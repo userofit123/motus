@@ -1,0 +1,11 @@
+{
+  "appId": "org.motus.app",
+  "appName": "Motus",
+  "webDir": "www",
+  "android": { "backgroundColor": "#17100d" },
+  "server": { "androidScheme": "https" },
+  "plugins": {
+    "CapacitorHttp": { "enabled": true },
+    "LocalNotifications": { "smallIcon": "ic_stat_motus", "iconColor": "#f8b396" }
+  }
+}

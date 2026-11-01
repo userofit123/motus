@@ -1,0 +1,124 @@
+# Publishes a release when CHANGELOG.md gets a new version on main (or when run by hand):
+# the server image (GHCR), the desktop apps (Linux, Windows) with auto-update files, and the signed Android APK
+# with android-latest.json, which the apps read to update themselves (PLAN.md §12).
+name: Release
+on:
+  push:
+    branches: [main]
+    paths: [CHANGELOG.md]
+  workflow_dispatch:
+permissions:
+  contents: write
+  packages: write
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      publish: ${{ steps.v.outputs.publish }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - id: v
+        run: |
+          V=$(grep -m1 -oP '^## \[\K[0-9]+\.[0-9]+\.[0-9]+' CHANGELOG.md)
+          echo "version=$V" >> $GITHUB_OUTPUT
+          if git rev-parse "v$V" >/dev/null 2>&1; then echo "publish=false" >> $GITHUB_OUTPUT; else echo "publish=true" >> $GITHUB_OUTPUT; fi
+  test:
+    needs: version
+    if: needs.version.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @motus/engine test
+      - run: pnpm --filter @motus/web exec vue-tsc --noEmit
+  release:
+    needs: [version, test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create the GitHub release
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          V=${{ needs.version.outputs.version }}
+          node scripts/release-notes.mjs "$V" > notes.md
+          gh release create "v$V" --title "Motus $V" --notes-file notes.md
+  docker:
+    needs: [version, release]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with: { registry: ghcr.io, username: "${{ github.actor }}", password: "${{ github.token }}" }
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/motus:${{ needs.version.outputs.version }}
+            ghcr.io/${{ github.repository_owner }}/motus:latest
+  desktop:
+    needs: [version, release]
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: node scripts/fetch-exercise-images.mjs
+      - run: pnpm --filter @motus/web exec vite build
+      - name: Build and publish
+        working-directory: apps/desktop
+        env: { GH_TOKEN: "${{ github.token }}" }
+        shell: bash
+        run: |
+          npm pkg set version=${{ needs.version.outputs.version }}
+          node build.mjs
+          npx electron-builder --publish always
+  android:
+    needs: [version, release]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: 21 }
+      - run: pnpm install --frozen-lockfile
+      - run: node scripts/fetch-exercise-images.mjs
+      - run: pnpm --filter @motus/web exec vite build
+        env: { MOTUS_VERSION: "${{ needs.version.outputs.version }}" }
+      - name: Copy the app into the Android project
+        working-directory: apps/android
+        run: node prepare-web.mjs && npx cap sync android
+      - name: Build the signed APK
+        working-directory: apps/android/android
+        env:
+          MOTUS_KEYSTORE_PASSWORD: ${{ secrets.MOTUS_KEYSTORE_PASSWORD }}
+        run: |
+          echo "${{ secrets.MOTUS_KEYSTORE_B64 }}" | base64 -d > $RUNNER_TEMP/motus.jks
+          export MOTUS_KEYSTORE=$RUNNER_TEMP/motus.jks
+          chmod +x gradlew
+          ./gradlew assembleRelease -PappVersion=${{ needs.version.outputs.version }}
+      - name: Upload the APK and its update manifest
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: |
+          V=${{ needs.version.outputs.version }}
+          APK=motus-$V.apk
+          cp apps/android/android/app/build/outputs/apk/release/app-release.apk $APK
+          SHA=$(sha256sum $APK | cut -d' ' -f1)
+          URL=https://github.com/${{ github.repository }}/releases/download/v$V/$APK
+          printf '{"version":"%s","url":"%s","sha256":"%s","size":%s}\n' "$V" "$URL" "$SHA" "$(stat -c%s $APK)" > android-latest.json
+          gh release upload "v$V" $APK android-latest.json
