@@ -12,8 +12,11 @@ import { invalidate } from "../api/live";
 import Icon from "../components/Icon.vue";
 import Menu from "../components/Menu.vue";
 import Sheet from "../components/Sheet.vue";
+import ProgramsSection from "../components/ProgramsSection.vue";
+import { useSettings } from "../api/queries";
 
 const router = useRouter();
+const settings = useSettings();
 const showArchived = ref(false);
 const routines = useRoutines();
 const archived = useRoutines(true);
@@ -110,6 +113,8 @@ const tgroups = computed(() => { const m = new Map<string, any[]>(); for (const 
         </div>
       </div>
     </section>
+
+    <ProgramsSection v-if="settings.features.programs && !showArchived" />
 
     <Sheet v-if="fromTemplate" title="Start from a template" size="wide" @close="fromTemplate = false">
       <p class="tiny" style="margin-bottom:6px">A copy is added to your routines, ready to change.</p>

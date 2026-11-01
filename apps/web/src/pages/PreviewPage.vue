@@ -48,7 +48,7 @@ const plan = (e: any) => {
 async function start(force = false) {
   busy.value = true;
   try {
-    await api.post("/workouts/start", { routineId: id.value, skip: skip.value, order: order.value, settings: overrides.value, scheduleId: route.query.schedule ?? null, scheduledDate: route.query.date ?? null, force });
+    await api.post("/workouts/start", { routineId: id.value, skip: skip.value, order: order.value, settings: overrides.value, scheduleId: route.query.schedule ?? null, scheduledDate: route.query.date ?? null, programId: route.query.program ?? null, deloadPct: route.query.deload ? Number(route.query.deload) : null, force });
     askNotificationPermission();
     invalidate(["workouts", "home", "calendar"]);
     router.replace("/workout");
@@ -77,6 +77,7 @@ const changed = computed(() => Object.keys(overrides.value).length);
       <div class="card stat"><div class="lbl"><span class="bi"><Icon name="refresh" :size="15" /></span>Reps</div><div class="val">{{ counts.reps }}</div><div class="sub">in total</div></div>
     </div>
 
+    <div v-if="route.query.deload" class="banner" style="margin-top:var(--spg)"><Icon name="info" /><b>Deload week: working weights are {{ route.query.deload }}% lighter today.</b></div>
     <div v-for="m in p.reminders" :key="m.id" class="banner" style="margin-top:var(--spg)"><Icon name="bell" /><b>{{ m.body }}</b></div>
     <div v-for="n in p.notes" :key="n.id" class="banner note" :style="!p.reminders.length ? { marginTop: 'var(--spg)' } : undefined"><Icon name="note" /><div>{{ n.body }}</div></div>
 

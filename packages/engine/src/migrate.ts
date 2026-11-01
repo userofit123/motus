@@ -2,10 +2,12 @@
 import type { Db } from "./db";
 import m001 from "./migrations/001_init";
 import m002 from "./migrations/002_isolation";
+import m003 from "./migrations/003_programs";
 
 export const MIGRATIONS: [string, string][] = [
   ["001_init", m001],
   ["002_isolation", m002],
+  ["003_programs", m003],
 ];
 
 export async function migrate(db: Db): Promise<string[]> {

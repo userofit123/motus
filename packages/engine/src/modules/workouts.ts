@@ -235,6 +235,7 @@ export function workoutRoutes(r: Router) {
     const active = (await ctx.q.query("SELECT id FROM workouts WHERE status = 'in_progress' LIMIT 1")).rows[0];
     if (active && !b.force) throw new HttpError(409, "A workout is already in progress");
     if (active && b.force) await ctx.q.query("DELETE FROM workouts WHERE id = $1", [active.id]);
+    if (b.programId) await visible(ctx.q, "programs", id(b.programId), "program");
     if (b.clientId) {
       const dup = (await ctx.q.query("SELECT id FROM workouts WHERE client_id = $1", [str(b.clientId, 80)])).rows[0];
       if (dup) return loadWorkout(ctx.q, dup.id, ymd(ctx.now()));
@@ -254,8 +255,11 @@ export function workoutRoutes(r: Router) {
        VALUES ($1,$2,$3,$4,$5,'in_progress',$6,$7,$8,$9,$10)`,
       [wid, ctx.userId, routine?.id ?? null, routine ? JSON.stringify(routine) : null, name, startedAt, JSON.stringify(b.settings ?? {}),
         b.clientId ? str(b.clientId, 80) : null, optId(b.scheduleId), b.scheduledDate ?? null]);
+    if (b.programId) await ctx.q.query("UPDATE workouts SET program_id = $2 WHERE id = $1", [wid, b.programId]);
     if (routine) {
       const plan = await buildPlan(ctx.q, routine, settings, ymd(ctx.now()));
+      // a deload week in a program: lighter working weights
+      if (b.deloadPct) for (const e of plan.exercises) for (const s of e.sets) if (s.kind !== "warmup" && s.weightKg) { s.weightKg = Math.round((s.weightKg * (1 - Number(b.deloadPct) / 100)) / 1.25) * 1.25; s.adjusted = true; }
       const skip = new Set<string>(Array.isArray(b.skip) ? b.skip : []);
       const order: string[] | null = Array.isArray(b.order) ? b.order : null;
       let exs = plan.exercises;

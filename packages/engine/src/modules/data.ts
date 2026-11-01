@@ -10,7 +10,7 @@ import { oneOf } from "../util";
 export const EXPORT_FORMAT = 1;
 // in the order they are restored (a table only points at tables above it)
 const TABLES = [
-  "exercises", "exercise_prefs", "folders", "routines", "routine_exercises", "routine_sets", "routine_versions", "schedules", "schedule_exceptions",
+  "exercises", "exercise_prefs", "folders", "programs", "routines", "routine_exercises", "routine_sets", "routine_versions", "schedules", "schedule_exceptions",
   "workouts", "workout_exercises", "workout_sets", "notes", "reminders", "goals", "activity_types", "activities", "body_metrics", "daily_logs",
 ] as const;
 const OWNER_COL: Record<string, string> = { exercises: "owner_id" };
