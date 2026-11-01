@@ -1,7 +1,7 @@
 // Who is signed in, and how this app reaches its data.
 import { reactive } from "vue";
 import { api, setOnUnauthorized, ApiError, server, usingHttp } from "../api/client";
-import { queryClient } from "../api/live";
+import { queryClient, invalidate } from "../api/live";
 import { readJson, writeJson } from "./prefs";
 import { startReplica, eraseReplica, sync } from "../api/replica";
 import { confirm } from "./ask";
@@ -13,13 +13,18 @@ export const session = reactive<{ ready: boolean; setupNeeded: boolean; user: { 
 const KEY = () => "motusSession:" + (server.value.base || location.origin);
 
 export async function loadSession() {
-  let s: any = null;
+  let s: any = null, offline = false;
   try { s = await api.get("/auth/status"); writeJson(KEY(), s.user ? s : null); }
-  catch (e) { if (e instanceof ApiError && e.status === 0) s = readJson(KEY(), null); }
+  catch (e) { if (e instanceof ApiError && e.status === 0) { s = readJson(KEY(), null); offline = true; } }
   if (s) Object.assign(session, { setupNeeded: s.setupNeeded, user: s.user, registration: s.registration, version: s.version, apiLevel: s.apiLevel });
   else session.user = null;
   // a server account works on a copy on this device (offline use); local accounts already are one
-  if (session.user && usingHttp() && !(await isLocalDesktopAccount())) await startReplica(session.user);
+  // Online, the screens show straight from the server while the copy opens (about a second) and take it over when
+  // it's ready; offline, the copy is all there is, so wait for it.
+  if (session.user && usingHttp() && !(await isLocalDesktopAccount())) {
+    const opening = startReplica(session.user).then((ok) => { if (ok && !offline) invalidate(["*"]); });
+    if (offline) await opening;
+  }
   session.ready = true;
 }
 async function isLocalDesktopAccount() {
