@@ -3,7 +3,7 @@
 // This file is the single place that says what affects what (PLAN.md §5).
 export const TOPICS = {
   workout: ["workouts", "exercises", "stats", "goals", "home", "calendar", "routines", "reminders", "notes"],
-  routine: ["routines", "home", "calendar"],
+  routine: ["routines", "home", "calendar", "stats"],
   exercise: ["exercises", "routines", "workouts"],
   note: ["notes", "workouts", "routines", "exercises"],
   reminder: ["reminders", "routines", "workouts", "home", "exercises"],

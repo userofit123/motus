@@ -53,6 +53,8 @@ export const api = {
 export function mediaUrl(src: string | null | undefined): string {
   if (!src) return "";
   if (src.startsWith("lib:")) return `${server.value.base}/exercise-images/${src.slice(4)}`;
+  // a local account (Android) keeps photos inside its database as data: URLs
+  if (src.startsWith("media:data:")) return src.slice(6);
   if (src.startsWith("media:")) return `${server.value.base}/api/media/${src.slice(6)}`;
   return src;
 }

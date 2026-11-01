@@ -3,7 +3,7 @@
 import type { Goal } from "@motus/shared";
 import Sparkline from "./Sparkline.vue";
 import Ring from "./Ring.vue";
-import { useFmt } from "../core/format";
+import { useFmt, goalLabel } from "../core/format";
 
 defineProps<{ goal: Goal; compact?: boolean }>();
 const fmt = useFmt();
@@ -18,7 +18,7 @@ const fmt = useFmt();
       </div>
       <Ring :pct="goal.progress?.pct ?? 0" :size="compact ? 38 : 46" :color="goal.progress?.done ? 'var(--pos)' : undefined" />
     </div>
-    <div style="margin-top:10px;font-weight:600;font-variant-numeric:tabular-nums">{{ goal.progress?.label }}</div>
+    <div style="margin-top:10px;font-weight:600;font-variant-numeric:tabular-nums">{{ goalLabel(goal, fmt) }}</div>
     <div class="sub" :class="{ pos: goal.progress?.done }">{{ goal.status === "achieved" ? "Achieved" : goal.progress?.done ? "Done for this period" : goal.progress?.pace }}</div>
     <Sparkline v-if="!compact && (goal.progress?.history?.length ?? 0) > 1" :values="goal.progress!.history.map((h) => h.value)" />
   </div>

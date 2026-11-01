@@ -34,5 +34,11 @@ export async function flush() {
     if (!waiting.value.length) invalidate(["workouts", "home"]);
   } finally { flushing = false; }
 }
+/** Sends everything still waiting (waiting for a send already under way); true when nothing is left. */
+export async function settle() {
+  while (flushing) await new Promise((ok) => setTimeout(ok, 100));
+  await flush();
+  return !waiting.value.length;
+}
 addEventListener("online", flush);
 setInterval(flush, 15000);

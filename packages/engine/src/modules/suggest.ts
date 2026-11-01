@@ -1,12 +1,14 @@
 // Suggestions for Home, worked out from what you actually do:
+// - the next workout of a program you're following
 // - your usual order of routines (if Back usually follows Chest and you just did Chest, Back is next)
 // - a muscle left out this week while the rest were worked, or one that hasn't been worked for a long while
 // - otherwise, the routine you haven't done for the longest
 import { muscleName } from "@motus/shared";
 import type { Sql } from "../db";
 import type { RoutineSummary } from "@motus/shared";
+import { programState } from "./programs";
 
-export type Suggestion = { kind: "order" | "missed" | "rested" | "oldest"; title: string; reason: string; routineId: string | null; color: string | null; muscle?: string };
+export type Suggestion = { kind: "program" | "order" | "missed" | "rested" | "oldest"; title: string; reason: string; routineId: string | null; color: string | null; muscle?: string };
 
 // the muscles worth a nudge; small ones (forearms, neck, adductors…) only show up as part of a routine
 const MAIN = ["chest", "lats", "middle back", "shoulders", "biceps", "triceps", "abdominals", "quadriceps", "hamstrings", "glutes", "calves"];
@@ -17,6 +19,12 @@ export async function suggestions(q: Sql, routines: RoutineSummary[], now: Date)
   const byId = new Map(usable.map((r) => [r.id, r]));
   const out: Suggestion[] = [];
   const add = (s: Suggestion) => { if (out.length < 3 && !out.some((x) => (s.routineId && x.routineId === s.routineId) || (s.muscle && x.muscle === s.muscle))) out.push(s); };
+
+  // 0. a program you're following says what's next
+  for (const p of (await q.query("SELECT * FROM programs WHERE active ORDER BY created_at DESC")).rows) {
+    const next = (await programState(q, p)).next;
+    if (next && byId.has(next.routineId)) add({ kind: "program", title: next.name, reason: `${p.name}: week ${next.week}, day ${next.day}${next.deload ? " (deload)" : ""}`, routineId: next.routineId, color: next.color });
+  }
 
   // 1. your usual order: which routine most often came right after the one you did last
   const seq = (await q.query<{ routine_id: string | null }>(

@@ -90,9 +90,11 @@ export async function saveActivity(ctx: Ctx, b: any, aid = uuidv7(), isNew = tru
     numOrNull(b.elevationM, 0, 1e5) ?? rs?.elevationM ?? null, intOrNull(b.avgHr, 20, 250), intOrNull(b.calories, 0, 1e5), route ? JSON.stringify(route) : null,
     str(b.notes, 10000), str(b.source, 20) || "manual", b.clientId ? str(b.clientId, 80) : null];
   if (isNew) {
-    await ctx.q.query(
+    const { rows } = await ctx.q.query(
       `INSERT INTO activities (id, user_id, type, name, started_at, ended_at, duration_s, moving_s, distance_m, steps, elevation_m, avg_hr, calories, route, notes, source, client_id)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) ON CONFLICT (user_id, client_id) WHERE client_id IS NOT NULL DO NOTHING`, vals);
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) ON CONFLICT (user_id, client_id) WHERE client_id IS NOT NULL DO NOTHING RETURNING id`, vals);
+    // sent twice (a double tap or a retry): it's already saved, so point at that one
+    if (!rows.length && b.clientId) return (await ctx.q.query("SELECT id FROM activities WHERE client_id = $1", [str(b.clientId, 80)])).rows[0]?.id ?? aid;
   } else {
     const { rows } = await ctx.q.query(
       `UPDATE activities SET type=$3, name=$4, started_at=$5, ended_at=$6, duration_s=$7, moving_s=$8, distance_m=$9, steps=$10, elevation_m=$11, avg_hr=$12, calories=$13,
@@ -190,7 +192,7 @@ export function activityRoutes(r: Router) {
     if (v == null) throw bad("Enter a value");
     const bid = uuidv7();
     await ctx.q.query("INSERT INTO body_metrics (id, user_id, kind, value, measured_at, note) VALUES ($1,$2,$3,$4,$5,$6)",
-      [bid, ctx.userId, str(b.kind, 40) || "weight", v, isoTime(b.measuredAt, ctx.now().toISOString()), str(b.note, 500)]);
+      [bid, ctx.userId, str(b.kind, 40) || "weight", v, isoTime(b.measuredAt, ctx.now().toISOString()), str(b.note, b.kind === "photo" ? 4_000_000 : 500)]); // a photo's note is its picture
     ctx.changed("body");
     return { id: bid };
   });

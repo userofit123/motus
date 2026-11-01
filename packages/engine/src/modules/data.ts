@@ -53,6 +53,7 @@ export async function importAll(ctx: Ctx, data: any, mode: "replace" | "merge") 
     if (data.settings) await q.query("INSERT INTO user_settings (user_id, data) VALUES ($1, $2) ON CONFLICT (user_id) DO UPDATE SET data = $2", [ctx.userId, JSON.stringify(data.settings)]);
   }
   const counts: Record<string, number> = {};
+  const jsonCols = new Map<string, Set<string>>();
   for (const t of TABLES) {
     const rows: any[] = Array.isArray(data.tables[t]) ? data.tables[t] : [];
     let n = 0;
@@ -66,7 +67,10 @@ export async function importAll(ctx: Ctx, data: any, mode: "replace" | "merge") 
       row[OWNER_COL[t] ?? "user_id"] = ctx.userId;
       if (t === "exercises") { row.source = "custom"; }
       const cols = Object.keys(row);
-      const vals = cols.map((c) => { const v = row[c]; return v !== null && typeof v === "object" && !Array.isArray(v) ? JSON.stringify(v) : Array.isArray(v) && v.length && typeof v[0] === "object" ? JSON.stringify(v) : v; });
+      // json columns get JSON (an empty list included); text[] columns get the list as it is
+      const json = jsonCols.get(t) ?? new Set((await ctx.q.query("SELECT column_name FROM information_schema.columns WHERE table_name = $1 AND data_type IN ('json', 'jsonb')", [t])).rows.map((x: any) => x.column_name));
+      jsonCols.set(t, json);
+      const vals = cols.map((c) => { const v = row[c]; return v != null && json.has(c) ? JSON.stringify(v) : v; });
       const sql = `INSERT INTO ${t} (${cols.join(",")}) VALUES (${cols.map((_, i) => `$${i + 1}`).join(",")}) ON CONFLICT DO NOTHING RETURNING 1`;
       if (mode === "merge") {
         // a row that no longer fits (e.g. points at something missing) is left out of a merge

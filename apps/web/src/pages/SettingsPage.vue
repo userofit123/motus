@@ -76,7 +76,8 @@ async function addGym() {
 const toggleEquip = (g: any, eq: string) => set({ gyms: s.value.gyms.map((x) => (x.id === g.id ? { ...x, equipment: x.equipment.includes(eq) ? x.equipment.filter((y) => y !== eq) : [...x.equipment, eq] } : x)) });
 const delGym = (g: any) => set({ gyms: s.value.gyms.filter((x) => x.id !== g.id), activeGym: s.value.activeGym === g.id ? null : s.value.activeGym });
 const groups = computed(() => { const m = new Map<string, typeof READY_FEATURES>(); for (const f of READY_FEATURES) m.set(f.group, [...(m.get(f.group) ?? []), f]); return [...m]; });
-const NOTIF: [keyof Settings["notifications"], string, string][] = [["scheduled", "Planned workouts", "Before a routine's scheduled time"], ["goals", "Goals reached", ""], ["updates", "New versions", ""], ["inactivity", "A nudge after a long break", "Off by default"]];
+// only the notifications the app actually sends are offered
+const NOTIF: [keyof Settings["notifications"], string, string][] = [["scheduled", "Planned workouts", "Before a routine's scheduled time"]];
 const notifPerm = ref(typeof Notification !== "undefined" ? Notification.permission : "unsupported");
 async function allowNotifications() { await askNotificationPermission(); notifPerm.value = typeof Notification !== "undefined" ? Notification.permission : notifPerm.value; }
 </script>
@@ -139,7 +140,6 @@ async function allowNotifications() { await askNotificationPermission(); notifPe
             <div class="li"><div class="grow"><div class="t">Weight steps</div><div class="s">Used by reminders and progression</div></div><input type="number" step="0.25" :value="s.units.weight === 'kg' ? s.increments.kg : s.increments.lb" style="width:90px" @change="set({ increments: { [s.units.weight]: Number(($event.target as HTMLInputElement).value) || 2.5 } })" /><span class="tiny">{{ s.units.weight }}</span></div>
             <div v-if="s.features.plates || s.features.warmupCalc" class="li"><div class="grow"><div class="t">Bar weight</div></div><input type="number" step="0.5" :value="s.barKg" style="width:90px" @change="set({ barKg: Number(($event.target as HTMLInputElement).value) || 20 })" /><span class="tiny">kg</span></div>
             <div v-if="s.features.plates" class="li"><div class="grow"><div class="t">Your plates</div><div class="s">{{ (s.units.weight === "kg" ? s.platesKg : s.platesLb).join(", ") }} {{ s.units.weight }}</div></div><button class="qb acc" @click="editPlates">Edit</button></div>
-            <div class="li"><div class="grow"><div class="t">One-rep max estimate</div></div><select :value="s.e1rm" style="width:auto" @change="set({ e1rm: ($event.target as HTMLSelectElement).value })"><option value="epley">Epley</option><option value="brzycki">Brzycki</option></select></div>
             <div v-if="s.features.steps" class="li"><div class="grow"><div class="t">Daily step goal</div></div><input type="number" step="500" :value="s.stepGoal" style="width:100px" @change="set({ stepGoal: Number(($event.target as HTMLInputElement).value) || 8000 })" /></div>
           </div>
           <template v-if="s.features.gyms">

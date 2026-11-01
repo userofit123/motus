@@ -46,3 +46,12 @@ export function ago(iso: string | null | undefined): string {
   return `${Math.round(days / 365)} years ago`;
 }
 export const localYmd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+/** "62.5 / 80 kg" in your units: goals keep weights in kg and distances in km */
+export function goalLabel(g: { target: number; progress?: { current: number; label: string; unit?: string } | null }, f: { w: (kg: number) => string; wu: string; distNum: (m: number) => number; du: string }) {
+  const p = g.progress;
+  if (!p) return "";
+  if (p.unit === "kg") return `${f.w(p.current)} / ${f.w(g.target)} ${f.wu}`;
+  if (p.unit === "km") return `${num(f.distNum(p.current * 1000), 1)} / ${num(f.distNum(g.target * 1000), 1)} ${f.du}`;
+  return p.label;
+}

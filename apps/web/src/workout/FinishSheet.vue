@@ -5,6 +5,7 @@ import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
 import { useWorkout } from "./useWorkout";
 import { api } from "../api/client";
+import { settle } from "../api/outbox";
 import { invalidate } from "../api/live";
 import { toast, toastError } from "../core/toast";
 import { finishRest } from "./runtime";
@@ -27,7 +28,7 @@ const changedFromPlan = computed(() => w.value.routineId && w.value.exercises.so
 const hitAll = computed(() => w.value.exercises.filter((e) => e.status !== "skipped" && e.sets.some((s) => s.done && s.kind !== "warmup") && e.sets.filter((s) => s.kind !== "warmup").every((s) => s.done && (s.targetReps == null || (s.reps ?? 0) >= s.targetReps)) && e.sets.some((s) => s.weightKg)));
 const reminded = ref<string[]>([]);
 async function remind(e: any) {
-  const inc = W.settings.value.increments.kg;
+  const inc = W.incKg.value;
   await api.post("/reminders", { targetType: "exercise", targetId: e.exerciseId, body: `Add ${fmt.value.w(inc)} ${fmt.value.wu}`, action: { weightKg: inc }, workoutId: w.value.id });
   reminded.value.push(e.id);
 }
@@ -36,6 +37,8 @@ async function finish() {
   busy.value = true;
   try {
     finishRest(true);
+    // sets ticked while offline must reach the server first, or finishing would remove them as unticked
+    if (!(await settle())) { toast("Can't reach the server yet: your sets are kept here. Finish again when you're back online.", { kind: "err" }); return; }
     await api.post(`/workouts/${w.value.id}/finish`, { rating: rating.value, notes: notes.value, bodyweightKg: bw.value ? fmt.value.toKg(bw.value) : null, updateRoutine: updateRoutine.value });
     keepAwake(false);
     invalidate(["*"]);
@@ -61,7 +64,7 @@ async function finish() {
     <template v-if="hitAll.length">
       <h2>Every target hit</h2>
       <div class="list"><div v-for="e in hitAll" :key="e.id" class="li"><div class="grow"><div class="t">{{ e.exercise.name }}</div></div>
-        <button class="btn s" :class="reminded.includes(e.id) ? 'o' : 'tonal'" :disabled="reminded.includes(e.id)" @click="remind(e)"><Icon :name="reminded.includes(e.id) ? 'check' : 'bell'" :size="14" />{{ reminded.includes(e.id) ? "Reminder set" : `Add ${fmt.w(W.settings.value.increments.kg)} ${fmt.wu} next time` }}</button></div></div>
+        <button class="btn s" :class="reminded.includes(e.id) ? 'o' : 'tonal'" :disabled="reminded.includes(e.id)" @click="remind(e)"><Icon :name="reminded.includes(e.id) ? 'check' : 'bell'" :size="14" />{{ reminded.includes(e.id) ? "Reminder set" : `Add ${fmt.w(W.incKg.value)} ${fmt.wu} next time` }}</button></div></div>
     </template>
     <template #foot><button class="btn o" @click="emit('close')">Keep going</button><button class="btn" :disabled="busy" @click="finish">Finish</button></template>
   </Sheet>

@@ -34,10 +34,12 @@ async function save(path: string, body: unknown, method: "put" | "del" | "post" 
   try { await (api as any)[method](path, body); invalidate(["workouts", "stats", "home", "goals", "calendar", "exercises"]); } catch (e) { toastError(e); }
 }
 const num = (v: string) => (v.trim() === "" ? null : Number(v.replace(",", ".")));
+// shown and read as local time (the stored time is UTC)
+const localStamp = (iso: string) => { const d = new Date(iso); return `${localYmd(d)} ${d.toTimeString().slice(0, 5)}`; };
 async function editTimes() {
-  const st = await prompt("Started at", { value: w.value.startedAt.slice(0, 16).replace("T", " "), text: "Date and time, e.g. 2026-11-01 18:30" });
+  const st = await prompt("Started at", { value: localStamp(w.value.startedAt), text: "Date and time, e.g. 2026-11-01 18:30" });
   if (!st) return;
-  const en = await prompt("Ended at", { value: (w.value.endedAt ?? w.value.startedAt).slice(0, 16).replace("T", " ") });
+  const en = await prompt("Ended at", { value: localStamp(w.value.endedAt ?? w.value.startedAt) });
   if (!en) return;
   await save(`/workouts/${id.value}`, { startedAt: new Date(st.replace(" ", "T")).toISOString(), endedAt: new Date(en.replace(" ", "T")).toISOString() });
 }

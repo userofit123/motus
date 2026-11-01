@@ -9,7 +9,6 @@ import { notFound, bad, HttpError } from "../errors";
 import { getSettings } from "./settings";
 import { buildPlan, loadRoutine, pendingReminders } from "./plan";
 import { getExercises, exerciseSessions } from "./library";
-import { writeRoutineBody } from "./routines";
 
 const KINDS = ["warmup", "normal", "drop", "failure"] as const;
 const EX_STATUS = ["pending", "done", "skipped", "partial"] as const;
@@ -165,7 +164,7 @@ async function insertSets(ctx: Ctx, weId: string, sets: any[], startPos = 0) {
       `INSERT INTO workout_sets (id, user_id, workout_exercise_id, position, kind, weight_kg, reps, duration_s, distance_m, rpe, rir, side, done, done_at,
          rest_planned_s, rest_actual_s, target_reps, target_weight_kg, prefilled)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
-      [s.id ?? uuidv7(), ctx.userId, weId, startPos + i, oneOf(s.kind, KINDS, "normal"), numOrNull(s.weightKg, -500, 2000), intOrNull(s.reps, 0, 10000),
+      [typeof s.id === "string" && /^[0-9a-f-]{36}$/i.test(s.id) ? s.id : uuidv7(), ctx.userId, weId, startPos + i, oneOf(s.kind, KINDS, "normal"), numOrNull(s.weightKg, -500, 2000), intOrNull(s.reps, 0, 10000),
         intOrNull(s.durationS, 0, 86400), numOrNull(s.distanceM, 0, 1e7), numOrNull(s.rpe, 0, 10), numOrNull(s.rir, 0, 20), s.side ? str(s.side, 5) : null,
         bool(s.done), s.done ? (s.doneAt ? isoTime(s.doneAt) : ctx.now().toISOString()) : null, intOrNull(s.restS ?? s.restPlannedS, 0, 3600),
         intOrNull(s.restActualS, 0, 86400), intOrNull(s.targetReps, 0, 10000), numOrNull(s.targetWeightKg, -500, 2000), bool(s.prefilled)]);
@@ -308,6 +307,8 @@ export function workoutRoutes(r: Router) {
     const pos = b.position == null ? n : Math.max(0, Math.min(n, Number(b.position)));
     await ctx.q.query("UPDATE workout_exercises SET position = position + 1 WHERE workout_id = $1 AND position >= $2", [wid, pos]);
     const weId = await addExercise(ctx, wid, { exerciseId: exId, position: pos, sets: Array.isArray(b.sets) ? b.sets : await freshSets(ctx, exId) });
+    // added to a finished workout (editing it afterwards): it counts as done
+    await ctx.q.query("UPDATE workout_exercises SET status = 'done' WHERE id = $1 AND (SELECT status FROM workouts WHERE id = $2) = 'completed'", [weId, wid]);
     await touch(ctx, wid);
     ctx.changed("workout");
     return { id: weId };
@@ -379,7 +380,9 @@ export function workoutRoutes(r: Router) {
       await ctx.q.query("UPDATE workout_sets SET position = position + $2 WHERE workout_exercise_id = $1", [weId, list.length]);
       await insertSets(ctx, weId, list, 0);
     } else await insertSets(ctx, weId, list, n);
-    await ctx.q.query("UPDATE workout_exercises SET status = CASE WHEN status = 'done' THEN 'pending' ELSE status END WHERE id = $1", [weId]);
+    // a new set reopens the exercise during a workout; on a finished workout it is simply part of it
+    await ctx.q.query(`UPDATE workout_exercises SET status = CASE WHEN (SELECT status FROM workouts WHERE id = $2) = 'completed' THEN 'done'
+      WHEN status = 'done' THEN 'pending' ELSE status END WHERE id = $1`, [weId, wid]);
     await touch(ctx, wid);
     ctx.changed("workout");
     return { ok: true };
@@ -460,10 +463,13 @@ export function workoutRoutes(r: Router) {
     await ctx.q.query(
       `UPDATE reminders SET seen_n = seen_n + 1, last_shown_workout_id = $1 WHERE status = 'pending' AND
          ((target_type = 'exercise' AND target_id = ANY($2::uuid[])) OR (target_type = 'routine' AND target_id = $3))`, [wid, doneEx, w.routine_id]);
+    // reminders that came up in this workout have done their job ("every" ones keep coming); ones written during it wait for next time
+    await ctx.q.query(
+      `UPDATE reminders SET status = 'done', done_at = now() WHERE status = 'pending' AND last_shown_workout_id = $1 AND created_workout_id IS DISTINCT FROM $1
+         AND (trigger = 'next' OR (trigger = 'after_n' AND seen_n >= coalesce(trigger_n, 1)) OR (trigger = 'date' AND trigger_date <= $2::date))`, [wid, end.slice(0, 10)]);
     if (b?.updateRoutine && w.routine_id) {
-      const { bodyFromWorkout } = await import("./routines");
-      const body = await bodyFromWorkout(ctx.q, wid);
-      if (body.length) await writeRoutineBody(ctx, w.routine_id, body);
+      const { updateRoutineFromWorkout } = await import("./routines");
+      await updateRoutineFromWorkout(ctx, w.routine_id, wid);
       ctx.changed("routine");
     }
     ctx.changed("workout");

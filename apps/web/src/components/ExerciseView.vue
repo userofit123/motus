@@ -4,6 +4,7 @@
 import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
 import { strengthLevel, LEVELS, e1rm, weightForReps, usesWeight, usesReps, usesDuration, usesDistance, muscleName } from "@motus/shared";
+import { invalidate } from "../api/live";
 import { useExercise, useExerciseHistory, useNotes, useReminders, useChange, useSettings, useBody } from "../api/queries";
 import { api, mediaUrl } from "../api/client";
 import { useFmt, ago } from "../core/format";
@@ -67,6 +68,7 @@ const standard = computed(() => {
 async function del() {
   if (!(await confirm(`Delete ${e.value.name}?`, { text: "If it has history it is archived instead, so your past workouts keep it.", ok: "Delete", danger: true }))) return;
   await api.del(`/exercises/${props.id}`);
+  invalidate(["exercises"]);
   exerciseSheet.value = null;
   router.push("/exercises");
 }
@@ -76,7 +78,7 @@ const menu = computed(() => [
   { label: "Remind me next time", icon: "bell", run: () => (reminderSheet.value = { targetType: "exercise", targetId: props.id, label: e.value.name }) },
   { label: "Add a note", icon: "note", run: () => (noteSheet.value = { targets: [{ type: "exercise", id: props.id, label: e.value.name }] }) },
   { label: "Edit", icon: "edit", run: () => (editing.value = true), hidden: !own.value },
-  { label: "Make my own copy", icon: "copy", run: async () => { const r = await api.post("/exercises", { ...e.value, name: e.value.name + " (mine)" }); exerciseSheet.value = null; router.push(`/exercises/${r.id}`); }, hidden: own.value },
+  { label: "Make my own copy", icon: "copy", run: async () => { const r = await api.post("/exercises", { ...e.value, name: e.value.name + " (mine)" }); invalidate(["exercises"]); exerciseSheet.value = null; router.push(`/exercises/${r.id}`); }, hidden: own.value },
   { label: "Open as a page", icon: "right", run: () => { exerciseSheet.value = null; router.push(`/exercises/${props.id}`); }, hidden: !props.inSheet },
   { label: "Delete", icon: "trash", danger: true, run: del, hidden: !own.value, sep: true },
 ]);

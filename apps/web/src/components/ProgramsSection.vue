@@ -41,7 +41,8 @@ const copyWeek = (i: number) => { const w = edit.value.weeks[i]; edit.value.week
         <div class="row"><b class="grow">{{ p.name }}</b><Menu :items="[{ label: 'Edit', icon: 'edit', run: () => editP(p) }, { label: p.active ? 'Pause' : 'Resume', icon: 'pause', run: async () => { await api.put(`/programs/${p.id}`, { active: !p.active }); invalidate(['routines']); } }, { label: 'Delete', icon: 'trash', danger: true, run: () => del(p) }]" /></div>
         <div class="tiny">{{ p.weeks.length }} weeks · {{ p.state.done }} of {{ p.state.total }} workouts done{{ p.active ? "" : " · paused" }}</div>
         <div class="pbar" style="margin:10px 0"><i :style="{ width: (p.state.total ? p.state.done / p.state.total : 0) * 100 + '%' }" /></div>
-        <div v-if="p.state.next" class="row"><div class="grow"><div style="font-weight:600">Next: {{ p.state.next.name }}</div><div class="tiny">Week {{ p.state.next.week }}, day {{ p.state.next.day }}{{ p.state.next.deload ? ` · deload (−${p.deloadPct}%)` : "" }}</div></div><button class="btn o s" @click="start(p)"><Icon name="play" :size="14" />Start</button></div>
+        <div v-if="!p.active" class="tiny">Paused. Resume it from ⋮ to carry on where you left off.</div>
+        <div v-else-if="p.state.next" class="row"><div class="grow"><div style="font-weight:600">Next: {{ p.state.next.name }}</div><div class="tiny">Week {{ p.state.next.week }}, day {{ p.state.next.day }}{{ p.state.next.deload ? ` · deload (−${p.deloadPct}%)` : "" }}</div></div><button class="btn o s" @click="start(p)"><Icon name="play" :size="14" />Start</button></div>
         <div v-else class="tiny pos">Program complete</div>
       </div>
     </div>

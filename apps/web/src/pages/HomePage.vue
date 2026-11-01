@@ -103,7 +103,7 @@ const dayName = (d: string) => { const t = new Date().toLocaleDateString("sv-SE"
           <div class="sh"><h2>Suggested</h2></div>
           <div class="card"><div class="list">
             <div v-for="x in h.suggest" :key="x.kind + (x.routineId ?? x.muscle)" class="li">
-              <span class="bi sg"><Icon :name="x.kind === 'order' ? 'routines' : x.kind === 'oldest' ? 'clock' : 'activity'" :size="16" /></span>
+              <span class="bi sg"><Icon :name="x.kind === 'order' || x.kind === 'program' ? 'routines' : x.kind === 'oldest' ? 'clock' : 'activity'" :size="16" /></span>
               <div class="grow"><div class="t">{{ x.title }}</div><div class="s">{{ x.reason }}</div></div>
               <template v-if="x.routineId">
                 <button class="ib sm" aria-label="Plan" title="Plan" @click="planOpen = { rule: 'once', routineId: x.routineId }"><Icon name="calendar" :size="18" /></button>

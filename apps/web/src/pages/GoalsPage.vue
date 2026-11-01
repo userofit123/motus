@@ -7,7 +7,7 @@ import { GROUPS, toKg, fromKg, toM, fromM, type Goal } from "@motus/shared";
 import { useGoals, useGoalMetrics, useRoutines, useExercises, useActivityTypes, useChange } from "../api/queries";
 import { api } from "../api/client";
 import { invalidate } from "../api/live";
-import { useFmt } from "../core/format";
+import { useFmt, goalLabel } from "../core/format";
 import { confirm } from "../core/ask";
 import { toastError, toast } from "../core/toast";
 import Icon from "../components/Icon.vue";
@@ -59,14 +59,18 @@ const autoTitle = computed(() => {
 });
 async function create() {
   const v = f.value, m = metric.value;
-  if (!m || v.target == null) return toast("Set a target", { kind: "err" });
+  if (!m || v.target == null || (v.target as any) === "" || Number(v.target) <= 0) return toast("Set a target", { kind: "err" });
+  if (["routine", "exercise", "muscle"].includes(v.scope) && !v.scopeId) return toast(`Pick the ${v.scope === "muscle" ? "muscle group" : v.scope}`, { kind: "err" });
   let target = Number(v.target);
   if (m.unit === "kg") target = toKg(target, fmt.value.wu);
   if (m.unit === "km") target = toM(target, fmt.value.du) / 1000;
   if (v.scope === "body" && v.scopeId === "weight") { v.metric = "body_weight"; target = toKg(Number(v.target), fmt.value.wu); }
   try {
-    await api.post("/goals", { metric: v.scope === "body" ? (v.scopeId === "weight" || !v.scopeId ? "body_weight" : "body_metric") : v.metric, scopeId: v.scope === "body" && v.scopeId === "weight" ? null : v.scopeId, target, period: v.period, deadline: v.deadline || null, title: v.title || autoTitle.value });
+    const made = await api.post<{ id: string }>("/goals", { metric: v.scope === "body" ? (v.scopeId === "weight" || !v.scopeId ? "body_weight" : "body_metric") : v.metric, scopeId: v.scope === "body" && v.scopeId === "weight" ? null : v.scopeId, target, period: v.period, deadline: v.deadline || null, title: v.title || autoTitle.value });
     invalidate(["goals", "home"]); creating.value = false; router.replace({ query: {} });
+    // a one-off goal you have already reached moves straight to Achieved: say so instead of letting it vanish
+    const g = await api.get<Goal>(`/goals/${made.id}`);
+    if (g.status === "achieved") { toast("Already reached: it's under Achieved"); filter.value = "achieved"; }
     f.value = { scope: "general", metric: "workouts", scopeId: null, target: null, period: "week", deadline: "", title: "" };
   } catch (e) { toastError(e); }
 }
@@ -88,7 +92,7 @@ const display = (g: Goal, v: number) => { const m = (metrics.data.value ?? []).f
 
     <Sheet v-if="open" :title="open.title" @close="open = null">
       <template #head><b>{{ open.title }}</b><Menu :items="[{ label: open.status === 'archived' ? 'Make active again' : 'Archive', icon: 'archive', run: () => { setStatus.run(open!.id, open!.status === 'archived' ? 'active' : 'archived'); open = null; } }, { label: 'Delete', icon: 'trash', danger: true, run: () => del(open!) }]" /></template>
-      <div class="row" style="margin-bottom:12px"><div class="val" style="font-size:30px">{{ open.progress?.label }}</div></div>
+      <div class="row" style="margin-bottom:12px"><div class="val" style="font-size:30px">{{ goalLabel(open, fmt) }}</div></div>
       <div class="pbar" :class="{ ok: open.progress?.done }"><i :style="{ width: (open.progress?.pct ?? 0) * 100 + '%' }" /></div>
       <div class="tiny" style="margin-top:6px">{{ open.status === "achieved" ? `Achieved ${fmt.date(open.achievedAt)}` : open.progress?.pace }}{{ open.deadline ? ` · deadline ${fmt.date(open.deadline, { day: "numeric", month: "short", year: "numeric" })}` : "" }} · since {{ fmt.date(open.startDate, { day: "numeric", month: "short", year: "numeric" }) }}</div>
       <div v-if="(open.progress?.history.length ?? 0) > 1" class="card" style="margin-top:14px"><LineChart :points="open.progress!.history.map((h) => ({ x: new Date(h.date).getTime(), y: Number(display(open!, h.value)) || h.value }))" :height="170" /></div>

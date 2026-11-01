@@ -99,7 +99,7 @@ async function addPair() {
 async function addWarmups() {
   const work = props.e.sets.find((s) => s.kind !== "warmup" && s.weightKg);
   if (!work?.weightKg) { toast("Set a working weight first", { kind: "err" }); return; }
-  const ws = warmups(work.weightKg, W.settings.value.barKg, W.settings.value.increments.kg);
+  const ws = warmups(work.weightKg, W.settings.value.barKg, W.incKg.value);
   await api.post(`/workout-exercises/${props.e.id}/sets`, { atStart: true, sets: ws.map((x) => ({ kind: "warmup", weightKg: x.weightKg, reps: x.reps, restPlannedS: 60 })) });
   invalidate(["workouts"]);
 }

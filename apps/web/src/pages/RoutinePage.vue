@@ -48,7 +48,7 @@ const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const schedLine = (s: any) => (s.rule === "weekly" ? s.days.map((d: number) => DAYS[d]).join(", ") : s.rule === "interval" ? `Every ${s.intervalDays} days` : fmt.value.date(s.startDate)) + (s.timeOfDay ? ` at ${s.timeOfDay}` : "");
 const delSched = useChange((sid: string) => api.del(`/schedules/${sid}`), ["schedules", "calendar", "home"]);
 const delNote = useChange((nid: string) => api.del(`/notes/${nid}`), ["notes"]);
-const remSet = useChange((mid: string, status: string) => api.put(`/reminders/${mid}`, { status }), ["reminders"]);
+const remSet = useChange((mid: string, status: string) => api.put(`/reminders/${mid}`, { status }), ["reminders", "routines"]);
 async function restore(v: any) {
   if (!(await confirm("Restore this version?", { text: "The current version is kept in the history too.", ok: "Restore" }))) return;
   await api.post(`/routines/${id.value}/versions/${v.id}/restore`); invalidate(["routines"]); showVersions.value = false; toast("Restored");

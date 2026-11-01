@@ -264,6 +264,8 @@ export interface GoalProgress {
   pct: number;
   done: boolean;
   label: string;
+  /** the unit current and target are stored in (kg, km, …), so the app can show them in yours */
+  unit?: string;
   history: { date: string; value: number }[];
   pace?: string;
 }

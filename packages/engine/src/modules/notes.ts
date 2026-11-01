@@ -38,8 +38,8 @@ export function noteRoutes(r: Router) {
   });
   r.put("/notes/:id", async (ctx, p, b) => {
     const { rows } = await ctx.q.query(
-      `UPDATE notes SET body = coalesce($2, body), tags = coalesce($3, tags), difficulty = $4, pinned = coalesce($5, pinned), updated_at = now() WHERE id = $1 RETURNING id`,
-      [id(p.id), b.body != null ? str(b.body, 10000) : null, Array.isArray(b.tags) ? b.tags.slice(0, 10) : null, intOrNull(b.difficulty, 1, 5), typeof b.pinned === "boolean" ? b.pinned : null]);
+      `UPDATE notes SET body = coalesce($2, body), tags = coalesce($3, tags), difficulty = CASE WHEN $6::boolean THEN $4 ELSE difficulty END, pinned = coalesce($5, pinned), updated_at = now() WHERE id = $1 RETURNING id`,
+      [id(p.id), b.body != null ? str(b.body, 10000) : null, Array.isArray(b.tags) ? b.tags.slice(0, 10) : null, intOrNull(b.difficulty, 1, 5), typeof b.pinned === "boolean" ? b.pinned : null, "difficulty" in b]);
     if (!rows.length) throw notFound("Note not found");
     ctx.changed("note");
     return { ok: true };

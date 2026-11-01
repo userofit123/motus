@@ -17,11 +17,22 @@ async function importJson(ev: Event) {
   const f = (ev.target as HTMLInputElement).files?.[0]; (ev.target as HTMLInputElement).value = ""; if (!f) return;
   try {
     const data = JSON.parse(await f.text());
-    if (data.motusRoutine) { await api.post("/routines", { ...data, exercises: data.exercises.map((e: any) => ({ ...e, id: undefined })) }); invalidate(["routines"]); toast("Routine imported"); return; }
+    if (data.motusRoutine) { await importRoutine(data); return; }
     const mode = await choose("Import this export?", [{ label: "Merge: add what's missing", value: "merge" }, { label: "Replace everything", value: "replace" }]);
     if (!mode) return;
     await api.post("/import", { data, mode }); invalidate(["*"]); toast("Imported");
   } catch (e) { toastError(e); }
+}
+// a routine shared from another account: its folder isn't here, and exercises are matched by id, then by name
+async function importRoutine(data: any) {
+  const lib = await api.get<any[]>("/exercises");
+  const ids = new Set(lib.map((e) => e.id));
+  const byName = new Map(lib.map((e) => [e.name.toLowerCase(), e.id]));
+  const exercises = data.exercises.map((e: any) => ({ ...e, id: undefined, exerciseId: ids.has(e.exerciseId) ? e.exerciseId : byName.get(String(e.exercise?.name ?? e.name ?? "").toLowerCase()) })).filter((e: any) => e.exerciseId);
+  await api.post("/routines", { ...data, folderId: null, basedOnId: null, exercises });
+  invalidate(["routines"]);
+  const missing = data.exercises.length - exercises.length;
+  toast(missing ? `Routine imported without ${missing} exercise${missing === 1 ? "" : "s"} not in your library` : "Routine imported");
 }
 // CSV from other apps
 const csv = ref<null | { text: string; preview: any; mapping: Record<string, string> }>(null);

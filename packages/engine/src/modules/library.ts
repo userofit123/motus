@@ -176,9 +176,9 @@ export function libraryRoutes(r: Router) {
 async function saveCustom(ctx: Ctx, exId: string, b: any, isNew: boolean) {
   const name = str(b.name, 120).trim();
   if (!name) throw bad("Give the exercise a name");
-  const arr = (v: unknown, max = 40) => (Array.isArray(v) ? v.filter((x) => typeof x === "string").slice(0, max).map((x: string) => x.slice(0, 1000)) : []);
+  const arr = (v: unknown, max = 40, len = 1000) => (Array.isArray(v) ? v.filter((x) => typeof x === "string").slice(0, max).map((x: string) => x.slice(0, len)) : []);
   const vals = [exId, ctx.userId, name, arr(b.aliases), str(b.category, 40, "strength"), b.equipment ? str(b.equipment, 40) : null, oneOf(b.tracking, TRACKING, "weight_reps"),
-    bool(b.unilateral), arr(b.primaryMuscles), arr(b.secondaryMuscles), arr(b.instructions, 60), arr(b.images, 10), b.videoUrl ? str(b.videoUrl, 500) : null];
+    bool(b.unilateral), arr(b.primaryMuscles), arr(b.secondaryMuscles), arr(b.instructions, 60), arr(b.images, 10, 4_000_000) /* local accounts keep photos inline */, b.videoUrl ? str(b.videoUrl, 500) : null];
   if (isNew) {
     await ctx.q.query(
       `INSERT INTO exercises (id, owner_id, source, name, aliases, category, equipment, tracking, unilateral, primary_muscles, secondary_muscles, instructions, images, video_url)

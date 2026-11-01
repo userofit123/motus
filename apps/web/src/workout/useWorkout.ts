@@ -1,7 +1,7 @@
 // The running workout, as one shared object: a local copy that every change updates at once (so typing and ticking never
 // wait for the network), with each change sent to the server (or kept for later when offline).
 import { computed, reactive, ref, watch } from "vue";
-import { restAfterSet, type Workout, type WorkoutExercise, type WorkoutSet, type WorkoutPrefs } from "@motus/shared";
+import { restAfterSet, toKg, type Workout, type WorkoutExercise, type WorkoutSet, type WorkoutPrefs } from "@motus/shared";
 import { useActive, useSettings } from "../api/queries";
 import { send } from "../api/outbox";
 import { api } from "../api/client";
@@ -33,6 +33,8 @@ export function useWorkout() {
   const prefs = computed<WorkoutPrefs>(() => ({ ...settings.value.workout, ...((state.w?.settings ?? {}) as Partial<WorkoutPrefs>) }));
   watch(prefs, (p) => setCues({ sound: p.sound, vibrate: p.vibrate, warn10: p.warn10, voice: p.voice && !!settings.value.features.voice }), { immediate: true });
   const fmt = computed(() => makeFmt(settings.value));
+  // the weight step in your units (5 lb or 2.5 kg), kept in kg
+  const incKg = computed(() => settings.value.units.weight === "lb" ? toKg(settings.value.increments.lb, "lb") : settings.value.increments.kg);
   watch(() => settings.value.features.notifLogging, (on) => enableNotificationActions(!!on, {
     done: () => { const e = state.w?.exercises.find((x) => x.status === "pending" && x.sets.some((y) => !y.done)); if (e) tick(e, e.sets.findIndex((y) => !y.done)); },
     more: () => import("./runtime").then((r) => r.startRest(30, { setId: null, label: "Rest", next: "", workoutId: state.w?.id ?? "" })),
@@ -106,9 +108,11 @@ export function useWorkout() {
   }
   async function addSet(e: WorkoutExercise) {
     const last = e.sets.at(-1);
-    await call("post", `/workout-exercises/${e.id}/sets`, {}, true);
-    e.sets.push({ ...(last ?? ({} as any)), id: "tmp" + Date.now(), done: false, doneAt: null, kind: last?.kind === "warmup" ? "normal" : last?.kind ?? "normal", position: e.sets.length, prefilled: true, pr: [] });
+    // the id is made here, so the new set can be ticked or changed straight away, even offline
+    const s = { ...(last ?? ({} as any)), id: crypto.randomUUID(), done: false, doneAt: null, kind: last?.kind === "warmup" ? "normal" : last?.kind ?? "normal", position: e.sets.length, prefilled: true, pr: [] };
+    e.sets.push(s);
     if (e.status === "done") e.status = "pending";
+    await call("post", `/workout-exercises/${e.id}/sets`, { id: s.id, kind: s.kind, weightKg: s.weightKg ?? null, reps: s.reps ?? null, durationS: s.durationS ?? null, distanceM: s.distanceM ?? null, restPlannedS: s.restPlannedS ?? null, prefilled: true }, true);
   }
   async function removeSet(e: WorkoutExercise, s: WorkoutSet) {
     e.sets.splice(e.sets.indexOf(s), 1);
@@ -143,7 +147,7 @@ export function useWorkout() {
     Object.assign(state.w!, patch);
     await call("put", `/workouts/${state.w!.id}`, patch, true);
   }
-  return { state, prefs, settings, fmt, ex, tick, editSet, addSet, removeSet, setStatus, reorder, patchExercise, addExercises, removeExercise, patchWorkout, restFor, call, active };
+  return { state, prefs, settings, fmt, incKg, ex, tick, editSet, addSet, removeSet, setStatus, reorder, patchExercise, addExercises, removeExercise, patchWorkout, restFor, call, active };
 }
 
 export const curExercise = computed(() => state.w?.exercises[state.cur] ?? null);

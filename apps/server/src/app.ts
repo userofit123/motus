@@ -27,7 +27,7 @@ export async function buildApp(o: Options): Promise<{ app: FastifyInstance; engi
   const app = Fastify({ logger: o.logger ?? false, bodyLimit: 30 * 1024 * 1024, trustProxy: true });
   await app.register(cookie);
   app.decorateRequest("user", null);
-  for (const t of ["image/jpeg", "image/png", "image/webp", "image/gif", "video/mp4", "application/octet-stream"])
+  for (const t of ["image/jpeg", "image/png", "image/webp", "image/gif", "image/avif", "image/heic", "image/heif", "video/mp4", "application/octet-stream"])
     app.addContentTypeParser(t, { parseAs: "buffer", bodyLimit: 30 * 1024 * 1024 }, (_r, body, done) => done(null, body));
 
   const meta = async (k: string, fallback: unknown) => (await db.admin.query("SELECT value FROM app_meta WHERE key = $1", [k])).rows[0]?.value ?? fallback;

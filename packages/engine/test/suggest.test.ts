@@ -1,4 +1,4 @@
-// Home suggestions come from what you do: your usual order of routines, and muscles left out.
+// Home suggestions (your usual order of routines, muscles left out), and goal fixes found in an audit.
 import { describe, it, expect, beforeAll } from "vitest";
 import { createEngine, type Engine } from "../src/index";
 import { pgliteDb } from "../src/adapters/pglite";
@@ -33,4 +33,23 @@ describe("suggestions", () => {
     expect(home.suggest[0].routineId).toBe(pull);
     expect(home.suggest[0].reason).toContain("after Push");
   }, 60000);
+});
+
+describe("fixes found in the audit", () => {
+  it("aims a body goal from where you are towards the target, so it doesn't count as done at once", async () => {
+    await call("POST", "/body", { kind: "weight", value: 70 }).catch(() => eng.db.admin.query("INSERT INTO body_metrics (id, user_id, kind, value, measured_at) VALUES ($1,$2,'weight',70,now())", [uuidv7(), U]));
+    const g = await call("POST", "/goals", { metric: "body_weight", target: 80 });
+    expect(g.comparator).toBe(">=");
+    const got = await call("GET", `/goals/${g.id}`);
+    expect(got.status).toBe("active");
+  });
+  it("refuses an empty target and a missing routine", async () => {
+    expect((await eng.handle({ method: "POST", path: "/goals", body: { metric: "workouts", target: "" }, userId: U })).status).toBe(400);
+    expect((await eng.handle({ method: "POST", path: "/goals", body: { metric: "routine_count", target: 3 }, userId: U })).status).toBe(400);
+  });
+  it("keeps a goal's deadline when it is archived", async () => {
+    const g = await call("POST", "/goals", { metric: "workouts", target: 5, deadline: "2027-06-30" });
+    await call("PUT", `/goals/${g.id}`, { status: "archived" });
+    expect((await call("GET", `/goals/${g.id}`)).deadline).toContain("2027-06-30");
+  });
 });

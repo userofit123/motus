@@ -104,6 +104,20 @@ export async function bodyFromWorkout(q: Sql, workoutId: string) {
   }));
 }
 
+/** "Update the routine from this workout": today's exercises, order and numbers, keeping each exercise's own settings
+ * (prefill, progression, note, rep ranges, rests) and the routine as it was in its history. */
+export async function updateRoutineFromWorkout(ctx: Ctx, routineId: string, workoutId: string) {
+  const body = await bodyFromWorkout(ctx.q, workoutId);
+  if (!body.length) return;
+  await snapshot(ctx, routineId);
+  const cur = new Map(((await loadRoutine(ctx.q, routineId))?.exercises ?? []).map((e: any) => [e.id, e]));
+  await writeRoutineBody(ctx, routineId, body.map((e) => {
+    const old: any = e.id ? cur.get(e.id) : null;
+    if (!old) return e;
+    return { ...old, exerciseId: e.exerciseId, sets: e.sets.map((s: any, i: number) => ({ ...(old.sets?.[i] ?? old.sets?.at(-1) ?? {}), ...s })) };
+  }));
+}
+
 export function routineRoutes(r: Router) {
   r.get("/routines", async ({ q, userId }, _p, _b, qs) => routineSummaries(q, userId, qs.archived === "1" ? "r.deleted_at IS NULL AND r.archived" : "r.deleted_at IS NULL"));
 
@@ -193,8 +207,7 @@ export function routineRoutes(r: Router) {
   r.post("/routines/:id/from-workout", async (ctx, p, b) => {
     const rid = id(p.id);
     if (!(await ctx.q.query("SELECT 1 FROM routines WHERE id = $1", [rid])).rows.length) throw notFound("Routine not found");
-    await snapshot(ctx, rid);
-    await writeRoutineBody(ctx, rid, await bodyFromWorkout(ctx.q, id(b.workoutId)));
+    await updateRoutineFromWorkout(ctx, rid, id(b.workoutId));
     ctx.changed("routine");
     return { ok: true };
   });
@@ -243,8 +256,8 @@ export function routineRoutes(r: Router) {
     return { id: fid };
   });
   r.put("/folders/:id", async (ctx, p, b) => {
-    await ctx.q.query("UPDATE folders SET name = coalesce($2, name), position = coalesce($3, position), color = $4 WHERE id = $1",
-      [id(p.id), b.name ? str(b.name, 80) : null, intOrNull(b.position, 0, 10000), b.color ? str(b.color, 20) : null]);
+    await ctx.q.query("UPDATE folders SET name = coalesce($2, name), position = coalesce($3, position), color = CASE WHEN $5::boolean THEN $4 ELSE color END WHERE id = $1",
+      [id(p.id), b.name ? str(b.name, 80) : null, intOrNull(b.position, 0, 10000), b.color ? str(b.color, 20) : null, "color" in b]);
     ctx.changed("routine");
     return { ok: true };
   });

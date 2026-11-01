@@ -142,7 +142,7 @@ export async function progressOf(q: Sql, g: Goal, s: Settings, now: Date): Promi
     pace = days >= 0 ? `${days} day${days === 1 ? "" : "s"} left` : "Deadline passed";
   }
   const unit = METRICS.find((m) => m.metric === g.metric)?.unit ?? "";
-  return { current, pct, done, label: `${current} / ${g.target} ${unit}`.trim(), history, pace };
+  return { current, pct, done, label: `${current} / ${g.target} ${unit}`.trim(), unit, history, pace };
 }
 
 export async function goalsWithProgress(ctx: Ctx, where = "status <> 'archived'"): Promise<Goal[]> {
@@ -172,21 +172,28 @@ export function goalRoutes(r: Router) {
     const m = METRICS.find((x) => x.metric === b.metric);
     if (!m) throw bad("Pick what to measure");
     const target = numOrNull(b.target, 0, 1e9);
-    if (target == null) throw bad("Set a target");
+    if (target == null || target <= 0) throw bad("Set a target");
+    if (["routine", "exercise", "muscle"].includes(m.scope) && !b.scopeId) throw bad(`Pick the ${m.scope === "muscle" ? "muscle group" : m.scope}`);
+    // a body goal heads from where you are now towards the target: up if you're below it, down if above
+    let cmp = oneOf(b.comparator, [">=", "<="], m.comparator ?? ">=");
+    if (m.scope === "body" && !b.comparator) {
+      const now = (await ctx.q.query("SELECT value v FROM body_metrics WHERE kind = $1 ORDER BY measured_at DESC LIMIT 1", [m.metric === "body_weight" ? "weight" : b.scopeId])).rows[0];
+      if (now) cmp = Number(now.v) < target ? ">=" : "<=";
+    }
     const gid = uuidv7();
     await ctx.q.query(
       `INSERT INTO goals (id, user_id, title, scope, scope_id, metric, comparator, target, period, start_date, deadline, notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
-      [gid, ctx.userId, str(b.title, 120), m.scope, b.scopeId ? str(b.scopeId, 80) : null, m.metric, oneOf(b.comparator, [">=", "<="], m.comparator ?? ">="), target,
+      [gid, ctx.userId, str(b.title, 120), m.scope, b.scopeId ? str(b.scopeId, 80) : null, m.metric, cmp, target,
         m.periodic ? oneOf(b.period, ["once", "week", "month"], "week") : "once", dateStr(b.startDate) ?? ymd(ctx.now()), dateStr(b.deadline), str(b.notes, 2000)]);
     ctx.changed("goal");
-    return { id: gid };
+    return { id: gid, comparator: cmp };
   });
   r.put("/goals/:id", async (ctx, p, b) => {
     const { rows } = await ctx.q.query(
-      `UPDATE goals SET title = coalesce($2, title), target = coalesce($3, target), deadline = $4, status = coalesce($5, status), notes = coalesce($6, notes),
+      `UPDATE goals SET title = coalesce($2, title), target = coalesce($3, target), deadline = CASE WHEN $8::boolean THEN $4 ELSE deadline END, status = coalesce($5, status), notes = coalesce($6, notes),
          period = coalesce($7, period), achieved_at = CASE WHEN $5 = 'active' THEN NULL ELSE achieved_at END WHERE id = $1 RETURNING id`,
       [id(p.id), b.title != null ? str(b.title, 120) : null, numOrNull(b.target, 0, 1e9), dateStr(b.deadline), b.status ? oneOf(b.status, ["active", "achieved", "archived"], "active") : null,
-        b.notes != null ? str(b.notes, 2000) : null, b.period ? oneOf(b.period, ["once", "week", "month"], "once") : null]);
+        b.notes != null ? str(b.notes, 2000) : null, b.period ? oneOf(b.period, ["once", "week", "month"], "once") : null, "deadline" in b]);
     if (!rows.length) throw notFound("Goal not found");
     ctx.changed("goal");
     return { ok: true };
