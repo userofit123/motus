@@ -23,7 +23,8 @@ const tr = computed(() => props.e.exercise?.tracking ?? "weight_reps");
 const showW = computed(() => usesWeight(tr.value)), showR = computed(() => usesReps(tr.value)), showD = computed(() => usesDuration(tr.value)), showDist = computed(() => usesDistance(tr.value));
 const visibleSets = computed(() => props.e.sets.filter((s) => prefs.value.showWarmups || s.kind !== "warmup"));
 const setNo = (s: WorkoutSet) => props.e.sets.slice(0, props.e.sets.indexOf(s) + 1).filter((x) => x.kind !== "warmup").length;
-const kindShort = (s: WorkoutSet) => (s.kind === "warmup" ? "W" : s.kind === "drop" ? "D" : s.kind === "failure" ? "F" : String(setNo(s)));
+const kindShort = (s: WorkoutSet) => (s.kind === "warmup" ? "W" : s.kind === "drop" ? "D" : s.kind === "failure" ? "F" : String(setNo(s))) + (s.side ? s.side : "");
+const sided = computed(() => !!feat.value.unilateral && !!props.e.exercise?.unilateral);
 const prevText = (s: WorkoutSet) => {
   const p = s.prev; if (!p) return "–";
   return [showW.value && p.weightKg != null ? fmt.value.w(p.weightKg) : "", showR.value && p.reps != null ? p.reps : "", showD.value && p.durationS ? fmt.value.clock(p.durationS) : "", showDist.value && p.distanceM ? fmt.value.num(fromM(p.distanceM, fmt.value.du), 2) : ""].filter((x) => x !== "").join(" × ") || "–";
@@ -90,6 +91,11 @@ async function quick() {
   }
   invalidate(["workouts"]);
 }
+async function addPair() {
+  const last = props.e.sets.at(-1);
+  await api.post(`/workout-exercises/${props.e.id}/sets`, { sets: ["L", "R"].map((side) => ({ kind: "normal", side, weightKg: last?.weightKg ?? null, reps: last?.reps ?? null })) });
+  invalidate(["workouts"]);
+}
 async function addWarmups() {
   const work = props.e.sets.find((s) => s.kind !== "warmup" && s.weightKg);
   if (!work?.weightKg) { toast("Set a working weight first", { kind: "err" }); return; }
@@ -113,6 +119,7 @@ const menu = computed(() => [
 const setMenu = (s: WorkoutSet) => [
   ...(feat.value.setTypes ? ([["normal", "Normal"], ["warmup", "Warm-up"], ["drop", "Drop set"], ["failure", "To failure"]] as const).map(([k, l]) => ({ label: l, icon: s.kind === k ? "check" : undefined, run: () => W.editSet(s, { kind: k }) })) : []),
   ...(s.prev ? [{ label: "Copy last time", icon: "copy", run: () => copyPrev(s) }] : []),
+  ...(sided.value ? [{ label: "Left side", icon: s.side === "L" ? "check" : undefined, run: () => W.editSet(s, { side: s.side === "L" ? null : "L" }) }, { label: "Right side", icon: s.side === "R" ? "check" : undefined, run: () => W.editSet(s, { side: s.side === "R" ? null : "R" }) }] : []),
   { label: "Remove set", icon: "trash", danger: true, sep: feat.value.setTypes, run: () => W.removeSet(props.e, s) },
 ];
 const isCur = computed(() => W.state.cur === props.index);
@@ -156,6 +163,7 @@ const isCur = computed(() => W.state.cur === props.index);
     </table>
     <div class="row" style="margin-top:8px">
       <button class="qb acc" @click="W.addSet(e)"><Icon name="plus" :size="16" />Add set</button>
+      <button v-if="sided" class="qb" title="Add a left and a right set" @click="addPair"><Icon name="plus" :size="16" />Left + right</button>
       <button v-if="e.repRestS" class="qb" :class="{ acc: repTimer }" @click="toggleRepTimer"><Icon name="timer" :size="16" />{{ repTimer ? "Stop rep timer" : `Rep timer ${e.repRestS}s` }}</button>
       <div class="grow" />
       <button class="qb" @click="noteSheet = { targets: [{ type: 'exercise', id: e.exerciseId, label: `${e.exercise.name} (always)` }, ...(e.routineExerciseId ? [{ type: 'routine_exercise', id: e.routineExerciseId, label: `${e.exercise.name} in this routine only` }] : []), ...(W.state.w?.routineId ? [{ type: 'routine', id: W.state.w.routineId, label: 'This routine' }] : []), { type: 'workout_exercise', id: e.id, label: 'Just this workout' }], workoutId: W.state.w?.id }"><Icon name="note" :size="16" />Note</button>

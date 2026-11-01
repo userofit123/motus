@@ -8,7 +8,7 @@ export const FEATURES: FeatureDef[] = [
   { id: "supersets", group: "Logging", name: "Supersets", desc: "Group exercises so you alternate between them, resting after each round.", on: false },
   { id: "plates", group: "Logging", name: "Plate calculator", desc: "See which plates to load for a weight.", on: false },
   { id: "warmupCalc", group: "Logging", name: "Warm-up sets", desc: "Add a ramp of warm-up sets to an exercise in one tap.", on: false },
-  { id: "unilateral", group: "Logging", name: "Left / right sides", desc: "Log single-arm and single-leg exercises per side.", on: false, ready: false },
+  { id: "unilateral", group: "Logging", name: "Left / right sides", desc: "Log single-arm and single-leg exercises per side.", on: false },
   { id: "quickEntry", group: "Logging", name: "Quick entry", desc: 'Type "3x8 80" to fill sets.', on: false },
   { id: "voice", group: "Logging", name: "Voice cues", desc: "Hear what's next when a rest ends.", on: false },
   { id: "adaptiveRest", group: "Logging", name: "Longer rest after a missed set", desc: "Adds 30 s to the rest when a set falls short of its target.", on: false },
@@ -16,7 +16,7 @@ export const FEATURES: FeatureDef[] = [
   // Training
   { id: "progression", group: "Training", name: "Progression rules", desc: "Let a routine suggest the next weight: add weight when you hit your reps, lower it after repeated misses.", on: false },
   { id: "programs", group: "Training", name: "Programs", desc: "Multi-week plans made of routines, with deload weeks.", on: false, ready: false },
-  { id: "gyms", group: "Training", name: "Gym profiles", desc: "Equipment and plates per gym.", on: false, ready: false },
+  { id: "gyms", group: "Training", name: "Gym profiles", desc: "Equipment and plates per gym.", on: false },
   { id: "sharing", group: "Training", name: "Share routines", desc: "Send a copy of a routine to another person on your server.", on: false },
   // Body & activity
   { id: "measurements", group: "Body & activity", name: "Body measurements", desc: "Waist, chest, arms and more, plus body fat.", on: false },

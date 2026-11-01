@@ -3,7 +3,7 @@
 import { computed, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useQuery } from "@tanstack/vue-query";
-import { READY_FEATURES, type Settings } from "@motus/shared";
+import { READY_FEATURES, EQUIPMENT, type Settings } from "@motus/shared";
 import { useMe, useSettings, saveSettings } from "../api/queries";
 import { api } from "../api/client";
 import { session, signOut } from "../core/session";
@@ -67,6 +67,13 @@ const TOGGLES: [keyof Settings["workout"], string, string][] = [
   ["keepAwake", "Keep the screen on during a workout", ""], ["lockScreen", "Rest timer on the lock screen", "Android app"], ["showPrevious", "Show last time's numbers", ""],
   ["showReminders", "Show reminders and pinned notes in workouts", ""], ["confirmSkip", "Ask before skipping an exercise", ""],
 ];
+// gym profiles
+async function addGym() {
+  const name = await prompt("Gym name", { placeholder: "e.g. Home, Work gym" }); if (!name) return;
+  set({ gyms: [...s.value.gyms, { id: crypto.randomUUID(), name, equipment: [...EQUIPMENT] }], activeGym: s.value.activeGym ?? undefined });
+}
+const toggleEquip = (g: any, eq: string) => set({ gyms: s.value.gyms.map((x) => (x.id === g.id ? { ...x, equipment: x.equipment.includes(eq) ? x.equipment.filter((y) => y !== eq) : [...x.equipment, eq] } : x)) });
+const delGym = (g: any) => set({ gyms: s.value.gyms.filter((x) => x.id !== g.id), activeGym: s.value.activeGym === g.id ? null : s.value.activeGym });
 const groups = computed(() => { const m = new Map<string, typeof READY_FEATURES>(); for (const f of READY_FEATURES) m.set(f.group, [...(m.get(f.group) ?? []), f]); return [...m]; });
 const NOTIF: [keyof Settings["notifications"], string, string][] = [["scheduled", "Planned workouts", "Before a routine's scheduled time"], ["goals", "Goals reached", ""], ["updates", "New versions", ""], ["inactivity", "A nudge after a long break", "Off by default"]];
 const notifPerm = ref(typeof Notification !== "undefined" ? Notification.permission : "unsupported");
@@ -134,6 +141,14 @@ async function allowNotifications() { await askNotificationPermission(); notifPe
             <div class="li"><div class="grow"><div class="t">One-rep max estimate</div></div><select :value="s.e1rm" style="width:auto" @change="set({ e1rm: ($event.target as HTMLSelectElement).value })"><option value="epley">Epley</option><option value="brzycki">Brzycki</option></select></div>
             <div v-if="s.features.steps" class="li"><div class="grow"><div class="t">Daily step goal</div></div><input type="number" step="500" :value="s.stepGoal" style="width:100px" @change="set({ stepGoal: Number(($event.target as HTMLInputElement).value) || 8000 })" /></div>
           </div>
+          <template v-if="s.features.gyms">
+            <div class="sh first"><h2>Gyms</h2><button class="lnk" @click="addGym">Add</button></div>
+            <div v-if="!s.gyms.length" class="card tiny">Add the places you train and what equipment each has; adding exercises then shows what's there.</div>
+            <div v-for="g in s.gyms" :key="g.id" class="card">
+              <div class="row" style="margin-bottom:8px"><b class="grow">{{ g.name }}</b><button class="btn s" :class="{ o: s.activeGym !== g.id }" @click="set({ activeGym: g.id })">{{ s.activeGym === g.id ? "Here now" : "I'm here" }}</button><button class="qb danger" @click="delGym(g)">Remove</button></div>
+              <div class="chips"><button v-for="eq in EQUIPMENT" :key="eq" class="fchip" :class="{ on: g.equipment.includes(eq) }" style="text-transform:capitalize" @click="toggleEquip(g, eq)">{{ eq }}</button></div>
+            </div>
+          </template>
         </template>
 
         <template v-else-if="sec === 'features'">

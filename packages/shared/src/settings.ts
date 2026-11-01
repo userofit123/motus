@@ -44,6 +44,8 @@ export interface Settings {
   layout: "auto" | "desktop" | "phone";
   sound: string;
   profile: { heightCm: number | null; birthYear: number | null; sex: "" | "male" | "female" };
+  gyms: { id: string; name: string; equipment: string[] }[];
+  activeGym: string | null;
 }
 
 export const HOME_CARDS_DEFAULT = ["stats", "resume", "upnext", "previous", "goals"];
@@ -74,6 +76,8 @@ export const DEFAULT_SETTINGS: Settings = {
   layout: "auto",
   sound: "chime",
   profile: { heightCm: null, birthYear: null, sex: "" },
+  gyms: [],
+  activeGym: null,
 };
 
 /** Deep-merges saved settings over the defaults, so new settings get their default value. */

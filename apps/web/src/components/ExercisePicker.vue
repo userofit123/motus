@@ -2,7 +2,7 @@
 // Choosing exercises: search (names and aliases), filter by muscle and equipment, recently used first; one or many.
 import { computed, ref } from "vue";
 import { GROUPS, EQUIPMENT } from "@motus/shared";
-import { useExercises } from "../api/queries";
+import { useExercises, useSettings } from "../api/queries";
 import { mediaUrl } from "../api/client";
 import Sheet from "./Sheet.vue";
 import Icon from "./Icon.vue";
@@ -12,6 +12,10 @@ import { exerciseSheet } from "../core/ui";
 const props = defineProps<{ title?: string; multi?: boolean; exclude?: string[]; suggest?: any[] }>();
 const emit = defineEmits<{ close: []; pick: [ids: string[]] }>();
 const all = useExercises();
+const settings = useSettings();
+// gym profiles (optional feature): only what the active gym has, unless "All equipment" is chosen
+const gym = computed(() => (settings.value.features.gyms ? settings.value.gyms.find((g) => g.id === settings.value.activeGym) : null) ?? null);
+const anyEquip = ref(false);
 const q = ref(""), group = ref(""), equip = ref(""), picked = ref<string[]>([]), creating = ref(false);
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ");
 const list = computed(() => {
@@ -20,6 +24,7 @@ const list = computed(() => {
   return (all.data.value ?? []).filter((e) => !e.hidden && !props.exclude?.includes(e.id)
     && (!g || e.primaryMuscles.some((m) => g.muscles.includes(m)))
     && (!equip.value || e.equipment === equip.value)
+    && (!gym.value || anyEquip.value || !e.equipment || gym.value.equipment.includes(e.equipment))
     && words.every((w) => norm(e.name + " " + e.aliases.join(" ")).includes(w)))
     .sort((a, b) => Number(b.favourite) - Number(a.favourite) || (b.timesDone ?? 0) - (a.timesDone ?? 0) || (b.lastDoneAt ?? "").localeCompare(a.lastDoneAt ?? "") || a.name.localeCompare(b.name))
     .slice(0, 150);
@@ -35,6 +40,7 @@ function tap(id: string) {
   <Sheet :title="title ?? 'Add exercises'" size="wide" @close="emit('close')">
     <div class="search" style="margin-bottom:10px"><Icon name="search" :size="18" /><input v-model="q" placeholder="Search exercises" autofocus /></div>
     <div class="chips" style="margin-bottom:6px"><button class="fchip" :class="{ on: !group }" @click="group = ''">All</button><button v-for="g in GROUPS" :key="g.id" class="fchip" :class="{ on: group === g.id }" @click="group = group === g.id ? '' : g.id">{{ g.name }}</button></div>
+    <div v-if="gym" class="chips" style="margin-bottom:6px"><button class="fchip" :class="{ on: !anyEquip }" @click="anyEquip = false">At {{ gym.name }}</button><button class="fchip" :class="{ on: anyEquip }" @click="anyEquip = true">All equipment</button></div>
     <div class="chips" style="margin-bottom:10px"><button v-for="eq in EQUIPMENT.slice(0, 8)" :key="eq" class="fchip" :class="{ on: equip === eq }" style="text-transform:capitalize" @click="equip = equip === eq ? '' : eq">{{ eq }}</button></div>
     <div v-if="suggest?.length && !q" style="margin-bottom:8px"><div class="tiny" style="margin-bottom:4px">Works the same muscles</div></div>
     <div class="list">
