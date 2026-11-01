@@ -7,7 +7,9 @@ goals and stats. Runs fully on your device, or syncs an account with your own se
 - Web app / PWA served by the self-hosted server
 - Multi-user server with strict per-user data isolation
 
-**Status:** planning. See [PLAN.md](PLAN.md) for the full design and [RESEARCH.md](RESEARCH.md) for
-the research behind it.
+**Status:** first version (0.1.0). What's built and what's left: [STATUS.md](STATUS.md). Design: [PLAN.md](PLAN.md), research: [RESEARCH.md](RESEARCH.md).
+
+- Self-hosting: [docs/self-hosting.md](docs/self-hosting.md)
+- Desktop and Android apps: [docs/apps.md](docs/apps.md)
 
 Development: [docs/development.md](docs/development.md) (live dev environment at https://motus.local).
