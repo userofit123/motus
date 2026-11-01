@@ -12,7 +12,9 @@
     "vue-router": "4.5.0",
     "@tanstack/vue-query": "5.62.7",
     "leaflet": "1.9.4",
-    "@motus/shared": "workspace:*"
+    "@motus/shared": "workspace:*",
+    "@motus/engine": "workspace:*",
+    "@electric-sql/pglite": "0.2.15"
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "5.2.1",

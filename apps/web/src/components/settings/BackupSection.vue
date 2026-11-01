@@ -13,7 +13,8 @@ import { native } from "../../core/device";
 const s = useSettings();
 const log = ref(backupLog());
 const folder = ref<string | null>(null);
-folderName().then((n) => (folder.value = n));
+const N = (globalThis as any).motusNative;
+if (N?.backupFolder) N.backupFolder().then((n: string) => (folder.value = n)); else folderName().then((n) => (folder.value = n));
 const busy = ref(false);
 const set = (patch: Record<string, unknown>) => saveSettings({ backup: patch });
 async function now() {
@@ -25,7 +26,9 @@ async function now() {
     log.value = backupLog(); toast(`Saved ${n}`);
   } catch (e) { toastError(e); } finally { busy.value = false; }
 }
-async function choose_folder() { try { folder.value = await pickFolder(); toast("Backups will be saved there"); } catch { /* cancelled */ } }
+async function choose_folder() {
+  try { const f = N?.chooseBackupFolder ? await N.chooseBackupFolder() : await pickFolder(); if (f) { folder.value = f; toast("Backups will be saved there"); } } catch { /* cancelled */ }
+}
 async function restore(ev: Event) {
   const file = (ev.target as HTMLInputElement).files?.[0]; (ev.target as HTMLInputElement).value = "";
   if (!file) return;
@@ -54,8 +57,9 @@ async function restore(ev: Event) {
       <template v-if="s.backup.on">
         <div class="li"><div class="grow"><div class="t">How often</div></div><select :value="s.backup.every" style="width:auto" @change="set({ every: ($event.target as HTMLSelectElement).value })"><option value="workout">After every workout</option><option value="daily">Every day</option><option value="weekly">Every week</option></select></div>
         <div class="li"><div class="grow"><div class="t">Keep</div><div class="s">Older backups are removed, the newest always stays</div></div><select :value="s.backup.keep" style="width:auto" @change="set({ keep: Number(($event.target as HTMLSelectElement).value) })"><option v-for="n in [3, 7, 14, 30, 60]" :key="n" :value="n">The last {{ n }}</option></select></div>
-        <div class="li"><div class="grow"><div class="t">Where</div><div class="s">{{ native.android || native.desktop ? "The folder chosen in the app" : folder ? `Folder: ${folder}` : canPickFolder() ? "Pick a folder and backups are written there automatically" : "This browser can't write to a folder: when a backup is due, Motus offers it as a download" }}</div></div>
-          <button v-if="canPickFolder() && !native.android && !native.desktop" class="qb acc" @click="choose_folder">{{ folder ? "Change" : "Pick folder" }}</button></div>
+        <div class="li"><div class="grow"><div class="t">Where</div><div class="s">{{ folder ? `Folder: ${folder}` : canPickFolder() ? "Pick a folder and backups are written there automatically" : "This browser can't write to a folder: when a backup is due, Motus offers it as a download" }}</div></div>
+          <button v-if="canPickFolder() || N?.chooseBackupFolder" class="qb acc" @click="choose_folder">{{ folder ? "Change" : "Pick folder" }}</button>
+          <button v-if="N?.openBackupFolder" class="qb" @click="N.openBackupFolder()">Open</button></div>
         <label class="tgl"><div class="grow"><div class="t">Encrypt with a password</div><div class="s">Asked each time a backup is made</div></div><span class="tg"><input type="checkbox" :checked="s.backup.encrypt" @change="set({ encrypt: ($event.target as HTMLInputElement).checked })" /></span></label>
       </template>
       <div class="li"><div class="grow"><div class="t">Last backup</div><div class="s">{{ log.lastAt ? `${new Date(log.lastAt).toLocaleString()} · ${log.lastName}` : "None yet" }}<span v-if="log.error" class="neg"> · {{ log.error }}</span></div></div><button class="btn s" :disabled="busy" @click="now">Back up now</button></div>

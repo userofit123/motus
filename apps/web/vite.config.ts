@@ -7,6 +7,9 @@ const hmrHost = process.env.VITE_HMR_HOST;
 
 export default defineConfig({
   plugins: [vue()],
+  // PGlite (the database for local accounts in the Android app) ships its own WebAssembly files
+  optimizeDeps: { exclude: ["@electric-sql/pglite"] },
+  define: { "import.meta.env.VITE_VERSION": JSON.stringify(process.env.MOTUS_VERSION ?? "") },
   server: {
     host: true,
     port: 5173,

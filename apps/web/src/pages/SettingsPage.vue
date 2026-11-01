@@ -17,13 +17,15 @@ import BackupSection from "../components/settings/BackupSection.vue";
 import DataSection from "../components/settings/DataSection.vue";
 import AdminSection from "../components/settings/AdminSection.vue";
 import UpdatesSection from "../components/settings/UpdatesSection.vue";
+import AccountsSection from "../components/settings/AccountsSection.vue";
+import { native } from "../core/device";
 
 const route = useRoute(), router = useRouter();
 const me = useMe();
 const s = useSettings();
 const sec = computed(() => String(route.params.section ?? (isPhone.value ? "" : "account")));
 const SECTIONS = computed(() => [
-  ["account", "Account", "user"], ["units", "Units & formats", "scale"], ["workout", "Workout", "dumbbell"], ["features", "Features", "sparkle"],
+  ["account", "Account", "user"], ...((globalThis as any).motusNative?.accounts ? [["accounts", "Accounts on this device", "layers"]] : []), ["units", "Units & formats", "scale"], ["workout", "Workout", "dumbbell"], ["features", "Features", "sparkle"],
   ["appearance", "Appearance", "palette"], ["notifications", "Notifications", "bell"], ["backup", "Backup & restore", "download"], ["data", "Export & import", "upload"],
   ["updates", "Updates", "refresh"], ...(session.user?.role === "admin" ? [["admin", "Server admin", "server"]] : []), ["about", "About", "info"],
 ] as [string, string, string][]);
@@ -158,6 +160,7 @@ async function allowNotifications() { await askNotificationPermission(); notifPe
         <BackupSection v-else-if="sec === 'backup'" />
         <DataSection v-else-if="sec === 'data'" />
         <UpdatesSection v-else-if="sec === 'updates'" />
+        <AccountsSection v-else-if="sec === 'accounts'" />
         <AdminSection v-else-if="sec === 'admin'" />
 
         <template v-else-if="sec === 'about'">

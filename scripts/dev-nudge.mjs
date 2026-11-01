@@ -13,8 +13,9 @@ import path from "node:path";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const DIRS = ["apps", "packages", "scripts"];
-const SKIP = new Set(["node_modules", ".pnpm-store", ".git", "dist", "build", "coverage", ".gradle"]);
-const EVERY_MS = 300;
+// only source folders are watched: photos, builds and installed packages never need a nudge
+const SKIP = new Set(["node_modules", ".pnpm-store", ".git", "dist", "build", "coverage", ".gradle", "images", "public", "android", "release", "data"]);
+const EVERY_MS = 500;
 const inodes = new Map(); // file → inode last seen
 
 function nudge(file) {

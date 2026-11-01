@@ -13,7 +13,7 @@ const area = computed(() => `0,46 ${line.value} 200,46`);
 </script>
 
 <template>
-  <svg class="spark" viewBox="0 0 200 46" preserveAspectRatio="none" aria-hidden="true">
+  <svg v-if="values.some((v) => v)" class="spark" viewBox="0 0 200 46" preserveAspectRatio="none" aria-hidden="true">
     <defs><linearGradient :id="'sg' + uid" x1="0" y1="0" x2="0" y2="1"><stop offset="0" :stop-color="color ?? 'var(--acc)'" stop-opacity=".45" /><stop offset="1" :stop-color="color ?? 'var(--acc)'" stop-opacity="0" /></linearGradient></defs>
     <polygon :points="area" :fill="`url(#sg${uid})`" />
     <polyline :points="line" fill="none" :stroke="color ?? 'var(--acc)'" stroke-width="2" vector-effect="non-scaling-stroke" stroke-linejoin="round" stroke-linecap="round" />

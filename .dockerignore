@@ -1,0 +1,9 @@
+**/node_modules
+.pnpm-store
+.git
+**/dist
+packages/exercise-data/images
+apps/android
+apps/desktop/release
+data
+*.log

@@ -10,7 +10,14 @@ import { createEngine, uuidv7, withUser, type Db, type Engine } from "@motus/eng
 import { hashPassword, checkPassword, createSession, userForToken, tooManyTries, recordFail, validUsername, validPassword, newInviteCode, COOKIE, SESSION_DAYS, type SessionUser } from "./auth";
 import { VERSION, API_LEVEL, checkForUpdate } from "./version";
 
-export interface Options { db: Db; dataDir: string; webDir?: string; imagesDir?: string; logger?: boolean }
+export interface Options { db: Db; dataDir: string; webDir?: string; imagesDir?: string; logger?: boolean; host?: string }
+
+/** A local (on-device) account: one person, signed in automatically by the desktop app. Returns a session token for them. */
+export async function localSession(db: Db, name = "Me"): Promise<string> {
+  let u = (await db.admin.query("SELECT id FROM users ORDER BY created_at LIMIT 1")).rows[0];
+  if (!u) { u = { id: uuidv7() }; await db.admin.query("INSERT INTO users (id, username, display_name, role) VALUES ($1, 'me', $2, 'admin')", [u.id, name]); }
+  return createSession(db, u.id, "This computer", "desktop");
+}
 
 declare module "fastify" { interface FastifyRequest { user: SessionUser | null } }
 

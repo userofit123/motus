@@ -23,7 +23,7 @@ const f = (v: number) => (props.fmt ? props.fmt(v) : String(Math.round(v * 10) /
     <svg class="chart" :viewBox="`0 0 ${bars.length * 40} ${H}`" preserveAspectRatio="none" :style="{ height: H + 'px' }">
       <rect v-if="band" :x="0" :width="bars.length * 40" :y="H - 18 - (band[1] / max) * (H - 26)" :height="((band[1] - band[0]) / max) * (H - 26)" fill="var(--pos)" opacity=".08" />
       <g v-for="(b, i) in bars" :key="i" @mouseenter="hover = i" @mouseleave="hover = null">
-        <rect class="bar" :class="{ dim: b.dim }" :x="i * 40 + 8" :width="24" :y="H - 18 - (b.value / max) * (H - 26)" :height="Math.max(b.value ? 2 : 0, (b.value / max) * (H - 26))" rx="5" :style="b.color ? { fill: b.color } : undefined" />
+        <rect v-if="b.value > 0" class="bar" :class="{ dim: b.dim }" :x="i * 40 + 8" :width="24" :y="H - 18 - (b.value / max) * (H - 26)" :height="Math.max(b.value ? 2 : 0, (b.value / max) * (H - 26))" rx="5" :style="b.color ? { fill: b.color } : undefined" />
         <text class="ax" :x="i * 40 + 20" :y="H - 4" text-anchor="middle">{{ b.label }}</text>
       </g>
     </svg>

@@ -41,5 +41,5 @@ export function duration(totalS: number, short = false): string {
   const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), r = s % 60;
   if (h) return m ? `${h} h ${m} min` : `${h} h`;
   if (m) return short || !r ? `${m} min` : `${m} min ${r} s`;
-  return `${r} s`;
+  return short && !r ? "0 min" : `${r} s`;
 }

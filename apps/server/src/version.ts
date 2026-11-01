@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 function readVersion(): string {
+  try { const v = fs.readFileSync(path.resolve(process.cwd(), "VERSION"), "utf8").trim(); if (v) return v; } catch { /* not in the image */ }
   for (const p of [path.resolve(import.meta.dirname, "../../../package.json"), path.resolve(process.cwd(), "package.json")]) {
     try { const v = JSON.parse(fs.readFileSync(p, "utf8")).version; if (v) return v; } catch { /* try the next */ }
   }

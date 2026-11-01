@@ -38,7 +38,7 @@ hr.sep { border: 0; border-top: 1px solid var(--ol); margin: 14px 0; }
 .sh { display: flex; align-items: center; justify-content: space-between; margin: calc(var(--spg) * 1.75) 0 var(--hg); }
 .sh h2 { margin: 0; }
 .sh .lnk { font-size: 12.5px; font-weight: 600; color: var(--acc); cursor: pointer; background: none; border: 0; display: inline-flex; align-items: center; gap: 2px; }
-section:first-child > .sh, .sh.first { margin-top: 0; }
+.sh.first { margin-top: 0; }
 
 .grid { display: grid; gap: var(--spg); }
 .g2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -341,3 +341,5 @@ html.phone .map { height: 240px; }
 
 @media (max-width: 860px) { .ph .acts .btn:not(.keep) { display: none; } }
 html.phone #pop { left: 8px; right: 8px; width: auto; bottom: calc(80px + var(--sb)); max-height: calc(100vh - 120px); }
+/* the switch inside a .tgl row: Money Manager's .tg switch without its row border */
+.tgl .tg, .li .tg { border: 0; padding: 0; flex: none; }

@@ -16,7 +16,7 @@ export async function pgliteDb(dataDir = "memory://"): Promise<Db> {
   return {
     kind: "pglite",
     admin,
-    tx: (fn) => run(() => lite.transaction((tx) => fn({ query: (t, p) => tx.query(t, p as any[]) as any, exec: async (t) => { await tx.exec(t); } }))),
+    tx: (fn) => run(async () => (await lite.transaction((tx) => fn({ query: (t, p) => tx.query(t, p as any[]) as any, exec: async (t) => { await tx.exec(t); } })))!),
     close: () => lite.close(),
   };
 }
