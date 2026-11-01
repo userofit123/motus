@@ -11,6 +11,7 @@ import LineChart from "../components/LineChart.vue";
 import BarChart from "../components/BarChart.vue";
 import BodyMap from "../components/BodyMap.vue";
 import Sparkline from "../components/Sparkline.vue";
+import Reports from "../components/Reports.vue";
 
 const route = useRoute(), router = useRouter();
 const s = useSettings();
@@ -27,7 +28,7 @@ const prev = useStats(prevRange);
 const ach = useAchievements();
 const d = computed<any>(() => st.data.value);
 const p = computed<any>(() => prev.data.value);
-const TABS = computed(() => [["overview", "Overview"], ["routines", "Routines"], ["exercises", "Exercises"], ["muscles", "Muscles"], ["activities", "Activities"], ["body", "Body"], ...(s.value.features.achievements ? [["achievements", "Achievements"]] : [])]);
+const TABS = computed(() => [["overview", "Overview"], ["routines", "Routines"], ["exercises", "Exercises"], ["muscles", "Muscles"], ["activities", "Activities"], ["body", "Body"], ...(s.value.features.reports ? [["reports", "Reports"]] : []), ...(s.value.features.achievements ? [["achievements", "Achievements"]] : [])]);
 
 const totals = (x: any) => x ? {
   workouts: x.workouts.length, timeS: x.workouts.reduce((a: number, w: any) => a + w.durationS, 0) + x.activities.reduce((a: number, w: any) => a + w.durationS, 0),
@@ -77,7 +78,7 @@ const steps = computed(() => (d.value?.daily ?? []).filter((x: any) => x.kind ==
 // body
 const bw = computed(() => (d.value?.body ?? []).filter((b: any) => b.kind === "weight").map((b: any) => ({ x: new Date(b.measuredAt).getTime(), y: Math.round(fmt.value.fromKg(Number(b.value)) * 10) / 10 })));
 const bwTrend = computed(() => { let ema: number | null = null; return bw.value.map((p: any) => { ema = ema == null ? p.y : ema + 0.15 * (p.y - ema); return { x: p.x, y: Math.round(ema! * 10) / 10 }; }); });
-const measures = computed(() => { const m = new Map<string, any[]>(); for (const b of d.value?.body ?? []) if (b.kind !== "weight") m.set(b.kind, [...(m.get(b.kind) ?? []), { x: new Date(b.measuredAt).getTime(), y: Number(b.value) }]); return [...m]; });
+const measures = computed(() => { const m = new Map<string, any[]>(); for (const b of d.value?.body ?? []) if (b.kind !== "weight" && b.kind !== "photo") m.set(b.kind, [...(m.get(b.kind) ?? []), { x: new Date(b.measuredAt).getTime(), y: Number(b.value) }]); return [...m]; });
 </script>
 
 <template>
@@ -162,6 +163,8 @@ const measures = computed(() => { const m = new Map<string, any[]>(); for (const
         <div v-if="bw.length" class="tiny" style="margin-top:6px">Latest {{ bw.at(-1)!.y }} {{ fmt.wu }} · trend {{ bwTrend.at(-1)!.y }} {{ fmt.wu }}{{ bwTrend.length > 7 ? ` · ${bwTrend.at(-1)!.y - bwTrend.at(-8)!.y >= 0 ? "+" : ""}${fmt.num(bwTrend.at(-1)!.y - bwTrend.at(-8)!.y, 1)} over the last 7 entries` : "" }}</div></div>
       <div v-if="s.features.measurements" class="grid g2" style="margin-top:var(--spg)"><div v-for="[k, pts] in measures" :key="k" class="card"><div class="lbl" style="margin-bottom:8px;text-transform:capitalize">{{ k.replace("_", " ") }}</div><LineChart :points="pts" :height="140" /></div></div>
     </template>
+
+    <Reports v-else-if="tab === 'reports'" />
 
     <template v-else-if="tab === 'achievements'">
       <div class="grid g4"><div v-for="a in ach.data.value ?? []" :key="a.id" class="card tight" :style="!a.reached ? { opacity: .55 } : undefined"><Icon name="trophy" :style="{ color: a.reached ? '#e9b52f' : 'var(--tx2)' }" /><div style="font-weight:600;margin-top:6px">{{ a.name }}</div><div class="pbar" style="margin-top:8px;height:5px"><i :style="{ width: a.progress * 100 + '%' }" /></div></div></div>

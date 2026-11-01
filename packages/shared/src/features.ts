@@ -20,14 +20,14 @@ export const FEATURES: FeatureDef[] = [
   { id: "sharing", group: "Training", name: "Share routines", desc: "Send a copy of a routine to another person on your server.", on: false, ready: false },
   // Body & activity
   { id: "measurements", group: "Body & activity", name: "Body measurements", desc: "Waist, chest, arms and more, plus body fat.", on: false },
-  { id: "photos", group: "Body & activity", name: "Progress photos", desc: "Private photos, compared side by side.", on: false, ready: false },
+  { id: "photos", group: "Body & activity", name: "Progress photos", desc: "Private photos, compared side by side.", on: false },
   { id: "steps", group: "Body & activity", name: "Steps", desc: "Daily steps and a step goal.", on: false },
   { id: "dailyLog", group: "Body & activity", name: "Sleep, water and mood", desc: "A quick daily log.", on: false },
   // Insights
   { id: "achievements", group: "Insights", name: "Achievements", desc: "Milestones like 100 workouts or 100 km walked.", on: false },
-  { id: "reports", group: "Insights", name: "Monthly report and year in review", desc: "A summary page for each month and year.", on: false, ready: false },
-  { id: "standards", group: "Insights", name: "Strength standards", desc: "How your lifts compare, relative to body weight.", on: false, ready: false },
-  { id: "shareImage", group: "Insights", name: "Share image", desc: "Make an image of a finished workout.", on: false, ready: false },
+  { id: "reports", group: "Insights", name: "Monthly report and year in review", desc: "A summary page for each month and year.", on: false },
+  { id: "standards", group: "Insights", name: "Strength standards", desc: "How your lifts compare, relative to body weight.", on: false },
+  { id: "shareImage", group: "Insights", name: "Share image", desc: "Make an image of a finished workout.", on: false },
   // Integrations
   { id: "healthConnect", group: "Integrations", name: "Health Connect", desc: "Read steps, weight and watch workouts on Android, and write your workouts back.", on: false, ready: false },
   { id: "strava", group: "Integrations", name: "Strava", desc: "Import walks and runs.", on: false, ready: false },

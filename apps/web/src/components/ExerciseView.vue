@@ -3,8 +3,8 @@
 // that workout), charts, records, notes and reminders, and which routines use it. Shown as a page and as a sheet.
 import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
-import { e1rm, weightForReps, usesWeight, usesReps, usesDuration, usesDistance, muscleName } from "@motus/shared";
-import { useExercise, useExerciseHistory, useNotes, useReminders, useChange, useSettings } from "../api/queries";
+import { strengthLevel, LEVELS, e1rm, weightForReps, usesWeight, usesReps, usesDuration, usesDistance, muscleName } from "@motus/shared";
+import { useExercise, useExerciseHistory, useNotes, useReminders, useChange, useSettings, useBody } from "../api/queries";
 import { api, mediaUrl } from "../api/client";
 import { useFmt, ago } from "../core/format";
 import { noteSheet, reminderSheet, exerciseSheet } from "../core/ui";
@@ -51,6 +51,12 @@ const delNote = useChange((id: string) => api.del(`/notes/${id}`), ["notes"]);
 const remDone = useChange((id: string, status: string) => api.put(`/reminders/${id}`, { status }), ["reminders"]);
 const pinNote = useChange((n: any) => api.put(`/notes/${n.id}`, { pinned: !n.pinned }), ["notes"]);
 const own = computed(() => !!e.value?.ownerId);
+// strength standards (optional feature): needs a body weight
+const bodyQ = useBody("weight");
+const standard = computed(() => {
+  const bw = (bodyQ.data.value as any[] | undefined)?.[0]?.value;
+  return settings.value.features.standards && e.value && best1rm.value ? strengthLevel(e.value.name, best1rm.value, Number(bw ?? 0), settings.value.profile.sex) : null;
+});
 async function del() {
   if (!(await confirm(`Delete ${e.value.name}?`, { text: "If it has history it is archived instead, so your past workouts keep it.", ok: "Delete", danger: true }))) return;
   await api.del(`/exercises/${props.id}`);
@@ -148,6 +154,13 @@ const menu = computed(() => [
           <div class="val" style="font-size:24px">{{ recVal(String(k), r.value) }}</div>
           <div class="tiny">{{ r.detail ? r.detail + " · " : "" }}{{ fmt.date(r.at, { day: "numeric", month: "short", year: "numeric" }) }}</div>
         </div>
+      </div>
+      <div v-if="standard" class="card" style="margin-top:var(--spg)">
+        <div class="lbl">Strength standard</div>
+        <div style="font-weight:600;font-size:20px;margin-top:4px">{{ standard.level }}</div>
+        <div class="tiny">1RM {{ fmt.num(standard.ratio, 2) }}× body weight{{ standard.next ? ` · ${standard.next.level} at ${fmt.wu_(standard.next.kg)}` : "" }}</div>
+        <div class="row" style="gap:4px;margin-top:10px"><div v-for="(t, i) in standard.thresholds" :key="i" class="grow" style="text-align:center"><div class="pbar" style="height:6px"><i :style="{ width: best1rm! >= t ? '100%' : '0%' }" /></div><div class="tiny" style="margin-top:3px">{{ LEVELS[i] }}</div></div></div>
+        <p class="tiny" style="margin-top:8px">A rough guide from common gym rules of thumb, using your latest body weight{{ settings.profile.sex ? "" : " (set your sex in Settings → Account for a closer match)" }}.</p>
       </div>
       <template v-if="best1rm">
         <h2>Rep maxes</h2>

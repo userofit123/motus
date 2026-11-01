@@ -129,3 +129,23 @@ export function weekStartOf(d: Date, firstDay: 0 | 1): string {
   return ymd(x);
 }
 export const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+// ----- strength standards: a rough guide from one-rep max ÷ body weight (common gym rules of thumb) -----
+export const LEVELS = ["Beginner", "Novice", "Intermediate", "Advanced", "Elite"];
+const STD: { match: RegExp; male: number[]; female: number[] }[] = [
+  { match: /\bsquat\b/i, male: [0.75, 1.25, 1.5, 2.25, 2.75], female: [0.5, 0.75, 1.25, 1.5, 2] },
+  { match: /bench press/i, male: [0.5, 0.75, 1.25, 1.75, 2], female: [0.25, 0.5, 0.75, 1, 1.5] },
+  { match: /deadlift/i, male: [1, 1.5, 2, 2.5, 3], female: [0.5, 1, 1.25, 1.75, 2.5] },
+  { match: /military press|overhead press|shoulder press/i, male: [0.35, 0.55, 0.8, 1.1, 1.4], female: [0.2, 0.35, 0.5, 0.75, 1] },
+  { match: /barbell row|bent over/i, male: [0.5, 0.75, 1, 1.5, 1.75], female: [0.25, 0.4, 0.65, 0.9, 1.2] },
+];
+/** Where a lift stands: the level reached, the ratio, and the next level's weight. Null when there's no standard. */
+export function strengthLevel(exerciseName: string, oneRmKg: number, bodyweightKg: number, sex: "male" | "female" | "" = "") {
+  const s = STD.find((x) => x.match.test(exerciseName));
+  if (!s || !bodyweightKg || !oneRmKg) return null;
+  const t = sex === "female" ? s.female : s.male;
+  const ratio = oneRmKg / bodyweightKg;
+  let lvl = -1;
+  t.forEach((v, i) => { if (ratio >= v) lvl = i; });
+  return { ratio, level: lvl >= 0 ? LEVELS[lvl]! : "Getting started", next: lvl < t.length - 1 ? { level: LEVELS[lvl + 1]!, kg: t[lvl + 1]! * bodyweightKg } : null, thresholds: t.map((v) => v * bodyweightKg) };
+}

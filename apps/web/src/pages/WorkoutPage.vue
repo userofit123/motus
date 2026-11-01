@@ -11,6 +11,7 @@ import { invalidate } from "../api/live";
 import { useFmt, localYmd } from "../core/format";
 import { exerciseSheet, noteSheet } from "../core/ui";
 import { confirm, prompt } from "../core/ask";
+import { shareWorkoutImage } from "../core/shareImage";
 import { toast, toastError } from "../core/toast";
 import Icon from "../components/Icon.vue";
 import Menu from "../components/Menu.vue";
@@ -86,6 +87,7 @@ const menu = computed(() => [
   { label: "Save as a routine", icon: "routines", run: saveAsRoutine },
   { label: "Update the routine from this", icon: "refresh", run: updateRoutine, hidden: !w.value?.routineId },
   { label: "Add a note", icon: "note", run: () => (noteSheet.value = { targets: [{ type: "workout", id: id.value, label: "This workout" }], workoutId: id.value }) },
+  { label: "Share as an image", icon: "share", run: () => shareWorkoutImage(w.value, fmt.value), hidden: !s.value.features.shareImage },
   { label: "Copy for an AI assistant", icon: "copy", run: copyText, hidden: !s.value.features.mcp },
   { label: "Export (JSON)", icon: "download", run: exportJson },
   { label: "Delete", icon: "trash", danger: true, sep: true, run: del },

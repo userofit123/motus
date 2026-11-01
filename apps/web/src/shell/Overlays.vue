@@ -14,6 +14,8 @@ import { computed, onMounted, onBeforeUnmount, watch } from "vue";
 import { useSettings } from "../api/queries";
 import { maybeAutoBackup } from "../core/backup";
 import { toast } from "../core/toast";
+import { schedulePlanned } from "../native/plannedNotifications";
+import CommandPalette from "./CommandPalette.vue";
 
 const ex = useExercise(computed(() => exerciseSheet.value ?? ""));
 // N starts a workout from anywhere on a computer
@@ -24,6 +26,7 @@ const settings = useSettings();
 let checked = false;
 watch(settings, (s) => {
   if (checked || !s) return; checked = true;
+  schedulePlanned(s.notifications.scheduled);
   setTimeout(() => maybeAutoBackup(s.backup, false, (run) => toast("A backup is due", { action: { label: "Download", run }, ms: 12000 })), 4000);
 });
 onBeforeUnmount(() => removeEventListener("keydown", key));
@@ -37,4 +40,5 @@ onBeforeUnmount(() => removeEventListener("keydown", key));
   <ActivitySheet v-if="activitySheet" :o="activitySheet" @close="activitySheet = null" />
   <BodySheet v-if="bodySheet" @close="bodySheet = false" />
   <AppearancePanel />
+  <CommandPalette v-if="settings.features.palette" />
 </template>
