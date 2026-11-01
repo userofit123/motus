@@ -3,7 +3,7 @@
 import { computed, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useQuery } from "@tanstack/vue-query";
-import { FEATURES, num, type Settings } from "@motus/shared";
+import { READY_FEATURES, type Settings } from "@motus/shared";
 import { useMe, useSettings, saveSettings } from "../api/queries";
 import { api } from "../api/client";
 import { session, signOut } from "../core/session";
@@ -66,7 +66,7 @@ const TOGGLES: [keyof Settings["workout"], string, string][] = [
   ["keepAwake", "Keep the screen on during a workout", ""], ["lockScreen", "Rest timer on the lock screen", "Android app"], ["showPrevious", "Show last time's numbers", ""],
   ["showReminders", "Show reminders and pinned notes in workouts", ""], ["confirmSkip", "Ask before skipping an exercise", ""],
 ];
-const groups = computed(() => { const m = new Map<string, typeof FEATURES>(); for (const f of FEATURES) m.set(f.group, [...(m.get(f.group) ?? []), f]); return [...m]; });
+const groups = computed(() => { const m = new Map<string, typeof READY_FEATURES>(); for (const f of READY_FEATURES) m.set(f.group, [...(m.get(f.group) ?? []), f]); return [...m]; });
 const NOTIF: [keyof Settings["notifications"], string, string][] = [["scheduled", "Planned workouts", "Before a routine's scheduled time"], ["goals", "Goals reached", ""], ["updates", "New versions", ""], ["inactivity", "A nudge after a long break", "Off by default"]];
 const notifPerm = ref(typeof Notification !== "undefined" ? Notification.permission : "unsupported");
 async function allowNotifications() { await askNotificationPermission(); notifPerm.value = typeof Notification !== "undefined" ? Notification.permission : notifPerm.value; }
