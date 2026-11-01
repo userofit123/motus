@@ -11,6 +11,7 @@ const router = useRouter();
 </script>
 
 <template>
+  <Transition name="mb">
   <div v-if="active.data.value" class="minibar" role="button" @click="router.push('/workout')">
     <Icon name="dumbbell" />
     <div class="grow">
@@ -20,4 +21,5 @@ const router = useRouter();
     <span v-if="restActive()" class="rest">{{ rest.label === "Next exercise" ? "Next" : "Rest" }} {{ clock(restLeft()) }}</span>
     <Icon name="right" />
   </div>
+  </Transition>
 </template>

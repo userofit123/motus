@@ -87,7 +87,7 @@ const changed = computed(() => Object.keys(overrides.value).length);
     <div v-for="n in p.notes" :key="n.id" class="banner note" :style="!p.reminders.length ? { marginTop: 'var(--spg)' } : undefined"><Icon name="note" /><div>{{ n.body }}</div></div>
 
     <div class="grid" style="grid-template-columns:minmax(0,1fr) 300px;align-items:start;margin-top:var(--spg)">
-      <div class="card">
+      <TransitionGroup tag="div" name="mv" class="card">
         <div v-for="(e, i) in exs" :key="e.routineExerciseId" class="li pvx" :class="{ off: skip.includes(e.routineExerciseId) }">
           <div class="thumb click" @click="exerciseSheet = e.exerciseId"><img v-if="e.exercise?.images?.[0]" :src="mediaUrl(e.exercise.images[0])" alt="" loading="lazy" /><Icon v-else name="dumbbell" /></div>
           <div class="grow click" @click="exerciseSheet = e.exerciseId">
@@ -106,7 +106,7 @@ const changed = computed(() => Object.keys(overrides.value).length);
             { label: 'Move down', icon: 'down', run: () => move(e.routineExerciseId, 1), hidden: i === exs.length - 1 },
           ]" label="Today only" />
         </div>
-      </div>
+      </TransitionGroup>
       <div class="col" style="gap:var(--spg)">
         <div class="card"><BodyMap :values="muscles" :height="190" legend /></div>
         <div class="card" style="padding-block:4px">

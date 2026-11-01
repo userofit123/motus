@@ -49,6 +49,8 @@ const acctMenu = computed(() => [
   { label: "Sign out", icon: "logout", run: async () => { await signOut(); } },
 ]);
 const active = useActive();
+// one key per page, so moving between pages animates; settings sections animate inside the page instead
+const pageKey = (r: any) => (r.name === "settings" ? "settings" : r.path);
 </script>
 
 <template>
@@ -65,7 +67,7 @@ const active = useActive();
         <button id="themeBtn" type="button" class="nb" @click.stop="appearanceOpen = !appearanceOpen"><span class="ic"><Icon name="palette" :size="22" /></span>Appearance</button>
       </div>
     </nav>
-    <main :class="{ withbar: !!active.data.value && route.name !== 'workout' }"><router-view /></main>
+    <main :class="{ withbar: !!active.data.value && route.name !== 'workout' }"><router-view v-slot="{ Component, route: r }"><Transition name="page" mode="out-in"><component :is="Component" :key="pageKey(r)" /></Transition></router-view></main>
     <button v-if="route.name !== 'workout'" class="fab" aria-label="Start" title="Start a workout or activity (N)" @click="startOpen = true"><Icon name="plus" /></button>
     <MiniBar v-if="route.name !== 'workout'" />
   </div>

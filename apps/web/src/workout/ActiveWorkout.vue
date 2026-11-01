@@ -24,6 +24,9 @@ import WorkoutSettings from "../components/WorkoutSettings.vue";
 
 const router = useRouter();
 const W = useWorkout();
+// the exercise card slides in from the side you're moving to
+const exDir = ref("nx");
+watch(() => W.state.cur, (n, o) => { exDir.value = n >= o ? "nx" : "pv"; });
 const w = computed(() => W.state.w);
 const fmt = W.fmt;
 const finishing = ref(false), adding = ref(false), settingsOpen = ref(false), listOpen = ref(false);
@@ -102,7 +105,7 @@ const menu = computed(() => [
     <template v-else-if="isPhone">
       <div class="aw-dots"><i v-for="(e, i) in w.exercises" :key="e.id" :class="[statusOf(e), { cur: i === W.state.cur }]" @click="go(i)" /></div>
       <div class="card" @touchstart.passive="ts" @touchend.passive="te">
-        <ExerciseCard v-if="w.exercises[W.state.cur]" :key="w.exercises[W.state.cur]!.id" :e="w.exercises[W.state.cur]!" :index="W.state.cur" />
+        <Transition :name="exDir" mode="out-in"><ExerciseCard v-if="w.exercises[W.state.cur]" :key="w.exercises[W.state.cur]!.id" :e="w.exercises[W.state.cur]!" :index="W.state.cur" /></Transition>
       </div>
       <div class="row" style="margin-top:10px">
         <button class="qb" :disabled="W.state.cur === 0" @click="go(W.state.cur - 1)"><Icon name="left" :size="16" />Previous</button>
@@ -116,14 +119,16 @@ const menu = computed(() => [
     <!-- computer -->
     <div v-else class="aw-desk">
       <div class="card side aw-list" style="padding:10px">
+        <TransitionGroup name="mv">
         <div v-for="(e, i) in w.exercises" :key="e.id" class="li" :class="{ cur: i === W.state.cur, skip: e.status === 'skipped' }" @click="go(i)">
           <span class="stt" :class="{ done: e.status === 'done', part: e.status === 'partial' || (e.status === 'pending' && e.sets.some((s) => s.done)) }"><Icon v-if="e.status === 'done'" name="check" :size="13" /></span>
           <div class="grow"><div class="t ellipsis">{{ e.exercise?.name }}</div><div class="s">{{ e.sets.filter((s) => s.done).length }}/{{ e.sets.length }} sets{{ e.superset ? ` · ${e.superset}` : "" }}</div></div>
           <span v-if="i === W.state.cur" class="col" style="gap:0" @click.stop><button class="ib sm plain" style="width:26px;height:22px" aria-label="Move up" @click="move(i, -1)"><Icon name="up" :size="14" /></button><button class="ib sm plain" style="width:26px;height:22px" aria-label="Move down" @click="move(i, 1)"><Icon name="down" :size="14" /></button></span>
         </div>
+        </TransitionGroup>
         <button class="qb acc" style="margin-top:6px" @click="adding = true"><Icon name="plus" :size="16" />Add exercise</button>
       </div>
-      <div class="card"><ExerciseCard v-if="w.exercises[W.state.cur]" :key="w.exercises[W.state.cur]!.id" :e="w.exercises[W.state.cur]!" :index="W.state.cur" /></div>
+      <div class="card"><Transition name="sw" mode="out-in"><ExerciseCard v-if="w.exercises[W.state.cur]" :key="w.exercises[W.state.cur]!.id" :e="w.exercises[W.state.cur]!" :index="W.state.cur" /></Transition></div>
       <div class="side col" style="gap:var(--spg)">
         <RestPanel variant="ring" />
         <div v-if="!rest.endAt" class="card">
@@ -146,9 +151,9 @@ const menu = computed(() => [
     <ExercisePicker v-if="adding" multi :exclude="w.exercises.map((e) => e.exerciseId)" @close="adding = false" @pick="(ids) => { adding = false; W.addExercises(ids); }" />
     <Sheet v-if="settingsOpen" title="Workout settings" @close="settingsOpen = false"><WorkoutSettings v-model="overrides" /></Sheet>
     <Sheet v-if="listOpen" title="Exercises" @close="listOpen = false">
-      <div class="list aw-list"><div v-for="(e, i) in w.exercises" :key="e.id" class="li" :class="{ cur: i === W.state.cur, skip: e.status === 'skipped' }">
+      <TransitionGroup tag="div" name="mv" class="list aw-list"><div v-for="(e, i) in w.exercises" :key="e.id" class="li" :class="{ cur: i === W.state.cur, skip: e.status === 'skipped' }">
         <div class="grow" @click="go(i); listOpen = false"><div class="t">{{ e.exercise.name }}</div><div class="s">{{ e.sets.filter((s) => s.done).length }}/{{ e.sets.length }} sets</div></div>
-        <button class="ib sm plain" :disabled="i === 0" @click="move(i, -1)"><Icon name="up" :size="16" /></button><button class="ib sm plain" :disabled="i === w.exercises.length - 1" @click="move(i, 1)"><Icon name="down" :size="16" /></button></div></div>
+        <button class="ib sm plain" :disabled="i === 0" @click="move(i, -1)"><Icon name="up" :size="16" /></button><button class="ib sm plain" :disabled="i === w.exercises.length - 1" @click="move(i, 1)"><Icon name="down" :size="16" /></button></div></TransitionGroup>
     </Sheet>
   </div>
   <div v-else class="page"><div class="empty"><b>No workout in progress</b><button class="btn" @click="router.push('/')">Home</button></div></div>

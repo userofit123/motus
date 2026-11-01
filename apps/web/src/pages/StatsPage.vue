@@ -86,6 +86,7 @@ const measures = computed(() => { const m = new Map<string, any[]>(); for (const
     <div class="ph"><div><h1>Stats</h1></div>
       <div class="acts"><select v-model="rk" style="width:auto"><option v-for="[k, l] in RANGES" :key="k" :value="k">{{ l }}</option></select></div></div>
     <div class="tabs"><button v-for="[k, l] in TABS" :key="k" :class="{ on: tab === k }" @click="tab = k!">{{ l }}</button></div>
+<Transition name="sw" mode="out-in"><div :key="tab">
     <div v-if="!d" class="empty">Loading…</div>
 
     <template v-else-if="tab === 'overview'">
@@ -169,5 +170,6 @@ const measures = computed(() => { const m = new Map<string, any[]>(); for (const
     <template v-else-if="tab === 'achievements'">
       <div class="grid g4"><div v-for="a in ach.data.value ?? []" :key="a.id" class="card tight" :style="!a.reached ? { opacity: .55 } : undefined"><Icon name="trophy" :style="{ color: a.reached ? '#e9b52f' : 'var(--tx2)' }" /><div style="font-weight:600;margin-top:6px">{{ a.name }}</div><div class="pbar" style="margin-top:8px;height:5px"><i :style="{ width: a.progress * 100 + '%' }" /></div></div></div>
     </template>
+</div></Transition>
   </div>
 </template>

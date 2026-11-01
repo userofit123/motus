@@ -396,3 +396,58 @@ html.phone .tabs button { padding: 10px 11px; }
 .leaflet-tile-container img { width: 256.5px !important; height: 256.5px !important; }
 .grid.g3.keep { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .grid.g2.keep { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+/* ---------- motion: pages, tabs, sections, sheets and controls move instead of jumping ---------- */
+:root { --t-in: .22s; --t-out: .12s; }
+/* pages and in-page tab switches: the old one fades out quickly, the new one rises in */
+.page-enter-active, .sw-enter-active { transition: opacity var(--t-in) var(--ease), transform var(--t-in) var(--ease); }
+.page-leave-active, .sw-leave-active { transition: opacity var(--t-out) ease-in, transform var(--t-out) ease-in; }
+.page-enter-from { opacity: 0; transform: translateY(10px); }
+.page-leave-to { opacity: 0; transform: translateY(-4px); }
+.sw-enter-from { opacity: 0; transform: translateY(6px); }
+.sw-leave-to { opacity: 0; }
+/* next / previous (exercises in a workout, calendar months): slide in from the side you're going to */
+.nx-enter-active, .pv-enter-active { transition: opacity .2s var(--ease), transform .24s var(--ease); }
+.nx-leave-active, .pv-leave-active { transition: opacity .12s ease-in, transform .12s ease-in; }
+.nx-enter-from { opacity: 0; transform: translateX(28px); }
+.nx-leave-to { opacity: 0; transform: translateX(-20px); }
+.pv-enter-from { opacity: 0; transform: translateX(-28px); }
+.pv-leave-to { opacity: 0; transform: translateX(20px); }
+/* reordering a list: rows glide to their new place */
+.mv-move { transition: transform .28s var(--ease); }
+.mv-enter-active { transition: opacity .2s, transform .2s var(--ease); }
+.mv-enter-from { opacity: 0; transform: translateY(-6px); }
+.mv-leave-active { display: none; }
+/* the running-workout bar and the rest timer come and go smoothly */
+.mb-enter-active, .rs-enter-active { transition: opacity .25s var(--ease), transform .3s var(--ease); }
+.mb-leave-active, .rs-leave-active { transition: opacity .16s ease-in, transform .16s ease-in; }
+.mb-enter-from, .mb-leave-to { opacity: 0; transform: translateY(14px); }
+html:not(.phone) .mb-enter-from, html:not(.phone) .mb-leave-to { transform: translate(-50%, 14px); }
+.rs-enter-from, .rs-leave-to { opacity: 0; transform: translateY(24px); }
+/* a sheet that was closed plays its way out (a copy of it, see Sheet.vue) */
+.scr.leaving { animation: fo .2s ease-in reverse forwards; }
+.scr.leaving .sht { animation: su .2s ease-in reverse forwards; }
+html.phone .scr.leaving .sht { animation: up .22s ease-in reverse forwards; }
+/* anything that appears later on a page (a section switched on, a row added, an empty state) rises in */
+@media (prefers-reduced-motion: no-preference) {
+  .li, .banner, .fld, .tgl, .empty, .sh, .chips > *, .mchip { transition: opacity .25s var(--ease), translate .25s var(--ease), background .2s, color .2s, border-color .2s; }
+  .card { transition: transform .2s, border-color .2s, box-shadow .2s, opacity .28s var(--ease), translate .28s var(--ease); }
+  @starting-style {
+    .card, .li, .banner, .fld, .tgl, .empty, .sh, .chips > *, .mchip { opacity: 0; translate: 0 6px; }
+  }
+}
+/* controls */
+.fchip, .tick, .aw-dots i, .cal .d, .stt, .qb, .ib, .tabs button { transition: background .2s, color .2s, border-color .2s, transform .15s; }
+.tick:active, .fchip:active, .btn:active, .ib:active, .qb:active { transform: scale(.96); }
+.tick.on svg { animation: pop .28s var(--ease); }
+@keyframes pop { 0% { transform: scale(.4); opacity: 0; } 70% { transform: scale(1.15); } 100% { transform: scale(1); } }
+.pbar i, .bodymap .m { transition: width .5s var(--ease), fill .4s; }
+/* the page tabs' underline glides to the chosen tab (core/segSlide.ts) */
+.tabs { position: relative; }
+.tabs.tsl button.on { border-bottom-color: transparent; }
+.tabi { position: absolute; left: 0; bottom: 0; height: 2px; border-radius: 2px; background: var(--acc); pointer-events: none; transition: transform .3s var(--ease), width .3s var(--ease); }
+@media (prefers-reduced-motion: reduce) {
+  .page-enter-active, .page-leave-active, .sw-enter-active, .sw-leave-active, .nx-enter-active, .nx-leave-active, .pv-enter-active, .pv-leave-active,
+  .mb-enter-active, .mb-leave-active, .rs-enter-active, .rs-leave-active, .mv-move { transition: none; }
+  .tabi { transition: none; }
+}

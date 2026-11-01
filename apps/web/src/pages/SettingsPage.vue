@@ -91,7 +91,7 @@ async function allowNotifications() { await askNotificationPermission(); notifPe
         <div v-if="isPhone" class="li click" style="padding:10px 12px" @click="signOut()"><Icon name="logout" :size="18" /><span class="grow">Sign out</span></div>
       </div>
 
-      <div v-if="sec" class="col" style="gap:var(--spg)">
+      <Transition name="sw" mode="out-in"><div v-if="sec" :key="sec" class="col" style="gap:var(--spg)">
         <template v-if="sec === 'account'">
           <div class="card">
             <div class="li"><div class="grow"><div class="t">{{ me.data.value?.user.displayName || me.data.value?.user.username }}</div><div class="s">@{{ me.data.value?.user.username }} · {{ me.data.value?.user.role === "admin" ? "admin" : "member" }}</div></div><button class="qb acc" @click="editName">Edit</button></div>
@@ -189,7 +189,7 @@ async function allowNotifications() { await askNotificationPermission(); notifPe
             <div class="li"><div class="grow"><div class="t">Source</div><div class="s">github.com/userofit123/motus</div></div></div>
           </div>
         </template>
-      </div>
+      </div></Transition>
     </div>
   </div>
 </template>

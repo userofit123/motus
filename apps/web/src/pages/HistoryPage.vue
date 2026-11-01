@@ -45,7 +45,8 @@ const byDay = computed(() => {
   return m;
 });
 const DOW = computed(() => Array.from({ length: 7 }, (_, i) => ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][(i + first.value) % 7]));
-const shift = (n: number) => { month.value = new Date(month.value.getFullYear(), month.value.getMonth() + n, 1); };
+const calDir = ref("nx");
+const shift = (n: number) => { calDir.value = n > 0 ? "nx" : "pv"; month.value = new Date(month.value.getFullYear(), month.value.getMonth() + n, 1); };
 const sel = ref<string | null>(isPhone.value ? today : null);
 const dayOpen = ref<string | null>(null);
 function openDay(d: string) { if (isPhone.value) sel.value = d; else dayOpen.value = d; }
@@ -84,7 +85,8 @@ const listGroups = computed(() => { const m = new Map<string, any[]>(); for (con
       </div>
     </div>
 
-    <template v-if="view === 'calendar'">
+    <Transition name="sw" mode="out-in">
+    <div v-if="view === 'calendar'" key="cal">
       <div class="calnav">
         <button class="ib sm plain" aria-label="Previous month" @click="shift(-1)"><Icon name="left" :size="18" /></button>
         <b class="grow">{{ month.toLocaleDateString(undefined, { month: "long", year: "numeric" }) }}</b>
@@ -92,7 +94,8 @@ const listGroups = computed(() => { const m = new Map<string, any[]>(); for (con
         <button class="ib sm plain" aria-label="Next month" @click="shift(1)"><Icon name="right" :size="18" /></button>
         <template v-if="!isPhone"><div class="grow" /><button class="qb acc" @click="planDay = today"><Icon name="plus" :size="16" />Plan a workout</button></template>
       </div>
-      <div class="cal">
+      <Transition :name="calDir" mode="out-in">
+      <div :key="month.getTime()" class="cal">
         <div v-for="d in DOW" :key="d" class="dh">{{ isPhone ? d![0] : d }}</div>
         <div v-for="d in grid" :key="d.getTime()" class="d" :class="{ out: d.getMonth() !== month.getMonth(), today: localYmd(d) === today, sel: sel === localYmd(d) }" @click="openDay(localYmd(d))">
           <span class="n">{{ d.getDate() }}</span>
@@ -105,6 +108,7 @@ const listGroups = computed(() => { const m = new Map<string, any[]>(); for (con
           <div v-else class="dots"><i v-for="x in (byDay.get(localYmd(d)) ?? []).slice(0, 4)" :key="x.id ?? x.scheduleId" :class="{ plan: x.kind === 'planned' }" :style="{ '--ec': x.color ?? (x.kind === 'activity' ? 'var(--c3)' : 'var(--acc)') }" /></div>
         </div>
       </div>
+      </Transition>
       <div v-if="isPhone && sel" style="margin-top:14px">
         <div class="sh first"><h2>{{ fmt.date(sel, { weekday: "long", day: "numeric", month: "long" }) }}</h2><button v-if="sel >= today" class="lnk" @click="planDay = sel"><Icon name="plus" :size="14" />Plan</button></div>
         <div class="card">
@@ -113,9 +117,9 @@ const listGroups = computed(() => { const m = new Map<string, any[]>(); for (con
             <Icon :name="icon(x)" :size="18" :style="{ color: x.color ?? 'var(--acc)' }" /><div class="grow"><div class="t" :style="x.missed ? { opacity: .5 } : undefined">{{ label(x) }}</div><div class="s">{{ x.kind === "planned" ? (x.missed ? "Missed" : "Planned") : `${fmt.time(x.startedAt)} · ${fmt.dur(x.durationS, true)}${x.distanceM ? " · " + fmt.dist(x.distanceM, 1) : ""}` }}</div></div><Icon name="right" class="muted" /></div></div>
         </div>
       </div>
-    </template>
+    </div>
 
-    <template v-else>
+    <div v-else key="list">
       <div class="search" style="margin-bottom:6px;max-width:360px"><Icon name="search" :size="18" /><input v-model="qtext" placeholder="Search" /></div>
       <div v-if="!list.length" class="card empty"><Icon name="calendar" :size="34" /><b>Nothing yet</b>Finished workouts and activities show here.</div>
       <section v-for="[m, xs] in listGroups" :key="m"><div class="sh"><h2>{{ m }}</h2><span class="tiny">{{ xs.length }}</span></div>
@@ -125,7 +129,8 @@ const listGroups = computed(() => { const m = new Map<string, any[]>(); for (con
           <div class="r tiny"><div>{{ fmt.dur(x.durationS, true) }}</div><div>{{ x.kind === "workout" ? `${x.setCount} sets · ${fmt.vol(x.volumeKg)}` : x.distanceM ? fmt.dist(x.distanceM, 1) : "" }}</div></div>
         </div></div></div>
       </section>
-    </template>
+    </div>
+    </Transition>
 
     <Sheet v-if="dayOpen" :title="fmt.date(dayOpen, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })" @close="dayOpen = null">
       <div v-if="!(byDay.get(dayOpen) ?? []).length" class="tiny" style="margin-bottom:10px">Nothing on this day.</div>

@@ -35,6 +35,7 @@ function keep() {
 </script>
 
 <template>
+  <Transition name="rs">
   <div v-if="restActive() || rest.done && rest.endAt">
     <div v-if="variant === 'ring'" class="card rest">
       <div class="lbl" style="justify-content:center;display:flex">{{ rest.done ? "Rest over" : rest.label }}</div>
@@ -62,4 +63,5 @@ function keep() {
       <button v-if="changed" class="qb" style="margin:6px auto 0;display:flex" @click="keep">Use {{ clock(rest.totalS) }} for this exercise</button>
     </div>
   </div>
+  </Transition>
 </template>

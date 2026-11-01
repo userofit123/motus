@@ -20,11 +20,13 @@ const TABS = [
 const moreOn = computed(() => ["more", "exercises", "goals", "stats", "settings"].includes(cur.value));
 const hideBar = computed(() => route.name === "workout");
 const active = useActive();
+// one key per page, so moving between pages animates
+const pageKey = (r: any) => r.path;
 </script>
 
 <template>
   <div class="pshell" :class="{ withbar: !!active.data.value && !hideBar }" :style="hideBar ? { paddingBottom: 0 } : undefined">
-    <div class="pmain"><router-view /></div>
+    <div class="pmain"><router-view v-slot="{ Component, route: r }"><Transition name="page" mode="out-in"><component :is="Component" :key="pageKey(r)" /></Transition></router-view></div>
     <div v-if="!hideBar" class="dock">
       <MiniBar />
       <div class="tabbar">

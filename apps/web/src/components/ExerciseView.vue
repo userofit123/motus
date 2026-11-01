@@ -100,6 +100,7 @@ const menu = computed(() => [
       <button v-for="[k, l] in TABS" :key="k" :class="{ on: tab === k }" @click="tab = k">{{ l }}</button>
     </div>
 
+    <Transition name="sw" mode="out-in">
     <div v-if="tab === 'about'" class="grid" :class="inSheet ? '' : 'g2'">
       <div>
         <div v-if="e.images?.length" class="media">
@@ -195,6 +196,7 @@ const menu = computed(() => [
         </div>
       </div>
     </div>
+    </Transition>
     <ExerciseEditor v-if="editing" :exercise="e" @close="editing = false" />
   </div>
   <div v-else class="empty">Loading…</div>

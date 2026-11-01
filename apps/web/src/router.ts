@@ -2,7 +2,8 @@ import { createRouter, createWebHistory } from "vue-router";
 
 export const router = createRouter({
   history: createWebHistory(),
-  scrollBehavior: (_to, _from, saved) => saved ?? { top: 0 },
+  // pages fade out before the next one comes in (see the shells), so scroll once the old page is gone
+  scrollBehavior: (to, from, saved) => to.path === from.path ? undefined : new Promise((ok) => setTimeout(() => ok(saved ?? { top: 0 }), 130)),
   routes: [
     { path: "/", name: "home", component: () => import("./pages/HomePage.vue") },
     { path: "/history", name: "history", component: () => import("./pages/HistoryPage.vue") },

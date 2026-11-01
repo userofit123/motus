@@ -83,6 +83,7 @@ const menu = computed(() => [
 
     <div class="tabs"><button v-for="[k, l] in [['plan', 'Plan'], ['history', `History · ${sum?.timesDone ?? 0}`], ['notes', `Notes · ${notes.data.value?.length ?? 0}`]]" :key="k" :class="{ on: tab === k }" @click="tab = k as string">{{ l }}</button></div>
 
+    <Transition name="sw" mode="out-in">
     <div v-if="tab === 'plan'" class="grid" style="grid-template-columns:minmax(0,1fr) 300px;align-items:start">
       <div class="card">
         <div v-if="!routine.exercises.length" class="empty"><b>No exercises yet</b><button class="btn tonal" @click="router.push(`/routines/${id}/edit`)">Add exercises</button></div>
@@ -125,6 +126,7 @@ const menu = computed(() => [
         <Menu :items="[{ label: 'Edit', icon: 'edit', run: () => (noteSheet = { targets: [{ type: n.targetType, id: n.targetId, label: routine.name }], edit: n }) }, { label: 'Delete', icon: 'trash', danger: true, run: () => delNote.run(n.id) }]" /></div></div>
     </div>
 
+    </Transition>
     <ScheduleEditor v-if="editSchedule" :schedule="editSchedule" @close="editSchedule = null" />
     <Sheet v-if="showVersions" title="Earlier versions" @close="showVersions = false">
       <div v-if="!versions.data.value?.length" class="tiny">Each time you save changes, the version before is kept here.</div>
