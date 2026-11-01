@@ -112,5 +112,7 @@ export async function maybeAutoBackup(cfg: { on: boolean; every: "workout" | "da
   if (!backupDue(cfg, afterWorkout) || cfg.encrypt) return; // encrypted backups need the password, so they are made by hand
   const silent = !!(globalThis as any).motusNative?.saveBackup || ((await idb<any>((s) => s.get("dir")).catch(() => null)) && true);
   if (silent) { try { await backupNow({ keep: cfg.keep, interactive: false }); } catch { /* shown in Settings → Backup */ } }
-  else if (!offered) { offered = true; offer?.(() => backupNow({ keep: cfg.keep, interactive: true })); }
+  // in a plain browser the data already lives on the server, so a daily "download your backup" would only nag;
+  // backups there are made by hand (or into a picked folder), and the apps keep theirs on the device
+  else if (!offered && (globalThis as any).Capacitor?.isNativePlatform?.()) { offered = true; offer?.(() => backupNow({ keep: cfg.keep, interactive: true })); }
 }
