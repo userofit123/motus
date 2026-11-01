@@ -47,7 +47,8 @@
     "publish": {
       "provider": "github",
       "owner": "userofit123",
-      "repo": "motus"
+      "repo": "motus",
+      "releaseType": "release"
     },
     "linux": {
       "target": [

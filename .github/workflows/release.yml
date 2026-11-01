@@ -7,6 +7,11 @@ on:
     branches: [main]
     paths: [CHANGELOG.md]
   workflow_dispatch:
+    inputs:
+      rebuild:
+        description: Build again for the current version even if its release exists
+        type: boolean
+        default: false
 permissions:
   contents: write
   packages: write
@@ -23,7 +28,7 @@ jobs:
         run: |
           V=$(grep -m1 -oP '^## \[\K[0-9]+\.[0-9]+\.[0-9]+' CHANGELOG.md)
           echo "version=$V" >> $GITHUB_OUTPUT
-          if git rev-parse "v$V" >/dev/null 2>&1; then echo "publish=false" >> $GITHUB_OUTPUT; else echo "publish=true" >> $GITHUB_OUTPUT; fi
+          if git rev-parse "v$V" >/dev/null 2>&1 && [ "${{ inputs.rebuild }}" != "true" ]; then echo "publish=false" >> $GITHUB_OUTPUT; else echo "publish=true" >> $GITHUB_OUTPUT; fi
   test:
     needs: version
     if: needs.version.outputs.publish == 'true'
@@ -46,7 +51,7 @@ jobs:
         run: |
           V=${{ needs.version.outputs.version }}
           node scripts/release-notes.mjs "$V" > notes.md
-          gh release create "v$V" --title "Motus $V" --notes-file notes.md
+          gh release view "v$V" >/dev/null 2>&1 || gh release create "v$V" --title "Motus $V" --notes-file notes.md
   docker:
     needs: [version, release]
     runs-on: ubuntu-latest
@@ -121,4 +126,4 @@ jobs:
           SHA=$(sha256sum $APK | cut -d' ' -f1)
           URL=https://github.com/${{ github.repository }}/releases/download/v$V/$APK
           printf '{"version":"%s","url":"%s","sha256":"%s","size":%s}\n' "$V" "$URL" "$SHA" "$(stat -c%s $APK)" > android-latest.json
-          gh release upload "v$V" $APK android-latest.json
+          gh release upload "v$V" $APK android-latest.json --clobber
