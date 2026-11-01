@@ -1,5 +1,6 @@
 // The shared exercise catalog: free-exercise-db, added once (and topped up when a new version of the app has more).
-import { exercises, SOURCE, LICENSE, AUTHOR, type RawExercise } from "@motus/exercise-data";
+import type { RawExercise } from "@motus/exercise-data";
+import { SOURCE, LICENSE, AUTHOR } from "@motus/exercise-data/meta";
 import type { Tracking } from "@motus/shared";
 import type { Db } from "./db";
 import { uuidv7 } from "./ids";
@@ -19,6 +20,8 @@ export function trackingOf(e: RawExercise): Tracking {
 
 export async function seedCatalog(db: Db): Promise<number> {
   const have = new Set((await db.admin.query<{ source_id: string }>("SELECT source_id FROM exercises WHERE owner_id IS NULL AND source = $1", [SOURCE])).rows.map((r) => r.source_id));
+  // loaded only here: the data is large, and the web app's copy of a server account takes the server's catalog instead
+  const { exercises } = await import("@motus/exercise-data");
   const missing = exercises.filter((e) => !have.has(e.id));
   if (!missing.length) return 0;
   await db.tx(async (q) => {

@@ -3,5 +3,5 @@
   "private": true,
   "type": "module",
   "main": "src/index.ts",
-  "exports": { ".": "./src/index.ts", "./exercises.json": "./data/exercises.json" }
+  "exports": { ".": "./src/index.ts", "./meta": "./src/meta.ts", "./exercises.json": "./data/exercises.json" }
 }

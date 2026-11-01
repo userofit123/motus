@@ -286,7 +286,9 @@ export async function buildApp(o: Options): Promise<{ app: FastifyInstance; engi
   if (o.imagesDir && fs.existsSync(o.imagesDir))
     await app.register(fstatic, { root: o.imagesDir, prefix: "/exercise-images/", decorateReply: false, maxAge: "30d", immutable: true });
   if (o.webDir && fs.existsSync(o.webDir)) {
-    await app.register(fstatic, { root: o.webDir, prefix: "/", wildcard: false, decorateReply: true });
+    // files are looked up on each request (a rebuild adds new ones); built files have content-hashed names, so they can be kept for good
+    await app.register(fstatic, { root: o.webDir, prefix: "/", wildcard: true, decorateReply: true, cacheControl: false,
+      setHeaders: (res, file) => res.setHeader("cache-control", /[\\/]assets[\\/]/.test(file) ? "public, max-age=31536000, immutable" : "no-cache") });
     app.setNotFoundHandler((req, reply) => (req.url.startsWith("/api/") ? reply.code(404).send({ error: "Not found" }) : reply.type("text/html").sendFile("index.html")));
   }
   app.setErrorHandler((err, req, reply) => {

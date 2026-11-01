@@ -55,10 +55,13 @@ Without the proxy, the same app is at http://127.0.0.1:8790.
 
 ## Opening the dev app from a phone
 
-The machine shares the dev app with your Tailscale devices at `https://<machine>.<tailnet>.ts.net:8443`
+The phone gets the built app (a few bundled files, like a real install, so it opens as fast as one) with the dev
+database: the `phone` service rebuilds it into `apps/web/dist` on every change (a few seconds), and the dev server
+serves it on http://127.0.0.1:8791. Tailscale shares that with your devices at `https://<machine>.<tailnet>.ts.net:8443`
 (port 443 on that name belongs to another app). It was set up once with
 
-    tailscale serve --bg --https=8443 http://127.0.0.1:8790
+    tailscale serve --bg --https=8443 http://127.0.0.1:8791
 
 and Tailscale keeps it across restarts (`tailscale serve status` shows it, `tailscale serve --https=8443 off` removes it).
-Hot reload works there too: it connects back to whatever address the page was opened from.
+No hot reload there: reopen the app to get the latest build. (The development server with hot reload is on 8790;
+point Tailscale at that instead when you need it on the phone, but it loads slowly over the network.)

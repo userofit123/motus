@@ -47,6 +47,9 @@ services:
       <<: *node-env
       DATABASE_URL: postgres://motus:motus-dev@db:5432/motus
       PORT: "8080"
+      WEB_DIR: /repo/apps/web/dist   # the built app (the "phone" service below keeps it up to date)
+    ports:
+      - "127.0.0.1:8791:8080"   # the built app with this database: what the phone opens over Tailscale
     depends_on:
       install: { condition: service_completed_successfully }
       db: { condition: service_healthy }
@@ -67,6 +70,16 @@ services:
       install: { condition: service_completed_successfully }
       server: { condition: service_started }
     networks: [dev, proxy]
+
+  # The phone gets the built app (a few bundled files, like a real install) instead of the development server's
+  # hundreds of separate files: rebuilt here on every change, served by the server above on port 8791.
+  phone:
+    <<: *node
+    restart: unless-stopped
+    command: corepack pnpm --filter @motus/web exec vite build --watch
+    depends_on:
+      install: { condition: service_completed_successfully }
+    networks: [dev]
 
 volumes:
   db: {}

@@ -1,6 +1,6 @@
 // Everything in and out: the full backup/export (JSON), restore (replace or merge), CSV export in Strong's layout,
 // and imports from Strong, Hevy and FitNotes CSV files.
-import { SOURCE } from "@motus/exercise-data";
+import { SOURCE } from "@motus/exercise-data/meta";
 import type { Router, Ctx } from "../router";
 import type { Sql } from "../db";
 import { uuidv7, isUuid } from "../ids";

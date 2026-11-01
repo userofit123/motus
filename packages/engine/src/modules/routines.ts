@@ -1,7 +1,7 @@
 // Routines (saved plans) and their folders: list, open, create (from scratch, from another routine, from a workout,
 // from a template), edit, duplicate, version history, and the pre-start preview.
 import { TEMPLATES, estimate, restAfterSet, ymd, type RoutineSummary } from "@motus/shared";
-import { SOURCE } from "@motus/exercise-data";
+import { SOURCE } from "@motus/exercise-data/meta";
 import type { Router, Ctx } from "../router";
 import type { Sql } from "../db";
 import { camel, id, optId, str, intOrNull, numOrNull, bool, oneOf, visible } from "../util";

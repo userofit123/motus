@@ -15,6 +15,4 @@ export interface RawExercise {
   images: string[];
 }
 export const exercises = data as RawExercise[];
-export const SOURCE = "free-exercise-db";
-export const LICENSE = "Unlicense (public domain)";
-export const AUTHOR = "free-exercise-db by yuhonas";
+export { SOURCE, LICENSE, AUTHOR } from "./meta";
