@@ -1,7 +1,8 @@
 <script setup lang="ts">
 // Recording a walk, run or ride (requirement 18): time, distance, pace and the route on a map.
 // The points are saved on this device as they come in, so closing the app never loses a walk. In a browser it records
-// while the page is open; the Android app keeps recording with the screen off.
+// while the page is open; the Android app keeps recording with the screen off, and also counts steps with the phone's
+// step counter (browsers have no access to it).
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useActivityTypes } from "../api/queries";
@@ -19,7 +20,9 @@ import RouteMap from "../components/RouteMap.vue";
 const route = useRoute(), router = useRouter();
 const types = useActivityTypes();
 const fmt = useFmt();
-interface Rec { type: string; startedAt: number; route: number[][]; pausedMs: number; pauseAt: number | null; running: boolean }
+interface Rec { type: string; startedAt: number; route: number[][]; pausedMs: number; pauseAt: number | null; running: boolean;
+  /** step counter totals (steps since the phone started): where the walk began, steps taken while paused, the total at the pause */
+  stepBase?: number | null; stepPaused?: number; stepPauseAt?: number | null; stepNow?: number | null }
 const KEY = "motusRecording";
 const rec = ref<Rec>(readJson<Rec | null>(KEY, null) ?? { type: String(route.query.type ?? "walk"), startedAt: 0, route: [], pausedMs: 0, pauseAt: null, running: false });
 const save = () => writeJson(KEY, rec.value);
@@ -30,6 +33,28 @@ const hav = (a: number[], b: number[]) => { const dLat = rad(b[0]! - a[0]!), dLo
 const dist = computed(() => rec.value.route.reduce((t, p, i, a) => (i ? t + hav(a[i - 1]!, p) : 0), 0));
 const elapsed = computed(() => rec.value.startedAt ? Math.max(0, ((rec.value.pauseAt ?? now.value) - rec.value.startedAt - rec.value.pausedMs) / 1000) : 0);
 const gpsError = ref("");
+// steps (Android app only)
+const WP = () => (globalThis as any).Capacitor?.Plugins?.MotusWorkout;
+const stepsOn = ref(false);
+let stepSub: any = null;
+function onSteps(total: number) {
+  if (total < 0 || !rec.value.running) return;
+  const r = rec.value;
+  if (r.stepBase == null || total < (r.stepNow ?? 0)) { r.stepBase = total - (r.stepNow != null && r.stepBase != null ? r.stepNow - r.stepBase : 0); r.stepPaused = r.stepPaused ?? 0; } // first reading, or the phone restarted
+  r.stepNow = total; save();
+}
+const steps = computed(() => { const r = rec.value; if (r.stepBase == null || r.stepNow == null) return 0; const pausing = r.pauseAt && r.stepPauseAt != null ? r.stepNow - r.stepPauseAt : 0; return Math.max(0, r.stepNow - r.stepBase - (r.stepPaused ?? 0) - pausing); });
+async function startSteps() {
+  const p = WP(); if (!p?.startSteps) return;
+  try {
+    const r = await p.startSteps();
+    if (!r?.available) return;
+    stepsOn.value = true;
+    stepSub = await p.addListener("steps", (e: any) => onSteps(Number(e.total)));
+    if (r.total >= 0) onSteps(Number(r.total));
+  } catch { /* no step counter */ }
+}
+const stopSteps = () => { stepSub?.remove?.(); stepSub = null; WP()?.stopSteps?.().catch?.(() => {}); };
 // in the Android app a foreground service keeps recording with the screen off
 const BG = () => (globalThis as any).Capacitor?.Plugins?.BackgroundGeolocation;
 let bgId: string | null = null;
@@ -54,21 +79,29 @@ async function startGps() {
     onPoint(p.coords.latitude, p.coords.longitude, p.timestamp, p.coords.altitude, p.coords.accuracy);
   }, (e) => (gpsError.value = e.code === 1 ? "Allow location to record the route" : "Looking for GPS…"), { enableHighAccuracy: true, maximumAge: 2000, timeout: 20000 });
 }
-function start() { rec.value = { ...rec.value, startedAt: Date.now(), route: [], pausedMs: 0, pauseAt: null, running: true }; save(); startGps(); keepAwake(true); }
-function pause() { if (rec.value.pauseAt) { rec.value.pausedMs += Date.now() - rec.value.pauseAt; rec.value.pauseAt = null; } else rec.value.pauseAt = Date.now(); save(); }
+function start() { rec.value = { ...rec.value, startedAt: Date.now(), route: [], pausedMs: 0, pauseAt: null, running: true, stepBase: null, stepPaused: 0, stepPauseAt: null, stepNow: null }; save(); startGps(); startSteps(); keepAwake(true); }
+function pause() {
+  const r = rec.value;
+  if (r.pauseAt) {
+    r.pausedMs += Date.now() - r.pauseAt; r.pauseAt = null;
+    if (r.stepPauseAt != null && r.stepNow != null) r.stepPaused = (r.stepPaused ?? 0) + r.stepNow - r.stepPauseAt;
+    r.stepPauseAt = null;
+  } else { r.pauseAt = Date.now(); r.stepPauseAt = r.stepNow ?? null; }
+  save();
+}
 async function finish() {
   try {
     const end = rec.value.pauseAt ?? Date.now();
-    const r = await api.post("/activities", { type: rec.value.type, startedAt: new Date(rec.value.startedAt).toISOString(), endedAt: new Date(end).toISOString(), durationS: Math.round(elapsed.value), route: rec.value.route, source: "gps", clientId: `gps:${rec.value.startedAt}` });
-    localStorage.removeItem(KEY); keepAwake(false); stopGps();
+    const r = await api.post("/activities", { type: rec.value.type, startedAt: new Date(rec.value.startedAt).toISOString(), endedAt: new Date(end).toISOString(), durationS: Math.round(elapsed.value), route: rec.value.route, steps: stepsOn.value ? steps.value : null, source: "gps", clientId: `gps:${rec.value.startedAt}` });
+    localStorage.removeItem(KEY); keepAwake(false); stopGps(); stopSteps();
     invalidate(["activities", "stats", "goals", "home", "calendar"]); toast("Saved");
     router.replace(`/activities/${r.id}`);
   } catch (e) { toastError(e); }
 }
-async function discard() { if (await confirm("Discard this recording?", { ok: "Discard", danger: true })) { localStorage.removeItem(KEY); keepAwake(false); router.back(); } }
-onMounted(() => { tick = setInterval(() => (now.value = Date.now()), 1000); if (rec.value.running) { startGps(); keepAwake(true); } });
+async function discard() { if (await confirm("Discard this recording?", { ok: "Discard", danger: true })) { localStorage.removeItem(KEY); keepAwake(false); stopSteps(); router.back(); } }
+onMounted(() => { tick = setInterval(() => (now.value = Date.now()), 1000); if (rec.value.running) { startGps(); startSteps(); keepAwake(true); } });
 const stopGps = () => { if (bgId) BG()?.removeWatcher({ id: bgId }).catch?.(() => {}); bgId = null; };
-onBeforeUnmount(() => { stopGps(); if (watchId != null) navigator.geolocation.clearWatch(watchId); if (tick) clearInterval(tick); });
+onBeforeUnmount(() => { stopGps(); stepSub?.remove?.(); if (watchId != null) navigator.geolocation.clearWatch(watchId); if (tick) clearInterval(tick); });
 const t = computed(() => (types.data.value ?? []).find((x: any) => x.slug === rec.value.type));
 </script>
 
@@ -78,10 +111,11 @@ const t = computed(() => (types.data.value ?? []).find((x: any) => x.slug === re
     <div class="ph"><div><h1>{{ t?.name ?? "Activity" }}</h1><div class="sub">{{ rec.running ? (rec.pauseAt ? "Paused" : "Recording") : "Ready" }}{{ gpsError ? " · " + gpsError : "" }}</div></div></div>
     <div v-if="!rec.running" class="chips" style="margin-bottom:12px"><button v-for="x in (types.data.value ?? []).filter((y: any) => y.hasGps)" :key="x.slug" class="fchip" :class="{ on: rec.type === x.slug }" @click="rec.type = x.slug"><Icon :name="x.icon" :size="15" />{{ x.name }}</button></div>
     <RouteMap :route="rec.route" follow />
-    <div class="grid g3" style="margin-top:var(--spg)">
+    <div class="grid g4" style="margin-top:var(--spg)">
       <div class="card stat hero"><div class="lbl">Time</div><div class="val">{{ clock(elapsed) }}</div></div>
       <div class="card stat"><div class="lbl">Distance</div><div class="val">{{ fmt.num(fmt.distNum(dist), 2) }}<small>{{ fmt.du }}</small></div></div>
-      <div class="card stat"><div class="lbl">Pace</div><div class="val" style="font-size:26px">{{ fmt.pace(elapsed, dist) || "–" }}</div></div>
+      <div class="card stat"><div class="lbl">Pace</div><div class="val">{{ fmt.pace(elapsed, dist) || "–" }}</div></div>
+      <div v-if="stepsOn" class="card stat"><div class="lbl">Steps</div><div class="val">{{ steps.toLocaleString() }}</div></div>
     </div>
     <div class="row" style="margin-top:var(--spg);justify-content:center">
       <button v-if="!rec.running" class="btn lg" @click="start"><Icon name="play" />Start</button>

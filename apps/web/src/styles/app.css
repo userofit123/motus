@@ -7,7 +7,9 @@ a { color: inherit; text-decoration: none; }
 button { font: inherit; color: inherit; }
 .ico { flex: none; display: block; }
 .grow { flex: 1; min-width: 0; }
-.row { display: flex; align-items: center; gap: 10px; padding: 0; border: 0; }
+.row { display: flex; align-items: center; gap: 10px; }
+/* Money Manager's .row is a padded list row; ours is a plain flex row (a card that is also a row keeps its card padding) */
+.row:not(.card), html[data-den] .row:not(.card) { padding: 0; border: 0; }
 .col { display: flex; flex-direction: column; gap: 6px; }
 .wrap { flex-wrap: wrap; }
 .end { justify-content: flex-end; }
@@ -72,15 +74,15 @@ hr.sep { border: 0; border-top: 1px solid var(--ol); margin: 14px 0; }
 .li { display: flex; align-items: center; gap: 12px; padding: 11px 4px; border-bottom: 1px solid var(--ol); min-height: 52px; }
 .li:last-child { border-bottom: 0; }
 .li.click:hover { background: color-mix(in srgb, var(--tx) 3%, transparent); border-radius: var(--r-sm); }
-.li .t { font-weight: 500; }
-.li .s { font-size: 12.5px; color: var(--tx2); margin-top: 1px; }
+.li .t { font-weight: 500; font-size: 15px; }
+.li .s:not(.btn) { font-size: 12.5px; color: var(--tx2); margin-top: 1px; }
 .li .r { text-align: end; flex: none; }
 .thumb { width: 44px; height: 44px; border-radius: 12px; background: var(--s2) center/cover no-repeat; flex: none; display: grid; place-items: center; color: var(--tx2); overflow: hidden; }
 .thumb img { width: 100%; height: 100%; object-fit: cover; }
 .thumb.sm { width: 36px; height: 36px; border-radius: 10px; }
 .thumb.lg { width: 64px; height: 64px; border-radius: 16px; }
 .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex: none; background: var(--acc); }
-.empty { text-align: center; padding: 38px 16px; color: var(--tx2); }
+.empty { text-align: center; padding: 38px 16px; color: var(--tx2); font-size: 13.5px; line-height: 1.5; }
 .empty .ico { margin: 0 auto 10px; opacity: .6; }
 .empty b { display: block; color: var(--tx); font-size: 15px; margin-bottom: 4px; font-weight: 600; }
 .empty .btn { margin-top: 14px; }
@@ -147,17 +149,17 @@ html.phone .sht .sh_f { padding: 12px 16px calc(12px + var(--sb)); }
 .frow > * { flex: 1; min-width: 0; }
 .seg.block { display: flex; width: 100%; }
 .seg.block button { flex: 1; }
-.tgl { display: flex; align-items: center; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--ol); cursor: pointer; }
+.tgl { display: flex; align-items: center; gap: 12px; padding: 11px 0; min-height: 52px; border-bottom: 1px solid var(--ol); cursor: pointer; }
 .tgl:last-child { border-bottom: 0; }
-.tgl .t { font-weight: 500; font-size: 14px; }
-.tgl .s { font-size: 12.5px; color: var(--tx2); margin-top: 2px; }
+.tgl .t { font-weight: 500; font-size: 15px; }
+.tgl .s:not(.btn) { font-size: 12.5px; color: var(--tx2); margin-top: 2px; }
 .search { position: relative; }
 .search .ico { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--tx2); }
 .search input { padding-inline-start: 38px; width: 100%; }
 
 /* ---------- toasts ---------- */
 .tst { position: fixed; left: 50%; bottom: calc(24px + var(--sb)); transform: translateX(-50%); z-index: 400; display: flex; flex-direction: column; gap: 8px; align-items: center; pointer-events: none; }
-html.phone .tst { bottom: calc(84px + var(--sb)); }
+html.phone .tst { bottom: calc(var(--tabh) + 76px + var(--sb)); }
 .tst > div { pointer-events: auto; background: var(--tx); color: var(--bg); border-radius: 14px; padding: 11px 16px; font-size: 13.5px; font-weight: 500; display: flex; gap: 14px; align-items: center; box-shadow: var(--shadow-pop); animation: su .2s var(--ease); max-width: min(520px, calc(100vw - 32px)); }
 .tst > div.err { background: var(--neg); color: #fff; }
 .tst > div.pr { background: linear-gradient(135deg, #f5c242, #f08a5d); color: #2a1600; }
@@ -173,25 +175,33 @@ main { position: relative; }
 /* the running workout, shown on every other page */
 .minibar { position: fixed; z-index: 45; display: flex; align-items: center; gap: 12px; padding: 10px 12px 10px 16px; border-radius: 18px; background: var(--accc); color: var(--onc); box-shadow: 0 14px 34px -14px #000a; cursor: pointer; }
 .minibar .t { font-weight: 600; font-size: 14px; }
-.minibar .s { font-size: 12px; opacity: .8; font-variant-numeric: tabular-nums; }
+.minibar .s:not(.btn) { font-size: 12px; opacity: .8; font-variant-numeric: tabular-nums; }
 .minibar .rest { font-variant-numeric: tabular-nums; font-weight: 700; background: color-mix(in srgb, var(--onc) 14%, transparent); border-radius: 10px; padding: 4px 8px; }
 html:not(.phone) .minibar { left: calc(88px + 50%); transform: translateX(-50%); bottom: 22px; min-width: 360px; }
 html:not(.phone)[data-nav="mini"] .minibar { left: calc(68px + 50%); }
-html.phone .minibar { left: 10px; right: 10px; bottom: calc(66px + var(--sb)); }
+html.phone .minibar { position: static; margin: 8px 10px 0; box-shadow: none; }
 
 /* ---------- phone frame ---------- */
-.pshell { width: 100%; min-height: 100vh; padding-bottom: calc(76px + var(--sb)); }
+html.phone { --tabh: 64px; }
+.pshell { width: 100%; min-height: 100vh; padding-bottom: calc(var(--tabh) + 16px + var(--sb)); }
+/* room for the running-workout bar above the tabs, so the end of a page is never hidden behind it */
+.pshell.withbar { padding-bottom: calc(var(--tabh) + 80px + var(--sb)); }
 .pmain { padding: calc(14px + var(--st)) 16px 24px; }
 .pmain .ph { margin-bottom: 16px; align-items: center; }
 .pmain .ph h1 { font-size: 26px; }
-.tabbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 50; display: grid; grid-template-columns: repeat(5, 1fr); align-items: center;
-  padding: 6px 6px calc(6px + var(--sb)); background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(16px) saturate(1.4); border-top: 1px solid var(--ol); }
+.pmain .ph .acts { gap: 4px; }
+.pmain .ph .acts .btn { min-height: 38px; padding: 8px 16px; }
+.pmain .ph .acts .btn.lg { min-height: 44px; padding: 10px 20px; font-size: 15px; }
+/* the bottom dock: the running workout (when there is one) above the tabs, on one blurred background */
+.dock { position: fixed; left: 0; right: 0; bottom: 0; z-index: 50; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(16px) saturate(1.4); border-top: 1px solid var(--ol); }
+.tabbar { display: grid; grid-template-columns: repeat(5, 1fr); align-items: center; height: calc(var(--tabh) + var(--sb)); padding: 0 6px var(--sb); }
 .tabbar button { border: 0; background: none; display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 11px; color: var(--tx2); padding: 4px 0; cursor: pointer; }
 .tabbar button .ic { width: 56px; height: 30px; border-radius: 15px; display: grid; place-items: center; transition: background .2s; }
 .tabbar button.on { color: var(--tx); font-weight: 600; }
 .tabbar button.on .ic { background: var(--accc); color: var(--onc); }
-.tabbar .start { width: 54px; height: 54px; border-radius: 18px; margin: -18px auto 0; background: linear-gradient(135deg, var(--acc), var(--acc2)); color: var(--on); display: grid; place-items: center; box-shadow: 0 10px 24px -8px var(--acc); }
-.tabbar .start svg { width: 26px; height: 26px; }
+/* Start: a filled button that sits inside the bar, the same height as the tab icons and labels together */
+.tabbar .start { width: 52px; height: 44px; border-radius: 15px; margin: 0 auto; background: linear-gradient(135deg, var(--acc), var(--acc2)); color: var(--on); display: grid; place-items: center; box-shadow: 0 6px 16px -8px var(--acc); }
+.tabbar .start svg { width: 24px; height: 24px; }
 
 /* ---------- start sheet ---------- */
 .opt-list { display: flex; flex-direction: column; gap: 8px; }
@@ -199,7 +209,7 @@ html.phone .minibar { left: 10px; right: 10px; bottom: calc(66px + var(--sb)); }
 .optb:hover { border-color: color-mix(in srgb, var(--acc) 45%, var(--ol)); }
 .optb .oi { width: 40px; height: 40px; border-radius: 12px; background: var(--accc); color: var(--onc); display: grid; place-items: center; flex: none; }
 .optb .t { font-weight: 600; }
-.optb .s { font-size: 12.5px; color: var(--tx2); margin-top: 2px; }
+.optb .s:not(.btn) { font-size: 12.5px; color: var(--tx2); margin-top: 2px; }
 
 /* ---------- sets table (pre-start, workout, detail) ---------- */
 .sets { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
@@ -220,7 +230,7 @@ html.phone .minibar { left: 10px; right: 10px; bottom: calc(66px + var(--sb)); }
 .vin.pre { color: var(--tx2); font-weight: 500; }
 .vin.adj { color: var(--acc); }
 .tick { width: 40px; height: 36px; border-radius: 10px; border: 1px solid var(--ol); background: var(--s1); cursor: pointer; display: grid; place-items: center; color: var(--tx2); margin: 0 auto; }
-.tick.on { background: var(--pos); border-color: transparent; color: #0c2a18; }
+.tick.on { background: var(--pos); border-color: transparent; color: var(--bg); }
 .tick.on svg { stroke-width: 2.6; }
 
 /* ---------- active workout ---------- */
@@ -242,10 +252,10 @@ html.phone .minibar { left: 10px; right: 10px; bottom: calc(66px + var(--sb)); }
 .aw-desk .side { position: sticky; top: 24px; }
 .aw-list .li { cursor: pointer; padding: 10px; border-radius: var(--r-sm); border: 0; }
 .aw-list .li.cur { background: var(--accc); color: var(--onc); }
-.aw-list .li.cur .s { color: color-mix(in srgb, var(--onc) 75%, transparent); }
+.aw-list .li.cur .s:not(.btn) { color: color-mix(in srgb, var(--onc) 75%, transparent); }
 .aw-list .li.skip .t { text-decoration: line-through; opacity: .6; }
 .stt { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--ol); flex: none; display: grid; place-items: center; }
-.stt.done { background: var(--pos); border-color: transparent; color: #0c2a18; }
+.stt.done { background: var(--pos); border-color: transparent; color: var(--bg); }
 .stt.part { border-color: var(--pos); }
 
 /* rest timer */
@@ -265,8 +275,8 @@ html.phone .minibar { left: 10px; right: 10px; bottom: calc(66px + var(--sb)); }
 .restbar i { display: block; height: 100%; background: linear-gradient(90deg, var(--acc), var(--acc2)); transition: width 1s linear; }
 
 /* ---------- exercise view ---------- */
-.media { position: relative; border-radius: var(--r); overflow: hidden; background: #fff; aspect-ratio: 4 / 3; }
-.media img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; transition: opacity .6s; }
+.media { position: relative; border-radius: var(--r); overflow: hidden; background: var(--s2); aspect-ratio: 4 / 3; }
+.media img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transition: opacity .6s; }
 .media img.b { animation: xf 3.2s infinite; }
 @keyframes xf { 0%, 40% { opacity: 0; } 50%, 90% { opacity: 1; } 100% { opacity: 0; } }
 .steps { padding-inline-start: 20px; display: flex; flex-direction: column; gap: 8px; line-height: 1.55; }
@@ -303,17 +313,28 @@ html.phone .cal .dots i.plan { background: none; border: 1px solid var(--ec, var
 .chart .ln { fill: none; stroke: var(--acc); stroke-width: 2.2; vector-effect: non-scaling-stroke; stroke-linejoin: round; stroke-linecap: round; }
 .chart .ar { fill: url(#cg-acc); opacity: .5; }
 .chart .pt { fill: var(--bg); stroke: var(--acc); stroke-width: 2; cursor: pointer; }
-.chart .bar { fill: var(--acc); }
-.chart .bar.dim { fill: color-mix(in srgb, var(--acc) 35%, transparent); }
+.chart .cbar { fill: var(--acc); }
+.chart .cbar.dim { fill: color-mix(in srgb, var(--acc) 75%, transparent); }
+.chart .goal { stroke: var(--tx2); stroke-width: 1; stroke-dasharray: 4 4; opacity: .7; }
 .ctip { position: absolute; pointer-events: none; background: var(--tx); color: var(--bg); padding: 6px 9px; border-radius: 9px; font-size: 12px; white-space: nowrap; transform: translate(-50%, calc(-100% - 10px)); z-index: 5; }
 .heat { display: grid; grid-auto-flow: column; grid-template-rows: repeat(7, 11px); gap: 3px; overflow-x: auto; padding-bottom: 4px; }
 .heat i { width: 11px; height: 11px; border-radius: 3px; background: var(--s2); }
 
-/* body map */
-.bodymap { display: flex; gap: 6px; justify-content: center; }
-.bodymap svg { height: 100%; max-height: 220px; width: auto; }
-.bodymap .m { fill: var(--s2); stroke: var(--bg); stroke-width: 1.5; transition: fill .3s; }
-.bodymap .sil { fill: color-mix(in srgb, var(--tx) 6%, transparent); }
+/* body map: muscles in three strengths (main, helped, a little) over a quiet figure */
+.bodymap { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.bodymap .figs { display: flex; gap: 4px; justify-content: center; height: var(--bmh); }
+.bodymap svg { height: 100%; width: auto; display: block; }
+.bodymap .sil { fill: color-mix(in srgb, var(--tx) 9%, transparent); }
+.bodymap .m { fill: color-mix(in srgb, var(--tx) 15%, transparent); transition: fill .3s; }
+.bodymap .t1 { fill: var(--heat1); }
+.bodymap .t2 { fill: var(--heat2); }
+.bodymap .t3 { fill: var(--heat3); }
+.bmlegend { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; font-size: var(--fs-xs); color: var(--tx2); }
+.bmlegend span { display: inline-flex; align-items: center; gap: 5px; }
+.bmlegend i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+.bmlegend i.t1 { background: var(--heat1); }
+.bmlegend i.t2 { background: var(--heat2); }
+.bmlegend i.t3 { background: var(--heat3); }
 
 /* progress bars */
 .pbar { height: 8px; border-radius: 8px; background: var(--s2); overflow: hidden; }
@@ -340,9 +361,34 @@ html.phone .map { height: 240px; }
 .leaflet-container { background: var(--s2) !important; font: inherit !important; }
 
 @media (max-width: 860px) { .ph .acts .btn:not(.keep) { display: none; } }
-html.phone #pop { left: 8px; right: 8px; width: auto; bottom: calc(80px + var(--sb)); max-height: calc(100vh - 120px); }
+html.phone #pop { left: 8px; right: 8px; width: auto; bottom: calc(var(--tabh) + 12px + var(--sb)); max-height: calc(100vh - 120px); }
 /* the switch inside a .tgl row: Money Manager's .tg switch without its row border */
 .tgl .tg, .li .tg { border: 0; padding: 0; flex: none; }
 /* on the phone, two- and three-column sections stack (stat cards stay two across) */
-html.phone .grid.g2, html.phone .grid.g3 { grid-template-columns: minmax(0, 1fr); }
+html.phone .grid.g2:not(.keep), html.phone .grid.g3:not(.keep) { grid-template-columns: minmax(0, 1fr); }
 html.phone .grid.g4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.calnav { display: flex; align-items: center; gap: 6px; margin-bottom: 12px; }
+.calnav b { font-size: 15px; font-weight: 600; text-align: center; }
+html:not(.phone) .calnav b { flex: none; min-width: 170px; }
+.pvx.off { opacity: .45; }
+.pvx .thumb { align-self: flex-start; margin-top: 2px; }
+.exspark { width: 120px; height: 34px; position: relative; flex: none; }
+html.phone .exspark { width: 64px; }
+/* big numbers in two-across stat cards shrink a little on narrow phones instead of wrapping */
+html.phone .grid.g4 .stat .val { font-size: clamp(24px, 7.4vw, var(--fs-val)); white-space: nowrap; }
+/* a single row of chips that scrolls sideways instead of wrapping onto many lines */
+.chips.hscroll { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin-inline: -16px; padding-inline: 16px; }
+html:not(.phone) .chips.hscroll { margin-inline: 0; padding-inline: 0; flex-wrap: wrap; }
+.chips.hscroll::-webkit-scrollbar { display: none; }
+.leaflet-control-attribution { font-size: 10px !important; }
+/* form rows wrap on narrow screens instead of squeezing dates and times */
+.frow { flex-wrap: wrap; }
+.frow > * { flex: 1 1 140px; }
+/* a setting row with a control: the label keeps at least ~half the row, the control gives way */
+.li > .grow { min-width: 42%; }
+.li > select, .li > input:not([type=checkbox]) { flex: 0 1 auto; min-width: 0; max-width: 56%; }
+main.withbar { padding-bottom: 120px; }
+/* inside a card, toggles line up with list rows */
+.card .tgl { padding-inline: 4px; }
+.rcard { display: flex; flex-direction: column; }
+html.phone .tabs button { padding: 10px 11px; }

@@ -3,7 +3,7 @@
 // exercise (and per set), supersets, how numbers are pre-filled, and progression rules. Drafts are kept on this device.
 import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { usesWeight, usesReps, usesDuration, usesDistance, estimate, restAfterSet, duration, muscleName, toM, fromM } from "@motus/shared";
+import { usesWeight, usesReps, usesDuration, usesDistance, estimate, restAfterSet, duration, muscleName, toM, fromM, muscleSets } from "@motus/shared";
 import { useRoutine, useRoutines, useFolders, useExercises, useSettings, useTemplates } from "../api/queries";
 import { api, mediaUrl } from "../api/client";
 import { invalidate } from "../api/live";
@@ -82,7 +82,7 @@ function superset(i: number) {
 const unsuperset = (i: number) => { r.value.exercises[i].superset = null; touch(); };
 const restDefaults = computed(() => ({ betweenSetsS: s.value.workout.restBetweenSetsS, afterExerciseS: s.value.workout.restAfterExerciseS }));
 const est = computed(() => r.value ? estimate(r.value.exercises.map((e: any) => ({ sets: e.sets.map((x: any, j: number) => ({ ...x, restS: restAfterSet({ setRestS: x.restS, exRestS: e.restS, isLastSet: j === e.sets.length - 1, exRestAfterS: e.restAfterS }, restDefaults.value) })) }))) : null);
-const muscles = computed(() => { const o: Record<string, number> = {}; for (const e of r.value?.exercises ?? []) for (const m of exById.value.get(e.exerciseId)?.primaryMuscles ?? []) o[m] = (o[m] ?? 0) + e.sets.length; return o; });
+const muscles = computed(() => muscleSets((r.value?.exercises ?? []).map((e: any) => { const x = e.exercise ?? exById.value.get(e.exerciseId); return { primary: x?.primaryMuscles ?? [], secondary: x?.secondaryMuscles ?? [], sets: e.sets.length }; })));
 const restLabel = (v: number | null, fallback: number) => (v == null ? `${fmt.value.clock(fallback)}` : fmt.value.clock(v));
 function setRest(v: number | null) {
   const t = restFor.value!; const e = r.value.exercises[t.ex];
@@ -164,7 +164,7 @@ const tr = (e: any) => exById.value.get(e.exerciseId)?.tracking ?? e.exercise?.t
           <div class="row" style="margin-bottom:10px">
             <div class="thumb sm click" @click="exerciseSheet = e.exerciseId"><img v-if="(exById.get(e.exerciseId) ?? e.exercise)?.images?.[0]" :src="mediaUrl((exById.get(e.exerciseId) ?? e.exercise).images[0])" alt="" /><Icon v-else name="dumbbell" :size="18" /></div>
             <div class="grow"><div style="font-weight:600">{{ (exById.get(e.exerciseId) ?? e.exercise)?.name }}</div>
-              <div class="tiny">{{ e.superset ? `Superset ${e.superset} · ` : "" }}{{ e.prefill === "target" ? "Uses these targets" : "Pre-filled from last time" }}{{ e.repRestS ? ` · ${e.repRestS}s between reps` : "" }}</div></div>
+              <div class="tiny">{{ e.superset ? `Superset ${e.superset} · ` : "" }}{{ e.prefill === "target" ? "Starts with these numbers" : "Starts with last time's numbers" }}{{ e.repRestS ? ` · ${e.repRestS}s between reps` : "" }}</div></div>
             <Menu :items="exMenu(e, i)" />
           </div>
           <table class="sets">
@@ -200,7 +200,7 @@ const tr = (e: any) => exById.value.get(e.exerciseId)?.tracking ?? e.exercise?.t
               <div v-if="e.progression" class="fld"><label>Deload after misses</label><input v-model.number="e.progression.deloadAfter" class="in" type="number" min="1" max="10" @change="touch" /></div>
             </div>
           </details>
-          <input v-model="e.note" class="in" placeholder="Note for this exercise in this routine (seat height, grip…)" style="margin-top:8px;font-size:13px" @input="touch" />
+          <input v-model="e.note" class="in" placeholder="Note: seat height, grip…" style="margin-top:8px;font-size:13px" @input="touch" />
         </div>
         <button class="btn tonal block lg" @click="picking = {}"><Icon name="plus" />Add exercises</button>
       </div>
@@ -210,13 +210,13 @@ const tr = (e: any) => exById.value.get(e.exerciseId)?.tracking ?? e.exercise?.t
           <div class="lbl">Estimated time</div>
           <div class="val" style="font-size:28px">{{ est ? duration(est.totalS, true) : "—" }}</div>
           <div class="tiny">{{ r.exercises.length }} exercises · {{ r.exercises.reduce((a: number, e: any) => a + e.sets.length, 0) }} sets · {{ est ? `${duration(est.restS, true)} of rest` : "" }}</div>
-          <BodyMap :values="muscles" :height="140" style="margin-top:12px" />
+          <BodyMap :values="muscles" :height="160" legend style="margin-top:12px" />
           <div class="chips" style="margin-top:6px;justify-content:center"><span v-for="m in Object.keys(muscles)" :key="m" class="mchip">{{ muscleName(m) }}</span></div>
         </div>
         <div class="card">
           <div class="fld"><label>Description</label><textarea v-model="r.description" rows="2" @input="touch" /></div>
           <div class="fld"><label>Folder</label><select v-model="r.folderId" @change="touch"><option :value="null">No folder</option><option v-for="f in folders.data.value ?? []" :key="f.id" :value="f.id">{{ f.name }}</option></select></div>
-          <div class="fld" style="margin-bottom:0"><label>Colour</label><div class="row" style="gap:6px"><button v-for="c in COLORS" :key="c" class="dot click" :style="{ background: c, width: '24px', height: '24px', border: r.color === c ? '2px solid var(--tx)' : '0' }" @click="r.color = c; touch()" /><button class="qb" style="padding:2px 6px" @click="r.color = null; touch()">None</button></div></div>
+          <div class="fld" style="margin-bottom:0"><label>Colour</label><div class="row wrap" style="gap:6px"><button v-for="c in COLORS" :key="c" class="dot click" :style="{ background: c, width: '24px', height: '24px', border: r.color === c ? '2px solid var(--tx)' : '0' }" @click="r.color = c; touch()" /><button class="qb" style="padding:2px 6px" @click="r.color = null; touch()">None</button></div></div>
         </div>
         <button class="btn block lg" :disabled="busy || !r.exercises.length" @click="save(true)"><Icon name="play" :size="18" />Save and start</button>
       </div>

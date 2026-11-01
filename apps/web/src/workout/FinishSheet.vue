@@ -48,7 +48,7 @@ async function finish() {
 
 <template>
   <Sheet title="Finish workout" @close="emit('close')">
-    <div class="grid g3" style="margin-bottom:16px;gap:8px">
+    <div class="grid g3 keep" style="margin-bottom:16px;gap:8px">
       <div class="card tight"><div class="lbl">Sets</div><div style="font-size:22px;font-weight:600">{{ done.length }}</div></div>
       <div class="card tight"><div class="lbl">Volume</div><div style="font-size:22px;font-weight:600">{{ fmt.vol(done.filter((s) => s.kind !== "warmup").reduce((a, s) => a + (s.weightKg ?? 0) * (s.reps ?? 0), 0)) }}</div></div>
       <div class="card tight"><div class="lbl">Records</div><div style="font-size:22px;font-weight:600">{{ records }}</div></div>

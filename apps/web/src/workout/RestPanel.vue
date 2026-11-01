@@ -51,7 +51,7 @@ function keep() {
       <button v-if="changed" class="qb" style="margin:6px auto 0" @click="keep">Use {{ clock(rest.totalS) }} for this exercise</button>
       <div class="next">{{ rest.next }}</div>
     </div>
-    <div v-else class="restsheet" role="timer">
+    <div v-if="variant !== 'ring'" class="restsheet" role="timer">
       <div class="row">
         <div class="grow"><div class="tiny">{{ rest.done ? "Rest over" : rest.label }} · {{ rest.next }}</div><div class="big" @click="exact">{{ clock(left) }}</div></div>
         <button class="ib" :aria-label="rest.pausedLeftS != null ? 'Resume' : 'Pause'" @click="rest.pausedLeftS != null ? resumeRest() : pauseRest()"><Icon :name="rest.pausedLeftS != null ? 'play' : 'pause'" /></button>

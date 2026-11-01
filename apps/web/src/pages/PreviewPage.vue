@@ -4,7 +4,7 @@
 // skipping or reordering for today only, and this workout's settings.
 import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { duration, estimate, usesWeight, usesReps } from "@motus/shared";
+import { duration, estimate, usesWeight, usesReps, muscleSets } from "@motus/shared";
 import { usePreview, useSettings } from "../api/queries";
 import { api, ApiError, mediaUrl } from "../api/client";
 import { invalidate } from "../api/live";
@@ -17,6 +17,7 @@ import Icon from "../components/Icon.vue";
 import BodyMap from "../components/BodyMap.vue";
 import Sheet from "../components/Sheet.vue";
 import WorkoutSettings from "../components/WorkoutSettings.vue";
+import Menu from "../components/Menu.vue";
 
 const route = useRoute(), router = useRouter();
 const id = computed(() => String(route.params.id));
@@ -35,15 +36,19 @@ const counts = computed(() => {
   return { exercises: active.value.length, sets: sets.filter((x: any) => x.kind !== "warmup").length, warm: sets.filter((x: any) => x.kind === "warmup").length, reps: sets.reduce((a: number, x: any) => a + (x.kind !== "warmup" ? x.reps ?? 0 : 0), 0) };
 });
 const est = computed(() => estimate(active.value.map((e) => ({ sets: e.sets.map((x: any) => ({ kind: x.kind, reps: x.reps, durationS: x.durationS, restS: x.restS })) }))));
-const muscles = computed(() => { const o: Record<string, number> = {}; for (const e of active.value) for (const m of e.exercise?.primaryMuscles ?? []) o[m] = (o[m] ?? 0) + e.sets.length; return o; });
+const muscles = computed(() => muscleSets(active.value.map((e) => ({ primary: e.exercise?.primaryMuscles ?? [], secondary: e.exercise?.secondaryMuscles ?? [], sets: e.sets.length }))));
 const toggleSkip = (rid: string) => { const i = skip.value.indexOf(rid); if (i >= 0) skip.value.splice(i, 1); else skip.value.push(rid); };
 const move = (rid: string, d: number) => { const a = order.value, i = a.indexOf(rid), j = i + d; if (j < 0 || j >= a.length) return; [a[i], a[j]] = [a[j]!, a[i]!]; };
 const setText = (e: any, x: any) => [x.weightKg != null && usesWeight(e.exercise?.tracking) ? fmt.value.w(x.weightKg) : "", x.reps != null && usesReps(e.exercise?.tracking) ? x.reps : "", x.durationS ? fmt.value.clock(x.durationS) : ""].filter((v) => v !== "").join(" × ");
+// "4 × 50 kg × 8", or when the sets differ "4 sets · 42.5–50 kg · 8 reps"
+const span = (xs: number[], f: (v: number) => string | number) => { const lo = Math.min(...xs), hi = Math.max(...xs); return lo === hi ? `${f(lo)}` : `${f(lo)}–${f(hi)}`; };
 const plan = (e: any) => {
   const w = e.sets.filter((x: any) => x.kind !== "warmup");
   const txt = w.map((x: any) => setText(e, x));
-  const same = txt.every((t: string) => t === txt[0]);
-  return same ? `${w.length} × ${txt[0] || "—"}${usesWeight(e.exercise?.tracking) && w[0]?.weightKg != null ? " " + fmt.value.wu : ""}` : txt.join(", ");
+  if (!w.length) return "No sets";
+  if (txt.every((t: string) => t === txt[0])) return `${w.length} × ${txt[0] || "—"}${usesWeight(e.exercise?.tracking) && w[0]?.weightKg != null ? " " + fmt.value.wu : ""}`;
+  const kg = w.map((x: any) => x.weightKg).filter((v: any) => v != null), reps = w.map((x: any) => x.reps).filter((v: any) => v != null);
+  return [`${w.length} sets`, kg.length && usesWeight(e.exercise?.tracking) ? `${span(kg, fmt.value.w)} ${fmt.value.wu}` : "", reps.length ? `${span(reps, (v) => v)} reps` : ""].filter(Boolean).join(" · ");
 };
 async function start(force = false) {
   busy.value = true;
@@ -71,7 +76,7 @@ const changed = computed(() => Object.keys(overrides.value).length);
     </div>
 
     <div class="grid g4">
-      <div class="card hero stat"><div class="lbl"><span class="bi"><Icon name="clock" :size="15" /></span>About</div><div class="val">{{ duration(est.totalS, true) }}</div><div class="sub">{{ duration(est.workS, true) }} lifting · {{ duration(est.restS, true) }} rest{{ p.medianDurationS ? ` · usually ${duration(p.medianDurationS, true)}` : "" }}</div></div>
+      <div class="card hero stat"><div class="lbl"><span class="bi"><Icon name="clock" :size="15" /></span>About</div><div class="val">{{ duration(est.totalS, true) }}</div><div class="sub">{{ duration(est.restS, true) }} of it resting</div></div>
       <div class="card stat"><div class="lbl"><span class="bi"><Icon name="dumbbell" :size="15" /></span>Exercises</div><div class="val">{{ counts.exercises }}</div><div class="sub">{{ skip.length ? `${skip.length} skipped today` : "in this order" }}</div></div>
       <div class="card stat"><div class="lbl"><span class="bi"><Icon name="layers" :size="15" /></span>Sets</div><div class="val">{{ counts.sets }}</div><div class="sub">{{ counts.warm ? `+ ${counts.warm} warm-up` : "working sets" }}</div></div>
       <div class="card stat"><div class="lbl"><span class="bi"><Icon name="refresh" :size="15" /></span>Reps</div><div class="val">{{ counts.reps }}</div><div class="sub">in total</div></div>
@@ -83,26 +88,31 @@ const changed = computed(() => Object.keys(overrides.value).length);
 
     <div class="grid" style="grid-template-columns:minmax(0,1fr) 300px;align-items:start;margin-top:var(--spg)">
       <div class="card">
-        <div v-for="(e, i) in exs" :key="e.routineExerciseId" class="li" :style="skip.includes(e.routineExerciseId) ? { opacity: .45 } : undefined">
-          <span class="tiny" style="width:18px">{{ i + 1 }}</span>
+        <div v-for="(e, i) in exs" :key="e.routineExerciseId" class="li pvx" :class="{ off: skip.includes(e.routineExerciseId) }">
           <div class="thumb click" @click="exerciseSheet = e.exerciseId"><img v-if="e.exercise?.images?.[0]" :src="mediaUrl(e.exercise.images[0])" alt="" loading="lazy" /><Icon v-else name="dumbbell" /></div>
           <div class="grow click" @click="exerciseSheet = e.exerciseId">
-            <div class="t">{{ e.exercise?.name }}<span v-if="e.reminders.length" class="mchip" style="margin-inline-start:6px;color:var(--acc)"><Icon name="bell" :size="11" style="display:inline;vertical-align:-1px" /> {{ e.reminders[0].body }}</span></div>
-            <div class="s" :class="{ acc: e.sets.some((x: any) => x.adjusted) }">Today: {{ plan(e) }}{{ e.sets[0]?.restS ? ` · rest ${fmt.clock(e.sets[0].restS)}` : "" }}</div>
-            <div v-if="e.last" class="s">Last time ({{ ago(e.last.startedAt) }}): {{ e.last.sets.filter((x: any) => x.kind !== "warmup").map((x: any) => setText(e, x)).join(", ") }}</div>
-            <div v-else class="s">First time</div>
-            <div v-if="e.suggestion" class="s acc">{{ e.suggestion }}</div>
+            <div class="t ellipsis">{{ i + 1 }}. {{ e.exercise?.name }}</div>
+            <div v-if="skip.includes(e.routineExerciseId)" class="s">Skipped today</div>
+            <template v-else>
+              <div class="s ellipsis" :class="{ acc: e.sets.some((x: any) => x.adjusted) }">{{ plan(e) }}</div>
+              <div class="s ellipsis">{{ e.sets[0]?.restS ? `Rest ${fmt.clock(e.sets[0].restS)} · ` : "" }}{{ e.last ? `last time ${e.last.sets.filter((x: any) => x.kind !== "warmup").map((x: any) => setText(e, x)).join(", ")}` : "first time" }}</div>
+              <div v-if="e.reminders.length" class="s acc ellipsis"><Icon name="bell" :size="12" style="display:inline;vertical-align:-1px" /> {{ e.reminders[0].body }}</div>
+              <div v-if="e.suggestion" class="s acc">{{ e.suggestion }}</div>
+            </template>
           </div>
-          <div class="col" style="gap:0">
-            <button class="ib sm plain" :aria-label="skip.includes(e.routineExerciseId) ? 'Include' : 'Skip today'" :title="skip.includes(e.routineExerciseId) ? 'Include' : 'Skip today'" @click="toggleSkip(e.routineExerciseId)"><Icon :name="skip.includes(e.routineExerciseId) ? 'plus' : 'skip'" :size="16" /></button>
-          </div>
-          <div class="col" style="gap:0"><button class="ib sm plain" :disabled="i === 0" aria-label="Move up" @click="move(e.routineExerciseId, -1)"><Icon name="up" :size="16" /></button><button class="ib sm plain" :disabled="i === exs.length - 1" aria-label="Move down" @click="move(e.routineExerciseId, 1)"><Icon name="down" :size="16" /></button></div>
+          <Menu :items="[
+            { label: skip.includes(e.routineExerciseId) ? 'Do it today' : 'Skip today', icon: skip.includes(e.routineExerciseId) ? 'plus' : 'skip', run: () => toggleSkip(e.routineExerciseId) },
+            { label: 'Move up', icon: 'up', run: () => move(e.routineExerciseId, -1), hidden: i === 0 },
+            { label: 'Move down', icon: 'down', run: () => move(e.routineExerciseId, 1), hidden: i === exs.length - 1 },
+          ]" label="Today only" />
         </div>
       </div>
       <div class="col" style="gap:var(--spg)">
-        <div class="card"><BodyMap :values="muscles" :height="170" /></div>
-        <div class="card click row" role="button" @click="showSettings = true"><Icon name="settings" class="muted" /><div class="grow"><div style="font-weight:600">Workout settings</div><div class="tiny">{{ changed ? `${changed} changed for this workout` : "Default" }}</div></div><Icon name="right" class="muted" /></div>
-        <div class="card click row" role="button" @click="noteSheet = { targets: [{ type: 'routine', id, label: p.routine.name }] }"><Icon name="note" class="muted" /><div class="grow" style="font-weight:600">Add a note</div></div>
+        <div class="card"><BodyMap :values="muscles" :height="190" legend /></div>
+        <div class="card" style="padding-block:4px">
+          <div class="li click" role="button" @click="showSettings = true"><Icon name="settings" :size="18" class="muted" /><div class="grow"><div class="t">Workout settings</div><div class="s">{{ changed ? `${changed} changed for this workout` : "As usual" }}</div></div><Icon name="right" :size="16" class="muted" /></div>
+          <div class="li click" role="button" @click="noteSheet = { targets: [{ type: 'routine', id, label: p.routine.name }] }"><Icon name="note" :size="18" class="muted" /><div class="grow"><div class="t">Add a note</div></div><Icon name="right" :size="16" class="muted" /></div>
+        </div>
       </div>
     </div>
     <Sheet v-if="showSettings" title="Workout settings" @close="showSettings = false"><WorkoutSettings v-model="overrides" :routine-id="id" /></Sheet>

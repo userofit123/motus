@@ -90,8 +90,8 @@ const menu = computed(() => [
         <div style="font-weight:600;font-size:17px" class="ellipsis">{{ w.name }}</div>
         <div class="clock">{{ clock(elapsed(w)) }}{{ paused ? " · paused" : "" }} · {{ done }}/{{ total }} sets<template v-if="!isPhone"> · {{ fmt.vol(volume) }} · ~{{ Math.round(remainingS / 60) }} min left</template><template v-if="waiting.length"> · {{ waiting.length }} waiting to sync</template></div>
       </div>
-      <Menu :items="menu" />
       <button class="btn" :class="{ o: done === 0 }" @click="finishing = true">Finish</button>
+      <Menu :items="menu" />
     </div>
     <div v-for="m in w.reminders" :key="m.id" class="banner"><Icon name="bell" /><b>{{ m.body }}</b></div>
     <div v-for="n in w.routineNotes?.filter((x) => x.pinned)" :key="n.id" class="banner note"><Icon name="note" />{{ n.body }}</div>

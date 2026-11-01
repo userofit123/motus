@@ -9,6 +9,7 @@ import { useMe } from "../api/queries";
 import Icon from "../components/Icon.vue";
 import Logo from "./Logo.vue";
 import MiniBar from "./MiniBar.vue";
+import { useActive } from "../api/queries";
 import UpdateButton from "./UpdateButton.vue";
 import Menu from "../components/Menu.vue";
 
@@ -47,6 +48,7 @@ const acctMenu = computed(() => [
   { label: me.data.value?.user.displayName || session.user?.username || "Account", icon: "user", run: () => router.push("/settings/account") },
   { label: "Sign out", icon: "logout", run: async () => { await signOut(); } },
 ]);
+const active = useActive();
 </script>
 
 <template>
@@ -63,7 +65,7 @@ const acctMenu = computed(() => [
         <button id="themeBtn" type="button" class="nb" @click.stop="appearanceOpen = !appearanceOpen"><span class="ic"><Icon name="palette" :size="22" /></span>Appearance</button>
       </div>
     </nav>
-    <main><router-view /></main>
+    <main :class="{ withbar: !!active.data.value && route.name !== 'workout' }"><router-view /></main>
     <button v-if="route.name !== 'workout'" class="fab" aria-label="Start" title="Start a workout or activity (N)" @click="startOpen = true"><Icon name="plus" /></button>
     <MiniBar v-if="route.name !== 'workout'" />
   </div>

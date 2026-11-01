@@ -3,7 +3,7 @@
 import { computed, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useQuery } from "@tanstack/vue-query";
-import { duration, muscleName } from "@motus/shared";
+import { duration, muscleName, muscleSets } from "@motus/shared";
 import { useRoutine, useRoutines, useNotes, useReminders, useSchedules, useChange, useSettings } from "../api/queries";
 import { api, mediaUrl } from "../api/client";
 import { invalidate } from "../api/live";
@@ -36,7 +36,7 @@ const showVersions = ref(false);
 const routine = computed<any>(() => r.data.value);
 const myRems = computed(() => (rems.data.value ?? []).filter((m: any) => (m.targetType === "routine" && m.targetId === id.value) || (m.targetType === "exercise" && routine.value?.exercises.some((e: any) => e.exerciseId === m.targetId) && (!m.scopeRoutineId || m.scopeRoutineId === id.value))));
 const mySchedules = computed(() => (schedules.data.value ?? []).filter((s: any) => s.routineId === id.value));
-const muscles = computed(() => { const o: Record<string, number> = {}; for (const e of routine.value?.exercises ?? []) for (const m of e.exercise?.primaryMuscles ?? []) o[m] = (o[m] ?? 0) + e.sets.length; return o; });
+const muscles = computed(() => muscleSets((routine.value?.exercises ?? []).map((e: any) => ({ primary: e.exercise?.primaryMuscles ?? [], secondary: e.exercise?.secondaryMuscles ?? [], sets: e.sets.length }))));
 const setLine = (e: any) => {
   const w = e.sets.filter((s: any) => s.kind !== "warmup");
   const reps = w.map((s: any) => (s.repsMax ? `${s.reps}–${s.repsMax}` : s.durationS ? fmt.value.clock(s.durationS) : s.reps ?? "–"));
@@ -76,7 +76,7 @@ const menu = computed(() => [
     <button class="back" @click="router.push('/routines')"><Icon name="left" :size="16" />Routines</button>
     <div class="ph">
       <div><h1>{{ routine.name }}</h1><div class="sub">{{ routine.exercises.length }} exercises · ~{{ duration(sum?.estimateS ?? 0, true) }} · {{ sum?.lastDoneAt ? `last done ${ago(sum.lastDoneAt)}` : "not done yet" }}</div></div>
-      <div class="acts"><Menu :items="menu" /><button class="btn keep" @click="router.push(`/routines/${id}/start`)"><Icon name="play" :size="16" />Start</button></div>
+      <div class="acts"><button class="btn keep" @click="router.push(`/routines/${id}/start`)"><Icon name="play" :size="16" />Start</button><Menu :items="menu" /></div>
     </div>
     <p v-if="routine.description" class="muted" style="margin:-8px 0 16px;max-width:680px">{{ routine.description }}</p>
     <div v-for="m in myRems" :key="m.id" class="banner"><Icon name="bell" /><div class="grow"><b>{{ m.body }}</b><span class="tiny"> · {{ m.targetName }}</span></div><button class="qb acc" style="padding:2px 8px" @click="remSet.run(m.id, 'done')">Done</button></div>
@@ -96,7 +96,7 @@ const menu = computed(() => [
         </div>
       </div>
       <div class="col" style="gap:var(--spg)">
-        <div class="card"><BodyMap :values="muscles" :height="170" /><div class="chips" style="margin-top:8px;justify-content:center"><span v-for="m in Object.keys(muscles)" :key="m" class="mchip">{{ muscleName(m) }}</span></div></div>
+        <div class="card"><BodyMap :values="muscles" :height="190" legend /><div class="chips" style="margin-top:8px;justify-content:center"><span v-for="m in Object.keys(muscles)" :key="m" class="mchip">{{ muscleName(m) }}</span></div></div>
         <div class="card">
           <div class="row" style="margin-bottom:6px"><b class="grow">Schedule</b><button class="qb acc" style="padding:4px 6px" @click="editSchedule = { routineId: id }"><Icon name="plus" :size="16" /></button></div>
           <div v-if="!mySchedules.length" class="tiny">Not scheduled. Add days to see it in Up next and the calendar, with a reminder.</div>

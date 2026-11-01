@@ -13,6 +13,7 @@ import Ring from "../components/Ring.vue";
 import BodyMap from "../components/BodyMap.vue";
 import Sheet from "../components/Sheet.vue";
 import GoalCard from "../components/GoalCard.vue";
+import ScheduleEditor from "../components/ScheduleEditor.vue";
 
 const router = useRouter();
 const home = useHome();
@@ -22,6 +23,7 @@ const h = computed<any>(() => home.data.value);
 const cards = computed(() => s.value.home.cards);
 const has = (c: string) => cards.value.includes(c);
 const custom = ref(false);
+const planOpen = ref(false);
 const OPT: Record<string, string> = { volume: "Volume this week", walking: "Walking", bodyweight: "Body weight", records: "Recent records", reminders: "Reminders", feed: "Recent activity", muscles: "Sets per muscle this week", achievements: "Achievements" };
 const toggleCard = (c: string) => saveSettings({ home: { cards: has(c) ? cards.value.filter((x) => x !== c) : [...cards.value, c] } });
 
@@ -41,7 +43,7 @@ const condition = computed(() => {
   const r = rested.value;
   if (!h.value?.last) return "Nothing trained yet";
   if (!r) return "";
-  return r.days >= 7 ? `${r.name} rested ${r.days} days` : `Everything trained this week`;
+  return r.days >= 7 ? `${r.name}: ${r.days} days rest` : "All trained";
 });
 const lastBw = computed(() => h.value?.bodyweight?.[0]);
 const bwTrend = computed(() => [...(h.value?.bodyweight ?? [])].reverse().map((x: any) => x.value));
@@ -78,24 +80,19 @@ const dayName = (d: string) => { const t = new Date().toLocaleDateString("sv-SE"
         </div>
         <div class="card stat click" @click="router.push('/stats?tab=muscles')">
           <div class="lbl"><span class="bi"><Icon name="activity" :size="15" /></span>Condition</div>
-          <div class="row" style="align-items:flex-end;flex:1">
-            <div class="grow"><div style="font-weight:600;margin-top:10px;font-size:15px;line-height:1.3">{{ condition }}</div><div class="sub">last 7 days</div></div>
-            <BodyMap :values="h.muscles7" :height="72" style="margin:-6px -6px -10px 0" />
+          <div class="cond">
+            <div class="grow"><div class="ct">{{ condition }}</div><div class="sub">Last 7 days</div></div>
+            <BodyMap :values="h.muscles7" :height="isPhone ? 80 : 78" />
           </div>
         </div>
-      </div>
-
-      <!-- workout in progress -->
-      <div v-if="h.active" class="card click" style="margin-top:var(--spg);border-color:var(--acc)" @click="router.push('/workout')">
-        <div class="row"><span class="thumb" style="background:var(--accc);color:var(--onc)"><Icon name="play" /></span><div class="grow"><div style="font-weight:600">{{ h.active.name }}</div><div class="tiny">Started {{ fmt.time(h.active.startedAt) }}</div></div><button class="btn">Resume</button></div>
       </div>
 
       <div class="grid g2" style="margin-top:0">
         <!-- up next -->
         <section>
-          <div class="sh"><h2>Up next</h2><button class="lnk" @click="router.push('/history')">Calendar <Icon name="right" :size="14" /></button></div>
+          <div class="sh"><h2>Up next</h2><div class="row" style="gap:14px"><button class="lnk" @click="planOpen = true"><Icon name="plus" :size="14" />Plan</button><button class="lnk" @click="router.push('/history')">Calendar <Icon name="right" :size="14" /></button></div></div>
           <div class="card">
-            <div v-if="!h.upNext.length && !h.suggest" class="empty" style="padding:18px"><b>Nothing planned</b>Create a routine and give it days in its schedule.<br /><button class="btn tonal" @click="router.push('/routines')">Routines</button></div>
+            <div v-if="!h.upNext.length && !h.suggest" class="empty" style="padding:18px"><b>Nothing planned</b>Plan a routine for certain days, and it shows here and in the calendar.<br /><button class="btn tonal" @click="planOpen = true">Plan a workout</button></div>
             <div v-else class="list">
               <div v-for="p in h.upNext" :key="p.scheduleId + p.date" class="li">
                 <span class="dot" :style="p.color ? { background: p.color } : undefined" />
@@ -105,7 +102,7 @@ const dayName = (d: string) => { const t = new Date().toLocaleDateString("sv-SE"
               </div>
               <div v-if="!h.upNext.length && h.suggest" class="li">
                 <span class="dot" :style="h.suggest.color ? { background: h.suggest.color } : undefined" />
-                <div class="grow"><div class="t">{{ h.suggest.name }}</div><div class="s">{{ h.suggest.lastDoneAt ? `Done longest ago · ${ago(h.suggest.lastDoneAt)}` : "Not done yet" }}</div></div>
+                <div class="grow"><div class="t">{{ h.suggest.name }}</div><div class="s">Suggested · {{ h.suggest.lastDoneAt ? `last done ${ago(h.suggest.lastDoneAt)}` : "not done yet" }}</div></div>
                 <button class="btn s" @click="router.push(`/routines/${h.suggest.id}/start`)">Start</button>
               </div>
             </div>
@@ -116,7 +113,7 @@ const dayName = (d: string) => { const t = new Date().toLocaleDateString("sv-SE"
           <div class="sh"><h2>Previous workout</h2><button class="lnk" @click="router.push('/history?view=list')">All <Icon name="right" :size="14" /></button></div>
           <div v-if="h.last" class="card click" @click="router.push(`/workouts/${h.last.id}`)">
             <div class="row"><span class="dot" :style="h.last.color ? { background: h.last.color } : undefined" /><b class="grow">{{ h.last.name }}</b><span class="tiny">{{ fmt.date(h.last.startedAt, { weekday: "short", day: "numeric", month: "short" }) }}</span></div>
-            <div class="grid g3" style="margin-top:12px;gap:8px">
+            <div class="grid g3 keep" style="margin-top:12px;gap:8px">
               <div><div class="lbl">Duration</div><div style="font-weight:600;font-size:18px">{{ fmt.dur(h.last.durationS, true) }}</div></div>
               <div><div class="lbl">Sets</div><div style="font-weight:600;font-size:18px">{{ h.last.setCount }}</div></div>
               <div><div class="lbl">Volume</div><div style="font-weight:600;font-size:18px">{{ fmt.vol(h.last.volumeKg) }}</div></div>
@@ -146,13 +143,14 @@ const dayName = (d: string) => { const t = new Date().toLocaleDateString("sv-SE"
             <Icon :name="x.kind === 'workout' ? 'dumbbell' : x.type === 'walk' ? 'walk' : 'activity'" :size="18" class="muted" /><div class="grow"><div class="t">{{ x.name || x.type }}</div><div class="s">{{ fmt.date(x.startedAt, { weekday: "short", day: "numeric", month: "short" }) }}</div></div>
             <span class="tiny">{{ x.kind === "workout" ? fmt.dur(x.durationS, true) : x.distanceM ? fmt.dist(x.distanceM, 1) : fmt.dur(x.durationS, true) }}</span></div></div></div></section>
         <section v-if="has('muscles')"><div class="sh"><h2>Sets per muscle · 7 days</h2></div>
-          <div class="card"><div class="row" style="align-items:flex-start"><BodyMap :values="h.muscles7" :height="150" /><div class="grow col" style="gap:4px"><div v-for="[m, n] in Object.entries(h.muscles7).sort((a: any, b: any) => b[1] - a[1]).slice(0, 7)" :key="m" class="row tiny"><span class="grow" style="color:var(--tx)">{{ muscleName(m) }}</span>{{ Math.round(Number(n) * 10) / 10 }}</div></div></div></div></section>
+          <div class="card"><div class="row" style="align-items:flex-start"><BodyMap :values="h.muscles7" :height="160" legend /><div class="grow col" style="gap:4px"><div v-for="[m, n] in Object.entries(h.muscles7).sort((a: any, b: any) => b[1] - a[1]).slice(0, 7)" :key="m" class="row tiny"><span class="grow" style="color:var(--tx)">{{ muscleName(m) }}</span>{{ Math.round(Number(n) * 10) / 10 }}</div></div></div></div></section>
       </div>
 
       <div class="center" style="margin-top:28px"><button class="qb" @click="custom = true"><Icon name="layers" :size="16" />Customise home</button></div>
     </template>
     <div v-else-if="home.isLoading.value" class="grid g4"><div v-for="i in 4" :key="i" class="card stat" style="opacity:.4" /></div>
 
+    <ScheduleEditor v-if="planOpen" :schedule="{ rule: 'once' }" @close="planOpen = false" />
     <Sheet v-if="custom" title="Customise home" @close="custom = false">
       <p class="tiny" style="margin-bottom:8px">The summary, up next, your previous workout and goals are always here. Add more if you want them.</p>
       <label class="tgl"><div class="grow"><div class="t">Goals</div></div><span class="tg"><input type="checkbox" :checked="has('goals')" @change="toggleCard('goals')" /></span></label>

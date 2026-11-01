@@ -107,7 +107,7 @@ const menu = computed(() => [
           <img v-if="e.images[1]" class="b" :src="mediaUrl(e.images[1])" alt="" loading="lazy" />
         </div>
         <a v-if="e.videoUrl" :href="e.videoUrl" target="_blank" rel="noopener" class="qb acc" style="margin-top:8px"><Icon name="play" />Watch a video</a>
-        <div class="card" style="margin-top:var(--spg)"><BodyMap :values="{}" :highlight="e.primaryMuscles" :secondary="e.secondaryMuscles" :height="180" /></div>
+        <div class="card" style="margin-top:var(--spg)"><BodyMap :values="{}" :highlight="e.primaryMuscles" :secondary="e.secondaryMuscles" :height="200" legend /></div>
       </div>
       <div>
         <div v-if="sessions[0]" class="card" style="margin-bottom:var(--spg)">

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // Backup & restore (requirement 20): automatic backups on or off, how often, how many to keep, where, encrypted or not;
 // a backup now; and restoring one (replacing everything, or merging in what's missing).
+import { useFmt } from "../../core/format";
 import { ref } from "vue";
 import { useSettings, saveSettings } from "../../api/queries";
 import { api } from "../../api/client";
@@ -35,7 +36,7 @@ async function restore(ev: Event) {
   try {
     const data = await readBackup(file, () => prompt("This backup is encrypted", { text: "Enter its password." }));
     const pv = await api.post("/import/preview", { data });
-    const mode = await choose(`Restore backup from ${new Date(pv.exportedAt).toLocaleString()}?`, [
+    const mode = await choose(`Restore backup from ${`${fmt.value.date(pv.exportedAt)} ${fmt.value.time(pv.exportedAt)}`}?`, [
       { label: "Merge: add what's missing, keep everything you have", value: "merge" },
       { label: "Replace: make Motus exactly like the backup", value: "replace" },
     ], `${pv.counts.workouts ?? 0} workouts, ${pv.counts.routines ?? 0} routines, ${pv.counts.activities ?? 0} activities, ${pv.counts.goals ?? 0} goals.`);
@@ -48,6 +49,7 @@ async function restore(ev: Event) {
     invalidate(["*"]); toast("Restored");
   } catch (e) { toastError(e); }
 }
+const fmt = useFmt();
 </script>
 
 <template>
@@ -62,7 +64,7 @@ async function restore(ev: Event) {
           <button v-if="N?.openBackupFolder" class="qb" @click="N.openBackupFolder()">Open</button></div>
         <label class="tgl"><div class="grow"><div class="t">Encrypt with a password</div><div class="s">Asked each time a backup is made</div></div><span class="tg"><input type="checkbox" :checked="s.backup.encrypt" @change="set({ encrypt: ($event.target as HTMLInputElement).checked })" /></span></label>
       </template>
-      <div class="li"><div class="grow"><div class="t">Last backup</div><div class="s">{{ log.lastAt ? `${new Date(log.lastAt).toLocaleString()} · ${log.lastName}` : "None yet" }}<span v-if="log.error" class="neg"> · {{ log.error }}</span></div></div><button class="btn s" :disabled="busy" @click="now">Back up now</button></div>
+      <div class="li"><div class="grow"><div class="t">Last backup</div><div class="s">{{ log.lastAt ? `${`${fmt.date(log.lastAt)} ${fmt.time(log.lastAt)}`} · ${log.lastName}` : "None yet" }}<span v-if="log.error" class="neg"> · {{ log.error }}</span></div></div><button class="btn s" :disabled="busy" @click="now">Back up now</button></div>
     </div>
     <div class="card">
       <div class="li"><div class="grow"><div class="t">Restore</div><div class="s">From a .motusbackup file or a Motus JSON export. You choose to merge or replace.</div></div><label class="btn o s" style="cursor:pointer">Choose file<input type="file" accept=".motusbackup,.json" hidden @change="restore" /></label></div>

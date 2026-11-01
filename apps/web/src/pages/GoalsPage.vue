@@ -87,7 +87,7 @@ const display = (g: Goal, v: number) => { const m = (metrics.data.value ?? []).f
     <div class="grid g3"><GoalCard v-for="g in list" :key="g.id" :goal="g" @click="open = g" /></div>
 
     <Sheet v-if="open" :title="open.title" @close="open = null">
-      <template #head><b>{{ open.title }}</b><Menu :items="[{ label: open.status === 'archived' ? 'Make active again' : 'Archive', icon: 'download', run: () => { setStatus.run(open!.id, open!.status === 'archived' ? 'active' : 'archived'); open = null; } }, { label: 'Delete', icon: 'trash', danger: true, run: () => del(open!) }]" /></template>
+      <template #head><b>{{ open.title }}</b><Menu :items="[{ label: open.status === 'archived' ? 'Make active again' : 'Archive', icon: 'archive', run: () => { setStatus.run(open!.id, open!.status === 'archived' ? 'active' : 'archived'); open = null; } }, { label: 'Delete', icon: 'trash', danger: true, run: () => del(open!) }]" /></template>
       <div class="row" style="margin-bottom:12px"><div class="val" style="font-size:30px">{{ open.progress?.label }}</div></div>
       <div class="pbar" :class="{ ok: open.progress?.done }"><i :style="{ width: (open.progress?.pct ?? 0) * 100 + '%' }" /></div>
       <div class="tiny" style="margin-top:6px">{{ open.status === "achieved" ? `Achieved ${fmt.date(open.achievedAt)}` : open.progress?.pace }}{{ open.deadline ? ` · deadline ${fmt.date(open.deadline, { day: "numeric", month: "short", year: "numeric" })}` : "" }} · since {{ fmt.date(open.startDate, { day: "numeric", month: "short", year: "numeric" }) }}</div>

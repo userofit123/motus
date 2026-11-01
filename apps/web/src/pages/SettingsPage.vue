@@ -12,6 +12,7 @@ import { appearanceOpen } from "../core/ui";
 import { confirm, prompt } from "../core/ask";
 import { toast, toastError } from "../core/toast";
 import { askNotificationPermission } from "../workout/native";
+import { ago } from "../core/format";
 import Icon from "../components/Icon.vue";
 import BackupSection from "../components/settings/BackupSection.vue";
 import DataSection from "../components/settings/DataSection.vue";
@@ -24,7 +25,7 @@ import { native } from "../core/device";
 const route = useRoute(), router = useRouter();
 const me = useMe();
 const s = useSettings();
-const sec = computed(() => String(route.params.section ?? (isPhone.value ? "" : "account")));
+const sec = computed(() => String(route.params.section || (isPhone.value ? "" : "account")));
 const SECTIONS = computed(() => [
   ["account", "Account", "user"], ...((globalThis as any).motusNative?.accounts ? [["accounts", "Accounts on this device", "layers"]] : []), ["units", "Units & formats", "scale"], ["workout", "Workout", "dumbbell"], ["features", "Features", "sparkle"],
   ["appearance", "Appearance", "palette"], ["notifications", "Notifications", "bell"], ["backup", "Backup & restore", "download"], ["data", "Export & import", "upload"],
@@ -98,7 +99,7 @@ async function allowNotifications() { await askNotificationPermission(); notifPe
             <div class="li"><div class="grow"><div class="t">Sign out</div><div class="s">From this device</div></div><button class="qb acc" @click="signOut()">Sign out</button></div>
           </div>
           <div class="sh first"><h2>Signed-in devices</h2><button class="lnk" @click="api.post('/auth/logout-others').then(() => sessions.refetch())">Sign out the others</button></div>
-          <div class="card"><div v-for="x in sessions.data.value ?? []" :key="x.id" class="li"><Icon :name="x.platform === 'android' ? 'device' : 'server'" :size="18" class="muted" /><div class="grow"><div class="t">{{ x.deviceName || x.platform }}{{ x.current ? " · this device" : "" }}</div><div class="s">Last used {{ new Date(x.lastSeenAt).toLocaleString() }}</div></div><button v-if="!x.current" class="qb" @click="endSession(x.id)">Sign out</button></div></div>
+          <div class="card"><div v-for="x in sessions.data.value ?? []" :key="x.id" class="li"><Icon :name="x.platform === 'android' ? 'device' : 'server'" :size="18" class="muted" /><div class="grow"><div class="t">{{ x.deviceName || x.platform }}{{ x.current ? " · this device" : "" }}</div><div class="s">{{ x.current ? "Now" : `Last used ${ago(x.lastSeenAt)}` }}</div></div><button v-if="!x.current" class="qb" @click="endSession(x.id)">Sign out</button></div></div>
           <div class="card"><div class="li"><div class="grow"><div class="t">Your body</div><div class="s">Used for strength standards and calories (optional)</div></div></div>
             <div class="frow"><div class="fld"><label>Height (cm)</label><input type="number" :value="s.profile.heightCm ?? ''" @change="set({ profile: { heightCm: Number(($event.target as HTMLInputElement).value) || null } })" /></div>
               <div class="fld"><label>Year of birth</label><input type="number" :value="s.profile.birthYear ?? ''" @change="set({ profile: { birthYear: Number(($event.target as HTMLInputElement).value) || null } })" /></div>
@@ -130,7 +131,7 @@ async function allowNotifications() { await askNotificationPermission(); notifPe
             <div class="li"><div class="grow"><div class="t">Rest between sets</div><div class="s">When an exercise has no rest of its own</div></div><button class="qb acc" @click="editRest('restBetweenSetsS')">{{ sec2(w.restBetweenSetsS) }}</button></div>
             <div class="li"><div class="grow"><div class="t">Rest after an exercise</div><div class="s">The longer break before the next exercise</div></div><button class="qb acc" @click="editRest('restAfterExerciseS')">{{ sec2(w.restAfterExerciseS) }}</button></div>
             <div class="li"><div class="grow"><div class="t">Weekly goal</div><div class="s">Workouts a week, for your streak</div></div><input type="number" min="1" max="14" :value="s.weeklyGoal" style="width:80px" @change="set({ weeklyGoal: Number(($event.target as HTMLInputElement).value) || 3 })" /></div>
-            <div class="li"><div class="grow"><div class="t">Last time's numbers come from</div></div><select :value="w.prefillScope" style="width:auto" @change="set({ workout: { prefillScope: ($event.target as HTMLSelectElement).value } })"><option value="any">The last time, in any routine</option><option value="routine">The last time in the same routine</option></select></div>
+            <div class="li"><div class="grow"><div class="t">Last time's numbers come from</div></div><select :value="w.prefillScope" style="width:auto" @change="set({ workout: { prefillScope: ($event.target as HTMLSelectElement).value } })"><option value="any">Any routine</option><option value="routine">The same routine</option></select></div>
             <div class="li"><div class="grow"><div class="t">After a workout, update its routine</div></div><select :value="w.updateRoutine" style="width:auto" @change="set({ workout: { updateRoutine: ($event.target as HTMLSelectElement).value } })"><option value="ask">Ask</option><option value="always">Always</option><option value="never">Never</option></select></div>
           </div>
           <div class="card"><label v-for="[k, l, d] in TOGGLES" :key="k" class="tgl"><div class="grow"><div class="t">{{ l }}</div><div v-if="d" class="s">{{ d }}</div></div><span class="tg"><input type="checkbox" :checked="w[k] as boolean" @change="set({ workout: { [k]: ($event.target as HTMLInputElement).checked } })" /></span></label></div>

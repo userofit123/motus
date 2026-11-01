@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // Integrations: personal API tokens (scripts, dashboards, Home Assistant), the address for automatic GPX uploads
 // (FitoTrack, OpenTracks), and copying workouts for an AI assistant.
+import { useFmt } from "../../core/format";
 import { useQuery } from "@tanstack/vue-query";
 import { api } from "../../api/client";
 import { prompt, confirm } from "../../core/ask";
@@ -18,6 +19,7 @@ async function create() {
 }
 async function revoke(id: string) { await api.del(`/auth/sessions/${id}`); sessions.refetch(); toast("Token removed"); }
 const origin = location.origin;
+const fmt = useFmt();
 </script>
 
 <template>
@@ -25,7 +27,7 @@ const origin = location.origin;
     <template v-if="s.features.apiTokens">
       <div class="sh first"><h2>API tokens</h2><button class="lnk" @click="create">New token</button></div>
       <div class="card">
-        <div v-for="t in (sessions.data.value ?? []).filter((x: any) => x.platform === 'api')" :key="t.id" class="li"><div class="grow"><div class="t">{{ t.deviceName }}</div><div class="s">Created {{ new Date(t.createdAt).toLocaleDateString() }}</div></div><button class="qb danger" @click="revoke(t.id)">Remove</button></div>
+        <div v-for="t in (sessions.data.value ?? []).filter((x: any) => x.platform === 'api')" :key="t.id" class="li"><div class="grow"><div class="t">{{ t.deviceName }}</div><div class="s">Created {{ fmt.date(t.createdAt) }}</div></div><button class="qb danger" @click="revoke(t.id)">Remove</button></div>
         <div v-if="!(sessions.data.value ?? []).some((x: any) => x.platform === 'api')" class="tiny">No tokens yet. Every page of Motus is backed by the same API under {{ origin }}/api.</div>
       </div>
       <div class="card"><div class="t" style="font-weight:600">Automatic GPX uploads</div>

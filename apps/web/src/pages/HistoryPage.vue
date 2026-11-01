@@ -11,6 +11,7 @@ import { isPhone } from "../core/device";
 import { activitySheet } from "../core/ui";
 import Icon from "../components/Icon.vue";
 import Sheet from "../components/Sheet.vue";
+import ScheduleEditor from "../components/ScheduleEditor.vue";
 
 const route = useRoute(), router = useRouter();
 const s = useSettings();
@@ -21,10 +22,13 @@ const month = ref(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
 const first = computed(() => s.value.firstDay);
 const grid = computed(() => {
   const m = month.value, start = new Date(m);
-  start.setDate(1 - ((m.getDay() - first.value + 7) % 7));
-  return Array.from({ length: 42 }, (_, i) => { const d = new Date(start); d.setDate(start.getDate() + i); return d; });
+  const lead = (m.getDay() - first.value + 7) % 7;
+  start.setDate(1 - lead);
+  // only the weeks this month touches (5 or 6, sometimes 4)
+  const cells = Math.ceil((lead + new Date(m.getFullYear(), m.getMonth() + 1, 0).getDate()) / 7) * 7;
+  return Array.from({ length: cells }, (_, i) => { const d = new Date(start); d.setDate(start.getDate() + i); return d; });
 });
-const range = computed(() => ({ from: localYmd(grid.value[0]!), to: localYmd(grid.value[41]!) }));
+const range = computed(() => ({ from: localYmd(grid.value[0]!), to: localYmd(grid.value.at(-1)!) }));
 const cal = useCalendar(range);
 const today = localYmd(new Date());
 const byDay = computed(() => {
@@ -54,6 +58,13 @@ const monthStats = computed(() => {
   const w = all.filter((x) => x.kind === "workout" && x.status === "completed"), a = all.filter((x) => x.kind === "activity");
   return { workouts: w.length, activities: a.length, timeS: [...w, ...a].reduce((t, x) => t + (x.durationS ?? 0), 0), days: inMonth.filter(([, v]) => v.some((x) => x.kind !== "planned")).length };
 });
+const planDay = ref<string | null>(null);
+const n = (k: number, one: string, many = one + "s") => `${k} ${k === 1 ? one : many}`;
+const summary = computed(() => {
+  const m = monthStats.value;
+  if (!m.days) return "Nothing yet this month";
+  return [n(m.workouts, "workout"), m.activities ? n(m.activities, "activity", "activities") : "", fmt.value.dur(m.timeS, true)].filter(Boolean).join(" · ");
+});
 async function skipPlanned(x: any) { await api.post(`/schedules/${x.scheduleId}/exception`, { date: x.date }); invalidate(["calendar", "home"]); }
 // list view
 const listWorkouts = useWorkouts(computed(() => ({ limit: 300 })));
@@ -67,19 +78,19 @@ const listGroups = computed(() => { const m = new Map<string, any[]>(); for (con
 <template>
   <div class="page wide">
     <div class="ph">
-      <div><h1>History</h1><div class="sub">{{ view === "calendar" ? month.toLocaleDateString(undefined, { month: "long", year: "numeric" }) : `${list.length} sessions` }}</div></div>
+      <div><h1>History</h1><div class="sub">{{ view === "calendar" ? summary : n(list.length, "session") }}</div></div>
       <div class="acts">
         <div class="seg"><button :class="{ on: view === 'calendar' }" @click="view = 'calendar'">Calendar</button><button :class="{ on: view === 'list' }" @click="view = 'list'">List</button></div>
       </div>
     </div>
 
     <template v-if="view === 'calendar'">
-      <div class="row" style="margin-bottom:12px">
-        <button class="ib sm" aria-label="Previous month" @click="shift(-1)"><Icon name="left" :size="18" /></button>
-        <button class="ib sm" aria-label="Next month" @click="shift(1)"><Icon name="right" :size="18" /></button>
-        <button class="qb" @click="month = new Date(new Date().getFullYear(), new Date().getMonth(), 1); sel = today">Today</button>
-        <div class="grow" />
-        <span class="tiny">{{ monthStats.workouts }} workouts · {{ monthStats.activities }} activities · {{ fmt.dur(monthStats.timeS, true) }} · {{ monthStats.days }} active days</span>
+      <div class="calnav">
+        <button class="ib sm plain" aria-label="Previous month" @click="shift(-1)"><Icon name="left" :size="18" /></button>
+        <b class="grow">{{ month.toLocaleDateString(undefined, { month: "long", year: "numeric" }) }}</b>
+        <button v-if="localYmd(month).slice(0, 7) !== today.slice(0, 7)" class="qb" @click="month = new Date(new Date().getFullYear(), new Date().getMonth(), 1); sel = today">Today</button>
+        <button class="ib sm plain" aria-label="Next month" @click="shift(1)"><Icon name="right" :size="18" /></button>
+        <template v-if="!isPhone"><div class="grow" /><button class="qb acc" @click="planDay = today"><Icon name="plus" :size="16" />Plan a workout</button></template>
       </div>
       <div class="cal">
         <div v-for="d in DOW" :key="d" class="dh">{{ isPhone ? d![0] : d }}</div>
@@ -95,9 +106,9 @@ const listGroups = computed(() => { const m = new Map<string, any[]>(); for (con
         </div>
       </div>
       <div v-if="isPhone && sel" style="margin-top:14px">
-        <div class="sh first"><h2>{{ fmt.date(sel, { weekday: "long", day: "numeric", month: "long" }) }}</h2></div>
+        <div class="sh first"><h2>{{ fmt.date(sel, { weekday: "long", day: "numeric", month: "long" }) }}</h2><button v-if="sel >= today" class="lnk" @click="planDay = sel"><Icon name="plus" :size="14" />Plan</button></div>
         <div class="card">
-          <div v-if="!(byDay.get(sel) ?? []).length" class="tiny">Nothing on this day.</div>
+          <div v-if="!(byDay.get(sel) ?? []).length" class="tiny">{{ sel >= today ? "Nothing planned. Use Plan to put a routine on this day." : "Nothing on this day." }}</div>
           <div class="list"><div v-for="x in byDay.get(sel) ?? []" :key="x.id ?? x.scheduleId" class="li click" @click="open(x)">
             <Icon :name="icon(x)" :size="18" :style="{ color: x.color ?? 'var(--acc)' }" /><div class="grow"><div class="t" :style="x.missed ? { opacity: .5 } : undefined">{{ label(x) }}</div><div class="s">{{ x.kind === "planned" ? (x.missed ? "Missed" : "Planned") : `${fmt.time(x.startedAt)} · ${fmt.dur(x.durationS, true)}${x.distanceM ? " · " + fmt.dist(x.distanceM, 1) : ""}` }}</div></div><Icon name="right" class="muted" /></div></div>
         </div>
@@ -124,9 +135,11 @@ const listGroups = computed(() => { const m = new Map<string, any[]>(); for (con
         <button v-if="x.kind === 'planned' && !x.missed" class="qb" @click="skipPlanned(x)">Skip</button>
       </div></div>
       <template #foot>
-        <button class="btn o" @click="router.push(`/log?date=${dayOpen}`); dayOpen = null">Log a workout</button>
-        <button class="btn o" @click="activitySheet = {}; dayOpen = null">Log an activity</button>
+        <button v-if="dayOpen >= today" class="btn o" @click="planDay = dayOpen; dayOpen = null">Plan a workout</button>
+        <button v-if="dayOpen <= today" class="btn o" @click="router.push(`/log?date=${dayOpen}`); dayOpen = null">Log a workout</button>
+        <button v-if="dayOpen <= today" class="btn o" @click="activitySheet = {}; dayOpen = null">Log an activity</button>
       </template>
     </Sheet>
+    <ScheduleEditor v-if="planDay" :schedule="{ rule: 'once', startDate: planDay }" @close="planDay = null" />
   </div>
 </template>

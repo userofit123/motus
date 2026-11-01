@@ -8,6 +8,7 @@ import { mediaUrl } from "../api/client";
 import { ago } from "../core/format";
 import Icon from "../components/Icon.vue";
 import ExerciseEditor from "../components/ExerciseEditor.vue";
+import Sheet from "../components/Sheet.vue";
 
 const router = useRouter();
 const all = useExercises();
@@ -24,25 +25,30 @@ const list = computed(() => {
       : Number(b.favourite) - Number(a.favourite) || (b.timesDone ?? 0) - (a.timesDone ?? 0) || a.name.localeCompare(b.name));
 });
 const shown = ref(60);
+// muscle groups stay one tap away; everything else lives behind Filters so the page stays calm
+const filtersOpen = ref(false);
+const filterCount = computed(() => Number(!!equip.value) + Number(!!only.value) + Number(sort.value !== "used"));
+const clearFilters = () => { equip.value = ""; only.value = ""; sort.value = "used"; };
 </script>
 
 <template>
   <div class="page">
     <div class="ph"><div><h1>Exercises</h1><div class="sub">{{ all.data.value?.length ?? 0 }} in the library</div></div>
       <div class="acts"><button class="btn keep" @click="creating = true"><Icon name="plus" :size="18" />New exercise</button></div></div>
-    <div class="row wrap" style="margin-bottom:10px">
-      <div class="search grow" style="max-width:420px;min-width:200px"><Icon name="search" :size="18" /><input v-model="q" placeholder="Search exercises" @input="shown = 60" /></div>
-      <select v-model="sort" style="width:auto"><option value="used">Most used</option><option value="recent">Recently done</option><option value="name">A–Z</option></select>
+    <div class="row" style="margin-bottom:10px">
+      <div class="search grow" style="max-width:480px"><Icon name="search" :size="18" /><input v-model="q" placeholder="Search exercises" @input="shown = 60" /></div>
+      <button class="ib" aria-label="Filters" title="Filters" @click="filtersOpen = true"><Icon name="filter" /><span v-if="filterCount" class="badge">{{ filterCount }}</span></button>
     </div>
-    <div class="chips" style="margin-bottom:6px">
-      <button class="fchip" :class="{ on: !group }" @click="group = ''">All muscles</button>
+    <div class="chips hscroll" style="margin-bottom:16px">
+      <button class="fchip" :class="{ on: !group }" @click="group = ''">All</button>
       <button v-for="g in GROUPS" :key="g.id" class="fchip" :class="{ on: group === g.id }" @click="group = group === g.id ? '' : g.id">{{ g.name }}</button>
     </div>
-    <div class="chips" style="margin-bottom:16px">
-      <button v-for="[k, l] in [['fav', 'Favourites'], ['done', 'Done before'], ['mine', 'My own']]" :key="k" class="fchip" :class="{ on: only === k }" @click="only = only === k ? '' : (k as any)">{{ l }}</button>
-      <span style="width:8px" />
-      <button v-for="eq in EQUIPMENT" :key="eq" class="fchip" :class="{ on: equip === eq }" style="text-transform:capitalize" @click="equip = equip === eq ? '' : eq">{{ eq }}</button>
-    </div>
+    <Sheet v-if="filtersOpen" title="Filters" @close="filtersOpen = false">
+      <div class="fld"><label>Show</label><div class="seg block"><button v-for="[k, l] in [['', 'All'], ['fav', 'Favourites'], ['done', 'Done before'], ['mine', 'My own']]" :key="k" :class="{ on: only === k }" @click="only = k as any">{{ l }}</button></div></div>
+      <div class="fld"><label>Sort</label><div class="seg block"><button v-for="[k, l] in [['used', 'Most used'], ['recent', 'Recent'], ['name', 'A–Z']]" :key="k" :class="{ on: sort === k }" @click="sort = k as any">{{ l }}</button></div></div>
+      <div class="fld"><label>Equipment</label><div class="chips"><button class="fchip" :class="{ on: !equip }" @click="equip = ''">Any</button><button v-for="eq in EQUIPMENT" :key="eq" class="fchip" :class="{ on: equip === eq }" style="text-transform:capitalize" @click="equip = equip === eq ? '' : eq">{{ eq }}</button></div></div>
+      <template #foot><button class="btn o" :disabled="!filterCount" @click="clearFilters">Clear</button><button class="btn" @click="filtersOpen = false">Show {{ list.length }}</button></template>
+    </Sheet>
     <div class="grid gauto">
       <div v-for="e in list.slice(0, shown)" :key="e.id" class="card click tight row" @click="router.push(`/exercises/${e.id}`)">
         <div class="thumb lg"><img v-if="e.images?.[0]" :src="mediaUrl(e.images[0])" alt="" loading="lazy" /><Icon v-else name="dumbbell" /></div>

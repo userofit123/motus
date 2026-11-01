@@ -24,6 +24,10 @@
   --c4: #7cb342;
   --c5: #8e24aa;
   --c6: #546e7a;
+  /* the body map's three strengths: main muscles, helpers, a little */
+  --heat1: #e5484d;
+  --heat2: #f2b33d;
+  --heat3: #4c8bf5;
   --font: Inter, "Segoe UI", Roboto, system-ui, sans-serif;
   --r: 22px;
   --r-sm: 12px;

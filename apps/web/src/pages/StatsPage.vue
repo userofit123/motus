@@ -83,7 +83,7 @@ const measures = computed(() => { const m = new Map<string, any[]>(); for (const
 
 <template>
   <div class="page wide">
-    <div class="ph"><div><h1>Stats</h1><div class="sub">{{ RANGES.find((r) => r[0] === rk)![1] }}</div></div>
+    <div class="ph"><div><h1>Stats</h1></div>
       <div class="acts"><select v-model="rk" style="width:auto"><option v-for="[k, l] in RANGES" :key="k" :value="k">{{ l }}</option></select></div></div>
     <div class="tabs"><button v-for="[k, l] in TABS" :key="k" :class="{ on: tab === k }" @click="tab = k!">{{ l }}</button></div>
     <div v-if="!d" class="empty">Loading…</div>
@@ -96,7 +96,7 @@ const measures = computed(() => { const m = new Map<string, any[]>(); for (const
         <div class="card stat"><div class="lbl"><span class="bi"><Icon name="walk" :size="15" /></span>Activities</div><div class="val">{{ T!.activities }}</div><div class="sub">{{ fmt.dist(T!.distM, 1) }}</div></div>
       </div>
       <div class="grid g2" style="margin-top:var(--spg)">
-        <div class="card"><div class="lbl" style="margin-bottom:8px">Workouts per week · goal {{ s.weeklyGoal }}</div><BarChart :bars="weeks.slice(-16).map((w) => ({ label: wlabel(w.week).split(' ')[0]!, value: w.workouts, dim: w.workouts < s.weeklyGoal }))" :height="170" /></div>
+        <div class="card"><div class="lbl" style="margin-bottom:8px">Workouts per week · goal {{ s.weeklyGoal }}</div><BarChart :bars="weeks.slice(-16).map((w) => ({ label: wlabel(w.week).split(' ')[0]!, value: w.workouts, dim: w.workouts < s.weeklyGoal }))" :goal="s.weeklyGoal" :height="170" /></div>
         <div class="card"><div class="lbl" style="margin-bottom:8px">Consistency · last 6 months</div>
           <div class="heat"><i v-for="c in heat" :key="c.k" :title="`${c.k}: ${c.n}`" :style="c.future ? { opacity: 0 } : c.n ? { background: `color-mix(in srgb, var(--acc) ${Math.min(100, 45 + c.n * 30)}%, var(--s2))` } : undefined" /></div>
           <div class="grid g2" style="margin-top:14px;gap:12px"><div><div class="tiny" style="margin-bottom:4px">By weekday</div><BarChart :bars="dow" :height="90" /></div><div><div class="tiny" style="margin-bottom:4px">By time of day</div><BarChart :bars="hours" :height="90" /></div></div>
@@ -110,7 +110,7 @@ const measures = computed(() => { const m = new Map<string, any[]>(); for (const
       <div class="grid g2">
         <div v-for="r in d.routines" :key="r.routineId" class="card click" @click="router.push(`/routines/${r.routineId}`)">
           <div class="row"><span class="dot" :style="r.color ? { background: r.color } : undefined" /><b class="grow">{{ r.name }}</b><span class="tiny">{{ r.times }}×</span></div>
-          <div class="grid g3" style="margin:10px 0;gap:8px">
+          <div class="grid g3 keep" style="margin:10px 0;gap:8px">
             <div><div class="lbl">Average</div><div style="font-weight:600">{{ fmt.dur(r.avgDurationS, true) }}</div></div>
             <div><div class="lbl">Planned</div><div style="font-weight:600">{{ r.estimateS ? fmt.dur(r.estimateS, true) : "—" }}</div></div>
             <div><div class="lbl">Skipped</div><div style="font-weight:600">{{ Math.round(r.skipRate * 100) }}%</div></div>
@@ -121,22 +121,22 @@ const measures = computed(() => { const m = new Map<string, any[]>(); for (const
     </template>
 
     <template v-else-if="tab === 'exercises'">
-      <div class="row wrap" style="margin-bottom:12px"><div class="search" style="max-width:320px;flex:1"><Icon name="search" :size="18" /><input v-model="exq" placeholder="Find an exercise" /></div>
+      <div class="row wrap" style="margin-bottom:12px"><div class="search" style="flex:1 1 220px;max-width:360px"><Icon name="search" :size="18" /><input v-model="exq" placeholder="Find an exercise" /></div>
         <div class="seg"><button :class="{ on: exSort === 'times' }" @click="exSort = 'times'">Most done</button><button :class="{ on: exSort === 'change' }" @click="exSort = 'change'">Most improved</button><button :class="{ on: exSort === 'stalled' }" @click="exSort = 'stalled'">Stalled</button></div></div>
       <div class="card"><div class="list">
         <div v-for="e in exList" :key="e.exerciseId" class="li click" @click="router.push(`/exercises/${e.exerciseId}?tab=charts`)">
           <div class="grow"><div class="t">{{ e.name }} <span v-if="e.stalled" class="mchip" title="No progress in the last 4 sessions">stalled</span></div><div class="s">{{ e.times }}× · last {{ fmt.date(e.lastAt) }}{{ e.bestE1rm ? ` · best 1RM ${fmt.wu_(e.bestE1rm)}` : "" }}</div></div>
-          <div style="width:120px;height:34px;position:relative"><Sparkline :values="e.trend.map((t: any) => t.e1rm || t.reps)" style="width:100%;height:100%" /></div>
+          <div class="exspark"><Sparkline :values="e.trend.map((t: any) => t.e1rm || t.reps)" style="width:100%;height:100%" /></div>
           <div class="r tiny" style="width:56px" :class="e.change > 0.005 ? 'pos' : e.change < -0.005 ? 'neg' : ''">{{ e.change ? `${e.change > 0 ? "+" : ""}${Math.round(e.change * 100)}%` : "" }}</div>
         </div>
       </div></div>
-      <template v-if="skipped.length"><h2>Most skipped</h2><div class="card"><div v-for="e in skipped" :key="e.exerciseId" class="row tiny" style="padding:4px 0"><span class="grow" style="color:var(--tx)">{{ e.name }}</span>skipped {{ e.skipped }}×</div></div></template>
+      <template v-if="skipped.length"><div class="sh"><h2>Most skipped</h2></div><div class="card"><div v-for="e in skipped" :key="e.exerciseId" class="row tiny" style="padding:4px 0"><span class="grow" style="color:var(--tx)">{{ e.name }}</span>skipped {{ e.skipped }}×</div></div></template>
     </template>
 
     <template v-else-if="tab === 'muscles'">
       <div class="grid g2">
-        <div class="card"><div class="lbl" style="margin-bottom:8px">Sets per muscle in this period</div><BodyMap :values="d.muscles" :height="230" />
-          <div class="grid g2" style="margin-top:12px;gap:6px"><div v-for="[m, n] in Object.entries(d.muscles).sort((a: any, b: any) => b[1] - a[1])" :key="m" class="row tiny"><span class="grow" style="color:var(--tx)">{{ muscleName(m) }}</span>{{ Math.round(Number(n)) }}</div></div></div>
+        <div class="card"><div class="lbl" style="margin-bottom:8px">Sets per muscle in this period</div><BodyMap :values="d.muscles" :height="240" legend />
+          <div class="grid g2 keep" style="margin-top:12px;gap:6px 28px"><div v-for="[m, n] in Object.entries(d.muscles).sort((a: any, b: any) => b[1] - a[1])" :key="m" class="row tiny"><span class="grow" style="color:var(--tx)">{{ muscleName(m) }}</span>{{ Math.round(Number(n)) }}</div></div></div>
         <div class="col" style="gap:var(--spg)">
           <div class="card"><div class="lbl" style="margin-bottom:10px">Working sets this week · target {{ WEEKLY_SET_RANGE[0] }}–{{ WEEKLY_SET_RANGE[1] }} per group</div><BarChart :bars="groupWeek" horizontal :band="WEEKLY_SET_RANGE" /></div>
           <div class="card"><div class="lbl" style="margin-bottom:10px">Average per training week</div><BarChart :bars="groupAvg" horizontal /></div>

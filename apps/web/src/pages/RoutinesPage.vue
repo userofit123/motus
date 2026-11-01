@@ -70,7 +70,7 @@ const items = (r: RoutineSummary) => [
   { label: "New routine based on this", icon: "layers", run: async () => { const n = await prompt("Name the new routine", { value: r.name + " v2" }); if (n) { const x = await api.post("/routines", { fromRoutineId: r.id, name: n }); invalidate(["routines"]); router.push(`/routines/${x.id}/edit`); } } },
   { label: r.pinned ? "Unpin" : "Pin to top", icon: "pin", run: () => upd.run(r.id, { pinned: !r.pinned }) },
   { label: "Move to folder", icon: "folder", run: () => moveTo(r) },
-  { label: r.archived ? "Restore from archive" : "Archive", icon: "download", run: () => upd.run(r.id, { archived: !r.archived }) },
+  { label: r.archived ? "Restore from archive" : "Archive", icon: "archive", run: () => upd.run(r.id, { archived: !r.archived }) },
   { label: "Delete", icon: "trash", danger: true, sep: true, run: () => del(r) },
 ];
 const tgroups = computed(() => { const m = new Map<string, any[]>(); for (const t of templates.data.value ?? []) m.set(t.group, [...(m.get(t.group) ?? []), t]); return [...m]; });
@@ -81,12 +81,12 @@ const tgroups = computed(() => { const m = new Map<string, any[]>(); for (const 
     <div class="ph">
       <div><h1>Routines</h1><div class="sub">{{ routines.data.value?.filter((r) => !r.archived).length ?? 0 }} routines</div></div>
       <div class="acts">
-        <Menu :items="[{ label: 'New folder', icon: 'folder', run: newFolder }, { label: 'From a template', icon: 'layers', run: () => (fromTemplate = true) }, { label: showArchived ? 'Hide archived' : 'Show archived', icon: 'download', run: () => (showArchived = !showArchived) }]" />
         <button class="btn keep" @click="router.push('/routines/new/edit')"><Icon name="plus" :size="18" />New routine</button>
+        <Menu :items="[{ label: 'New folder', icon: 'folder', run: newFolder }, { label: 'From a template', icon: 'layers', run: () => (fromTemplate = true) }, { label: showArchived ? 'Hide archived' : 'Show archived', icon: 'archive', run: () => (showArchived = !showArchived) }]" />
       </div>
     </div>
     <div v-if="(routines.data.value?.length ?? 0) > 6" class="search" style="margin-bottom:6px;max-width:360px"><Icon name="search" :size="18" /><input v-model="q" placeholder="Search routines" /></div>
-    <div v-if="showArchived" class="banner note"><Icon name="download" />Showing archived routines<button class="qb acc" style="margin-inline-start:auto;padding:0 6px" @click="showArchived = false">Done</button></div>
+    <div v-if="showArchived" class="banner note"><Icon name="archive" />Showing archived routines<button class="qb acc" style="margin-inline-start:auto;padding:0 6px" @click="showArchived = false">Done</button></div>
 
     <div v-if="routines.data.value && !list.length && !showArchived" class="card empty">
       <Icon name="routines" :size="34" /><b>No routines yet</b>A routine is a saved plan: exercises, sets, reps, weights and rest times.
@@ -98,16 +98,16 @@ const tgroups = computed(() => { const m = new Map<string, any[]>(); for (const 
         <Menu v-if="g.id && g.id !== 'pinned'" :items="[{ label: 'Rename', icon: 'edit', run: () => renameFolder(g as any) }, { label: 'Delete folder', icon: 'trash', danger: true, run: () => delFolder(g as any) }]" /></div>
       <div v-if="!g.items.length" class="tiny" style="padding:4px 0 8px">Empty. Move a routine here from its ⋮ menu.</div>
       <div class="grid gauto">
-        <div v-for="r in g.items" :key="r.id" class="card click" @click="router.push(`/routines/${r.id}`)">
+        <div v-for="r in g.items" :key="r.id" class="card click rcard" @click="router.push(`/routines/${r.id}`)">
           <div class="row" style="align-items:flex-start">
             <span class="dot" :style="{ marginTop: '6px', background: r.color ?? undefined }" />
-            <div class="grow"><div style="font-weight:600;font-size:15.5px">{{ r.name }}</div><div class="tiny" style="margin-top:2px">{{ r.exerciseCount }} exercises · {{ r.setCount }} sets · ~{{ duration(r.estimateS, true) }}</div></div>
+            <div class="grow"><div style="font-weight:600;font-size:15.5px">{{ r.name }}</div><div class="tiny" style="margin-top:2px">{{ r.exerciseCount }} exercises · ~{{ duration(r.estimateS, true) }}</div></div>
             <span @click.stop><Menu :items="items(r)" /></span>
           </div>
           <div class="tiny ellipsis" style="margin:10px 0 0">{{ r.exerciseNames.join(" · ") || "No exercises yet" }}</div>
           <div class="chips" style="margin-top:8px"><span v-for="m in r.muscles.slice(0, 4)" :key="m" class="mchip">{{ muscleName(m) }}</span></div>
-          <div class="row" style="margin-top:12px">
-            <span class="tiny grow">{{ r.lastDoneAt ? `${ago(r.lastDoneAt)} · ${r.timesDone}×` : "Not done yet" }}<template v-if="r.pendingReminders"> · <Icon name="bell" :size="12" style="display:inline;vertical-align:-1px" /> {{ r.pendingReminders }}</template></span>
+          <div class="row" style="margin-top:auto;padding-top:12px">
+            <span class="tiny grow">{{ r.lastDoneAt ? `Last done ${ago(r.lastDoneAt)} · ${r.timesDone}×` : "Not done yet" }}<template v-if="r.pendingReminders"> · <Icon name="bell" :size="12" style="display:inline;vertical-align:-1px" /> {{ r.pendingReminders }}</template></span>
             <button class="btn o s" @click.stop="router.push(`/routines/${r.id}/start`)"><Icon name="play" :size="14" />Start</button>
           </div>
         </div>

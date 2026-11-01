@@ -123,7 +123,6 @@ const RATE = ["Awful", "Meh", "OK", "Good", "Great"];
       <div class="col" style="gap:var(--spg)">
         <div v-for="(e, i) in w.exercises" :key="e.id" class="card">
           <div class="row" style="margin-bottom:8px">
-            <span class="tiny" style="width:16px">{{ i + 1 }}</span>
             <div class="thumb sm click" @click="exerciseSheet = e.exerciseId"><img v-if="e.exercise?.images?.[0]" :src="mediaUrl(e.exercise.images[0])" alt="" /><Icon v-else name="dumbbell" :size="16" /></div>
             <div class="grow click" @click="exerciseSheet = e.exerciseId"><div style="font-weight:600" :style="e.status === 'skipped' ? { textDecoration: 'line-through', opacity: .6 } : undefined">{{ e.exercise?.name }}</div>
               <div class="tiny">{{ e.status === "skipped" ? `Skipped${e.skipReason ? " · " + e.skipReason : ""}` : verdict(e.id)?.verdict === "better" ? "Better than last time" : verdict(e.id)?.verdict === "worse" ? "Below last time" : verdict(e.id)?.verdict === "first" ? "First time" : "Same as last time" }}</div></div>
@@ -137,7 +136,7 @@ const RATE = ["Awful", "Meh", "OK", "Good", "Great"];
                 <td><span class="sk" :class="{ w: x.kind === 'warmup', d: x.kind === 'drop', f: x.kind === 'failure' }">{{ x.kind === "warmup" ? "W" : x.kind === "drop" ? "D" : x.kind === "failure" ? "F" : e.sets.slice(0, j + 1).filter((y: any) => y.kind !== "warmup").length }}</span></td>
                 <template v-if="!editing">
                   <td style="text-align:start;font-weight:500">{{ setText(e, x) }}<span v-if="x.rpe" class="tiny"> @ {{ x.rpe }}</span></td>
-                  <td class="tiny">{{ x.restActualS != null ? `rested ${fmt.clock(x.restActualS)}` : "" }}{{ x.restPlannedS != null && x.restActualS != null ? ` / ${fmt.clock(x.restPlannedS)}` : "" }}</td>
+                  <td class="tiny" style="text-align:end;white-space:nowrap" :title="x.restPlannedS != null ? `Planned rest ${fmt.clock(x.restPlannedS)}` : undefined">{{ x.restActualS != null ? `Rest ${fmt.clock(x.restActualS)}` : "" }}</td>
                   <td style="text-align:end"><span v-for="p in x.pr" :key="p" class="pr" style="margin-inline-start:4px">{{ p === "e1rm" ? "1RM PR" : p === "weight" ? "Heaviest" : p === "reps" ? "Rep PR" : p === "volume" ? "Volume PR" : "PR" }}</span></td>
                 </template>
                 <template v-else>
@@ -158,7 +157,7 @@ const RATE = ["Awful", "Meh", "OK", "Good", "Great"];
         <button v-if="editing" class="btn tonal block" @click="adding = true"><Icon name="plus" />Add exercise</button>
       </div>
       <div class="col" style="gap:var(--spg)">
-        <div class="card"><div class="lbl" style="margin-bottom:6px">Muscles worked</div><BodyMap :values="rep.muscles" :height="170" />
+        <div class="card"><div class="lbl" style="margin-bottom:6px">Muscles worked</div><BodyMap :values="rep.muscles" :height="200" legend />
           <div class="col" style="gap:3px;margin-top:8px"><div v-for="[m, n] in Object.entries(rep.muscles).sort((a: any, b: any) => b[1] - a[1])" :key="m" class="row tiny"><span class="grow" style="color:var(--tx)">{{ muscleName(m) }}</span>{{ n }} sets</div></div></div>
         <div v-if="rep.previous" class="card click" @click="router.push(`/workouts/${rep.previous.id}`)"><div class="lbl">Last time ({{ fmt.date(rep.previous.startedAt) }})</div>
           <div class="tiny" style="margin-top:6px">{{ fmt.dur(rep.previous.durationS, true) }} · {{ fmt.vol(rep.previous.volumeKg) }}</div>
