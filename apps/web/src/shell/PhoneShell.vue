@@ -34,19 +34,19 @@ const stop = router.beforeEach((to, from) => {
 });
 onBeforeUnmount(stop);
 
-// on a tab's own page, a sideways swipe goes to the next or previous tab
+// on a tab's own page, a sideways swipe anywhere (cards or empty space) goes to the next or previous tab
 let x0 = 0, y0 = 0, t0 = 0, ok = false;
 function ts(e: TouchEvent) {
   const t = e.touches[0]!;
   x0 = t.clientX; y0 = t.clientY; t0 = Date.now();
   ok = e.touches.length === 1 && ORDER.includes(route.name as string) && !sheetIsOpen()
-    && !(e.target as HTMLElement).closest("input, textarea, select, .hscroll, .chips, .seg, .tabs, .leaflet-container, .cal, .chart, [data-noswipe]")
+    && !(e.target as HTMLElement).closest(".dock, input, textarea, select, .hscroll, .chips, .seg, .tabs, .leaflet-container, .cal, .chart, [data-noswipe]")
     && x0 > 24 && x0 < innerWidth - 24; // the screen edges belong to the phone's own back gesture
 }
 function te(e: TouchEvent) {
   if (!ok) return;
   const t = e.changedTouches[0]!, dx = t.clientX - x0, dy = t.clientY - y0;
-  if (Math.abs(dx) < 70 || Math.abs(dx) < Math.abs(dy) * 2 || Date.now() - t0 > 600) return;
+  if (Math.abs(dx) < 60 || Math.abs(dx) < Math.abs(dy) * 1.3 || Date.now() - t0 > 900) return; // a natural thumb swipe drifts a little
   const next = ORDER[ORDER.indexOf(route.name as string) + (dx < 0 ? 1 : -1)];
   const tab = TABS.find((x) => x.name === next);
   if (tab?.to) router.push(tab.to);
@@ -54,8 +54,8 @@ function te(e: TouchEvent) {
 </script>
 
 <template>
-  <div class="pshell" :class="{ withbar: !!active.data.value && !hideBar }" :style="hideBar ? { paddingBottom: 0 } : undefined">
-    <div class="pmain" @touchstart.passive="ts" @touchend.passive="te"><router-view v-slot="{ Component, route: r }"><Transition :name="motion" mode="out-in"><component :is="Component" :key="pageKey(r)" /></Transition></router-view></div>
+  <div class="pshell" @touchstart.passive="ts" @touchend.passive="te" :class="{ withbar: !!active.data.value && !hideBar }" :style="hideBar ? { paddingBottom: 0 } : undefined">
+    <div class="pmain"><router-view v-slot="{ Component, route: r }"><Transition :name="motion" mode="out-in"><component :is="Component" :key="pageKey(r)" /></Transition></router-view></div>
     <div v-if="!hideBar" class="dock">
       <MiniBar />
       <div class="tabbar">

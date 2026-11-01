@@ -8,6 +8,7 @@ import { goalsWithProgress, streakWeeks } from "./goals";
 import { plannedBetween } from "./schedule";
 import { workoutSummaries } from "./workouts";
 import { routineSummaries } from "./routines";
+import { suggestions } from "./suggest";
 
 /** Every completed workout in a range, with its totals and sets per muscle. */
 async function workoutRows(q: Sql, from: string, to: string) {
@@ -137,11 +138,7 @@ export function statsRoutes(r: Router) {
     const planned = (await plannedBetween(ctx.q, today, end));
     const doneToday = rows.filter((x) => ymd(new Date(new Date(x.startedAt).getTime() - tzMin * 60000)) === today).map((x) => x.routineId);
     const upNext = planned.filter((p) => !(p.date === today && p.routineId && doneToday.includes(p.routineId))).slice(0, 5);
-    // a suggestion when nothing is planned: the pinned or recent routine done longest ago
-    const routines = (await routineSummaries(ctx.q, ctx.userId)).filter((x) => !x.archived);
-    const suggest = !upNext.length && routines.length
-      ? [...routines].filter((x) => x.exerciseCount > 0).sort((a, b) => (a.lastDoneAt ?? "").localeCompare(b.lastDoneAt ?? ""))[0] ?? null
-      : null;
+    const suggest = await suggestions(ctx.q, await routineSummaries(ctx.q, ctx.userId), now);
     const goals = (await goalsWithProgress(ctx)).filter((g) => g.status === "active").slice(0, 3);
     const reminders = (await ctx.q.query(
       `SELECT m.*, coalesce(e.name, r.name) AS target_name FROM reminders m LEFT JOIN exercises e ON m.target_type='exercise' AND e.id = m.target_id

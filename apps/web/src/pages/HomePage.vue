@@ -30,18 +30,14 @@ const toggleCard = (c: string) => saveSettings({ home: { cards: has(c) ? cards.v
 
 const today = new Date();
 const greeting = computed(() => { const hr = today.getHours(); return hr < 5 ? "Good night" : hr < 12 ? "Good morning" : hr < 18 ? "Good afternoon" : "Good evening"; });
-const statusLine = computed(() => {
-  if (!h.value) return "";
-  if (!h.value.last) return "No workouts yet. Press + to start your first one.";
-  return `Last workout: ${h.value.last.name} · ${ago(h.value.last.startedAt)}`;
-});
 const weeks = computed<any[]>(() => h.value?.weeks ?? []);
 const tw = computed(() => h.value?.thisWeek ?? { workouts: 0, timeS: 0, volumeKg: 0, walkM: 0 });
 const lw = computed(() => h.value?.lastWeek ?? { workouts: 0, timeS: 0, volumeKg: 0, walkM: 0 });
 // how many muscle groups were worked in the last 7 days
 const groups = computed<any[]>(() => h.value?.groupDays ?? []);
 const worked = computed(() => groups.value.filter((g) => g.days != null && g.days < 7).length);
-const condition = computed(() => !h.value?.last ? "Nothing worked yet" : worked.value === groups.value.length ? "All muscle groups" : `${worked.value} of ${groups.value.length} muscle groups`);
+const condition = computed(() => !h.value?.last ? "Nothing worked yet" : worked.value === groups.value.length ? "Every muscle group" : `${worked.value} of ${groups.value.length} muscle groups`);
+const notWorked = computed(() => groups.value.filter((g) => g.days == null || g.days >= 7).map((g) => g.name));
 // minutes until there is an hour's worth, then hours and minutes
 const hm = (sec: number) => { const m = Math.round(sec / 60); return m < 60 ? [[m, "min"]] : m % 60 ? [[Math.floor(m / 60), "h"], [m % 60, "min"]] : [[m / 60, "h"]]; };
 const lastBw = computed(() => h.value?.bodyweight?.[0]);
@@ -54,7 +50,7 @@ const dayName = (d: string) => { const t = new Date().toLocaleDateString("sv-SE"
 <template>
   <div class="page">
     <div class="ph">
-      <div><h1>{{ isPhone ? greeting : "Home" }}</h1><div class="sub">{{ fmt.dateLong(today.toISOString()) }}<template v-if="statusLine"> · {{ statusLine }}</template></div></div>
+      <div><h1>{{ isPhone ? greeting : "Home" }}</h1><div class="sub">{{ fmt.dateLong(today.toISOString()) }}</div></div>
     </div>
     <template v-if="h">
       <!-- the four stat cards, like the screenshot's top row -->
@@ -71,7 +67,7 @@ const dayName = (d: string) => { const t = new Date().toLocaleDateString("sv-SE"
           <div class="sub">{{ h.streak ? `in a row with ${h.weekGoal}+ workouts` : `Weeks in a row with ${h.weekGoal}+ workouts` }}</div>
           <Sparkline :values="weeks.map((w) => Math.min(1, w.workouts / Math.max(1, h.weekGoal)))" />
         </div>
-        <div class="card stat">
+        <div class="card stat click" @click="router.push('/stats')">
           <div class="lbl"><span class="bi"><Icon name="clock" :size="15" /></span>Time this week</div>
           <div class="val"><template v-for="([v, u], i) in hm(tw.timeS)" :key="i">{{ i ? " " : "" }}{{ v }}<small>{{ u }}</small></template></div>
           <div class="sub">vs {{ fmt.dur(lw.timeS, true) }} last week</div>
@@ -80,7 +76,7 @@ const dayName = (d: string) => { const t = new Date().toLocaleDateString("sv-SE"
         <div class="card stat click" @click="router.push('/stats?tab=muscles')">
           <div class="lbl"><span class="bi"><Icon name="activity" :size="15" /></span>Muscles</div>
           <div class="cond">
-            <div class="grow"><div class="ct">{{ condition }}</div><div v-if="h.last" class="sub">worked in the last 7 days</div></div>
+            <div class="grow"><div class="ct">{{ condition }}</div><div v-if="h.last" class="sub">worked in the last 7 days<template v-if="notWorked.length"> · not yet: {{ notWorked.join(", ") }}</template></div></div>
             <BodyMap :values="h.muscles7" :height="isPhone ? 80 : 78" />
           </div>
         </div>
@@ -91,7 +87,7 @@ const dayName = (d: string) => { const t = new Date().toLocaleDateString("sv-SE"
         <section>
           <div class="sh"><h2>Up next</h2><div class="row" style="gap:14px"><button class="lnk" @click="planOpen = { rule: 'once' }"><Icon name="plus" :size="14" />Plan</button><button class="lnk" @click="router.push('/history')">Calendar <Icon name="right" :size="14" /></button></div></div>
           <div class="card">
-            <div v-if="!h.upNext.length && !h.suggest" class="empty" style="padding:18px"><b>Nothing planned</b>Plan a routine for certain days, and it shows here and in the calendar.<br /><button class="btn tonal" @click="planOpen = { rule: 'once' }">Plan a workout</button></div>
+            <div v-if="!h.upNext.length" class="empty" style="padding:18px"><b>Nothing planned</b>Plan a routine for certain days, and it shows here and in the calendar.<br /><button class="btn tonal" @click="planOpen = { rule: 'once' }">Plan a workout</button></div>
             <div v-else class="list">
               <div v-for="p in h.upNext" :key="p.scheduleId + p.date" class="li">
                 <span class="dot" :style="p.color ? { background: p.color } : undefined" />
@@ -99,14 +95,23 @@ const dayName = (d: string) => { const t = new Date().toLocaleDateString("sv-SE"
                 <button v-if="p.routineId" class="btn s" :class="{ o: dayName(p.date) !== 'Today' }" @click="start(p)">Start</button>
                 <button v-else class="btn s o" @click="activitySheet = { type: p.activityType }">Log</button>
               </div>
-              <div v-if="!h.upNext.length && h.suggest" class="li">
-                <span class="dot" :style="h.suggest.color ? { background: h.suggest.color } : undefined" />
-                <div class="grow"><div class="t">{{ h.suggest.name }}</div><div class="s">Suggested: {{ h.suggest.lastDoneAt ? `your routine done longest ago (${ago(h.suggest.lastDoneAt)})` : "a routine you haven't done yet" }}</div></div>
-                <button class="btn s o" @click="planOpen = { rule: 'once', routineId: h.suggest.id }">Plan</button>
-                <button class="btn s" @click="router.push(`/routines/${h.suggest.id}/start`)">Start</button>
-              </div>
             </div>
           </div>
+        </section>
+        <!-- suggestions: worked out from your order of routines and the muscles you've worked -->
+        <section v-if="h.suggest.length">
+          <div class="sh"><h2>Suggested</h2></div>
+          <div class="card"><div class="list">
+            <div v-for="x in h.suggest" :key="x.kind + (x.routineId ?? x.muscle)" class="li">
+              <span class="bi sg"><Icon :name="x.kind === 'order' ? 'routines' : x.kind === 'oldest' ? 'clock' : 'activity'" :size="16" /></span>
+              <div class="grow"><div class="t">{{ x.title }}</div><div class="s">{{ x.reason }}</div></div>
+              <template v-if="x.routineId">
+                <button class="ib sm" aria-label="Plan" title="Plan" @click="planOpen = { rule: 'once', routineId: x.routineId }"><Icon name="calendar" :size="18" /></button>
+                <button class="btn s o" @click="router.push(`/routines/${x.routineId}/start`)">Start</button>
+              </template>
+              <button v-else class="btn s o" @click="router.push(`/exercises?muscle=${encodeURIComponent(x.muscle)}`)">Exercises</button>
+            </div>
+          </div></div>
         </section>
         <!-- previous workout -->
         <section>
@@ -152,7 +157,7 @@ const dayName = (d: string) => { const t = new Date().toLocaleDateString("sv-SE"
 
     <ScheduleEditor v-if="planOpen" :schedule="planOpen" @close="planOpen = null" />
     <Sheet v-if="targetOpen" title="Weekly target" @close="targetOpen = false">
-      <p class="tiny" style="margin-bottom:12px">How many workouts you aim for each week. Each week you reach it adds to your streak.</p>
+      <p class="tiny" style="margin-bottom:12px">How many workouts you aim for each week. Each week you reach it adds to your streak. This is separate from Goals, where you can set more specific ones.</p>
       <div class="seg block"><button v-for="n in 7" :key="n" :class="{ on: s.weeklyGoal === n }" @click="saveSettings({ weeklyGoal: n })">{{ n }}</button></div>
       <template #foot><button class="btn" @click="targetOpen = false">Done</button></template>
     </Sheet>

@@ -1,8 +1,8 @@
 <script setup lang="ts">
 // The exercise library: search, filter by muscle group and equipment, your own exercises, favourites and most used first.
 import { computed, ref } from "vue";
-import { useRouter } from "vue-router";
-import { GROUPS, EQUIPMENT, muscleName } from "@motus/shared";
+import { useRoute, useRouter } from "vue-router";
+import { GROUPS, EQUIPMENT, muscleName, groupOf } from "@motus/shared";
 import { useExercises } from "../api/queries";
 import { mediaUrl } from "../api/client";
 import { ago } from "../core/format";
@@ -10,9 +10,10 @@ import Icon from "../components/Icon.vue";
 import ExerciseEditor from "../components/ExerciseEditor.vue";
 import Sheet from "../components/Sheet.vue";
 
-const router = useRouter();
+const router = useRouter(), route = useRoute();
 const all = useExercises();
-const q = ref(""), group = ref(""), equip = ref(""), only = ref<"" | "mine" | "done" | "fav">(""), sort = ref<"used" | "name" | "recent">("used");
+// ?muscle=biceps (from a Home suggestion) opens on that muscle's group
+const q = ref(""), group = ref(route.query.muscle ? groupOf(String(route.query.muscle)) : ""), equip = ref(""), only = ref<"" | "mine" | "done" | "fav">(""), sort = ref<"used" | "name" | "recent">("used");
 const creating = ref(false);
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ");
 const list = computed(() => {
