@@ -1,20 +1,24 @@
-import Fastify from "fastify";
-import pg from "pg";
+// Starts the server: PostgreSQL from DATABASE_URL, or PGlite in DATA_DIR when there is none (desktop "this computer" mode).
+import path from "node:path";
+import fs from "node:fs";
+import { buildApp } from "./app";
 
 const PORT = Number(process.env.PORT ?? 8080);
-const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
-const app = Fastify({ logger: true });
+const HOST = process.env.HOST ?? "0.0.0.0";
+const DATA_DIR = process.env.DATA_DIR ?? path.resolve(process.cwd(), "data");
+fs.mkdirSync(DATA_DIR, { recursive: true });
 
-// Health of the server and its database, shown on the development page.
-app.get("/api/health", async () => {
-  let db: { ok: boolean; version?: string; error?: string };
-  try {
-    const { rows } = await pool.query<{ v: string }>("SELECT current_setting('server_version') AS v");
-    db = { ok: true, version: rows[0]?.v };
-  } catch (e) {
-    db = { ok: false, error: (e as Error).message };
-  }
-  return { ok: true, app: "motus", node: process.version, db };
+const db = process.env.DATABASE_URL
+  ? (await import("@motus/engine/pg")).pgDb(process.env.DATABASE_URL)
+  : await (await import("@motus/engine/pglite")).pgliteDb(path.join(DATA_DIR, "db"));
+
+const { app } = await buildApp({
+  db,
+  dataDir: DATA_DIR,
+  webDir: process.env.WEB_DIR,
+  imagesDir: process.env.IMAGES_DIR ?? path.resolve(import.meta.dirname, "../../../packages/exercise-data/images"),
+  logger: process.env.LOG !== "0",
 });
+await app.listen({ host: HOST, port: PORT });
 
-await app.listen({ host: "0.0.0.0", port: PORT });
+for (const sig of ["SIGINT", "SIGTERM"] as const) process.on(sig, async () => { await app.close(); await db.close(); process.exit(0); });

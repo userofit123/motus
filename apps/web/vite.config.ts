@@ -15,6 +15,6 @@ export default defineConfig({
     // Polling notices edits that replace the file (editors, sed -i), which file events in a container can miss.
     watch: process.env.WATCH_POLL ? { usePolling: true, interval: 300 } : undefined,
     hmr: hmrHost ? { host: hmrHost, protocol: "wss", clientPort: 443 } : undefined,
-    proxy: { "/api": process.env.API_URL ?? "http://localhost:8080" },
+    proxy: { "/api": process.env.API_URL ?? "http://localhost:8080", "/exercise-images": process.env.API_URL ?? "http://localhost:8080" },
   },
 });
