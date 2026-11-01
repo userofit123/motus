@@ -140,7 +140,7 @@ export function statsRoutes(r: Router) {
     // a suggestion when nothing is planned: the pinned or recent routine done longest ago
     const routines = (await routineSummaries(ctx.q, ctx.userId)).filter((x) => !x.archived);
     const suggest = !upNext.length && routines.length
-      ? [...routines].filter((x) => x.timesDone > 0 || x.pinned).sort((a, b) => (a.lastDoneAt ?? "").localeCompare(b.lastDoneAt ?? ""))[0] ?? routines[0]
+      ? [...routines].filter((x) => x.exerciseCount > 0).sort((a, b) => (a.lastDoneAt ?? "").localeCompare(b.lastDoneAt ?? ""))[0] ?? null
       : null;
     const goals = (await goalsWithProgress(ctx)).filter((g) => g.status === "active").slice(0, 3);
     const reminders = (await ctx.q.query(

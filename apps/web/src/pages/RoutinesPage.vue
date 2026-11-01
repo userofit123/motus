@@ -105,7 +105,7 @@ const tgroups = computed(() => { const m = new Map<string, any[]>(); for (const 
           <div class="chips" style="margin-top:8px"><span v-for="m in r.muscles.slice(0, 4)" :key="m" class="mchip">{{ muscleName(m) }}</span></div>
           <div class="row" style="margin-top:12px">
             <span class="tiny grow">{{ r.lastDoneAt ? `${ago(r.lastDoneAt)} · ${r.timesDone}×` : "Not done yet" }}<template v-if="r.pendingReminders"> · <Icon name="bell" :size="12" style="display:inline;vertical-align:-1px" /> {{ r.pendingReminders }}</template></span>
-            <button class="btn s" @click.stop="router.push(`/routines/${r.id}/start`)"><Icon name="play" :size="14" />Start</button>
+            <button class="btn o s" @click.stop="router.push(`/routines/${r.id}/start`)"><Icon name="play" :size="14" />Start</button>
           </div>
         </div>
       </div>

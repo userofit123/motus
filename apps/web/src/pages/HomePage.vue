@@ -105,7 +105,7 @@ const dayName = (d: string) => { const t = new Date().toLocaleDateString("sv-SE"
               </div>
               <div v-if="!h.upNext.length && h.suggest" class="li">
                 <span class="dot" :style="h.suggest.color ? { background: h.suggest.color } : undefined" />
-                <div class="grow"><div class="t">{{ h.suggest.name }}</div><div class="s">Done longest ago · {{ h.suggest.lastDoneAt ? ago(h.suggest.lastDoneAt) : "not done yet" }}</div></div>
+                <div class="grow"><div class="t">{{ h.suggest.name }}</div><div class="s">{{ h.suggest.lastDoneAt ? `Done longest ago · ${ago(h.suggest.lastDoneAt)}` : "Not done yet" }}</div></div>
                 <button class="btn s" @click="router.push(`/routines/${h.suggest.id}/start`)">Start</button>
               </div>
             </div>

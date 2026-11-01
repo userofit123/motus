@@ -343,3 +343,6 @@ html.phone .map { height: 240px; }
 html.phone #pop { left: 8px; right: 8px; width: auto; bottom: calc(80px + var(--sb)); max-height: calc(100vh - 120px); }
 /* the switch inside a .tgl row: Money Manager's .tg switch without its row border */
 .tgl .tg, .li .tg { border: 0; padding: 0; flex: none; }
+/* on the phone, two- and three-column sections stack (stat cards stay two across) */
+html.phone .grid.g2, html.phone .grid.g3 { grid-template-columns: minmax(0, 1fr); }
+html.phone .grid.g4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
