@@ -1,0 +1,80 @@
+# Development environment: watch the app at https://motus.local while it is being built.
+#   docker compose -f docker-compose.dev.yml up -d
+# The shared Caddy proxy (another project) serves https://motus.local and forwards to the "motus-web"
+# container on the external "proxy" network. Nothing here publishes ports 80/443, so other sites are untouched.
+# Dev-only database password: the database sits on an internal network with no published port.
+name: motus
+
+x-node: &node
+  image: node:22-alpine
+  user: "1000:1000"
+  working_dir: /repo
+  volumes:
+    - ./:/repo
+  environment: &node-env
+    COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+    npm_config_store_dir: /repo/.pnpm-store
+    CHOKIDAR_USEPOLLING: "1"   # notice every change in the shared folder, however the file was saved
+    WATCH_POLL: "1"
+
+services:
+  install:   # installs packages once per "up", then exits
+    <<: *node
+    command: corepack pnpm install
+    networks: [dev]
+
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: motus
+      POSTGRES_PASSWORD: motus-dev
+      POSTGRES_DB: motus
+    volumes:
+      - db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U motus -d motus"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [backend]
+
+  server:
+    <<: *node
+    restart: unless-stopped
+    command: corepack pnpm --filter @motus/server dev
+    environment:
+      <<: *node-env
+      DATABASE_URL: postgres://motus:motus-dev@db:5432/motus
+      PORT: "8080"
+    depends_on:
+      install: { condition: service_completed_successfully }
+      db: { condition: service_healthy }
+    networks: [backend, dev]
+
+  web:
+    <<: *node
+    container_name: motus-web   # the name Caddy forwards to
+    restart: unless-stopped
+    command: corepack pnpm --filter @motus/web dev
+    environment:
+      <<: *node-env
+      API_URL: http://server:8080
+      VITE_HMR_HOST: motus.local
+    ports:
+      - "127.0.0.1:8790:5173"   # direct access without the proxy: http://127.0.0.1:8790
+    depends_on:
+      install: { condition: service_completed_successfully }
+      server: { condition: service_started }
+    networks: [dev, proxy]
+
+volumes:
+  db: {}
+
+networks:
+  backend:
+    internal: true   # the database is never reachable from outside
+  dev: {}            # not internal: package installs need the internet
+  proxy:
+    external: true
+    name: proxy

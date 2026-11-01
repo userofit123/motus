@@ -9,3 +9,5 @@ goals and stats. Runs fully on your device, or syncs an account with your own se
 
 **Status:** planning. See [PLAN.md](PLAN.md) for the full design and [RESEARCH.md](RESEARCH.md) for
 the research behind it.
+
+Development: [docs/development.md](docs/development.md) (live dev environment at https://motus.local).

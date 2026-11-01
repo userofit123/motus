@@ -32,3 +32,6 @@ test-results/
 Thumbs.db
 .claude/worktrees/
 .claude/settings.local.json
+
+# package store used by the dev containers
+.pnpm-store/

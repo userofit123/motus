@@ -1,0 +1,10 @@
+{
+  "name": "motus",
+  "private": true,
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "dev:server": "pnpm --filter @motus/server dev",
+    "dev:web": "pnpm --filter @motus/web dev",
+    "typecheck": "pnpm -r typecheck"
+  }
+}

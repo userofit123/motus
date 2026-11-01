@@ -1,0 +1,20 @@
+{
+  "name": "@motus/server",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "nodemon --legacy-watch --watch src --ext ts,json --exec tsx src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "fastify": "5.2.0",
+    "pg": "8.13.1"
+  },
+  "devDependencies": {
+    "@types/node": "22.10.2",
+    "@types/pg": "8.11.10",
+    "nodemon": "3.1.9",
+    "tsx": "4.19.2",
+    "typescript": "5.7.2"
+  }
+}
