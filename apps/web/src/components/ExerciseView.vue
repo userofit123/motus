@@ -42,6 +42,13 @@ const points = computed(() => sessions.value.map((s) => {
   const y = chart.value === "e1rm" ? s.e1rm : chart.value === "max" ? s.maxWeightKg : chart.value === "volume" ? s.volumeKg : chart.value === "reps" ? s.reps : chart.value === "duration" ? s.durationS : s.distanceM;
   return { x: new Date(s.startedAt).getTime(), y: y == null ? null : ["e1rm", "max", "volume"].includes(chart.value) ? fmt.value.fromKg(y) : chart.value === "distance" ? fmt.value.distNum(y) : y, id: s.workoutId, label: s.workoutName };
 }).filter((p) => p.y != null) as any[]);
+// the time of day you usually do it, in this device's time zone
+const usualHour = computed(() => {
+  const c = new Map<number, number>();
+  for (const x of sessions.value) { const h = new Date(x.startedAt).getHours(); c.set(h, (c.get(h) ?? 0) + 1); }
+  const h = [...c].sort((a, b) => b[1] - a[1])[0]?.[0];
+  return h == null ? "" : fmt.value.time(new Date(2000, 0, 1, h).toISOString());
+});
 const best1rm = computed(() => hist.data.value?.records?.e1rm?.value ?? null);
 const setText = (s: any) => [s.weightKg != null && usesWeight(tracking.value) ? fmt.value.w(s.weightKg) + " " + fmt.value.wu : "", s.reps != null && usesReps(tracking.value) ? (s.weightKg != null && usesWeight(tracking.value) ? "× " : "") + s.reps : "", s.durationS ? fmt.value.clock(s.durationS) : "", s.distanceM ? fmt.value.dist(s.distanceM) : ""].filter(Boolean).join(" ");
 const REC: Record<string, string> = { maxWeight: "Heaviest weight", e1rm: "Best estimated 1RM", maxReps: "Most reps in a set", setVolume: "Best set (weight × reps)", sessionVolume: "Most volume in a session", maxDuration: "Longest", maxDistance: "Farthest" };
@@ -127,16 +134,16 @@ const menu = computed(() => [
       <div v-if="hist.data.value?.summary?.timesDone" class="grid g3" style="margin-bottom:var(--spg)">
         <div class="card tight"><div class="lbl">Times done</div><div class="val" style="font-size:24px">{{ hist.data.value.summary.timesDone }}</div><div class="tiny">since {{ fmt.date(hist.data.value.summary.firstAt, { month: "short", year: "numeric" }) }}</div></div>
         <div class="card tight"><div class="lbl">Usually</div><div class="val" style="font-size:24px">#{{ hist.data.value.summary.usualPosition }}</div><div class="tiny">in the workout · first {{ Math.round(hist.data.value.summary.firstPositionShare * 100) }}% of the time</div></div>
-        <div class="card tight"><div class="lbl">Last done</div><div class="val" style="font-size:24px">{{ ago(hist.data.value.summary.lastAt) }}</div><div class="tiny">usually around {{ hist.data.value.summary.usualHour }}:00</div></div>
+        <div class="card tight"><div class="lbl">Last done</div><div class="val" style="font-size:24px">{{ ago(hist.data.value.summary.lastAt) }}</div><div class="tiny">usually around {{ usualHour }}</div></div>
       </div>
       <div v-if="!sessions.length" class="empty"><Icon name="history" :size="32" /><b>Not done yet</b>Its history will show here after your first workout with it.</div>
-      <div class="list">
+      <div v-if="sessions.length" class="card list">
         <div v-for="s in sessions" :key="s.workoutId" class="li click" @click="openWorkout(s.workoutId)">
           <div class="grow">
             <div class="t">{{ fmt.date(s.startedAt, { weekday: "short", day: "numeric", month: "short", year: "numeric" }) }} <span class="tiny">· {{ s.workoutName }} · #{{ s.position }} of {{ s.ofN }}</span></div>
             <div class="s">{{ s.sets.map(setText).join(" · ") || (s.status === "skipped" ? "Skipped" : "") }}</div>
           </div>
-          <div class="r tiny"><div v-if="s.e1rm">1RM {{ fmt.w(s.e1rm) }}</div><div v-if="s.volumeKg">{{ fmt.vol(s.volumeKg) }}</div></div>
+          <div class="r tiny"><div v-if="s.e1rm">1RM {{ fmt.wu_(s.e1rm) }}</div><div v-if="s.volumeKg">{{ fmt.vol(s.volumeKg) }}</div></div>
         </div>
       </div>
     </div>

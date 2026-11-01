@@ -169,7 +169,7 @@ const tr = (e: any) => exById.value.get(e.exerciseId)?.tracking ?? e.exercise?.t
           </div>
           <table class="sets">
             <thead><tr><th>Set</th>
-              <th v-if="usesWeight(tr(e))">{{ fmt.wu }}</th><th v-if="usesReps(tr(e))">Reps</th><th v-if="usesReps(tr(e))" class="hide-p">to</th>
+              <th v-if="usesWeight(tr(e))">{{ fmt.wu }}</th><th v-if="usesReps(tr(e))">Reps</th><th v-if="usesReps(tr(e))" class="hide-p">Up to</th>
               <th v-if="usesDuration(tr(e))">Sec</th><th v-if="usesDistance(tr(e))">{{ fmt.du }}</th><th v-if="s.features.rpe">RPE</th><th /></tr></thead>
             <tbody>
               <tr v-for="(x, j) in e.sets" :key="j">
