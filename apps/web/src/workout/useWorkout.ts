@@ -8,7 +8,7 @@ import { api } from "../api/client";
 import { invalidate } from "../api/live";
 import { readJson, writeJson } from "../core/prefs";
 import { startRest, finishRest, rest, setCues } from "./runtime";
-import { haptic } from "./native";
+import { haptic, enableNotificationActions } from "./native";
 import { makeFmt } from "../core/format";
 
 const state = reactive<{ w: Workout | null; pending: number; cur: number }>({ w: null, pending: 0, cur: 0 });
@@ -33,6 +33,10 @@ export function useWorkout() {
   const prefs = computed<WorkoutPrefs>(() => ({ ...settings.value.workout, ...((state.w?.settings ?? {}) as Partial<WorkoutPrefs>) }));
   watch(prefs, (p) => setCues({ sound: p.sound, vibrate: p.vibrate, warn10: p.warn10, voice: p.voice && !!settings.value.features.voice }), { immediate: true });
   const fmt = computed(() => makeFmt(settings.value));
+  watch(() => settings.value.features.notifLogging, (on) => enableNotificationActions(!!on, {
+    done: () => { const e = state.w?.exercises.find((x) => x.status === "pending" && x.sets.some((y) => !y.done)); if (e) tick(e, e.sets.findIndex((y) => !y.done)); },
+    more: () => import("./runtime").then((r) => r.startRest(30, { setId: null, label: "Rest", next: "", workoutId: state.w?.id ?? "" })),
+  }), { immediate: true });
 
   async function call(method: "post" | "put" | "del", path: string, body?: unknown, refresh = false) {
     state.pending++;

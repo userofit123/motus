@@ -12,7 +12,7 @@ export const FEATURES: FeatureDef[] = [
   { id: "quickEntry", group: "Logging", name: "Quick entry", desc: 'Type "3x8 80" to fill sets.', on: false },
   { id: "voice", group: "Logging", name: "Voice cues", desc: "Hear what's next when a rest ends.", on: false },
   { id: "adaptiveRest", group: "Logging", name: "Longer rest after a missed set", desc: "Adds 30 s to the rest when a set falls short of its target.", on: false },
-  { id: "notifLogging", group: "Logging", name: "Log from the notification", desc: "Tick the next set from the lock-screen timer (Android).", on: false, ready: false },
+  { id: "notifLogging", group: "Logging", name: "Log from the notification", desc: "Tick the next set from the lock-screen timer (Android).", on: false },
   // Training
   { id: "progression", group: "Training", name: "Progression rules", desc: "Let a routine suggest the next weight: add weight when you hit your reps, lower it after repeated misses.", on: false },
   { id: "programs", group: "Training", name: "Programs", desc: "Multi-week plans made of routines, with deload weeks.", on: false },
