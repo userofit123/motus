@@ -35,3 +35,6 @@ Thumbs.db
 
 # package store used by the dev containers
 .pnpm-store/
+
+# exercise photos, downloaded by scripts/fetch-exercise-images.mjs
+packages/exercise-data/images/
