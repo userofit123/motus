@@ -9,6 +9,7 @@ import { invalidate } from "../api/live";
 import { toast, toastError } from "../core/toast";
 import { finishRest } from "./runtime";
 import { keepAwake } from "./native";
+import { maybeAutoBackup } from "../core/backup";
 import Sheet from "../components/Sheet.vue";
 import Icon from "../components/Icon.vue";
 
@@ -40,6 +41,7 @@ async function finish() {
     invalidate(["*"]);
     if (records.value) toast(`${records.value} new record${records.value > 1 ? "s" : ""}!`, { kind: "pr" });
     router.replace(`/workouts/${w.value.id}`);
+    maybeAutoBackup(W.settings.value.backup, true, (run) => toast("Back up now?", { action: { label: "Download", run }, ms: 10000 }));
   } catch (e) { toastError(e); } finally { busy.value = false; }
 }
 </script>

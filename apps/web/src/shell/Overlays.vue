@@ -10,12 +10,22 @@ import ActivitySheet from "./ActivitySheet.vue";
 import BodySheet from "./BodySheet.vue";
 import AppearancePanel from "./AppearancePanel.vue";
 import { useExercise } from "../api/queries";
-import { computed, onMounted, onBeforeUnmount } from "vue";
+import { computed, onMounted, onBeforeUnmount, watch } from "vue";
+import { useSettings } from "../api/queries";
+import { maybeAutoBackup } from "../core/backup";
+import { toast } from "../core/toast";
 
 const ex = useExercise(computed(() => exerciseSheet.value ?? ""));
 // N starts a workout from anywhere on a computer
 const key = (e: KeyboardEvent) => { if (e.key === "n" && !e.metaKey && !e.ctrlKey && !(e.target as HTMLElement).closest("input,textarea,select,[contenteditable]")) startOpen.value = true; };
 onMounted(() => addEventListener("keydown", key));
+// an automatic backup when one is due (Settings → Backup)
+const settings = useSettings();
+let checked = false;
+watch(settings, (s) => {
+  if (checked || !s) return; checked = true;
+  setTimeout(() => maybeAutoBackup(s.backup, false, (run) => toast("A backup is due", { action: { label: "Download", run }, ms: 12000 })), 4000);
+});
 onBeforeUnmount(() => removeEventListener("keydown", key));
 </script>
 
