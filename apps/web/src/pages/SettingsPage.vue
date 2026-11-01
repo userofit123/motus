@@ -16,6 +16,7 @@ import { ago } from "../core/format";
 import Icon from "../components/Icon.vue";
 import BackupSection from "../components/settings/BackupSection.vue";
 import ProfileSection from "../components/settings/ProfileSection.vue";
+import { sync, schedule } from "../api/replica";
 import DataSection from "../components/settings/DataSection.vue";
 import AdminSection from "../components/settings/AdminSection.vue";
 import UpdatesSection from "../components/settings/UpdatesSection.vue";
@@ -100,6 +101,9 @@ async function allowNotifications() { await askNotificationPermission(); notifPe
             <div class="li"><div class="grow"><div class="t">Password</div></div><button class="qb acc" @click="changePassword">Change</button></div>
             <div class="li"><div class="grow"><div class="t">Sign out</div><div class="s">From this device</div></div><button class="qb acc" @click="signOut()">Sign out</button></div>
           </div>
+          <div v-if="sync.on" class="card"><div class="li"><Icon name="refresh" :size="18" class="muted" /><div class="grow"><div class="t">Works offline</div>
+            <div class="s">{{ !sync.online ? "Can't reach the server: changes are saved on this device" : sync.syncing ? "Syncing…" : sync.lastAt ? `In sync · ${ago(new Date(sync.lastAt).toISOString())}` : "Getting ready" }}{{ sync.waiting ? ` · ${sync.waiting} waiting to be sent` : "" }}{{ sync.error ? ` · ${sync.error}` : "" }}</div></div>
+            <button class="qb acc" :disabled="sync.syncing" @click="schedule(0)">Sync now</button></div></div>
           <div class="sh first"><h2>Signed-in devices</h2><button class="lnk" @click="api.post('/auth/logout-others').then(() => sessions.refetch())">Sign out the others</button></div>
           <div class="card"><div v-for="x in sessions.data.value ?? []" :key="x.id" class="li"><Icon :name="x.platform === 'android' ? 'device' : 'server'" :size="18" class="muted" /><div class="grow"><div class="t">{{ x.deviceName || x.platform }}{{ x.current ? " · this device" : "" }}</div><div class="s">{{ x.current ? "Now" : `Last used ${ago(x.lastSeenAt)}` }}</div></div><button v-if="!x.current" class="qb" @click="endSession(x.id)">Sign out</button></div></div>
           <div class="card"><div class="li"><div class="grow"><div class="t" style="color:var(--neg)">Delete account</div><div class="s">Deletes everything you have in Motus</div></div><button class="qb danger" @click="deleteAccount">Delete</button></div></div>

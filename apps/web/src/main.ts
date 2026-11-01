@@ -20,3 +20,9 @@ startTabSlide();
 if ("serviceWorker" in navigator && !(globalThis as any).Capacitor?.isNativePlatform?.() && !(globalThis as any).motusNative) {
   addEventListener("load", () => navigator.serviceWorker.register("/sw.js").catch(() => { /* not installable here, nothing else changes */ }));
 }
+
+// Fetch every page's code once the app is up, so pages not opened yet still open without a connection
+// (the service worker keeps them).
+addEventListener("load", () => setTimeout(() => {
+  for (const r of router.getRoutes()) { const c = r.components?.default as any; if (typeof c === "function") c().catch?.(() => {}); }
+}, 3000));

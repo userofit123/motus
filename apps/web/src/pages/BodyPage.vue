@@ -4,6 +4,7 @@ import { computed, onMounted } from "vue";
 import { useRoute } from "vue-router";
 import { useBody, useSettings } from "../api/queries";
 import { api } from "../api/client";
+import { confirm } from "../core/ask";
 import { invalidate } from "../api/live";
 import { useFmt, localYmd } from "../core/format";
 import { bodySheet } from "../core/ui";
@@ -22,7 +23,7 @@ const entries = computed(() => (body.data.value ?? []).filter((b: any) => b.kind
 const weights = computed(() => (body.data.value ?? []).filter((b: any) => b.kind === "weight").slice().reverse());
 const trend = computed(() => { let e: number | null = null; return weights.value.map((b: any) => { const y = fmt.value.fromKg(b.value); e = e == null ? y : e + 0.15 * (y - e); return { x: new Date(b.measuredAt).getTime(), y: Math.round(e! * 10) / 10 }; }); });
 const val = (b: any) => (b.kind === "weight" ? `${fmt.value.w(b.value)} ${fmt.value.wu}` : b.kind === "body_fat" ? `${b.value}%` : `${fmt.value.num(fromCm(b.value, s.value.units.length), 1)} ${s.value.units.length}`);
-async function del(id: string) { await api.del(`/body/${id}`); invalidate(["body", "stats", "goals", "home"]); }
+async function del(id: string) { if (!(await confirm("Delete this entry?", { ok: "Delete", danger: true }))) return; await api.del(`/body/${id}`); invalidate(["body", "stats", "goals", "home"]); }
 </script>
 
 <template>

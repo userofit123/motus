@@ -19,12 +19,15 @@ import { scheduleRoutes } from "./modules/schedule";
 import { statsRoutes } from "./modules/stats";
 import { dataRoutes } from "./modules/data";
 import { programRoutes } from "./modules/programs";
+import { syncRoutes } from "./modules/sync";
 
 export type { Db, Sql } from "./db";
 export { withUser } from "./db";
 export { HttpError } from "./errors";
 export { uuidv7, isUuid } from "./ids";
 export { exportAll, importAll } from "./modules/data";
+export * as replica from "./sync/replica";
+export type { Change } from "./sync/core";
 
 export interface Request { method: string; path: string; query?: Record<string, string>; body?: unknown; userId: string }
 export interface Response { status: number; body: unknown }
@@ -39,11 +42,12 @@ export interface Engine {
   ensureLocalUser(name?: string): Promise<string>;
 }
 
-export async function createEngine(db: Db, opts: { mode: "server" | "local"; now?: () => Date } = { mode: "server" }): Promise<Engine> {
+/** seed: false for a device's copy of a server account, which takes the server's catalog instead (the same ids). */
+export async function createEngine(db: Db, opts: { mode: "server" | "local"; now?: () => Date; seed?: boolean } = { mode: "server" }): Promise<Engine> {
   await migrate(db);
-  await seedCatalog(db);
+  if (opts.seed !== false) await seedCatalog(db);
   const router = new Router();
-  for (const add of [settingsRoutes, libraryRoutes, routineRoutes, workoutRoutes, noteRoutes, goalRoutes, activityRoutes, scheduleRoutes, statsRoutes, dataRoutes, programRoutes]) add(router);
+  for (const add of [settingsRoutes, libraryRoutes, routineRoutes, workoutRoutes, noteRoutes, goalRoutes, activityRoutes, scheduleRoutes, statsRoutes, dataRoutes, programRoutes, syncRoutes]) add(router);
   const listeners = new Set<Listener>();
   const now = opts.now ?? (() => new Date());
 

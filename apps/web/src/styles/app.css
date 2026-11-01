@@ -320,7 +320,7 @@ html.phone .cal .dots i.plan { background: none; border: 1px solid var(--ec, var
 .chart .ar { fill: url(#cg-acc); opacity: .5; }
 .chart .pt { fill: var(--bg); stroke: var(--acc); stroke-width: 2; cursor: pointer; }
 .chart .cbar { fill: var(--acc); }
-.chart .cbar.dim { fill: color-mix(in srgb, var(--acc) 75%, transparent); }
+.chart .cbar[data-dim] { fill: color-mix(in srgb, var(--acc) 75%, transparent); }
 .chart .goal { stroke: var(--tx2); stroke-width: 1; stroke-dasharray: 4 4; opacity: .7; }
 .ctip { position: absolute; pointer-events: none; background: var(--tx); color: var(--bg); padding: 6px 9px; border-radius: 9px; font-size: 12px; white-space: nowrap; transform: translate(-50%, calc(-100% - 10px)); z-index: 5; }
 .heat { display: grid; grid-auto-flow: column; grid-template-rows: repeat(7, 11px); gap: 3px; overflow-x: auto; padding-bottom: 4px; }
@@ -332,9 +332,9 @@ html.phone .cal .dots i.plan { background: none; border: 1px solid var(--ec, var
 .bodymap svg { height: 100%; width: auto; display: block; }
 .bodymap .sil { fill: color-mix(in srgb, var(--tx) 9%, transparent); }
 .bodymap .m { fill: color-mix(in srgb, var(--tx) 15%, transparent); transition: fill .3s; }
-.bodymap .t1 { fill: var(--heat1); }
-.bodymap .t2 { fill: var(--heat2); }
-.bodymap .t3 { fill: var(--heat3); }
+.bodymap [data-t="1"] .m { fill: var(--heat1); }
+.bodymap [data-t="2"] .m { fill: var(--heat2); }
+.bodymap [data-t="3"] .m { fill: var(--heat3); }
 .bmlegend { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; font-size: var(--fs-xs); color: var(--tx2); }
 .bmlegend span { display: inline-flex; align-items: center; gap: 5px; }
 .bmlegend i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
@@ -402,6 +402,14 @@ html.phone .tabs button { padding: 10px 11px; }
 .leaflet-tile-container img { width: 256.5px !important; height: 256.5px !important; }
 .grid.g3.keep { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .grid.g2.keep { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+/* offline: a small note at the top while the server can't be reached (shell/SyncPill.vue) */
+.syncpill { position: fixed; bottom: 24px; left: 112px; z-index: 150; display: flex; align-items: center; gap: 6px; padding: 6px 12px;
+  border-radius: 999px; background: var(--s2); border: 1px solid var(--ol); color: var(--tx2); font-size: 12.5px; box-shadow: var(--shadow-sheet); pointer-events: none; }
+html.phone .syncpill { left: 50%; translate: -50% 0; bottom: calc(var(--tabh) + var(--sb) + 12px); white-space: nowrap; }
+html.phone .pshell.withbar .syncpill { bottom: calc(var(--tabh) + var(--sb) + 80px); }
+.sp-enter-active, .sp-leave-active { transition: opacity .25s, transform .25s var(--ease); }
+.sp-enter-from, .sp-leave-to { opacity: 0; transform: translateY(8px); }
 
 /* ---------- motion: pages, tabs, sections, sheets and controls move instead of jumping ---------- */
 :root { --t-in: .22s; --t-out: .12s; }

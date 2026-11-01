@@ -24,6 +24,7 @@ What is built, what is left, and what needs you. Updated 1 November 2026.
 - Settings: units (metric/imperial and each unit), formats, workout defaults, features, appearance, notifications, backup, export/import, updates, admin, about.
 - Backups to the device on a schedule (folder, Android Documents, desktop folder, or a download), optional password encryption, restore by merge or replace.
 - Export JSON and CSV; import Motus files, Strong / Hevy / FitNotes CSV (with exercise matching), GPX/TCX.
+- Offline use for server accounts (web app, desktop, Android): the app works on a copy of your data in the device's own database and syncs both ways when the server can be reached; the newest change to a row wins. Only signing in, the admin pages and uploading photos need the server.
 - Look: Money Manager's theme engine and full Appearance panel; Ember dark by default; separate desktop and phone layouts.
 
 **Apps and releases**

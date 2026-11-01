@@ -9,6 +9,7 @@ import { useMe } from "../api/queries";
 import Icon from "../components/Icon.vue";
 import Logo from "./Logo.vue";
 import MiniBar from "./MiniBar.vue";
+import SyncPill from "./SyncPill.vue";
 import { useActive } from "../api/queries";
 import UpdateButton from "./UpdateButton.vue";
 import Menu from "../components/Menu.vue";
@@ -70,5 +71,6 @@ const pageKey = (r: any) => (r.name === "settings" ? "settings" : r.path);
     <main :class="{ withbar: !!active.data.value && route.name !== 'workout' }"><router-view v-slot="{ Component, route: r }"><Transition name="page" mode="out-in"><component :is="Component" :key="pageKey(r)" /></Transition></router-view></main>
     <button v-if="route.name !== 'workout'" class="fab" aria-label="Start" title="Start a workout or activity (N)" @click="startOpen = true"><Icon name="plus" /></button>
     <MiniBar v-if="route.name !== 'workout'" />
+    <SyncPill />
   </div>
 </template>

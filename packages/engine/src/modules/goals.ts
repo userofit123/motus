@@ -141,7 +141,8 @@ export async function progressOf(q: Sql, g: Goal, s: Settings, now: Date): Promi
     const days = Math.ceil((new Date(g.deadline + "T23:59:59").getTime() - now.getTime()) / 86400000);
     pace = days >= 0 ? `${days} day${days === 1 ? "" : "s"} left` : "Deadline passed";
   }
-  const unit = METRICS.find((m) => m.metric === g.metric)?.unit ?? "";
+  // a measurement is in cm, except body fat (%)
+  const unit = g.metric === "body_metric" && g.scopeId === "body_fat" ? "%" : METRICS.find((m) => m.metric === g.metric)?.unit ?? "";
   return { current, pct, done, label: `${current} / ${g.target} ${unit}`.trim(), unit, history, pace };
 }
 

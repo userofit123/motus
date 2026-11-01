@@ -6,6 +6,7 @@ import { section } from "./nav";
 import { startOpen } from "../core/ui";
 import Icon from "../components/Icon.vue";
 import MiniBar from "./MiniBar.vue";
+import SyncPill from "./SyncPill.vue";
 import { useActive } from "../api/queries";
 import { sheetIsOpen } from "../core/sheets";
 
@@ -65,5 +66,6 @@ function te(e: TouchEvent) {
         </template>
       </div>
     </div>
+    <SyncPill />
   </div>
 </template>

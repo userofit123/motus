@@ -32,10 +32,11 @@ const used = computed(() => new Set(VIEWS.flatMap((v) => v.shapes.map(([m]) => t
     <div class="figs">
       <svg v-for="v in VIEWS" :key="v.name" viewBox="10 3 80 194" role="img" :aria-label="v.name">
         <g class="sil"><path :d="SILHOUETTE" /><path :d="SILHOUETTE" :transform="MIRROR" /><ellipse v-bind="HEAD" /></g>
-        <template v-for="[m, d] in v.shapes" :key="m">
-          <path class="m" :class="'t' + tier(m)" :d="d"><title>{{ label(m) }}</title></path>
-          <path class="m" :class="'t' + tier(m)" :d="d" :transform="MIRROR"><title>{{ label(m) }}</title></path>
-        </template>
+        <!-- the level is an attribute, not a class: patching the class of SVG elements inside these lists crashes Vue (3.5) -->
+        <g v-for="[m, d] in v.shapes" :key="m" :data-t="tier(m)">
+          <path class="m" :d="d"><title>{{ label(m) }}</title></path>
+          <path class="m" :d="d" :transform="MIRROR"><title>{{ label(m) }}</title></path>
+        </g>
       </svg>
     </div>
     <div v-if="legend && used.size" class="bmlegend">

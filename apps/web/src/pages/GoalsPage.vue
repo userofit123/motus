@@ -74,6 +74,19 @@ async function create() {
     f.value = { scope: "general", metric: "workouts", scopeId: null, target: null, period: "week", deadline: "", title: "" };
   } catch (e) { toastError(e); }
 }
+// editing: the target is shown and typed in your units, and kept in kg / km
+const editing = ref<null | { id: string; title: string; target: number; deadline: string; unit: string; kind: string }>(null);
+function startEdit(g: Goal) {
+  const u = g.progress?.unit ?? "";
+  const target = u === "kg" ? Number(fmt.value.w(g.target)) : u === "km" ? Number(fmt.value.num(fromM(g.target * 1000, fmt.value.du), 2)) : g.target;
+  editing.value = { id: g.id, title: g.title, target, deadline: g.deadline ?? "", unit: u === "kg" ? fmt.value.wu : u === "km" ? fmt.value.du : u, kind: u };
+  open.value = null;
+}
+async function saveEdit() {
+  const e = editing.value!;
+  const target = e.kind === "kg" ? toKg(Number(e.target), fmt.value.wu) : e.kind === "km" ? toM(Number(e.target), fmt.value.du) / 1000 : Number(e.target);
+  try { await api.put(`/goals/${e.id}`, { title: e.title.trim(), target, deadline: e.deadline || null }); invalidate(["goals", "home"]); editing.value = null; } catch (err) { toastError(err); }
+}
 const setStatus = useChange((id: string, status: string) => api.put(`/goals/${id}`, { status }), ["goals", "home"]);
 async function del(g: Goal) { if (await confirm(`Delete "${g.title}"?`, { ok: "Delete", danger: true })) { await api.del(`/goals/${g.id}`); invalidate(["goals", "home"]); open.value = null; } }
 const display = (g: Goal, v: number) => { const m = (metrics.data.value ?? []).find((x: any) => x.metric === g.metric); return m?.unit === "kg" ? fmt.value.w(v) : m?.unit === "km" ? fmt.value.num(fromM(v * 1000, fmt.value.du), 1) : fmt.value.num(v, 1); };
@@ -91,11 +104,17 @@ const display = (g: Goal, v: number) => { const m = (metrics.data.value ?? []).f
     <div class="grid g3"><GoalCard v-for="g in list" :key="g.id" :goal="g" @click="open = g" /></div>
 
     <Sheet v-if="open" :title="open.title" @close="open = null">
-      <template #head><b>{{ open.title }}</b><Menu :items="[{ label: open.status === 'archived' ? 'Make active again' : 'Archive', icon: 'archive', run: () => { setStatus.run(open!.id, open!.status === 'archived' ? 'active' : 'archived'); open = null; } }, { label: 'Delete', icon: 'trash', danger: true, run: () => del(open!) }]" /></template>
+      <template #head><b>{{ open.title }}</b><Menu :items="[{ label: 'Edit', icon: 'edit', run: () => startEdit(open!) }, { label: open.status === 'archived' ? 'Make active again' : 'Archive', icon: 'archive', run: () => { setStatus.run(open!.id, open!.status === 'archived' ? 'active' : 'archived'); open = null; } }, { label: 'Delete', icon: 'trash', danger: true, run: () => del(open!) }]" /></template>
       <div class="row" style="margin-bottom:12px"><div class="val" style="font-size:30px">{{ goalLabel(open, fmt) }}</div></div>
       <div class="pbar" :class="{ ok: open.progress?.done }"><i :style="{ width: (open.progress?.pct ?? 0) * 100 + '%' }" /></div>
       <div class="tiny" style="margin-top:6px">{{ open.status === "achieved" ? `Achieved ${fmt.date(open.achievedAt)}` : open.progress?.pace }}{{ open.deadline ? ` · deadline ${fmt.date(open.deadline, { day: "numeric", month: "short", year: "numeric" })}` : "" }} · since {{ fmt.date(open.startDate, { day: "numeric", month: "short", year: "numeric" }) }}</div>
       <div v-if="(open.progress?.history.length ?? 0) > 1" class="card" style="margin-top:14px"><LineChart :points="open.progress!.history.map((h) => ({ x: new Date(h.date).getTime(), y: Number(display(open!, h.value)) || h.value }))" :height="170" /></div>
+    </Sheet>
+    <Sheet v-if="editing" title="Edit goal" @close="editing = null">
+      <div class="fld"><label>Name</label><input v-model="editing.title" /></div>
+      <div class="frow"><div class="fld"><label>Target{{ editing.unit ? ` (${editing.unit})` : "" }}</label><input v-model.number="editing.target" type="number" inputmode="decimal" step="any" /></div>
+        <div class="fld"><label>Deadline (optional)</label><input v-model="editing.deadline" type="date" /></div></div>
+      <template #foot><button class="btn o" @click="editing = null">Cancel</button><button class="btn" :disabled="!editing.title.trim() || !(Number(editing.target) > 0)" @click="saveEdit">Save</button></template>
     </Sheet>
 
     <Sheet v-if="creating" title="New goal" @close="creating = false; router.replace({ query: {} })">

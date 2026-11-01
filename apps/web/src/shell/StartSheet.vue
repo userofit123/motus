@@ -46,7 +46,7 @@ async function empty() {
     </div>
     <div class="opt-list" style="margin-top:14px">
       <button class="optb" @click="go('/routines/new/edit')"><span class="oi"><Icon name="plus" /></span><div class="grow"><div class="t">Create a new routine</div><div class="s">From scratch, from a template or from another routine</div></div></button>
-      <button class="optb" @click="empty"><span class="oi"><Icon name="dumbbell" /></span><div class="grow"><div class="t">Empty workout</div><div class="s">Add exercises as you go</div></div></button>
+      <button v-if="!active.data.value" class="optb" @click="empty"><span class="oi"><Icon name="dumbbell" /></span><div class="grow"><div class="t">Empty workout</div><div class="s">Add exercises as you go</div></div></button>
       <button class="optb" @click="emit('close'); activitySheet = {}"><span class="oi"><Icon name="walk" /></span><div class="grow"><div class="t">Walk or other activity</div><div class="s">Record with GPS or type it in</div></div></button>
       <button class="optb" @click="go('/log')"><span class="oi"><Icon name="history" /></span><div class="grow"><div class="t">Log a past workout</div><div class="s">Something you did without the app</div></div></button>
     </div>

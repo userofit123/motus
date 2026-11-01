@@ -1,0 +1,91 @@
+// A device's copy of a person's data on a server (offline use). The app works on this copy; sync() in the app sends
+// what changed here and fetches what changed elsewhere. Kept in app_meta: where in the server's log this copy is,
+// how much of its own log has been sent, this device's name for itself, and which catalog it has.
+import type { Db } from "../db";
+import { SYNCED } from "./tables";
+import { readRows, applyChanges, latestPerRow, keyOf, type Change } from "./core";
+import { uuidv7 } from "../ids";
+
+export interface ReplicaMeta { cursor: number; pushed: number; device: string; catalog: string; ready: boolean }
+
+export async function replicaMeta(db: Db): Promise<ReplicaMeta> {
+  const r = (await db.admin.query("SELECT value FROM app_meta WHERE key = 'replica'")).rows[0]?.value;
+  return { cursor: 0, pushed: 0, device: "", catalog: "", ready: false, ...(r ?? {}) };
+}
+async function saveMeta(db: Db, patch: Partial<ReplicaMeta>) {
+  const next = { ...(await replicaMeta(db)), ...patch };
+  await db.admin.query("INSERT INTO app_meta (key, value) VALUES ('replica', $1) ON CONFLICT (key) DO UPDATE SET value = $1", [JSON.stringify(next)]);
+  return next;
+}
+
+/** The shared catalog, as the server has it (the same ids, so people's rows can point at it). */
+export async function loadCatalog(db: Db, stamp: string, rows: Record<string, unknown>[]) {
+  await db.tx(async (q) => {
+    for (let i = 0; i < rows.length; i += 200)
+      await q.query(`INSERT INTO exercises SELECT * FROM jsonb_populate_recordset(NULL::exercises, $1::jsonb) ON CONFLICT (id) DO UPDATE SET
+        name = EXCLUDED.name, aliases = EXCLUDED.aliases, category = EXCLUDED.category, equipment = EXCLUDED.equipment, tracking = EXCLUDED.tracking,
+        primary_muscles = EXCLUDED.primary_muscles, secondary_muscles = EXCLUDED.secondary_muscles, instructions = EXCLUDED.instructions,
+        images = EXCLUDED.images, archived = EXCLUDED.archived, updated_at = EXCLUDED.updated_at`, [JSON.stringify(rows.slice(i, i + 200))]);
+  });
+  await saveMeta(db, { catalog: stamp });
+}
+
+/** The first full copy: the person, then every table, parents first. Nothing of this is sent back. */
+export async function loadSnapshot(db: Db, snap: { cursor: number; user: any; tables: Record<string, Record<string, unknown>[]> }) {
+  await db.tx(async (q) => {
+    await q.query("SELECT set_config('motus.sync_apply', '1', true)");
+    const u = snap.user;
+    await q.query(`INSERT INTO users (id, username, display_name, email, role) VALUES ($1, $2, $3, $4, $5)
+      ON CONFLICT (id) DO UPDATE SET username = $2, display_name = $3, email = $4, role = $5`, [u.id, u.username, u.display_name ?? "", u.email ?? null, u.role ?? "user"]);
+    for (const t of SYNCED) {
+      const rows = snap.tables[t.name] ?? [];
+      for (let i = 0; i < rows.length; i += 200)
+        await q.query(`INSERT INTO ${t.name} SELECT * FROM jsonb_populate_recordset(NULL::${t.name}, $1::jsonb) ON CONFLICT DO NOTHING`, [JSON.stringify(rows.slice(i, i + 200))]);
+    }
+  });
+  const pushed = Number((await db.admin.query("SELECT coalesce(max(seq), 0) AS s FROM sync_log")).rows[0].s);
+  return saveMeta(db, { cursor: snap.cursor, pushed, device: (await replicaMeta(db)).device || uuidv7(), ready: true });
+}
+
+/** What changed here since the last send (the latest change per row), and up to where in the log that goes. */
+export async function localChanges(db: Db, limit = 500): Promise<{ changes: Change[]; upTo: number }> {
+  const m = await replicaMeta(db);
+  const log = (await db.admin.query("SELECT seq, tbl, pk, op, at FROM sync_log WHERE seq > $1 ORDER BY seq LIMIT $2", [m.pushed, limit])).rows;
+  if (!log.length) return { changes: [], upTo: m.pushed };
+  const latest = latestPerRow(log as any[]);
+  const rows = await readRows(db.admin, latest.filter((e: any) => e.op === "upsert"));
+  return {
+    upTo: Number(log.at(-1).seq),
+    changes: latest.map((e: any) => { const row = e.op === "upsert" ? rows.get(keyOf(e.tbl, e.pk)) ?? null : null; return { tbl: e.tbl, pk: e.pk, op: row ? "upsert" : "delete", at: new Date(e.at).toISOString(), row }; }),
+  };
+}
+/** The server has them: forget them here. */
+export async function markSent(db: Db, upTo: number) {
+  await db.admin.query("DELETE FROM sync_log WHERE seq <= $1", [upTo]);
+  await saveMeta(db, { pushed: upTo });
+}
+/** Rows not yet sent to the server, for "N changes waiting". */
+export async function waitingCount(db: Db) {
+  const m = await replicaMeta(db);
+  return Number((await db.admin.query("SELECT count(DISTINCT (tbl, pk)) AS n FROM sync_log WHERE seq > $1", [m.pushed])).rows[0].n);
+}
+
+/**
+ * Writes the server's changes into this copy. A row changed here more recently (and not yet sent) keeps this
+ * device's version; it goes to the server on the next send, where the newest wins again.
+ */
+export async function applyRemote(db: Db, userId: string, changes: Change[], cursor?: number) {
+  const m = await replicaMeta(db);
+  const mine = new Map<string, number>();
+  for (const e of (await db.admin.query("SELECT tbl, pk, max(at) AS at FROM sync_log WHERE seq > $1 GROUP BY tbl, pk", [m.pushed])).rows)
+    mine.set(keyOf(e.tbl, e.pk), new Date(e.at).getTime());
+  const take = changes.filter((c) => { const t = mine.get(keyOf(c.tbl, c.pk)); return t == null || t <= new Date(c.at).getTime(); });
+  const res = await db.tx(async (q) => {
+    const r = await applyChanges(q, userId, take, { apply: true });
+    // the server's version replaced an older change made here: that one need not be sent any more
+    for (const c of take) await q.query("DELETE FROM sync_log WHERE seq > $1 AND tbl = $2 AND pk = $3::jsonb", [m.pushed, c.tbl, JSON.stringify(c.pk)]);
+    return r;
+  });
+  if (cursor != null) await saveMeta(db, { cursor });
+  return res;
+}

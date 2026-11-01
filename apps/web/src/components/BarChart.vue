@@ -34,7 +34,7 @@ const f = (v: number) => (props.fmt ? props.fmt(v) : String(Math.round(v * 10) /
       <line v-if="goal" class="goal" x1="0" :x2="W" :y1="y(goal)" :y2="y(goal)" />
       <g v-for="(b, i) in bars" :key="i" @mouseenter="hover = i" @mouseleave="hover = null">
         <rect :x="i * slot" :width="slot" y="0" :height="H" fill="transparent" />
-        <rect v-if="b.value > 0" class="cbar" :class="{ dim: b.dim }" :x="i * slot + (slot - bw) / 2" :width="bw" :y="y(b.value)" :height="Math.max(2, H - 18 - y(b.value))" :rx="Math.min(5, bw / 3)" :style="b.color ? { fill: b.color } : undefined" />
+        <rect v-if="b.value > 0" class="cbar" :data-dim="b.dim ? 1 : undefined" :x="i * slot + (slot - bw) / 2" :width="bw" :y="y(b.value)" :height="Math.max(2, H - 18 - y(b.value))" :rx="Math.min(5, bw / 3)" :style="b.color ? { fill: b.color } : undefined" />
         <text v-if="i % every === (bars.length - 1) % every" class="ax" :x="i * slot + slot / 2" :y="H - 4" text-anchor="middle">{{ b.label }}</text>
       </g>
     </svg>

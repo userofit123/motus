@@ -10,7 +10,7 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 
-interface Account { id: string; kind: "local" | "server"; name: string; url?: string }
+interface Account { id: string; kind: "local" | "server"; name: string; url?: string; port?: number }
 const USER = app.getPath("userData");
 const ACCOUNTS = path.join(USER, "accounts.json");
 const RES = app.isPackaged ? process.resourcesPath : path.resolve(__dirname, "../../..");
@@ -69,7 +69,12 @@ function startProxy(acc: Account): Promise<{ port: number; close: () => Promise<
     if (clean !== "/" && serveFile(WEB, clean.slice(1), res)) return;
     serveFile(WEB, "index.html", res);
   });
-  return new Promise((resolve) => server.listen(0, "127.0.0.1", () => resolve({ port: (server.address() as any).port, close: () => new Promise((r) => server.close(() => r())) })));
+  // the same address every time: the screens keep this account's offline copy in the browser storage of that address
+  const done = (resolve: (v: { port: number; close: () => Promise<void> }) => void) => () => resolve({ port: (server.address() as any).port, close: () => new Promise((r) => server.close(() => r())) });
+  return new Promise((resolve) => {
+    server.once("error", () => server.listen(0, "127.0.0.1", done(resolve)));
+    server.listen(acc.port ?? 0, "127.0.0.1", done(resolve));
+  });
 }
 
 async function openAccount(id: string) {
@@ -87,6 +92,7 @@ async function openAccount(id: string) {
   } else {
     const s = await startProxy(acc);
     port = s.port;
+    if (acc.port !== port) { acc.port = port; const i = all.list.findIndex((x) => x.id === acc.id); all.list[i] = acc; }
     running = { id, port, close: s.close };
   }
   writeAccounts({ ...all, active: id });

@@ -22,6 +22,8 @@ export const httpTransport: Transport = {
     } catch {
       throw new ApiError(0, "Can't reach the server. Check your connection.");
     }
+    // the server is down behind its proxy (Caddy, the desktop app): the same as no connection
+    if ([502, 503, 504].includes(r.status)) throw new ApiError(0, "Can't reach the server right now.");
     const text = await r.text();
     const data = text ? (() => { try { return JSON.parse(text); } catch { return text; } })() : null;
     if (!r.ok) {
@@ -33,6 +35,7 @@ export const httpTransport: Transport = {
 };
 
 let transport: Transport = httpTransport;
+export const usingHttp = () => transport === httpTransport;
 export const setTransport = (t: Transport) => { transport = t; };
 let onUnauthorized = () => {};
 export const setOnUnauthorized = (fn: () => void) => { onUnauthorized = fn; };
