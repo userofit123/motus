@@ -392,3 +392,7 @@ main.withbar { padding-bottom: 120px; }
 .card .tgl { padding-inline: 4px; }
 .rcard { display: flex; flex-direction: column; }
 html.phone .tabs button { padding: 10px 11px; }
+/* hides the hairline seams between map tiles at fractional zoom */
+.leaflet-tile-container img { width: 256.5px !important; height: 256.5px !important; }
+.grid.g3.keep { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.grid.g2.keep { grid-template-columns: repeat(2, minmax(0, 1fr)); }
