@@ -6,4 +6,4 @@ await build({ ...common, entryPoints: ["src/main.ts"], outfile: "dist/main.cjs",
 await build({ ...common, entryPoints: ["src/preload.ts"], outfile: "dist/preload.cjs", external: ["electron"] });
 import fs from "node:fs";
 fs.copyFileSync("src/accounts.html", "dist/accounts.html");
-fs.copyFileSync("build/icon.png", "dist/icon.png");
+fs.copyFileSync("assets/icon.png", "dist/icon.png");
