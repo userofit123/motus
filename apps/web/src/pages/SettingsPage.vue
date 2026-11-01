@@ -18,6 +18,7 @@ import DataSection from "../components/settings/DataSection.vue";
 import AdminSection from "../components/settings/AdminSection.vue";
 import UpdatesSection from "../components/settings/UpdatesSection.vue";
 import AccountsSection from "../components/settings/AccountsSection.vue";
+import IntegrationsSection from "../components/settings/IntegrationsSection.vue";
 import { native } from "../core/device";
 
 const route = useRoute(), router = useRouter();
@@ -27,7 +28,7 @@ const sec = computed(() => String(route.params.section ?? (isPhone.value ? "" : 
 const SECTIONS = computed(() => [
   ["account", "Account", "user"], ...((globalThis as any).motusNative?.accounts ? [["accounts", "Accounts on this device", "layers"]] : []), ["units", "Units & formats", "scale"], ["workout", "Workout", "dumbbell"], ["features", "Features", "sparkle"],
   ["appearance", "Appearance", "palette"], ["notifications", "Notifications", "bell"], ["backup", "Backup & restore", "download"], ["data", "Export & import", "upload"],
-  ["updates", "Updates", "refresh"], ...(session.user?.role === "admin" ? [["admin", "Server admin", "server"]] : []), ["about", "About", "info"],
+  ["updates", "Updates", "refresh"], ...(s.value.features.apiTokens || s.value.features.mcp ? [["integrations", "Integrations", "link"]] : []), ...(session.user?.role === "admin" ? [["admin", "Server admin", "server"]] : []), ["about", "About", "info"],
 ] as [string, string, string][]);
 const go = (k: string) => router.push(`/settings/${k}`);
 const set = (patch: Record<string, unknown>) => saveSettings(patch);
@@ -161,6 +162,7 @@ async function allowNotifications() { await askNotificationPermission(); notifPe
         <DataSection v-else-if="sec === 'data'" />
         <UpdatesSection v-else-if="sec === 'updates'" />
         <AccountsSection v-else-if="sec === 'accounts'" />
+        <IntegrationsSection v-else-if="sec === 'integrations'" />
         <AdminSection v-else-if="sec === 'admin'" />
 
         <template v-else-if="sec === 'about'">

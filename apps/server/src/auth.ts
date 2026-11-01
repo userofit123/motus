@@ -44,7 +44,7 @@ export async function userForToken(db: Db, token: string | undefined): Promise<S
   // sliding expiry, written at most every 10 minutes
   if ((seen.get(r.sid) ?? 0) < Date.now() - 600000) {
     seen.set(r.sid, Date.now());
-    await db.admin.query("UPDATE sessions SET last_seen_at = now(), expires_at = now() + ($2 || ' days')::interval WHERE id = $1", [r.sid, String(SESSION_DAYS)]);
+    await db.admin.query("UPDATE sessions SET last_seen_at = now(), expires_at = greatest(expires_at, now() + ($2 || ' days')::interval) WHERE id = $1", [r.sid, String(SESSION_DAYS)]);
   }
   return { id: r.id, username: r.username, role: r.role, sessionId: r.sid };
 }

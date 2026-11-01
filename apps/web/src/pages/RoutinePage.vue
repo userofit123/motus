@@ -4,13 +4,13 @@ import { computed, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useQuery } from "@tanstack/vue-query";
 import { duration, muscleName } from "@motus/shared";
-import { useRoutine, useRoutines, useNotes, useReminders, useSchedules, useChange } from "../api/queries";
+import { useRoutine, useRoutines, useNotes, useReminders, useSchedules, useChange, useSettings } from "../api/queries";
 import { api, mediaUrl } from "../api/client";
 import { invalidate } from "../api/live";
 import { useFmt, ago } from "../core/format";
 import { noteSheet, reminderSheet, exerciseSheet } from "../core/ui";
 import { confirm, prompt } from "../core/ask";
-import { toast } from "../core/toast";
+import { toast, toastError } from "../core/toast";
 import Icon from "../components/Icon.vue";
 import Menu from "../components/Menu.vue";
 import LineChart from "../components/LineChart.vue";
@@ -27,6 +27,7 @@ const notes = useNotes("routine", id);
 const rems = useReminders(computed(() => ({ status: "pending" })));
 const schedules = useSchedules();
 const fmt = useFmt();
+const settings = useSettings();
 const history = useQuery({ queryKey: computed(() => ["workouts", "routine", id.value]), queryFn: () => api.get(`/routines/${id.value}/workouts`) });
 const versions = useQuery({ queryKey: computed(() => ["routines", "versions", id.value]), queryFn: () => api.get(`/routines/${id.value}/versions`) });
 const tab = ref("plan");
@@ -64,6 +65,7 @@ const menu = computed(() => [
   { label: "Remind me next time", icon: "bell", run: () => (reminderSheet.value = { targetType: "routine", targetId: id.value, label: routine.value.name }) },
   { label: "Schedule", icon: "calendar", run: () => (editSchedule.value = { routineId: id.value }) },
   { label: "Earlier versions", icon: "history", run: () => (showVersions.value = true) },
+  { label: "Send a copy to…", icon: "share", hidden: !settings.value.features.sharing, run: async () => { const u = await prompt("Send a copy to", { placeholder: "Their username on this server" }); if (u) { try { await api.post("/share/routine", { routineId: id.value, username: u }); toast(`Sent to ${u}`); } catch (e) { toastError(e); } } } },
   { label: "Export", icon: "download", run: () => { const b = new Blob([JSON.stringify({ motusRoutine: 1, ...routine.value }, null, 2)], { type: "application/json" }); const a = document.createElement("a"); a.href = URL.createObjectURL(b); a.download = `${routine.value.name}.motusroutine`; a.click(); } },
   { label: "Delete", icon: "trash", danger: true, sep: true, run: del },
 ]);

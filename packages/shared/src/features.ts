@@ -17,7 +17,7 @@ export const FEATURES: FeatureDef[] = [
   { id: "progression", group: "Training", name: "Progression rules", desc: "Let a routine suggest the next weight: add weight when you hit your reps, lower it after repeated misses.", on: false },
   { id: "programs", group: "Training", name: "Programs", desc: "Multi-week plans made of routines, with deload weeks.", on: false, ready: false },
   { id: "gyms", group: "Training", name: "Gym profiles", desc: "Equipment and plates per gym.", on: false, ready: false },
-  { id: "sharing", group: "Training", name: "Share routines", desc: "Send a copy of a routine to another person on your server.", on: false, ready: false },
+  { id: "sharing", group: "Training", name: "Share routines", desc: "Send a copy of a routine to another person on your server.", on: false },
   // Body & activity
   { id: "measurements", group: "Body & activity", name: "Body measurements", desc: "Waist, chest, arms and more, plus body fat.", on: false },
   { id: "photos", group: "Body & activity", name: "Progress photos", desc: "Private photos, compared side by side.", on: false },
@@ -31,7 +31,7 @@ export const FEATURES: FeatureDef[] = [
   // Integrations
   { id: "healthConnect", group: "Integrations", name: "Health Connect", desc: "Read steps, weight and watch workouts on Android, and write your workouts back.", on: false, ready: false },
   { id: "strava", group: "Integrations", name: "Strava", desc: "Import walks and runs.", on: false, ready: false },
-  { id: "apiTokens", group: "Integrations", name: "Personal API", desc: "Tokens for scripts and dashboards, and a file-upload address for GPX/FIT.", on: false, ready: false },
+  { id: "apiTokens", group: "Integrations", name: "Personal API", desc: "Tokens for scripts and dashboards, and a file-upload address for GPX/FIT.", on: false },
   { id: "mcp", group: "Integrations", name: "Ask Claude", desc: "Copy a workout as text for an AI assistant, or connect one over MCP.", on: false },
   { id: "wear", group: "Integrations", name: "Wear OS", desc: "The watch app.", on: false, ready: false },
   { id: "liveBundle", group: "Integrations", name: "Instant app updates", desc: "Small fixes arrive without installing a new app version.", on: false, ready: false },

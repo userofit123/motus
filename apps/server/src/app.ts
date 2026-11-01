@@ -136,6 +136,45 @@ export async function buildApp(o: Options): Promise<{ app: FastifyInstance; engi
     return { ok: true };
   });
 
+  // personal API tokens (Settings → Integrations): a session that never expires by use, for scripts and dashboards
+  app.post("/api/auth/tokens", async (req, reply) => {
+    if (!need(req, reply)) return;
+    const name = String((req.body as any)?.name ?? "API token").slice(0, 60);
+    const token = await createSession(db, req.user!.id, name, "api");
+    await db.admin.query("UPDATE sessions SET expires_at = now() + interval '10 years' WHERE token_hash = encode(sha256($1::bytea), 'hex')", [token]);
+    return { token };
+  });
+  // a GPX or TCX file posted as it is (e.g. FitoTrack's or OpenTracks' automatic export), with an API token
+  app.addContentTypeParser(["application/gpx+xml", "application/vnd.garmin.tcx+xml", "text/xml", "application/xml"], { parseAs: "string", bodyLimit: 30 * 1024 * 1024 }, (_r, body, done) => done(null, body));
+  app.post("/api/upload/track", async (req, reply) => {
+    if (!need(req, reply)) return;
+    const text = typeof req.body === "string" ? req.body : Buffer.isBuffer(req.body) ? req.body.toString("utf8") : "";
+    const res = await engine.handle({ method: "POST", path: "/activities/import", body: { files: [{ name: String((req.query as any)?.name ?? ""), text }], type: (req.query as any)?.type }, userId: req.user!.id });
+    return reply.code(res.status).send(res.body);
+  });
+  // sending a copy of a routine to another person on this server (their own exercises are copied along)
+  app.post("/api/share/routine", async (req, reply) => {
+    if (!need(req, reply)) return;
+    const b = req.body as any;
+    const to = (await db.admin.query("SELECT id FROM users WHERE username = $1 AND disabled_at IS NULL", [String(b?.username ?? "").toLowerCase()])).rows[0];
+    if (!to) return reply.code(404).send({ error: "No one with that username on this server" });
+    if (to.id === req.user!.id) return reply.code(400).send({ error: "That's you" });
+    const src = await engine.handle({ method: "GET", path: `/routines/${b.routineId}`, userId: req.user!.id });
+    if (src.status !== 200) return reply.code(src.status).send(src.body);
+    const r = src.body as any;
+    const map = new Map<string, string>();
+    for (const e of r.exercises) {
+      if (!e.exercise?.ownerId || map.has(e.exerciseId)) continue;
+      const made = await engine.handle({ method: "POST", path: "/exercises", body: { ...e.exercise, images: (e.exercise.images ?? []).filter((x: string) => !x.startsWith("media:")) }, userId: to.id });
+      if (made.status === 200) map.set(e.exerciseId, (made.body as any).id);
+    }
+    const sender = (await db.admin.query("SELECT display_name, username FROM users WHERE id = $1", [req.user!.id])).rows[0];
+    const out = await engine.handle({ method: "POST", path: "/routines", userId: to.id, body: {
+      name: `${r.name} (from ${sender.display_name || sender.username})`, description: r.description,
+      exercises: r.exercises.map((e: any) => ({ ...e, id: undefined, exerciseId: map.get(e.exerciseId) ?? e.exerciseId })) } });
+    return reply.code(out.status).send(out.status === 200 ? { ok: true } : out.body);
+  });
+
   // ----- admin -----
   app.get("/api/admin/users", async (req, reply) => {
     if (!needAdmin(req, reply)) return;
