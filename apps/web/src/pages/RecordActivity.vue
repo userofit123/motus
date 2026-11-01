@@ -30,15 +30,28 @@ const hav = (a: number[], b: number[]) => { const dLat = rad(b[0]! - a[0]!), dLo
 const dist = computed(() => rec.value.route.reduce((t, p, i, a) => (i ? t + hav(a[i - 1]!, p) : 0), 0));
 const elapsed = computed(() => rec.value.startedAt ? Math.max(0, ((rec.value.pauseAt ?? now.value) - rec.value.startedAt - rec.value.pausedMs) / 1000) : 0);
 const gpsError = ref("");
-function startGps() {
+// in the Android app a foreground service keeps recording with the screen off
+const BG = () => (globalThis as any).Capacitor?.Plugins?.BackgroundGeolocation;
+let bgId: string | null = null;
+function onPoint(lat: number, lon: number, time: number, alt: number | null | undefined, acc: number) {
+  if (!rec.value.running || rec.value.pauseAt) return;
+  if (acc > 40) return; // ignore rough fixes
+  const pt = [lat, lon, Math.round(time / 1000), alt ?? undefined] as number[];
+  const last = rec.value.route.at(-1);
+  if (last && hav(last, pt) < 3) return; // standing still
+  rec.value.route.push(pt); save();
+}
+async function startGps() {
+  if (BG()) {
+    try {
+      bgId = await BG().addWatcher({ backgroundTitle: "Recording your " + (t.value?.name ?? "activity").toLowerCase(), backgroundMessage: "Motus is tracking your route", requestPermissions: true, stale: false, distanceFilter: 3 },
+        (loc: any, err: any) => { if (err) { gpsError.value = err.code === "NOT_AUTHORIZED" ? "Allow location to record the route" : "Looking for GPS…"; return; } if (loc) onPoint(loc.latitude, loc.longitude, loc.time ?? Date.now(), loc.altitude, loc.accuracy ?? 0); });
+      return;
+    } catch { /* fall back to the browser's location */ }
+  }
   if (!("geolocation" in navigator)) { gpsError.value = "Location is not available here"; return; }
   watchId = navigator.geolocation.watchPosition((p) => {
-    if (!rec.value.running || rec.value.pauseAt) return;
-    if (p.coords.accuracy > 40) return; // ignore rough fixes
-    const pt = [p.coords.latitude, p.coords.longitude, Math.round(p.timestamp / 1000), p.coords.altitude ?? undefined] as number[];
-    const last = rec.value.route.at(-1);
-    if (last && hav(last, pt) < 3) return; // standing still
-    rec.value.route.push(pt); save();
+    onPoint(p.coords.latitude, p.coords.longitude, p.timestamp, p.coords.altitude, p.coords.accuracy);
   }, (e) => (gpsError.value = e.code === 1 ? "Allow location to record the route" : "Looking for GPS…"), { enableHighAccuracy: true, maximumAge: 2000, timeout: 20000 });
 }
 function start() { rec.value = { ...rec.value, startedAt: Date.now(), route: [], pausedMs: 0, pauseAt: null, running: true }; save(); startGps(); keepAwake(true); }
@@ -47,14 +60,15 @@ async function finish() {
   try {
     const end = rec.value.pauseAt ?? Date.now();
     const r = await api.post("/activities", { type: rec.value.type, startedAt: new Date(rec.value.startedAt).toISOString(), endedAt: new Date(end).toISOString(), durationS: Math.round(elapsed.value), route: rec.value.route, source: "gps", clientId: `gps:${rec.value.startedAt}` });
-    localStorage.removeItem(KEY); keepAwake(false);
+    localStorage.removeItem(KEY); keepAwake(false); stopGps();
     invalidate(["activities", "stats", "goals", "home", "calendar"]); toast("Saved");
     router.replace(`/activities/${r.id}`);
   } catch (e) { toastError(e); }
 }
 async function discard() { if (await confirm("Discard this recording?", { ok: "Discard", danger: true })) { localStorage.removeItem(KEY); keepAwake(false); router.back(); } }
 onMounted(() => { tick = setInterval(() => (now.value = Date.now()), 1000); if (rec.value.running) { startGps(); keepAwake(true); } });
-onBeforeUnmount(() => { if (watchId != null) navigator.geolocation.clearWatch(watchId); if (tick) clearInterval(tick); });
+const stopGps = () => { if (bgId) BG()?.removeWatcher({ id: bgId }).catch?.(() => {}); bgId = null; };
+onBeforeUnmount(() => { stopGps(); if (watchId != null) navigator.geolocation.clearWatch(watchId); if (tick) clearInterval(tick); });
 const t = computed(() => (types.data.value ?? []).find((x: any) => x.slug === rec.value.type));
 </script>
 

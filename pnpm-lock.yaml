@@ -10,6 +10,9 @@ importers:
 
   apps/android:
     dependencies:
+      '@capacitor-community/background-geolocation':
+        specifier: 1.2.17
+        version: 1.2.17(@capacitor/core@6.2.0)
       '@capacitor-community/keep-awake':
         specifier: 5.0.1
         version: 5.0.1(@capacitor/core@6.2.0)
@@ -210,6 +213,11 @@ packages:
   '@babel/types@7.29.11':
     resolution: {integrity: sha512-WCsemW40Cpc6gouC1SrY6PBaZ+oLRlEVY9XBvZBI7il/HyUrb2nJ505wE1MHEFyDZNnrWDEuy4jL50WVHfTTSQ==}
     engines: {node: '>=6.9.0'}
+
+  '@capacitor-community/background-geolocation@1.2.17':
+    resolution: {integrity: sha512-9EBLXdSyuYNy7YZAgxyMCRZYnN3FTSSWCNpem5ZjU9Yi8sCdswSbx1j+CwePP9aXggtBPImywrenv9+pj69TIg==}
+    peerDependencies:
+      '@capacitor/core': '>=3.0.0'
 
   '@capacitor-community/keep-awake@5.0.1':
     resolution: {integrity: sha512-5ZeJ5DQE5Aa1NwzD1kKv8IkHoLwKhkGYlURWHh4/SDrug0KBaGocKuk1q1TAk1nsCs6ndbSsEvUt2LZDoPo9SQ==}
@@ -3190,6 +3198,10 @@ snapshots:
     dependencies:
       '@babel/helper-string-parser': 7.29.11
       '@babel/helper-validator-identifier': 7.29.7
+
+  '@capacitor-community/background-geolocation@1.2.17(@capacitor/core@6.2.0)':
+    dependencies:
+      '@capacitor/core': 6.2.0
 
   '@capacitor-community/keep-awake@5.0.1(@capacitor/core@6.2.0)':
     dependencies:
