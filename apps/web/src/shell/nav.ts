@@ -1,7 +1,7 @@
 // The pages in the menu (PLAN.md §8.1): seven on a computer, five tabs on the phone.
 export const NAV = [
   { name: "home", label: "Home", icon: "home", to: "/" },
-  { name: "history", label: "History", icon: "calendar", to: "/history" },
+  { name: "history", label: "Calendar", icon: "calendar", to: "/history" },
   { name: "routines", label: "Routines", icon: "routines", to: "/routines" },
   { name: "exercises", label: "Exercises", icon: "dumbbell", to: "/exercises" },
   { name: "goals", label: "Goals", icon: "goals", to: "/goals" },

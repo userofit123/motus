@@ -1,6 +1,7 @@
 // Inside the Android app (Capacitor): accounts, backups to a folder on the phone, the in-app updater, the status bar
 // colours, and the back button. Exposed as window.motusNative, like the desktop app.
 import { accounts, addLocal, addServer, open, remove, chooser } from "./accounts";
+import { sheetIsOpen } from "../core/sheets";
 
 const cap = () => (globalThis as any).Capacitor;
 const P = (n: string) => cap()?.Plugins?.[n];
@@ -51,8 +52,8 @@ export function installAndroidBridge() {
       async install() { if (staged) await P("MotusUpdater").install({ path: staged }); },
     },
   };
-  // the hardware back button goes back in the app, and leaves it from the home page
-  P("App")?.addListener?.("backButton", ({ canGoBack }: { canGoBack: boolean }) => { if (canGoBack && location.pathname !== "/") history.back(); else P("App").minimizeApp?.(); });
+  // the hardware back button closes an open sheet, goes back in the app, and leaves it from the home page
+  P("App")?.addListener?.("backButton", ({ canGoBack }: { canGoBack: boolean }) => { if (sheetIsOpen() || (canGoBack && location.pathname !== "/")) history.back(); else P("App").minimizeApp?.(); });
   // the status bar follows the look (theme.ts calls motusApp.setBars)
   (globalThis as any).motusApp = { setBars: (bg: string, dark: boolean) => { P("StatusBar")?.setBackgroundColor?.({ color: bg }).catch?.(() => {}); P("StatusBar")?.setStyle?.({ style: dark ? "DARK" : "LIGHT" }).catch?.(() => {}); } };
 }

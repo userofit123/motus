@@ -6,8 +6,10 @@ import { queryClient } from "./api/live";
 import { startTheme } from "./core/theme";
 import "./styles/index.css";
 import { startSegSlide, startTabSlide } from "./core/segSlide";
+import { watchRouter } from "./core/sheets";
 
 startTheme();
+watchRouter(router);
 createApp(App).use(router).use(VueQueryPlugin, { queryClient }).mount("#app");
 // every row of tabs gets its gliding highlight without any code in the pages
 startSegSlide();

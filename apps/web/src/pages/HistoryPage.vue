@@ -79,7 +79,7 @@ const listGroups = computed(() => { const m = new Map<string, any[]>(); for (con
 <template>
   <div class="page wide">
     <div class="ph">
-      <div><h1>History</h1><div class="sub">{{ view === "calendar" ? summary : n(list.length, "session") }}</div></div>
+      <div><h1>Calendar</h1><div class="sub">{{ view === "calendar" ? summary : n(list.length, "session") }}</div></div>
       <div class="acts">
         <div class="seg"><button :class="{ on: view === 'calendar' }" @click="view = 'calendar'">Calendar</button><button :class="{ on: view === 'list' }" @click="view = 'list'">List</button></div>
       </div>

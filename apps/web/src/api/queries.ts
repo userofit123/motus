@@ -3,7 +3,7 @@ import { computed, type Ref, unref, type MaybeRef } from "vue";
 import { useQuery, useMutation } from "@tanstack/vue-query";
 import { withDefaults, type Settings, type Exercise, type RoutineSummary, type Goal, type Me } from "@motus/shared";
 import { api } from "./client";
-import { invalidate } from "./live";
+import { invalidate, queryClient } from "./live";
 import { toastError } from "../core/toast";
 
 export const useMe = () => useQuery({ queryKey: ["settings", "me"], queryFn: () => api.get<{ user: Me; settings: Settings }>("/me"), staleTime: 60_000 });
@@ -43,6 +43,20 @@ export function useChange<A extends unknown[], R>(fn: (...a: A) => Promise<R>, t
 }
 
 /** Settings change, applied to the cache straight away so the screen does not wait for the server. */
-export async function saveSettings(patch: Partial<Settings> | Record<string, unknown>) {
-  try { await api.put("/settings", patch); invalidate(["settings", "home", "stats", "goals"]); } catch (e) { toastError(e); }
+// Saves go one after another: quick taps each build on the last one instead of racing and overwriting it.
+let saving: Promise<unknown> = Promise.resolve();
+export function saveSettings(patch: Partial<Settings> | Record<string, unknown>) {
+  queryClient.setQueryData(["settings", "me"], (m: any) => m && { ...m, settings: mergePatch(m.settings, patch) });
+  saving = saving.then(async () => {
+    try { await api.put("/settings", patch); } catch (e) { toastError(e); }
+    invalidate(["settings", "home", "stats", "goals"]);
+  });
+  return saving;
+}
+// the same merge the server does: objects merge, anything else (lists included) replaces
+function mergePatch(a: any, b: any): any {
+  if (Array.isArray(b) || b === null || typeof b !== "object") return b;
+  const o = { ...(a && typeof a === "object" && !Array.isArray(a) ? a : {}) };
+  for (const k of Object.keys(b)) o[k] = mergePatch(o[k], b[k]);
+  return o;
 }

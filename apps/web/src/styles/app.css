@@ -74,6 +74,11 @@ hr.sep { border: 0; border-top: 1px solid var(--ol); margin: 14px 0; }
 .li { display: flex; align-items: center; gap: 12px; padding: 11px 4px; border-bottom: 1px solid var(--ol); min-height: 52px; }
 .li:last-child { border-bottom: 0; }
 .li.click:hover { background: color-mix(in srgb, var(--tx) 3%, transparent); border-radius: var(--r-sm); }
+/* a card that is only a menu of rows: a touched row lights up edge to edge, the dividers stay inset */
+.card.flush { padding: 0; overflow: hidden; }
+.card.flush .li { padding-inline: 16px; border-bottom: 0; position: relative; }
+.card.flush .li:not(:last-child)::after { content: ""; position: absolute; inset-inline: 16px; bottom: 0; height: 1px; background: var(--ol); }
+.card.flush .li.click:hover, .card.flush .li.click:active { border-radius: 0; background: color-mix(in srgb, var(--tx) 6%, transparent); }
 .li .t { font-weight: 500; font-size: 15px; }
 .li .s:not(.btn) { font-size: 12.5px; color: var(--tx2); margin-top: 1px; }
 .li .r { text-align: end; flex: none; }
@@ -186,7 +191,7 @@ html.phone { --tabh: 64px; }
 .pshell { width: 100%; min-height: 100vh; padding-bottom: calc(var(--tabh) + 16px + var(--sb)); }
 /* room for the running-workout bar above the tabs, so the end of a page is never hidden behind it */
 .pshell.withbar { padding-bottom: calc(var(--tabh) + 80px + var(--sb)); }
-.pmain { padding: calc(14px + var(--st)) 16px 24px; }
+.pmain { padding: calc(14px + var(--st)) 16px 24px; overflow-x: clip; }
 .pmain .ph { margin-bottom: 16px; align-items: center; }
 .pmain .ph h1 { font-size: 26px; }
 .pmain .ph .acts { gap: 4px; }
@@ -200,7 +205,7 @@ html.phone { --tabh: 64px; }
 .tabbar button.on { color: var(--tx); font-weight: 600; }
 .tabbar button.on .ic { background: var(--accc); color: var(--onc); }
 /* Start: a filled button that sits inside the bar, the same height as the tab icons and labels together */
-.tabbar .start { width: 52px; height: 44px; border-radius: 15px; margin: 0 auto; background: linear-gradient(135deg, var(--acc), var(--acc2)); color: var(--on); display: grid; place-items: center; box-shadow: 0 6px 16px -8px var(--acc); }
+.tabbar .start { width: 46px; height: 46px; border-radius: 15px; margin: 0 auto; background: linear-gradient(135deg, var(--acc), var(--acc2)); color: var(--on); display: grid; place-items: center; box-shadow: 0 6px 16px -8px var(--acc); }
 .tabbar .start svg { width: 24px; height: 24px; }
 
 /* ---------- start sheet ---------- */
@@ -413,6 +418,13 @@ html.phone .tabs button { padding: 10px 11px; }
 .nx-leave-to { opacity: 0; transform: translateX(-20px); }
 .pv-enter-from { opacity: 0; transform: translateX(-28px); }
 .pv-leave-to { opacity: 0; transform: translateX(20px); }
+/* moving between the phone's tabs: the page slides towards the tab you chose */
+.tnx-enter-active, .tpv-enter-active { transition: opacity .2s var(--ease), transform .26s var(--ease); }
+.tnx-leave-active, .tpv-leave-active { transition: opacity .12s ease-in, transform .12s ease-in; }
+.tnx-enter-from { opacity: 0; transform: translateX(40px); }
+.tnx-leave-to { opacity: 0; transform: translateX(-30px); }
+.tpv-enter-from { opacity: 0; transform: translateX(-40px); }
+.tpv-leave-to { opacity: 0; transform: translateX(30px); }
 /* reordering a list: rows glide to their new place */
 .mv-move { transition: transform .28s var(--ease); }
 .mv-enter-active { transition: opacity .2s, transform .2s var(--ease); }
@@ -447,7 +459,7 @@ html.phone .scr.leaving .sht { animation: up .22s ease-in reverse forwards; }
 .tabs.tsl button.on { border-bottom-color: transparent; }
 .tabi { position: absolute; left: 0; bottom: 0; height: 2px; border-radius: 2px; background: var(--acc); pointer-events: none; transition: transform .3s var(--ease), width .3s var(--ease); }
 @media (prefers-reduced-motion: reduce) {
-  .page-enter-active, .page-leave-active, .sw-enter-active, .sw-leave-active, .nx-enter-active, .nx-leave-active, .pv-enter-active, .pv-leave-active,
+  .page-enter-active, .page-leave-active, .tnx-enter-active, .tnx-leave-active, .tpv-enter-active, .tpv-leave-active, .sw-enter-active, .sw-leave-active, .nx-enter-active, .nx-leave-active, .pv-enter-active, .pv-leave-active,
   .mb-enter-active, .mb-leave-active, .rs-enter-active, .rs-leave-active, .mv-move { transition: none; }
   .tabi { transition: none; }
 }
