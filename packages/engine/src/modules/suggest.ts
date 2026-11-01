@@ -8,17 +8,23 @@ import type { Sql } from "../db";
 import type { RoutineSummary } from "@motus/shared";
 import { programState } from "./programs";
 
-export type Suggestion = { kind: "program" | "order" | "missed" | "rested" | "oldest"; title: string; reason: string; routineId: string | null; color: string | null; muscle?: string };
+export type Suggestion = { key: string; kind: "program" | "order" | "missed" | "rested" | "oldest"; title: string; reason: string; routineId: string | null; color: string | null; muscle?: string };
 
 // the muscles worth a nudge; small ones (forearms, neck, adductors…) only show up as part of a routine
 const MAIN = ["chest", "lats", "middle back", "shoulders", "biceps", "triceps", "abdominals", "quadriceps", "hamstrings", "glutes", "calves"];
 const DAY = 86400000;
 
-export async function suggestions(q: Sql, routines: RoutineSummary[], now: Date): Promise<Suggestion[]> {
+/** hidden: suggestions you dismissed (key → when); each stays hidden until your next workout */
+export async function suggestions(q: Sql, routines: RoutineSummary[], now: Date, hidden: Record<string, string> = {}): Promise<Suggestion[]> {
   const usable = routines.filter((r) => !r.archived && r.exerciseCount > 0);
   const byId = new Map(usable.map((r) => [r.id, r]));
   const out: Suggestion[] = [];
-  const add = (s: Suggestion) => { if (out.length < 3 && !out.some((x) => (s.routineId && x.routineId === s.routineId) || (s.muscle && x.muscle === s.muscle))) out.push(s); };
+  const lastWorkout = (await q.query<{ at: string }>("SELECT max(started_at) AS at FROM workouts WHERE status = 'completed'")).rows[0]?.at;
+  const isHidden = (key: string) => !!hidden[key] && (!lastWorkout || new Date(hidden[key]!) > new Date(lastWorkout));
+  const add = (x: Omit<Suggestion, "key">) => {
+    const key = `${x.kind}:${x.routineId ?? x.muscle}`;
+    if (out.length < 5 && !isHidden(key) && !out.some((y) => (x.routineId && y.routineId === x.routineId) || (x.muscle && y.muscle === x.muscle))) out.push({ key, ...x });
+  };
 
   // 0. a program you're following says what's next
   for (const p of (await q.query("SELECT * FROM programs WHERE active ORDER BY created_at DESC")).rows) {
@@ -34,11 +40,12 @@ export async function suggestions(q: Sql, routines: RoutineSummary[], now: Date)
     const after = new Map<string, number>();
     let times = 0;
     for (let i = 0; i < seq.length - 1; i++) if (seq[i] === last && seq[i + 1]) { times++; after.set(seq[i + 1]!, (after.get(seq[i + 1]!) ?? 0) + 1); }
-    const [next, n] = [...after].filter(([id]) => id !== last && byId.has(id)).sort((a, b) => b[1] - a[1])[0] ?? [];
     // twice is a habit; once is enough only when it's the only thing that ever followed
-    if (next && (n! >= 2 || after.size === 1) && byId.get(last)) {
+    const followers = [...after].filter(([id]) => id !== last && byId.has(id)).sort((a, b) => b[1] - a[1]);
+    for (const [next, n] of followers.slice(0, 2)) {
+      if (!(n >= 2 || after.size === 1) || !byId.get(last)) continue;
       const r = byId.get(next)!;
-      add({ kind: "order", title: r.name, reason: `You usually do it after ${byId.get(last)!.name}${n! > 1 ? ` (${n} of ${times} times)` : ""}`, routineId: r.id, color: r.color ?? null });
+      add({ kind: "order", title: r.name, reason: `${n === followers[0]![1] ? "You usually do it" : "Sometimes done"} after ${byId.get(last)!.name}${n > 1 ? ` (${n} of ${times} times)` : ""}`, routineId: r.id, color: r.color ?? null });
     }
   }
 
@@ -66,8 +73,9 @@ export async function suggestions(q: Sql, routines: RoutineSummary[], now: Date)
   for (const m of known.filter((x) => days(x)! >= 10).sort((a, b) => days(b)! - days(a)!).slice(0, 2))
     muscleTip(m, "rested", `${muscleName(m)} not worked for ${days(m)} days`);
 
-  // 3. otherwise: the routine done longest ago
-  const oldest = [...usable].sort((a, b) => (a.lastDoneAt ?? "").localeCompare(b.lastDoneAt ?? ""))[0];
-  if (oldest && !out.length) add({ kind: "oldest", title: oldest.name, reason: oldest.lastDoneAt ? `Your routine done longest ago, ${Math.floor((now.getTime() - new Date(oldest.lastDoneAt).getTime()) / DAY)} days` : "You haven't done this one yet", routineId: oldest.id, color: oldest.color ?? null });
+  // 3. and the routines done longest ago
+  const ago = (at: string | null) => (at ? Math.floor((now.getTime() - new Date(at).getTime()) / DAY) : null);
+  for (const r of [...usable].filter((x) => (ago(x.lastDoneAt) ?? 99) >= 3).sort((a, b) => (a.lastDoneAt ?? "").localeCompare(b.lastDoneAt ?? "")).slice(0, 2))
+    add({ kind: "oldest", title: r.name, reason: r.lastDoneAt ? `Not done for ${ago(r.lastDoneAt)} days` : "You haven't done this one yet", routineId: r.id, color: r.color ?? null });
   return out;
 }

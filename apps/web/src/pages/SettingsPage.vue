@@ -15,6 +15,7 @@ import { askNotificationPermission } from "../workout/native";
 import { ago } from "../core/format";
 import Icon from "../components/Icon.vue";
 import BackupSection from "../components/settings/BackupSection.vue";
+import ProfileSection from "../components/settings/ProfileSection.vue";
 import DataSection from "../components/settings/DataSection.vue";
 import AdminSection from "../components/settings/AdminSection.vue";
 import UpdatesSection from "../components/settings/UpdatesSection.vue";
@@ -25,9 +26,9 @@ import { native } from "../core/device";
 const route = useRoute(), router = useRouter();
 const me = useMe();
 const s = useSettings();
-const sec = computed(() => String(route.params.section || (isPhone.value ? "" : "account")));
+const sec = computed(() => String(route.params.section || (isPhone.value ? "" : "profile")));
 const SECTIONS = computed(() => [
-  ["account", "Account", "user"], ...((globalThis as any).motusNative?.accounts ? [["accounts", "Accounts on this device", "layers"]] : []), ["units", "Units & formats", "scale"], ["workout", "Workout", "dumbbell"], ["features", "Features", "sparkle"],
+  ["profile", "Profile", "user"], ["account", "Account", "lock"], ...((globalThis as any).motusNative?.accounts ? [["accounts", "Accounts on this device", "layers"]] : []), ["units", "Units & formats", "scale"], ["workout", "Workout", "dumbbell"], ["features", "Features", "sparkle"],
   ["appearance", "Appearance", "palette"], ["notifications", "Notifications", "bell"], ["backup", "Backup & restore", "download"], ["data", "Export & import", "upload"],
   ["updates", "Updates", "refresh"], ...(s.value.features.apiTokens || s.value.features.mcp ? [["integrations", "Integrations", "link"]] : []), ...(session.user?.role === "admin" ? [["admin", "Server admin", "server"]] : []), ["about", "About", "info"],
 ] as [string, string, string][]);
@@ -37,7 +38,6 @@ const w = computed(() => s.value.workout);
 
 // account
 const sessions = useQuery({ queryKey: ["settings", "sessions"], queryFn: () => api.get("/auth/sessions"), enabled: computed(() => sec.value === "account") });
-async function editName() { const n = await prompt("Your name", { value: me.data.value?.user.displayName }); if (n != null) { await api.put("/me", { displayName: n, email: me.data.value?.user.email }); me.refetch(); } }
 async function changePassword() {
   const current = await prompt("Current password"); if (!current) return;
   const next = await prompt("New password", { text: "At least 8 characters." }); if (!next) return;
@@ -93,18 +93,15 @@ async function allowNotifications() { await askNotificationPermission(); notifPe
       </div>
 
       <Transition name="sw" mode="out-in"><div v-if="sec" :key="sec" class="col" style="gap:var(--spg)">
-        <template v-if="sec === 'account'">
+        <ProfileSection v-if="sec === 'profile'" />
+        <template v-else-if="sec === 'account'">
           <div class="card">
-            <div class="li"><div class="grow"><div class="t">{{ me.data.value?.user.displayName || me.data.value?.user.username }}</div><div class="s">@{{ me.data.value?.user.username }} · {{ me.data.value?.user.role === "admin" ? "admin" : "member" }}</div></div><button class="qb acc" @click="editName">Edit</button></div>
+            <div class="li"><div class="grow"><div class="t">Username</div><div class="s">@{{ me.data.value?.user.username }} · {{ me.data.value?.user.role === "admin" ? "admin" : "member" }}</div></div></div>
             <div class="li"><div class="grow"><div class="t">Password</div></div><button class="qb acc" @click="changePassword">Change</button></div>
             <div class="li"><div class="grow"><div class="t">Sign out</div><div class="s">From this device</div></div><button class="qb acc" @click="signOut()">Sign out</button></div>
           </div>
           <div class="sh first"><h2>Signed-in devices</h2><button class="lnk" @click="api.post('/auth/logout-others').then(() => sessions.refetch())">Sign out the others</button></div>
           <div class="card"><div v-for="x in sessions.data.value ?? []" :key="x.id" class="li"><Icon :name="x.platform === 'android' ? 'device' : 'server'" :size="18" class="muted" /><div class="grow"><div class="t">{{ x.deviceName || x.platform }}{{ x.current ? " · this device" : "" }}</div><div class="s">{{ x.current ? "Now" : `Last used ${ago(x.lastSeenAt)}` }}</div></div><button v-if="!x.current" class="qb" @click="endSession(x.id)">Sign out</button></div></div>
-          <div class="card"><div class="li"><div class="grow"><div class="t">Your body</div><div class="s">Used for strength standards and calories (optional)</div></div></div>
-            <div class="frow"><div class="fld"><label>Height (cm)</label><input type="number" :value="s.profile.heightCm ?? ''" @change="set({ profile: { heightCm: Number(($event.target as HTMLInputElement).value) || null } })" /></div>
-              <div class="fld"><label>Year of birth</label><input type="number" :value="s.profile.birthYear ?? ''" @change="set({ profile: { birthYear: Number(($event.target as HTMLInputElement).value) || null } })" /></div>
-              <div class="fld"><label>Sex</label><select :value="s.profile.sex" @change="set({ profile: { sex: ($event.target as HTMLSelectElement).value } })"><option value="">Not set</option><option value="male">Male</option><option value="female">Female</option></select></div></div></div>
           <div class="card"><div class="li"><div class="grow"><div class="t" style="color:var(--neg)">Delete account</div><div class="s">Deletes everything you have in Motus</div></div><button class="qb danger" @click="deleteAccount">Delete</button></div></div>
         </template>
 

@@ -4,6 +4,7 @@ import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
 import { HOME_CARDS_OPTIONAL, muscleName } from "@motus/shared";
 import { useHome, useSettings, saveSettings } from "../api/queries";
+import { queryClient } from "../api/live";
 import { useFmt, ago } from "../core/format";
 import { startOpen, bodySheet, activitySheet } from "../core/ui";
 import { isPhone } from "../core/device";
@@ -26,6 +27,11 @@ const custom = ref(false);
 const planOpen = ref<any>(null);
 const targetOpen = ref(false);
 const OPT: Record<string, string> = { volume: "Volume this week", walking: "Walking", bodyweight: "Body weight", records: "Recent records", reminders: "Reminders", feed: "Recent activity", muscles: "Sets per muscle this week", achievements: "Achievements" };
+// a dismissed suggestion stays away until your next workout; the list redraws without waiting for the server
+const hideSuggestion = (key: string) => {
+  queryClient.setQueriesData({ queryKey: ["home"] }, (d: any) => d && { ...d, suggest: d.suggest.filter((x: any) => x.key !== key) });
+  saveSettings({ home: { hidden: { [key]: new Date().toISOString() } } });
+};
 const toggleCard = (c: string) => saveSettings({ home: { cards: has(c) ? cards.value.filter((x) => x !== c) : [...cards.value, c] } });
 
 const today = new Date();
@@ -36,8 +42,7 @@ const lw = computed(() => h.value?.lastWeek ?? { workouts: 0, timeS: 0, volumeKg
 // how many muscle groups were worked in the last 7 days
 const groups = computed<any[]>(() => h.value?.groupDays ?? []);
 const worked = computed(() => groups.value.filter((g) => g.days != null && g.days < 7).length);
-const condition = computed(() => !h.value?.last ? "Nothing worked yet" : worked.value === groups.value.length ? "Every muscle group" : `${worked.value} of ${groups.value.length} muscle groups`);
-const notWorked = computed(() => groups.value.filter((g) => g.days == null || g.days >= 7).map((g) => g.name));
+const condition = computed(() => !h.value?.last ? "Nothing worked yet" : `${worked.value}/${groups.value.length} groups`);
 // minutes until there is an hour's worth, then hours and minutes
 const hm = (sec: number) => { const m = Math.round(sec / 60); return m < 60 ? [[m, "min"]] : m % 60 ? [[Math.floor(m / 60), "h"], [m % 60, "min"]] : [[m / 60, "h"]]; };
 const lastBw = computed(() => h.value?.bodyweight?.[0]);
@@ -76,7 +81,7 @@ const dayName = (d: string) => { const t = new Date().toLocaleDateString("sv-SE"
         <div class="card stat click" @click="router.push('/stats?tab=muscles')">
           <div class="lbl"><span class="bi"><Icon name="activity" :size="15" /></span>Muscles</div>
           <div class="cond">
-            <div class="grow"><div class="ct">{{ condition }}</div><div v-if="h.last" class="sub">worked in the last 7 days<template v-if="notWorked.length"> · not yet: {{ notWorked.join(", ") }}</template></div></div>
+            <div class="grow"><div class="ct">{{ condition }}</div><div v-if="h.last" class="sub">worked in the last 7 days</div></div>
             <BodyMap :values="h.muscles7" :height="isPhone ? 80 : 78" />
           </div>
         </div>
@@ -101,7 +106,7 @@ const dayName = (d: string) => { const t = new Date().toLocaleDateString("sv-SE"
         <!-- suggestions: worked out from your order of routines and the muscles you've worked -->
         <section v-if="h.suggest.length">
           <div class="sh"><h2>Suggested</h2></div>
-          <div class="card"><div class="list">
+          <div class="card"><TransitionGroup name="mv" tag="div" class="list">
             <div v-for="x in h.suggest" :key="x.kind + (x.routineId ?? x.muscle)" class="li">
               <span class="bi sg"><Icon :name="x.kind === 'order' || x.kind === 'program' ? 'routines' : x.kind === 'oldest' ? 'clock' : 'activity'" :size="16" /></span>
               <div class="grow"><div class="t">{{ x.title }}</div><div class="s">{{ x.reason }}</div></div>
@@ -110,8 +115,9 @@ const dayName = (d: string) => { const t = new Date().toLocaleDateString("sv-SE"
                 <button class="btn s o" @click="router.push(`/routines/${x.routineId}/start`)">Start</button>
               </template>
               <button v-else class="btn s o" @click="router.push(`/exercises?muscle=${encodeURIComponent(x.muscle)}`)">Exercises</button>
+              <button class="ib sm plain" aria-label="Not now" title="Not now: hide until your next workout" @click="hideSuggestion(x.key)"><Icon name="close" :size="16" /></button>
             </div>
-          </div></div>
+          </TransitionGroup></div>
         </section>
         <!-- previous workout -->
         <section>

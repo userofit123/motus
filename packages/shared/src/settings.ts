@@ -36,7 +36,8 @@ export interface Settings {
   e1rm: "epley" | "brzycki";
   weeklyGoal: number;
   stepGoal: number;
-  home: { cards: string[] };
+  /** hidden: Home suggestions you dismissed (key → when), hidden until your next workout */
+  home: { cards: string[]; hidden: Record<string, string> };
   features: Record<string, boolean>;
   notifications: { scheduled: boolean; goals: boolean; updates: boolean; inactivity: boolean };
   backup: { on: boolean; every: "workout" | "daily" | "weekly"; at: string; keep: number; encrypt: boolean; media: boolean };
@@ -68,7 +69,7 @@ export const DEFAULT_SETTINGS: Settings = {
   e1rm: "epley",
   weeklyGoal: 3,
   stepGoal: 8000,
-  home: { cards: HOME_CARDS_DEFAULT },
+  home: { cards: HOME_CARDS_DEFAULT, hidden: {} },
   features: FEATURE_DEFAULTS,
   notifications: { scheduled: true, goals: true, updates: true, inactivity: false },
   backup: { on: true, every: "daily", at: "03:00", keep: 14, encrypt: false, media: true },

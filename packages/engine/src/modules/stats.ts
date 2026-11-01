@@ -138,7 +138,7 @@ export function statsRoutes(r: Router) {
     const planned = (await plannedBetween(ctx.q, today, end));
     const doneToday = rows.filter((x) => ymd(new Date(new Date(x.startedAt).getTime() - tzMin * 60000)) === today).map((x) => x.routineId);
     const upNext = planned.filter((p) => !(p.date === today && p.routineId && doneToday.includes(p.routineId))).slice(0, 5);
-    const suggest = await suggestions(ctx.q, await routineSummaries(ctx.q, ctx.userId), now);
+    const suggest = await suggestions(ctx.q, await routineSummaries(ctx.q, ctx.userId), now, s.home.hidden);
     const goals = (await goalsWithProgress(ctx)).filter((g) => g.status === "active").slice(0, 3);
     const reminders = (await ctx.q.query(
       `SELECT m.*, coalesce(e.name, r.name) AS target_name FROM reminders m LEFT JOIN exercises e ON m.target_type='exercise' AND e.id = m.target_id

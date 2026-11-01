@@ -15,10 +15,10 @@
     <!-- Before the first paint: the saved look (so there is no flash) and the phone/desktop layout. -->
     <script>try{var T=JSON.parse(localStorage.getItem("motusTheme")||"{}"),h=document.documentElement;["bg","tex","rad","den","spc","nsp","fnt","nav"].forEach(function(k){if(T[k])h.dataset[k]=T[k]});var b=JSON.parse(localStorage.getItem("motusBoot")||"null");h.style.background=b?b.bg:"#17100d";h.style.colorScheme=!b||b.d?"dark":"light";if(b){h.style.setProperty("--sp1",b.a1);h.style.setProperty("--sp2",b.a2)}}catch(e){}
     (function(){var L=localStorage.getItem("motusLayout")||"auto",w=Math.min(innerWidth,document.documentElement.clientWidth||innerWidth),t=matchMedia("(pointer:coarse)").matches;document.documentElement.classList.toggle("phone",L=="phone"||(L=="auto"&&(w<=860||(t&&w<=1100))))})();</script>
-    <style>#splash{position:fixed;inset:0;display:grid;place-items:center}#splash i{width:56px;height:56px;border-radius:18px;background:linear-gradient(135deg,var(--sp1,#f8b396),var(--sp2,#f47b99));animation:spl 1.2s ease-in-out infinite}@keyframes spl{50%{transform:scale(.92);opacity:.7}}</style>
+    <style>#splash{position:fixed;inset:0;display:grid;place-items:center}#splash i{width:56px;height:56px;border-radius:18px;display:grid;place-items:center;background:linear-gradient(135deg,var(--sp1,#f8b396),var(--sp2,#f47b99));animation:spl 1.2s ease-in-out infinite}#splash svg{width:30px;height:30px}@keyframes spl{50%{transform:scale(.92);opacity:.7}}</style>
   </head>
   <body>
-    <div id="app"><div id="splash"><i></i></div></div>
+    <div id="app"><div id="splash"><i><svg viewBox="0 0 24 24" fill="none" stroke="#441704" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 16c2-5.5 4-8 5.5-8s2 4.2 3.2 4.2S14.8 9.5 20 6"/></svg></i></div></div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
