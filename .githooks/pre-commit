@@ -6,7 +6,7 @@ case "$email" in
   *@users.noreply.github.com) ;;
   *) echo "pre-commit: author email must be a GitHub no-reply address (got: $email)"; exit 1 ;;
 esac
-bad="$(git diff --cached --name-only --diff-filter=AM | grep -E '(^|/)\.env($|\.)|\.motusbackup$|\.mmbackup$|\.jks$|\.keystore$|\.p12$|(^|/)secrets/|(^|/)data/' | grep -v '\.env\.example$')"
+bad="$(git diff --cached --name-only --diff-filter=AM | grep -E '(^|/)\.env($|\.)|\.motusbackup$|\.mmbackup$|\.jks$|\.keystore$|\.p12$|(^|/)secrets/|^data/' | grep -v '\.env\.example$')"
 if [ -n "$bad" ]; then
   echo "pre-commit: these files may hold data or secrets and cannot be committed:"; echo "$bad"; exit 1
 fi

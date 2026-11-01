@@ -106,10 +106,11 @@ export function backupDue(cfg: { on: boolean; every: "workout" | "daily" | "week
   return Date.now() - last > (cfg.every === "daily" ? 86400000 : 7 * 86400000) - 3600000;
 }
 
+let offered = false; // the download is offered once per visit, not again after every workout
 /** Runs an automatic backup when one is due: silently into the folder (or the app's folder), else offers a download. */
 export async function maybeAutoBackup(cfg: { on: boolean; every: "workout" | "daily" | "weekly"; keep: number; encrypt: boolean }, afterWorkout = false, offer?: (run: () => void) => void) {
   if (!backupDue(cfg, afterWorkout) || cfg.encrypt) return; // encrypted backups need the password, so they are made by hand
   const silent = !!(globalThis as any).motusNative?.saveBackup || ((await idb<any>((s) => s.get("dir")).catch(() => null)) && true);
   if (silent) { try { await backupNow({ keep: cfg.keep, interactive: false }); } catch { /* shown in Settings → Backup */ } }
-  else offer?.(() => backupNow({ keep: cfg.keep, interactive: true }));
+  else if (!offered) { offered = true; offer?.(() => backupNow({ keep: cfg.keep, interactive: true })); }
 }
