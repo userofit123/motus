@@ -30,7 +30,11 @@ const all = computed(() => downloads(rel.data.value?.assets ?? []));
 // the first matching download for this system (Linux: the AppImage, which runs on any distribution)
 const mine = computed(() => all.value.find((d) => d.key === platform.key));
 const others = computed(() => all.value.filter((d) => d !== mine.value));
-const DOWNLOAD_LABEL: Record<string, string> = { android: "Download the Android app", windows: "Download for Windows", linux: "Download for Linux", mac: "Download for macOS" };
+const DOWNLOAD_LABEL: Record<string, string> = { android: "Download the APK", windows: "Download for Windows", linux: "Download for Linux", mac: "Download for macOS" };
+// In a browser the app made for this device is suggested on a card of its own, as the page's main action: on Android
+// always (until there is an APK, the releases page is where it will appear), on a computer only when there is a download.
+const RELEASES_URL = `${REPO_URL}/releases`;
+const suggest = computed(() => (platform.app ? null : platform.key === "android" ? "android" : ["windows", "linux", "mac"].includes(platform.key) && mine.value ? "desktop" : null));
 const showServer = computed(() => session.user?.role === "admin" && !localAccount.value && !!latest.value);
 const mb = (n?: number) => (n ? ` · ${Math.max(1, Math.round(n / 1e6))} MB` : "");
 const notes = computed(() => String(rel.data.value?.notes ?? "").split("\n").filter((l) => l.trim()).slice(0, 30));
@@ -44,7 +48,18 @@ const notes = computed(() => String(rel.data.value?.notes ?? "").split("\n").fil
         <div v-if="platform.app && updater.status" class="s">{{ updater.status }}</div>
         <div v-else-if="platform.key === 'ios'" class="s">There is no iPhone or iPad app yet. Motus works in Safari: tap Share, then Add to Home Screen.</div></div>
         <button v-if="platform.app && isNewer" class="btn s" @click="updater.install()">{{ updater.ready ? "Install" : "Download update" }}</button>
-        <a v-else-if="!platform.app && mine" class="btn s" :href="mine.url" target="_blank" rel="noopener">{{ DOWNLOAD_LABEL[mine.key] }}</a></div>
+</div>
+    </div>
+    <div v-if="suggest === 'android'" class="card">
+      <div class="li"><div class="grow"><div class="t">Get the Android app</div>
+        <div class="s">It can keep your data on the phone alone, without a server, and works without a connection. The rest timer rings and shows on the lock screen while the phone is locked, walks and runs are recorded with GPS and counted in steps with the screen off, and it updates itself.</div></div>
+        <a v-if="mine" class="btn s" :href="mine.url" target="_blank" rel="noopener">{{ DOWNLOAD_LABEL.android }}</a>
+        <a v-else class="btn s" :href="RELEASES_URL" target="_blank" rel="noopener">See releases</a></div>
+    </div>
+    <div v-else-if="suggest === 'desktop' && mine" class="card">
+      <div class="li"><div class="grow"><div class="t">Get the desktop app</div>
+        <div class="s">Motus in its own window. It can keep your data on this computer alone, without a server, works without a connection and updates itself.</div></div>
+        <a class="btn s" :href="mine.url" target="_blank" rel="noopener">{{ DOWNLOAD_LABEL[mine.key] }}</a></div>
     </div>
     <div v-if="others.length || showServer" class="card">
       <div class="lbl hgap">Other devices</div>

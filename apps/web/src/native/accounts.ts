@@ -43,8 +43,15 @@ export async function connect(): Promise<boolean> {
   const acc = current();
   if (!acc) return false;
   if (acc.kind === "local") setTransport(await localTransport(acc));
-  else { server.value = { base: acc.url!, token: acc.token ?? null }; setTransport(httpTransport); }
+  else { server.value = { base: acc.url!, token: acc.token ?? null }; setTransport(httpTransport); document.addEventListener("error", photoFallback, true); }
   return true;
+}
+/** A built-in exercise photo missing from the copy inside the app (a newer server's library): load it from the server. */
+function photoFallback(e: Event) {
+  const img = e.target;
+  const own = location.origin + "/exercise-images/";
+  // once per photo: the server's address never starts with the app's own, so a photo missing there too stays broken
+  if (img instanceof HTMLImageElement && img.src.startsWith(own) && server.value.base) img.src = server.value.base + img.src.slice(location.origin.length);
 }
 
 export async function addLocal(name: string) {

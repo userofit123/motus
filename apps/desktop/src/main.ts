@@ -51,7 +51,12 @@ function startProxy(acc: Account): Promise<{ port: number; close: () => Promise<
   };
   const server = http.createServer((req, res) => {
     const url = req.url ?? "/";
-    if (url.startsWith("/api/")) {
+    let clean = url.split("?")[0]!;
+    try { clean = decodeURIComponent(clean); } catch { /* left as it came */ }
+    // built-in exercise photos come from the copy inside the app (offline, at once); one it lacks (a newer server's
+    // library) is passed on to the server below
+    if (clean.startsWith("/exercise-images/") && serveFile(IMAGES, clean.slice(17), res)) return;
+    if (url.startsWith("/api/") || clean.startsWith("/exercise-images/")) {
       const headers = { ...req.headers, host: target.host, origin: target.origin };
       const p = lib.request({ protocol: target.protocol, hostname: target.hostname, port: target.port || undefined, path: url, method: req.method, headers }, (r) => {
         const h = { ...r.headers };
@@ -64,8 +69,6 @@ function startProxy(acc: Account): Promise<{ port: number; close: () => Promise<
       req.pipe(p);
       return;
     }
-    const clean = decodeURIComponent(url.split("?")[0]!);
-    if (clean.startsWith("/exercise-images/") && serveFile(IMAGES, clean.slice(17), res)) return;
     if (clean !== "/" && serveFile(WEB, clean.slice(1), res)) return;
     serveFile(WEB, "index.html", res);
   });
@@ -132,6 +135,8 @@ function serverAddress(input: string) {
 ipcMain.handle("accounts:addServer", async (_e, url: unknown, name: unknown) => {
   if (typeof url !== "string") throw new Error("That doesn't look like an address");
   const base = serverAddress(url);
+  // https only, like the Android app: sign-in and your data never travel unencrypted
+  if (base.startsWith("http://")) throw new Error("This app only connects over https. Use the https address of your server.");
   // a Motus server answers its sign-in status with its API level; anything else at that address isn't one.
   // It gets a few seconds: an address that never answers would otherwise leave the screen waiting for minutes.
   const res = await fetch(base + "/api/auth/status", { signal: AbortSignal.timeout(8000) }).catch((e) => { if (e?.name === "TimeoutError") throw new Error("No answer from that address"); return null; });

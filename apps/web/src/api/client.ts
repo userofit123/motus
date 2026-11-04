@@ -68,7 +68,10 @@ export const api = {
 /** Exercise photo or uploaded media → URL */
 export function mediaUrl(src: string | null | undefined): string {
   if (!src) return "";
-  if (src.startsWith("lib:")) return `${server.value.base}/exercise-images/${src.slice(4)}`;
+  // built-in exercise photos always come from this app's own address: in a browser that is the server it was opened
+  // from (sw.js keeps them for offline); the Android and desktop apps carry their own copy, which shows offline and at
+  // once, for server accounts too. One the Android app lacks falls back to the server (photoFallback in native/accounts.ts).
+  if (src.startsWith("lib:")) return `/exercise-images/${src.slice(4)}`;
   // a local account (Android) keeps photos inside its database as data: URLs
   if (src.startsWith("media:data:")) return src.slice(6);
   if (src.startsWith("media:")) return `${server.value.base}/api/media/${src.slice(6)}`;

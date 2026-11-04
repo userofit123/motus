@@ -202,7 +202,7 @@ by side** on one device, with a quick account switcher:
 
 | | **Local account** | **Server account** |
 |---|---|---|
-| App, screens, exercise library, images | On the device | On the device (bundled; never loaded from the server) |
+| App, screens, exercise library, images | On the device | On the device (bundled; only a photo the app lacks, from a newer server library, comes from the server) |
 | Database (your workouts, routines, goals…) | On the device (PGlite) | **On your server** (PostgreSQL), with an offline cache and outbox on the device (§2.2) |
 | Your uploaded media (custom exercise photos, progress photos) | On the device | Stored on the server, cached on the device |
 | Needs a network | Never | Only to sync |
