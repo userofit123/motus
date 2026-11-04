@@ -12,8 +12,8 @@ const groups = computed(() => { const m = new Map<string, any[]>(); for (const t
 </script>
 
 <template>
-  <template v-for="([grp, ts], i) in groups" :key="grp">
-    <div class="sh" :class="{ first: i === 0 }"><h2>{{ grp }}</h2><span class="tiny">{{ ts.length }} {{ ts.length === 1 ? "routine" : "routines" }}</span></div>
+  <template v-for="[grp, ts] in groups" :key="grp">
+    <div class="sh"><h2>{{ grp }}</h2><span class="tiny">{{ ts.length }} {{ ts.length === 1 ? "routine" : "routines" }}</span></div>
     <div class="opt-list">
       <button v-for="t in ts" :key="t.slug" class="optb wbody" @click="emit('pick', t.slug)">
         <MuscleFig :muscles="t.muscles" :helpers="t.helpers" />
