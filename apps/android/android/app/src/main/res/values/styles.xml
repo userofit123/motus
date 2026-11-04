@@ -13,6 +13,9 @@
         <item name="windowActionBar">false</item>
         <item name="windowNoTitle">true</item>
         <item name="android:background">@null</item>
+        <!-- until the page sets the look's colour (MotusBarsPlugin), the bars wear the default dark background, not black -->
+        <item name="android:statusBarColor">#17100d</item>
+        <item name="android:navigationBarColor">#17100d</item>
     </style>
 
 

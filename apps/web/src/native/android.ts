@@ -4,6 +4,7 @@ import { accounts, addLocal, addServer, open, remove, rename, chooser } from "./
 import { sheetIsOpen, closeTopSheet } from "../core/sheets";
 import { REPO, newer } from "../core/releases";
 import { router } from "../router";
+import { applyTheme } from "../core/theme";
 
 const cap = () => (globalThis as any).Capacitor;
 const P = (n: string) => cap()?.Plugins?.[n];
@@ -57,6 +58,16 @@ export function installAndroidBridge() {
   P("App")?.addListener?.("backButton", ({ canGoBack }: { canGoBack: boolean }) => { if (sheetIsOpen()) closeTopSheet(); else if (canGoBack && location.pathname !== "/") history.back(); else P("App").minimizeApp?.(); });
   // a tap on an ongoing notification that names a page (the interval timer's) opens that page
   P("MotusWorkout")?.addListener?.("open", ({ path }: { path?: string }) => { if (typeof path === "string" && path.startsWith("/")) void router.push(path); });
-  // the status bar follows the look (theme.ts calls motusApp.setBars)
-  (globalThis as any).motusApp = { setBars: (bg: string, dark: boolean) => { P("StatusBar")?.setBackgroundColor?.({ color: bg }).catch?.(() => {}); P("StatusBar")?.setStyle?.({ style: dark ? "DARK" : "LIGHT" }).catch?.(() => {}); } };
+  // the status bar and the navigation bar follow the look (theme.ts calls motusApp.setBars); Android reads only
+  // #rrggbb, so a short "#abc" is spelled out
+  (globalThis as any).motusApp = {
+    setBars: (bg: string, dark: boolean) => {
+      const c = /^#[0-9a-f]{3}$/i.test(bg) ? "#" + [...bg.slice(1)].map((x) => x + x).join("") : bg;
+      if (P("MotusBars")) P("MotusBars").set({ bg: c, dark }).catch?.(() => {});
+      else { P("StatusBar")?.setBackgroundColor?.({ color: c }).catch?.(() => {}); P("StatusBar")?.setStyle?.({ style: dark ? "DARK" : "LIGHT" }).catch?.(() => {}); }
+    },
+  };
+  // the look was put on the page before this bridge existed (main.ts starts the theme first), so the bars missed it
+  // and stayed black until the look changed: give them the current colour now
+  applyTheme();
 }

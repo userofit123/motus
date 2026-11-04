@@ -8,6 +8,7 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(MotusUpdaterPlugin.class);
         registerPlugin(MotusWorkoutPlugin.class);
+        registerPlugin(MotusBarsPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }
