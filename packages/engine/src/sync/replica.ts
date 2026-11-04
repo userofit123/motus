@@ -1,15 +1,16 @@
 // A device's copy of a person's data on a server (offline use). The app works on this copy; sync() in the app sends
 // what changed here and fetches what changed elsewhere. Kept in app_meta: where in the server's log this copy is,
 // how much of its own log has been sent, this device's name for itself, and which catalog it has.
-import type { Db } from "../db";
+import type { Db, Sql } from "../db";
 import { SYNCED } from "./tables";
-import { readRows, applyChanges, latestPerRow, keyOf, type Change } from "./core";
+import { readRows, applyChanges, latestPerRow, keyOf, overrule, DELETES_WIN, type Change } from "./core";
 import { uuidv7 } from "../ids";
 
 export interface ReplicaMeta { cursor: number; pushed: number; device: string; catalog: string; ready: boolean }
 
-export async function replicaMeta(db: Db): Promise<ReplicaMeta> {
-  const r = (await db.admin.query("SELECT value FROM app_meta WHERE key = 'replica'")).rows[0]?.value;
+export const replicaMeta = (db: Db) => metaOf(db.admin);
+async function metaOf(q: Sql): Promise<ReplicaMeta> {
+  const r = (await q.query("SELECT value FROM app_meta WHERE key = 'replica'")).rows[0]?.value;
   return { cursor: 0, pushed: 0, device: "", catalog: "", ready: false, ...(r ?? {}) };
 }
 async function saveMeta(db: Db, patch: Partial<ReplicaMeta>) {
@@ -72,18 +73,34 @@ export async function waitingCount(db: Db) {
 
 /**
  * Writes the server's changes into this copy. A row changed here more recently (and not yet sent) keeps this
- * device's version; it goes to the server on the next send, where the newest wins again.
+ * device's version; it goes to the server on the next send, where the newest wins again. overrule() decides first:
+ * a workout cancelled here stays cancelled, one finished here stays finished (and is sent again, so the server
+ * follows), and one cancelled or finished on the server is so here too, whatever was changed here meanwhile.
  */
 export async function applyRemote(db: Db, userId: string, changes: Change[], cursor?: number) {
-  const m = await replicaMeta(db);
-  const mine = new Map<string, number>();
-  for (const e of (await db.admin.query("SELECT tbl, pk, max(at) AS at FROM sync_log WHERE seq > $1 GROUP BY tbl, pk", [m.pushed])).rows)
-    mine.set(keyOf(e.tbl, e.pk), new Date(e.at).getTime());
-  const take = changes.filter((c) => { const t = mine.get(keyOf(c.tbl, c.pk)); return t == null || t <= new Date(c.at).getTime(); });
   const res = await db.tx(async (q) => {
+    // read inside the same transaction as the writes: a change made here in between (finishing, say) is then either
+    // seen here, or made after these writes; never overwritten by an older version of the row
+    const m = await metaOf(q);
+    const mine = new Map<string, { at: number; op: string }>();
+    for (const e of (await q.query("SELECT DISTINCT ON (tbl, pk) tbl, pk, op, at FROM sync_log WHERE seq > $1 ORDER BY tbl, pk, seq DESC", [m.pushed])).rows)
+      mine.set(keyOf(e.tbl, e.pk), { at: new Date(e.at).getTime(), op: e.op });
+    const here = await readRows(q, changes.filter((c) => DELETES_WIN.has(c.tbl)));
+    const keep: Change[] = [];
+    const take = changes.filter((c) => {
+      const k = keyOf(c.tbl, c.pk), t = mine.get(k);
+      const o = overrule(c, { row: here.get(k) ?? null, lastOp: t?.op ?? null });
+      if (o === false) keep.push(c);
+      return o ?? (t == null || t.at <= new Date(c.at).getTime());
+    });
     const r = await applyChanges(q, userId, take, { apply: true });
     // the server's version replaced an older change made here: that one need not be sent any more
     for (const c of take) await q.query("DELETE FROM sync_log WHERE seq > $1 AND tbl = $2 AND pk = $3::jsonb", [m.pushed, c.tbl, JSON.stringify(c.pk)]);
+    // this copy's version stands against the server's: send it (again), so the server ends up the same
+    for (const c of [...keep, ...r.kept]) {
+      const row = (await readRows(q, [c])).get(keyOf(c.tbl, c.pk));
+      await q.query("INSERT INTO sync_log (user_id, tbl, pk, op) VALUES ($1, $2, $3::jsonb, $4)", [userId, c.tbl, JSON.stringify(c.pk), row ? "upsert" : "delete"]);
+    }
     return r;
   });
   if (cursor != null) await saveMeta(db, { cursor });

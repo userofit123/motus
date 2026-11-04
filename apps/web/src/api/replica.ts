@@ -5,6 +5,7 @@
 import { reactive } from "vue";
 import { ApiError, httpTransport, server, setTransport, type Transport } from "./client";
 import { invalidate, setRemoteHandler } from "./live";
+import { readStr, writeStr } from "../core/prefs";
 
 export const sync = reactive({ on: false, online: true, syncing: false, waiting: 0, lastAt: 0, error: "" });
 
@@ -14,13 +15,46 @@ const PAGE_WAIT = 30_000;
 
 let eng: any = null, R: any = null, db: any = null, userId = "", name = "";
 let running = false, again = false, timer: ReturnType<typeof setTimeout> | null = null;
+// what signing out has to undo, so the next person signing in on this tab starts clean
+let releaseLock = () => {}, stopEvents: AbortController | null = null, tick: ReturnType<typeof setInterval> | null = null;
+
+// whether this device has changes the server hasn't got, kept outside the copy so it's known before the copy opens
+const UNSENT = () => "motusUnsent:" + name;
+const noteUnsent = (n: number) => writeStr(UNSENT(), String(n));
+const copyName = (userId: string) => `motus-r-${hash(server.value.base || location.origin)}-${userId}`;
+
+/**
+ * Whether the app must wait for the copy on this device before showing anything. Normally the screens show straight
+ * from the server while the copy opens; but with changes here the server hasn't got yet (a workout finished or
+ * cancelled just before the app was closed), the server's view is out of date: it would show that workout still
+ * running, and anything done to it there would then beat the change made here.
+ */
+export async function copyHasUnsent(user: { id: string }): Promise<boolean> {
+  const n = copyName(user.id), v = readStr("motusUnsent:" + n, "");
+  if (v) return v !== "0";
+  // not known yet (the copy was made by an older version of the app): wait whenever there is a copy
+  try { return !!(await (indexedDB as any).databases?.())?.some((d: any) => d.name === `/pglite/${n}`); } catch { return false; }
+}
 
 const hash = (s: string) => { let h = 5381; for (const c of s) h = ((h << 5) + h + c.charCodeAt(0)) >>> 0; return h.toString(36); };
+/** Deletes a database and waits until it's gone (or blocked by a tab that still has it open), so a reload after it doesn't find it again. */
+export function dropDatabase(dbName: string) {
+  return new Promise<void>((done) => {
+    try { const r = indexedDB.deleteDatabase(dbName); r.onsuccess = r.onerror = r.onblocked = () => done(); } catch { done(); }
+  });
+}
+/** Deletes every copy this device keeps of a server's data (a server account removed from the app). */
+export async function eraseCopiesOf(base: string) {
+  const start = `/pglite/motus-r-${hash(base)}-`;
+  try {
+    for (const d of (await (indexedDB as any).databases?.()) ?? []) if (d.name?.startsWith(start)) { await dropDatabase(d.name); writeStr("motusUnsent:" + d.name.slice(8), "0"); }
+  } catch { /* nothing kept */ }
+}
 const http = <T = any>(method: string, path: string, body?: unknown) => httpTransport.request(method, path, body) as Promise<T>;
 
 const transport: Transport = {
-  async request(method, path, body) {
-    if (SERVER_ONLY.test(path) || body instanceof Blob) return httpTransport.request(method, path, body);
+  async request(method, path, body, opts) {
+    if (SERVER_ONLY.test(path) || body instanceof Blob) return httpTransport.request(method, path, body, opts);
     // your name lives with your sign-in on the server; the copy here follows it
     if (method === "PUT" && path === "/me") {
       const r = await httpTransport.request(method, path, body);
@@ -39,10 +73,10 @@ const transport: Transport = {
 export async function startReplica(user: { id: string }): Promise<boolean> {
   if (sync.on) { if (user.id === userId) return true; location.reload(); return false; } // signed in again (or as someone else)
   if (!globalThis.indexedDB || !globalThis.WebAssembly || !navigator.locks) return false;
-  name = `motus-r-${hash(server.value.base || location.origin)}-${user.id}`;
+  name = copyName(user.id);
   // PGlite can't share its database between tabs: the first tab works offline, others talk to the server directly
   const mine = await new Promise<boolean>((ok) => {
-    navigator.locks.request(name, { ifAvailable: true }, (lock) => { ok(!!lock); return lock ? new Promise(() => {}) : undefined; });
+    navigator.locks.request(name, { ifAvailable: true }, (lock) => { ok(!!lock); return lock ? new Promise<void>((done) => { releaseLock = done; }) : undefined; });
   });
   if (!mine) return false;
   try {
@@ -55,21 +89,33 @@ export async function startReplica(user: { id: string }): Promise<boolean> {
       // the first copy needs the server once
       const cat = await http("GET", "/sync/catalog");
       await R.loadCatalog(db, cat.stamp, cat.rows);
-      await R.loadSnapshot(db, await http("GET", "/sync/snapshot"));
+      // everything you have in one answer: on a big history and a slow connection this takes far longer than an
+      // ordinary request is given
+      await R.loadSnapshot(db, await httpTransport.request("GET", "/sync/snapshot", undefined, { wait: 120_000 }));
     }
   } catch {
     await db?.close().catch(() => {}); db = null; eng = null;
+    releaseLock();
     return false;
   }
-  eng.onChange((_u: string, topics: string[]) => { invalidate(topics); schedule(); });
+  // a change here is unsent until a sync says otherwise: noted at once, in case the app is closed before that
+  eng.onChange((_u: string, topics: string[]) => { noteUnsent(1); invalidate(topics); schedule(); });
+  // catch up with the server before the screens switch to the copy: otherwise they briefly show what the copy had
+  // when the app was last open (a planned workout already done on another device, say) and then change again.
+  // Bounded, so a slow connection still gets the copy within a few seconds; the sync carries on behind it.
+  // Not when the server has just failed to answer (the app is opening offline): the sync below tries again anyway.
+  if (navigator.onLine && sync.online) await Promise.race([run(), new Promise((ok) => setTimeout(ok, 4000))]);
   setTransport(transport);
   setRemoteHandler(() => schedule(0));
   sync.on = true;
-  addEventListener("online", () => schedule(0));
-  addEventListener("offline", () => { sync.online = false; });
-  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") schedule(0); });
-  setInterval(() => schedule(0), PAGE_WAIT);
+  stopEvents = new AbortController();
+  const { signal } = stopEvents;
+  addEventListener("online", () => schedule(0), { signal });
+  addEventListener("offline", () => { sync.online = false; }, { signal });
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") schedule(0); }, { signal });
+  tick = setInterval(() => schedule(0), PAGE_WAIT);
   sync.waiting = await R.waitingCount(db);
+  noteUnsent(sync.waiting);
   schedule(0);
   return true;
 }
@@ -84,7 +130,7 @@ export function schedule(ms = 400) {
 async function run() {
   if (running) { again = true; return; }
   running = true; sync.syncing = true;
-  let changed = false;
+  let changed = false, failed = 0;
   try {
     const meta = await R.replicaMeta(db);
     for (;;) {
@@ -93,6 +139,8 @@ async function run() {
       const res = await http("POST", "/sync/push", { device: meta.device, changes: out.changes });
       await R.markSent(db, out.upTo);
       if (res.rejected.length) { await R.applyRemote(db, userId, res.rejected); changed = true; }
+      // the server couldn't take some (they no longer fit its data): say so rather than lose them without a word
+      if (res.failed?.length) { failed = res.failed.length; console.warn("Sync: the server refused", res.failed); }
     }
     const retry: any[] = [];
     for (;;) {
@@ -106,12 +154,13 @@ async function run() {
     }
     // a row that arrived before the row it belongs to (they came in different pages)
     if (retry.length) await R.applyRemote(db, userId, retry);
-    Object.assign(sync, { online: true, error: "", lastAt: Date.now() });
+    Object.assign(sync, { online: true, error: failed ? `${failed} change${failed === 1 ? "" : "s"} from this device didn't fit the server's data` : "", lastAt: Date.now() });
   } catch (e) {
     if (e instanceof ApiError && e.status === 0) sync.online = false;
     else sync.error = (e as Error).message;
   } finally {
     sync.waiting = await R.waitingCount(db).catch(() => sync.waiting);
+    noteUnsent(sync.waiting);
     running = false; sync.syncing = false;
     if (changed) invalidate(["*"]);
     if (again) { again = false; schedule(0); }
@@ -122,6 +171,16 @@ async function run() {
 export async function eraseReplica() {
   if (!sync.on) return;
   sync.on = false;
+  // back to the server for everything: left pointing at the closed copy, the next account to sign in on this tab
+  // would get "PGlite is closed" on every screen
+  setTransport(httpTransport);
+  setRemoteHandler(invalidate);
+  stopEvents?.abort(); stopEvents = null;
+  if (tick) clearInterval(tick); tick = null;
+  if (timer) clearTimeout(timer); timer = null;
   await db?.close().catch(() => {});
-  indexedDB.deleteDatabase(`/pglite/${name}`);
+  db = null; eng = null; userId = ""; Object.assign(sync, { waiting: 0, error: "", syncing: false });
+  releaseLock(); releaseLock = () => {};
+  await dropDatabase(`/pglite/${name}`);
+  writeStr(UNSENT(), "0");
 }

@@ -44,6 +44,33 @@ export async function allRows(q: Sql): Promise<Record<string, Record<string, unk
 }
 
 /**
+ * Workouts and what's in them: a deletion here is final (a cancelled workout, a removed set, the unticked sets dropped
+ * when finishing), so a later change to the same row made somewhere that hadn't heard yet must not bring it back.
+ * Their ids are made fresh every time, so a deleted one never legitimately comes back.
+ */
+export const DELETES_WIN = new Set(["workouts", "workout_exercises", "workout_sets"]);
+const finished = (status: unknown) => status != null && status !== "in_progress";
+
+/**
+ * Rules that decide before "the newest change wins" (whose clocks can disagree between a phone and a server):
+ * a deleted workout stays deleted, and a finished workout never goes back to running (a set ticked or the name changed
+ * on a copy that didn't know it was finished must not reopen it). true: the incoming change wins; false: what's here
+ * stays; null: newest wins. here: the row as it is now (null: none), and the last thing logged for it here.
+ */
+export function overrule(c: Change, here: { row: Record<string, unknown> | null; lastOp?: string | null }): boolean | null {
+  if (DELETES_WIN.has(c.tbl)) {
+    if (c.op === "delete") return true;
+    if (!here.row && here.lastOp === "delete") return false;
+  }
+  if (c.tbl === "workouts" && c.op === "upsert" && c.row && here.row) {
+    const a = finished(c.row.status), b = finished(here.row.status);
+    if (a && !b) return true;
+    if (!a && b) return false;
+  }
+  return null;
+}
+
+/**
  * Writes changes made elsewhere: upserts parents first, then deletes children first.
  * Each row on its own savepoint, so one that no longer fits (its parent was deleted meanwhile) doesn't stop the rest.
  * origin: who made them (the server logs it, so that device isn't sent its own changes back); apply: a device writing
@@ -57,6 +84,8 @@ export async function applyChanges(q: Sql, userId: string, changes: Change[], op
   ];
   if (opts.apply) await q.query("SELECT set_config('motus.sync_apply', '1', true)");
   const failed: { change: Change; error: string }[] = [];
+  // upserts that were not written because the row here is a finished workout and the change would reopen it
+  const kept: Change[] = [];
   for (const c of list) {
     const def = SYNCED_BY_NAME.get(c.tbl)!;
     await q.query("SAVEPOINT motus_row");
@@ -67,9 +96,12 @@ export async function applyChanges(q: Sql, userId: string, changes: Change[], op
         // a row always belongs to whoever is writing it, whatever the JSON says
         const row = { ...c.row, ...(c.tbl === "exercises" ? { owner_id: userId } : all.includes("user_id") ? { user_id: userId } : {}) };
         const rest = all.filter((x) => !def.pk.includes(x));
-        await q.query(
+        // the last guard against a finished workout going back to running, whatever got this far
+        const guard = c.tbl === "workouts" ? " WHERE NOT (workouts.status <> 'in_progress' AND EXCLUDED.status = 'in_progress') RETURNING 1 AS ok" : "";
+        const r = await q.query(
           `INSERT INTO ${c.tbl} SELECT * FROM jsonb_populate_record(NULL::${c.tbl}, $1::jsonb)
-           ON CONFLICT (${def.pk.join(", ")}) DO ${rest.length ? `UPDATE SET ${rest.map((x) => `${x} = EXCLUDED.${x}`).join(", ")}` : "NOTHING"}`, [JSON.stringify(row)]);
+           ON CONFLICT (${def.pk.join(", ")}) DO ${rest.length ? `UPDATE SET ${rest.map((x) => `${x} = EXCLUDED.${x}`).join(", ")}` : "NOTHING"}${guard}`, [JSON.stringify(row)]);
+        if (guard && !r.rows.length) kept.push(c);
       } else if (def.pk.length === 1 && def.pk[0] === "id") {
         await q.query(`DELETE FROM ${c.tbl} WHERE id = $1`, [c.pk.id]);
       } else {
@@ -82,7 +114,7 @@ export async function applyChanges(q: Sql, userId: string, changes: Change[], op
     }
   }
   if (opts.apply) await q.query("SELECT set_config('motus.sync_apply', '', true)");
-  return { applied: list.length - failed.length, failed };
+  return { applied: list.length - failed.length - kept.length, failed, kept };
 }
 
 /** The latest change per row among log entries (oldest first, as they come from the log). */

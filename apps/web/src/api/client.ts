@@ -4,24 +4,37 @@ import { ref } from "vue";
 
 export class ApiError extends Error { constructor(public status: number, message: string) { super(message); } }
 
-export interface Transport { request(method: string, path: string, body?: unknown): Promise<unknown> }
+/** wait: how long to wait for an answer before counting it as no connection, in ms (0 = as long as it takes). */
+export interface RequestOptions { wait?: number }
+export interface Transport { request(method: string, path: string, body?: unknown, opts?: RequestOptions): Promise<unknown> }
 
 /** The server this app talks to ("" = the one it was loaded from) and, in the apps, a bearer token instead of the cookie. */
 export const server = ref<{ base: string; token: string | null }>({ base: "", token: null });
 
+const ANSWER_WAIT = 20_000;
+
 export const httpTransport: Transport = {
-  async request(method, path, body) {
+  async request(method, path, body, opts) {
     const headers: Record<string, string> = { "x-motus": "1" };
     if (server.value.token) headers.authorization = `Bearer ${server.value.token}`;
     let payload: BodyInit | undefined;
     if (body instanceof Blob) { payload = body; headers["content-type"] = body.type || "application/octet-stream"; }
     else if (body !== undefined) { payload = JSON.stringify(body); headers["content-type"] = "application/json"; }
     let r: Response;
+    // A switched-off server (behind Tailscale, on the LAN) often never answers instead of refusing, and the request
+    // would hang for minutes: no answer at all within a while counts as no connection. Uploads can take longer.
+    const stop = new AbortController();
+    const wait = body instanceof Blob ? 0 : opts?.wait ?? ANSWER_WAIT;
+    const timer = wait ? setTimeout(() => stop.abort(), wait) : 0;
     try {
-      r = await fetch(server.value.base + "/api" + path, { method, headers, body: payload, credentials: "include" });
+      r = await Promise.race([
+        fetch(server.value.base + "/api" + path, { method, headers, body: payload, credentials: "include", signal: stop.signal }),
+        // the Android app's native fetch may not honour the signal
+        new Promise<never>((_, no) => stop.signal.addEventListener("abort", () => no(stop.signal.reason))),
+      ]);
     } catch {
       throw new ApiError(0, "Can't reach the server. Check your connection.");
-    }
+    } finally { clearTimeout(timer); }
     // the server is down behind its proxy (Caddy, the desktop app): the same as no connection
     if ([502, 503, 504].includes(r.status)) throw new ApiError(0, "Can't reach the server right now.");
     const text = await r.text();
@@ -46,7 +59,7 @@ const q = (params?: Record<string, unknown>) => {
   return s ? "?" + s : "";
 };
 export const api = {
-  get: <T = any>(path: string, params?: Record<string, unknown>) => transport.request("GET", path + q(params)) as Promise<T>,
+  get: <T = any>(path: string, params?: Record<string, unknown>, opts?: RequestOptions) => transport.request("GET", path + q(params), undefined, opts) as Promise<T>,
   post: <T = any>(path: string, body?: unknown) => transport.request("POST", path, body ?? {}) as Promise<T>,
   put: <T = any>(path: string, body?: unknown) => transport.request("PUT", path, body ?? {}) as Promise<T>,
   del: <T = any>(path: string, body?: unknown) => transport.request("DELETE", path, body) as Promise<T>,

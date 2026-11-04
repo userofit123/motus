@@ -7,6 +7,11 @@ import { startTheme } from "./core/theme";
 import "./styles/index.css";
 import { startSegSlide, startTabSlide } from "./core/segSlide";
 import { watchRouter } from "./core/sheets";
+import type { RouteRecordNormalized } from "vue-router";
+
+// The browser lists only 250 loaded files by default, fewer than the app has; the list is handed to the service
+// worker below, so make room before the pages' code starts loading.
+performance.setResourceTimingBufferSize?.(2000);
 
 startTheme();
 watchRouter(router);
@@ -22,7 +27,13 @@ if ("serviceWorker" in navigator && !(globalThis as any).Capacitor?.isNativePlat
 }
 
 // Fetch every page's code once the app is up, so pages not opened yet still open without a connection
-// (the service worker keeps them).
-addEventListener("load", () => setTimeout(() => {
-  for (const r of router.getRoutes()) { const c = r.components?.default as any; if (typeof c === "function") c().catch?.(() => {}); }
+// (the service worker keeps them), then hand the worker the list of everything loaded: on the very first visit the
+// files came before it was looking after the page, and without them the app wouldn't open offline.
+addEventListener("load", () => setTimeout(async () => {
+  const pages = router.getRoutes().map((r) => r.components?.default)
+    .filter((c): c is Extract<NonNullable<RouteRecordNormalized["components"]>[string], () => Promise<unknown>> => typeof c === "function");
+  await Promise.allSettled(pages.map((c) => c()));
+  const sw = navigator.serviceWorker && (await Promise.race([navigator.serviceWorker.ready, new Promise<null>((ok) => setTimeout(() => ok(null), 10_000))]));
+  const files = performance.getEntriesByType("resource").map((e) => new URL(e.name)).filter((u) => u.origin === location.origin).map((u) => u.pathname);
+  sw?.active?.postMessage({ keep: ["/", ...new Set(files)] });
 }, 3000));

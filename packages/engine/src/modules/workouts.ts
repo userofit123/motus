@@ -1,6 +1,6 @@
 // Workouts: starting one (from a routine or empty), logging sets, skipping, reordering and replacing exercises,
 // finishing, logging a past workout, editing and duplicating, and the full detail with records and improvements.
-import { e1rm, ymd, type Workout, type WorkoutSummary } from "@motus/shared";
+import { e1rm, ymd, liftedKg, LIFTED_SQL, type Workout, type WorkoutSummary } from "@motus/shared";
 import type { Router, Ctx } from "../router";
 import type { Sql } from "../db";
 import { camel, id, optId, str, intOrNull, numOrNull, bool, oneOf, isoTime, secondsBetween, visible } from "../util";
@@ -13,8 +13,8 @@ import { getExercises, exerciseSessions } from "./library";
 const KINDS = ["warmup", "normal", "drop", "failure"] as const;
 const EX_STATUS = ["pending", "done", "skipped", "partial"] as const;
 
-const VOLUME_SQL = `coalesce((SELECT sum(s.weight_kg * s.reps) FROM workout_sets s JOIN workout_exercises we ON we.id = s.workout_exercise_id
-  WHERE we.workout_id = w.id AND s.done AND s.kind <> 'warmup'), 0)`;
+const VOLUME_SQL = `coalesce((SELECT sum(${LIFTED_SQL}) FROM workout_sets s JOIN workout_exercises we ON we.id = s.workout_exercise_id
+  JOIN exercises e ON e.id = we.exercise_id WHERE we.workout_id = w.id AND s.done AND s.kind <> 'warmup'), 0)`;
 const DURATION_SQL = `greatest(0, extract(epoch FROM coalesce(w.ended_at, now()) - w.started_at)::int - w.paused_s)`;
 
 export async function workoutSummaries(q: Sql, where: string, params: unknown[], limit = 100): Promise<WorkoutSummary[]> {
@@ -27,31 +27,43 @@ export async function workoutSummaries(q: Sql, where: string, params: unknown[],
   return rows.map((r: any) => ({ ...camel<WorkoutSummary>(r), exerciseCount: Number(r.exercise_count), setCount: Number(r.set_count), volumeKg: Number(r.volume_kg), prCount: 0 }));
 }
 
-/** Records set in this workout: each done set compared with the best of every earlier session of that exercise. */
+/** Records set in this workout: each done set compared with the best of every earlier session of that exercise and the
+ * sets before it in this one (so a record is flagged once, not on every set that matches it). Kinds: weight, e1rm, volume,
+ * reps, duration, distance. */
 async function recordsIn(q: Sql, w: any, exercises: any[]): Promise<Map<string, string[]>> {
   const out = new Map<string, string[]>();
   for (const we of exercises) {
     const before = (await exerciseSessions(q, we.exerciseId, 500)).filter((s) => s.startedAt < w.startedAt && s.workoutId !== w.id);
     if (!before.length) continue; // the first time is not a record
-    const prev = before.flatMap((s) => s.sets).filter((s: any) => s.kind !== "warmup");
-    const maxW = Math.max(0, ...prev.map((s: any) => s.weightKg ?? 0));
-    const maxE = Math.max(0, ...prev.map((s: any) => e1rm(s.weightKg, s.reps) ?? 0));
-    const maxV = Math.max(0, ...prev.map((s: any) => (s.weightKg ?? 0) * (s.reps ?? 0)));
-    const maxD = Math.max(0, ...prev.map((s: any) => s.durationS ?? 0));
-    const maxDist = Math.max(0, ...prev.map((s: any) => s.distanceM ?? 0));
-    const bestRepsAt = (wt: number) => Math.max(0, ...prev.filter((s: any) => (s.weightKg ?? 0) >= wt).map((s: any) => s.reps ?? 0));
-    let seen = { w: maxW, e: maxE, v: maxV, d: maxD, dist: maxDist };
+    const tracking = we.exercise?.tracking;
+    // assisted exercises log the help taken off as weight: less help is the better lift, and help isn't weight lifted
+    const assisted = tracking === "assisted";
+    const prev: any[] = before.flatMap((s) => s.sets).filter((s: any) => s.kind !== "warmup");
+    const wt = (s: any) => Number(s.weightKg) || 0;
+    const best = (f: (s: any) => number) => Math.max(0, ...prev.map(f));
     for (const s of we.sets) {
       if (!s.done || s.kind === "warmup") continue;
       const f: string[] = [];
-      const e = e1rm(s.weightKg, s.reps) ?? 0, v = (s.weightKg ?? 0) * (s.reps ?? 0);
-      if ((s.weightKg ?? 0) > seen.w && s.weightKg) { f.push("weight"); seen.w = s.weightKg; }
-      if (e > seen.e + 0.01) { f.push("e1rm"); seen.e = e; }
-      if (v > seen.v && v > 0) { f.push("volume"); seen.v = v; }
-      if (s.reps && s.weightKg && s.reps > bestRepsAt(s.weightKg) && !f.includes("weight")) f.push("reps");
-      if ((s.durationS ?? 0) > seen.d && s.durationS) { f.push("duration"); seen.d = s.durationS; }
-      if ((s.distanceM ?? 0) > seen.dist && s.distanceM) { f.push("distance"); seen.dist = s.distanceM; }
+      const kg = wt(s), reps = s.reps ?? 0;
+      if (assisted) {
+        const helped = prev.filter((p) => p.weightKg != null && (p.reps ?? 0) > 0);
+        if (s.weightKg != null && reps > 0 && helped.length && kg < Math.min(...helped.map(wt))) f.push("weight");
+      } else {
+        if (kg > 0 && kg > best(wt)) f.push("weight");
+        if ((e1rm(kg, reps) ?? 0) > best((p) => e1rm(wt(p), p.reps) ?? 0) + 0.01) f.push("e1rm");
+        const v = liftedKg(kg, reps, tracking);
+        if (v > 0 && v > best((p) => liftedKg(p.weightKg, p.reps, tracking))) f.push("volume");
+      }
+      // most reps at this weight or more (assisted: this much help or less). A set without weight (push-ups, reps only)
+      // is weighed against every set, so it is simply the most reps
+      if (reps > 0 && !f.includes("weight")) {
+        const most = Math.max(0, ...prev.filter((p) => (assisted ? wt(p) <= kg : wt(p) >= kg)).map((p) => p.reps ?? 0));
+        if (reps > most) f.push("reps");
+      }
+      if ((s.durationS ?? 0) > best((p) => p.durationS ?? 0)) f.push("duration");
+      if ((Number(s.distanceM) || 0) > best((p) => Number(p.distanceM) || 0)) f.push("distance");
       if (f.length) out.set(s.id, f);
+      prev.push(s);
     }
   }
   return out;
@@ -117,7 +129,8 @@ async function workoutReport(q: Sql, w: any) {
   const restS = done.reduce((a: number, s: any) => a + (s.restActualS ?? 0), 0);
   const totals = {
     durationS, restS, activeS: Math.max(0, durationS - restS), sets: done.length, workingSets: work.length,
-    reps: work.reduce((a: number, s: any) => a + (s.reps ?? 0), 0), volumeKg: work.reduce((a: number, s: any) => a + (s.weightKg ?? 0) * (s.reps ?? 0), 0),
+    reps: work.reduce((a: number, s: any) => a + (s.reps ?? 0), 0), volumeKg: w.exercises.reduce((a: number, e: any) => a + e.sets.filter((s: any) => s.done && s.kind !== "warmup")
+      .reduce((b: number, s: any) => b + liftedKg(s.weightKg, s.reps, e.exercise?.tracking), 0), 0),
     exercises: w.exercises.filter((e: any) => e.status !== "skipped").length, skipped: w.exercises.filter((e: any) => e.status === "skipped").length,
     records: done.filter((s: any) => s.pr?.length).length,
     avgRestS: done.filter((s: any) => s.restActualS != null).length ? Math.round(restS / done.filter((s: any) => s.restActualS != null).length) : null,
@@ -139,8 +152,9 @@ async function workoutReport(q: Sql, w: any) {
     const last = hist[0];
     const sw = e.sets.filter((s: any) => s.done && s.kind !== "warmup");
     const now = {
-      volumeKg: sw.reduce((a: number, s: any) => a + (s.weightKg ?? 0) * (s.reps ?? 0), 0),
-      e1rm: Math.max(0, ...sw.map((s: any) => e1rm(s.weightKg, s.reps) ?? 0)) || null,
+      volumeKg: sw.reduce((a: number, s: any) => a + liftedKg(s.weightKg, s.reps, e.exercise?.tracking), 0),
+      // an assisted exercise's "weight" is help, so it has no one-rep max; it's judged on reps
+      e1rm: e.exercise?.tracking === "assisted" ? null : Math.max(0, ...sw.map((s: any) => e1rm(s.weightKg, s.reps) ?? 0)) || null,
       maxWeightKg: Math.max(0, ...sw.map((s: any) => s.weightKg ?? 0)) || null,
       reps: sw.reduce((a: number, s: any) => a + (s.reps ?? 0), 0),
     };
@@ -158,18 +172,27 @@ async function workoutReport(q: Sql, w: any) {
   return { totals, previous, perExercise, muscles, beat: perExercise.filter((p) => p.verdict === "better").length, compared: perExercise.filter((p) => p.verdict !== "first").length };
 }
 
+const clientSetId = (s: any): string | null => typeof s?.id === "string" && /^[0-9a-f-]{36}$/i.test(s.id) ? s.id : null;
+
 async function insertSets(ctx: Ctx, weId: string, sets: any[], startPos = 0) {
   for (const [i, s] of sets.entries()) {
-    await ctx.q.query(
+    const given = clientSetId(s);
+    // A set with the device's own id may arrive twice: the first send timed out on the phone after the server had
+    // saved it, and the outbox sends it again. The second time it is already there, which is fine when it is this
+    // user's set; an id taken by someone else's row is refused (and says nothing about that row).
+    const res = await ctx.q.query(
       `INSERT INTO workout_sets (id, user_id, workout_exercise_id, position, kind, weight_kg, reps, duration_s, distance_m, rpe, rir, side, done, done_at,
          rest_planned_s, rest_actual_s, target_reps, target_weight_kg, prefilled)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)`,
-      [typeof s.id === "string" && /^[0-9a-f-]{36}$/i.test(s.id) ? s.id : uuidv7(), ctx.userId, weId, startPos + i, oneOf(s.kind, KINDS, "normal"), numOrNull(s.weightKg, -500, 2000), intOrNull(s.reps, 0, 10000),
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)${given ? " ON CONFLICT (id) DO NOTHING" : ""} RETURNING id`,
+      [given ?? uuidv7(), ctx.userId, weId, startPos + i, oneOf(s.kind, KINDS, "normal"), numOrNull(s.weightKg, -500, 2000), intOrNull(s.reps, 0, 10000),
         intOrNull(s.durationS, 0, 86400), numOrNull(s.distanceM, 0, 1e7), numOrNull(s.rpe, 0, 10), numOrNull(s.rir, 0, 20), s.side ? str(s.side, 5) : null,
         bool(s.done), s.done ? (s.doneAt ? isoTime(s.doneAt) : ctx.now().toISOString()) : null, intOrNull(s.restS ?? s.restPlannedS, 0, 3600),
         intOrNull(s.restActualS, 0, 86400), intOrNull(s.targetReps, 0, 10000), numOrNull(s.targetWeightKg, -500, 2000), bool(s.prefilled)]);
+    if (!res.rows.length && !(await ownSet(ctx, given!, weId))) throw bad("That set id is already in use");
   }
 }
+const ownSet = async (ctx: Ctx, setId: string, weId: string) =>
+  (await ctx.q.query("SELECT 1 FROM workout_sets WHERE id = $1 AND user_id = $2 AND workout_exercise_id = $3", [setId, ctx.userId, weId])).rows.length > 0;
 
 async function addExercise(ctx: Ctx, workoutId: string, x: { exerciseId: string; routineExerciseId?: string | null; position: number; superset?: string | null; restS?: number | null; restAfterS?: number | null; repRestS?: number | null; sets: any[] }) {
   const weId = uuidv7();
@@ -188,6 +211,34 @@ async function freshSets(ctx: Ctx, exerciseId: string) {
   const settings = await getSettings(ctx.q, ctx.userId);
   if (last?.sets.length && settings.workout.prefillFromLast) return last.sets.map((s: any) => ({ kind: s.kind, weightKg: s.weightKg, reps: s.reps, durationS: s.durationS, distanceM: s.distanceM, prefilled: true }));
   return [0, 1, 2].map(() => ({ kind: "normal" }));
+}
+
+/** A workout planned on the spot (same shape as a routine's body) as an unsaved routine, so buildPlan fills it the same
+ * way: last time's numbers, rests per kind and per set, supersets. Cleaned like writeRoutineBody does. */
+async function plannedRoutine(ctx: Ctx, exercises: unknown) {
+  if (!Array.isArray(exercises)) throw bad("Expected a list of exercises");
+  if (exercises.length > 100) throw bad("Too many exercises");
+  const exIds = exercises.map((e: any) => id(e?.exerciseId, "exercise"));
+  for (const x of new Set(exIds)) await visible(ctx.q, "exercises", x, "exercise");
+  const exs = await getExercises(ctx.q, exIds);
+  const byKind = (v: any) => {
+    if (!v || typeof v !== "object") return null;
+    const out: Record<string, number> = {};
+    for (const k of ["warmup", "drop", "failure"]) { const n = intOrNull(v[k], 0, 3600); if (n != null) out[k] = n; }
+    return Object.keys(out).length ? out : null;
+  };
+  return {
+    id: null,
+    exercises: exercises.map((e: any, i: number) => ({
+      id: null, exerciseId: exIds[i], exercise: exs.get(exIds[i]!), superset: e.superset ? str(e.superset, 20) : null,
+      restS: intOrNull(e.restS, 0, 3600), restAfterS: intOrNull(e.restAfterS, 0, 3600), repRestS: intOrNull(e.repRestS, 0, 600), restByKind: byKind(e.restByKind),
+      prefill: oneOf(e.prefill, ["last", "target"], "last"), prefillScope: "any", progression: null, note: str(e.note, 2000),
+      sets: (Array.isArray(e.sets) ? e.sets.slice(0, 50) : []).map((s: any) => ({
+        kind: oneOf(s?.kind, KINDS, "normal"), reps: intOrNull(s?.reps, 0, 1000), repsMax: intOrNull(s?.repsMax, 0, 1000), weightKg: numOrNull(s?.weightKg, -500, 2000),
+        durationS: intOrNull(s?.durationS, 0, 86400), distanceM: numOrNull(s?.distanceM, 0, 1e7), rpe: numOrNull(s?.rpe, 0, 10), restS: intOrNull(s?.restS, 0, 3600),
+      })),
+    })),
+  };
 }
 
 async function touch(ctx: Ctx, workoutId: string) {
@@ -248,6 +299,8 @@ export function workoutRoutes(r: Router) {
       if (!routine) throw notFound("Routine not found");
       name = routine.name;
     }
+    // planned on the spot (no routine): filled exactly like a routine, but the workout points at no routine
+    const planned = !routine && Array.isArray(b.exercises) ? await plannedRoutine(ctx, b.exercises) : null;
     const startedAt = b.startedAt ? isoTime(b.startedAt) : ctx.now().toISOString();
     await ctx.q.query(
       `INSERT INTO workouts (id, user_id, routine_id, routine_snapshot, name, status, started_at, settings, client_id, schedule_id, scheduled_date)
@@ -255,8 +308,8 @@ export function workoutRoutes(r: Router) {
       [wid, ctx.userId, routine?.id ?? null, routine ? JSON.stringify(routine) : null, name, startedAt, JSON.stringify(b.settings ?? {}),
         b.clientId ? str(b.clientId, 80) : null, optId(b.scheduleId), b.scheduledDate ?? null]);
     if (b.programId) await ctx.q.query("UPDATE workouts SET program_id = $2 WHERE id = $1", [wid, b.programId]);
-    if (routine) {
-      const plan = await buildPlan(ctx.q, routine, settings, ymd(ctx.now()));
+    if (routine || planned) {
+      const plan = await buildPlan(ctx.q, routine ?? planned, settings, ymd(ctx.now()));
       // a deload week in a program: lighter working weights
       if (b.deloadPct) for (const e of plan.exercises) for (const s of e.sets) if (s.kind !== "warmup" && s.weightKg) { s.weightKg = Math.round((s.weightKg * (1 - Number(b.deloadPct) / 100)) / 1.25) * 1.25; s.adjusted = true; }
       const skip = new Set<string>(Array.isArray(b.skip) ? b.skip : []);
@@ -374,11 +427,18 @@ export function workoutRoutes(r: Router) {
     const wid = await workoutOfExercise(ctx.q, weId);
     const last = (await ctx.q.query("SELECT * FROM workout_sets WHERE workout_exercise_id = $1 ORDER BY position DESC LIMIT 1", [weId])).rows[0];
     const n = last ? last.position + 1 : 0;
-    const list = Array.isArray(b?.sets) ? b.sets : [b?.kind || b?.weightKg != null || b?.reps != null ? b : { kind: last?.kind === "warmup" ? "normal" : last?.kind ?? "normal",
+    const asked = Array.isArray(b?.sets) ? b.sets : [b?.kind || b?.weightKg != null || b?.reps != null ? b : { kind: last?.kind === "warmup" ? "normal" : last?.kind ?? "normal",
       weightKg: last?.weight_kg ?? null, reps: last?.reps ?? null, durationS: last?.duration_s ?? null, distanceM: last?.distance_m ?? null, restPlannedS: last?.rest_planned_s ?? null }];
-    if (b?.atStart) {
-      await ctx.q.query("UPDATE workout_sets SET position = position + $2 WHERE workout_exercise_id = $1", [weId, list.length]);
-      await insertSets(ctx, weId, list, 0);
+    // sets already saved by an earlier send of this same change are left alone, so a replay moves nothing
+    const list: any[] = [];
+    for (const s of asked) { const sid = clientSetId(s); if (!sid || !(await ownSet(ctx, sid, weId))) list.push(s); }
+    if (asked.length && !list.length) return { ok: true };
+    // a drop set goes straight after the set it drops from
+    const after = typeof b?.afterId === "string" ? (await ctx.q.query("SELECT position FROM workout_sets WHERE id = $1 AND workout_exercise_id = $2", [b.afterId, weId])).rows[0] : null;
+    if (b?.atStart || after) {
+      const at = after ? after.position + 1 : 0;
+      await ctx.q.query("UPDATE workout_sets SET position = position + $2 WHERE workout_exercise_id = $1 AND position >= $3", [weId, list.length, at]);
+      await insertSets(ctx, weId, list, at);
     } else await insertSets(ctx, weId, list, n);
     // a new set reopens the exercise during a workout; on a finished workout it is simply part of it
     await ctx.q.query(`UPDATE workout_exercises SET status = CASE WHEN (SELECT status FROM workouts WHERE id = $2) = 'completed' THEN 'done'
@@ -438,6 +498,9 @@ export function workoutRoutes(r: Router) {
     const wid = id(p.id);
     const w = (await ctx.q.query("SELECT * FROM workouts WHERE id = $1", [wid])).rows[0];
     if (!w) throw notFound("Workout not found");
+    // already finished (a second tap, or a retry after a lost answer): nothing to do; finishing again would move its
+    // end time and count its reminders twice
+    if (w.status !== "in_progress") return { ok: true };
     const end = b?.endedAt ? isoTime(b.endedAt) : ctx.now().toISOString();
     const paused = w.paused_s + (w.pause_started_at ? secondsBetween(w.pause_started_at, end) : 0);
     // sets that were never ticked are removed; exercises with none done are marked skipped, partly done ones partial
@@ -477,6 +540,9 @@ export function workoutRoutes(r: Router) {
   });
 
   r.post("/workouts/:id/discard", async (ctx, p) => {
+    const w = (await ctx.q.query("SELECT status FROM workouts WHERE id = $1", [id(p.id)])).rows[0];
+    // gone already is fine (cancelled twice); a finished one is kept, and saying so beats pretending it was cancelled
+    if (w && w.status !== "in_progress") throw new HttpError(409, "This workout is already finished");
     await ctx.q.query("DELETE FROM workouts WHERE id = $1 AND status = 'in_progress'", [id(p.id)]);
     ctx.changed("workout");
     return { ok: true };
@@ -529,7 +595,7 @@ export function workoutRoutes(r: Router) {
   r.get("/workouts/:id/text", async (ctx, p) => {
     const w = await loadWorkout(ctx.q, id(p.id), ymd(ctx.now()));
     if (!w) throw notFound();
-    const lines = [`# ${w.name} — ${w.startedAt.slice(0, 16).replace("T", " ")}`];
+    const lines = [`# ${w.name} - ${w.startedAt.slice(0, 16).replace("T", " ")}`];
     for (const e of w.exercises) {
       lines.push(`\n## ${e.exercise?.name}${e.status === "skipped" ? " (skipped)" : ""}`);
       for (const s of e.sets.filter((x) => x.done)) lines.push(`- ${s.kind !== "normal" ? s.kind + ": " : ""}${s.weightKg != null ? s.weightKg + " kg × " : ""}${s.reps ?? ""}${s.durationS ? s.durationS + " s" : ""}${s.rpe ? ` @RPE ${s.rpe}` : ""}`);

@@ -59,7 +59,8 @@ describe("sync", () => {
     const there = await S()("GET", `/workouts/${w.id}`);
     expect(there.status).toBe("completed");
     expect(there.exercises[0].sets.every((s: any) => s.done && s.weightKg === 60)).toBe(true);
-    expect((await S()("GET", "/goals")).length).toBe(1);
+    // this one and the starter goal, which both sides made with the same id, so it isn't doubled
+    expect((await S()("GET", "/goals")).length).toBe(2);
   }, 60000);
 
   it("fetches changes made elsewhere", async () => {
@@ -78,8 +79,7 @@ describe("sync", () => {
   }, 60000);
 
   it("sends deletions both ways", async () => {
-    const g = (await D()("GET", "/goals"))[0];
-    await D()("DELETE", `/goals/${g.id}`);
+    for (const g of await D()("GET", "/goals")) await D()("DELETE", `/goals/${g.id}`);
     await sync();
     expect((await S()("GET", "/goals")).length).toBe(0);
     const b = await S()("POST", "/body", { kind: "weight", value: 72 });
