@@ -2,6 +2,18 @@
 
 The top entry's version is the one the release workflow publishes. Add a new `## [x.y.z]` section to release.
 
+## [0.1.2] - 2026-11-04
+
+- Notifications in the Android app: a running workout, rest, activity or interval timer shows on the lock screen with Pause/Resume, Skip, +30s and Set done; the app asks once to turn notifications on, and Settings shows whether they are allowed.
+- Steps count again on walks, runs, hikes and any activity type set to "on foot", with a plain reason when they can't; climb no longer jumps from GPS altitude noise.
+- Interval timer: seven soft alarm sounds and a countdown notification.
+- Times read compactly everywhere (10s, 1m 30s, 1h 5m).
+- The Android status and navigation bars match the app's colours in every look.
+- What's new has its own page in Settings.
+- About you (year of birth, sex, height) is one tidy card on the Body page.
+- Cards have even space on all sides, and the template list is spaced properly.
+- Devices on an older app version keep syncing activity types.
+
 ## [0.1.1] - 2026-11-04
 
 - Works offline on server accounts: a copy of your data on each device, synced both ways; the app opens from its own copy when the server is away.
