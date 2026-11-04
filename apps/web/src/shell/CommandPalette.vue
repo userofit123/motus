@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // Ctrl+K (or ⌘K): jump to any page, routine or exercise, or start something, by typing (an optional feature).
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { lockScroll } from "../core/scrollLock";
 import { useRouter } from "vue-router";
 import { useRoutines, useExercises } from "../api/queries";
 import { startOpen, activitySheet, bodySheet } from "../core/ui";
@@ -33,8 +34,11 @@ function key(e: KeyboardEvent) {
   if (e.key === "Enter") pick(items.value[sel.value]);
 }
 const pick = (i?: Item) => { if (!i) return; open.value = false; i.run(); };
+// the page behind stays still while it is open
+let unlock = () => {};
+watch(open, (o) => { unlock(); unlock = o ? lockScroll() : () => {}; });
 onMounted(() => addEventListener("keydown", key));
-onBeforeUnmount(() => removeEventListener("keydown", key));
+onBeforeUnmount(() => { removeEventListener("keydown", key); unlock(); });
 </script>
 
 <template>

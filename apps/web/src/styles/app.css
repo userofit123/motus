@@ -182,7 +182,7 @@ html[data-mode="light"] .pr { color: #9a6d00; }
 @keyframes fi { from { opacity: 0; transform: translateY(4px); } }
 
 /* ---------- sheets: bottom sheet on the phone, centred window on a computer ---------- */
-.scr { position: fixed; inset: 0; z-index: 200; background: var(--scrim); display: flex; align-items: center; justify-content: center; padding: 24px; animation: fo .15s; }
+.scr { position: fixed; inset: 0; overscroll-behavior: contain; z-index: 200; background: var(--scrim); display: flex; align-items: center; justify-content: center; padding: 24px; animation: fo .15s; }
 @keyframes fo { from { opacity: 0; } }
 .sht { background: var(--bg); border: 1px solid var(--ol); border-radius: var(--r-sheet); width: min(560px, 100%); max-height: calc(100vh - 48px); display: flex; flex-direction: column; box-shadow: var(--shadow-sheet); animation: su .22s var(--ease); overflow: hidden; }
 .sht.wide { width: min(860px, 100%); }

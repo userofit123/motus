@@ -4,6 +4,7 @@
 import { onMounted, onBeforeUnmount, ref } from "vue";
 import { isPhone } from "../core/device";
 import { sheetOpened, sheetClosed } from "../core/sheets";
+import { lockScroll } from "../core/scrollLock";
 import Icon from "./Icon.vue";
 
 // noHistory: no Back step of its own (see core/leave.ts)
@@ -11,9 +12,9 @@ const props = defineProps<{ title?: string; size?: "wide" | "full"; noClose?: bo
 const emit = defineEmits<{ close: [] }>();
 const key = (e: KeyboardEvent) => { if (e.key === "Escape" && !props.noClose) { e.stopPropagation(); emit("close"); } };
 const root = ref<HTMLElement | null>(null), sheet = ref<HTMLElement | null>(null);
-let backId = 0, pulledAway = false;
+let backId = 0, pulledAway = false, unlock = () => {};
 onMounted(() => {
-  addEventListener("keydown", key); document.body.style.overflow = "hidden";
+  addEventListener("keydown", key); unlock = lockScroll();
   if (!props.noClose && !props.noHistory) backId = sheetOpened(() => emit("close"));
   if (isPhone.value && !props.noClose) {
     sheet.value!.addEventListener("touchstart", tstart, { passive: true });
@@ -24,7 +25,7 @@ onMounted(() => {
 });
 // However a sheet is closed (its own buttons or the page), a copy of it plays the closing animation for a moment.
 onBeforeUnmount(() => {
-  removeEventListener("keydown", key); document.body.style.overflow = "";
+  removeEventListener("keydown", key); unlock();
   if (backId) sheetClosed(backId);
   const el = root.value;
   if (!el || pulledAway || matchMedia("(prefers-reduced-motion: reduce)").matches) return;
