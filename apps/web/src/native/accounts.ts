@@ -1,5 +1,6 @@
 // Accounts inside the Android app (PLAN.md §2.4). Each account is local (the Motus engine runs in the app with
-// PGlite, data in this phone's storage) or a server account (signed in with a token; the app and photos stay local).
+// PGlite, data in this phone's storage) or a server account (the app's own screens with the data from that server, signed in
+// with a token: the app is never loaded from the server). Any number of both, one open at a time.
 // The desktop app has its own implementation in Electron (apps/desktop), exposed the same way as window.motusNative.
 import { reactive } from "vue";
 import { readJson, writeJson } from "../core/prefs";
@@ -11,10 +12,10 @@ export const accounts = reactive<{ list: Account[]; active: string | null }>(rea
 const save = () => writeJson(KEY, accounts);
 export const current = () => accounts.list.find((a) => a.id === accounts.active) ?? null;
 
-let engine: any = null;
+let engine: any = null, localDb: any = null;
 async function localTransport(acc: Account): Promise<Transport> {
   const [{ createEngine }, { pgliteDb }] = await Promise.all([import("@motus/engine"), import("@motus/engine/pglite")]);
-  const db = await pgliteDb(`idb://motus-${acc.id}`);
+  const db = localDb = await pgliteDb(`idb://motus-${acc.id}`);
   engine = await createEngine(db, { mode: "local" });
   const userId = await engine.ensureLocalUser(acc.name);
   const { invalidate } = await import("../api/live");
@@ -51,22 +52,62 @@ export async function addLocal(name: string) {
   accounts.list.push(acc); accounts.active = acc.id; save();
   location.reload();
 }
-export async function addServer(url: string, username: string, password: string, name?: string) {
-  const base = new URL(/^https?:\/\//.test(url) ? url : `https://${url}`).origin;
-  const r = await fetch(base + "/api/auth/login", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ username, password, wantToken: true, deviceName: "Android app", platform: "android" }) });
-  const j = await r.json().catch(() => ({}));
-  if (!r.ok || !j.token) throw new Error(j.error ?? "Could not sign in");
-  const acc: Account = { id: crypto.randomUUID(), kind: "server", name: name || username, url: base, token: j.token };
+/** "motus.home", "192.168.1.5:8080" or "https://Motus.Example.com/x/" → "https://motus.home" (https unless told otherwise). */
+export function serverAddress(input: string) {
+  const s = input.trim();
+  try { const u = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(s) ? s : `https://${s}`); if (/^https?:$/.test(u.protocol) && u.hostname) return u.origin; } catch { /* not an address */ }
+  throw new Error("That doesn't look like an address");
+}
+/** Saves a server after checking a Motus server answers there, and opens it: its sign-in screen comes next. */
+export async function addServer(url: string, name?: string) {
+  const base = serverAddress(url);
+  // the app has no permission for unencrypted connections, so an http:// server could never be reached from it
+  if (base.startsWith("http://")) throw new Error("This app only connects over https. Use the https address of your server.");
+  if (accounts.list.some((a) => a.url === base)) throw new Error("That server is already in the list");
+  // a timer, not an AbortSignal: on Android fetch goes through CapacitorHttp, which ignores the signal
+  const late = Symbol();
+  const r = await Promise.race([
+    fetch(base + "/api/auth/status", { headers: { "x-motus": "1" } }).catch(() => null),
+    new Promise<typeof late>((ok) => setTimeout(() => ok(late), 8000)),
+  ]);
+  if (r === late) throw new Error("No answer from that address");
+  const j = r?.ok ? await r.json().catch(() => null) : null;
+  if (!j || typeof j.apiLevel !== "number") throw new Error("No Motus server answered at that address");
+  const acc: Account = { id: crypto.randomUUID(), kind: "server", name: name?.trim().slice(0, 60) || new URL(base).host, url: base };
   accounts.list.push(acc); accounts.active = acc.id; save();
   location.reload();
 }
-export function open(id: string) { accounts.active = id; save(); location.reload(); }
-export function remove(id: string) {
+/** After signing in (or out) on the open server account: the token it uses from now on. */
+export function setToken(token: string | null) {
+  const acc = current();
+  if (acc?.kind !== "server") return;
+  acc.token = token ?? undefined; save();
+  server.value = { base: acc.url!, token };
+}
+export function rename(id: string, name: string) {
   const acc = accounts.list.find((a) => a.id === id);
+  if (acc && name.trim()) { acc.name = name.trim().slice(0, 60); save(); }
+}
+export function open(id: string) { accounts.active = id; save(); location.reload(); }
+export async function remove(id: string) {
+  const acc = accounts.list.find((a) => a.id === id);
+  if (!acc) return;
+  const { confirm } = await import("../core/ask");
+  if (!(await confirm(`Remove ${acc.name} from this phone?`, { ok: "Remove", danger: true,
+    text: acc.kind === "local" ? "Its data on this phone is deleted. Make a backup first if you want to keep it." : "Your data stays on the server. Changes not sent to it yet are lost." }))) return;
+  const { eraseCopiesOf, eraseReplica, dropDatabase } = await import("../api/replica");
+  // the open account's database has to be closed first, or deleting it waits until the app is closed
+  if (acc.kind === "local") { if (accounts.active === id) { await localDb?.close().catch(() => {}); localDb = engine = null; } await dropDatabase(`/pglite/motus-${id}`); }
+  else {
+    // sign this phone out on the server too, and drop the copy of its data kept here
+    if (acc.token) await fetch(acc.url + "/api/auth/logout", { method: "POST", headers: { "x-motus": "1", authorization: `Bearer ${acc.token}`, "content-type": "application/json" }, body: "{}" }).catch(() => {});
+    if (accounts.active === id) await eraseReplica();
+    await eraseCopiesOf(acc.url!);
+    writeJson("motusSession:" + acc.url, null);
+  }
   accounts.list = accounts.list.filter((a) => a.id !== id);
   if (accounts.active === id) accounts.active = null;
   save();
-  if (acc?.kind === "local") indexedDB.deleteDatabase(`/pglite/motus-${id}`);
   location.reload();
 }
 export const chooser = () => { accounts.active = null; save(); location.reload(); };

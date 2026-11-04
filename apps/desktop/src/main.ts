@@ -123,13 +123,30 @@ function showChooser() {
 // ----- what the screens can ask of the app (window.motusNative, see preload.ts) -----
 ipcMain.handle("accounts:list", () => readAccounts());
 ipcMain.handle("accounts:addLocal", async (_e, name: string) => { const a = readAccounts(); const acc: Account = { id: crypto.randomUUID(), kind: "local", name: name || "Me" }; a.list.push(acc); writeAccounts(a); await openAccount(acc.id); });
-ipcMain.handle("accounts:addServer", async (_e, url: string, name: string) => {
-  const u = new URL(/^https?:\/\//.test(url) ? url : `https://${url}`);
-  const res = await fetch(new URL("/api/version", u)).catch(() => null);
-  if (!res?.ok) throw new Error("No Motus server answered at that address");
-  const a = readAccounts(); const acc: Account = { id: crypto.randomUUID(), kind: "server", name: name || u.host, url: u.origin }; a.list.push(acc); writeAccounts(a); await openAccount(acc.id);
+/** "motus.home", "192.168.1.5:8080" or "https://Motus.Example.com/x/" → "https://motus.home" (https unless told otherwise). Same rules as the Android app (apps/web/src/native/accounts.ts). */
+function serverAddress(input: string) {
+  const s = input.trim();
+  try { const u = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(s) ? s : `https://${s}`); if (/^https?:$/.test(u.protocol) && u.hostname) return u.origin; } catch { /* not an address */ }
+  throw new Error("That doesn't look like an address");
+}
+ipcMain.handle("accounts:addServer", async (_e, url: unknown, name: unknown) => {
+  if (typeof url !== "string") throw new Error("That doesn't look like an address");
+  const base = serverAddress(url);
+  // a Motus server answers its sign-in status with its API level; anything else at that address isn't one.
+  // It gets a few seconds: an address that never answers would otherwise leave the screen waiting for minutes.
+  const res = await fetch(base + "/api/auth/status", { signal: AbortSignal.timeout(8000) }).catch((e) => { if (e?.name === "TimeoutError") throw new Error("No answer from that address"); return null; });
+  const j: { apiLevel?: unknown } | null = res?.ok ? await res.json().catch(() => null) : null;
+  if (typeof j?.apiLevel !== "number") throw new Error("No Motus server answered at that address");
+  const a = readAccounts();
+  if (a.list.some((x) => x.url === base)) throw new Error("That server is already in the list");
+  const label = typeof name === "string" ? name.trim().slice(0, 60) : "";
+  const acc: Account = { id: crypto.randomUUID(), kind: "server", name: label || new URL(base).host, url: base }; a.list.push(acc); writeAccounts(a); await openAccount(acc.id);
 });
 ipcMain.handle("accounts:open", (_e, id: string) => openAccount(id));
+ipcMain.handle("accounts:rename", (_e, id: string, name: string) => {
+  const a = readAccounts(); const acc = a.list.find((x) => x.id === id);
+  if (acc && String(name).trim()) { acc.name = String(name).trim().slice(0, 60); writeAccounts(a); }
+});
 ipcMain.handle("accounts:chooser", () => showChooser());
 ipcMain.handle("accounts:remove", async (_e, id: string) => {
   const a = readAccounts();

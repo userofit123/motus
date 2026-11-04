@@ -4,6 +4,10 @@ import { ref, computed } from "vue";
 import { api } from "../api/client";
 import { session, loadSession } from "../core/session";
 import Logo from "./Logo.vue";
+import { current, setToken } from "../native/accounts";
+
+// in the desktop and Android apps: back to the list of accounts and servers on this device
+const accounts = (globalThis as any).motusNative?.accounts;
 
 const mode = ref<"login" | "register">("login");
 const f = ref({ username: "", password: "", displayName: "", invite: new URLSearchParams(location.search).get("invite") ?? "" });
@@ -14,7 +18,10 @@ async function go() {
   err.value = ""; busy.value = true;
   try {
     const path = setup.value ? "/auth/setup" : mode.value === "login" ? "/auth/login" : "/auth/register";
-    await api.post(path, { ...f.value, deviceName: navigator.userAgent.includes("Android") ? "Android browser" : "Browser" });
+    // the Android app signs in to its server with a token (it isn't on the server's own address, so no cookie)
+    const app = current()?.kind === "server";
+    const r = await api.post(path, { ...f.value, deviceName: app ? "Android app" : navigator.userAgent.includes("Android") ? "Android browser" : "Browser", ...(app ? { wantToken: true, platform: "android" } : {}) });
+    if (app && r?.token) setToken(r.token);
     await loadSession();
   } catch (e) { err.value = (e as Error).message; } finally { busy.value = false; }
 }
@@ -36,6 +43,7 @@ async function go() {
         <a v-if="mode === 'login'" class="acc click" @click="mode = 'register'">Have an invite? Create an account</a>
         <a v-else class="acc click" @click="mode = 'login'">Already have an account? Sign in</a>
       </p>
+      <p v-if="accounts" class="center tiny" style="margin-top:12px"><a class="acc click" @click="accounts.chooser()">Other accounts and servers</a></p>
     </form>
   </div>
 </template>

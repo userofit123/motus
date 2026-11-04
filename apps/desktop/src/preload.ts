@@ -12,6 +12,7 @@ const api = {
     addLocal: (name: string) => ipcRenderer.invoke("accounts:addLocal", name),
     addServer: (url: string, name: string) => ipcRenderer.invoke("accounts:addServer", url, name),
     open: (id: string) => ipcRenderer.invoke("accounts:open", id),
+    rename: (id: string, name: string) => ipcRenderer.invoke("accounts:rename", id, name),
     remove: (id: string) => ipcRenderer.invoke("accounts:remove", id),
     chooser: () => ipcRenderer.invoke("accounts:chooser"),
   },

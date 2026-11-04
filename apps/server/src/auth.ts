@@ -34,6 +34,19 @@ export async function createSession(db: Db, userId: string, device: string, plat
   return token;
 }
 
+// The name a signed-in device gets in Account → Signed-in devices, so you can tell your places apart:
+// "Firefox on Linux", "Motus app on Android". A name the app chose itself (anything but the generic ones) is kept.
+const GENERIC = new Set(["", "browser", "android browser", "android app"]);
+export function deviceLabel(given: unknown, ua: string | undefined): string {
+  const g = (typeof given === "string" ? given : "").trim();
+  if (!GENERIC.has(g.toLowerCase()) || !ua) return g || "Browser";
+  const os = /Android/.test(ua) ? "Android" : /iPhone|iPad|iPod/.test(ua) ? "iPhone or iPad" : /Windows/.test(ua) ? "Windows" : /CrOS/.test(ua) ? "ChromeOS"
+    : /Mac OS X|Macintosh/.test(ua) ? "Mac" : /Linux/.test(ua) ? "Linux" : "";
+  const app = g.toLowerCase() === "android app" || /Electron\//.test(ua) ? "Motus app" : /Edg\//.test(ua) ? "Edge" : /OPR\//.test(ua) ? "Opera"
+    : /Firefox\//.test(ua) ? "Firefox" : /Chrome\//.test(ua) ? "Chrome" : /Safari\//.test(ua) ? "Safari" : g || "Browser";
+  return os ? `${app} on ${os}` : app;
+}
+
 const seen = new Map<string, number>(); // session id → last time last_seen_at was written
 export async function userForToken(db: Db, token: string | undefined): Promise<SessionUser | null> {
   if (!token || token.length > 200) return null;
