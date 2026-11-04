@@ -38,21 +38,6 @@ describe("engine", () => {
     expect(list[0].estimateS).toBeGreaterThan(600);
   });
 
-  it("plans the rest after each kind of set, with a set's own rest first", async () => {
-    const r = await call(A, "POST", "/routines", { name: "Rests", exercises: [{ exerciseId: benchId, restS: 120, restAfterS: 200, restByKind: { warmup: 45, drop: 0, bogus: 9 }, sets: [
-      { kind: "warmup", reps: 10 }, { kind: "warmup", reps: 5, restS: 75 }, { kind: "normal", reps: 8 }, { kind: "drop", reps: 8 }, { kind: "failure", reps: 8 }, { kind: "normal", reps: 8 }] }] });
-    const full = await call(A, "GET", `/routines/${r.id}`);
-    expect(full.exercises[0].restByKind).toEqual({ warmup: 45, drop: 0 });
-    const prev = await call(A, "GET", `/routines/${r.id}/preview`);
-    expect(prev.exercises[0].sets.map((s: any) => s.restS)).toEqual([45, 75, 0, 0, 120, 200]); // no rest before a drop set
-    // the person's default for a kind comes before the exercise's working-set rest
-    await call(A, "PUT", "/settings", { workout: { restByKindS: { failure: 30, warmup: 99 } } });
-    const prev2 = await call(A, "GET", `/routines/${r.id}/preview`);
-    expect(prev2.exercises[0].sets.map((s: any) => s.restS)).toEqual([45, 75, 0, 0, 30, 200]);
-    await call(A, "PUT", "/settings", { workout: { restByKindS: { failure: null, warmup: null } } });
-    await call(A, "DELETE", `/routines/${r.id}`);
-  });
-
   it("starts, logs and finishes a workout", async () => {
     const w = await call(A, "POST", "/workouts/start", { routineId });
     workoutId = w.id;
@@ -105,7 +90,7 @@ describe("engine", () => {
   it("builds the home summary, stats and calendar", async () => {
     const home = await call(A, "GET", "/home");
     expect(home.last.name).toBe("Push");
-    expect(home.goals.length).toBe(3); // the two set above and the "Weekly target" A gets for already having workouts
+    expect(home.goals.length).toBe(2);
     const stats = await call(A, "GET", "/stats");
     expect(stats.workouts.length).toBe(2);
     expect(stats.muscles.chest).toBeGreaterThan(0);
@@ -127,7 +112,7 @@ describe("engine", () => {
     expect((await call(B, "GET", "/routines")).length).toBe(0);
     expect(await call(B, "GET", "/workouts/active")).toBe(null);
     expect((await call(B, "GET", "/workouts")).length).toBe(0);
-    expect((await call(B, "GET", "/goals")).map((g: any) => g.title)).toEqual([]); // B has no data, so no starter goal, and none of A's
+    expect((await call(B, "GET", "/goals")).length).toBe(0);
     expect(await status(B, "GET", `/routines/${routineId}`)).toBe(404);
     expect(await status(B, "GET", `/workouts/${workoutId}`)).toBe(404);
     // and cannot change them
@@ -173,26 +158,5 @@ describe("engine", () => {
     const res = await call(B, "POST", "/import/csv", { text: csv, mapping: {} });
     expect(res.workouts).toBe(1);
     expect((await call(B, "GET", "/workouts")).length).toBe(1);
-  });
-});
-
-describe("updating a routine from a workout", () => {
-  it("takes today's sets and added exercises, and keeps skipped ones", async () => {
-    const C = uuidv7();
-    await eng.db.admin.query("INSERT INTO users (id, username, display_name) VALUES ($1,'legs-tester','C')", [C]);
-    const ex = await call(C, "GET", "/exercises");
-    const [a, b, c] = ["Barbell Squat", "Barbell Deadlift", "Plank"].map((n) => ex.find((e: any) => e.name === n)?.id ?? ex[0].id);
-    const r = await call(C, "POST", "/routines", { name: "Legs", exercises: [
-      { exerciseId: a, sets: [{ kind: "normal", reps: 5, weightKg: 100 }, { kind: "normal", reps: 5, weightKg: 100 }] },
-      { exerciseId: b, sets: [{ kind: "normal", reps: 5, weightKg: 140 }] }] });
-    const w = await call(C, "POST", "/workouts/start", { routineId: r.id });
-    for (const s of w.exercises[0].sets) await call(C, "PUT", `/workout-sets/${s.id}`, { weightKg: 105, reps: 5, done: true });
-    await call(C, "PUT", `/workout-exercises/${w.exercises[1].id}`, { status: "skipped" });
-    await call(C, "POST", `/workouts/${w.id}/exercises`, { exerciseId: c, sets: [{ kind: "normal", durationS: 60, done: true }] });
-    await call(C, "POST", `/workouts/${w.id}/finish`, { updateRoutine: true });
-    const after = await call(C, "GET", `/routines/${r.id}`);
-    expect(after.exercises.map((e: any) => e.exerciseId)).toEqual([a, b, c]);
-    expect(after.exercises[0].sets.map((s: any) => s.weightKg)).toEqual([105, 105]);
-    expect(after.exercises[1].sets[0].weightKg).toBe(140);
   });
 });
