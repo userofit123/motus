@@ -12,6 +12,7 @@ const s = useSettings();
 const ROWS = computed(() => ([
   ["prefillFromLast", "Fill in last time's numbers", "Otherwise the routine's targets"],
   ["autoRest", "Start the rest timer when a set is ticked", ""],
+  ["restEndNext", "Go to the next set when the rest ends", "Otherwise it waits on \"Rest over\" until you tap Next set"],
   ["countdown", "3-2-1 before timed sets", ""],
   ["sound", "Sound when the rest ends", ""],
   ["vibrate", "Vibrate when the rest ends", ""],
@@ -31,7 +32,7 @@ function set(k: keyof WorkoutPrefs, v: boolean) {
   if (v === s.value.workout[k]) delete o[k]; else o[k] = v;
   model.value = o;
 }
-function saveDefault() { saveSettings({ workout: model.value }); model.value = {}; toast("Saved as your default"); }
+function saveDefault() { saveSettings({ workout: model.value }, { quiet: true }); model.value = {}; toast("Saved as your default"); }
 </script>
 
 <template>

@@ -3,7 +3,9 @@
 // (PLAN.md §8.6). The rest timer is kept on the device so a reload does not lose it.
 import { reactive, ref } from "vue";
 import { readJson, writeJson } from "../core/prefs";
+import { withDefaults } from "@motus/shared";
 import { api } from "../api/client";
+import { queryClient } from "../api/live";
 import { notifyRestEnd, cancelRestNotification } from "./native";
 
 export interface RestState {
@@ -22,9 +24,16 @@ export const rest = reactive<RestState>({ ...EMPTY, ...readJson("motusRest", {})
 export const now = ref(Date.now());
 const save = () => writeJson("motusRest", rest);
 
-export interface Cues { sound: boolean; vibrate: boolean; warn10: boolean; voice: boolean }
-let cues: Cues = { sound: true, vibrate: true, warn10: true, voice: false };
+export interface Cues { sound: boolean; vibrate: boolean; warn10: boolean; voice: boolean; next?: boolean }
+let cues: Cues = { sound: true, vibrate: true, warn10: true, voice: false, next: true };
 export const setCues = (c: Cues) => { cues = c; };
+/** Sound and vibration as chosen in Settings → Workout, read from the settings the app has loaded, so they are right
+ *  on any page (the cues above are only filled once a workout screen has been opened). */
+export function savedCues(): { sound: boolean; vibrate: boolean } {
+  const w = withDefaults(queryClient.getQueryData<{ settings?: unknown }>(["settings", "me"])?.settings ?? {}).workout;
+  return { sound: w.sound, vibrate: w.vibrate };
+}
+export function vibrate(pattern: number | number[]) { try { navigator.vibrate?.(pattern); } catch { /* no vibration */ } }
 
 let warned = false;
 setInterval(() => {
@@ -32,7 +41,8 @@ setInterval(() => {
   if (rest.endAt && !rest.done && rest.pausedLeftS == null) {
     const left = (rest.endAt - now.value) / 1000;
     if (left <= 10 && left > 9 && !warned && cues.warn10) { warned = true; beep(1, 660); }
-    if (left <= 0) { rest.done = true; save(); restEnded(); }
+    // over: the cues play either way; then straight on to the next set, or "Rest over" until you tap Next set
+    if (left <= 0) { rest.done = true; save(); restEnded(); if (cues.next) finishRest(true); }
   }
 }, 250);
 
@@ -83,7 +93,7 @@ export function finishRest(record = true) {
 
 function restEnded() {
   if (cues.sound) beep(3, 880);
-  if (cues.vibrate) try { navigator.vibrate?.([300, 150, 300]); } catch { /* no vibration */ }
+  if (cues.vibrate) vibrate([300, 150, 300]);
   if (cues.voice && rest.next) speak(`Rest over. ${rest.next}`);
   if (document.hidden && "Notification" in window && Notification.permission === "granted")
     try { new Notification("Rest over", { body: rest.next, tag: "motus-rest", icon: "/icon-192.png" }); } catch { /* not allowed here */ }

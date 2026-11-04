@@ -1,23 +1,27 @@
 <script setup lang="ts">
-// The running workout (PLAN.md §8.5). Phone: one exercise at a time (swipe between them), the rest timer as a bottom
-// sheet. Computer: the list on the left, the current exercise in the middle, the timer and notes on the right.
-import { computed, onMounted, onBeforeUnmount, ref, watch } from "vue";
+// The running workout (PLAN.md §8.5). Phone: one exercise at a time on the page itself (swipe between them, or pick one from the tabs),
+// with the controls in a sheet at the bottom: the set to do now, or the rest. Computer: the list on the left, the current exercise
+// and the action bar (rest included) in the middle, what comes next and the totals on the right.
+import { computed, nextTick, onMounted, onBeforeUnmount, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { clock, muscleName } from "@motus/shared";
-import { useWorkout } from "./useWorkout";
-import { elapsed, rest, finishRest } from "./runtime";
+import { useWorkout, endWorkout } from "./useWorkout";
+import { elapsed, finishRest, pauseRest, resumeRest } from "./runtime";
 import { keepAwake } from "./native";
 import { isPhone } from "../core/device";
 import { confirm, prompt } from "../core/ask";
 import { noteSheet, reminderSheet } from "../core/ui";
-import { api } from "../api/client";
 import { invalidate } from "../api/live";
-import { waiting } from "../api/outbox";
+import { waiting, send } from "../api/outbox";
+import { toastError } from "../core/toast";
 import Icon from "../components/Icon.vue";
 import Menu from "../components/Menu.vue";
 import Sheet from "../components/Sheet.vue";
+import NoteItem from "../components/NoteItem.vue";
+import ReminderItem from "../components/ReminderItem.vue";
 import ExerciseCard from "./ExerciseCard.vue";
-import RestPanel from "./RestPanel.vue";
+import ActionBar from "./ActionBar.vue";
+import Peek from "./PeekBanner.vue";
 import FinishSheet from "./FinishSheet.vue";
 import ExercisePicker from "../components/ExercisePicker.vue";
 import WorkoutSettings from "../components/WorkoutSettings.vue";
@@ -34,14 +38,16 @@ const overrides = computed({ get: () => (w.value?.settings ?? {}) as Record<stri
 // keys on a computer: Space ticks the next set, arrows move between exercises
 function key(ev: KeyboardEvent) {
   if ((ev.target as HTMLElement).closest("input,textarea,select") || document.querySelector(".scr")) return;
-  const e = w.value?.exercises[W.state.cur];
+  const e = w.value?.exercises[W.state.active];
   if (ev.key === " " && e) { const i = e.sets.findIndex((x) => !x.done); if (i >= 0) { ev.preventDefault(); W.tick(e, i); } }
   if (ev.key === "ArrowRight") go(W.state.cur + 1);
   if (ev.key === "ArrowLeft") go(W.state.cur - 1);
 }
 onMounted(() => { if (W.prefs.value.keepAwake) keepAwake(true); addEventListener("keydown", key); });
 onBeforeUnmount(() => { keepAwake(false); removeEventListener("keydown", key); });
-watch(() => W.active.isFetched.value && !W.active.data.value && !W.state.pending, (gone) => { if (gone) router.replace("/"); });
+// no workout any more (finished or discarded elsewhere): go home. Not while fetching: right after Start, the cached
+// answer is still "none" until the new workout arrives
+watch(() => W.active.isFetched.value && !W.active.isFetching.value && !W.active.data.value && !W.state.pending, (gone) => { if (gone) router.replace("/"); });
 
 const done = computed(() => w.value?.exercises.flatMap((e) => e.sets).filter((s) => s.done).length ?? 0);
 const total = computed(() => w.value?.exercises.filter((e) => e.status !== "skipped").flatMap((e) => e.sets).length ?? 0);
@@ -53,101 +59,145 @@ const remainingS = computed(() => {
   return t;
 });
 const paused = computed(() => !!w.value?.pauseStartedAt);
+// how far along: one segment per exercise, as long as its sets, filled by the sets done
+// under the exercise: the routine's pinned notes, and every note written in this workout (pinned or not)
+const workoutNotes = computed(() => (w.value?.routineNotes ?? []).filter((x: any) => x.pinned || x.targetType === "workout" || x.workoutId === w.value?.id));
+const segs = computed(() => (w.value?.exercises ?? []).filter((e) => e.status !== "skipped").map((e) => ({ id: e.id, n: Math.max(1, e.sets.length), done: e.sets.filter((s) => s.done).length })));
+// the tabs of exercises on the phone keep the current one in view
+const strip = ref<HTMLElement | null>(null);
+// the action bar's height, so the page can always scroll its last note clear of it
+const dock = ref<HTMLElement | null>(null);
+let ro: ResizeObserver | null = null;
+watch(dock, (el) => {
+  ro?.disconnect();
+  if (!el) return;
+  ro = new ResizeObserver(() => document.querySelector<HTMLElement>(".aw")?.style.setProperty("--dockh", `${el.offsetHeight}px`));
+  ro.observe(el);
+});
+onBeforeUnmount(() => ro?.disconnect());
+watch(() => W.state.cur, async () => { await nextTick(); strip.value?.querySelector(".cur")?.scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" }); });
 const statusOf = (e: any) => (e.status === "skipped" ? "skip" : e.status === "done" || e.status === "partial" ? "done" : "");
 
-// phone: swipe left and right between exercises
-let x0 = 0, y0 = 0;
-const ts = (e: TouchEvent) => { x0 = e.touches[0]!.clientX; y0 = e.touches[0]!.clientY; };
+// phone: swipe left and right anywhere on the exercise (sets included) to move between exercises; not on the tabs
+// (it scrolls sideways), the action bar's steppers, or the screen edges (the phone's own Back gesture)
+let x0 = 0, y0 = 0, t0 = 0, ok = false;
+const ts = (e: TouchEvent) => {
+  const t = e.touches[0]!; x0 = t.clientX; y0 = t.clientY; t0 = Date.now();
+  ok = e.touches.length === 1 && !document.querySelector(".scr") && !(e.target as HTMLElement).closest(".aw-tabs, .nstep, .ab-last, .mnu") && x0 > 24 && x0 < innerWidth - 24;
+};
 const te = (e: TouchEvent) => {
+  if (!ok) return;
   const dx = e.changedTouches[0]!.clientX - x0, dy = e.changedTouches[0]!.clientY - y0;
-  if (Math.abs(dx) > 70 && Math.abs(dx) > Math.abs(dy) * 1.6 && !(e.target as HTMLElement).closest("input")) go(W.state.cur + (dx < 0 ? 1 : -1));
+  if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.3 && Date.now() - t0 < 900) { (document.activeElement as HTMLElement)?.blur?.(); go(W.state.cur + (dx < 0 ? 1 : -1)); }
 };
 const go = (i: number) => { if (w.value && i >= 0 && i < w.value.exercises.length) W.state.cur = i; };
 
 async function discard() {
-  if (!(await confirm("Discard this workout?", { text: "Nothing from it will be saved.", ok: "Discard", danger: true }))) return;
+  if (!(await confirm("Cancel this workout?", { text: "It ends now and nothing from it is saved: no sets, no history.", ok: "Cancel workout", danger: true }))) return;
+  const id = w.value!.id;
+  // through the outbox, behind any set changes still waiting there, so none of them arrives after the cancel
+  try { await send("post", `/workouts/${id}/discard`); }
+  catch (e) { toastError(e); invalidate(["workouts"]); return; }
   finishRest(false);
-  await api.post(`/workouts/${w.value!.id}/discard`);
-  invalidate(["workouts", "home", "calendar"]);
-  router.replace("/");
+  // leave first, then drop it everywhere: dropping it while this screen is still up would flash "No workout in progress"
+  await router.replace("/");
+  endWorkout(id);
 }
 async function rename() { const n = await prompt("Workout name", { value: w.value!.name }); if (n) W.patchWorkout({ name: n }); }
 const move = (i: number, d: number) => { const ids = w.value!.exercises.map((e) => e.id); const j = i + d; if (j < 0 || j >= ids.length) return; [ids[i], ids[j]] = [ids[j]!, ids[i]!]; W.reorder(ids); };
+// pausing the workout pauses everything: its clock and a rest that's running
+function togglePause() {
+  const p = !paused.value;
+  if (p) pauseRest(); else resumeRest();
+  W.patchWorkout({ pause: p, pauseStartedAt: p ? new Date().toISOString() : null });
+}
 const menu = computed(() => [
   { label: "Add exercise", icon: "plus", run: () => (adding.value = true) },
   { label: "Reorder exercises", icon: "routines", run: () => (listOpen.value = true), hidden: !isPhone.value },
   { label: "Workout note", icon: "note", run: () => (noteSheet.value = { targets: [{ type: "workout", id: w.value!.id, label: "This workout" }, ...(w.value!.routineId ? [{ type: "routine", id: w.value!.routineId, label: "The routine" }] : [])], workoutId: w.value!.id }) },
   { label: "Remind me next time (routine)", icon: "bell", run: () => (reminderSheet.value = { targetType: "routine", targetId: w.value!.routineId!, label: w.value!.name, workoutId: w.value!.id }), hidden: !w.value?.routineId },
-  { label: paused.value ? "Resume" : "Pause the clock", icon: paused.value ? "play" : "pause", run: () => W.patchWorkout({ pause: !paused.value, pauseStartedAt: paused.value ? null : new Date().toISOString() }) },
   { label: "Workout settings", icon: "settings", run: () => (settingsOpen.value = true) },
   { label: "Rename", icon: "edit", run: rename },
-  { label: "Discard workout", icon: "trash", danger: true, sep: true, run: discard },
+  { label: "Cancel workout", hint: "End it without saving anything", icon: "trash", danger: true, sep: true, run: discard },
 ]);
 </script>
 
 <template>
-  <div v-if="w" class="page wide" :style="isPhone ? { paddingBottom: '200px' } : undefined">
+  <div v-if="w" class="page wide aw" :class="{ phone: isPhone }" @touchstart.passive="isPhone && ts($event)" @touchend.passive="isPhone && te($event)">
     <div class="aw-top">
-      <button class="ib sm plain" aria-label="Back" @click="router.push('/')"><Icon name="down" /></button>
-      <div class="grow">
-        <div style="font-weight:600;font-size:17px" class="ellipsis">{{ w.name }}</div>
-        <div class="clock">{{ clock(elapsed(w)) }}{{ paused ? " · paused" : "" }} · {{ done }}/{{ total }} sets<template v-if="!isPhone"> · {{ fmt.vol(volume) }} · ~{{ Math.round(remainingS / 60) }} min left</template><template v-if="waiting.length"> · {{ waiting.length }} waiting to sync</template></div>
+      <button class="ib sm plain" aria-label="Minimise" @click="router.push('/')"><Icon name="down" /></button>
+      <div class="grow" style="min-width:0">
+        <div class="aw-name ellipsis" @click="rename">{{ w.name }}</div>
+        <div class="aw-clock"><b>{{ clock(elapsed(w)) }}</b><span v-if="paused" class="aw-paused">Paused</span><span>{{ done }} of {{ total }} sets</span><span v-if="waiting.length">{{ waiting.length }} waiting to sync</span></div>
       </div>
+      <Menu :items="menu" align="start" />
       <button class="btn" :class="{ o: done === 0 }" @click="finishing = true">Finish</button>
-      <Menu :items="menu" />
     </div>
-    <div v-for="m in w.reminders" :key="m.id" class="banner"><Icon name="bell" /><b>{{ m.body }}</b></div>
-    <div v-for="n in w.routineNotes?.filter((x) => x.pinned)" :key="n.id" class="banner note"><Icon name="note" />{{ n.body }}</div>
+    <div v-if="!isPhone" class="aw-prog" aria-hidden="true"><span v-for="g in segs" :key="g.id" :style="{ flexGrow: g.n }"><i :style="{ width: (g.done / g.n) * 100 + '%' }" /></span></div>
+    <div v-if="w.reminders?.length" class="col spb" style="gap:8px"><ReminderItem v-for="m in w.reminders" :key="m.id" :reminder="m" /></div>
+
 
     <div v-if="!w.exercises.length" class="card empty"><Icon name="dumbbell" :size="34" /><b>Add your first exercise</b><button class="btn" @click="adding = true">Add exercises</button></div>
 
     <!-- phone -->
     <template v-else-if="isPhone">
-      <div class="aw-dots"><i v-for="(e, i) in w.exercises" :key="e.id" :class="[statusOf(e), { cur: i === W.state.cur }]" @click="go(i)" /></div>
-      <div class="card" @touchstart.passive="ts" @touchend.passive="te">
+      <!-- the exercises as tabs: a tick when done, a dot on the one being done -->
+      <div ref="strip" class="aw-tabs" role="tablist">
+        <button v-for="(e, i) in w.exercises" :key="e.id" role="tab" :aria-selected="i === W.state.cur" :class="[statusOf(e), { cur: i === W.state.cur, act: i === W.state.active }]" :title="i === W.state.active ? 'Doing now' : undefined" @click="go(i)">
+          <Icon v-if="statusOf(e) === 'done'" name="check" :size="13" class="ok" /><span class="ellipsis">{{ e.exercise?.name }}</span>
+        </button>
+        <button class="add" aria-label="Add exercise" @click="adding = true"><Icon name="plus" :size="16" /></button>
+      </div>
+      <Peek />
+      <!-- the exercise and its sets sit on the page itself, no card around them -->
+      <div class="aw-flat">
         <Transition :name="exDir" mode="out-in"><ExerciseCard v-if="w.exercises[W.state.cur]" :key="w.exercises[W.state.cur]!.id" :e="w.exercises[W.state.cur]!" :index="W.state.cur" /></Transition>
       </div>
-      <div class="row" style="margin-top:10px">
-        <button class="qb" :disabled="W.state.cur === 0" @click="go(W.state.cur - 1)"><Icon name="left" :size="16" />Previous</button>
-        <div class="grow center tiny">{{ W.state.cur + 1 }} of {{ w.exercises.length }}</div>
-        <button class="qb" :disabled="W.state.cur >= w.exercises.length - 1" @click="go(W.state.cur + 1)">Next<Icon name="right" :size="16" /></button>
+      <!-- the routine's pinned notes: under the exercise, not pushing it down (its reminders stay at the top) -->
+      <div v-if="workoutNotes.length" class="aw-notes">
+        <NoteItem v-for="n in workoutNotes" :key="n.id" :note="n" />
       </div>
-      <button class="qb" style="margin:12px auto 0;display:flex" @click="adding = true"><Icon name="plus" :size="16" />Add exercise</button>
-      <RestPanel variant="sheet" />
+      <div ref="dock" class="aw-dock"><ActionBar :paused="paused" @finish="finishing = true" @pause="togglePause" /></div>
     </template>
 
     <!-- computer -->
     <div v-else class="aw-desk">
-      <div class="card side aw-list" style="padding:10px">
+      <div class="card side aw-list" style="padding:calc(var(--cpy) * 2 / 3)">
         <TransitionGroup name="mv">
-        <div v-for="(e, i) in w.exercises" :key="e.id" class="li" :class="{ cur: i === W.state.cur, skip: e.status === 'skipped' }" @click="go(i)">
+        <div v-for="(e, i) in w.exercises" :key="e.id" class="li" :class="{ cur: i === W.state.cur, act: i === W.state.active, skip: e.status === 'skipped' }" @click="go(i)">
           <span class="stt" :class="{ done: e.status === 'done', part: e.status === 'partial' || (e.status === 'pending' && e.sets.some((s) => s.done)) }"><Icon v-if="e.status === 'done'" name="check" :size="13" /></span>
-          <div class="grow"><div class="t ellipsis">{{ e.exercise?.name }}</div><div class="s">{{ e.sets.filter((s) => s.done).length }}/{{ e.sets.length }} sets{{ e.superset ? ` · ${e.superset}` : "" }}</div></div>
+          <div class="grow"><div class="t ellipsis">{{ e.exercise?.name }}</div><div class="s">{{ e.sets.filter((s) => s.done).length }} of {{ e.sets.length }} sets{{ e.superset ? `, superset ${e.superset}` : "" }}</div></div>
           <span v-if="i === W.state.cur" class="col" style="gap:0" @click.stop><button class="ib sm plain" style="width:26px;height:22px" aria-label="Move up" @click="move(i, -1)"><Icon name="up" :size="14" /></button><button class="ib sm plain" style="width:26px;height:22px" aria-label="Move down" @click="move(i, 1)"><Icon name="down" :size="14" /></button></span>
         </div>
         </TransitionGroup>
         <button class="qb acc" style="margin-top:6px" @click="adding = true"><Icon name="plus" :size="16" />Add exercise</button>
       </div>
-      <div class="card"><Transition name="sw" mode="out-in"><ExerciseCard v-if="w.exercises[W.state.cur]" :key="w.exercises[W.state.cur]!.id" :e="w.exercises[W.state.cur]!" :index="W.state.cur" /></Transition></div>
-      <div class="side col" style="gap:var(--spg)">
-        <RestPanel variant="ring" />
-        <div v-if="!rest.endAt" class="card">
+      <div class="stack" style="position:sticky;top:24px">
+        <Peek />
+        <div class="card"><Transition name="sw" mode="out-in"><ExerciseCard v-if="w.exercises[W.state.cur]" :key="w.exercises[W.state.cur]!.id" :e="w.exercises[W.state.cur]!" :index="W.state.cur" /></Transition></div>
+        <ActionBar :paused="paused" @finish="finishing = true" @pause="togglePause" />
+        <div v-if="workoutNotes.length" class="aw-notes">
+          <NoteItem v-for="n in workoutNotes" :key="n.id" :note="n" />
+        </div>
+      </div>
+      <div class="side stack">
+        <div class="card">
           <div class="lbl">Up next</div>
-          <div style="font-weight:600;margin-top:4px">{{ w.exercises.find((e, i) => i > W.state.cur && e.status === "pending")?.exercise.name ?? "Last exercise" }}</div>
-          <div class="tiny" style="margin-top:6px">Rest between sets {{ fmt.clock(w.exercises[W.state.cur]?.restS ?? W.prefs.value.restBetweenSetsS) }} · after {{ fmt.clock(w.exercises[W.state.cur]?.restAfterS ?? W.prefs.value.restAfterExerciseS) }}</div>
+          <div style="font-weight:600;margin-top:4px">{{ w.exercises.find((e, i) => i > W.state.active && e.status === "pending")?.exercise.name ?? "Last exercise" }}</div>
+          <div class="tiny" style="margin-top:6px">Rest between sets {{ fmt.clock(w.exercises[W.state.active]?.restS ?? W.prefs.value.restBetweenSetsS) }}, after the exercise {{ fmt.clock(w.exercises[W.state.active]?.restAfterS ?? W.prefs.value.restAfterExerciseS) }}</div>
         </div>
         <div class="card">
           <div class="grid g2" style="gap:10px">
             <div><div class="lbl">Volume</div><div style="font-weight:600;font-size:18px">{{ fmt.vol(volume) }}</div></div>
-            <div><div class="lbl">Time left</div><div style="font-weight:600;font-size:18px">~{{ Math.round(remainingS / 60) }} min</div></div>
+            <div><div class="lbl">Time left</div><div style="font-weight:600;font-size:18px">about {{ Math.round(remainingS / 60) }} min</div></div>
           </div>
           <div class="chips" style="margin-top:10px"><span v-for="m in [...new Set(w.exercises.filter((e) => e.sets.some((s) => s.done)).flatMap((e) => e.exercise.primaryMuscles))]" :key="m" class="mchip">{{ muscleName(m) }}</span></div>
         </div>
-        <p class="tiny center">Keys: Space ticks the next set · → / ← move between exercises</p>
+        <p class="tiny center">Space ticks the set you're on. ← and → move between exercises.</p>
       </div>
     </div>
 
-    <FinishSheet v-if="finishing" @close="finishing = false" />
+    <FinishSheet v-if="finishing" @close="finishing = false" @cancel="finishing = false; discard()" />
     <ExercisePicker v-if="adding" multi :exclude="w.exercises.map((e) => e.exerciseId)" @close="adding = false" @pick="(ids) => { adding = false; W.addExercises(ids); }" />
     <Sheet v-if="settingsOpen" title="Workout settings" @close="settingsOpen = false"><WorkoutSettings v-model="overrides" /></Sheet>
     <Sheet v-if="listOpen" title="Exercises" @close="listOpen = false">
@@ -156,5 +206,33 @@ const menu = computed(() => [
         <button class="ib sm plain" :disabled="i === 0" @click="move(i, -1)"><Icon name="up" :size="16" /></button><button class="ib sm plain" :disabled="i === w.exercises.length - 1" @click="move(i, 1)"><Icon name="down" :size="16" /></button></div></TransitionGroup>
     </Sheet>
   </div>
-  <div v-else class="page"><div class="empty"><b>No workout in progress</b><button class="btn" @click="router.push('/')">Home</button></div></div>
+  <!-- only once we know: while the app opens, the workout may still be on its way -->
+  <div v-else-if="W.active.isFetched.value && !W.active.isFetching.value" class="page"><div class="empty"><b>No workout in progress</b><button class="btn" @click="router.push('/')">Home</button></div></div>
 </template>
+
+<style scoped>
+/* room under the page for the action bar, however tall it is right now (it grows and shrinks with what it shows) */
+.aw.phone { padding-bottom: calc(var(--dockh, 330px) + var(--spg)); }
+.aw-name { font-size: 13px; font-weight: 600; color: var(--tx2); cursor: pointer; }
+.aw-clock { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; font-size: 12.5px; color: var(--tx2); }
+.aw-clock b { font-size: 26px; font-weight: 600; letter-spacing: -.8px; color: var(--tx); font-variant-numeric: tabular-nums; line-height: 1.1; }
+.aw-paused { color: var(--acc); font-weight: 600; }
+.aw-prog { display: flex; gap: 3px; margin: -4px 0 14px; }
+.aw-prog span { flex-basis: 0; height: 5px; border-radius: 5px; background: var(--s2); overflow: hidden; }
+.aw-prog i { display: block; height: 100%; background: var(--acc); border-radius: inherit; transition: width .3s var(--ease); }
+/* phone: the exercises as underlined tabs across the top, edge to edge */
+.aw-tabs { display: flex; overflow-x: auto; scrollbar-width: none; margin: 0 -16px var(--spg); padding: 0 10px; border-bottom: 1px solid var(--ol); }
+.aw-tabs::-webkit-scrollbar { display: none; }
+.aw-tabs button { display: inline-flex; align-items: center; gap: 5px; flex: none; max-width: 170px; padding: 10px 10px 9px; border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px; background: none; color: var(--tx2); font: inherit; font-size: 13.5px; cursor: pointer; }
+.aw-tabs button.cur { color: var(--tx); font-weight: 600; border-bottom-color: var(--acc); }
+.aw-tabs button.skip { opacity: .55; text-decoration: line-through; }
+.aw-tabs .ok { color: var(--pos); flex: none; }
+.aw-tabs .add { padding-inline: 12px; }
+/* the exercise being done: a dot after its name, wherever you're looking */
+.aw-tabs button.act::after, .aw-list .li.act .t::after { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--pos); flex: none; display: inline-block; margin-inline-start: 6px; vertical-align: middle; }
+.aw-notes { display: flex; flex-direction: column; gap: var(--spg); margin-top: var(--spg); }
+.stack > .aw-notes { margin-top: 0; }
+/* phone: the controls are a sheet fixed to the bottom edge, its own shadow lifting it off the page */
+.aw-dock { position: fixed; z-index: 50; left: 0; right: 0; bottom: 0; }
+.aw-dock :deep(.abar) { border-radius: var(--r-sheet) var(--r-sheet) 0 0; border-bottom: 0; padding-bottom: calc(14px + var(--sb, 0px)); box-shadow: 0 -10px 30px -18px rgb(0 0 0 / .45); }
+</style>

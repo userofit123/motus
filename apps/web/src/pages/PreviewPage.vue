@@ -2,10 +2,11 @@
 // Before pressing Start (requirement 17): how many exercises, sets and reps, how long it should take with the rests,
 // what each exercise is and what you did last time (tap for its full history), reminders and pinned notes,
 // skipping or reordering for today only, and this workout's settings.
+import { goBack } from "../core/leave";
 import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { duration, estimate, usesWeight, usesReps, muscleSets } from "@motus/shared";
-import { usePreview, useSettings } from "../api/queries";
+import { duration, estimate, usesWeight, usesReps, muscleSets, musclesWorked } from "@motus/shared";
+import { usePreview, useSettings, loaded } from "../api/queries";
 import { api, ApiError, mediaUrl } from "../api/client";
 import { invalidate } from "../api/live";
 import { useFmt, ago } from "../core/format";
@@ -14,10 +15,13 @@ import { choose } from "../core/ask";
 import { toastError } from "../core/toast";
 import { askNotificationPermission } from "../workout/native";
 import Icon from "../components/Icon.vue";
+import NoteItem from "../components/NoteItem.vue";
+import ReminderItem from "../components/ReminderItem.vue";
 import BodyMap from "../components/BodyMap.vue";
 import Sheet from "../components/Sheet.vue";
 import WorkoutSettings from "../components/WorkoutSettings.vue";
 import Menu from "../components/Menu.vue";
+import { replacingWorkout } from "../workout/useWorkout";
 
 const route = useRoute(), router = useRouter();
 const id = computed(() => String(route.params.id));
@@ -29,6 +33,8 @@ const skip = ref<string[]>([]), order = ref<string[]>([]);
 const overrides = ref<Record<string, unknown>>({});
 const showSettings = ref(false), busy = ref(false);
 watch(p, (v) => { if (v && !order.value.length) order.value = v.exercises.map((e: any) => e.routineExerciseId); }, { immediate: true });
+// which exercise a reminder or note is about; routine-wide ones need no label
+const exName = (x: any) => (x.targetType === "exercise" ? p.value?.exercises.find((e: any) => e.exerciseId === x.targetId) : x.targetType === "routine_exercise" ? p.value?.exercises.find((e: any) => e.routineExerciseId === x.targetId) : null)?.exercise?.name ?? null;
 const exs = computed<any[]>(() => (p.value?.exercises ?? []).slice().sort((a: any, b: any) => order.value.indexOf(a.routineExerciseId) - order.value.indexOf(b.routineExerciseId)));
 const active = computed(() => exs.value.filter((e) => !skip.value.includes(e.routineExerciseId)));
 const counts = computed(() => {
@@ -37,23 +43,27 @@ const counts = computed(() => {
 });
 const est = computed(() => estimate(active.value.map((e) => ({ sets: e.sets.map((x: any) => ({ kind: x.kind, reps: x.reps, durationS: x.durationS, restS: x.restS })) }))));
 const muscles = computed(() => muscleSets(active.value.map((e) => ({ primary: e.exercise?.primaryMuscles ?? [], secondary: e.exercise?.secondaryMuscles ?? [], sets: e.sets.length }))));
+// main and helped by whether any exercise has the muscle as a main one, not by amounts (a busy helper isn't a main muscle)
+const worked = computed(() => musclesWorked(active.value.map((e) => ({ primary: e.exercise?.primaryMuscles ?? [], secondary: e.exercise?.secondaryMuscles ?? [] }))));
 const toggleSkip = (rid: string) => { const i = skip.value.indexOf(rid); if (i >= 0) skip.value.splice(i, 1); else skip.value.push(rid); };
 const move = (rid: string, d: number) => { const a = order.value, i = a.indexOf(rid), j = i + d; if (j < 0 || j >= a.length) return; [a[i], a[j]] = [a[j]!, a[i]!]; };
 const setText = (e: any, x: any) => [x.weightKg != null && usesWeight(e.exercise?.tracking) ? fmt.value.w(x.weightKg) : "", x.reps != null && usesReps(e.exercise?.tracking) ? x.reps : "", x.durationS ? fmt.value.clock(x.durationS) : ""].filter((v) => v !== "").join(" × ");
-// "4 × 50 kg × 8", or when the sets differ "4 sets · 42.5–50 kg · 8 reps"
-const span = (xs: number[], f: (v: number) => string | number) => { const lo = Math.min(...xs), hi = Math.max(...xs); return lo === hi ? `${f(lo)}` : `${f(lo)}–${f(hi)}`; };
+// "4 × 50 kg × 8", or when the sets differ "4 sets · 42.5-50 kg · 8 reps"
+const span = (xs: number[], f: (v: number) => string | number) => { const lo = Math.min(...xs), hi = Math.max(...xs); return lo === hi ? `${f(lo)}` : `${f(lo)}-${f(hi)}`; };
 const plan = (e: any) => {
   const w = e.sets.filter((x: any) => x.kind !== "warmup");
   const txt = w.map((x: any) => setText(e, x));
   if (!w.length) return "No sets";
-  if (txt.every((t: string) => t === txt[0])) return `${w.length} × ${txt[0] || "—"}${usesWeight(e.exercise?.tracking) && w[0]?.weightKg != null ? " " + fmt.value.wu : ""}`;
+  if (txt.every((t: string) => t === txt[0])) return `${w.length} × ${txt[0] || "-"}${usesWeight(e.exercise?.tracking) && w[0]?.weightKg != null ? " " + fmt.value.wu : ""}`;
   const kg = w.map((x: any) => x.weightKg).filter((v: any) => v != null), reps = w.map((x: any) => x.reps).filter((v: any) => v != null);
   return [`${w.length} sets`, kg.length && usesWeight(e.exercise?.tracking) ? `${span(kg, fmt.value.w)} ${fmt.value.wu}` : "", reps.length ? `${span(reps, (v) => v)} reps` : ""].filter(Boolean).join(" · ");
 };
 async function start(force = false) {
   busy.value = true;
   try {
+    const replaced = force ? replacingWorkout() : null;
     await api.post("/workouts/start", { routineId: id.value, skip: skip.value, order: order.value, settings: overrides.value, scheduleId: route.query.schedule ?? null, scheduledDate: route.query.date ?? null, programId: route.query.program ?? null, deloadPct: route.query.deload ? Number(route.query.deload) : null, force });
+    replaced?.();
     askNotificationPermission();
     invalidate(["workouts", "home", "calendar"]);
     router.replace("/workout");
@@ -65,11 +75,13 @@ async function start(force = false) {
   } finally { busy.value = false; }
 }
 const changed = computed(() => Object.keys(overrides.value).length);
+// show the page once its data is in, all at once
+await loaded(pv);
 </script>
 
 <template>
   <div v-if="p" class="page">
-    <button class="back" @click="router.back()"><Icon name="left" :size="16" />Back</button>
+    <button class="back" @click="goBack(router, '/routines')"><Icon name="left" :size="16" /><span>Back</span></button>
     <div class="ph">
       <div><h1>{{ p.routine.name }}</h1><div class="sub">{{ p.lastDoneAt ? `Last done ${ago(p.lastDoneAt)} · ${p.timesDone}×` : "First time" }}</div></div>
       <div class="acts"><button class="btn lg keep" :disabled="busy || !active.length" @click="start()"><Icon name="play" :size="18" />Start</button></div>
@@ -82,11 +94,13 @@ const changed = computed(() => Object.keys(overrides.value).length);
       <div class="card stat"><div class="lbl"><span class="bi"><Icon name="refresh" :size="15" /></span>Reps</div><div class="val">{{ counts.reps }}</div><div class="sub">in total</div></div>
     </div>
 
-    <div v-if="route.query.deload" class="banner" style="margin-top:var(--spg)"><Icon name="info" /><b>Deload week: working weights are {{ route.query.deload }}% lighter today.</b></div>
-    <div v-for="m in p.reminders" :key="m.id" class="banner" style="margin-top:var(--spg)"><Icon name="bell" /><b>{{ m.body }}</b></div>
-    <div v-for="n in p.notes" :key="n.id" class="banner note" :style="!p.reminders.length ? { marginTop: 'var(--spg)' } : undefined"><Icon name="note" /><div>{{ n.body }}</div></div>
+    <div v-if="route.query.deload" class="banner spt"><Icon name="info" /><b>Deload week: working weights are {{ route.query.deload }}% lighter today.</b></div>
+    <div v-if="p.reminders?.length || p.notes?.length" class="col spt" style="gap:8px">
+      <ReminderItem v-for="m in p.reminders" :key="m.id" :reminder="m" :where="exName(m)" />
+      <NoteItem v-for="n in p.notes" :key="n.id" :note="n" :where="exName(n)" />
+    </div>
 
-    <div class="grid" style="grid-template-columns:minmax(0,1fr) 300px;align-items:start;margin-top:var(--spg)">
+    <div class="grid spt" style="grid-template-columns:minmax(0,1fr) 300px;align-items:start">
       <TransitionGroup tag="div" name="mv" class="card">
         <div v-for="(e, i) in exs" :key="e.routineExerciseId" class="li pvx" :class="{ off: skip.includes(e.routineExerciseId) }">
           <div class="thumb click" @click="exerciseSheet = e.exerciseId"><img v-if="e.exercise?.images?.[0]" :src="mediaUrl(e.exercise.images[0])" alt="" loading="lazy" /><Icon v-else name="dumbbell" /></div>
@@ -107,9 +121,9 @@ const changed = computed(() => Object.keys(overrides.value).length);
           ]" label="Today only" />
         </div>
       </TransitionGroup>
-      <div class="col" style="gap:var(--spg)">
-        <div class="card"><BodyMap :values="muscles" :height="190" legend /></div>
-        <div class="card" style="padding-block:4px">
+      <div class="stack">
+        <div class="card"><BodyMap :values="muscles" :highlight="worked.primary" :secondary="worked.secondary" :height="190" legend /></div>
+        <div class="card flush">
           <div class="li click" role="button" @click="showSettings = true"><Icon name="settings" :size="18" class="muted" /><div class="grow"><div class="t">Workout settings</div><div class="s">{{ changed ? `${changed} changed for this workout` : "As usual" }}</div></div><Icon name="right" :size="16" class="muted" /></div>
           <div class="li click" role="button" @click="noteSheet = { targets: [{ type: 'routine', id, label: p.routine.name }] }"><Icon name="note" :size="18" class="muted" /><div class="grow"><div class="t">Add a note</div></div><Icon name="right" :size="16" class="muted" /></div>
         </div>

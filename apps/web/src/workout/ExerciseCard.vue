@@ -3,15 +3,18 @@
 // (Previous · kg · Reps · ✓). Last time's numbers are already filled in; tap Previous to copy it, tick to log the set.
 import { computed, ref, onBeforeUnmount } from "vue";
 import { usesWeight, usesReps, usesDuration, usesDistance, toM, fromM, parseQuick, warmups, muscleName, type WorkoutExercise, type WorkoutSet } from "@motus/shared";
+import { SET_KINDS } from "../core/format";
 import { useWorkout } from "./useWorkout";
 import { mediaUrl, api } from "../api/client";
 import { exerciseSheet, noteSheet, reminderSheet } from "../core/ui";
-import { choose, prompt } from "../core/ask";
+import { prompt } from "../core/ask";
 import { toast } from "../core/toast";
 import { invalidate } from "../api/live";
 import { beep } from "./runtime";
 import Icon from "../components/Icon.vue";
 import Menu from "../components/Menu.vue";
+import NoteItem from "../components/NoteItem.vue";
+import ReminderItem from "../components/ReminderItem.vue";
 import ExercisePicker from "../components/ExercisePicker.vue";
 import RestPicker from "../components/RestPicker.vue";
 import PlateSheet from "./PlateSheet.vue";
@@ -22,12 +25,14 @@ const fmt = W.fmt, feat = computed(() => W.settings.value.features), prefs = W.p
 const tr = computed(() => props.e.exercise?.tracking ?? "weight_reps");
 const showW = computed(() => usesWeight(tr.value)), showR = computed(() => usesReps(tr.value)), showD = computed(() => usesDuration(tr.value)), showDist = computed(() => usesDistance(tr.value));
 const visibleSets = computed(() => props.e.sets.filter((s) => prefs.value.showWarmups || s.kind !== "warmup"));
-const setNo = (s: WorkoutSet) => props.e.sets.slice(0, props.e.sets.indexOf(s) + 1).filter((x) => x.kind !== "warmup").length;
-const kindShort = (s: WorkoutSet) => (s.kind === "warmup" ? "W" : s.kind === "drop" ? "D" : s.kind === "failure" ? "F" : String(setNo(s))) + (s.side ? s.side : "");
+const setNo = (s: WorkoutSet) => props.e.sets.slice(0, props.e.sets.indexOf(s) + 1).filter((x) => x.kind !== "warmup" && x.kind !== "drop").length;
+// drops are numbered within their set: D1, D2…
+const dropNo = (s: WorkoutSet) => { const a = props.e.sets; let i = a.indexOf(s), n = 0; while (a[i]?.kind === "drop") { n++; i--; } return n; };
+const kindShort = (s: WorkoutSet) => (s.kind === "warmup" ? "W" : s.kind === "drop" ? `D${dropNo(s)}` : s.kind === "failure" ? "F" : String(setNo(s))) + (s.side ? s.side : "");
 const sided = computed(() => !!feat.value.unilateral && !!props.e.exercise?.unilateral);
 const prevText = (s: WorkoutSet) => {
-  const p = s.prev; if (!p) return "–";
-  return [showW.value && p.weightKg != null ? fmt.value.w(p.weightKg) : "", showR.value && p.reps != null ? p.reps : "", showD.value && p.durationS ? fmt.value.clock(p.durationS) : "", showDist.value && p.distanceM ? fmt.value.num(fromM(p.distanceM, fmt.value.du), 2) : ""].filter((x) => x !== "").join(" × ") || "–";
+  const p = s.prev; if (!p) return "-";
+  return [showW.value && p.weightKg != null ? fmt.value.w(p.weightKg) : "", showR.value && p.reps != null ? p.reps : "", showD.value && p.durationS ? fmt.value.clock(p.durationS) : "", showDist.value && p.distanceM ? fmt.value.num(fromM(p.distanceM, fmt.value.du), 2) : ""].filter((x) => x !== "").join(" × ") || "-";
 };
 const copyPrev = (s: WorkoutSet) => { if (s.prev && !s.done) W.editSet(s, { weightKg: s.prev.weightKg, reps: s.prev.reps, durationS: s.prev.durationS, distanceM: s.prev.distanceM }); };
 const wIn = (kg: number | null) => (kg == null ? "" : String(Math.round(fmt.value.fromKg(kg) * 100) / 100));
@@ -39,7 +44,7 @@ const beat = (s: WorkoutSet) => {
   if (dw > -0.01 && dr > 0) return `+${dr} rep${dr > 1 ? "s" : ""}`;
   return "";
 };
-const remDone = async (id: string, status: string) => { await api.put(`/reminders/${id}`, { status }); props.e.reminders = props.e.reminders?.filter((r) => r.id !== id); invalidate(["reminders"]); };
+const remDone = async (id: string, status: string) => { await api.put(`/reminders/${id}`, { status }); props.e.reminders = props.e.reminders?.filter((r) => r.id !== id); invalidate(["reminders"]); toast(status === "done" ? "Reminder done" : status === "pending" ? "It will show next time" : "Reminder dismissed"); };
 
 // timed sets (planks, holds): 3-2-1, count down, then tick the set
 const timer = ref<{ set: WorkoutSet; left: number; lead: number } | null>(null);
@@ -62,21 +67,7 @@ function toggleRepTimer() { repTimer.value = !repTimer.value; if (rH) clearInter
 onBeforeUnmount(() => { stopTimed(); if (rH) clearInterval(rH); });
 
 const picking = ref<null | "replace">(null), alts = ref<any[]>([]), restEdit = ref<null | "between" | "after">(null), plates = ref<number | null>(null);
-async function skip() {
-  if (prefs.value.confirmSkip || true) {
-    const v = await choose(`Skip ${props.e.exercise.name}?`, [
-      { label: "Skip it", value: "skip" }, { label: "Do it later (move to the end)", value: "later" },
-      ...(props.e.sets.some((s) => s.done) ? [{ label: "Skip the remaining sets", value: "rest" }] : []),
-    ]);
-    if (!v) return;
-    if (v === "later") { const ids = W.state.w!.exercises.map((x) => x.id).filter((x) => x !== props.e.id); ids.push(props.e.id); await W.reorder(ids); return; }
-    const reason = await choose("Why? (optional)", [{ label: "Equipment busy", value: "Equipment busy" }, { label: "Pain or injury", value: "Pain or injury" }, { label: "Out of time", value: "Out of time" }, { label: "Don't feel like it", value: "Don't feel like it" }, { label: "No reason", value: "" }]);
-    if (v === "rest") { for (const s of props.e.sets.filter((x) => !x.done)) await W.removeSet(props.e, s); await W.setStatus(props.e, "partial", reason || null); }
-    else await W.setStatus(props.e, "skipped", reason || null);
-    const next = W.state.w!.exercises.findIndex((x) => x.status === "pending");
-    if (next >= 0) W.state.cur = next;
-  }
-}
+const skip = () => W.skipExercise(props.e);
 async function openReplace() { alts.value = await api.get(`/exercises/${props.e.exerciseId}/alternatives`).catch(() => []); picking.value = "replace"; }
 async function replace(ids: string[]) { picking.value = null; await W.patchExercise(props.e, { exerciseId: ids[0] }, true); toast("Exercise replaced"); }
 async function quick() {
@@ -108,7 +99,7 @@ const menu = computed(() => [
   { label: "Skip", icon: "skip", run: skip, hidden: props.e.status === "skipped" },
   { label: "Bring it back", icon: "refresh", run: () => W.setStatus(props.e, props.e.sets.every((s) => s.done) && props.e.sets.length ? "done" : "pending"), hidden: props.e.status !== "skipped" },
   { label: "Replace", icon: "swap", run: openReplace },
-  { label: "Remind me next time", icon: "bell", run: () => (reminderSheet.value = { targetType: "exercise", targetId: props.e.exerciseId, label: props.e.exercise.name, scopeRoutineId: W.state.w?.routineId, workoutId: W.state.w?.id }) },
+  { label: "Remind me next time", icon: "bell", run: () => (reminderSheet.value = { targetType: "exercise", targetId: props.e.exerciseId, label: props.e.exercise.name, scopeRoutineId: props.e.routineExerciseId ? W.state.w?.routineId : null, routineName: W.state.w?.name, workoutId: W.state.w?.id }) },
   { label: "Rest between sets", icon: "timer", run: () => (restEdit.value = "between") },
   { label: "Rest after this exercise", icon: "timer", run: () => (restEdit.value = "after") },
   { label: "Add warm-up sets", icon: "flame", run: addWarmups, hidden: !feat.value.warmupCalc || !showW.value },
@@ -117,12 +108,18 @@ const menu = computed(() => [
   { label: "Remove from workout", icon: "trash", danger: true, sep: true, run: () => W.removeExercise(props.e) },
 ]);
 const setMenu = (s: WorkoutSet) => [
-  ...(feat.value.setTypes ? ([["normal", "Normal"], ["warmup", "Warm-up"], ["drop", "Drop set"], ["failure", "To failure"]] as const).map(([k, l]) => ({ label: l, icon: s.kind === k ? "check" : undefined, run: () => W.editSet(s, { kind: k }) })) : []),
+  // a drop is added under the set it drops from, not made by relabelling a set
+  ...(feat.value.setTypes && s.kind !== "drop" ? SET_KINDS.map(([k, l, ic]) => ({ label: l, icon: ic, checked: s.kind === k, run: () => W.editSet(s, { kind: k }) })) : []),
+  ...(feat.value.setTypes && s.kind !== "warmup" ? [{ label: s.kind === "drop" || props.e.sets[props.e.sets.indexOf(s) + 1]?.kind === "drop" ? "Add another drop" : "Add a drop set", hint: "Straight after this set: lower the weight and keep going", icon: "arrowDown", sep: s.kind !== "drop", run: () => W.addDrop(props.e, s) }] : []),
   ...(s.prev ? [{ label: "Copy last time", icon: "copy", run: () => copyPrev(s) }] : []),
-  ...(sided.value ? [{ label: "Left side", icon: s.side === "L" ? "check" : undefined, run: () => W.editSet(s, { side: s.side === "L" ? null : "L" }) }, { label: "Right side", icon: s.side === "R" ? "check" : undefined, run: () => W.editSet(s, { side: s.side === "R" ? null : "R" }) }] : []),
+  ...(sided.value ? [{ label: "Left side", icon: "left", checked: s.side === "L", run: () => W.editSet(s, { side: s.side === "L" ? null : "L" }) }, { label: "Right side", icon: "right", checked: s.side === "R", run: () => W.editSet(s, { side: s.side === "R" ? null : "R" }) }] : []),
   { label: "Remove set", icon: "trash", danger: true, sep: feat.value.setTypes, run: () => W.removeSet(props.e, s) },
 ];
 const isCur = computed(() => W.state.cur === props.index);
+// the set to do now, marked in the table (the same one the action bar shows)
+// sets are logged only in the exercise being done: in one you're just looking at, the ticks are locked against stray taps
+const isActive = computed(() => W.state.active === props.index);
+const nowId = computed(() => (W.state.active === props.index ? visibleSets.value.find((s) => !s.done)?.id ?? null : null));
 </script>
 
 <template>
@@ -135,28 +132,28 @@ const isCur = computed(() => W.state.cur === props.index);
       </div>
       <Menu :items="menu" />
     </div>
-    <template v-if="prefs.showReminders && isCur">
-      <div v-for="r in e.reminders" :key="r.id" class="banner"><Icon name="bell" /><div class="grow"><b>{{ r.body }}</b>
-        <div class="acts"><button class="qb acc" style="padding:4px 8px" @click="remDone(r.id, 'done')">Done</button><button class="qb" style="padding:4px 8px" @click="remDone(r.id, 'pending'); e.reminders = e.reminders?.filter((x) => x.id !== r.id)">Next time</button><button class="qb" style="padding:4px 8px" @click="remDone(r.id, 'dismissed')">Dismiss</button></div></div></div>
-      <div v-for="n in e.notes?.filter((x) => x.pinned || x.workoutId === W.state.w?.id)" :key="n.id" class="banner note"><Icon name="note" /><div class="grow" style="white-space:pre-wrap">{{ n.body }}<span v-for="t in n.tags" :key="t" class="mchip" style="margin-inline-start:6px">{{ t }}</span></div></div>
-    </template>
+
+    <!-- reminders come first, before the sets they are about; notes go under the exercise -->
+    <div v-if="prefs.showReminders && isCur && e.reminders?.length" class="exrem">
+      <ReminderItem v-for="r in e.reminders" :key="r.id" :reminder="r" :actions="[{ label: 'Done', primary: true, run: () => remDone(r.id, 'done') }, { label: 'Next time', run: () => remDone(r.id, 'pending') }, { label: 'Dismiss', run: () => remDone(r.id, 'dismissed') }]" />
+    </div>
 
     <table class="sets">
       <thead><tr><th>Set</th><th v-if="prefs.showPrevious">Previous</th><th v-if="showW">{{ fmt.wu }}</th><th v-if="showR">Reps</th><th v-if="showD">Time</th><th v-if="showDist">{{ fmt.du }}</th><th v-if="feat.rpe">RPE</th><th style="width:44px" /></tr></thead>
       <tbody>
-        <tr v-for="s in visibleSets" :key="s.id" :class="{ done: s.done }">
+        <tr v-for="s in visibleSets" :key="s.id" :class="{ done: s.done, drop: s.kind === 'drop', now: s.id === nowId && e.status !== 'skipped' }" :aria-current="s.id === nowId ? 'step' : undefined">
           <td><button class="sk" :class="{ w: s.kind === 'warmup', d: s.kind === 'drop', f: s.kind === 'failure' }" @click.stop>{{ kindShort(s) }}</button></td>
           <td v-if="prefs.showPrevious" class="prev" @click="copyPrev(s)">{{ prevText(s) }}<span v-if="s.pr?.length" class="pr" style="margin-inline-start:6px">PR</span><span v-else-if="beat(s)" class="pos tiny" style="margin-inline-start:6px">{{ beat(s) }}</span></td>
-          <td v-if="showW"><input class="vin" :class="{ pre: s.prefilled && !s.done }" inputmode="decimal" :value="wIn(s.weightKg)" placeholder="–" @change="W.editSet(s, { weightKg: num(($event.target as HTMLInputElement).value) == null ? null : fmt.toKg(num(($event.target as HTMLInputElement).value)!) })" @focus="($event.target as HTMLInputElement).select()" /></td>
-          <td v-if="showR"><input class="vin" :class="{ pre: s.prefilled && !s.done }" inputmode="numeric" :value="s.reps ?? ''" :placeholder="s.targetReps != null ? String(s.targetReps) : '–'" @change="W.editSet(s, { reps: num(($event.target as HTMLInputElement).value) })" @focus="($event.target as HTMLInputElement).select()" /></td>
+          <td v-if="showW"><input class="vin" :class="{ pre: s.prefilled && !s.done }" inputmode="decimal" :value="wIn(s.weightKg)" placeholder="-" @change="W.editSet(s, { weightKg: num(($event.target as HTMLInputElement).value) == null ? null : fmt.toKg(num(($event.target as HTMLInputElement).value)!) })" @focus="($event.target as HTMLInputElement).select()" /></td>
+          <td v-if="showR"><input class="vin" :class="{ pre: s.prefilled && !s.done }" inputmode="numeric" :value="s.reps ?? ''" :placeholder="s.targetReps != null ? String(s.targetReps) : '-'" @change="W.editSet(s, { reps: num(($event.target as HTMLInputElement).value) })" @focus="($event.target as HTMLInputElement).select()" /></td>
           <td v-if="showD">
-            <button v-if="!s.done && timer?.set !== s && !showR" class="btn tonal s" style="min-width:76px" @click="startTimed(s)"><Icon name="play" :size="14" />{{ fmt.clock(s.durationS ?? 30) }}</button>
+            <button v-if="!s.done && timer?.set !== s && !showR" :disabled="!isActive" class="btn tonal s" style="min-width:76px" @click="startTimed(s)"><Icon name="play" :size="14" />{{ fmt.clock(s.durationS ?? 30) }}</button>
             <button v-else-if="timer?.set === s" class="btn s" style="min-width:76px" @click="stopTimed">{{ timer.lead > 0 ? timer.lead : fmt.clock(timer.left) }}</button>
             <input v-else class="vin" inputmode="numeric" :value="s.durationS ?? ''" placeholder="sec" @change="W.editSet(s, { durationS: num(($event.target as HTMLInputElement).value) })" />
           </td>
-          <td v-if="showDist"><input class="vin" inputmode="decimal" :value="s.distanceM != null ? Math.round(fromM(s.distanceM, fmt.du) * 100) / 100 : ''" placeholder="–" @change="W.editSet(s, { distanceM: num(($event.target as HTMLInputElement).value) == null ? null : toM(num(($event.target as HTMLInputElement).value)!, fmt.du) })" /></td>
-          <td v-if="feat.rpe"><input class="vin" inputmode="decimal" :value="s.rpe ?? ''" placeholder="–" style="max-width:56px" @change="W.editSet(s, { rpe: num(($event.target as HTMLInputElement).value) })" /></td>
-          <td><button class="tick" :class="{ on: s.done }" :aria-label="s.done ? 'Undo' : 'Done'" @click="W.tick(e, e.sets.indexOf(s))"><Icon name="check" :size="20" /></button></td>
+          <td v-if="showDist"><input class="vin" inputmode="decimal" :value="s.distanceM != null ? Math.round(fromM(s.distanceM, fmt.du) * 100) / 100 : ''" placeholder="-" @change="W.editSet(s, { distanceM: num(($event.target as HTMLInputElement).value) == null ? null : toM(num(($event.target as HTMLInputElement).value)!, fmt.du) })" /></td>
+          <td v-if="feat.rpe"><input class="vin" inputmode="decimal" :value="s.rpe ?? ''" placeholder="-" style="max-width:56px" @change="W.editSet(s, { rpe: num(($event.target as HTMLInputElement).value) })" /></td>
+          <td><button class="tick" :class="{ on: s.done }" :disabled="!isActive" :aria-label="s.done ? 'Undo' : 'Done'" :title="isActive ? undefined : 'Make this the exercise you\'re doing to log it'" @click="W.tick(e, e.sets.indexOf(s))"><Icon v-if="s.done" name="check" :size="20" /></button></td>
           <td style="width:30px;padding:0"><Menu :items="setMenu(s)" /></td>
         </tr>
       </tbody>
@@ -166,7 +163,11 @@ const isCur = computed(() => W.state.cur === props.index);
       <button v-if="sided" class="qb" title="Add a left and a right set" @click="addPair"><Icon name="plus" :size="16" />Left + right</button>
       <button v-if="e.repRestS" class="qb" :class="{ acc: repTimer }" @click="toggleRepTimer"><Icon name="timer" :size="16" />{{ repTimer ? "Stop rep timer" : `Rep timer ${e.repRestS}s` }}</button>
       <div class="grow" />
-      <button class="qb" @click="noteSheet = { targets: [{ type: 'exercise', id: e.exerciseId, label: `${e.exercise.name} (always)` }, ...(e.routineExerciseId ? [{ type: 'routine_exercise', id: e.routineExerciseId, label: `${e.exercise.name} in this routine only` }] : []), ...(W.state.w?.routineId ? [{ type: 'routine', id: W.state.w.routineId, label: 'This routine' }] : []), { type: 'workout_exercise', id: e.id, label: 'Just this workout' }], workoutId: W.state.w?.id }"><Icon name="note" :size="16" />Note</button>
+      <button class="qb" @click="noteSheet = { targets: [{ type: 'exercise', id: e.exerciseId, label: `${e.exercise.name}, every time` }, ...(e.routineExerciseId ? [{ type: 'routine_exercise', id: e.routineExerciseId, label: `${e.exercise.name} in ${W.state.w?.name ?? 'this routine'}` }] : []), ...(W.state.w?.routineId ? [{ type: 'routine', id: W.state.w.routineId, label: `The whole routine` }] : []), { type: 'workout_exercise', id: e.id, label: 'Just today' }], workoutId: W.state.w?.id }"><Icon name="note" :size="16" />Note</button>
+    </div>
+    <!-- notes for this exercise: under it, where you look after a set -->
+    <div v-if="prefs.showReminders && isCur && e.notes?.some((x) => x.pinned || x.workoutId === W.state.w?.id)" class="exnotes">
+      <NoteItem v-for="n in e.notes?.filter((x) => x.pinned || x.workoutId === W.state.w?.id)" :key="n.id" :note="n" />
     </div>
     <ExercisePicker v-if="picking" title="Replace with" :suggest="alts" @close="picking = null" @pick="replace" />
     <RestPicker v-if="restEdit" :title="restEdit === 'between' ? 'Rest between sets' : 'Rest after this exercise'" :value="restEdit === 'between' ? e.restS : e.restAfterS" :default-label="'Default'" @close="restEdit = null"
@@ -174,3 +175,8 @@ const isCur = computed(() => W.state.cur === props.index);
     <PlateSheet v-if="plates != null" :kg="plates" @close="plates = null" />
   </div>
 </template>
+
+<style scoped>
+.exnotes { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--ol); }
+.exrem { display: flex; flex-direction: column; gap: 8px; margin-bottom: var(--hg); }
+</style>

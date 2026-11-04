@@ -64,6 +64,39 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener {
         call.resolve();
     }
 
+    /** The workout in progress (same place as the rest countdown, which replaces it while a rest runs): the exercise and
+     *  set you're on, and the workout's clock counting up from `since` (none while paused). */
+    @PluginMethod
+    public void showSession(PluginCall call) {
+        channel();
+        Long since = call.getLong("since");
+        Intent open = new Intent(getContext(), MainActivity.class);
+        open.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        PendingIntent pi = PendingIntent.getActivity(getContext(), 0, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+        String body = call.getString("body", "");
+        NotificationCompat.Builder b = new NotificationCompat.Builder(getContext(), CHANNEL)
+            .setSmallIcon(R.drawable.ic_stat_motus)
+            .setContentTitle(call.getString("title", "Workout in progress"))
+            .setContentText(body)
+            .setStyle(new NotificationCompat.BigTextStyle().bigText(body))
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setSilent(true)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setCategory(NotificationCompat.CATEGORY_STOPWATCH)
+            .setContentIntent(pi);
+        if (since != null) b.setWhen(since).setUsesChronometer(true).setShowWhen(true);
+        else b.setShowWhen(false);
+        try { NotificationManagerCompat.from(getContext()).notify(ID, b.build()); } catch (SecurityException e) { /* notifications not allowed */ }
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void clearSession(PluginCall call) {
+        NotificationManagerCompat.from(getContext()).cancel(ID);
+        call.resolve();
+    }
+
     @PluginMethod
     public void clearRest(PluginCall call) {
         NotificationManagerCompat.from(getContext()).cancel(ID);
