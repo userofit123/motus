@@ -13,6 +13,7 @@ import SyncPill from "./SyncPill.vue";
 import { useActive } from "../api/queries";
 import UpdateButton from "./UpdateButton.vue";
 import Menu from "../components/Menu.vue";
+import { recording } from "../workout/recording";
 
 const route = useRoute(), router = useRouter();
 const cur = computed(() => section(route.name as string));
@@ -41,17 +42,23 @@ const onResize = () => place(false);
 let mo: MutationObserver | null = null;
 onMounted(() => {
   nextTick(() => place(false)); setTimeout(onResize, 80); addEventListener("resize", onResize);
-  mo = new MutationObserver(onResize); mo.observe(document.documentElement, { attributes: true, attributeFilter: ["data-rad", "data-nav", "data-nsp"] });
+  mo = new MutationObserver(onResize); mo.observe(document.documentElement, { attributes: true, attributeFilter: ["data-rad", "data-nav", "data-nsp", "data-fnt"] });
   document.fonts?.ready.then(onResize);
 });
 onBeforeUnmount(() => { removeEventListener("resize", onResize); mo?.disconnect(); });
 const acctMenu = computed(() => [
   { label: me.data.value?.user.displayName || session.user?.username || "Account", icon: "user", run: () => router.push("/settings/account") },
+  // Body has no place in the rail's main pages, so it is reached from here (on the phone, from More)
+  { label: "Body", icon: "scale", run: () => router.push("/body") },
   { label: "Sign out", icon: "logout", run: async () => { await signOut(); } },
 ]);
 const active = useActive();
+// how many running-session bars float at the bottom (the workout, a recording), so the page leaves room for them
+const bars = computed(() => (active.data.value && route.name !== "workout" ? 1 : 0) + (recording.value && route.name !== "record" && route.name !== "workout" ? 1 : 0));
 // one key per page, so moving between pages animates; settings sections animate inside the page instead
 const pageKey = (r: any) => (r.name === "settings" ? "settings" : r.path);
+// once a page has moved in, anything that appears on it later rises in by itself (see app.css)
+const arrived = (el: Element) => el.classList?.add("in");
 </script>
 
 <template>
@@ -68,7 +75,7 @@ const pageKey = (r: any) => (r.name === "settings" ? "settings" : r.path);
         <button id="themeBtn" type="button" class="nb" @click.stop="appearanceOpen = !appearanceOpen"><span class="ic"><Icon name="palette" :size="22" /></span>Appearance</button>
       </div>
     </nav>
-    <main :class="{ withbar: !!active.data.value && route.name !== 'workout' }"><router-view v-slot="{ Component, route: r }"><Transition name="page" mode="out-in"><component :is="Component" :key="pageKey(r)" /></Transition></router-view></main>
+    <main :class="{ withbar: bars > 0, withbar2: bars > 1 }"><MiniBar v-if="route.name === 'workout'" strip /><router-view v-slot="{ Component, route: r }"><Suspense><Transition name="page" mode="out-in" appear @after-enter="arrived"><component :is="Component" :key="pageKey(r)" /></Transition></Suspense></router-view></main>
     <button v-if="route.name !== 'workout'" class="fab" aria-label="Start" title="Start a workout or activity (N)" @click="startOpen = true"><Icon name="plus" /></button>
     <MiniBar v-if="route.name !== 'workout'" />
     <SyncPill />

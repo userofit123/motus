@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // Panels any screen can open: Start, an exercise, a note, a reminder, an activity, body weight, Appearance.
-import { exerciseSheet, noteSheet, reminderSheet, activitySheet, bodySheet, startOpen } from "../core/ui";
+import { exerciseSheet, noteSheet, reminderSheet, activitySheet, bodySheet, dailySheet, startOpen } from "../core/ui";
 import Sheet from "../components/Sheet.vue";
 import ExerciseView from "../components/ExerciseView.vue";
 import StartSheet from "./StartSheet.vue";
@@ -8,6 +8,7 @@ import NoteSheet from "./NoteSheet.vue";
 import ReminderSheet from "./ReminderSheet.vue";
 import ActivitySheet from "./ActivitySheet.vue";
 import BodySheet from "./BodySheet.vue";
+import DailySheet from "./DailySheet.vue";
 import AppearancePanel from "./AppearancePanel.vue";
 import { useExercise } from "../api/queries";
 import { computed, onMounted, onBeforeUnmount, watch } from "vue";
@@ -39,6 +40,7 @@ onBeforeUnmount(() => removeEventListener("keydown", key));
   <ReminderSheet v-if="reminderSheet" :o="reminderSheet" @close="reminderSheet = null" />
   <ActivitySheet v-if="activitySheet" :o="activitySheet" @close="activitySheet = null" />
   <BodySheet v-if="bodySheet" @close="bodySheet = false" />
+  <DailySheet v-if="dailySheet" @close="dailySheet = false" />
   <AppearancePanel />
   <CommandPalette v-if="settings.features.palette" />
 </template>

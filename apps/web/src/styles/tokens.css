@@ -44,6 +44,7 @@
   --shadow-sheet: 0 30px 80px -20px #000a;
   --scrim: #0007;
   --ease: cubic-bezier(.2, .8, .2, 1);
+  --t-slide: .25s;
   --sb: env(safe-area-inset-bottom, 0px);
   --st: env(safe-area-inset-top, 0px);
 }
@@ -93,6 +94,13 @@
 html {
   --spg: 16px;
   --hg: 10px;
+  /* density (Cozy): inside a card, a list row (and its least height, kept a comfortable tap), a sets-table cell.
+     theme.css sets Compact and Roomy */
+  --cpy: 15px;
+  --cpx: 16px;
+  --lpy: 10px;
+  --lmh: 48px;
+  --tdy: 6px;
 }
 
 :root {

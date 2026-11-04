@@ -9,7 +9,7 @@ button { font: inherit; color: inherit; }
 .grow { flex: 1; min-width: 0; }
 .row { display: flex; align-items: center; gap: 10px; }
 /* Money Manager's .row is a padded list row; ours is a plain flex row (a card that is also a row keeps its card padding) */
-.row:not(.card), html[data-den] .row:not(.card) { padding: 0; border: 0; }
+.row:not(.card) { padding: 0; border: 0; }
 .col { display: flex; flex-direction: column; gap: 6px; }
 .wrap { flex-wrap: wrap; }
 .end { justify-content: flex-end; }
@@ -24,23 +24,52 @@ button { font: inherit; color: inherit; }
 .neg { color: var(--neg); }
 .acc { color: var(--acc); }
 hr.sep { border: 0; border-top: 1px solid var(--ol); margin: 14px 0; }
+/* spacing between blocks: blocks stacked in a column (cards, banners, sections' parts) are --spg apart, so the Spacing
+   setting in Appearance moves them all; a heading, a filter row or a toolbar sits --hg above what it belongs to */
+.stack { display: flex; flex-direction: column; gap: var(--spg); }
+.spt { margin-top: var(--spg); }
+.spb { margin-bottom: var(--spg); }
+.hgap { margin-bottom: var(--hg); }
 
 /* ---------- page frame ---------- */
 .shell { display: flex; width: 100%; min-height: 100vh; }
 .page { width: 100%; max-width: 1100px; margin: 0 auto; }
-.page.wide { max-width: 1320px; }
-.ph { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 22px; }
+.ph { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: calc(var(--spg) + 6px); }
 .ph h1 { font-size: var(--fs-h1); font-weight: 600; letter-spacing: -.6px; line-height: 1.15; }
 .ph .sub { color: var(--tx2); font-size: 13px; margin-top: 4px; }
 .ph .acts { display: flex; gap: 8px; align-items: center; flex: none; }
-.back { display: inline-flex; align-items: center; gap: 4px; color: var(--tx2); font-size: 13px; margin-bottom: 8px; cursor: pointer; background: none; border: 0; padding: 0; }
-.back:hover { color: var(--tx); }
+/* a page's Back: a small pill, the chevron on its own tinted dot; same height as the old text link */
+.back { display: inline-flex; align-items: center; gap: 6px; color: var(--tx2); font-size: 13px; line-height: 20px; font-weight: 500; margin: 0 0 8px -4px; cursor: pointer; background: none; border: 0; padding: 3px 10px 3px 3px; border-radius: var(--pill); transition: background .2s, color .2s; }
+.back svg { display: block; flex: none; width: 20px; height: 20px; padding: 3px; box-sizing: border-box; border-radius: 50%; background: var(--s2); color: var(--tx); transition: background .2s, color .2s; }
+/* most fonts sit their letters a little above the middle of the line: bring the label down to the chevron's centre */
+.back > span { translate: 0 1px; }
+.back:hover { color: var(--tx); background: var(--s2); }
+.back:hover svg { background: var(--accc); color: var(--onc); }
+.back:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
 
 /* section heading: small capitals with an "All →" link, like the screenshot */
 .sh { display: flex; align-items: center; justify-content: space-between; margin: calc(var(--spg) * 1.75) 0 var(--hg); }
 .sh h2 { margin: 0; }
+/* a link inside a sentence */
+.lnk.inl { display: inline; padding: 0; border: 0; background: none; color: var(--acc); font: inherit; font-weight: 600; cursor: pointer; }
 .sh .lnk { font-size: 12.5px; font-weight: 600; color: var(--acc); cursor: pointer; background: none; border: 0; display: inline-flex; align-items: center; gap: 2px; }
 .sh.first { margin-top: 0; }
+/* the first heading under a page title, its tabs or its search: the bar above already leaves the gap (the same as above any
+   first card, e.g. Programs' empty block), so the heading adds none; grids are left out, their side-by-side headings must line up.
+   A window's first heading likewise starts at its top padding */
+.sh_b > .sh:first-child,
+:is(.ph, .tabs, .search) + .sh,
+:is(.ph, .tabs, .search) + :not(.grid) > .sh:first-child,
+:is(.ph, .tabs, .search) + :not(.grid) > :first-child:not(.grid) > .sh:first-child { margin-top: 0; }
+/* a heading's description sits close under it; the block it introduces follows at the usual --hg */
+.sh + p.tiny { margin-top: calc(var(--hg) * -.5); }
+/* sections side by side in a grid: the heading's own top margin already parts the rows, so the grid adds no row gap */
+.grid:has(> section > .sh:first-child) { row-gap: 0; }
+/* a heading among a .stack's blocks: with the stack's gap, the same section gap above and --hg below as anywhere else */
+.stack > .sh { margin: calc(var(--spg) * .75) 0 calc(var(--hg) - var(--spg)); }
+.stack > .sh:first-child { margin-top: 0; }
+/* the same for a description or filter row among a .stack's blocks: --hg to what it belongs to, not the stack's gap plus --hg */
+.stack > .hgap { margin-bottom: calc(var(--hg) - var(--spg)); }
 
 .grid { display: grid; gap: var(--spg); }
 .g2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -51,8 +80,8 @@ hr.sep { border: 0; border-top: 1px solid var(--ol); margin: 14px 0; }
 
 .card { position: relative; }
 .card.flat { background: none; }
-.card.tight { padding: 12px 14px; }
-.card .ch { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.card.tight { padding: calc(var(--cpy) - 3px) calc(var(--cpx) - 2px); }
+.card .ch { display: flex; align-items: center; gap: 8px; margin-bottom: var(--hg); }
 .card .ch .t { font-weight: 600; font-size: 14px; }
 .click { cursor: pointer; }
 
@@ -72,14 +101,21 @@ hr.sep { border: 0; border-top: 1px solid var(--ol); margin: 14px 0; }
 
 /* ---------- lists ---------- */
 .list { display: flex; flex-direction: column; }
-.li { display: flex; align-items: center; gap: 12px; padding: 11px 4px; border-bottom: 1px solid var(--ol); min-height: 52px; }
+.li { display: flex; align-items: center; gap: 12px; padding: var(--lpy) 4px; border-bottom: 1px solid var(--ol); min-height: var(--lmh); }
 .li:last-child { border-bottom: 0; }
-.li.click:hover { background: color-mix(in srgb, var(--tx) 3%, transparent); border-radius: var(--r-sm); }
-/* a card that is only a menu of rows: a touched row lights up edge to edge, the dividers stay inset */
+/* a row lights up edge to edge: across the whole card, and on the first and last row up to the card's own edge; the
+   card's rounded corners clip it. Rows outside a card light up across their own width */
+.li.click:hover, .li.click:active { background: color-mix(in srgb, var(--tx) 3%, transparent); }
+:is(.card > .li.click, .card > .list > .li.click) { position: relative; isolation: isolate; }
+:is(.card > .li.click, .card > .list > .li.click):is(:hover, :active) { background: none; }
+:is(.card > .li.click, .card > .list > .li.click)::before { content: ""; position: absolute; inset-block: 0; inset-inline: calc(-1 * var(--cpx)); z-index: -1; pointer-events: none; }
+:is(.card > .li.click, .card > .list > .li.click):is(:hover, :active)::before { background: color-mix(in srgb, var(--tx) 3%, transparent); }
+:is(.card > .li.click:first-child, .card > .list:first-child > .li.click:first-child)::before { inset-block-start: calc(-1 * var(--cpy)); }
+:is(.card > .li.click:last-child, .card > .list:last-child > .li.click:last-child)::before { inset-block-end: calc(-1 * var(--cpy)); }
+/* a card that is only a menu of rows: rows reach its edges, the dividers between them stay inset */
 .card.flush { padding: 0; overflow: hidden; }
-.card.flush .li { padding-inline: 16px; border-bottom: 0; position: relative; }
-.card.flush .li:not(:last-child)::after { content: ""; position: absolute; inset-inline: 16px; bottom: 0; height: 1px; background: var(--ol); }
-.card.flush .li.click:hover, .card.flush .li.click:active { border-radius: 0; background: color-mix(in srgb, var(--tx) 6%, transparent); }
+.card.flush .li { padding-inline: var(--cpx); border-bottom: 0; position: relative; }
+.card.flush .li:not(:last-child)::after { content: ""; position: absolute; inset-inline: var(--cpx); bottom: 0; height: 1px; background: var(--ol); }
 .li .t { font-weight: 500; font-size: 15px; }
 .li .s:not(.btn) { font-size: 12.5px; color: var(--tx2); margin-top: 1px; }
 .li .r { text-align: end; flex: none; }
@@ -88,10 +124,12 @@ hr.sep { border: 0; border-top: 1px solid var(--ol); margin: 14px 0; }
 .thumb.sm { width: 36px; height: 36px; border-radius: 10px; }
 .thumb.lg { width: 64px; height: 64px; border-radius: 16px; }
 .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex: none; background: var(--acc); }
-.empty { text-align: center; padding: 38px 16px; color: var(--tx2); font-size: 13.5px; line-height: 1.5; }
+/* an empty state: roomy on its own, .sm inside a card or next to a short one; both follow the density */
+.empty { text-align: center; padding: calc(var(--cpy) * 2.5) var(--cpx); color: var(--tx2); font-size: 13.5px; line-height: 1.5; }
 .empty .ico { margin: 0 auto 10px; opacity: .6; }
 .empty b { display: block; color: var(--tx); font-size: 15px; margin-bottom: 4px; font-weight: 600; }
 .empty .btn { margin-top: 14px; }
+.empty.sm { padding: var(--cpy) var(--cpx); }
 
 /* chips used as quiet filters */
 .chips { display: flex; gap: 6px; flex-wrap: wrap; }
@@ -124,6 +162,22 @@ html[data-mode="light"] .pr { color: #9a6d00; }
 .mnu button { display: flex; width: 100%; align-items: center; gap: 10px; padding: 10px 12px; border: 0; background: none; border-radius: 10px; cursor: pointer; text-align: start; font-size: 14px; }
 .mnu button:hover { background: var(--s2); }
 .mnu button.danger { color: var(--neg); }
+.mnu .ml { flex: 1; }
+.mnu .mh { flex: 1; }
+.mnu button.on { color: var(--acc); font-weight: 600; }
+.mnu .mck { margin-inline-start: auto; flex: none; }
+/* menus whose items explain themselves: wider, each icon on a soft tile, the explanation under the label */
+.mnu:has(.mh) { width: min(320px, calc(100vw - 16px)); padding: 6px; }
+.mnu:has(.mh) button { align-items: flex-start; gap: 12px; padding: 9px 10px; }
+.mnu:has(.mh) button > svg { box-sizing: content-box; padding: 7px; border-radius: 10px; background: var(--s2); color: var(--tx2); flex: none; }
+.mnu:has(.mh) button:hover > svg { background: var(--accc); color: var(--onc); }
+.mnu:has(.mh) button.danger > svg { background: color-mix(in srgb, var(--neg) 12%, transparent); color: var(--neg); }
+.mnu:has(.mh) button:not(:has(.mh)) { align-items: center; }
+/* the tick on the chosen option is a plain mark, not one of the icon tiles */
+.mnu:has(.mh) button > svg.mck, .mnu:has(.mh) button:hover > svg.mck { padding: 0; background: none; color: var(--acc); align-self: center; }
+.mnu .mh { display: flex; flex-direction: column; gap: 2px; min-width: 0; padding-top: 1px; }
+.mnu .mh > span { font-weight: 500; }
+.mnu .mh small { font-size: 12px; color: var(--tx2); line-height: 1.4; }
 .mnu hr { border: 0; border-top: 1px solid var(--ol); margin: 4px 0; }
 @keyframes fi { from { opacity: 0; transform: translateY(4px); } }
 
@@ -133,18 +187,19 @@ html[data-mode="light"] .pr { color: #9a6d00; }
 .sht { background: var(--bg); border: 1px solid var(--ol); border-radius: var(--r-sheet); width: min(560px, 100%); max-height: calc(100vh - 48px); display: flex; flex-direction: column; box-shadow: var(--shadow-sheet); animation: su .22s var(--ease); overflow: hidden; }
 .sht.wide { width: min(860px, 100%); }
 .sht.full { width: min(1100px, 100%); height: calc(100vh - 48px); }
-.sht .sh_h { display: flex; align-items: center; gap: 10px; padding: 16px 18px 12px 22px; flex: none; }
+/* a sheet's sides follow the density like a card's (a little wider on a computer), so its content lines up with cards in it */
+.sht .sh_h { display: flex; align-items: center; gap: 10px; padding: 16px calc(var(--cpx) + 2px) 12px calc(var(--cpx) + 6px); flex: none; }
 .sht .sh_h b { font-size: 17px; font-weight: 600; flex: 1; letter-spacing: -.2px; }
-.sht .sh_b { padding: 4px 22px 18px; overflow: auto; overscroll-behavior: contain; flex: 1; min-height: 0; }
-.sht .sh_f { padding: 12px 22px calc(16px + var(--sb)); border-top: 1px solid var(--ol); display: flex; gap: 10px; justify-content: flex-end; flex: none; }
+.sht .sh_b { padding: 4px calc(var(--cpx) + 6px) calc(var(--cpy) + 3px); overflow: auto; overscroll-behavior: contain; flex: 1; min-height: 0; }
+.sht .sh_f { padding: 12px calc(var(--cpx) + 6px) calc(16px + var(--sb)); border-top: 1px solid var(--ol); display: flex; gap: 10px; justify-content: flex-end; flex: none; }
 @keyframes su { from { transform: translateY(16px); opacity: 0; } }
 html.phone .scr { padding: 0; align-items: flex-end; }
 html.phone .sht { width: 100%; max-height: 92vh; border-radius: var(--r-sheet) var(--r-sheet) 0 0; border-bottom: 0; animation: up .26s var(--ease); }
 html.phone .sht.full { height: 92vh; }
 html.phone .sht .sh_h::before { content: ""; position: absolute; left: 50%; top: 7px; width: 36px; height: 4px; border-radius: 4px; background: var(--ol); transform: translateX(-50%); }
 html.phone .sht .sh_h { position: relative; padding-top: 22px; }
-html.phone .sht .sh_b { padding: 4px 16px 18px; }
-html.phone .sht .sh_f { padding: 12px 16px calc(12px + var(--sb)); }
+html.phone .sht .sh_b { padding: 4px var(--cpx) calc(var(--cpy) + 3px); }
+html.phone .sht .sh_f { padding: 12px var(--cpx) calc(12px + var(--sb)); }
 @keyframes up { from { transform: translateY(100%); } }
 
 /* ---------- forms ---------- */
@@ -155,10 +210,12 @@ html.phone .sht .sh_f { padding: 12px 16px calc(12px + var(--sb)); }
 .frow > * { flex: 1; min-width: 0; }
 .seg.block { display: flex; width: 100%; }
 .seg.block button { flex: 1; }
-.tgl { display: flex; align-items: center; gap: 12px; padding: 11px 0; min-height: 52px; border-bottom: 1px solid var(--ol); cursor: pointer; }
+.tgl { display: flex; align-items: center; gap: 12px; padding: var(--lpy) 0; min-height: var(--lmh); border-bottom: 1px solid var(--ol); cursor: pointer; }
 .tgl:last-child { border-bottom: 0; }
 .tgl .t { font-weight: 500; font-size: 15px; }
 .tgl .s:not(.btn) { font-size: 12.5px; color: var(--tx2); margin-top: 2px; }
+/* fields revealed by a switch sit one row-gap under the switch's separator line instead of touching it */
+.tgl + .fld, .tgl + .frow { margin-top: var(--lpy); }
 .search { position: relative; }
 .search .ico { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--tx2); }
 .search input { padding-inline-start: 38px; width: 100%; }
@@ -178,31 +235,56 @@ nav .navb .upd { color: var(--acc); }
 main { position: relative; }
 .fab.pos2 { bottom: 22px; }
 
-/* the running workout, shown on every other page */
-.minibar { position: fixed; z-index: 45; display: flex; align-items: center; gap: 12px; padding: 10px 12px 10px 16px; border-radius: 18px; background: var(--accc); color: var(--onc); box-shadow: 0 14px 34px -14px #000a; cursor: pointer; }
-.minibar .t { font-weight: 600; font-size: 14px; }
-.minibar .s:not(.btn) { font-size: 12px; opacity: .8; font-variant-numeric: tabular-nums; }
-.minibar .rest { font-variant-numeric: tabular-nums; font-weight: 700; background: color-mix(in srgb, var(--onc) 14%, transparent); border-radius: 10px; padding: 4px 8px; }
-html:not(.phone) .minibar { left: calc(88px + 50%); transform: translateX(-50%); bottom: 22px; min-width: 360px; }
-html:not(.phone)[data-nav="mini"] .minibar { left: calc(68px + 50%); }
-html.phone .minibar { position: static; margin: 8px 10px 0; box-shadow: none; }
+/* what's running (the workout, a recording), shown on every other page; one bar each, stacked */
+.minibars { display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
+.minibars > * { pointer-events: auto; }
+.minibar { display: flex; align-items: center; gap: 12px; padding: 10px 14px 10px 10px; border-radius: 18px; background: var(--accc); color: var(--onc); box-shadow: var(--shadow-pop); cursor: pointer; }
+.minibar .k { font-size: 11.5px; font-weight: 600; opacity: .75; }
+.minibar .t { font-weight: 600; font-size: 14.5px; }
+/* the icon tile with a live dot: this is running now */
+.mb-live { position: relative; width: 36px; height: 36px; border-radius: 11px; display: grid; place-items: center; background: color-mix(in srgb, var(--onc) 14%, transparent); flex: none; }
+.mb-live::after { content: ""; position: absolute; top: -2px; inset-inline-end: -2px; width: 10px; height: 10px; border-radius: 50%; background: var(--pos); box-shadow: 0 0 0 2px var(--accc); }
+.mb-live.paused::after { background: var(--tx2); }
+@media (prefers-reduced-motion: no-preference) { .mb-live:not(.paused)::after { animation: mbpulse 1.6s ease-in-out infinite; } }
+@keyframes mbpulse { 50% { opacity: .35; } }
+.mb-clock { display: flex; flex-direction: column; align-items: flex-end; flex: none; }
+.mb-clock b { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -.3px; line-height: 1.1; }
+.mb-clock span { font-size: 11px; opacity: .75; }
+html:not(.phone) .minibars:not(.strip-host) { position: fixed; z-index: 45; left: calc(88px + 50%); transform: translateX(-50%); bottom: 22px; min-width: 360px; }
+html:not(.phone)[data-nav="mini"] .minibars { left: calc(68px + 50%); }
+html.phone .minibar { margin: 8px 10px 0; box-shadow: none; }
+html.phone .minibars { gap: 0; }
+/* two bars on a phone: each a little smaller, the same padding rule (equal left, top and bottom) */
+html.phone .minibars.two .minibar { padding: 7px 12px 7px 7px; gap: 10px; }
+html.phone .minibars.two .mb-live { width: 30px; height: 30px; border-radius: 9px; }
+html.phone .minibars.two .k { font-size: 11px; }
+html.phone .minibars.two .t { font-size: 13.5px; }
+html.phone .minibars.two .mb-clock b { font-size: 16px; }
+/* the recording as a slim line on the workout page, where the workout's own bar takes the bottom */
+.mb-strip { gap: 10px; padding: 6px 12px 6px 6px; border-radius: 14px; box-shadow: none; font-size: 13px; }
+.mb-strip .mb-live { width: 26px; height: 26px; border-radius: 8px; }
+.mb-strip .mb-num { font-variant-numeric: tabular-nums; }
+html.phone .mb-strip { margin: calc(8px + var(--st)) 16px 0; }
+html.phone .pshell.withstrip .pmain { padding-top: 10px; }
+html:not(.phone) .minibars.strip-host { max-width: 560px; margin: 0 auto 12px; }
 
 /* ---------- phone frame ---------- */
 html.phone { --tabh: 64px; }
 .pshell { width: 100%; min-height: 100vh; padding-bottom: calc(var(--tabh) + 16px + var(--sb)); }
 /* room for the running-workout bar above the tabs, so the end of a page is never hidden behind it */
 .pshell.withbar { padding-bottom: calc(var(--tabh) + 80px + var(--sb)); }
+.pshell.withbar2 { padding-bottom: calc(var(--tabh) + 132px + var(--sb)); }
 .pmain { padding: calc(14px + var(--st)) 16px 24px; overflow-x: clip; }
-.pmain .ph { margin-bottom: 16px; align-items: center; }
+.pmain .ph { margin-bottom: var(--spg); align-items: center; }
 .pmain .ph h1 { font-size: 26px; }
 .pmain .ph .acts { gap: 4px; }
 .pmain .ph .acts .btn { min-height: 38px; padding: 8px 16px; }
 .pmain .ph .acts .btn.lg { min-height: 44px; padding: 10px 20px; font-size: 15px; }
 /* the bottom dock: the running workout (when there is one) above the tabs, on one blurred background */
 .dock { position: fixed; left: 0; right: 0; bottom: 0; z-index: 50; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(16px) saturate(1.4); border-top: 1px solid var(--ol); }
-.tabbar { display: grid; grid-template-columns: repeat(5, 1fr); align-items: center; height: calc(var(--tabh) + var(--sb)); padding: 0 6px var(--sb); }
-.tabbar button { border: 0; background: none; display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 11px; color: var(--tx2); padding: 4px 0; cursor: pointer; }
-.tabbar button .ic { width: 56px; height: 30px; border-radius: 15px; display: grid; place-items: center; transition: background .2s; }
+.tabbar { display: grid; grid-template-columns: repeat(7, 1fr); align-items: center; height: calc(var(--tabh) + var(--sb)); padding: 0 4px var(--sb); }
+.tabbar button { border: 0; background: none; display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 10.5px; color: var(--tx2); padding: 4px 0; min-width: 0; cursor: pointer; }
+.tabbar button .ic { width: 44px; height: 30px; border-radius: 15px; display: grid; place-items: center; transition: background .2s; }
 .tabbar button.on { color: var(--tx); font-weight: 600; }
 .tabbar button.on .ic { background: var(--accc); color: var(--onc); }
 /* Start: a filled button that sits inside the bar, the same height as the tab icons and labels together */
@@ -211,52 +293,57 @@ html.phone { --tabh: 64px; }
 
 /* ---------- start sheet ---------- */
 .opt-list { display: flex; flex-direction: column; gap: 8px; }
-.optb { display: flex; align-items: center; gap: 14px; padding: 14px; border-radius: var(--r-md); border: 1px solid var(--ol); background: var(--s1); cursor: pointer; text-align: start; width: 100%; }
+.optb { display: flex; align-items: center; gap: 14px; padding: calc(var(--cpy) - 1px) calc(var(--cpx) - 2px); border-radius: var(--r-md); border: 1px solid var(--ol); background: var(--s1); cursor: pointer; text-align: start; width: 100%; }
 .optb:hover { border-color: color-mix(in srgb, var(--acc) 45%, var(--ol)); }
 .optb .oi { width: 40px; height: 40px; border-radius: 12px; background: var(--accc); color: var(--onc); display: grid; place-items: center; flex: none; }
 .optb .t { font-weight: 600; }
 .optb .s:not(.btn) { font-size: 12.5px; color: var(--tx2); margin-top: 2px; }
 
 /* ---------- sets table (pre-start, workout, detail) ---------- */
-.sets { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+/* rows apart from each other, each a rounded strip (the tint of a done or current set goes on its cells) */
+.sets { width: 100%; border-collapse: separate; border-spacing: 0 5px; margin-block: -5px; font-variant-numeric: tabular-nums; }
 .sets th { font-size: 11px; font-weight: 600; color: var(--tx2); text-transform: uppercase; letter-spacing: .6px; text-align: center; padding: 4px 4px 8px; }
-.sets th:first-child, .sets td:first-child { text-align: start; width: 34px; }
-.sets td { padding: 4px; text-align: center; }
-.sets tr.done td { color: var(--tx); }
-.sets tr.done { background: color-mix(in srgb, var(--pos) 9%, transparent); }
-.sets tr td:first-child { border-radius: 10px 0 0 10px; }
-.sets tr td:last-child { border-radius: 0 10px 10px 0; }
+.sets th:first-child, .sets td:first-child { text-align: start; width: 34px; padding-inline-start: 8px; }
+.sets td { padding: var(--tdy) 4px; text-align: center; }
+.sets td:last-child, .sets th:last-child { padding-inline-end: 6px; }
+.sets tr.done td { color: var(--tx); background: color-mix(in srgb, var(--pos) 9%, transparent); }
+.sets tr td:first-child { border-start-start-radius: 10px; border-end-start-radius: 10px; }
+.sets tr td:last-child { border-start-end-radius: 10px; border-end-end-radius: 10px; }
 .sets .prev { color: var(--tx2); font-size: 13px; cursor: pointer; white-space: nowrap; }
 .sets .sk { display: inline-grid; place-items: center; min-width: 26px; height: 26px; padding: 0 6px; border-radius: 8px; background: var(--s2); font-size: 12.5px; font-weight: 600; cursor: pointer; border: 0; }
 .sets .sk.w { color: var(--c2); }
 .sets .sk.d { color: var(--c1); }
+/* a drop hangs off the set above it */
+.sets tr.drop .sk { translate: 8px 0; }
 .sets .sk.f { color: var(--neg); }
 .vin { width: 100%; max-width: 92px; text-align: center; font-variant-numeric: tabular-nums; font-size: 16px; font-weight: 600; padding: 8px 4px; border-radius: 10px; border: 1px solid transparent; background: var(--s2); color: var(--tx); }
 .vin:focus { border-color: var(--acc); outline: 0; background: var(--bg); }
 .vin.pre { color: var(--tx2); font-weight: 500; }
 .vin.adj { color: var(--acc); }
+/* the set to do now in a running workout: tinted, its number filled with the accent */
+.sets tr.now td { background: color-mix(in srgb, var(--acc) 11%, transparent); }
+.sets tr.now .sk { background: var(--acc); color: var(--on); }
+.sets tr.now .tick { border-color: var(--acc); color: var(--acc); }
 .tick { width: 40px; height: 36px; border-radius: 10px; border: 1px solid var(--ol); background: var(--s1); cursor: pointer; display: grid; place-items: center; color: var(--tx2); margin: 0 auto; }
+.tick:disabled { opacity: .35; cursor: not-allowed; }
 .tick.on { background: var(--pos); border-color: transparent; color: var(--bg); }
 .tick.on svg { stroke-width: 2.6; }
 
 /* ---------- active workout ---------- */
 .aw-top { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
-.aw-top .clock { font-variant-numeric: tabular-nums; font-size: 13px; color: var(--tx2); }
-.aw-dots { display: flex; gap: 5px; margin: 0 0 14px; }
-.aw-dots i { flex: 1; height: 4px; border-radius: 4px; background: var(--s2); cursor: pointer; }
-.aw-dots i.done { background: var(--pos); }
-.aw-dots i.skip { background: color-mix(in srgb, var(--tx2) 40%, transparent); }
-.aw-dots i.cur { background: var(--acc); }
 .aw-ex .exh { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 12px; }
 .aw-ex .exh h3 { font-size: 19px; font-weight: 600; letter-spacing: -.3px; line-height: 1.2; cursor: pointer; }
-.banner { display: flex; gap: 10px; align-items: flex-start; padding: 11px 13px; border-radius: var(--r-sm); background: color-mix(in srgb, var(--acc) 13%, transparent); margin-bottom: 10px; font-size: 13.5px; position: static; color: var(--tx); }
+/* a banner is a block: --spg below it on a page, --hg inside a card or a sheet, none in a stack (its gap does it);
+   inside, a smaller version of a card's padding so the density moves it too */
+.banner { display: flex; gap: 10px; align-items: flex-start; padding: calc(var(--cpy) - 4px) calc(var(--cpx) - 3px); border-radius: var(--r-sm); background: color-mix(in srgb, var(--acc) 13%, transparent); margin-bottom: var(--spg); font-size: 13.5px; color: var(--tx); text-align: start; }
 .banner .ico { color: var(--acc); margin-top: 1px; }
 .banner.note { background: var(--s2); }
 .banner.note .ico { color: var(--tx2); }
-.banner .acts { display: flex; gap: 4px; margin-top: 6px; }
+.card .banner, .sh_b .banner { margin-bottom: var(--hg); }
+:is(.stack, .col, .grid) > .banner { margin-bottom: 0; }
 .aw-desk { display: grid; grid-template-columns: 280px minmax(0, 1fr) 300px; gap: var(--spg); align-items: start; }
 .aw-desk .side { position: sticky; top: 24px; }
-.aw-list .li { cursor: pointer; padding: 10px; border-radius: var(--r-sm); border: 0; }
+.aw-list .li { cursor: pointer; padding: var(--lpy); border-radius: var(--r-sm); border: 0; }
 .aw-list .li.cur { background: var(--accc); color: var(--onc); }
 .aw-list .li.cur .s:not(.btn) { color: color-mix(in srgb, var(--onc) 75%, transparent); }
 .aw-list .li.skip .t { text-decoration: line-through; opacity: .6; }
@@ -264,21 +351,6 @@ html.phone { --tabh: 64px; }
 .stt.done { background: var(--pos); border-color: transparent; color: var(--bg); }
 .stt.part { border-color: var(--pos); }
 
-/* rest timer */
-.rest { text-align: center; }
-.rest .ringw { position: relative; width: 210px; height: 210px; margin: 0 auto; }
-.rest .ringw svg { transform: rotate(-90deg); }
-.rest .ringw .tv { position: absolute; inset: 0; display: grid; place-items: center; align-content: center; }
-.rest .tv b { font-size: 46px; font-weight: 600; letter-spacing: -1.5px; font-variant-numeric: tabular-nums; cursor: pointer; }
-.rest .tv span { font-size: 12.5px; color: var(--tx2); }
-.rest .adj { display: flex; gap: 8px; justify-content: center; margin-top: 14px; }
-.rest .adj button { min-width: 56px; }
-.rest .next { margin-top: 12px; font-size: 13px; color: var(--tx2); }
-.restsheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 60; background: var(--bg); border-top: 1px solid var(--ol); border-radius: var(--r-sheet) var(--r-sheet) 0 0; padding: 14px 16px calc(14px + var(--sb)); box-shadow: 0 -20px 50px -20px #0009; animation: up .25s var(--ease); }
-.restsheet .row { justify-content: space-between; }
-.restsheet .big { font-size: 40px; font-weight: 600; letter-spacing: -1px; font-variant-numeric: tabular-nums; }
-.restbar { height: 4px; border-radius: 4px; background: var(--s2); overflow: hidden; margin: 8px 0 12px; }
-.restbar i { display: block; height: 100%; background: linear-gradient(90deg, var(--acc), var(--acc2)); transition: width 1s linear; }
 
 /* ---------- exercise view ---------- */
 .media { position: relative; border-radius: var(--r); overflow: hidden; background: var(--s2); aspect-ratio: 4 / 3; }
@@ -289,7 +361,7 @@ html.phone { --tabh: 64px; }
 .kv { display: grid; grid-template-columns: auto 1fr; gap: 6px 16px; font-size: 13.5px; }
 .kv dt { color: var(--tx2); }
 .kv dd { margin: 0; text-transform: capitalize; }
-.tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--ol); margin-bottom: 16px; overflow-x: auto; scrollbar-width: none; }
+.tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--ol); margin-bottom: var(--spg); overflow-x: auto; scrollbar-width: none; }
 .tabs button { border: 0; background: none; padding: 10px 14px; font-size: 14px; color: var(--tx2); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; white-space: nowrap; font-weight: 500; }
 .tabs button.on { color: var(--tx); border-bottom-color: var(--acc); font-weight: 600; }
 
@@ -335,6 +407,14 @@ html.phone .cal .dots i.plan { background: none; border: 1px solid var(--ec, var
 .bodymap [data-t="1"] .m { fill: var(--heat1); }
 .bodymap [data-t="2"] .m { fill: var(--heat2); }
 .bodymap [data-t="3"] .m { fill: var(--heat3); }
+/* the little body on the left of a card, info on the right, as on the Routines list's routine cards (CLAUDE.md rule).
+   The row never hangs on :has() (where it is missing the whole rule drops and the figure stacks above the info),
+   and two classes so it outranks the card's own column (.rcard) whatever order the rules come in.
+   The body runs the card's full height, whatever the text beside it needs, never smaller than readable. */
+.card.wbody, .optb.wbody { display: flex; flex-direction: row; align-items: stretch; gap: var(--cpx); }
+.bodymap.rbody { flex: none; align-self: stretch; position: relative; width: 92px; min-height: 112px; }
+.bodymap.rbody .figs { position: absolute; inset: 0; height: auto; gap: 0; }
+.bodymap.rbody svg { width: 50%; height: 100%; }
 .bmlegend { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; font-size: var(--fs-xs); color: var(--tx2); }
 .bmlegend span { display: inline-flex; align-items: center; gap: 5px; }
 .bmlegend i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
@@ -349,7 +429,7 @@ html.phone .cal .dots i.plan { background: none; border: 1px solid var(--ec, var
 
 /* login */
 .auth { min-height: 100vh; width: 100%; display: grid; place-items: center; padding: 24px 16px; }
-.auth .card { width: min(400px, 100%); padding: 28px; }
+.auth .card { width: min(400px, 100%); padding: calc(var(--cpy) + 13px) calc(var(--cpx) + 12px); }
 .auth h1 { font-size: 26px; font-weight: 600; letter-spacing: -.5px; margin: 14px 0 4px; }
 .auth .logo { margin: 0; }
 .err { color: var(--neg); font-size: 13px; margin: 6px 0 10px; }
@@ -364,18 +444,26 @@ html.phone .cal .dots i.plan { background: none; border: 1px solid var(--ec, var
 
 .map { height: 320px; border-radius: var(--r); overflow: hidden; background: var(--s2); }
 html.phone .map { height: 240px; }
-.leaflet-container { background: var(--s2) !important; font: inherit !important; }
+/* the map keeps its own layers (z-index 400-1000) inside itself, so sheets, menus and the + popup stay above it */
+.leaflet-container { background: var(--s2) !important; font: inherit !important; isolation: isolate; z-index: 0; }
 
 @media (max-width: 860px) { .ph .acts .btn:not(.keep) { display: none; } }
-html.phone #pop { left: 8px; right: 8px; width: auto; bottom: calc(var(--tabh) + 12px + var(--sb)); max-height: calc(100vh - 120px); }
+/* on the phone the Appearance panel is a bottom sheet, over the tab bar like the other sheets */
+html.phone #pop { left: 0; right: 0; bottom: 0; width: auto; height: min(640px, 88vh); max-height: 88vh; z-index: 201; border-radius: var(--r-sheet) var(--r-sheet) 0 0; border-bottom: 0; padding-bottom: var(--sb); box-shadow: var(--shadow-sheet); }
+html.phone #pop.on { animation: up .26s var(--ease); }
+html.phone #pop.out { animation: down .2s var(--ease) forwards; }
+@keyframes down { to { transform: translateY(100%); } }
+html.phone .apscr { z-index: 200; }
 /* the switch inside a .tgl row: Money Manager's .tg switch without its row border */
 .tgl .tg, .li .tg { border: 0; padding: 0; flex: none; }
 /* on the phone, two- and three-column sections stack (stat cards stay two across) */
 html.phone .grid.g2:not(.keep), html.phone .grid.g3:not(.keep) { grid-template-columns: minmax(0, 1fr); }
 html.phone .grid.g4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.calnav { display: flex; align-items: center; gap: 6px; margin-bottom: 12px; }
+.calnav { display: flex; align-items: center; gap: 6px; margin-bottom: var(--hg); }
 .calnav b { font-size: 15px; font-weight: 600; text-align: center; }
-html:not(.phone) .calnav b { flex: none; min-width: 170px; }
+.calnav b { flex: none; min-width: 132px; }
+html:not(.phone) .calnav b { min-width: 170px; }
+.fchip.acc { color: var(--acc); border-color: var(--acc); }
 .pvx.off { opacity: .45; }
 .pvx .thumb { align-self: flex-start; margin-top: 2px; }
 .exspark { width: 120px; height: 34px; position: relative; flex: none; }
@@ -392,8 +480,9 @@ html:not(.phone) .chips.hscroll { margin-inline: 0; padding-inline: 0; flex-wrap
 .frow > * { flex: 1 1 140px; }
 /* a setting row with a control: the label keeps at least ~half the row, the control gives way */
 .li > .grow { min-width: 42%; }
-.li > select, .li > input:not([type=checkbox]) { flex: 0 1 auto; min-width: 0; max-width: 56%; }
+.li > select, .li > .fpick, .li > input:not([type=checkbox]) { flex: 0 1 auto; min-width: 0; max-width: 56%; }
 main.withbar { padding-bottom: 120px; }
+main.withbar2 { padding-bottom: 190px; }
 /* inside a card, toggles line up with list rows */
 .card .tgl { padding-inline: 4px; }
 .rcard { display: flex; flex-direction: column; }
@@ -406,8 +495,11 @@ html.phone .tabs button { padding: 10px 11px; }
 /* offline: a small note at the top while the server can't be reached (shell/SyncPill.vue) */
 .syncpill { position: fixed; bottom: 24px; left: 112px; z-index: 150; display: flex; align-items: center; gap: 6px; padding: 6px 12px;
   border-radius: 999px; background: var(--s2); border: 1px solid var(--ol); color: var(--tx2); font-size: 12.5px; box-shadow: var(--shadow-sheet); pointer-events: none; }
+html[data-nav="mini"]:not(.phone) .syncpill { left: 92px; }
 html.phone .syncpill { left: 50%; translate: -50% 0; bottom: calc(var(--tabh) + var(--sb) + 12px); white-space: nowrap; }
 html.phone .pshell.withbar .syncpill { bottom: calc(var(--tabh) + var(--sb) + 80px); }
+html.phone .pshell.withbar2 .syncpill { bottom: calc(var(--tabh) + var(--sb) + 132px); }
+html.phone:has(.pshell.withbar2) .tst { bottom: calc(var(--tabh) + 132px + var(--sb)); }
 .sp-enter-active, .sp-leave-active { transition: opacity .25s, transform .25s var(--ease); }
 .sp-enter-from, .sp-leave-to { opacity: 0; transform: translateY(8px); }
 
@@ -439,28 +531,32 @@ html.phone .pshell.withbar .syncpill { bottom: calc(var(--tabh) + var(--sb) + 80
 .mv-enter-active { transition: opacity .2s, transform .2s var(--ease); }
 .mv-enter-from { opacity: 0; transform: translateY(-6px); }
 .mv-leave-active { display: none; }
+/* a move arrow with nowhere to go stays clickable (a click on it must not reach the row's switch) but looks spent */
+.ib.end { opacity: .35; cursor: default; }
+.ib.end:hover { background: none; }
 /* the running-workout bar and the rest timer come and go smoothly */
 .mb-enter-active, .rs-enter-active { transition: opacity .25s var(--ease), transform .3s var(--ease); }
 .mb-leave-active, .rs-leave-active { transition: opacity .16s ease-in, transform .16s ease-in; }
 .mb-enter-from, .mb-leave-to { opacity: 0; transform: translateY(14px); }
-html:not(.phone) .mb-enter-from, html:not(.phone) .mb-leave-to { transform: translate(-50%, 14px); }
 .rs-enter-from, .rs-leave-to { opacity: 0; transform: translateY(24px); }
 /* a sheet that was closed plays its way out (a copy of it, see Sheet.vue) */
 .scr.leaving { animation: fo .2s ease-in reverse forwards; }
 .scr.leaving .sht { animation: su .2s ease-in reverse forwards; }
 html.phone .scr.leaving .sht { animation: up .22s ease-in reverse forwards; }
-/* anything that appears later on a page (a section switched on, a row added, an empty state) rises in */
+/* anything that appears later on a page (a section switched on, a row added, an empty state) rises in. Only once
+   the page has arrived (.in, set by the shells) and not inside something already moving in as a whole (a page, a
+   tab, a month): there everything rises together with its container instead of each piece on its own. */
 @media (prefers-reduced-motion: no-preference) {
   .li, .banner, .fld, .tgl, .empty, .sh, .chips > *, .mchip { transition: opacity .25s var(--ease), translate .25s var(--ease), background .2s, color .2s, border-color .2s; }
   .card { transition: transform .2s, border-color .2s, box-shadow .2s, opacity .28s var(--ease), translate .28s var(--ease); }
   @starting-style {
-    .card, .li, .banner, .fld, .tgl, .empty, .sh, .chips > *, .mchip { opacity: 0; translate: 0 6px; }
+    .page.in :is(.card, .li, .banner, .fld, .tgl, .empty, .sh, .chips > *, .mchip):not(:is(.sw-enter-active, .nx-enter-active, .pv-enter-active) *) { opacity: 0; translate: 0 6px; }
   }
 }
 /* controls */
-.fchip, .tick, .aw-dots i, .cal .d, .stt, .qb, .ib, .tabs button { transition: background .2s, color .2s, border-color .2s, transform .15s; }
+.fchip, .tick, .cal .d, .stt, .qb, .ib, .tabs button { transition: background .2s, color .2s, border-color .2s, transform .15s; }
 .tick:active, .fchip:active, .btn:active, .ib:active, .qb:active { transform: scale(.96); }
-.tick.on svg { animation: pop .28s var(--ease); }
+@media (prefers-reduced-motion: no-preference) { .tick.on svg { animation: pop .28s var(--ease); } }
 @keyframes pop { 0% { transform: scale(.4); opacity: 0; } 70% { transform: scale(1.15); } 100% { transform: scale(1); } }
 .pbar i, .bodymap .m { transition: width .5s var(--ease), fill .4s; }
 /* the page tabs' underline glides to the chosen tab (core/segSlide.ts) */
@@ -472,3 +568,18 @@ html.phone .scr.leaving .sht { animation: up .22s ease-in reverse forwards; }
   .mb-enter-active, .mb-leave-active, .rs-enter-active, .rs-leave-active, .mv-move { transition: none; }
   .tabi { transition: none; }
 }
+
+/* dragging to reorder (core/drag.ts): the list shows its drop area, the item lifts, a dashed slot marks where it lands */
+.dragging { position: relative; outline: 2px dashed color-mix(in srgb, var(--acc) 40%, transparent); outline-offset: 6px; border-radius: var(--r-md); user-select: none; }
+.drag-slot { position: absolute; top: 0; left: 0; right: 0; border: 2px dashed var(--acc); border-radius: var(--r-md); background: color-mix(in srgb, var(--acc) 7%, transparent); pointer-events: none; z-index: 0; transition: transform .18s; }
+/* no transition on the lifted item: it must stay under the finger (cards otherwise ease their transform) */
+.lifted { position: relative; z-index: 5; box-shadow: var(--shadow-pop); scale: 1.02; cursor: grabbing; background: var(--s1); border-radius: var(--r-md); transition: none !important; }
+.dragh { touch-action: none; cursor: grab; }
+
+/* a dot between items (name · count): its own element with the same space on both sides. In a flex row the row's gap
+   does it (no margin here, so it isn't doubled); in running text write " · " with one space each side instead */
+.sep { color: var(--tx2); flex: none; }
+
+/* the Appearance sheet's grab handle, as on the other sheets */
+html.phone #pop .aph { position: relative; padding-top: 22px; }
+html.phone #pop .aph::before { content: ""; position: absolute; left: 50%; top: 7px; width: 36px; height: 4px; border-radius: 4px; background: var(--ol); transform: translateX(-50%); }

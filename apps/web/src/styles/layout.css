@@ -222,23 +222,6 @@ header {
   place-items: center;
 }
 
-.banner {
-  position: fixed;
-  top: 0;
-  inset-inline: 0;
-  z-index: 95;
-  background: var(--neg);
-  color: #fff;
-  text-align: center;
-  font-size: 13px;
-  padding: calc(6px + var(--st)) 10px 6px;
-  display: none;
-}
-
-.banner.on {
-  display: block;
-}
-
 html.nt *,
 html.nt *::before,
 html.nt *::after {

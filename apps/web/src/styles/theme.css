@@ -5,14 +5,6 @@
   color: #ffcc80;
 }
 
-html[data-den="compact"] .ssb.p {
-  padding-bottom: 16px;
-}
-
-html[data-den="roomy"] .ssb.p {
-  padding-bottom: 26px;
-}
-
 /* ===== appearance: backgrounds, surfaces, corners, density, fonts, navigation ===== */
 
 html[data-bg="mesh"]::before {
@@ -52,33 +44,40 @@ html[data-bg="flat"]::before {
 }
 
 body.outline .card:not(.hero),
-body.outline table,
+body.outline table:not(.sets),
 body.outline .bgrp {
   background: transparent;
   border-width: 1.5px;
 }
 
+/* every radius token follows the corners choice, so Motus's own sheets, menus, rows and tiles (which use them) change too */
 html[data-rad="soft"] {
   --r: 14px;
+  --r-sm: 9px;
+  --r-md: 11px;
+  --r-sheet: 16px;
 }
 
 html[data-rad="sharp"] {
   --r: 5px;
+  --r-sm: 3px;
+  --r-md: 4px;
+  --r-sheet: 6px;
 }
 
-html[data-rad="soft"] :is(.sheet,.pop,.bgrp,.toast,.jstats > div,.trstats > div,.phs > div,.inf,.bbin,.exo,.kin) {
+html[data-rad="soft"] :is(.sheet,.pop,.bgrp,.toast,.jstats > div,.trstats > div,.phs > div,.inf,.bbin,.exo,.kin,.minibar,.tst > div) {
   border-radius: 12px;
 }
 
-html[data-rad="sharp"] :is(.sheet,.pop,.bgrp,.toast,.jstats > div,.trstats > div,.phs > div,.inf,.bbin,.exo,.kin) {
+html[data-rad="sharp"] :is(.sheet,.pop,.bgrp,.toast,.jstats > div,.trstats > div,.phs > div,.inf,.bbin,.exo,.kin,.minibar,.tst > div) {
   border-radius: 4px;
 }
 
-html[data-rad="soft"] :is(input,select,textarea,.btn,.seg,.seg button,.chip,.tag,.kchips button,.sw button,.sw .swp,.ib,.logo,.nb .ic) {
+html[data-rad="soft"] :is(input,select,textarea,.fpick,.btn,.seg,.seg button,.chip,.tag,.kchips button,.sw button,.sw .swp,.ib,.logo,.nb .ic,.fchip,.mchip,.thumb,.tick,.sets .sk,.kp button,.tabbar button .ic,.tabbar .start,.fab) {
   border-radius: 10px;
 }
 
-html[data-rad="sharp"] :is(input,select,textarea,.btn,.seg,.seg button,.chip,.tag,.kchips button,.sw button,.sw .swp,.ib,.logo,.nb .ic) {
+html[data-rad="sharp"] :is(input,select,textarea,.fpick,.btn,.seg,.seg button,.chip,.tag,.kchips button,.sw button,.sw .swp,.ib,.logo,.nb .ic,.fchip,.mchip,.thumb,.tick,.sets .sk,.kp button,.tabbar button .ic,.tabbar .start,.fab) {
   border-radius: 3px;
 }
 
@@ -92,143 +91,34 @@ html[data-nsp="roomy"] {
   --nvp: 5px;
 }
 
-html[data-den="compact"] .card {
-  padding: 12px 14px;
+/* density: the space inside blocks (cards), list rows and fields. Cozy is the default in tokens.css; the blocks read these
+   variables, so a block's own padding (a menu card with no padding, a tight card) still wins over the density */
+html[data-den="compact"] {
+  --cpy: 10px;
+  --cpx: 12px;
+  --lpy: 7px;
+  --lmh: 42px;
+  --tdy: 4px;
 }
 
-html[data-den="compact"] .row {
-  padding: 7px 0;
+html[data-den="roomy"] {
+  --cpy: 22px;
+  --cpx: 24px;
+  --lpy: 14px;
+  --lmh: 56px;
+  --tdy: 9px;
 }
 
 html[data-den="compact"] .val {
   font-size: 26px;
 }
 
-html[data-den="compact"] .txi {
-  padding: 7px 4px;
-}
-
-html[data-den="compact"] td {
-  padding-top: 7px;
-  padding-bottom: 7px;
-}
-
-html[data-den="compact"] .ssh {
-  padding: 10px 16px;
-}
-
-html[data-den="compact"] .ssb {
-  padding: 2px 16px 12px;
-}
-
-html[data-den="compact"] .ssb.p {
-  padding-top: 10px;
-}
-
-html[data-den="compact"] .sr {
-  padding: 9px 0;
-}
-
-html[data-den="compact"] .sfoot {
-  padding: 9px 16px 11px;
-}
-
 html[data-den="compact"] .fld {
   margin-bottom: 8px;
 }
 
-html[data-den="compact"] .bgh {
-  padding: 11px 16px;
-}
-
-html[data-den="compact"] .bgr {
-  padding: 0 16px;
-}
-
-html[data-den="compact"] .brow {
-  padding: 10px 0;
-}
-
-html[data-den="compact"] .jhero > div {
-  padding: 16px 20px;
-}
-
-html[data-den="compact"] .jbufc {
-  padding: 11px 16px;
-}
-
-html[data-den="compact"] .jstat3 {
-  padding: 8px 10px;
-}
-
-html[data-den="compact"] .ghead {
-  padding-top: 8px;
-  padding-bottom: 8px;
-}
-
-html[data-den="roomy"] .card {
-  padding: 24px 26px;
-}
-
-html[data-den="roomy"] .row {
-  padding: 17px 0;
-}
-
-html[data-den="roomy"] .txi {
-  padding: 15px 6px;
-}
-
-html[data-den="roomy"] td {
-  padding-top: 15px;
-  padding-bottom: 15px;
-}
-
-html[data-den="roomy"] .ssh {
-  padding: 22px 26px;
-}
-
-html[data-den="roomy"] .ssb {
-  padding: 10px 26px 24px;
-}
-
-html[data-den="roomy"] .ssb.p {
-  padding-top: 22px;
-}
-
-html[data-den="roomy"] .sr {
-  padding: 20px 0;
-}
-
-html[data-den="roomy"] .sfoot {
-  padding: 16px 26px 20px;
-}
-
 html[data-den="roomy"] .fld {
-  margin-bottom: 16px;
-}
-
-html[data-den="roomy"] .bgh {
-  padding: 22px 26px;
-}
-
-html[data-den="roomy"] .bgr {
-  padding: 6px 26px;
-}
-
-html[data-den="roomy"] .brow {
-  padding: 22px 0;
-}
-
-html[data-den="roomy"] .jhero > div {
-  padding: 32px 36px;
-}
-
-html[data-den="roomy"] .jbufc {
-  padding: 22px 30px;
-}
-
-html[data-den="roomy"] .jstat3 {
-  padding: 16px 18px;
+  margin-bottom: 18px;
 }
 
 html[data-spc="tight"] {
@@ -302,18 +192,18 @@ html[data-tex="static"] body::before {
 
 /* ===== surfaces ===== */
 
-body.outline :is(.card,table,.bgrp):not(.hero) {
+body.outline :is(.card,table:not(.sets),.bgrp):not(.hero) {
   background: transparent;
   border-width: 1.5px;
 }
 
 /* raised: a soft edge light on top, a darker edge below, and a shadow that falls behind whatever is underneath */
 
-body.raised :is(.card,table,.bgrp,.jhero,.seg:not(.apseg),.ftools input,.ftools select) {
+body.raised :is(.card,table:not(.sets),.bgrp,.jhero,.seg:not(.apseg),.ftools input,.ftools select) {
   position: relative;
 }
 
-body.raised :is(.card,table,.bgrp):not(.hero) {
+body.raised :is(.card,table:not(.sets),.bgrp):not(.hero) {
   background: linear-gradient(180deg, color-mix(in srgb, #fff 7%, var(--s1)), var(--s1) 60%);
   border-color: color-mix(in srgb, var(--tx) 9%, transparent);
   border-bottom-color: color-mix(in srgb, var(--tx) 17%, transparent);
@@ -321,7 +211,7 @@ body.raised :is(.card,table,.bgrp):not(.hero) {
 }
 
 /* a table keeps one edge colour all round: its rows reach the corners, so a different colour below shows as a straight line that stops where the corner curves */
-:root body.raised table:not(.hero) {
+:root body.raised table:not(.hero,.sets) {
   border-bottom-color: color-mix(in srgb, var(--tx) 9%, transparent);
 }
 
@@ -336,7 +226,7 @@ body.raised .ftools :is(input,select) {
   box-shadow: 0 1px 1px color-mix(in srgb, #000 9%, transparent), 0 4px 10px -6px color-mix(in srgb, #000 35%, transparent);
 }
 
-html[data-mode=dark] body.raised :is(.card,table,.bgrp):not(.hero) {
+html[data-mode=dark] body.raised :is(.card,table:not(.sets),.bgrp):not(.hero) {
   background: linear-gradient(180deg, color-mix(in srgb, #fff 5%, var(--s1)), var(--s1) 60%);
   box-shadow: 0 1px 1px #0006, 0 12px 22px -12px #000c;
 }
@@ -370,11 +260,11 @@ html[data-mode=dark] body.glass {
 
 /* blocks in the page: the blurred backdrop sits just behind the block's own colour (a layer, so windows and menus inside still open
    where they should) */
-body.glass :is(.card,table,.bgrp,.jhero,.fcard,.rkeq) {
+body.glass :is(.card,table:not(.sets),.bgrp,.jhero,.fcard,.rkeq) {
   position: relative;
 }
 
-body.glass :is(.card,table,.bgrp,.jhero,.fcard,.setnav,.rkeq)::before {
+body.glass :is(.card,table:not(.sets),.bgrp,.jhero,.fcard,.setnav,.rkeq)::before {
   content: "";
   position: absolute;
   inset: 0;
@@ -387,11 +277,11 @@ body.glass :is(.card,table,.bgrp,.jhero,.fcard,.setnav,.rkeq)::before {
 
 /* windows, menus and pop-ups: nearly solid, with their colour on the box itself so it stays behind every line when they
    scroll. The small menus and lists blur what is behind them; windows do not (a blur would trap the menus that open inside them) */
-body.glass :is(.sheet,.pop,.askb,.help,.rcal,.dvbox) {
+body.glass :is(.sheet,.sht,.pop,.askb,.help,.rcal,.dvbox) {
   background: var(--gpbg);
 }
 
-body.glass :is(.tsug,.ddm,.cmenu,.toast,.sugb) {
+body.glass :is(.tsug,.ddm,.cmenu,.mnu,.toast,.sugb) {
   background: var(--gp1);
   -webkit-backdrop-filter: var(--gpfx);
   backdrop-filter: var(--gpfx);
@@ -414,7 +304,7 @@ body.glass :is(.rktip,.trtip) {
 /* filled parts that stand on the page by themselves (tab rows, round buttons, fields) blur what is behind them directly;
    inside a block they need not,
    the block already does */
-body.glass :is(.rkbr,.inf,.exo,.exbox,.exd,.exsamp,.txs-c,.jstat3,.stl,.phs > div,.trstats > div,.jstats > div,.exst > div,.cstn > div,.jfs > div,.wct,.bq,.sinfo,.trex,.trtog,.trleg .lgi,.tcs,.hdemo,.jt,.jct,.kvc,.atile,.phb,.phl,.txs2,.rule,.wnc,input:not([type=checkbox],[type=radio],[type=range],[type=color]),textarea,.ftools select):not(:is(.card,table,.bgrp,.jhero,.fcard,.setnav,.rkeq,.sheet,.pop,.askb,.help,.rcal,.dvbox,.tsug,.ddm,.cmenu,.toast,.sugb) *) {
+body.glass :is(.rkbr,.inf,.exo,.exbox,.exd,.exsamp,.txs-c,.jstat3,.stl,.phs > div,.trstats > div,.jstats > div,.exst > div,.cstn > div,.jfs > div,.wct,.bq,.sinfo,.trex,.trtog,.trleg .lgi,.tcs,.hdemo,.jt,.jct,.kvc,.atile,.phb,.phl,.txs2,.rule,.wnc,input:not([type=checkbox],[type=radio],[type=range],[type=color]),textarea,.fpick,.ftools select):not(:is(.card,table:not(.sets),.bgrp,.jhero,.fcard,.setnav,.rkeq,.sheet,.pop,.askb,.help,.rcal,.dvbox,.tsug,.ddm,.cmenu,.toast,.sugb) *) {
   -webkit-backdrop-filter: var(--gfx);
   backdrop-filter: var(--gfx);
 }
@@ -436,12 +326,12 @@ body.glass .jhero {
 }
 
 /* the edge is the same quiet line the other surfaces have (no white rim) */
-body.glass :is(.card,table,.bgrp,.jhero,.fcard,.setnav,.rkeq):not(.hero) {
+body.glass :is(.card,table:not(.sets),.bgrp,.jhero,.fcard,.setnav,.rkeq):not(.hero) {
   border-color: var(--ol);
   box-shadow: 0 1px 1px color-mix(in srgb, #000 6%, transparent), 0 10px 24px -14px color-mix(in srgb, #000 35%, transparent);
 }
 
-html[data-mode=dark] body.glass :is(.card,table,.bgrp,.jhero,.fcard,.setnav,.rkeq):not(.hero) {
+html[data-mode=dark] body.glass :is(.card,table:not(.sets),.bgrp,.jhero,.fcard,.setnav,.rkeq):not(.hero) {
   border-color: var(--ol);
   box-shadow: 0 1px 1px #0005, 0 12px 26px -14px #000b;
 }

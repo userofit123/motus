@@ -6,14 +6,15 @@ import { isPhone } from "../core/device";
 import { sheetOpened, sheetClosed } from "../core/sheets";
 import Icon from "./Icon.vue";
 
-const props = defineProps<{ title?: string; size?: "wide" | "full"; noClose?: boolean }>();
+// noHistory: no Back step of its own (see core/leave.ts)
+const props = defineProps<{ title?: string; size?: "wide" | "full"; noClose?: boolean; noHistory?: boolean }>();
 const emit = defineEmits<{ close: [] }>();
 const key = (e: KeyboardEvent) => { if (e.key === "Escape" && !props.noClose) { e.stopPropagation(); emit("close"); } };
 const root = ref<HTMLElement | null>(null), sheet = ref<HTMLElement | null>(null);
 let backId = 0, pulledAway = false;
 onMounted(() => {
   addEventListener("keydown", key); document.body.style.overflow = "hidden";
-  if (!props.noClose) backId = sheetOpened(() => emit("close"));
+  if (!props.noClose && !props.noHistory) backId = sheetOpened(() => emit("close"));
   if (isPhone.value && !props.noClose) {
     sheet.value!.addEventListener("touchstart", tstart, { passive: true });
     sheet.value!.addEventListener("touchmove", tmove, { passive: false });

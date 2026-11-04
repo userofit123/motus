@@ -164,6 +164,60 @@ textarea:focus {
   outline-offset: 1px;
 }
 
+/* the field that opens the app's own pickers (components/AppSelect, DatePicker, TimePicker): the same look as the
+   fields above, since it stands where a <select> or a date field used to */
+.fpick {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  font: inherit;
+  font-size: 14px;
+  padding: 10px 12px 10px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--ol);
+  background: var(--s1);
+  color: var(--tx);
+  min-height: 42px;
+  min-width: 0;
+  max-width: 100%;
+  cursor: pointer;
+  text-align: start;
+  transition: border-color .15s, box-shadow .15s;
+}
+
+.fpick > .v {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* "unset", not "ph": .ph is the page header and would stretch the field */
+.fpick > .v.unset,
+.fpick > .ico {
+  color: var(--tx2);
+}
+
+.fpick > .ico {
+  flex: none;
+}
+
+.fpick:focus-visible {
+  outline: 2px solid var(--acc);
+  outline-offset: 1px;
+}
+
+.fpick[aria-expanded=true] {
+  border-color: var(--acc);
+}
+
+.fpick:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
+
 option {
   background: var(--bg);
   color: var(--tx);

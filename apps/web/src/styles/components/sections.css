@@ -188,27 +188,25 @@
   line-height: 1.5;
 }
 
-/* SlideOpen: a part that slides open and shut (height and fade) */
-.slo {
+/* Collapse: a section that slides open and shut. Only the container's height moves; the items inside are untouched. */
+.clp {
   display: grid;
   grid-template-rows: 0fr;
-  opacity: 0;
-  transition: grid-template-rows .25s var(--ease), opacity .2s var(--ease);
+  transition: grid-template-rows var(--t-slide) var(--ease);
 }
 
-.slo.on {
+.clp.on {
   grid-template-rows: 1fr;
-  opacity: 1;
 }
 
-.slo > .sloi {
+.clp > .clpi {
   min-block-size: 0;
   min-inline-size: 0;
   overflow: hidden;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .slo {
+  .clp {
     transition: none;
   }
 }

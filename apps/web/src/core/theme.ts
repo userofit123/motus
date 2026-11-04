@@ -90,6 +90,9 @@ export function applyTheme() {
   if (theme.ls !== k) { theme.ls = k; const x = looks.value.find((y) => y.id === lookFor.value[k]); if (x) Object.assign(theme, copy(x.v)); }
   const a = atmOf(theme.atm)[k], ex = cuOf(k), h = document.documentElement, r = h.style;
   r.colorScheme = d ? "dark" : "light";
+  // index.html paints <html> with the last session's colour before the app loads; follow the current one, or a mode or
+  // colour change keeps the old colour wherever the page is pulled past its edge
+  r.background = a[3]!;
   h.dataset.mode = d ? "dark" : "light";
   (["bg", "tex", "rad", "den", "spc", "nsp", "fnt", "nav"] as const).forEach((x) => { h.dataset[x] = String(theme[x]); });
   r.setProperty("--tsc", String((+theme.tsc || 100) / 100));

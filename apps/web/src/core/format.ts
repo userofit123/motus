@@ -1,6 +1,6 @@
 // Numbers, units and dates as the person likes them (Settings → Units & formats).
 import { computed } from "vue";
-import { fromKg, toKg, fromM, num, clock, duration as dur, type Settings } from "@motus/shared";
+import { fromKg, toKg, fromM, fromCm, toCm, num, clock, duration as dur, type Settings } from "@motus/shared";
 import { useSettings } from "../api/queries";
 
 export function useFmt() {
@@ -8,12 +8,15 @@ export function useFmt() {
   return computed(() => makeFmt(s.value));
 }
 export function makeFmt(s: Settings) {
-  const wu = s.units.weight, du = s.units.distance;
+  const wu = s.units.weight, du = s.units.distance, lu = s.units.length;
   const locale = s.dateFormat === "mdy" ? "en-US" : s.dateFormat === "ymd" ? "sv-SE" : "en-GB";
   const hour12 = s.clock === "12";
   return {
     s,
-    wu, du,
+    wu, du, lu,
+    /** a body measurement kept in cm, in cm or inches */
+    len: (cm: number | null | undefined, dp = 1) => (cm == null ? "" : num(fromCm(cm, lu), dp)),
+    toCm: (v: number) => toCm(v, lu),
     /** 80 kg → "80" (or "176.4" in lb) */
     w: (kg: number | null | undefined, dp = 1) => (kg == null ? "" : num(fromKg(kg, wu), dp)),
     wu_: (kg: number | null | undefined, dp = 1) => (kg == null ? "" : `${num(fromKg(kg, wu), dp)} ${wu}`),
@@ -47,11 +50,22 @@ export function ago(iso: string | null | undefined): string {
 }
 export const localYmd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
-/** "62.5 / 80 kg" in your units: goals keep weights in kg and distances in km */
-export function goalLabel(g: { target: number; progress?: { current: number; label: string; unit?: string } | null }, f: { w: (kg: number) => string; wu: string; distNum: (m: number) => number; du: string }) {
+/** "62.5 / 80 kg" in your units: goals keep weights in kg and distances in km.
+ *  Body goals read "now → target" ("87.5 → 85 cm"), which says where you are and where you're heading either way, without a value judgement. */
+export function goalLabel(g: { target: number; scope?: string; progress?: { current: number; label: string; unit?: string } | null }, f: { w: (kg: number) => string; wu: string; distNum: (m: number) => number; du: string; len: (cm: number) => string; lu: string }) {
   const p = g.progress;
   if (!p) return "";
+  if (g.scope === "body") {
+    const show = (v: number) => (p.unit === "kg" ? f.w(v) : p.unit === "cm" ? f.len(v) : num(v, 1));
+    const u = p.unit === "kg" ? f.wu : p.unit === "cm" ? f.lu : p.unit === "%" ? "%" : "";
+    const tail = u === "%" ? "%" : ` ${u}`;
+    return p.current ? `${show(p.current)} → ${show(g.target)}${tail}` : `Target ${show(g.target)}${tail}`;
+  }
   if (p.unit === "kg") return `${f.w(p.current)} / ${f.w(g.target)} ${f.wu}`;
+  if (p.unit === "cm") return `${f.len(p.current)} / ${f.len(g.target)} ${f.lu}`;
   if (p.unit === "km") return `${num(f.distNum(p.current * 1000), 1)} / ${num(f.distNum(g.target * 1000), 1)} ${f.du}`;
   return p.label;
 }
+
+/** The kinds a set can be switched to from its ⋮ menu, each with its own icon (a drop set is added, not switched to). */
+export const SET_KINDS = [["normal", "Normal", "dumbbell"], ["warmup", "Warm-up", "flame"], ["failure", "To failure", "target"]] as const;

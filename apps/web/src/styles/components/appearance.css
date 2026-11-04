@@ -285,6 +285,28 @@ details.closing > *:not(summary) {
   border-radius: 0;
 }
 
+/* the density tiles: three lines, further apart as the density grows */
+.dv {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: var(--g);
+}
+
+.dv i {
+  display: block;
+  width: 62%;
+  height: 6px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--tx) 35%, transparent);
+}
+
+.dv i:first-child {
+  width: 44%;
+  background: var(--acc);
+}
+
 .spv {
   display: flex;
   flex-direction: column;
@@ -454,7 +476,8 @@ details.closing > *:not(summary) {
   background: var(--s1);
 }
 
-.cbase select {
+.cbase select,
+.cbase .fpick {
   grid-column: 1 / -1;
   width: 100%;
 }
@@ -545,7 +568,7 @@ details.closing > *:not(summary) {
   background: var(--s1);
 }
 
-.crow input {
+.crow .cpk {
   grid-area: c;
 }
 
@@ -562,7 +585,7 @@ details.closing > *:not(summary) {
   grid-area: h;
 }
 
-.cust input[type=color] {
+.cust .cpk {
   width: 34px;
   height: 34px;
   min-height: 0;
@@ -575,23 +598,9 @@ details.closing > *:not(summary) {
   overflow: hidden;
 }
 
-.cbc input[type=color] {
+.cbc .cpk {
   width: 44px;
   height: 44px;
-  border: 0;
-  border-radius: 0;
-}
-
-.cust input[type=color]::-webkit-color-swatch-wrapper {
-  padding: 0;
-}
-
-.cust input[type=color]::-webkit-color-swatch {
-  border: 0;
-  border-radius: 0;
-}
-
-.cust input[type=color]::-moz-color-swatch {
   border: 0;
   border-radius: 0;
 }
@@ -622,17 +631,9 @@ details.closing > *:not(summary) {
   gap: 8px;
 }
 
-.cchip input[type=color] {
+.cchip .cpk {
   width: 36px;
   height: 36px;
-  border-radius: 50%;
-}
-
-.cchip input[type=color]::-webkit-color-swatch {
-  border-radius: 50%;
-}
-
-.cchip input[type=color]::-moz-color-swatch {
   border-radius: 50%;
 }
 
@@ -656,4 +657,9 @@ details.closing > *:not(summary) {
 details.closing.kvd > summary::after {
   transform: rotate(45deg);
   margin-top: -3px;
+}
+
+/* the side menu's spacing and style only exist on a computer: the phone has a tab bar instead */
+html.phone #pop .only-d {
+  display: none;
 }

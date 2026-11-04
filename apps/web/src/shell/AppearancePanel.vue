@@ -4,14 +4,23 @@
 import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from "vue";
 import { theme, ATM, ST0, CP, AKEYS, BGS, FONTS, looks, lookFor, saveLooks, copy, isDark, atmOf, cpOf, custVal, lookPal, setTheme, themeSwap, PKEYS, type Theme } from "../core/theme";
 import { appearanceOpen } from "../core/ui";
+import { sheetOpened, sheetClosed } from "../core/sheets";
+import { isPhone } from "../core/device";
 import { toast } from "../core/toast";
+import AppSelect from "../components/AppSelect.vue";
+import ColorPicker from "../components/ColorPicker.vue";
 
 const tab = ref("col");
 const TABS: Record<string, string> = { col: "Colours", bg: "Backdrop", sty: "Style", lay: "Layout", sav: "Saved" };
 const k = computed<"L" | "D">(() => (isDark() ? "D" : "L"));
 const dark = computed(() => k.value === "D");
 const out = ref(false);
-watch(appearanceOpen, (o) => { if (!o) { out.value = true; setTimeout(() => (out.value = false), 200); } });
+// Back closes it like any sheet, instead of leaving the page behind it
+let backId = 0;
+watch(appearanceOpen, (o) => {
+  if (o) backId = sheetOpened(() => (appearanceOpen.value = false));
+  else { if (backId) sheetClosed(backId); backId = 0; out.value = true; setTimeout(() => (out.value = false), 200); }
+});
 const close = () => { appearanceOpen.value = false; };
 const el = ref<HTMLElement | null>(null);
 const outside = (e: Event) => { if (appearanceOpen.value && el.value && !el.value.contains(e.target as Node) && !(e.target as HTMLElement).closest?.("#themeBtn,[data-theme-open]")) close(); };
@@ -39,11 +48,10 @@ const CNAME: Record<string, string> = { acc: "Accent", acc2: "Gradient colour", 
 const opt = (key: keyof Theme, v: unknown) => setTheme({ [key]: v } as Partial<Theme>);
 const swatch = (n: string) => { const c = n === "Custom" ? atmOf("Custom")[k.value] : ATM[n]![k.value]; return `linear-gradient(135deg,${c[0]} 0 52%,${c[4]} 52% 100%)`; };
 const range = (key: keyof Theme, v: string) => { (theme as any)[key] = +v; };
-const fromPreset = (e: Event) => {
-  const t = e.target as HTMLSelectElement, a = ATM[t.value]; if (!a) return;
+const fromPreset = (n: string) => {
+  const a = ATM[n]; if (!a) return;
   const cu: Record<string, Record<string, string>> = { L: {}, D: {} };
   (["L", "D"] as const).forEach((m) => AKEYS.forEach((x, j) => { cu[m]![x] = a[m][j]!; }));
-  t.value = "";
   setTheme({ cc: a.L[0], cu, cp: { L: {}, D: {} }, atm: "Custom" });
 };
 const setBase = (v: string) => Object.assign(theme, { cc: v, atm: "Custom", cu: { L: {}, D: {} }, cp: { L: {}, D: {} } });
@@ -74,6 +82,8 @@ const lookDot = (x: { v: Partial<Theme> }) => { const c = lookPal(x.v, k.value);
 </script>
 
 <template>
+  <!-- on the phone it's a bottom sheet over a scrim, like the other sheets; a tap on the scrim closes it -->
+  <div v-if="isPhone && appearanceOpen" class="scr apscr" aria-hidden="true" />
   <div id="pop" ref="el" class="pop" :class="{ on: appearanceOpen, out }" role="dialog" aria-label="Appearance">
     <div class="aph"><b>Appearance</b><span class="aphb"><button class="btn o s" @click="openSave">Save…</button><button class="btn o s" @click="reset">Reset</button></span></div>
     <div id="apTabs" class="seg apseg aptabs">
@@ -97,16 +107,16 @@ const lookDot = (x: { v: Partial<Theme> }) => { const c = lookPal(x.v, k.value);
         <div v-if="theme.atm === 'Custom'" class="aps cust">
           <div class="cuh"><div><b>Your own colours</b><div class="sm">Pick one colour and the rest follow, or set each one yourself.</div></div><button class="btn o s" @click="custReset">Reset</button></div>
           <div class="cbase">
-            <label class="cbc"><input type="color" :value="theme.cc || '#954523'" aria-label="Base colour" @input="setBase(($event.target as HTMLInputElement).value)"></label>
+            <label class="cbc"><ColorPicker :model-value="theme.cc || '#954523'" title="Base colour" aria-label="Base colour" @update:model-value="setBase" /></label>
             <div class="cbt"><b>Base colour</b><span>{{ (theme.cc || "").toUpperCase() }}</span></div>
-            <select aria-label="Start from" @change="fromPreset"><option value="">Choose a preset…</option><option v-for="(_, n) in ATM" :key="n" :value="n">{{ n }}</option></select>
+            <AppSelect model-value="" :options="Object.keys(ATM)" placeholder="Choose a preset…" title="Start from" aria-label="Start from" @update:model-value="fromPreset" />
           </div>
           <div class="cmode"><span class="cmd" :class="{ d: dark }" />{{ dark ? "Dark colours" : "Light colours" }}<span class="sm">Change Mode above to edit the other set.</span></div>
           <div v-for="[g, ns] in CGROUPS" :key="g" class="cgp">
             <h5>{{ g }}</h5>
-            <div class="cgrid"><label v-for="n in ns" :key="n" class="crow"><input type="color" :value="custVal(n, k)" :aria-label="CNAME[n]" @input="setCust(n, ($event.target as HTMLInputElement).value)"><span>{{ CNAME[n] }}</span><output>{{ custVal(n, k).toUpperCase() }}</output></label></div>
+            <div class="cgrid"><label v-for="n in ns" :key="n" class="crow"><ColorPicker :model-value="custVal(n, k)" :title="CNAME[n]" :aria-label="CNAME[n]" @update:model-value="(v) => setCust(n, v)" /><span>{{ CNAME[n] }}</span><output>{{ custVal(n, k).toUpperCase() }}</output></label></div>
           </div>
-          <details class="cch fold"><summary>Chart colours</summary><div class="cchips"><label v-for="(_, i) in CP.L" :key="i" class="cchip" :title="`Chart colour ${i + 1}`"><input type="color" :value="cpOf(k)[i]" @input="setChart(i, ($event.target as HTMLInputElement).value)"></label></div></details>
+          <details class="cch fold"><summary>Chart colours</summary><div class="cchips"><label v-for="(_, i) in CP.L" :key="i" class="cchip" :title="`Chart colour ${i + 1}`"><ColorPicker :model-value="cpOf(k)[i]!" :title="`Chart colour ${i + 1}`" :aria-label="`Chart colour ${i + 1}`" @update:model-value="(v) => setChart(i, v)" /></label></div></details>
         </div>
       </div>
       <div class="apbt" :class="{ on: tab === 'bg' }">
