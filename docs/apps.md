@@ -14,7 +14,7 @@ From the [latest release](https://github.com/userofit123/motus/releases/latest):
 
 ## Updates
 
-- The apps check GitHub for a new version (Settings → Updates) and can download it automatically.
+- The apps check GitHub for a new version (Settings → App & Versions) and can download it automatically.
 - Desktop: the update installs when you restart the app (or press Install).
 - Android: Android always asks you to confirm an install; Motus downloads the APK, checks it, and opens the installer.
   The first time, Android asks you to allow Motus to install apps.

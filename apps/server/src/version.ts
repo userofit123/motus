@@ -1,6 +1,7 @@
 // The running version (from the root package.json, set by scripts/bump.mjs) and the check for a newer release on GitHub.
 import fs from "node:fs";
 import path from "node:path";
+import { newer } from "@motus/shared";
 
 function readVersion(): string {
   try { const v = fs.readFileSync(path.resolve(process.cwd(), "VERSION"), "utf8").trim(); if (v) return v; } catch { /* not in the image */ }
@@ -14,25 +15,27 @@ export const VERSION = process.env.MOTUS_VERSION ?? readVersion();
 export const API_LEVEL = 1;
 export const REPO = process.env.MOTUS_REPO ?? "userofit123/motus";
 
+type GhAsset = { name: string; browser_download_url: string; size?: number };
 let cache: { at: number; value: unknown } | null = null;
 /** The latest GitHub release, cached for an hour (GitHub allows 60 unauthenticated requests an hour per address). */
 export async function checkForUpdate() {
   if (cache && cache.at > Date.now() - 3600000) return cache.value;
   try {
     const r = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`, { headers: { accept: "application/vnd.github+json", "user-agent": "motus" } });
+    // 404: no release published yet (or the repository is still private); not a failure to report as one
+    if (r.status === 404) {
+      const value = { current: VERSION, latest: null, newer: false, assets: [], error: "No releases found" };
+      cache = { at: Date.now(), value };
+      return value;
+    }
     if (!r.ok) throw new Error(String(r.status));
-    const j: any = await r.json();
+    const j = (await r.json()) as { tag_name?: string; body?: string; html_url?: string; published_at?: string; assets?: GhAsset[] };
     const latest = String(j.tag_name ?? "").replace(/^v/, "");
-    const assets = (j.assets ?? []).map((a: any) => ({ name: a.name, url: a.browser_download_url, size: a.size }));
+    const assets = (j.assets ?? []).map((a) => ({ name: a.name, url: a.browser_download_url, size: a.size }));
     const value = { current: VERSION, latest, newer: newer(latest, VERSION), notes: j.body ?? "", url: j.html_url, publishedAt: j.published_at, assets };
     cache = { at: Date.now(), value };
     return value;
   } catch (e) {
     return { current: VERSION, latest: null, newer: false, error: "Could not reach GitHub" };
   }
-}
-export function newer(a: string, b: string): boolean {
-  const pa = a.split(/[.-]/).map((x) => parseInt(x) || 0), pb = b.split(/[.-]/).map((x) => parseInt(x) || 0);
-  for (let i = 0; i < 3; i++) if ((pa[i] ?? 0) !== (pb[i] ?? 0)) return (pa[i] ?? 0) > (pb[i] ?? 0);
-  return false;
 }

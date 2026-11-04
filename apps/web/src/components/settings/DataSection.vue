@@ -58,7 +58,7 @@ const fmt = useFmt();
 </script>
 
 <template>
-  <div class="col" style="gap:var(--spg)">
+  <div class="stack">
     <div class="sh first"><h2>Export</h2></div>
     <div class="card">
       <div class="li"><div class="grow"><div class="t">Everything (JSON)</div><div class="s">Routines, workouts, notes, reminders, goals, activities, body, settings</div></div><button class="btn o s" @click="exportJson">Download</button></div>
@@ -73,7 +73,7 @@ const fmt = useFmt();
       <div class="li"><div class="grow"><div class="t">Activities (GPX, TCX)</div><div class="s">From a watch, Strava, OpenTracks…</div></div><label class="btn o s" style="cursor:pointer">Choose<input type="file" accept=".gpx,.tcx" multiple hidden @change="gpx" /></label></div>
     </div>
     <Sheet v-if="csv" :title="`Import from ${csv.preview.format}`" size="wide" @close="csv = null">
-      <p class="muted" style="margin-bottom:10px">{{ csv.preview.workouts }} workouts, {{ csv.preview.sets }} sets, {{ fmt.date(csv.preview.from) }} – {{ fmt.date(csv.preview.to) }}. Workouts imported before are skipped.</p>
+      <p class="muted hgap">{{ csv.preview.workouts }} workouts, {{ csv.preview.sets }} sets, {{ fmt.date(csv.preview.from) }} - {{ fmt.date(csv.preview.to) }}. Workouts imported before are skipped.</p>
       <div class="list"><div v-for="e in csv.preview.exercises" :key="e.name" class="li"><div class="grow"><div class="t">{{ e.name }}</div><div class="s">→ {{ nameOf(e.name) }}</div></div>
         <button class="qb acc" @click="mapFor = e.name">Change</button><button v-if="csv.mapping[e.name] !== 'new'" class="qb" @click="csv.mapping[e.name] = 'new'">Make new</button></div></div>
       <template #foot><button class="btn o" @click="csv = null">Cancel</button><button class="btn" @click="runCsv">Import</button></template>

@@ -9,7 +9,7 @@ const upd = useQuery({ queryKey: ["static", "update"], queryFn: () => api.get("/
 </script>
 
 <template>
-  <button v-if="upd.data.value?.newer" type="button" class="nb upd" :title="`Version ${upd.data.value.latest} is available`" @click="router.push('/settings/updates')">
+  <button v-if="upd.data.value?.newer" type="button" class="nb upd" :title="`Version ${upd.data.value.latest} is available`" @click="router.push('/settings/versions')">
     <span class="ic"><Icon name="download" :size="22" /></span>Update
   </button>
 </template>

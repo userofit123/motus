@@ -1,13 +1,13 @@
 // Inside the Android app (Capacitor): accounts, backups to a folder on the phone, the in-app updater, the status bar
 // colours, and the back button. Exposed as window.motusNative, like the desktop app.
-import { accounts, addLocal, addServer, open, remove, chooser } from "./accounts";
-import { sheetIsOpen } from "../core/sheets";
+import { accounts, addLocal, addServer, open, remove, rename, chooser } from "./accounts";
+import { sheetIsOpen, closeTopSheet } from "../core/sheets";
+import { REPO, newer } from "../core/releases";
 
 const cap = () => (globalThis as any).Capacitor;
 const P = (n: string) => cap()?.Plugins?.[n];
 export const isAndroid = () => cap()?.getPlatform?.() === "android";
 
-const REPO = "userofit123/motus";
 async function latestApk() {
   const r = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`, { headers: { accept: "application/vnd.github+json" } });
   if (!r.ok) throw new Error("Could not reach GitHub");
@@ -27,7 +27,7 @@ export function installAndroidBridge() {
     accounts: {
       list: async () => ({ list: accounts.list.map(({ token, ...a }) => a), active: accounts.active }),
       current: async () => accounts.list.find((a) => a.id === accounts.active) ?? null,
-      addLocal, addServer, open, remove, chooser,
+      addLocal, addServer, open, remove, rename, chooser,
     },
     // backups go to Documents/Motus on the phone (the Filesystem plugin), newest `keep` are kept
     async saveBackup(name: string, bytes: Uint8Array, keep: number) {
@@ -53,13 +53,7 @@ export function installAndroidBridge() {
     },
   };
   // the hardware back button closes an open sheet, goes back in the app, and leaves it from the home page
-  P("App")?.addListener?.("backButton", ({ canGoBack }: { canGoBack: boolean }) => { if (sheetIsOpen() || (canGoBack && location.pathname !== "/")) history.back(); else P("App").minimizeApp?.(); });
+  P("App")?.addListener?.("backButton", ({ canGoBack }: { canGoBack: boolean }) => { if (sheetIsOpen()) closeTopSheet(); else if (canGoBack && location.pathname !== "/") history.back(); else P("App").minimizeApp?.(); });
   // the status bar follows the look (theme.ts calls motusApp.setBars)
   (globalThis as any).motusApp = { setBars: (bg: string, dark: boolean) => { P("StatusBar")?.setBackgroundColor?.({ color: bg }).catch?.(() => {}); P("StatusBar")?.setStyle?.({ style: dark ? "DARK" : "LIGHT" }).catch?.(() => {}); } };
-}
-
-function newer(a: string, b: string) {
-  const pa = a.split(".").map(Number), pb = b.split(".").map(Number);
-  for (let i = 0; i < 3; i++) if ((pa[i] ?? 0) !== (pb[i] ?? 0)) return (pa[i] ?? 0) > (pb[i] ?? 0);
-  return false;
 }

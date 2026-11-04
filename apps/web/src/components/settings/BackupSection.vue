@@ -10,6 +10,7 @@ import { backupNow, backupLog, readBackup, canPickFolder, pickFolder, folderName
 import { prompt, choose, confirm } from "../../core/ask";
 import { toast, toastError } from "../../core/toast";
 import { native } from "../../core/device";
+import AppSelect from "../AppSelect.vue";
 
 const s = useSettings();
 const log = ref(backupLog());
@@ -53,12 +54,12 @@ const fmt = useFmt();
 </script>
 
 <template>
-  <div class="col" style="gap:var(--spg)">
+  <div class="stack">
     <div class="card">
       <label class="tgl"><div class="grow"><div class="t">Automatic backups</div><div class="s">A copy of everything, saved on this device</div></div><span class="tg"><input type="checkbox" :checked="s.backup.on" @change="set({ on: ($event.target as HTMLInputElement).checked })" /></span></label>
       <template v-if="s.backup.on">
-        <div class="li"><div class="grow"><div class="t">How often</div></div><select :value="s.backup.every" style="width:auto" @change="set({ every: ($event.target as HTMLSelectElement).value })"><option value="workout">After every workout</option><option value="daily">Every day</option><option value="weekly">Every week</option></select></div>
-        <div class="li"><div class="grow"><div class="t">Keep</div><div class="s">Older backups are removed, the newest always stays</div></div><select :value="s.backup.keep" style="width:auto" @change="set({ keep: Number(($event.target as HTMLSelectElement).value) })"><option v-for="n in [3, 7, 14, 30, 60]" :key="n" :value="n">The last {{ n }}</option></select></div>
+        <div class="li"><div class="grow"><div class="t">How often</div></div><AppSelect :model-value="s.backup.every" :options="[{ value: 'workout', label: 'After every workout' }, { value: 'daily', label: 'Every day' }, { value: 'weekly', label: 'Every week' }]" title="How often" style="width:auto" @update:model-value="(v) => set({ every: v })" /></div>
+        <div class="li"><div class="grow"><div class="t">Keep</div><div class="s">Older backups are removed, the newest always stays</div></div><AppSelect :model-value="s.backup.keep" :options="[3, 7, 14, 30, 60].map((n) => ({ value: n, label: `The last ${n}` }))" title="Keep" style="width:auto" @update:model-value="(v) => set({ keep: v })" /></div>
         <div class="li"><div class="grow"><div class="t">Where</div><div class="s">{{ folder ? `Folder: ${folder}` : canPickFolder() ? "Pick a folder and backups are written there automatically" : "This browser can't write to a folder. Your data is kept on the server; use Back up now for a copy of your own" }}</div></div>
           <button v-if="canPickFolder() || N?.chooseBackupFolder" class="qb acc" @click="choose_folder">{{ folder ? "Change" : "Pick folder" }}</button>
           <button v-if="N?.openBackupFolder" class="qb" @click="N.openBackupFolder()">Open</button></div>

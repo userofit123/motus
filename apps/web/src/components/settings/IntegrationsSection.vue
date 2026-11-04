@@ -23,7 +23,7 @@ const fmt = useFmt();
 </script>
 
 <template>
-  <div class="col" style="gap:var(--spg)">
+  <div class="stack">
     <template v-if="s.features.apiTokens">
       <div class="sh first"><h2>API tokens</h2><button class="lnk" @click="create">New token</button></div>
       <div class="card">
