@@ -6,6 +6,7 @@ import { useExercises, useSettings } from "../api/queries";
 import { mediaUrl } from "../api/client";
 import Sheet from "./Sheet.vue";
 import Icon from "./Icon.vue";
+import MuscleFig from "./MuscleFig.vue";
 import ExerciseEditor from "./ExerciseEditor.vue";
 import FilterPanel from "./FilterPanel.vue";
 import FilterRow from "./FilterRow.vue";
@@ -62,6 +63,7 @@ function tap(id: string) {
     </FilterPanel>
     <div class="list">
       <div v-for="e in (showSuggest ? suggest : list)" :key="e.id" class="li click" @click="tap(e.id)">
+        <MuscleFig sm :muscles="e.primaryMuscles" :helpers="e.secondaryMuscles" />
         <div class="thumb"><img v-if="e.images?.[0]" :src="mediaUrl(e.images[0])" alt="" loading="lazy" /><Icon v-else name="dumbbell" /></div>
         <div class="grow"><div class="t">{{ e.name }}</div><div class="s"><span style="text-transform:capitalize">{{ e.primaryMuscles.join(", ") }}</span>{{ e.equipment ? " · " + eqName(e.equipment) : "" }}{{ e.timesDone ? ` · done ${e.timesDone}×` : "" }}</div></div>
         <button class="ib sm plain" aria-label="About this exercise" @click.stop="exerciseSheet = e.id"><Icon name="info" :size="18" /></button>

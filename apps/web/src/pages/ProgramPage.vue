@@ -12,6 +12,7 @@ import { useFmt, localYmd } from "../core/format";
 import { confirm } from "../core/ask";
 import { toast, toastError } from "../core/toast";
 import Icon from "../components/Icon.vue";
+import MuscleFig from "../components/MuscleFig.vue";
 import Menu from "../components/Menu.vue";
 import Sheet from "../components/Sheet.vue";
 import DatePicker from "../components/DatePicker.vue";
@@ -80,7 +81,7 @@ await loaded(q);
     <p v-if="p.description" class="muted desc">{{ p.description }}</p>
 
     <div v-if="p.status !== 'finished' && next" class="card spb nx" :class="{ dl: next.deload }">
-      <div class="row"><span class="bi sg"><Icon name="routines" :size="18" /></span>
+      <div class="row"><MuscleFig sm :routine="next.routineId" />
         <div class="grow"><div class="lbl">{{ p.status === "paused" ? "When you resume" : "Next" }} · week {{ next.week }}, workout {{ next.day }}</div><b class="nm">{{ next.name }}</b></div>
         <button class="qb acc" @click="router.push(`/routines/${next.routineId}`)">See routine</button></div>
       <div v-if="next.deload" class="tiny">Deload week: a lighter week to let your body recover. Working weights start {{ p.deloadPct }}% lower; warm-ups and reps stay the same.</div>
@@ -108,6 +109,7 @@ await loaded(q);
             <div v-if="!w.days.length" class="tiny">Rest week</div>
             <div class="list">
               <div v-for="d in w.days" :key="d.day" class="li" :class="[d.status, { click: !!d.workout }]" @click="d.workout && router.push(`/workouts/${d.workout.id}`)">
+                <MuscleFig sm :routine="d.routineId" />
                 <span class="mk"><Icon v-if="d.status === 'done'" name="check" :size="14" /><Icon v-else-if="d.status === 'next'" name="play" :size="12" /><template v-else>{{ d.day }}</template></span>
                 <div class="grow"><div class="t">{{ d.name }}</div><div v-if="dayLine(d)" class="s">{{ dayLine(d) }}</div></div>
               </div>

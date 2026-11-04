@@ -27,6 +27,8 @@ import RestPicker from "../components/RestPicker.vue";
 import NumStep from "../components/NumStep.vue";
 import AppSelect from "../components/AppSelect.vue";
 import BodyMap from "../components/BodyMap.vue";
+import MuscleFig from "../components/MuscleFig.vue";
+import TemplateList from "../components/TemplateList.vue";
 import RadioList from "../components/RadioList.vue";
 
 const route = useRoute(), router = useRouter();
@@ -160,8 +162,9 @@ const est = computed(() => r.value ? estimate(r.value.exercises.map((e: any) => 
 const setCount = computed(() => (r.value?.exercises ?? []).reduce((a: number, e: any) => a + e.sets.length, 0));
 const muscles = computed(() => muscleSets((r.value?.exercises ?? []).map((e: any) => { const x = e.exercise ?? exById.value.get(e.exerciseId); return { primary: x?.primaryMuscles ?? [], secondary: x?.secondaryMuscles ?? [], sets: e.sets.length }; })));
 const worked = computed(() => musclesWorked((r.value?.exercises ?? []).map((e: any) => { const x = e.exercise ?? exById.value.get(e.exerciseId); return { primary: x?.primaryMuscles ?? [], secondary: x?.secondaryMuscles ?? [] }; })));
-const exName = (e: any) => (exById.value.get(e.exerciseId) ?? e.exercise)?.name ?? "";
-const exImg = (e: any) => (exById.value.get(e.exerciseId) ?? e.exercise)?.images?.[0];
+const exOf = (e: any) => exById.value.get(e.exerciseId) ?? e.exercise;
+const exName = (e: any) => exOf(e)?.name ?? "";
+const exImg = (e: any) => exOf(e)?.images?.[0];
 
 /** "3 × 8-12 · 60 kg": the working sets in one line, for folded cards and the overview */
 function setSummary(e: any) {
@@ -222,11 +225,6 @@ async function pickFolder(v: string) {
     try { r.value.folderId = (await api.post("/folders", { name })).id; invalidate(["routines"]); touch(); } catch (e) { toastError(e); }
   }
 }
-const templateGroups = computed(() => {
-  const g = new Map<string, any[]>();
-  for (const t of (templates.data.value ?? []) as any[]) g.set(t.group, [...(g.get(t.group) ?? []), t]);
-  return [...g];
-});
 function fromScratch() { starter.value = false; picking.value = {}; }
 
 // progression: what each rule does, in plain words
@@ -366,19 +364,13 @@ await loaded(src, all, folders, routines, templates);
           <button class="optb" @click="starterView = 'templates'"><span class="oi"><Icon name="layers" /></span><span class="grow"><span class="t">Use a template</span><span class="s" style="display:block">{{ templates.data.value?.length ?? 0 }} ready-made routines: full body, push / pull / legs, upper / lower…</span></span><Icon name="right" :size="18" /></button>
           <button v-if="routines.data.value?.length" class="optb" @click="starterView = 'copy'"><span class="oi"><Icon name="copy" /></span><span class="grow"><span class="t">Copy one of your routines</span><span class="s" style="display:block">Start from a routine you already have</span></span><Icon name="right" :size="18" /></button>
         </div>
-        <template v-else-if="starterView === 'templates'">
-          <template v-for="[g, ts] in templateGroups" :key="g">
-            <div class="st-h">{{ g }}</div>
-            <div class="tiles">
-              <button v-for="t in ts" :key="t.slug" class="tile" @click="startFrom('template', t.slug)">
-                <span class="tt">{{ t.name }}</span><span class="td">{{ t.description }}</span><span class="tm">{{ t.exercises }} exercises</span>
-              </button>
-            </div>
-          </template>
-        </template>
-        <div v-else class="tiles" style="margin-top:14px">
-          <button v-for="x in routines.data.value" :key="x.id" class="tile" @click="startFrom('copy', x.id)">
-            <span class="tt"><span v-if="x.color" class="dot" :style="{ background: x.color }" />{{ x.name }}</span><span class="tm">{{ x.exerciseCount }} exercises · {{ x.setCount }} sets</span>
+        <TemplateList v-else-if="starterView === 'templates'" @pick="(slug) => startFrom('template', slug)" />
+        <!-- your routines, drawn like the Routines list's cards: the muscles each works on the left -->
+        <div v-else class="opt-list" style="margin-top:14px">
+          <button v-for="x in routines.data.value" :key="x.id" class="optb wbody" @click="startFrom('copy', x.id)">
+            <MuscleFig :muscles="x.muscles" :helpers="x.helpers" />
+            <div class="grow" style="align-self:center;min-width:0"><div class="t row" style="gap:8px"><span class="dot" :style="{ background: x.color ?? undefined }" /><span class="ellipsis">{{ x.name }}</span></div><div class="s">{{ x.exerciseCount }} exercises · {{ x.setCount }} sets</div><div class="s ellipsis">{{ x.exerciseNames.join(" · ") }}</div></div>
+            <Icon name="copy" style="align-self:center" />
           </button>
         </div>
       </div>
@@ -391,6 +383,7 @@ await loaded(src, all, folders, routines, templates);
         <div v-for="(e, i) in r.exercises" :key="e._k" data-drag :data-k="e._k" class="card ex" :class="{ sup: e.superset }">
           <div class="exh">
             <button class="ib sm plain dragh" aria-label="Drag to reorder" @pointerdown="dragEx($event, i)"><Icon name="drag" :size="18" /></button>
+            <MuscleFig sm :muscles="exOf(e)?.primaryMuscles" :helpers="exOf(e)?.secondaryMuscles" />
             <div class="thumb sm click" @click="exerciseSheet = e.exerciseId"><img v-if="exImg(e)" :src="mediaUrl(exImg(e))" alt="" /><Icon v-else name="dumbbell" :size="18" /></div>
             <button class="exn" :aria-expanded="isOpen(e)" @click="toggle(e)">
               <span class="t">{{ exName(e) }}</span>
@@ -531,14 +524,6 @@ await loaded(src, all, folders, routines, templates);
 .starter, .plan-opt { margin-bottom: var(--spg); }
 .pl-k { margin-bottom: 2px; }
 .st-t { font-size: 17px; font-weight: 600; }
-.st-h { font-size: 12.5px; font-weight: 600; color: var(--tx2); margin: 18px 0 8px; }
-.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; }
-.tile { display: flex; flex-direction: column; gap: 4px; text-align: start; padding: calc(var(--cpy) - 3px) calc(var(--cpx) - 2px); border-radius: var(--r-md); border: 1px solid var(--ol); background: var(--s1); color: var(--tx); cursor: pointer; transition: border-color .2s, background .2s; }
-.tile:hover { border-color: color-mix(in srgb, var(--acc) 45%, var(--ol)); background: var(--s2); }
-.tile .tt { font-weight: 600; display: flex; align-items: center; gap: 6px; }
-.tile .tt .dot { width: 10px; height: 10px; }
-.tile .td { font-size: 12.5px; color: var(--tx2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.tile .tm { font-size: 11.5px; color: var(--tx2); margin-top: auto; padding-top: 2px; }
 
 .exlist { display: flex; flex-direction: column; gap: var(--spg); margin-bottom: var(--spg); }
 .ex { text-align: start; }

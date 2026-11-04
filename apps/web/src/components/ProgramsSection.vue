@@ -9,6 +9,7 @@ import { invalidate } from "../api/live";
 import { confirm } from "../core/ask";
 import { toast } from "../core/toast";
 import Icon from "./Icon.vue";
+import MuscleFig from "./MuscleFig.vue";
 import Menu from "./Menu.vue";
 import ProgramEditor from "./ProgramEditor.vue";
 
@@ -32,12 +33,16 @@ defineExpose({ create: () => (edit.value = null) });
       <div class="row" style="justify-content:center;margin-top:14px"><button class="btn" @click="edit = null">Create one</button></div>
     </div>
     <div class="grid gauto">
-      <div v-for="p in programs.data.value ?? []" :key="p.id" class="card click" @click="router.push(`/programs/${p.id}`)">
+      <div v-for="p in programs.data.value ?? []" :key="p.id" class="card click wbody" @click="router.push(`/programs/${p.id}`)">
+        <!-- every muscle the program's routines work, on the left like the routine cards -->
+        <MuscleFig :routine="p.weeks.flatMap((w) => w.days)" />
+        <div class="grow" style="min-width:0">
         <div class="row"><b class="grow">{{ p.name }}</b><span @click.stop><Menu :items="[{ label: 'Edit', icon: 'edit', run: () => (edit = p) }, { label: p.active ? 'Pause' : 'Resume', icon: p.active ? 'pause' : 'play', run: () => pause(p) }, { label: 'Delete', icon: 'trash', danger: true, sep: true, run: () => del(p) }]" /></span></div>
         <div class="tiny">{{ p.state.done }} of {{ p.state.total }} workouts done{{ p.active || p.state.finished ? "" : " · paused" }}</div>
         <div class="pbar" style="margin:10px 0"><i :style="{ width: (p.state.total ? p.state.done / p.state.total : 0) * 100 + '%' }" /></div>
         <div class="row"><div class="grow" :class="{ pos: p.state.finished, muted: !p.active && !p.state.finished }" style="font-weight:600">{{ where(p) }}</div>
           <button v-if="p.active && p.state.next" class="btn o s" @click.stop="start(p)"><Icon name="play" :size="14" />Start</button></div>
+        </div>
       </div>
     </div>
     <ProgramEditor v-if="edit !== undefined" :program="edit" @close="edit = undefined" @saved="(id) => !edit && router.push(`/programs/${id}`)" />

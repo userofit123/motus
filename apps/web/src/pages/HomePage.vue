@@ -14,6 +14,7 @@ import { useFmt, ago, goalLabel } from "../core/format";
 import { startOpen, bodySheet, dailySheet, activitySheet } from "../core/ui";
 import { isPhone } from "../core/device";
 import Icon from "../components/Icon.vue";
+import MuscleFig from "../components/MuscleFig.vue";
 import Sparkline from "../components/Sparkline.vue";
 import Ring from "../components/Ring.vue";
 import BodyMap from "../components/BodyMap.vue";
@@ -190,7 +191,7 @@ await loaded(home, ach);
       <section v-for="p in h.programs ?? []" :key="p.id">
         <div class="sh"><h2>Your program</h2><button class="lnk" @click="router.push(`/programs/${p.id}`)">Plan <Icon name="right" :size="14" /></button></div>
         <div class="card click prog" :class="{ dl: p.next?.deload }" v-bind="link(`/programs/${p.id}`)">
-          <div class="row"><span class="bi sg"><Icon name="routines" :size="18" /></span>
+          <div class="row"><MuscleFig sm :routine="p.next.routineId" />
             <div class="grow" style="min-width:0"><b class="ellipsis pn">{{ p.name }}</b><div class="tiny">{{ p.calendarWeek === 0 ? `Starts ${fmt.date(p.startDate, { weekday: "long", day: "numeric", month: "short" })}` : `Week ${p.next.week} of ${p.weeks}` }} · {{ p.done }} of {{ p.total }} workouts</div></div></div>
           <div class="pbar"><i :style="{ width: (p.done / p.total) * 100 + '%' }" /></div>
           <div class="row pnx"><div class="grow" style="min-width:0"><div class="tiny">Next</div><div class="ellipsis"><b>{{ p.next.name }}</b><span v-if="p.next.deload" class="mchip">Deload −{{ p.deloadPct }}%</span></div></div>
@@ -207,6 +208,7 @@ await loaded(home, ach);
             <div v-if="!h.upNext.length" class="empty sm"><b>Nothing planned</b>Plan a routine for certain days, and it shows here and in the calendar.<br /><button class="btn tonal" @click="planOpen = { rule: 'once' }">Plan a workout</button></div>
             <div v-else class="list">
               <div v-for="p in h.upNext" :key="p.scheduleId + p.date" class="li click" v-bind="link(() => (p.routineId ? start(p) : (activitySheet = { type: p.activityType })))">
+                <MuscleFig sm :routine="p.routineId" />
                 <span class="dot" :style="p.color ? { background: p.color } : undefined" />
                 <div class="grow"><div class="t">{{ p.name }}</div><div class="s">{{ dayName(p.date) }}{{ p.timeOfDay ? " · " + p.timeOfDay : "" }}</div></div>
                 <button v-if="p.routineId" class="btn s" :class="{ o: dayName(p.date) !== 'Today' }" @click.stop="start(p)">Start</button>
@@ -220,7 +222,8 @@ await loaded(home, ach);
           <div class="sh"><h2>Suggested</h2></div>
           <div class="card"><TransitionGroup name="mv" tag="div" class="list">
             <div v-for="x in h.suggest" :key="x.kind + (x.routineId ?? x.muscle)" class="li click" v-bind="link(x.routineId ? `/routines/${x.routineId}` : `/exercises?muscle=${encodeURIComponent(x.muscle)}`)">
-              <span class="bi sg"><Icon :name="x.kind === 'order' || x.kind === 'program' ? 'routines' : x.kind === 'oldest' ? 'clock' : 'activity'" :size="16" /></span>
+              <!-- the routine's muscles, or the one muscle the tip is about -->
+              <MuscleFig sm :routine="x.routineId" :muscles="x.routineId || !x.muscle ? undefined : [x.muscle]" />
               <div class="grow"><div class="t">{{ x.title }}</div><div class="s">{{ x.reason }}</div></div>
               <template v-if="x.routineId">
                 <button class="ib sm" aria-label="Plan" title="Plan" @click.stop="planOpen = { rule: 'once', routineId: x.routineId }"><Icon name="calendar" :size="18" /></button>

@@ -15,6 +15,7 @@ import { choose } from "../core/ask";
 import { toastError } from "../core/toast";
 import { askNotificationPermission } from "../workout/native";
 import Icon from "../components/Icon.vue";
+import MuscleFig from "../components/MuscleFig.vue";
 import NoteItem from "../components/NoteItem.vue";
 import ReminderItem from "../components/ReminderItem.vue";
 import BodyMap from "../components/BodyMap.vue";
@@ -103,6 +104,7 @@ await loaded(pv);
     <div class="grid spt" style="grid-template-columns:minmax(0,1fr) 300px;align-items:start">
       <TransitionGroup tag="div" name="mv" class="card">
         <div v-for="(e, i) in exs" :key="e.routineExerciseId" class="li pvx" :class="{ off: skip.includes(e.routineExerciseId) }">
+          <MuscleFig sm :muscles="e.exercise?.primaryMuscles" :helpers="e.exercise?.secondaryMuscles" />
           <div class="thumb click" @click="exerciseSheet = e.exerciseId"><img v-if="e.exercise?.images?.[0]" :src="mediaUrl(e.exercise.images[0])" alt="" loading="lazy" /><Icon v-else name="dumbbell" /></div>
           <div class="grow click" @click="exerciseSheet = e.exerciseId">
             <div class="t ellipsis">{{ i + 1 }}. {{ e.exercise?.name }}</div>

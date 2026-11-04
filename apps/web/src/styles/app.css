@@ -419,6 +419,8 @@ html.phone .cal .dots i.plan { background: none; border: 1px solid var(--ec, var
 .bodymap.rbody { flex: none; align-self: stretch; position: relative; width: 92px; min-height: 112px; }
 .bodymap.rbody .figs { position: absolute; inset: 0; height: auto; gap: 0; }
 .bodymap.rbody svg { width: 50%; height: 100%; }
+/* the same body, same place, sized for a list row (exercise rows, program days, Up next) */
+.bodymap.rbody.sm { width: 46px; min-height: 52px; }
 .bmlegend { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; font-size: var(--fs-xs); color: var(--tx2); }
 .bmlegend span { display: inline-flex; align-items: center; gap: 5px; }
 .bmlegend i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }

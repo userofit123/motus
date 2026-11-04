@@ -7,6 +7,7 @@ import { useExercises, loaded } from "../api/queries";
 import { mediaUrl } from "../api/client";
 import { ago } from "../core/format";
 import Icon from "../components/Icon.vue";
+import MuscleFig from "../components/MuscleFig.vue";
 import ExerciseEditor from "../components/ExerciseEditor.vue";
 import Sheet from "../components/Sheet.vue";
 import AppSelect from "../components/AppSelect.vue";
@@ -57,6 +58,7 @@ await loaded(all);
     </Sheet>
     <div class="grid gauto">
       <div v-for="e in list.slice(0, shown)" :key="e.id" class="card click tight row" @click="router.push(`/exercises/${e.id}`)">
+        <MuscleFig sm :muscles="e.primaryMuscles" :helpers="e.secondaryMuscles" />
         <div class="thumb lg"><img v-if="e.images?.[0]" :src="mediaUrl(e.images[0])" alt="" loading="lazy" /><Icon v-else name="dumbbell" /></div>
         <div class="grow">
           <div style="font-weight:600;line-height:1.3">{{ e.name }} <Icon v-if="e.favourite" name="star" :size="13" style="display:inline;color:var(--acc);vertical-align:-1px" /></div>

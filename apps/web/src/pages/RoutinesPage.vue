@@ -4,8 +4,8 @@
 import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { duration, muscleName, type RoutineSummary } from "@motus/shared";
-import BodyMap from "../components/BodyMap.vue";
-import { useRoutines, useFolders, useChange, useTemplates, usePrograms, loaded } from "../api/queries";
+import MuscleFig from "../components/MuscleFig.vue";
+import { useRoutines, useFolders, useChange, usePrograms, loaded } from "../api/queries";
 import { api } from "../api/client";
 import { ago } from "../core/format";
 import { readJson, writeJson } from "../core/prefs";
@@ -17,6 +17,7 @@ import Menu from "../components/Menu.vue";
 import Collapse from "../components/Collapse.vue";
 import Sheet from "../components/Sheet.vue";
 import ProgramsSection from "../components/ProgramsSection.vue";
+import TemplateList from "../components/TemplateList.vue";
 import { useSettings } from "../api/queries";
 
 const route = useRoute(), router = useRouter();
@@ -31,7 +32,6 @@ const showArchived = ref(false);
 const routines = useRoutines();
 const archived = useRoutines(true);
 const folders = useFolders();
-const templates = useTemplates();
 const q = ref("");
 const fromTemplate = ref(route.query.template === "1"); // Home's first-run card opens the templates straight away
 const list = computed(() => (showArchived.value ? archived.data.value ?? [] : (routines.data.value ?? []).filter((r) => !r.archived)).filter((r) => r.name.toLowerCase().includes(q.value.toLowerCase())));
@@ -90,7 +90,6 @@ const items = (r: RoutineSummary) => [
   { label: r.archived ? "Restore from archive" : "Archive", icon: "archive", run: () => upd.run(r.id, { archived: !r.archived }).then(() => toast(r.archived ? "Routine restored" : "Routine archived")) },
   { label: "Delete", icon: "trash", danger: true, sep: true, run: () => del(r) },
 ];
-const tgroups = computed(() => { const m = new Map<string, any[]>(); for (const t of templates.data.value ?? []) m.set(t.group, [...(m.get(t.group) ?? []), t]); return [...m]; });
 // show the page once its data is in, all at once
 // the programs below are read here too, so they arrive with the routines rather than after them
 await loaded(routines, folders, ...(settings.value.features.programs ? [programs] : []));
@@ -133,7 +132,7 @@ await loaded(routines, folders, ...(settings.value.features.programs ? [programs
       <div class="grid gauto rgrid">
         <div v-for="r in g.items" :key="r.id" class="card click rcard" :class="{ wbody: r.muscles.length }" @click="router.push(`/routines/${r.id}`)">
           <!-- the muscles this routine works, at a glance, down the whole left side; the routine's colour is the dot by the name -->
-          <BodyMap v-if="r.muscles.length" class="rbody" :values="{}" :highlight="r.muscles" :secondary="r.helpers ?? []" />
+          <MuscleFig :muscles="r.muscles" :helpers="r.helpers" />
           <div class="rmain">
             <div class="row" style="align-items:flex-start">
               <div class="grow" style="min-width:0"><div class="row" style="gap:8px"><span class="dot" :style="{ background: r.color ?? undefined }" /><span class="ellipsis" style="font-weight:600;font-size:15.5px">{{ r.name }}</span></div><div class="tiny" style="margin-top:2px">{{ r.exerciseCount }} exercises · ~{{ duration(r.estimateS, true) }}</div></div>
@@ -155,18 +154,7 @@ await loaded(routines, folders, ...(settings.value.features.programs ? [programs
 
     <Sheet v-if="fromTemplate" title="Start from a template" size="wide" @close="fromTemplate = false">
       <p class="tiny hgap">A copy is added to your routines, ready to change.</p>
-      <template v-for="([grp, ts], i) in tgroups" :key="grp">
-        <div class="sh" :class="{ first: i === 0 }"><h2>{{ grp }}</h2><span class="tiny">{{ ts.length }} {{ ts.length === 1 ? "routine" : "routines" }}</span></div>
-        <div class="opt-list">
-          <button v-for="t in ts" :key="t.slug" class="optb" :class="{ wbody: t.muscles?.length }" @click="useTemplate(t.slug)">
-            <!-- the muscles this template works, drawn like the routine cards -->
-            <BodyMap v-if="t.muscles?.length" class="rbody" :values="{}" :highlight="t.muscles" :secondary="t.helpers ?? []" />
-            <span v-else class="oi"><Icon name="routines" /></span>
-            <div class="grow" style="align-self:center"><div class="t">{{ t.name }}</div><div class="s">{{ t.exercises }} exercises</div><div class="s">{{ t.description }}</div></div>
-            <Icon name="plus" style="align-self:center" />
-          </button>
-        </div>
-      </template>
+      <TemplateList @pick="useTemplate" />
     </Sheet>
   </div>
 </template>

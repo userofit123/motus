@@ -13,6 +13,7 @@ import { noteSheet, reminderSheet, exerciseSheet } from "../core/ui";
 import { confirm, prompt } from "../core/ask";
 import { toast, toastError } from "../core/toast";
 import Icon from "../components/Icon.vue";
+import MuscleFig from "../components/MuscleFig.vue";
 import Menu from "../components/Menu.vue";
 import NoteItem from "../components/NoteItem.vue";
 import ReminderItem from "../components/ReminderItem.vue";
@@ -104,6 +105,7 @@ await loaded(r, summaries, notes, rems, schedules, history, versions);
         <div v-if="!routine.exercises.length" class="empty"><b>No exercises yet</b><button class="btn tonal" @click="router.push(`/routines/${id}/edit`)">Add exercises</button></div>
         <div class="list">
           <div v-for="(e, i) in routine.exercises" :key="e.id" class="li click" @click="exerciseSheet = e.exerciseId">
+            <MuscleFig sm :muscles="e.exercise?.primaryMuscles" :helpers="e.exercise?.secondaryMuscles" />
             <span class="tiny" style="width:18px">{{ i + 1 }}</span>
             <div class="thumb"><img v-if="e.exercise?.images?.[0]" :src="mediaUrl(e.exercise.images[0])" alt="" loading="lazy" /><Icon v-else name="dumbbell" /></div>
             <div class="grow"><div class="t">{{ e.exercise?.name }}<span v-if="e.superset" class="mchip" style="margin-inline-start:6px">Superset {{ e.superset }}</span></div><div class="s">{{ setLine(e) }}<template v-if="restLine(e)"> · {{ restLine(e) }}</template></div>
