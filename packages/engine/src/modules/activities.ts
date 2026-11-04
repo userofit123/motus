@@ -46,7 +46,8 @@ export function routeStats(route: number[][]) {
     const dt = (b[2] ?? 0) - (a[2] ?? 0);
     if (dt > 0 && dt < 120 && d / dt > 0.3) moving += dt; // faster than ~1 km/h counts as moving
   }
-  return { distanceM: Math.round(dist), movingS: Math.round(moving), elevationM: Math.round(climb) };
+  // no altitude anywhere on the route: the climb is unknown, not 0 m
+  return { distanceM: Math.round(dist), movingS: Math.round(moving), elevationM: low == null ? null : Math.round(climb) };
 }
 
 /** GPX and TCX: track points, times and altitude. */
@@ -117,7 +118,9 @@ export async function saveActivity(ctx: Ctx, b: any, aid = uuidv7(), isNew = tru
 export function activityRoutes(r: Router) {
   r.get("/activity-types", async (ctx) => {
     await ensureTypes(ctx);
-    return (await ctx.q.query("SELECT id, slug, name, icon, has_distance, has_gps, has_steps FROM activity_types ORDER BY slug = 'other', name")).rows.map((x: any) => camel(x));
+    // has_steps is unset on a type written by an app from before it existed (sync or an older backup): decide by slug
+    return (await ctx.q.query(`SELECT id, slug, name, icon, has_distance, has_gps, coalesce(has_steps, slug IN ('walk', 'run', 'hike')) AS has_steps
+      FROM activity_types ORDER BY slug = 'other', name`)).rows.map((x: any) => camel(x));
   });
   r.post("/activity-types", async (ctx, _p, b) => {
     await ensureTypes(ctx);

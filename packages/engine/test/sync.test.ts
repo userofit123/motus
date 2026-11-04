@@ -69,6 +69,24 @@ describe("sync", () => {
     expect((await D()("GET", `/routines/${routineId}`)).name).toBe("Push day");
   }, 60000);
 
+  it("takes activity types from an older app that doesn't send has_steps", async () => {
+    const types = await S()("GET", "/activity-types");
+    const walk = types.find((t: any) => t.slug === "walk");
+    const at = new Date().toISOString();
+    const old = (row: Record<string, unknown>) => ({ tbl: "activity_types", op: "upsert", pk: { id: row.id }, at, row });
+    const id = uuidv7();
+    const res = await S()("POST", "/sync/push", { device: deviceId, changes: [
+      old({ id, user_id: U, slug: "trail-run", name: "Trail run", icon: "run", has_distance: true, has_gps: true }),
+      old({ id: walk.id, user_id: U, slug: "walk", name: "Stroll", icon: "walk", has_distance: true, has_gps: true }),
+    ] });
+    expect(res).toMatchObject({ applied: 2, failed: [], rejected: [] });
+    const after = Object.fromEntries((await S()("GET", "/activity-types")).map((t: any) => [t.slug, t]));
+    expect(after["trail-run"]).toMatchObject({ name: "Trail run", hasSteps: false });
+    // the existing type keeps its own has_steps
+    expect(after.walk).toMatchObject({ name: "Stroll", hasSteps: true });
+    expect((await server.db.admin.query("SELECT has_steps FROM activity_types WHERE id = $1", [walk.id])).rows[0].has_steps).toBe(true);
+  }, 60000);
+
   it("keeps the newest of two changes to the same thing", async () => {
     await D()("PUT", `/routines/${routineId}`, { name: "Older, from the device" });
     await new Promise((r) => setTimeout(r, 20));

@@ -8,6 +8,7 @@ import m005 from "./migrations/005_rest_by_kind";
 import m006 from "./migrations/006_log_index";
 import m007 from "./migrations/007_goal_days";
 import m008 from "./migrations/008_activity_steps";
+import m009 from "./migrations/009_activity_steps_nullable";
 
 export const MIGRATIONS: [string, string][] = [
   ["001_init", m001],
@@ -18,6 +19,7 @@ export const MIGRATIONS: [string, string][] = [
   ["006_log_index", m006],
   ["007_goal_days", m007],
   ["008_activity_steps", m008],
+  ["009_activity_steps_nullable", m009],
 ];
 
 export async function migrate(db: Db): Promise<string[]> {

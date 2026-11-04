@@ -87,6 +87,34 @@ describe("activities", () => {
     const list = await call("GET", "/activities");
     expect(list[0].distanceM).toBeGreaterThan(300);
   });
+  it("says which types count steps, deciding by slug when it's unset", async () => {
+    const steps = async () => Object.fromEntries((await call("GET", "/activity-types")).map((t: any) => [t.slug, t.hasSteps]));
+    expect(await steps()).toMatchObject({ walk: true, run: true, hike: true, cycle: false });
+    const { slug } = await call("POST", "/activity-types", { name: "Nordic walk", hasDistance: true, hasGps: true, hasSteps: true });
+    expect((await steps())[slug]).toBe(true);
+    await call("PUT", `/activity-types/${slug}`, { hasSteps: false });
+    expect((await steps())[slug]).toBe(false);
+    // left out of a rename: stays as it was
+    await call("PUT", `/activity-types/${slug}`, { name: "Nordic" });
+    expect((await steps())[slug]).toBe(false);
+    // unset, as an older app's sync or backup leaves it
+    await eng.db.admin.query("UPDATE activity_types SET has_steps = NULL WHERE user_id = $1 AND slug IN ('walk', 'cycle', $2)", [U, slug]);
+    expect(await steps()).toMatchObject({ walk: true, cycle: false, [slug]: false });
+  });
+  it("counts a real climb but not GPS wobble, and leaves an unknown climb unset", async () => {
+    // as the app sends a route (null: no altitude), and as it's kept (a point without altitude has no 4th value)
+    const at = (alts: (number | null)[]) => alts.map((alt, i) => [32 + i * 0.0005, 34.8, 1_700_000_000 + i * 30, alt]);
+    const kept = (alts: (number | null)[]) => at(alts).map((p) => (p[3] == null ? p.slice(0, 3) : p) as number[]);
+    expect(routeStats(kept([100, 103, 99, 102, 100, 103, 101])).elevationM).toBe(0);
+    expect(routeStats(kept([100, 102, 105, 110, 108])).elevationM).toBe(10);
+    // a point with no altitude in the middle doesn't count as 0 m and back up
+    expect(routeStats(kept([100, null, 101, null, 100])).elevationM).toBe(0);
+    expect(routeStats(kept([null, null, null])).elevationM).toBeNull();
+    const { id } = await call("POST", "/activities", { type: "walk", startedAt: "2026-10-30T07:00:00Z", durationS: 60, route: at([null, null, null]), source: "gps" });
+    const a = await call("GET", `/activities/${id}`);
+    expect(a.elevationM).toBeNull();
+    expect(a.route.every((p: any[]) => p.length === 3)).toBe(true);
+  });
   it("exports workouts as CSV", async () => {
     const csv = await call("GET", "/export/csv", undefined, { what: "workouts" });
     expect(csv.text.split("\n")[0]).toContain("Exercise Name");

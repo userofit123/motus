@@ -95,11 +95,14 @@ export async function applyChanges(q: Sql, userId: string, changes: Change[], op
         const all = await columns(q, c.tbl);
         // a row always belongs to whoever is writing it, whatever the JSON says
         const row = { ...c.row, ...(c.tbl === "exercises" ? { owner_id: userId } : all.includes("user_id") ? { user_id: userId } : {}) };
-        const rest = all.filter((x) => !def.pk.includes(x));
+        // only the columns the JSON has: a device on an older app doesn't know newer columns, so a new row takes their
+        // default and an existing row keeps its value, instead of both becoming NULL
+        const has = all.filter((x) => x in row);
+        const rest = has.filter((x) => !def.pk.includes(x));
         // the last guard against a finished workout going back to running, whatever got this far
         const guard = c.tbl === "workouts" ? " WHERE NOT (workouts.status <> 'in_progress' AND EXCLUDED.status = 'in_progress') RETURNING 1 AS ok" : "";
         const r = await q.query(
-          `INSERT INTO ${c.tbl} SELECT * FROM jsonb_populate_record(NULL::${c.tbl}, $1::jsonb)
+          `INSERT INTO ${c.tbl} (${has.join(", ")}) SELECT ${has.join(", ")} FROM jsonb_populate_record(NULL::${c.tbl}, $1::jsonb)
            ON CONFLICT (${def.pk.join(", ")}) DO ${rest.length ? `UPDATE SET ${rest.map((x) => `${x} = EXCLUDED.${x}`).join(", ")}` : "NOTHING"}${guard}`, [JSON.stringify(row)]);
         if (guard && !r.rows.length) kept.push(c);
       } else if (def.pk.length === 1 && def.pk[0] === "id") {
