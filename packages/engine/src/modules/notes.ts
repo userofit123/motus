@@ -1,5 +1,6 @@
 // Notes (on exercises, routines, workouts…) and reminders ("increase the weight next time").
 import type { Router } from "../router";
+import type { Sql } from "../db";
 import { camel, id, optId, str, intOrNull, bool, oneOf, dateStr, visible } from "../util";
 import { uuidv7 } from "../ids";
 import { notFound } from "../errors";
@@ -27,12 +28,12 @@ export function noteRoutes(r: Router) {
     const nid = uuidv7();
     const tt = oneOf(b.targetType, NOTE_TARGETS, "exercise");
     await visible(ctx.q, tt === "workout_exercise" ? "workout_exercises" : tt === "routine_exercise" ? "routine_exercises" : tt === "activity" ? "activities" : tt + "s", id(b.targetId), "target");
-    await visible(ctx.q, "workouts", optId(b.workoutId), "workout");
     await visible(ctx.q, "routines", optId(b.scopeRoutineId), "routine");
+    const wid = await seenIn(ctx.q, b.workoutId);
     await ctx.q.query(
       `INSERT INTO notes (id, user_id, target_type, target_id, scope_routine_id, body, tags, difficulty, pinned, workout_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
       [nid, ctx.userId, oneOf(b.targetType, NOTE_TARGETS, "exercise"), id(b.targetId), optId(b.scopeRoutineId), str(b.body, 10000),
-        Array.isArray(b.tags) ? b.tags.filter((t: unknown) => typeof t === "string").slice(0, 10) : [], intOrNull(b.difficulty, 1, 5), bool(b.pinned), optId(b.workoutId)]);
+        Array.isArray(b.tags) ? b.tags.filter((t: unknown) => typeof t === "string").slice(0, 10) : [], intOrNull(b.difficulty, 1, 5), bool(b.pinned), wid]);
     ctx.changed("note");
     return { id: nid };
   });
@@ -64,14 +65,14 @@ export function noteRoutes(r: Router) {
   r.post("/reminders", async (ctx, _p, b) => {
     const mid = uuidv7();
     await visible(ctx.q, b.targetType === "routine" ? "routines" : "exercises", id(b.targetId), "target");
-    await visible(ctx.q, "workouts", optId(b.workoutId), "workout");
     await visible(ctx.q, "routines", optId(b.scopeRoutineId), "routine");
+    const wid = await seenIn(ctx.q, b.workoutId);
     const action = b.action && typeof b.action === "object" ? { weightKg: Number(b.action.weightKg) || undefined, reps: Number(b.action.reps) || undefined, restS: Number(b.action.restS) || undefined } : null;
     await ctx.q.query(
       `INSERT INTO reminders (id, user_id, target_type, target_id, scope_routine_id, body, trigger, trigger_date, trigger_n, action, created_workout_id)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
       [mid, ctx.userId, oneOf(b.targetType, ["exercise", "routine"], "exercise"), id(b.targetId), optId(b.scopeRoutineId), str(b.body, 2000) || "Reminder",
-        oneOf(b.trigger, TRIGGERS, "next"), dateStr(b.triggerDate), intOrNull(b.triggerN, 1, 100), action && Object.values(action).some(Boolean) ? JSON.stringify(action) : null, optId(b.workoutId)]);
+        oneOf(b.trigger, TRIGGERS, "next"), dateStr(b.triggerDate), intOrNull(b.triggerN, 1, 100), action && Object.values(action).some(Boolean) ? JSON.stringify(action) : null, wid]);
     ctx.changed("reminder");
     return { id: mid };
   });
@@ -93,4 +94,11 @@ export function noteRoutes(r: Router) {
     ctx.changed("reminder");
     return { ok: true };
   });
+}
+
+/** The workout a note or reminder was written in, if this copy of the data has it. It only says where the note came
+ * from, so one the server hasn't seen yet (made offline, still syncing) leaves it out instead of refusing the note. */
+async function seenIn(q: Sql, v: unknown): Promise<string | null> {
+  const w = optId(v);
+  return w && (await q.query("SELECT 1 FROM workouts WHERE id = $1", [w])).rows.length ? w : null;
 }
