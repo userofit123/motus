@@ -2,6 +2,18 @@
 
 The top entry's version is the one the release workflow publishes. Add a new `## [x.y.z]` section to release.
 
+## [0.1.1] - 2026-11-04
+
+- Works offline on server accounts: a copy of your data on each device, synced both ways; the app opens from its own copy when the server is away.
+- The Android and desktop apps can keep several servers and on-device accounts and switch between them (https only).
+- Goals: more goal types, the weekly target as a goal you can set per activity, goals in your own order, a detail view with streaks and history, achievements.
+- Home: choose which sections show and in what order; goal blocks highlight when reached.
+- Interval timer (optional): work, rest, rounds and sets, presets, a sound per part, and a bar at the bottom while it runs.
+- Routines and programs: plan a workout for any day (including every day, with no time), program pages, folders that slide open, the muscle figure on every routine, template and exercise card.
+- Account page with signed-in devices; deleting an account needs your password; year of birth, sex and height in their own tab on the Body page.
+- App & Versions page: your installed version, the right download for your device, and a suggestion to get the Android or desktop app.
+- Many fixes and polish: popups no longer let the page scroll behind them, clearer reminders, calendar Today button, spacing, wording and new app icon.
+
 ## [0.1.0] - 2026-11-01
 
 First version.
