@@ -12,7 +12,7 @@ const me = useMe();
 const user = computed(() => me.data.value?.user);
 const initials = computed(() => (user.value?.displayName || user.value?.username || "?").split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join(""));
 const PAGES: [to: string, label: string, icon: string, hint: string][] = [
-  ["/exercises", "Exercises", "dumbbell", "The library, and your own"], ["/body", "Body", "scale", "Weight, measurements, photos"]];
+  ["/exercises", "Exercises", "dumbbell", "The library, and your own"], ["/body", "Body", "scale", "Weight, measurements, photos, about you"]];
 </script>
 
 <template>

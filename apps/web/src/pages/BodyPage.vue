@@ -1,10 +1,11 @@
 <script setup lang="ts">
 // Body: the one home for everything about your body. Tabs (shown only when there is more than one):
-//  · Weight: a quiet card with height, age and sex (tap to change them; components/BodyProfile.vue), then latest weight,
-//    smoothed trend and the weight entries.
+//  · Weight: latest weight, smoothed trend and the weight entries.
 //  · Measurements (Body measurements feature): the latest of each tape measure and body fat with the change since the one before;
 //    tap one for its chart and entries.
 //  · Photos (Progress photos feature).
+//  · About you (always there, last): year of birth, sex and height, edited in place (components/BodyProfile.vue). Nothing to
+//    log there, so the Log button is hidden (one primary button per screen, and it would have no meaning).
 // Logging: the Log button here, + → Body weight / Measurements, or Home's Body weight card. Stats → Body charts the same numbers
 // over a chosen period and links back here. Steps, sleep, water and mood are not body measurements: they are the daily log
 // (+ → Steps / Daily log, Home's Today card, Stats → Activities).
@@ -27,7 +28,7 @@ const route = useRoute(), router = useRouter();
 const body = useBody();
 const s = useSettings();
 const fmt = useFmt();
-const TABS = computed(() => [["weight", "Weight"], ...(s.value.features.measurements ? [["measurements", "Measurements"]] : []), ...(s.value.features.photos ? [["photos", "Photos"]] : [])] as [string, string][]);
+const TABS = computed(() => [["weight", "Weight"], ...(s.value.features.measurements ? [["measurements", "Measurements"]] : []), ...(s.value.features.photos ? [["photos", "Photos"]] : []), ["details", "About you"]] as [string, string][]);
 const tab = ref(String(route.query.tab ?? "weight"));
 // a tab whose feature was switched off falls back to weight
 const cur = computed(() => (TABS.value.some(([k]) => k === tab.value) ? tab.value : "weight"));
@@ -66,13 +67,12 @@ await loaded(body);
 
 <template>
   <div class="page">
-    <div class="ph"><div><h1>Body</h1><div class="sub">Weight{{ s.features.measurements ? ", measurements" : "" }}{{ s.features.photos ? ", photos" : "" }}</div></div>
-      <div class="acts"><button v-if="cur !== 'photos'" class="btn keep" @click="log"><Icon name="plus" :size="18" />Log</button></div></div>
-    <div v-if="TABS.length > 1" class="tabs"><button v-for="[k, l] in TABS" :key="k" :class="{ on: cur === k }" @click="tab = k">{{ l }}</button></div>
+    <div class="ph"><div><h1>Body</h1><div class="sub">Weight{{ s.features.measurements ? ", measurements" : "" }}{{ s.features.photos ? ", photos" : "" }}, about you</div></div>
+      <div class="acts"><button v-if="cur === 'weight' || cur === 'measurements'" class="btn keep" @click="log"><Icon name="plus" :size="18" />Log</button></div></div>
+    <div class="tabs"><button v-for="[k, l] in TABS" :key="k" :class="{ on: cur === k }" @click="tab = k">{{ l }}</button></div>
 
     <template v-if="cur === 'weight'">
-      <BodyProfile />
-      <div class="grid g2 spt">
+      <div class="grid g2">
         <div class="card stat"><div class="lbl">Latest</div><div class="val">{{ weights.length ? fmt.w(weights[0].value) : "-" }}<small>{{ fmt.wu }}</small></div><div class="sub">{{ weights.length ? ago(weights[0].measuredAt) : "Not logged yet" }}</div></div>
         <div class="card stat"><div class="lbl">Trend</div><div class="val">{{ trend.length ? fmt.num(trend.at(-1)!.y, 1) : "-" }}<small>{{ fmt.wu }}</small></div><div class="sub">{{ month != null ? `${signed(month, "weight")} over 30 days` : "Smoothed, so one day's water weight doesn't swing it" }}</div></div>
       </div>
@@ -93,6 +93,8 @@ await loaded(body);
     </template>
 
     <ProgressPhotos v-else-if="cur === 'photos'" />
+
+    <BodyProfile v-else-if="cur === 'details'" />
 
     <template v-if="cur === 'weight' || picked">
       <div class="sh"><h2>Entries</h2></div>

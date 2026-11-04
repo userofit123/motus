@@ -51,6 +51,7 @@ const acctMenu = computed(() => [
   { label: me.data.value?.user.displayName || session.user?.username || "Account", icon: "user", run: () => router.push("/settings/account") },
   // Body has no place in the rail's main pages, so it is reached from here (on the phone, from More)
   { label: "Body", icon: "scale", run: () => router.push("/body") },
+  { label: "About you", icon: "user", run: () => router.push("/body?tab=details") },
   { label: "Sign out", icon: "logout", run: async () => { await signOut(); } },
 ]);
 const active = useActive();

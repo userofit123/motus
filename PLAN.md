@@ -282,8 +282,8 @@ file each. The rest of this section is about **server** accounts.
   password (server accounts), sign out, sync status, signed-in devices and delete account. A local
   account shows name, email, sign out, and delete (which points to Accounts on this device).
 - **Body facts:** year of birth, sex and height (all optional, height stored in cm) sit on the Body
-  page, as one quiet card at the top of the Weight tab ("178 cm · 34 · Male") that opens a small
-  sheet. Only sex (with the latest weight) is used, for the strength standards.
+  page, in their own always-present "About you" tab (last, after Weight, Measurements and Photos; edited in
+  place, no Log button there; opens directly with `/body?tab=details`). Only sex (with the latest weight) is used, for the strength standards.
 - **Account deletion:** deletes all of the user's data, after offering a final export.
 - **Admin panel:** users (create, disable, reset password, delete), registration mode, exercise
   catalog sync, server backups, storage usage. **Admins cannot see other users' workout data in the
@@ -964,7 +964,7 @@ tappable through to its source.
 
 | Section | Options |
 |---|---|
-| **Account** | Name, email, username, password, 2FA, sync, signed-in devices (every other place signed in), delete account. Year of birth, sex and height are on the Body page |
+| **Account** | Name, email, username, password, 2FA, sync, signed-in devices (every other place signed in), delete account. Year of birth, sex and height are on the Body page, in its About you tab |
 | **Features** | One switch per optional feature (§10.0): when off, the feature disappears from every screen. Grouped as Logging, Training, Body & activity, Insights, Integrations |
 | **Units & formats** | Measurement system **Metric / Imperial** (one switch), with individual overrides: weight kg/lb, distance km/mi, body measurements cm/in, height cm/ft-in. First day of week, date format, 12/24 h |
 | **Workout defaults** | Default rest between sets / after exercise, all toggles from §8.4.3, pre-fill rule (same routine vs. anywhere), "update routine on finish" behaviour, default set type, weight increments (kg/lb), bar weight, available plates (for the plate calculator if accepted) |
