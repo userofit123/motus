@@ -11,6 +11,7 @@ import { useActive } from "../api/queries";
 import { sheetIsOpen } from "../core/sheets";
 import { recording } from "../workout/recording";
 import { ivRunning } from "../workout/intervals";
+import { useWorkout } from "../workout/useWorkout";
 
 const route = useRoute(), router = useRouter();
 const cur = computed(() => section(route.name as string));
@@ -28,6 +29,8 @@ const IN_MORE = ["more", "exercises", "body", "settings"];
 const moreOn = computed(() => IN_MORE.includes(cur.value));
 const hideBar = computed(() => route.name === "workout");
 const active = useActive();
+// the running workout, set up once at start, so its notification's buttons work on any page, also after a reload
+useWorkout();
 // how many running-session bars sit above the tabs (the workout, a recording, the interval timer), so the page leaves room for them
 const bars = computed(() => hideBar.value ? 0 : (active.data.value ? 1 : 0) + (recording.value && route.name !== "record" ? 1 : 0) + (ivRunning.value && route.name !== "timer" ? 1 : 0));
 // one key per page, so moving between pages animates; pages wait for their data inside <Suspense> (see loaded() in api/queries) and fade in whole

@@ -15,6 +15,7 @@ import UpdateButton from "./UpdateButton.vue";
 import Menu from "../components/Menu.vue";
 import { recording } from "../workout/recording";
 import { ivRunning } from "../workout/intervals";
+import { useWorkout } from "../workout/useWorkout";
 
 const route = useRoute(), router = useRouter();
 const cur = computed(() => section(route.name as string));
@@ -55,6 +56,8 @@ const acctMenu = computed(() => [
   { label: "Sign out", icon: "logout", run: async () => { await signOut(); } },
 ]);
 const active = useActive();
+// the running workout, set up once at start, so its notification's buttons work on any page, also after a reload
+useWorkout();
 // how many running-session bars float at the bottom (the workout, a recording, the interval timer), so the page leaves room for them
 const bars = computed(() => route.name === "workout" ? 0 : (active.data.value ? 1 : 0) + (recording.value && route.name !== "record" ? 1 : 0) + (ivRunning.value && route.name !== "timer" ? 1 : 0));
 // one key per page, so moving between pages animates; settings sections animate inside the page instead

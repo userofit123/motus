@@ -16,6 +16,7 @@ import { choose } from "../core/ask";
 // cur: the exercise on screen (look around freely); active: the one being done now, which the action bar works on
 const state = reactive<{ w: Workout | null; pending: number; cur: number; active: number }>({ w: null, pending: 0, cur: 0, active: 0 });
 let wired = false;
+let actionsWired = false;
 
 // The watchers below run once for the whole app, in their own scope: made inside the first screen that asked, they
 // would stop when that screen closed, and a workout started from elsewhere would then never reach the workout screen
@@ -68,7 +69,7 @@ export function useWorkout() {
         // ticking from the notification is the optional "Log from the notification"; pausing is always there
         actions: [
           ...(appSettings.value.features.notifLogging && cur && !w.pauseStartedAt ? [{ id: "workout-done", title: "Set done" } as NoticeButton] : []),
-          { id: "workout-pause", title: w.pauseStartedAt ? "Resume" : "Pause" } as NoticeButton,
+          (w.pauseStartedAt ? { id: "workout-resume", title: "Resume" } : { id: "workout-pause", title: "Pause" }) as NoticeButton,
         ],
       };
     });
@@ -77,6 +78,9 @@ export function useWorkout() {
       if (t) clearTimeout(t);
       t = setTimeout(() => { if (n === "rest") return; if (n) showSession(n); else clearSession(); }, 300);
     }, { deep: true, immediate: true });
+    // an app-wide copy of everything below, living as long as the app: the notification buttons go to it (first to get
+    // there, see actionsWired), so they work on any screen, also straight after a reload
+    useWorkout();
     });
   }
   const prefs = computed<WorkoutPrefs>(() => ({ ...settings.value.workout, ...((state.w?.settings ?? {}) as Partial<WorkoutPrefs>) }));
@@ -86,12 +90,18 @@ export function useWorkout() {
   const tickNext = () => { const e = state.w?.exercises.find((x) => x.status === "pending" && x.sets.some((y) => !y.done)); if (e) tick(e, e.sets.findIndex((y) => !y.done)); };
   const restLonger = () => startRest(30, { setId: null, label: "Rest", next: "", workoutId: state.w?.id ?? "" });
   watch(() => settings.value.features.notifLogging, (on) => enableNotificationActions(!!on, { done: tickNext, more: restLonger }), { immediate: true });
-  // the buttons on the workout's and the rest's notifications (native.ts); a rest that is over (still saying "Rest
-  // over") gets 30 seconds from now, one that runs 30 more, and with none a new one starts
-  onNoticeAction("workout-done", tickNext);
-  onNoticeAction("workout-pause", () => { if (state.w?.status === "in_progress") togglePause(); });
-  onNoticeAction("rest-more", () => { if (!rest.endAt) restLonger(); else if (rest.done) setRest(30); else adjustRest(30); });
-  onNoticeAction("rest-skip", () => finishRest(true));
+  // the buttons on the workout's and the rest's notifications (native.ts), registered once; a rest that is over (still
+  // saying "Rest over") gets 30 seconds from now, one that runs 30 more, and with none a new one starts (only during a
+  // workout). Pause and Resume do nothing when the workout already is so.
+  if (!actionsWired) {
+    actionsWired = true;
+    const going = () => state.w?.status === "in_progress";
+    onNoticeAction("workout-done", tickNext);
+    onNoticeAction("workout-pause", () => { if (going() && !state.w!.pauseStartedAt) togglePause(); });
+    onNoticeAction("workout-resume", () => { if (going() && state.w!.pauseStartedAt) togglePause(); });
+    onNoticeAction("rest-more", () => { if (!rest.endAt) { if (going()) restLonger(); } else if (rest.done) setRest(30); else adjustRest(30); });
+    onNoticeAction("rest-skip", () => finishRest(true));
+  }
 
   async function call(method: "post" | "put" | "del", path: string, body?: unknown, refresh = false) {
     state.pending++;

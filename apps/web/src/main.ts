@@ -7,12 +7,15 @@ import { startTheme } from "./core/theme";
 import "./styles/index.css";
 import { startSegSlide, startTabSlide } from "./core/segSlide";
 import { watchRouter } from "./core/sheets";
+import { takeUrlAction } from "./workout/native";
 import type { RouteRecordNormalized } from "vue-router";
 
 // The browser lists only 250 loaded files by default, fewer than the app has; the list is handed to the service
 // worker below, so make room before the pages' code starts loading.
 performance.setResourceTimingBufferSize?.(2000);
 
+// a notification button tapped with no window open came in the address; taken out before the router reads it
+takeUrlAction();
 startTheme();
 watchRouter(router);
 createApp(App).use(router).use(VueQueryPlugin, { queryClient }).mount("#app");

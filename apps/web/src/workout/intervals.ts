@@ -177,10 +177,12 @@ function notice() {
   if (iv.startedAt == null || !p) { if (noticeShown) { clearIntervalNotice(); noticeShown = false; } return; }
   const sets = iv.cfg.sets > 1 ? ` · Set ${p.set} of ${iv.cfg.sets}` : "";
   showIntervalNotice({ title: iv.name || "Interval timer", body: `${paused ? "Paused · " : ""}${PHASE_NAME[p.kind]} · Round ${p.round} of ${iv.cfg.rounds}${sets}`, endAt: paused ? null : Date.now() + leftMs,
-    actions: [{ id: "iv-pause", title: paused ? "Resume" : "Pause" }, { id: "iv-skip", title: "Skip" }] });
+    actions: [paused ? { id: "iv-resume", title: "Resume" } : { id: "iv-pause", title: "Pause" }, { id: "iv-skip", title: "Skip" }] });
   noticeShown = true;
 }
-onNoticeAction("iv-pause", () => { if (iv.pausedAt != null) resumeIntervals(); else pauseIntervals(); });
+// each does nothing when already so (pauseIntervals and resumeIntervals check)
+onNoticeAction("iv-pause", pauseIntervals);
+onNoticeAction("iv-resume", resumeIntervals);
 onNoticeAction("iv-skip", () => skipInterval(1));
 // a timer left running from before a reload keeps the screen on again, and its notification shows again
 if (ivRunning.value && iv.pausedAt == null) keepAwake(true, "intervals");

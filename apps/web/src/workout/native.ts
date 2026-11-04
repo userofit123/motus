@@ -8,30 +8,71 @@ const cap = () => (globalThis as any).Capacitor;
 const plugin = (name: string) => cap()?.Plugins?.[name];
 
 // A button on a notification: its id names what it does (handled by onNoticeAction), its title is what it says.
+// Pause and Resume are separate ids, never one that flips: a quick double tap, or a tap on a notification that hasn't
+// caught up yet, then can't land in the wrong state.
 export interface NoticeButton { id: NoticeAction; title: string }
-export type NoticeAction = "rest-more" | "rest-skip" | "workout-pause" | "workout-done" | "rec-pause" | "iv-pause" | "iv-skip";
-const handlers = new Map<string, () => void>();
+const NOTICE_ACTIONS = ["rest-more", "rest-skip", "workout-pause", "workout-resume", "workout-done", "rec-pause", "rec-resume", "iv-pause", "iv-resume", "iv-skip"] as const;
+export type NoticeAction = (typeof NOTICE_ACTIONS)[number];
+const isNoticeAction = (a: unknown): a is NoticeAction => typeof a === "string" && (NOTICE_ACTIONS as readonly string[]).includes(a);
+const handlers = new Map<NoticeAction, () => void>();
+// taps that came before their handler was registered (the app was still starting), run once it is
+const waiting: NoticeAction[] = [];
 let listening = false;
-/** What a notification button does. Android sends the tap as an "action" event, a browser's service worker as a message. */
-export function onNoticeAction(id: NoticeAction, run: () => void) {
-  handlers.set(id, run);
+function dispatch(a: unknown) {
+  if (!isNoticeAction(a)) return;
+  const run = handlers.get(a);
+  if (run) run(); else waiting.push(a);
+}
+// One listener for all of them, made at once: Android holds a tap back until the first listener, which then gets it,
+// so every id has to go through this one.
+function listen() {
   if (listening) return;
   listening = true;
-  const go = (a: unknown) => { if (typeof a === "string") handlers.get(a)?.(); };
-  plugin("MotusWorkout")?.addListener?.("action", (e: any) => go(e?.action));
-  try { navigator.serviceWorker?.addEventListener("message", (e) => go(e.data?.motusAction)); } catch { /* no service worker here */ }
+  plugin("MotusWorkout")?.addListener?.("action", (e: { action?: unknown } | undefined) => dispatch(e?.action));
+  try { navigator.serviceWorker?.addEventListener("message", (e: MessageEvent<{ motusAction?: unknown } | null>) => dispatch(e.data?.motusAction)); } catch { /* no service worker here */ }
+}
+/** What a notification button does. Android sends the tap as an "action" event, a browser's service worker as a message
+ *  (or, with no window open, in the address of the one it opens: takeUrlAction). */
+export function onNoticeAction(id: NoticeAction, run: () => void) {
+  handlers.set(id, run);
+  listen();
+  for (let i = waiting.indexOf(id); i >= 0; i = waiting.indexOf(id)) { waiting.splice(i, 1); run(); }
+}
+/** A button tapped while no window was open: the service worker opens the app with it in the address (?motusAction=…).
+ *  Taken out of the address at once, so a reload doesn't do it again, and run once its handler is registered. */
+export function takeUrlAction() {
+  try {
+    const u = new URL(location.href), a = u.searchParams.get("motusAction");
+    if (a == null) return;
+    u.searchParams.delete("motusAction");
+    history.replaceState(history.state, "", u.pathname + u.search + u.hash);
+    listen();
+    dispatch(a);
+  } catch { /* nothing to take */ }
 }
 // A browser notification through the service worker (only that kind can carry buttons, and a phone's browser allows
 // no other); `tag` replaces the one shown before, quietly. Chrome shows at most two buttons.
-async function webNotice(title: string, o: { body: string; tag: string; url: string; buttons?: NoticeButton[]; since?: number | null; silent?: boolean; sticky?: boolean }) {
-  if (isNativeApp() || !("Notification" in window) || Notification.permission !== "granted") return;
-  try {
-    const reg = await navigator.serviceWorker?.getRegistration();
-    await reg?.showNotification(title, { body: o.body, tag: o.tag, silent: o.silent ?? true, requireInteraction: o.sticky ?? true, icon: "/icon-192.png", timestamp: o.since ?? undefined, data: { url: o.url }, actions: (o.buttons ?? []).slice(0, 2).map((b) => ({ action: b.id, title: b.title })) } as NotificationOptions);
-  } catch { /* not allowed here */ }
+// Showing and closing are both waits on the service worker; each tag's run one after the other, in the order asked, so a
+// close that comes after a show can't finish first and leave the shown one behind.
+const webQueue = new Map<string, Promise<void>>();
+function inOrder(tag: string, job: () => Promise<void>): Promise<void> {
+  const next = (webQueue.get(tag) ?? Promise.resolve()).then(job, job);
+  webQueue.set(tag, next);
+  return next;
 }
-async function closeWebNotice(tag: string) {
-  try { for (const n of (await (await navigator.serviceWorker?.getRegistration())?.getNotifications({ tag })) ?? []) n.close(); } catch { /* none shown */ }
+function webNotice(title: string, o: { body: string; tag: string; url: string; buttons?: NoticeButton[]; since?: number | null; silent?: boolean; sticky?: boolean }) {
+  if (isNativeApp() || !("Notification" in window) || Notification.permission !== "granted") return Promise.resolve();
+  return inOrder(o.tag, async () => {
+    try {
+      const reg = await navigator.serviceWorker?.getRegistration();
+      await reg?.showNotification(title, { body: o.body, tag: o.tag, silent: o.silent ?? true, requireInteraction: o.sticky ?? true, icon: "/icon-192.png", timestamp: o.since ?? undefined, data: { url: o.url }, actions: (o.buttons ?? []).slice(0, 2).map((b) => ({ action: b.id, title: b.title })) } as NotificationOptions);
+    } catch { /* not allowed here */ }
+  });
+}
+function closeWebNotice(tag: string) {
+  return inOrder(tag, async () => {
+    try { for (const n of (await (await navigator.serviceWorker?.getRegistration())?.getNotifications({ tag })) ?? []) n.close(); } catch { /* none shown */ }
+  });
 }
 // the rest countdown's buttons (Android): the same as the workout screen's +15 and Skip rest, a bit more at a time
 const REST_BUTTONS: NoticeButton[] = [{ id: "rest-more", title: "+30s" }, { id: "rest-skip", title: "Skip rest" }];

@@ -236,12 +236,18 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener {
         ContextCompat.registerReceiver(getContext(), receiver, new IntentFilter(ACTION), ContextCompat.RECEIVER_NOT_EXPORTED);
     }
 
+    // The app is closed (swiped away): its ongoing notifications would stay with buttons nothing answers any more, so
+    // they go too. The app shows them again when it opens with something still running.
     @Override
     protected void handleOnDestroy() {
         if (receiver != null) {
             try { getContext().unregisterReceiver(receiver); } catch (IllegalArgumentException e) { /* not registered */ }
             receiver = null;
         }
+        NotificationManagerCompat nm = NotificationManagerCompat.from(getContext());
+        nm.cancel(ID);
+        nm.cancel(TIMER_ID);
+        nm.cancel(REC_ID);
         super.handleOnDestroy();
     }
 

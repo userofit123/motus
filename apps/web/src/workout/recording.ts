@@ -208,7 +208,11 @@ export function startRecording(type: string) {
   void askNotificationsOnce();
 }
 export function togglePause() {
-  const r = recording.value; if (!r) return;
+  setPaused(!recording.value?.pauseAt);
+}
+// paused or going on; nothing when it already is (a second tap on a notification that hadn't caught up yet)
+function setPaused(on: boolean) {
+  const r = recording.value; if (!r || !!r.pauseAt === on) return;
   if (r.pauseAt) { r.pausedMs += Date.now() - r.pauseAt; r.pauseAt = null; } else r.pauseAt = Date.now();
   persist();
 }
@@ -240,19 +244,25 @@ const recNotice = computed(() => {
   const du = queryClient.getQueryData<any>(["settings", "me"])?.settings?.units?.distance === "mi" ? "mi" : "km";
   return { type: r.type, paused: !!r.pauseAt, since: r.startedAt + r.pausedMs, startedAt: r.startedAt, du, dist: Math.floor(fromM(recDistM.value, du) * 10) / 10, steps: countsSteps(r.type) ? Math.floor(r.steps / 50) * 50 : null };
 });
-// compared as text, so a new GPS point that changes none of it shows nothing again
-watch(() => JSON.stringify(recNotice.value), () => {
+// compared as text, so a new GPS point that changes none of it shows nothing again. The setting is part of it, so
+// turning it off mid-recording takes the notification off. The settings come from the query cache, which isn't
+// reactive by itself: a count bumped on each change to them lets this follow.
+const settingsSeen = ref(0);
+queryClient.getQueryCache().subscribe((e) => { if (e.query.queryKey[0] === "settings" && e.query.queryKey[1] === "me") settingsSeen.value++; });
+const noticeOn = () => { void settingsSeen.value; return queryClient.getQueryData<any>(["settings", "me"])?.settings?.workout?.sessionNotice !== false; };
+let recShown = !recording.value; // with nothing saved, one left behind by an app closed mid-recording is taken off below
+watch(() => JSON.stringify([recNotice.value, noticeOn()]), () => {
   const n = recNotice.value;
-  if (!n) return;
-  const me = queryClient.getQueryData<any>(["settings", "me"]);
-  if (me?.settings?.workout?.sessionNotice === false) return;
+  if (!n || !noticeOn()) { if (recShown) { void clearRecording(); recShown = false; } return; }
+  recShown = true;
   const at = new Date(n.startedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
   const so = [n.dist > 0 ? `${n.dist.toFixed(1)} ${n.du}` : "", n.steps ? `${n.steps.toLocaleString()} steps` : ""].filter(Boolean).join(" · ");
   showRecording({
     title: `${typeName(n.type)}${n.paused ? " (paused)" : ": recording"}`,
     body: isNativeApp() ? so || `Started ${at}` : [so, `Started ${at}. Keep Motus open on screen to record the route.`].filter(Boolean).join("\n"),
     since: n.paused ? null : n.since,
-    actions: [{ id: "rec-pause", title: n.paused ? "Resume" : "Pause" }],
+    actions: [n.paused ? { id: "rec-resume", title: "Resume" } : { id: "rec-pause", title: "Pause" }],
   });
 }, { immediate: true });
-onNoticeAction("rec-pause", () => togglePause());
+onNoticeAction("rec-pause", () => setPaused(true));
+onNoticeAction("rec-resume", () => setPaused(false));
