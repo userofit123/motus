@@ -10,6 +10,7 @@ import SyncPill from "./SyncPill.vue";
 import { useActive } from "../api/queries";
 import { sheetIsOpen } from "../core/sheets";
 import { recording } from "../workout/recording";
+import { ivRunning } from "../workout/intervals";
 
 const route = useRoute(), router = useRouter();
 const cur = computed(() => section(route.name as string));
@@ -27,8 +28,8 @@ const IN_MORE = ["more", "exercises", "body", "settings"];
 const moreOn = computed(() => IN_MORE.includes(cur.value));
 const hideBar = computed(() => route.name === "workout");
 const active = useActive();
-// how many running-session bars sit above the tabs (the workout, a recording), so the page leaves room for them
-const bars = computed(() => hideBar.value ? 0 : (active.data.value ? 1 : 0) + (recording.value && route.name !== "record" ? 1 : 0));
+// how many running-session bars sit above the tabs (the workout, a recording, the interval timer), so the page leaves room for them
+const bars = computed(() => hideBar.value ? 0 : (active.data.value ? 1 : 0) + (recording.value && route.name !== "record" ? 1 : 0) + (ivRunning.value && route.name !== "timer" ? 1 : 0));
 // one key per page, so moving between pages animates; pages wait for their data inside <Suspense> (see loaded() in api/queries) and fade in whole
 const pageKey = (r: any) => r.path;
 // once a page has moved in, anything that appears on it later rises in by itself (see app.css)
@@ -64,7 +65,7 @@ function te(e: TouchEvent) {
 </script>
 
 <template>
-  <div class="pshell" @touchstart.passive="ts" @touchend.passive="te" :class="{ withbar: bars > 0, withbar2: bars > 1, withstrip: hideBar && !!recording }" :style="hideBar ? { paddingBottom: 0 } : undefined">
+  <div class="pshell" @touchstart.passive="ts" @touchend.passive="te" :class="{ withbar: bars > 0, withbar2: bars > 1, withbar3: bars > 2, withstrip: hideBar && (!!recording || ivRunning) }" :style="hideBar ? { paddingBottom: 0 } : undefined">
     <MiniBar v-if="hideBar" strip />
     <div class="pmain"><router-view v-slot="{ Component, route: r }"><Suspense><Transition :name="motion" mode="out-in" appear @after-enter="arrived"><component :is="Component" :key="pageKey(r)" /></Transition></Suspense></router-view></div>
     <div v-if="!hideBar" class="dock">

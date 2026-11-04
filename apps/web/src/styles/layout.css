@@ -9,6 +9,7 @@ nav {
   position: sticky;
   top: 0;
   height: 100vh;
+  height: 100dvh;
   border-inline-end: 1px solid var(--ol);
   overflow-y: auto;
   scrollbar-width: none;

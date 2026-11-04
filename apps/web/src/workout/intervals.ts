@@ -4,7 +4,7 @@
 import { computed, reactive } from "vue";
 import { intervalPhases, intervalAt, intervalTotalS, cleanInterval, INTERVAL_DEFAULT, type IntervalConfig, type IntervalKind, type IntervalSound } from "@motus/shared";
 import { readJson, writeJson } from "../core/prefs";
-import { now, beep, savedCues, vibrate } from "./runtime";
+import { now, tone, SOFT, savedCues, vibrate } from "./runtime";
 import { keepAwake, scheduleIntervalCues, cancelIntervalCues, INTERVAL_CUE_MAX } from "./native";
 
 interface IntervalRun {
@@ -21,14 +21,20 @@ const save = () => writeJson(KEY, iv);
 export const PHASE_NAME: Record<IntervalKind, string> = { prep: "Get ready", work: "Work", rest: "Rest", setRest: "Rest between sets" };
 
 export const SOUND_NAME: Record<IntervalSound, string> = { beep: "Beep", double: "Double beep", triple: "Three beeps", high: "High", low: "Low", rising: "Rising", none: "None" };
-/** Plays one of the built-in sounds (also the preview when one is chosen). Pitches as the timer has always used. */
+// notes of a C major chord, so every sound (and any two in a row) sits in tune with the others
+const C5 = 523.25, E5 = 659.25, G5 = 783.99, C6 = 1046.5, E6 = 1318.5, G6 = 1567.98, C7 = 2093;
+/** Plays one of the built-in sounds (also the preview when one is chosen). The ids stay as saved in presets. */
 export function playIntervalSound(sound: IntervalSound) {
-  if (sound === "beep") beep(1, 660);
-  else if (sound === "double") beep(2, 880);
-  else if (sound === "triple") beep(3, 880);
-  else if (sound === "high") beep(1, 1320);
-  else if (sound === "low") beep(1, 520);
-  else if (sound === "rising") [520, 660, 880].forEach((f, i) => setTimeout(() => beep(1, f), i * 180));
+  if (sound === "beep") tone(G5, { dur: 0.9 }); // one bell
+  else if (sound === "double") [C6, C6].forEach((f, i) => tone(f, { delay: i * 0.17, dur: i ? 0.7 : 0.35 }));
+  else if (sound === "triple") [C6, C6, C6].forEach((f, i) => tone(f, { delay: i * 0.17, dur: i === 2 ? 0.8 : 0.3 }));
+  else if (sound === "high") tone(G6, { dur: 0.8, vol: 0.24 });
+  else if (sound === "low") tone(C5, { dur: 1, vol: 0.34, partials: SOFT }); // round and gentle, no bright overtones
+  else if (sound === "rising") [C6, E6, G6, C7].forEach((f, i) => tone(f, { delay: i * 0.11, dur: i === 3 ? 1.1 : 0.45, vol: 0.24 })); // chime
+}
+/** The countdown in the last three seconds of a part: short soft blips, the last one higher so you know "now". */
+export function playTick(last: boolean) {
+  tone(last ? E6 : E5, { dur: last ? 0.18 : 0.09, vol: last ? 0.22 : 0.16, partials: SOFT });
 }
 
 export const ivPhases = computed(() => intervalPhases(iv.cfg));
@@ -113,7 +119,7 @@ setInterval(() => {
     return;
   }
   const s = Math.ceil(leftMs / 1000);
-  if (index < ph.length && s <= 3 && s >= 1 && s !== lastSecond && ph[index]!.durS > 5) { lastSecond = s; if (inAppCues() && savedCues().sound) beep(1, 440); }
+  if (index < ph.length && s <= 3 && s >= 1 && s !== lastSecond && ph[index]!.durS > 5) { lastSecond = s; if (inAppCues() && savedCues().sound) playTick(s === 1); }
 }, 200);
 
 // In the background the app's own beeps may stop (a locked phone), so the coming changes go to the notification

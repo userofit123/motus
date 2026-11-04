@@ -99,17 +99,43 @@ function restEnded() {
     try { new Notification("Rest over", { body: rest.next, tag: "motus-rest", icon: "/icon-192.png" }); } catch { /* not allowed here */ }
 }
 
-let ctx: AudioContext | null = null;
-export function beep(times = 1, freq = 880) {
+// Sounds are made here rather than shipped as files. Each note is a few sine partials with a quick (but not instant)
+// attack and an exponential fade, so it rings like a small bell instead of clicking on and off like a raw square
+// beep; everything goes through one compressor so stacked notes never clip.
+let ctx: AudioContext | null = null, out: AudioNode | null = null;
+function audio() {
+  if (!ctx) {
+    ctx = new AudioContext();
+    const comp = ctx.createDynamicsCompressor(), master = ctx.createGain();
+    master.gain.value = 0.8; comp.connect(master).connect(ctx.destination); out = comp;
+  }
+  if (ctx.state === "suspended") void ctx.resume();
+  return { ac: ctx, dest: out! };
+}
+/** [frequency ratio, loudness, how long it rings as a share of the note] */
+export type Overtone = readonly [number, number, number];
+/** A struck bell: slightly out-of-tune overtones that die away faster than the note itself. */
+export const BELL: Overtone[] = [[1, 1, 1], [2, 0.32, 0.6], [2.76, 0.16, 0.4], [5.4, 0.05, 0.2]];
+/** Round and soft: the note with a little warmth on top. */
+export const SOFT: Overtone[] = [[1, 1, 1], [2, 0.18, 0.5]];
+/** One note starting `delay` seconds from now that rings for `dur` seconds. */
+export function tone(freq: number, { delay = 0, dur = 0.5, vol = 0.3, partials = BELL }: { delay?: number; dur?: number; vol?: number; partials?: readonly Overtone[] } = {}) {
   try {
-    ctx ??= new AudioContext();
-    for (let i = 0; i < times; i++) {
-      const o = ctx.createOscillator(), g = ctx.createGain(), t = ctx.currentTime + i * 0.28;
-      o.frequency.value = freq; o.type = "sine";
-      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.35, t + 0.02); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
-      o.connect(g).connect(ctx.destination); o.start(t); o.stop(t + 0.24);
+    const { ac, dest } = audio(), t = ac.currentTime + 0.01 + delay;
+    for (const [ratio, amp, ring] of partials) {
+      const f = freq * ratio;
+      if (f > 16000) continue;
+      const o = ac.createOscillator(), g = ac.createGain(), end = t + Math.max(0.05, dur * ring);
+      o.type = "sine"; o.frequency.value = f;
+      // a 5 ms rise takes the click off the start; the exponential fall to near silence takes it off the end
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol * amp, t + 0.005); g.gain.exponentialRampToValueAtTime(0.0001, end);
+      o.connect(g).connect(dest); o.start(t); o.stop(end + 0.02);
     }
   } catch { /* no sound */ }
+}
+/** The plain cue used by the rest timer and timed sets: `times` soft bell notes. */
+export function beep(times = 1, freq = 880) {
+  for (let i = 0; i < times; i++) tone(freq, { delay: i * 0.2, dur: 0.45 });
 }
 export function speak(text: string) {
   try { const u = new SpeechSynthesisUtterance(text); u.rate = 1.05; speechSynthesis.cancel(); speechSynthesis.speak(u); } catch { /* no voice */ }

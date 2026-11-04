@@ -48,6 +48,7 @@ body {
   font-family: var(--font);
   color: var(--tx);
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   -webkit-font-smoothing: antialiased;
   max-width: 100%;

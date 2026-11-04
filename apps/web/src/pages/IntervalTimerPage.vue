@@ -165,11 +165,17 @@ const menu = computed<MenuItem[]>(() => [
 .face.rest { --ph: var(--pos); }
 .face.setRest { --ph: var(--warn); }
 .face.prep, .face.done { --ph: var(--tx2); }
-.dial { position: relative; width: 280px; max-width: 100%; aspect-ratio: 1; }
+/* The running face fits the screen without scrolling: the dial gives up height for everything else on the page
+   (header, the line under it, the buttons, the shell's tabs and padding, and any running-session bars). */
+.dial { position: relative; width: clamp(160px, calc(100dvh - 420px - var(--st) - var(--sb) - var(--room, 0px)), 280px); max-width: 100%; aspect-ratio: 1; container-type: inline-size; }
+/* set on the shell, which carries the bar count, and inherited down to the dial */
+:global(.withbar) { --room: 70px; }
+:global(.withbar2) { --room: 125px; }
+:global(.withbar3) { --room: 180px; }
 .dial :deep(.ring) { width: 100%; height: 100%; }
 .mid { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
 .pn { color: var(--ph); font-weight: 700; font-size: var(--fs-lg); text-transform: uppercase; letter-spacing: 1px; }
-.cd { font-size: clamp(64px, 20vw, 92px); font-weight: 700; line-height: 1.05; font-variant-numeric: tabular-nums; color: var(--tx); }
+.cd { font-size: clamp(40px, 30cqi, 92px); font-weight: 700; line-height: 1.05; font-variant-numeric: tabular-nums; color: var(--tx); }
 .wh { color: var(--tx2); font-size: var(--fs-sm); }
 .foot { display: flex; align-items: center; gap: var(--hg); font-size: var(--fs-sm); font-variant-numeric: tabular-nums; }
 .go { justify-content: center; gap: var(--hg); flex-wrap: wrap; }
