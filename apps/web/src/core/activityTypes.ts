@@ -5,12 +5,14 @@ import { invalidate } from "../api/live";
 import { prompt, choose } from "./ask";
 import { toast, toastError } from "./toast";
 
+// "On foot" also counts steps while recording (a walk, run or hike); "GPS" is for the rest with a route (a ride, skating)
 export const TRACKS = [
-  { value: "gps", label: "Time, distance and route (GPS)", hasDistance: true, hasGps: true },
-  { value: "distance", label: "Time and distance", hasDistance: true, hasGps: false },
-  { value: "time", label: "Time only", hasDistance: false, hasGps: false },
+  { value: "foot", label: "Time, distance, route and steps (on foot)", hasDistance: true, hasGps: true, hasSteps: true },
+  { value: "gps", label: "Time, distance and route (GPS)", hasDistance: true, hasGps: true, hasSteps: false },
+  { value: "distance", label: "Time and distance", hasDistance: true, hasGps: false, hasSteps: false },
+  { value: "time", label: "Time only", hasDistance: false, hasGps: false, hasSteps: false },
 ];
-export const tracksOf = (t: { hasDistance: boolean; hasGps: boolean }) => (t.hasGps ? "gps" : t.hasDistance ? "distance" : "time");
+export const tracksOf = (t: { hasDistance: boolean; hasGps: boolean; hasSteps?: boolean }) => (t.hasGps ? (t.hasSteps ? "foot" : "gps") : t.hasDistance ? "distance" : "time");
 
 /** asks, saves and returns the new type's slug (null if cancelled) */
 export async function newActivityType(): Promise<string | null> {
@@ -20,7 +22,7 @@ export async function newActivityType(): Promise<string | null> {
   if (!tracks) return null;
   const t = TRACKS.find((x) => x.value === tracks)!;
   try {
-    const r = await api.post<{ slug: string }>("/activity-types", { name, hasDistance: t.hasDistance, hasGps: t.hasGps });
+    const r = await api.post<{ slug: string }>("/activity-types", { name, hasDistance: t.hasDistance, hasGps: t.hasGps, hasSteps: t.hasSteps });
     invalidate(["activities"]);
     toast(`${name} added`);
     return r.slug;

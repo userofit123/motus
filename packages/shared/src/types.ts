@@ -334,6 +334,8 @@ export interface ActivityType {
   icon: string;
   hasDistance: boolean;
   hasGps: boolean;
+  /** on foot: steps are counted while recording one */
+  hasSteps?: boolean;
 }
 
 export interface BodyMetric {

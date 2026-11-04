@@ -5,7 +5,8 @@
 //
 // Steps: the Android app reads the phone's step counter, which keeps counting with the screen off. Browsers have no step
 // counter, so there the steps are counted from the phone's motion sensor while Motus is open on screen (the same limit as
-// the route: a browser stops both when the screen goes off). A computer has no motion sensor, so no steps are shown there.
+// the route: a browser stops both when the screen goes off). A computer has no motion sensor, so the steps say so there.
+// Which types count steps is the type's own "on foot" setting (walk, run and hike, and any type you add as on foot).
 import { computed, ref, watch } from "vue";
 import { readJson, writeJson } from "../core/prefs";
 import { api } from "../api/client";
@@ -20,7 +21,9 @@ export interface Rec {
   stepLast: number | null;
 }
 const KEY = "motusRecording";
-export const STEP_TYPES = ["walk", "run", "hike"];
+const typeInfo = (slug: string) => (queryClient.getQueryData<any[]>(["activities", "types"]) ?? []).find((x) => x.slug === slug) as { name: string; hasGps: boolean; hasDistance: boolean; hasSteps?: boolean } | undefined;
+/** the type is on foot, so steps are counted; before the types have loaded, the built-in walk, run and hike are */
+export const countsSteps = (slug: string) => typeInfo(slug)?.hasSteps ?? ["walk", "run", "hike"].includes(slug);
 
 function load(): Rec | null {
   const r = readJson<any>(KEY, null);
@@ -39,17 +42,19 @@ export const recNow = ref(Date.now());
 export const gpsError = ref("");
 /** where you are now (the newest fix, rough ones too) and how sure the phone is of it, in metres; shown on the map */
 export const here = ref<{ lat: number; lon: number; acc: number } | null>(null);
-/** a step source is giving readings on this device right now */
+/** a step source is running on this device: the phone's step counter, or motion readings coming in */
 export const stepsLive = ref(false);
-/** why steps aren't counted, when it's something you can change */
+/** steps come from the motion sensor, which only counts while Motus is on screen */
+export const stepsOnScreen = ref(false);
+/** why steps aren't counted here, shown in the steps block instead of a count that never moves */
 export const stepsError = ref("");
 
 const R = 6371000, rad = (d: number) => (d * Math.PI) / 180;
 const hav = (a: number[], b: number[]) => { const dLat = rad(b[0]! - a[0]!), dLon = rad(b[1]! - a[1]!); const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a[0]!)) * Math.cos(rad(b[0]!)) * Math.sin(dLon / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(h)); };
 export const recDistM = computed(() => (recording.value?.route ?? []).reduce((t, p, i, a) => (i ? t + hav(a[i - 1]!, p) : 0), 0));
 export const recElapsedS = computed(() => { const r = recording.value; return r ? Math.max(0, ((r.pauseAt ?? recNow.value) - r.startedAt - r.pausedMs) / 1000) : 0; });
-/** steps are worth showing: counting now, or counted earlier in this recording */
-export const recStepsShown = computed(() => !!recording.value && STEP_TYPES.includes(recording.value.type) && (stepsLive.value || recording.value.steps > 0));
+/** steps are worth saving: a step source ran, or steps were counted earlier in this recording */
+export const recStepsCounted = computed(() => !!recording.value && (stepsLive.value || recording.value.steps > 0));
 
 // Saving the whole route on every step reading would be wasteful; points are saved as they come, steps a moment later.
 let saveT: ReturnType<typeof setTimeout> | null = null;
@@ -119,24 +124,27 @@ async function startNativeSteps() {
   try {
     // asks for "Physical activity" the first time (Android 10+); without it, or without a step counter, no steps are shown
     const r = await p.startSteps();
-    if (!r?.available) { if (r?.denied) stepsError.value = "Allow Physical activity to count steps"; return; }
+    if (r?.denied) { stepsError.value = "Allow Physical activity for Motus in Android settings to count steps"; return; }
+    // a phone without a step counter still has a motion sensor; it counts while Motus is on screen
+    if (!r?.available) { startMotion(false); return; }
     stepsError.value = "";
-    nativeSteps = true;
+    nativeSteps = true; stepsLive.value = true; // the counter only reports once you take a step, so show 0 until then
     stepSub = await p.addListener("steps", (e: any) => onTotal(Number(e.total)));
     if (r.total >= 0) onTotal(Number(r.total));
-  } catch { /* no step counter */ }
+  } catch { startMotion(false); }
 }
 
 // ---- steps: the motion sensor (browsers) ----
 // A step shows as a peak in how hard the phone is pushed (acceleration including gravity) above its slow average. Taps and
 // shakes are ignored by waiting for four steps in a walking rhythm before counting them, and after a two-second stop.
 let motionOn = false, ema = 0, base = 0, armed = true, lastStep = 0, run = 0;
+let motionWait: ReturnType<typeof setTimeout> | null = null;
 function onMotion(e: DeviceMotionEvent) {
   const a = e.accelerationIncludingGravity;
   if (!a || a.x == null || a.y == null || a.z == null) return;
   const m = Math.hypot(a.x, a.y, a.z);
   if (!base) { base = ema = m; }
-  stepsLive.value = true;
+  if (!stepsLive.value) { stepsLive.value = true; stepsError.value = ""; }
   ema += (m - ema) * 0.3; // smooths sensor noise
   base += (m - base) * 0.02; // gravity plus how the phone is held
   const d = ema - base, t = e.timeStamp || performance.now();
@@ -149,35 +157,39 @@ function step(t: number) {
   const r = recording.value;
   if (n && r && !r.pauseAt) { r.steps += n; persist(true); }
 }
+const NO_SENSOR = "This device has no motion sensor, so steps aren't counted";
 async function startMotion(fromTap: boolean) {
-  if (motionOn || typeof DeviceMotionEvent === "undefined") return;
+  if (motionOn) return;
+  if (typeof DeviceMotionEvent === "undefined") { stepsError.value = NO_SENSOR; return; }
   // iPhones ask first, and only when asked from a tap; elsewhere the sensor is simply there (or never sends anything)
   const ask = (DeviceMotionEvent as any).requestPermission;
   if (typeof ask === "function") {
-    if (!fromTap) return;
-    try { if ((await ask()) !== "granted") return; } catch { return; }
+    if (!fromTap) { stepsError.value = "Steps stopped when Motus was reopened"; return; }
+    try { if ((await ask()) !== "granted") { stepsError.value = "Allow Motion & Orientation access to count steps"; return; } } catch { stepsError.value = NO_SENSOR; return; }
   }
-  motionOn = true; base = 0; run = 0;
+  motionOn = true; stepsOnScreen.value = true; base = 0; run = 0;
   addEventListener("devicemotion", onMotion);
+  // a computer has the browser feature but no sensor behind it: nothing ever arrives, so say so
+  motionWait = setTimeout(() => { motionWait = null; if (motionOn && !stepsLive.value) stepsError.value = NO_SENSOR; }, 5000);
 }
 function stopSteps() {
   stepSub?.remove?.(); stepSub = null;
   if (nativeSteps) WP()?.stopSteps?.().catch?.(() => {});
   nativeSteps = false;
   if (motionOn) removeEventListener("devicemotion", onMotion);
-  motionOn = false; stepsLive.value = false;
+  if (motionWait) clearTimeout(motionWait);
+  motionOn = false; motionWait = null; stepsLive.value = false; stepsOnScreen.value = false; stepsError.value = "";
 }
 
 // ---- running it ----
 let tick: ReturnType<typeof setInterval> | null = null;
-const typeInfo = (slug: string) => (queryClient.getQueryData<any[]>(["activities", "types"]) ?? []).find((x) => x.slug === slug) as { name: string; hasGps: boolean; hasDistance: boolean } | undefined;
 const typeName = (slug: string) => ((queryClient.getQueryData<any[]>(["activities", "types"]) ?? []).find((x) => x.slug === slug)?.name as string | undefined) ?? (slug[0]?.toUpperCase() + slug.slice(1));
 function startSensors(fromTap: boolean) {
   const r = recording.value; if (!r) return;
   recNow.value = Date.now();
   if (!tick) tick = setInterval(() => (recNow.value = Date.now()), 1000);
   // the motion sensor's permission (iPhone) has to be asked straight from the tap, so nothing is awaited before it
-  if (STEP_TYPES.includes(r.type)) { if (WP()?.startSteps) startNativeSteps(); else startMotion(fromTap); }
+  if (countsSteps(r.type)) { if (WP()?.startSteps) startNativeSteps(); else startMotion(fromTap); }
   // a type without a route (yoga, a spin class, climbing) records time only, so location is never asked for
   if (typeInfo(r.type)?.hasGps !== false) startGps(typeName(r.type));
   keepAwake(true, "recording");
@@ -203,7 +215,7 @@ export async function finishRecording(): Promise<string> {
   const r = recording.value!;
   if (saveT) persist();
   const end = r.pauseAt ?? Date.now();
-  const res = await api.post("/activities", { type: r.type, startedAt: new Date(r.startedAt).toISOString(), endedAt: new Date(end).toISOString(), durationS: Math.round(recElapsedS.value), route: r.route, steps: recStepsShown.value ? r.steps : null, source: "gps", clientId: `gps:${r.startedAt}` });
+  const res = await api.post("/activities", { type: r.type, startedAt: new Date(r.startedAt).toISOString(), endedAt: new Date(end).toISOString(), durationS: Math.round(recElapsedS.value), route: r.route, steps: recStepsCounted.value ? r.steps : null, source: "gps", clientId: `gps:${r.startedAt}` });
   recording.value = null; persist(); stopAll();
   invalidate(["activities", "stats", "goals", "home", "calendar"]);
   return res.id;

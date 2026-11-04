@@ -34,7 +34,7 @@ async function save() {
   busy.value = true;
   try {
     const startedAt = new Date(`${f.value.date}T${f.value.time}`).toISOString();
-    await api.post("/activities", { type: type.value, name: f.value.name, startedAt, durationS: Math.round((f.value.minutes ?? 0) * 60), distanceM: f.value.distance ? toM(f.value.distance, fmt.value.du) : null, steps: f.value.steps, notes: f.value.notes, source: "manual" });
+    await api.post("/activities", { type: type.value, name: f.value.name, startedAt, durationS: Math.round((f.value.minutes ?? 0) * 60), distanceM: f.value.distance ? toM(f.value.distance, fmt.value.du) : null, steps: t.value?.hasSteps ? f.value.steps : null, notes: f.value.notes, source: "manual" });
     invalidate(["activities", "stats", "goals", "home", "calendar"]);
     toast(`${t.value?.name ?? "Activity"} saved`);
     emit("close");
@@ -60,7 +60,7 @@ async function importFiles(ev: Event) {
     <div class="frow">
       <div class="fld"><label>Minutes</label><input v-model.number="f.minutes" type="number" inputmode="numeric" min="0" /></div>
       <div v-if="t?.hasDistance !== false" class="fld"><label>Distance ({{ fmt.du }})</label><input v-model.number="f.distance" type="number" inputmode="decimal" step="0.01" min="0" /></div>
-      <div v-if="type === 'walk' || type === 'run' || type === 'hike'" class="fld"><label>Steps</label><input v-model.number="f.steps" type="number" inputmode="numeric" min="0" /></div>
+      <div v-if="t?.hasSteps" class="fld"><label>Steps</label><input v-model.number="f.steps" type="number" inputmode="numeric" min="0" /></div>
     </div>
     <div class="fld"><label>Notes</label><input v-model="f.notes" /></div>
     <div class="row" style="flex-wrap:wrap;gap:4px">

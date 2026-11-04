@@ -11,7 +11,7 @@ import { useFmt } from "../core/format";
 import { confirm } from "../core/ask";
 import { toast, toastError } from "../core/toast";
 import { isNativeApp } from "../workout/native";
-import { recording as rec, recDistM, recElapsedS, recStepsShown, gpsError, stepsError, here, previewLocation, startRecording, togglePause, finishRecording, discardRecording } from "../workout/recording";
+import { recording as rec, recDistM, recElapsedS, stepsLive, stepsOnScreen, stepsError, countsSteps, gpsError, here, previewLocation, startRecording, togglePause, finishRecording, discardRecording } from "../workout/recording";
 import { clock } from "@motus/shared";
 import Icon from "../components/Icon.vue";
 import RouteMap from "../components/RouteMap.vue";
@@ -27,6 +27,10 @@ const slug = computed(() => rec.value?.type ?? pick.value);
 const t = computed(() => (types.data.value ?? []).find((x: any) => x.slug === slug.value));
 const noRoute: number[][] = [];
 const gps = computed(() => t.value?.hasGps !== false);
+// on foot (walk, run, hike, or a type added as on foot): the steps block is always there, and says why when it can't count
+const onFoot = computed(() => (t.value ? !!t.value.hasSteps : countsSteps(slug.value)));
+const stepsCounting = computed(() => !!rec.value && (stepsLive.value || rec.value.steps > 0));
+const stepsNote = computed(() => (rec.value && stepsError.value) || ((rec.value ? stepsOnScreen.value : !isNativeApp()) ? "Counted while Motus is on screen" : ""));
 // before you start, the map finds you (only for types with a route)
 watch([gps, () => !!rec.value], ([g, r]) => previewLocation(g && !r), { immediate: true });
 onBeforeUnmount(() => previewLocation(false));
@@ -36,7 +40,7 @@ const tiles = computed(() => [...(types.data.value ?? []).map((x: any) => ({ val
 let lastPick = pick.value;
 watch(pick, async (v, old) => { if (v !== NEW) { lastPick = v; return; } pick.value = old ?? lastPick; const slug = await newActivityType(); if (slug) { await types.refetch(); pick.value = slug; } });
 // a ride reads better as speed, on foot as pace (time per km or mile); nothing until there's a little distance to go on
-const ride = computed(() => slug.value === "cycle");
+const ride = computed(() => slug.value === "cycle" || (!!t.value && !onFoot.value));
 const pace = computed(() => {
   const d = fmt.value.distNum(recDistM.value), s = recElapsedS.value;
   if (recDistM.value < 20 || !s) return null;
@@ -56,7 +60,7 @@ await loaded(types, active);
 <template>
   <div class="page">
     <button class="back" @click="goBack(router, '/')"><Icon name="left" :size="16" /><span>Back</span></button>
-    <div class="ph"><div><h1>{{ t?.name ?? "Activity" }}</h1><div class="sub">{{ rec ? (rec.pauseAt ? "Paused" : "Recording") : "Ready" }}{{ gps && gpsError ? " · " + gpsError : "" }}{{ rec && stepsError ? " · " + stepsError : "" }}</div></div></div>
+    <div class="ph"><div><h1>{{ t?.name ?? "Activity" }}</h1><div class="sub">{{ rec ? (rec.pauseAt ? "Paused" : "Recording") : "Ready" }}{{ gps && gpsError ? " · " + gpsError : "" }}</div></div></div>
     <ChoiceTiles v-if="!rec" v-model="pick" class="hgap" :options="tiles" compact min="110px" label="Activity" />
     <p v-if="!rec && active.data.value" class="tiny hgap">Your workout keeps going while you record. Each has its own bar at the bottom of the screen.</p>
     <RouteMap v-if="gps" :route="rec?.route ?? noRoute" :here="here" follow />
@@ -64,7 +68,7 @@ await loaded(types, active);
       <div class="card stat hero"><div class="lbl">Time</div><div class="val">{{ clock(recElapsedS) }}</div></div>
       <div v-if="gps" class="card stat"><div class="lbl">Distance</div><div class="val">{{ fmt.num(fmt.distNum(recDistM), 2) }}<small>{{ fmt.du }}</small></div></div>
       <div v-if="gps" class="card stat"><div class="lbl">{{ ride ? "Speed" : "Pace" }}</div><div class="val">{{ pace ?? "-" }}<small v-if="pace">{{ ride ? `${fmt.du}/h` : `/${fmt.du}` }}</small></div></div>
-      <div v-if="recStepsShown" class="card stat"><div class="lbl">Steps</div><div class="val">{{ fmt.num(rec!.steps, 0) }}</div><div v-if="!isNativeApp()" class="sub">Counted while Motus is on screen</div></div>
+      <div v-if="onFoot" class="card stat"><div class="lbl">Steps</div><div class="val">{{ stepsCounting ? fmt.num(rec!.steps, 0) : "-" }}</div><div v-if="stepsNote" class="sub">{{ stepsNote }}</div></div>
     </div>
     <div class="row spt" style="justify-content:center">
       <button v-if="!rec" class="btn lg" @click="startRecording(pick)"><Icon name="play" />Start</button>

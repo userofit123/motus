@@ -20,7 +20,7 @@ async function remove(t: any) {
   if (!(await confirm(`Remove ${t.name}?`, { text: "Activities you logged as it stay, under the same name.", ok: "Remove", danger: true }))) return;
   try { await api.del(`/activity-types/${t.slug}`); invalidate(["activities"]); toast(`${t.name} removed`); } catch (e) { toastError(e); }
 }
-const setTracks = (t: any, v: string) => { const x = TRACKS.find((y) => y.value === v)!; put(t.slug, { hasDistance: x.hasDistance, hasGps: x.hasGps }); };
+const setTracks = (t: any, v: string) => { const x = TRACKS.find((y) => y.value === v)!; put(t.slug, { hasDistance: x.hasDistance, hasGps: x.hasGps, hasSteps: x.hasSteps }); };
 </script>
 
 <template>

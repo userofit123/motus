@@ -6,9 +6,9 @@ import { uuidv7 } from "../ids";
 import { notFound, bad } from "../errors";
 
 export const DEFAULT_TYPES: ActivityType[] = [
-  { slug: "walk", name: "Walk", icon: "walk", hasDistance: true, hasGps: true },
-  { slug: "run", name: "Run", icon: "run", hasDistance: true, hasGps: true },
-  { slug: "hike", name: "Hike", icon: "hike", hasDistance: true, hasGps: true },
+  { slug: "walk", name: "Walk", icon: "walk", hasDistance: true, hasGps: true, hasSteps: true },
+  { slug: "run", name: "Run", icon: "run", hasDistance: true, hasGps: true, hasSteps: true },
+  { slug: "hike", name: "Hike", icon: "hike", hasDistance: true, hasGps: true, hasSteps: true },
   { slug: "cycle", name: "Cycle", icon: "cycle", hasDistance: true, hasGps: true },
   { slug: "swim", name: "Swim", icon: "swim", hasDistance: true, hasGps: false },
   { slug: "yoga", name: "Yoga", icon: "yoga", hasDistance: false, hasGps: false },
@@ -30,13 +30,21 @@ export function haversine(a: [number, number], b: [number, number]): number {
 /** Distance, moving time and climb from a route of [lat, lon, unix s, altitude] points. */
 export function routeStats(route: number[][]) {
   let dist = 0, moving = 0, climb = 0;
-  for (let i = 1; i < route.length; i++) {
-    const a = route[i - 1]!, b = route[i]!;
+  // a phone's GPS altitude wobbles a few metres from point to point; adding up every small rise would turn a flat walk
+  // into a hill, so a climb counts once it's 5 m above the lowest point since the last one counted
+  let low: number | null = null;
+  for (let i = 0; i < route.length; i++) {
+    const b = route[i]!, alt = b[3];
+    if (alt != null && Number.isFinite(alt)) {
+      if (low == null || alt < low) low = alt;
+      else if (alt - low >= 5) { climb += alt - low; low = alt; }
+    }
+    if (!i) continue;
+    const a = route[i - 1]!;
     const d = haversine([a[0]!, a[1]!], [b[0]!, b[1]!]);
     dist += d;
     const dt = (b[2] ?? 0) - (a[2] ?? 0);
     if (dt > 0 && dt < 120 && d / dt > 0.3) moving += dt; // faster than ~1 km/h counts as moving
-    if (a[3] != null && b[3] != null && b[3] > a[3]) climb += b[3] - a[3];
   }
   return { distanceM: Math.round(dist), movingS: Math.round(moving), elevationM: Math.round(climb) };
 }
@@ -76,12 +84,14 @@ async function ensureTypes(ctx: Ctx) {
   const n = Number((await ctx.q.query("SELECT count(*) n FROM activity_types")).rows[0].n);
   if (n) return;
   for (const t of DEFAULT_TYPES)
-    await ctx.q.query("INSERT INTO activity_types (id, user_id, slug, name, icon, has_distance, has_gps) VALUES ($1,$2,$3,$4,$5,$6,$7) ON CONFLICT DO NOTHING",
-      [uuidv7(), ctx.userId, t.slug, t.name, t.icon, t.hasDistance, t.hasGps]);
+    await ctx.q.query("INSERT INTO activity_types (id, user_id, slug, name, icon, has_distance, has_gps, has_steps) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) ON CONFLICT DO NOTHING",
+      [uuidv7(), ctx.userId, t.slug, t.name, t.icon, t.hasDistance, t.hasGps, !!t.hasSteps]);
 }
 
 export async function saveActivity(ctx: Ctx, b: any, aid = uuidv7(), isNew = true) {
-  const route = Array.isArray(b.route) ? b.route.slice(0, 50000).filter((p: any) => Array.isArray(p) && p.length >= 2).map((p: any[]) => p.slice(0, 4).map(Number)) : null;
+  const route = Array.isArray(b.route) ? b.route.slice(0, 50000).filter((p: any) => Array.isArray(p) && p.length >= 2)
+    // a point without an altitude (often from a browser) comes as null: kept as "no altitude", not 0 m, or the climb jumps
+    .map((p: any[]) => (p[3] == null ? p.slice(0, 3) : p.slice(0, 4)).map(Number)) : null;
   const rs = route && route.length > 1 ? routeStats(route) : null;
   const startedAt = isoTime(b.startedAt);
   const durationS = intOrNull(b.durationS, 0, 864000) ?? (b.endedAt ? Math.round((new Date(b.endedAt).getTime() - new Date(startedAt).getTime()) / 1000) : 0);
@@ -107,7 +117,7 @@ export async function saveActivity(ctx: Ctx, b: any, aid = uuidv7(), isNew = tru
 export function activityRoutes(r: Router) {
   r.get("/activity-types", async (ctx) => {
     await ensureTypes(ctx);
-    return (await ctx.q.query("SELECT id, slug, name, icon, has_distance, has_gps FROM activity_types ORDER BY slug = 'other', name")).rows.map((x: any) => camel(x));
+    return (await ctx.q.query("SELECT id, slug, name, icon, has_distance, has_gps, has_steps FROM activity_types ORDER BY slug = 'other', name")).rows.map((x: any) => camel(x));
   });
   r.post("/activity-types", async (ctx, _p, b) => {
     await ensureTypes(ctx);
@@ -116,8 +126,8 @@ export function activityRoutes(r: Router) {
     let slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || uuidv7().slice(0, 8);
     if (slug === "workout") slug = "workout-activity"; // "workout" means gym workouts in goals
     if ((await ctx.q.query("SELECT 1 FROM activity_types WHERE slug = $1", [slug])).rows.length) throw bad(`You already have ${name}`);
-    await ctx.q.query("INSERT INTO activity_types (id, user_id, slug, name, icon, has_distance, has_gps) VALUES ($1,$2,$3,$4,$5,$6,$7)",
-      [uuidv7(), ctx.userId, slug, name, str(b.icon, 20) || "activity", bool(b.hasDistance, true), bool(b.hasGps)]);
+    await ctx.q.query("INSERT INTO activity_types (id, user_id, slug, name, icon, has_distance, has_gps, has_steps) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)",
+      [uuidv7(), ctx.userId, slug, name, str(b.icon, 20) || "activity", bool(b.hasDistance, true), bool(b.hasGps), bool(b.hasSteps)]);
     ctx.changed("activity");
     return { slug };
   });
@@ -125,8 +135,9 @@ export function activityRoutes(r: Router) {
   r.put("/activity-types/:slug", async (ctx, p, b) => {
     const name = b.name != null ? str(b.name, 40).trim() : null;
     if (name === "") throw bad("Give it a name");
-    const { rows } = await ctx.q.query(`UPDATE activity_types SET name = coalesce($2, name), icon = coalesce($3, icon), has_distance = coalesce($4, has_distance), has_gps = coalesce($5, has_gps)
-      WHERE slug = $1 RETURNING slug`, [p.slug, name, b.icon ? str(b.icon, 20) : null, b.hasDistance == null ? null : bool(b.hasDistance), b.hasGps == null ? null : bool(b.hasGps)]);
+    const { rows } = await ctx.q.query(`UPDATE activity_types SET name = coalesce($2, name), icon = coalesce($3, icon), has_distance = coalesce($4, has_distance), has_gps = coalesce($5, has_gps),
+      has_steps = coalesce($6, has_steps) WHERE slug = $1 RETURNING slug`, [p.slug, name, b.icon ? str(b.icon, 20) : null, b.hasDistance == null ? null : bool(b.hasDistance), b.hasGps == null ? null : bool(b.hasGps),
+      b.hasSteps == null ? null : bool(b.hasSteps)]);
     if (!rows.length) throw notFound("Activity type not found");
     ctx.changed("activity");
     return { ok: true };
