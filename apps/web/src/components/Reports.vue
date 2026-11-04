@@ -24,7 +24,7 @@ const label = (k: string) => (k.length === 4 ? k : new Date(k + "-15").toLocaleD
 <template>
   <div>
     <template v-for="y in years.slice(0, 1)" :key="y.k">
-      <div class="card hero" style="margin-bottom:var(--spg)">
+      <div class="card hero spb">
         <div class="lbl">{{ y.k }} in review</div>
         <div class="grid g4" style="margin-top:10px">
           <div><div class="val" style="font-size:28px">{{ y.workouts }}</div><div class="sub">workouts</div></div>
@@ -34,7 +34,7 @@ const label = (k: string) => (k.length === 4 ? k : new Date(k + "-15").toLocaleD
         </div>
       </div>
     </template>
-    <div v-if="months.length" class="card" style="margin-bottom:var(--spg)"><div class="lbl" style="margin-bottom:8px">Workouts per month</div><BarChart :bars="months.slice(0, 12).reverse().map((m) => ({ label: m.k.slice(5), value: m.workouts }))" :height="150" /></div>
+    <div v-if="months.length" class="card spb"><div class="lbl hgap">Workouts per month</div><BarChart :bars="months.slice(0, 12).reverse().map((m) => ({ label: m.k.slice(5), value: m.workouts }))" :height="150" /></div>
     <div class="grid g2">
       <div v-for="m in months" :key="m.k" class="card">
         <b>{{ label(m.k) }}</b>

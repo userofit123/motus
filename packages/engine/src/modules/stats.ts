@@ -1,24 +1,26 @@
 // Stats and the home summary. Sessions come back with their times; the apps group them into days and weeks in their own time zone.
-import { e1rm, GROUPS, ymd, weekStartOf, WEEKLY_SET_RANGE } from "@motus/shared";
+import { e1rm, GROUPS, WEEKLY_SET_RANGE, liftedKg, LIFTED_SQL } from "@motus/shared";
 import type { Router, Ctx } from "../router";
 import type { Sql } from "../db";
 import { camel } from "../util";
 import { getSettings } from "./settings";
-import { goalsWithProgress, streakWeeks } from "./goals";
+import { goalsWithProgress, ensureStarterGoal } from "./goals";
+import { achievementRoutes, currentStreak, dayIn, weekIn } from "./achievements";
 import { plannedBetween } from "./schedule";
 import { workoutSummaries } from "./workouts";
 import { routineSummaries } from "./routines";
 import { suggestions } from "./suggest";
+import { programState } from "./programs";
 
 /** Every completed workout in a range, with its totals and sets per muscle. */
 async function workoutRows(q: Sql, from: string, to: string) {
   const { rows } = await q.query(
     `SELECT w.id, w.name, w.routine_id, w.started_at, r.color, greatest(0, extract(epoch FROM w.ended_at - w.started_at)::int - w.paused_s) AS duration_s,
-       coalesce(sum(s.weight_kg * s.reps) FILTER (WHERE s.kind <> 'warmup'), 0) AS volume_kg,
+       coalesce(sum(${LIFTED_SQL}) FILTER (WHERE s.kind <> 'warmup'), 0) AS volume_kg,
        count(s.id) FILTER (WHERE s.kind <> 'warmup') AS sets, coalesce(sum(s.reps) FILTER (WHERE s.kind <> 'warmup'), 0) AS reps,
        count(DISTINCT we.id) FILTER (WHERE we.status = 'skipped') AS skipped, count(DISTINCT we.id) AS exercises
      FROM workouts w LEFT JOIN routines r ON r.id = w.routine_id
-     LEFT JOIN workout_exercises we ON we.workout_id = w.id
+     LEFT JOIN workout_exercises we ON we.workout_id = w.id LEFT JOIN exercises e ON e.id = we.exercise_id
      LEFT JOIN workout_sets s ON s.workout_exercise_id = we.id AND s.done
      WHERE w.status = 'completed' AND w.started_at >= $1 AND w.started_at < $2
      GROUP BY w.id, r.color ORDER BY w.started_at`, [from, to]);
@@ -57,7 +59,7 @@ async function exerciseStats(q: Sql, from: string, to: string) {
     const top = Math.max(0, ...sets.map((s) => Number(s.w) || 0));
     x.bestE1rm = Math.max(x.bestE1rm, best);
     x.bestWeightKg = Math.max(x.bestWeightKg, top);
-    x.volumeKg += sets.reduce((a, s) => a + (Number(s.w) || 0) * (s.r ?? 0), 0);
+    x.volumeKg += sets.reduce((a, s) => a + liftedKg(s.w, s.r, r.tracking), 0);
     x.trend.push({ at: r.started_at, e1rm: Math.round(best * 10) / 10, top, reps: sets.reduce((a, s) => a + (s.r ?? 0), 0) });
   }
   // stalled: done 4+ times and the best of the last 4 sessions is no better than before them
@@ -100,11 +102,13 @@ export function statsRoutes(r: Router) {
   });
 
   r.get("/home", async (ctx, _p, _b, qs) => {
+    await ensureStarterGoal(ctx.q, ctx.userId); // before reading settings: it may add the starter goal to Home
     const s = await getSettings(ctx.q, ctx.userId);
     const now = ctx.now();
-    const tzMin = Number(qs.tz) || 0; // the app's offset from UTC, so "this week" matches its calendar
-    const local = new Date(now.getTime() - tzMin * 60000);
-    const weekStart = weekStartOf(local, s.firstDay);
+    // the app's offset from UTC, so "this week" and "today" match its calendar. Dates are worked out in UTC from the
+    // shifted time: this also runs in the app's own copy, where the process's time zone is the person's, not UTC
+    const tzMin = Number(qs.tz) || 0;
+    const weekStart = weekIn(now, tzMin, s.firstDay);
     const ws = new Date(new Date(weekStart + "T00:00:00Z").getTime() + tzMin * 60000);
     const eightAgo = new Date(ws.getTime() - 7 * 7 * 86400000);
     const rows = await workoutRows(ctx.q, eightAgo.toISOString(), new Date(now.getTime() + 86400000).toISOString());
@@ -133,13 +137,26 @@ export function statsRoutes(r: Router) {
     });
     const last = (await workoutSummaries(ctx.q, "w.status = 'completed'", [], 1))[0] ?? null;
     const active = (await ctx.q.query("SELECT id, name, started_at FROM workouts WHERE status = 'in_progress' ORDER BY started_at DESC LIMIT 1")).rows[0] ?? null;
-    const today = ymd(local);
-    const end = ymd(new Date(local.getTime() + 7 * 86400000));
+    const today = dayIn(now, tzMin);
+    const end = dayIn(new Date(now.getTime() + 7 * 86400000), tzMin);
     const planned = (await plannedBetween(ctx.q, today, end));
-    const doneToday = rows.filter((x) => ymd(new Date(new Date(x.startedAt).getTime() - tzMin * 60000)) === today).map((x) => x.routineId);
+    const doneToday = rows.filter((x) => dayIn(x.startedAt, tzMin) === today).map((x) => x.routineId);
     const upNext = planned.filter((p) => !(p.date === today && p.routineId && doneToday.includes(p.routineId))).slice(0, 5);
-    const suggest = await suggestions(ctx.q, await routineSummaries(ctx.q, ctx.userId), now, s.home.hidden);
-    const goals = (await goalsWithProgress(ctx)).filter((g) => g.status === "active").slice(0, 3);
+    // the programs you're following get their own card on Home, so their next workout isn't also a suggestion
+    const programs = [];
+    for (const p of (await ctx.q.query("SELECT * FROM programs WHERE active ORDER BY created_at DESC")).rows) {
+      const st = await programState(ctx.q, p);
+      if (!st.total || st.finished) continue;
+      const start = String(p.start_date).slice(0, 10);
+      const calendarWeek = today < start ? 0 : Math.floor((Date.parse(today) - Date.parse(start)) / (7 * 86400000)) + 1;
+      programs.push({ id: p.id, name: p.name, weeks: (p.weeks ?? []).length, deloadPct: p.deload_pct, startDate: start, calendarWeek, ...st });
+    }
+    const routines = await routineSummaries(ctx.q, ctx.userId);
+    const suggest = (await suggestions(ctx.q, routines, now, s.home.hidden)).filter((x) => x.kind !== "program" || !programs.length);
+    const allGoals = await goalsWithProgress(ctx, tzMin);
+    const goals = allGoals.filter((g) => g.status === "active").slice(0, 3);
+    // the goals picked for the top of Home, in the order picked, each saying whether its streak shows beside it
+    const homeGoals = (s.home.goals ?? []).flatMap((h) => { const g = allGoals.find((x) => x.id === h.id); return g ? [{ ...g, showStreak: h.streak && g.period !== "once" }] : []; });
     const reminders = (await ctx.q.query(
       `SELECT m.*, coalesce(e.name, r.name) AS target_name FROM reminders m LEFT JOIN exercises e ON m.target_type='exercise' AND e.id = m.target_id
        LEFT JOIN routines r ON m.target_type='routine' AND r.id = m.target_id WHERE m.status = 'pending' ORDER BY m.created_at DESC LIMIT 5`)).rows.map((x: any) => camel(x));
@@ -149,22 +166,16 @@ export function statsRoutes(r: Router) {
       ...(await ctx.q.query("SELECT id, type, name, started_at, duration_s, distance_m FROM activities ORDER BY started_at DESC LIMIT 8")).rows.map((x: any) => ({ kind: "activity", ...camel<any>(x) })),
     ].sort((a: any, b: any) => b.startedAt.localeCompare(a.startedAt)).slice(0, 8);
     return {
-      weekGoal: s.weeklyGoal, weeks, thisWeek: weeks.at(-1), lastWeek: weeks.at(-2), streak: await streakWeeks(ctx.q, s, now),
-      last, daysSinceLast: last ? Math.floor((now.getTime() - new Date(last.startedAt).getTime()) / 86400000) : null,
-      active: active ? camel(active) : null, upNext, suggest, goals, reminders, bodyweight: bw, feed, muscles7, groupDays,
+      weeks, thisWeek: weeks.at(-1), lastWeek: weeks.at(-2), streak: await currentStreak(ctx.q, s, now, tzMin), homeGoals,
+      // calendar days, so last night's workout is "Yesterday" even when it was less than 24 hours ago
+      last, daysSinceLast: last ? Math.round((new Date(today).getTime() - new Date(dayIn(last.startedAt, tzMin)).getTime()) / 86400000) : null,
+      active: active ? camel(active) : null, programs, upNext, suggest, goals, reminders, bodyweight: bw, feed, muscles7, groupDays,
       totalWorkouts: Number((await ctx.q.query("SELECT count(*) n FROM workouts WHERE status = 'completed'")).rows[0].n),
+      // with no routines and nothing done yet, Home opens with a way to begin
+      routineCount: routines.length,
+      activityCount: Number((await ctx.q.query("SELECT count(*) n FROM activities")).rows[0].n),
     };
   });
 
-  // achievements: milestones reached
-  r.get("/achievements", async ({ q }) => {
-    const n = async (sql: string) => Number((await q.query(sql)).rows[0]?.v ?? 0);
-    const workouts = await n("SELECT count(*) v FROM workouts WHERE status = 'completed'");
-    const tonnage = await n("SELECT coalesce(sum(s.weight_kg*s.reps),0) v FROM workout_sets s JOIN workout_exercises we ON we.id=s.workout_exercise_id JOIN workouts w ON w.id=we.workout_id WHERE w.status='completed' AND s.done AND s.kind<>'warmup'");
-    const walkKm = (await n("SELECT coalesce(sum(distance_m),0) v FROM activities WHERE type = 'walk'")) / 1000;
-    const hours = (await n("SELECT coalesce(sum(extract(epoch FROM ended_at - started_at) - paused_s),0) v FROM workouts WHERE status='completed'")) / 3600;
-    const ladder = (v: number, steps: number[], unit: string, what: string) => steps.map((s) => ({ id: `${what}-${s}`, name: `${s.toLocaleString("en-US")} ${unit}`, what, reached: v >= s, progress: Math.min(1, v / s) }));
-    return [...ladder(workouts, [1, 10, 25, 50, 100, 250, 500, 1000], "workouts", "workouts"), ...ladder(tonnage / 1000, [1, 10, 50, 100, 500, 1000], "tonnes lifted", "tonnage"),
-      ...ladder(walkKm, [10, 50, 100, 500, 1000], "km walked", "walking"), ...ladder(hours, [10, 50, 100, 500], "hours trained", "hours")];
-  });
+  achievementRoutes(r);
 }

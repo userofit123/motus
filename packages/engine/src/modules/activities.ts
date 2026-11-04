@@ -107,17 +107,29 @@ export async function saveActivity(ctx: Ctx, b: any, aid = uuidv7(), isNew = tru
 export function activityRoutes(r: Router) {
   r.get("/activity-types", async (ctx) => {
     await ensureTypes(ctx);
-    return (await ctx.q.query("SELECT id, slug, name, icon, has_distance, has_gps FROM activity_types ORDER BY name")).rows.map((x: any) => camel(x));
+    return (await ctx.q.query("SELECT id, slug, name, icon, has_distance, has_gps FROM activity_types ORDER BY slug = 'other', name")).rows.map((x: any) => camel(x));
   });
   r.post("/activity-types", async (ctx, _p, b) => {
     await ensureTypes(ctx);
     const name = str(b.name, 40).trim();
     if (!name) throw bad("Give it a name");
-    const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || uuidv7().slice(0, 8);
+    let slug = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || uuidv7().slice(0, 8);
+    if (slug === "workout") slug = "workout-activity"; // "workout" means gym workouts in goals
+    if ((await ctx.q.query("SELECT 1 FROM activity_types WHERE slug = $1", [slug])).rows.length) throw bad(`You already have ${name}`);
     await ctx.q.query("INSERT INTO activity_types (id, user_id, slug, name, icon, has_distance, has_gps) VALUES ($1,$2,$3,$4,$5,$6,$7)",
       [uuidv7(), ctx.userId, slug, name, str(b.icon, 20) || "activity", bool(b.hasDistance, true), bool(b.hasGps)]);
     ctx.changed("activity");
     return { slug };
+  });
+  // renaming keeps the slug, so activities already logged as this type stay with it
+  r.put("/activity-types/:slug", async (ctx, p, b) => {
+    const name = b.name != null ? str(b.name, 40).trim() : null;
+    if (name === "") throw bad("Give it a name");
+    const { rows } = await ctx.q.query(`UPDATE activity_types SET name = coalesce($2, name), icon = coalesce($3, icon), has_distance = coalesce($4, has_distance), has_gps = coalesce($5, has_gps)
+      WHERE slug = $1 RETURNING slug`, [p.slug, name, b.icon ? str(b.icon, 20) : null, b.hasDistance == null ? null : bool(b.hasDistance), b.hasGps == null ? null : bool(b.hasGps)]);
+    if (!rows.length) throw notFound("Activity type not found");
+    ctx.changed("activity");
+    return { ok: true };
   });
   r.del("/activity-types/:slug", async (ctx, p) => {
     await ctx.q.query("DELETE FROM activity_types WHERE slug = $1", [p.slug]);
@@ -187,14 +199,21 @@ export function activityRoutes(r: Router) {
     const { rows } = await q.query(`SELECT id, kind, value, measured_at, note FROM body_metrics ${qs.kind ? "WHERE kind = $1" : ""} ORDER BY measured_at DESC LIMIT 2000`, qs.kind ? [qs.kind] : []);
     return rows.map((x: any) => camel(x));
   });
+  // one entry, or { entries: [...] } for a whole tape session saved together (all or nothing)
   r.post("/body", async (ctx, _p, b) => {
-    const v = numOrNull(b.value, 0, 10000);
-    if (v == null) throw bad("Enter a value");
-    const bid = uuidv7();
-    await ctx.q.query("INSERT INTO body_metrics (id, user_id, kind, value, measured_at, note) VALUES ($1,$2,$3,$4,$5,$6)",
-      [bid, ctx.userId, str(b.kind, 40) || "weight", v, isoTime(b.measuredAt, ctx.now().toISOString()), str(b.note, b.kind === "photo" ? 4_000_000 : 500)]); // a photo's note is its picture
+    const list = Array.isArray(b.entries) ? b.entries.slice(0, 100) : [b];
+    if (!list.length) throw bad("Enter a value");
+    const ids: string[] = [];
+    for (const e of list) {
+      const v = numOrNull(e?.value, 0, 10000);
+      if (v == null) throw bad("Enter a value");
+      const bid = uuidv7();
+      await ctx.q.query("INSERT INTO body_metrics (id, user_id, kind, value, measured_at, note) VALUES ($1,$2,$3,$4,$5,$6)",
+        [bid, ctx.userId, str(e.kind, 40) || "weight", v, isoTime(e.measuredAt ?? b.measuredAt, ctx.now().toISOString()), str(e.note, e.kind === "photo" ? 4_000_000 : 500)]); // a photo's note is its picture
+      ids.push(bid);
+    }
     ctx.changed("body");
-    return { id: bid };
+    return Array.isArray(b.entries) ? { ids } : { id: ids[0] };
   });
   r.del("/body/:id", async (ctx, p) => {
     await ctx.q.query("DELETE FROM body_metrics WHERE id = $1", [id(p.id)]);
@@ -202,7 +221,7 @@ export function activityRoutes(r: Router) {
     return { ok: true };
   });
 
-  // daily log: steps, sleep (h), water (ml), mood (1–5)
+  // daily log: steps, sleep (h), water (ml), mood (1-5)
   r.get("/daily", async ({ q }, _p, _b, qs) => {
     const { rows } = await q.query(`SELECT date, kind, value, source FROM daily_logs WHERE date >= $1::date ORDER BY date DESC`, [dateStr(qs.from) ?? "1970-01-01"]);
     return rows;
@@ -217,7 +236,8 @@ export function activityRoutes(r: Router) {
         `INSERT INTO daily_logs (user_id, date, kind, value, source) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (user_id, date, kind) DO UPDATE SET value = $4, source = $5`,
         [ctx.userId, d, k, numOrNull(e.value, 0, 1e7), str(e.source, 20) || "manual"]);
     }
-    ctx.changed("body", "activity");
+    // the daily log is not a body measurement: it touches activity, stats, goals and home, not the body log
+    ctx.changed("activity");
     return { ok: true };
   });
 }

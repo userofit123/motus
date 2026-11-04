@@ -1,26 +1,60 @@
 <script setup lang="ts">
-// The daily log: steps, sleep, water and mood for today, with the last two weeks below.
-import { computed, ref } from "vue";
+// The daily log: steps (Steps feature) and sleep, water and mood (Sleep, water and mood feature), one value a day.
+// Kept apart from body measurements on purpose: these are about the day, not the body. Filed under activity.
+import { computed } from "vue";
 import { useQuery } from "@tanstack/vue-query";
 import { api } from "../api/client";
 import { invalidate } from "../api/live";
 import { useSettings } from "../api/queries";
-import { localYmd } from "../core/format";
+import { localYmd, useFmt } from "../core/format";
+import { savedToast, savedError } from "../core/toast";
+import { DAILY_KINDS } from "@motus/shared";
+import Icon from "./Icon.vue";
+import { useStepGoal } from "../core/goals";
 
+// day: which day the boxes write to; history: the last week below, for the sheet
+const props = defineProps<{ day?: string; history?: boolean }>();
 const s = useSettings();
-const from = localYmd(new Date(Date.now() - 14 * 86400000));
-const q = useQuery({ queryKey: ["body", "daily", from], queryFn: () => api.get("/daily", { from }) });
-const today = localYmd(new Date());
-const KINDS = computed(() => [...(s.value.features.steps ? [["steps", "Steps", 500]] : []), ...(s.value.features.dailyLog ? [["sleep_h", "Sleep (h)", 0.5], ["water_ml", "Water (ml)", 250], ["mood", "Mood (1–5)", 1]] : [])] as [string, string, number][]);
-const val = (k: string, d = today) => (q.data.value ?? []).find((x: any) => x.kind === k && x.date === d)?.value ?? null;
-async function set(k: string, v: string) { await api.put("/daily", { date: today, kind: k, value: v === "" ? null : Number(v) }); invalidate(["body", "stats", "goals", "home"]); }
+const stepGoal = useStepGoal();
+const fmt = useFmt();
+const from = localYmd(new Date(Date.now() - 8 * 86400000));
+const q = useQuery({ queryKey: ["activities", "daily", from], queryFn: () => api.get("/daily", { from }) });
+const day = computed(() => props.day ?? localYmd(new Date()));
+const KINDS = computed(() => DAILY_KINDS.filter((k) => s.value.features[k.feature]));
+const val = (k: string, d = day.value) => { const v = (q.data.value ?? []).find((x: any) => x.kind === k && String(x.date).slice(0, 10) === d)?.value; return v == null ? null : Number(v); };
+const steps = computed(() => val("steps"));
+async function set(k: string, v: string) {
+  try { await api.put("/daily", { date: day.value, kind: k, value: v === "" ? null : Number(v) }); invalidate(["activities", "stats", "goals", "home"]); savedToast(); } catch (e) { savedError(e); }
+}
+// the week before the chosen day, newest first, only days with something logged
+const week = computed(() => Array.from({ length: 7 }, (_, i) => localYmd(new Date(new Date(day.value + "T12:00").getTime() - (i + 1) * 86400000)))
+  .map((d) => ({ d, v: KINDS.value.map((k) => val(k.id, d)) })).filter((x) => x.v.some((v) => v != null)));
+const show = (k: string, v: number | null) => (v == null ? "-" : k === "steps" ? fmt.value.num(v, 0) : `${fmt.value.num(v, 1)}${k === "mood" ? "" : " " + DAILY_KINDS.find((x) => x.id === k)!.unit}`);
 </script>
 
 <template>
-  <div class="card">
-    <div class="lbl" style="margin-bottom:8px">Today</div>
-    <div class="grid g4" style="gap:10px">
-      <div v-for="[k, l, step] in KINDS" :key="k" class="fld" style="margin:0"><label>{{ l }}</label><input type="number" :step="step" inputmode="decimal" :value="val(k) ?? ''" @change="set(k, ($event.target as HTMLInputElement).value)" /></div>
+  <div>
+    <div class="grid g4 dl-grid">
+      <div v-for="k in KINDS" :key="k.id" class="fld dl-fld"><label><Icon :name="k.icon" :size="14" />{{ k.name }}{{ k.unit ? ` (${k.unit})` : "" }}</label>
+        <input type="number" :step="k.step" min="0" inputmode="decimal" :value="val(k.id) ?? ''" @change="set(k.id, ($event.target as HTMLInputElement).value)" /></div>
     </div>
+    <div v-if="s.features.steps && stepGoal" class="dl-goal"><div class="dl-bar"><i :style="{ width: Math.min(100, ((steps ?? 0) / stepGoal.target) * 100) + '%' }" /></div>
+      <span class="tiny">{{ fmt.num(steps ?? 0, 0) }} of {{ fmt.num(stepGoal.target, 0) }} steps</span></div>
+    <template v-if="history && week.length">
+      <div class="lbl dl-wk">Last 7 days</div>
+      <div class="list"><div v-for="w in week" :key="w.d" class="li"><div class="grow t">{{ fmt.date(w.d + "T12:00", { weekday: "short", day: "numeric", month: "short" }) }}</div>
+        <span v-for="(k, i) in KINDS" :key="k.id" class="num tiny dl-v" :title="k.name">{{ show(k.id, w.v[i]!) }}</span></div></div>
+    </template>
   </div>
 </template>
+
+<style scoped>
+.dl-grid { gap: 10px; }
+.dl-fld { margin: 0; }
+.dl-fld label { display: flex; align-items: center; gap: 4px; }
+.dl-goal { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.dl-bar { flex: 1; height: 6px; border-radius: 3px; background: var(--s2); overflow: hidden; }
+.dl-bar i { display: block; height: 100%; background: var(--acc); border-radius: inherit; }
+.dl-wk { margin-top: var(--spg); }
+.dl-v { min-width: 56px; text-align: end; }
+</style>

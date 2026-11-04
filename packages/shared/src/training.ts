@@ -1,7 +1,8 @@
 // Training maths: estimated one-rep max, volume, how long a routine takes, which rest applies, plates, warm-ups.
-import type { SetKind, Tracking, Progression } from "./types";
+import type { SetKind, Tracking, Progression, RestByKind } from "./types";
+import { fromKg, toKg } from "./units";
 
-/** Estimated one-rep max (Epley by default; Brzycki is better for low reps). Only for 1–15 reps. */
+/** Estimated one-rep max (Epley by default; Brzycki is better for low reps). Only for 1-15 reps. */
 export function e1rm(weightKg: number | null | undefined, reps: number | null | undefined, formula: "epley" | "brzycki" = "epley"): number | null {
   if (!weightKg || !reps || reps < 1 || weightKg <= 0) return null;
   if (reps === 1) return weightKg;
@@ -13,9 +14,18 @@ export function e1rm(weightKg: number | null | undefined, reps: number | null | 
 export const weightForReps = (oneRm: number, reps: number) => (reps <= 1 ? oneRm : oneRm / (1 + reps / 30));
 
 export const countsForVolume = (kind: SetKind) => kind !== "warmup";
-export function setVolume(s: { kind: SetKind; weightKg: number | null; reps: number | null; done?: boolean }): number {
+/** Weight lifted in one set (weight × reps). Assisted exercises log the help taken off, which isn't weight lifted, so
+ * they add nothing; neither does a set with no (or negative) weight. LIFTED_SQL is the same rule for queries. */
+export function liftedKg(weightKg: number | string | null | undefined, reps: number | null | undefined, tracking?: Tracking | string | null): number {
+  const w = Number(weightKg) || 0;
+  if (tracking === "assisted" || w <= 0 || !reps) return 0;
+  return w * reps;
+}
+/** liftedKg in SQL, for a query with the set as `s` and its exercise as `e`. */
+export const LIFTED_SQL = "CASE WHEN e.tracking <> 'assisted' AND s.weight_kg > 0 THEN s.weight_kg * coalesce(s.reps, 0) ELSE 0 END";
+export function setVolume(s: { kind: SetKind; weightKg: number | null; reps: number | null; done?: boolean }, tracking?: Tracking | null): number {
   if (s.done === false || !countsForVolume(s.kind)) return 0;
-  return (s.weightKg ?? 0) * (s.reps ?? 0);
+  return liftedKg(s.weightKg, s.reps, tracking);
 }
 
 export const usesWeight = (t: Tracking) => t === "weight_reps" || t === "bodyweight_reps" || t === "assisted" || t === "weight_duration" || t === "distance_weight";
@@ -28,15 +38,26 @@ export const usesDistance = (t: Tracking) => t === "distance_duration" || t === 
 export interface RestDefaults {
   betweenSetsS: number;
   afterExerciseS: number;
+  byKindS?: RestByKind; // the person's defaults after warm-up, drop and to-failure sets
 }
-/** The rest after a set: the set's own rest, else the exercise in the routine, else the person's exercise default, else the global default. */
+/** The rest after a set: the set's own rest, else the routine's rest for that kind of set (warm-up, drop…), else the
+ * person's default for that kind, else the exercise in the routine, else the person's exercise default, else the global default. */
 export function restAfterSet(
-  o: { setRestS?: number | null; exRestS?: number | null; prefRestS?: number | null; isLastSet: boolean; exRestAfterS?: number | null; prefRestAfterS?: number | null },
+  o: { setRestS?: number | null; kind?: SetKind; nextKind?: SetKind; byKindS?: RestByKind | null; exRestS?: number | null; prefRestS?: number | null; isLastSet: boolean; exRestAfterS?: number | null; prefRestAfterS?: number | null },
   d: RestDefaults,
 ): number {
   if (o.setRestS != null) return o.setRestS;
+  // a drop set follows straight on: lower the weight and keep going
+  if (o.nextKind === "drop") return 0;
   if (o.isLastSet) return o.exRestAfterS ?? o.prefRestAfterS ?? d.afterExerciseS;
-  return o.exRestS ?? o.prefRestS ?? d.betweenSetsS;
+  const k = o.kind && o.kind !== "normal" ? o.byKindS?.[o.kind] ?? d.byKindS?.[o.kind] : null;
+  return k ?? o.exRestS ?? o.prefRestS ?? d.betweenSetsS;
+}
+
+/** A drop set's starting weight: about 20% lighter than the set before it, on a weight a gym has (2.5 kg or 5 lb steps). */
+export function dropWeightKg(kg: number | null | undefined, unit: "kg" | "lb"): number | null {
+  if (!kg) return kg ?? null;
+  return unit === "lb" ? toKg(Math.max(5, Math.round((fromKg(kg, "lb") * 0.8) / 5) * 5), "lb") : Math.max(2.5, Math.round((kg * 0.8) / 2.5) * 2.5);
 }
 
 // ----- how long a routine takes -----
@@ -89,7 +110,8 @@ export interface SessionResult { sets: { weightKg: number | null; reps: number |
 export function nextProgression(p: Progression, history: SessionResult[], repsTarget: number | null, repsMax: number | null): { action: "add" | "hold" | "deload"; weightKg: number | null; reason: string } | null {
   const last = history[0];
   if (!last) return null;
-  const work = last.sets.filter((s) => s.kind !== "warmup" && s.weightKg != null);
+  // warm-ups and drop sets (lighter on purpose, taken to failure) don't decide progression
+  const work = last.sets.filter((s) => s.kind !== "warmup" && s.kind !== "drop" && s.weightKg != null);
   if (!work.length) return null;
   const top = Math.max(...work.map((s) => s.weightKg ?? 0));
   const hit = (s: SessionResult["sets"][number], goal: number | null) => goal == null || (s.reps ?? 0) >= goal;
@@ -97,10 +119,11 @@ export function nextProgression(p: Progression, history: SessionResult[], repsTa
   const success = work.every((s) => hit(s, goal ?? s.targetReps));
   if (success) return { action: "add", weightKg: top + p.incrementKg, reason: p.kind === "double" ? "Top of the rep range in every set" : "All target reps done" };
   const n = p.deloadAfter ?? 3;
-  const fails = history.slice(0, n).filter((h) => !h.sets.filter((s) => s.kind !== "warmup").every((s) => hit(s, goal ?? s.targetReps))).length;
+  const fails = history.slice(0, n).filter((h) => !h.sets.filter((s) => s.kind !== "warmup" && s.kind !== "drop").every((s) => hit(s, goal ?? s.targetReps))).length;
   if (fails >= n) {
     const pct = (p.deloadPct ?? 10) / 100;
-    return { action: "deload", weightKg: Math.round((top * (1 - pct)) / 1.25) * 1.25, reason: `Missed reps ${n} times in a row` };
+    const w = p.deloadKg ? Math.max(0, top - p.deloadKg) : Math.round((top * (1 - pct)) / 1.25) * 1.25;
+    return { action: "deload", weightKg: w, reason: `Missed reps ${n} times in a row` };
   }
   return { action: "hold", weightKg: top, reason: "Not every set reached its reps yet" };
 }

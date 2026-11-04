@@ -2,22 +2,29 @@
 // Stats (requirement 16): progress over time overall, per routine, per exercise, per muscle group, for activities and the body.
 import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { GROUPS, muscleName, weekStartOf, WEEKLY_SET_RANGE } from "@motus/shared";
-import { useStats, useSettings, useAchievements } from "../api/queries";
+import { GROUPS, muscleName, weekStartOf, WEEKLY_SET_RANGE, num, bodyName, bodyMeasure, fromCm } from "@motus/shared";
+import { useStats, useSettings, useAchievements, useGoals, loaded } from "../api/queries";
 import { useFmt, localYmd } from "../core/format";
-import { bodySheet } from "../core/ui";
+import { startOpen } from "../core/ui";
+import { useStepGoal } from "../core/goals";
+const stepGoal = useStepGoal();
 import Icon from "../components/Icon.vue";
+import AppSelect from "../components/AppSelect.vue";
 import LineChart from "../components/LineChart.vue";
 import BarChart from "../components/BarChart.vue";
 import BodyMap from "../components/BodyMap.vue";
 import Sparkline from "../components/Sparkline.vue";
 import Reports from "../components/Reports.vue";
+import FilterPanel from "../components/FilterPanel.vue";
+import FilterRow from "../components/FilterRow.vue";
 
 const route = useRoute(), router = useRouter();
 const s = useSettings();
 const fmt = useFmt();
 const tab = ref(String(route.query.tab ?? "overview"));
 watch(tab, (t) => router.replace({ query: t === "overview" ? {} : { tab: t } }));
+// opened again from elsewhere (Home's muscles card) while this page is still around
+watch(() => route.query.tab, (t) => { if (route.name === "stats") tab.value = String(t ?? "overview"); });
 const RANGES: [string, string, number][] = [["4w", "4 weeks", 28], ["3m", "3 months", 91], ["6m", "6 months", 182], ["1y", "1 year", 365], ["all", "All time", 0]];
 const rk = ref("3m");
 const days = computed(() => RANGES.find((r) => r[0] === rk.value)![2]);
@@ -25,7 +32,12 @@ const range = computed(() => (days.value ? { from: new Date(Date.now() - days.va
 const prevRange = computed(() => (days.value ? { from: new Date(Date.now() - 2 * days.value * 86400000).toISOString(), to: new Date(Date.now() - days.value * 86400000).toISOString() } : { from: "2999-01-01" }));
 const st = useStats(range);
 const prev = useStats(prevRange);
-const ach = useAchievements();
+// the goal line: your weekly gym-workout goal, the first one on Home (else the first there is), when you have one
+const goals = useGoals();
+const wkGoal = computed(() => { const gs = (goals.data.value ?? []).filter((g) => g.status === "active" && g.period === "week" && (g.metric === "workouts" || (g.metric === "sessions" && g.scopeId === "workout")));
+  const ids = s.value.home.goals.map((x) => x.id); return (gs.find((g) => ids.includes(g.id)) ?? gs[0])?.target ?? null; });
+const ach = useAchievements(computed(() => !!s.value.features.achievements));
+const achAmount = (unit: string, v: number) => unit === "kg" ? fmt.value.vol(v) : unit === "m" ? fmt.value.dist(v, v < 10000 ? 1 : 0) : unit === "s" ? `${num(v / 3600, 0)} h` : unit === "weeks" ? `${num(v, 0)} wk` : num(v, 0);
 const d = computed<any>(() => st.data.value);
 const p = computed<any>(() => prev.data.value);
 const TABS = computed(() => [["overview", "Overview"], ["routines", "Routines"], ["exercises", "Exercises"], ["muscles", "Muscles"], ["activities", "Activities"], ["body", "Body"], ...(s.value.features.reports ? [["reports", "Reports"]] : []), ...(s.value.features.achievements ? [["achievements", "Achievements"]] : [])]);
@@ -57,11 +69,12 @@ const heat = computed(() => {
   return Array.from({ length: 26 * 7 }, (_, i) => { const x = new Date(start); x.setDate(start.getDate() + i); const k = localYmd(x); return { k, n: on.get(k) ?? 0, future: x > new Date() }; });
 });
 const dow = computed(() => { const c = [0, 0, 0, 0, 0, 0, 0]; for (const w of d.value?.workouts ?? []) c[new Date(w.startedAt).getDay()]!++; return Array.from({ length: 7 }, (_, i) => { const j = (i + s.value.firstDay) % 7; return { label: "SMTWTFS"[j]!, value: c[j]! }; }); });
-const hours = computed(() => { const b = [0, 0, 0, 0, 0, 0]; for (const w of d.value?.workouts ?? []) b[Math.floor(new Date(w.startedAt).getHours() / 4)]!++; return ["0–4", "4–8", "8–12", "12–16", "16–20", "20–24"].map((l, i) => ({ label: l, value: b[i]! })); });
+const hours = computed(() => { const b = [0, 0, 0, 0, 0, 0]; for (const w of d.value?.workouts ?? []) b[Math.floor(new Date(w.startedAt).getHours() / 4)]!++; return ["0-4", "4-8", "8-12", "12-16", "16-20", "20-24"].map((l, i) => ({ label: l, value: b[i]! })); });
 // exercises
 const exq = ref(""), exSort = ref<"times" | "change" | "stalled">("times");
 const exList = computed(() => (d.value?.exercises ?? []).filter((e: any) => e.times && e.name.toLowerCase().includes(exq.value.toLowerCase()))
   .sort((a: any, b: any) => exSort.value === "change" ? b.change - a.change : exSort.value === "stalled" ? Number(b.stalled) - Number(a.stalled) || b.times - a.times : b.times - a.times));
+const EX_ORDER = [{ value: "times", label: "Most done" }, { value: "change", label: "Most improved" }, { value: "stalled", label: "Stalled" }];
 const skipped = computed(() => (d.value?.exercises ?? []).filter((e: any) => e.skipped).sort((a: any, b: any) => b.skipped - a.skipped).slice(0, 5));
 // muscles
 const groupWeek = computed(() => { const w = weeks.value.at(-1)?.muscles ?? {}; return GROUPS.filter((g) => g.id !== "neck").map((g) => ({ label: g.name, value: Math.round(g.muscles.reduce((a, m) => a + (w[m] ?? 0), 0) * 10) / 10 })); });
@@ -78,16 +91,24 @@ const steps = computed(() => (d.value?.daily ?? []).filter((x: any) => x.kind ==
 // body
 const bw = computed(() => (d.value?.body ?? []).filter((b: any) => b.kind === "weight").map((b: any) => ({ x: new Date(b.measuredAt).getTime(), y: Math.round(fmt.value.fromKg(Number(b.value)) * 10) / 10 })));
 const bwTrend = computed(() => { let ema: number | null = null; return bw.value.map((p: any) => { ema = ema == null ? p.y : ema + 0.15 * (p.y - ema); return { x: p.x, y: Math.round(ema! * 10) / 10 }; }); });
-const measures = computed(() => { const m = new Map<string, any[]>(); for (const b of d.value?.body ?? []) if (b.kind !== "weight" && b.kind !== "photo") m.set(b.kind, [...(m.get(b.kind) ?? []), { x: new Date(b.measuredAt).getTime(), y: Number(b.value) }]); return [...m]; });
+// lengths are kept in cm: shown in the person's unit; body fat stays in %
+const mUnit = (k: string) => (bodyMeasure(k)?.unit ?? "cm") === "cm" ? fmt.value.lu : "%";
+const measures = computed(() => { const m = new Map<string, any[]>(); for (const b of d.value?.body ?? []) if (b.kind !== "weight" && b.kind !== "photo") m.set(b.kind, [...(m.get(b.kind) ?? []), { x: new Date(b.measuredAt).getTime(), y: mUnit(b.kind) === "%" ? Number(b.value) : Math.round(fromCm(Number(b.value), fmt.value.lu) * 10) / 10 }]); return [...m]; });
+// show the page once its data is in, all at once
+await loaded(st, prev, ach);
 </script>
 
 <template>
-  <div class="page wide">
+  <div class="page">
     <div class="ph"><div><h1>Stats</h1></div>
-      <div class="acts"><select v-model="rk" style="width:auto"><option v-for="[k, l] in RANGES" :key="k" :value="k">{{ l }}</option></select></div></div>
+      <div class="acts"><AppSelect v-model="rk" :options="RANGES.map(([value, label]) => ({ value, label }))" title="Period" style="width:auto" /></div></div>
     <div class="tabs"><button v-for="[k, l] in TABS" :key="k" :class="{ on: tab === k }" @click="tab = k!">{{ l }}</button></div>
 <Transition name="sw" mode="out-in"><div :key="tab">
-    <div v-if="!d" class="empty">Loading…</div>
+    <div v-if="!d && st.isError.value" class="card empty"><Icon name="info" :size="34" /><b>Couldn't load your stats</b>{{ (st.error.value as Error | null)?.message }}<br /><button class="btn tonal" @click="st.refetch()">Try again</button></div>
+    <div v-else-if="!d" class="empty">Loading…</div>
+
+    <!-- nothing in this period: one message instead of a page of zeros and empty charts -->
+    <div v-else-if="tab === 'overview' && !T!.workouts && !T!.activities" class="card empty"><Icon name="stats" :size="34" /><b>Nothing to show yet</b>{{ days ? "No workouts or activities in this period. Pick a longer one, or" : "Your numbers show here once you" }} finish a workout or log an activity.<br /><button class="btn tonal" @click="startOpen = true">Start a workout</button></div>
 
     <template v-else-if="tab === 'overview'">
       <div class="grid g4">
@@ -96,24 +117,24 @@ const measures = computed(() => { const m = new Map<string, any[]>(); for (const
         <div class="card stat"><div class="lbl"><span class="bi"><Icon name="layers" :size="15" /></span>Volume</div><div class="val">{{ fmt.vol(T!.volumeKg) }}</div><div class="sub">{{ change("volumeKg") || `${T!.sets} sets` }}</div><Sparkline :values="weeks.map((w) => w.volumeKg)" /></div>
         <div class="card stat"><div class="lbl"><span class="bi"><Icon name="walk" :size="15" /></span>Activities</div><div class="val">{{ T!.activities }}</div><div class="sub">{{ fmt.dist(T!.distM, 1) }}</div></div>
       </div>
-      <div class="grid g2" style="margin-top:var(--spg)">
-        <div class="card"><div class="lbl" style="margin-bottom:8px">Workouts per week · goal {{ s.weeklyGoal }}</div><BarChart :bars="weeks.slice(-16).map((w) => ({ label: wlabel(w.week).split(' ')[0]!, value: w.workouts, dim: w.workouts < s.weeklyGoal }))" :goal="s.weeklyGoal" :height="170" /></div>
-        <div class="card"><div class="lbl" style="margin-bottom:8px">Consistency · last 6 months</div>
+      <div class="grid g2 spt">
+        <div class="card"><div class="lbl hgap">Workouts per week{{ wkGoal ? ` · goal ${wkGoal}` : "" }}</div><BarChart :bars="weeks.slice(-16).map((w) => ({ label: wlabel(w.week).split(' ')[0]!, value: w.workouts, dim: !!wkGoal && w.workouts < wkGoal }))" :goal="wkGoal ?? undefined" :height="170" /></div>
+        <div class="card"><div class="lbl hgap">Consistency · last 6 months</div>
           <div class="heat"><i v-for="c in heat" :key="c.k" :title="`${c.k}: ${c.n}`" :style="c.future ? { opacity: 0 } : c.n ? { background: `color-mix(in srgb, var(--acc) ${Math.min(100, 45 + c.n * 30)}%, var(--s2))` } : undefined" /></div>
           <div class="grid g2" style="margin-top:14px;gap:12px"><div><div class="tiny" style="margin-bottom:4px">By weekday</div><BarChart :bars="dow" :height="90" /></div><div><div class="tiny" style="margin-bottom:4px">By time of day</div><BarChart :bars="hours" :height="90" /></div></div>
         </div>
       </div>
-      <div class="card" style="margin-top:var(--spg)"><div class="lbl" style="margin-bottom:8px">Average workout length (min)</div><LineChart :points="d.workouts.map((w: any) => ({ x: new Date(w.startedAt).getTime(), y: Math.round(w.durationS / 60), id: w.id, label: w.name }))" :height="160" @pick="(id) => router.push(`/workouts/${id}`)" /></div>
+      <div class="card spt"><div class="lbl hgap">Average workout length (min)</div><LineChart :points="d.workouts.map((w: any) => ({ x: new Date(w.startedAt).getTime(), y: Math.round(w.durationS / 60), id: w.id, label: w.name }))" :height="160" @pick="(id) => router.push(`/workouts/${id}`)" /></div>
     </template>
 
     <template v-else-if="tab === 'routines'">
-      <div v-if="!d.routines.length" class="card empty"><b>No routine workouts in this period</b></div>
+      <div v-if="!d.routines.length" class="card empty"><Icon name="routines" :size="34" /><b>No routine workouts in this period</b>Workouts started from a routine are compared here.</div>
       <div class="grid g2">
         <div v-for="r in d.routines" :key="r.routineId" class="card click" @click="router.push(`/routines/${r.routineId}`)">
           <div class="row"><span class="dot" :style="r.color ? { background: r.color } : undefined" /><b class="grow">{{ r.name }}</b><span class="tiny">{{ r.times }}×</span></div>
           <div class="grid g3 keep" style="margin:10px 0;gap:8px">
             <div><div class="lbl">Average</div><div style="font-weight:600">{{ fmt.dur(r.avgDurationS, true) }}</div></div>
-            <div><div class="lbl">Planned</div><div style="font-weight:600">{{ r.estimateS ? fmt.dur(r.estimateS, true) : "—" }}</div></div>
+            <div><div class="lbl">Planned</div><div style="font-weight:600">{{ r.estimateS ? fmt.dur(r.estimateS, true) : "-" }}</div></div>
             <div><div class="lbl">Skipped</div><div style="font-weight:600">{{ Math.round(r.skipRate * 100) }}%</div></div>
           </div>
           <LineChart :points="r.trend.map((t: any) => ({ x: new Date(t.at).getTime(), y: fmt.fromKg(t.volumeKg) }))" :height="110" :fmt="(v) => fmt.num(v / 1000, 1) + 'k'" />
@@ -122,26 +143,30 @@ const measures = computed(() => { const m = new Map<string, any[]>(); for (const
     </template>
 
     <template v-else-if="tab === 'exercises'">
-      <div class="row wrap" style="margin-bottom:12px"><div class="search" style="flex:1 1 220px;max-width:360px"><Icon name="search" :size="18" /><input v-model="exq" placeholder="Find an exercise" /></div>
-        <div class="seg"><button :class="{ on: exSort === 'times' }" @click="exSort = 'times'">Most done</button><button :class="{ on: exSort === 'change' }" @click="exSort = 'change'">Most improved</button><button :class="{ on: exSort === 'stalled' }" @click="exSort = 'stalled'">Stalled</button></div></div>
-      <div class="card"><div class="list">
+      <div class="search hgap"><Icon name="search" :size="18" /><input v-model="exq" placeholder="Find an exercise" /></div>
+      <FilterPanel :count="`${exList.length} exercise${exList.length === 1 ? '' : 's'}`" :active="!!exq || exSort !== 'times'" @clear="exq = ''; exSort = 'times'">
+        <FilterRow :model-value="exSort" label="Order" :options="EX_ORDER" @update:model-value="(v) => (exSort = v as typeof exSort)" />
+      </FilterPanel>
+      <div v-if="!exList.length" class="card empty"><Icon name="dumbbell" :size="34" /><b>{{ exq ? "No exercise matches" : "No exercises done in this period" }}</b>{{ exq ? "Try another name." : "Each exercise you do shows here with its progress." }}</div>
+      <div v-else class="card"><div class="list">
         <div v-for="e in exList" :key="e.exerciseId" class="li click" @click="router.push(`/exercises/${e.exerciseId}?tab=charts`)">
           <div class="grow"><div class="t">{{ e.name }} <span v-if="e.stalled" class="mchip" title="No progress in the last 4 sessions">stalled</span></div><div class="s">{{ e.times }}× · last {{ fmt.date(e.lastAt) }}{{ e.bestE1rm ? ` · best 1RM ${fmt.wu_(e.bestE1rm)}` : "" }}</div></div>
           <div class="exspark"><Sparkline :values="e.trend.map((t: any) => t.e1rm || t.reps)" style="width:100%;height:100%" /></div>
           <div class="r tiny" style="width:56px" :class="e.change > 0.005 ? 'pos' : e.change < -0.005 ? 'neg' : ''">{{ e.change ? `${e.change > 0 ? "+" : ""}${Math.round(e.change * 100)}%` : "" }}</div>
         </div>
       </div></div>
-      <template v-if="skipped.length"><div class="sh"><h2>Most skipped</h2></div><div class="card"><div v-for="e in skipped" :key="e.exerciseId" class="row tiny" style="padding:4px 0"><span class="grow" style="color:var(--tx)">{{ e.name }}</span>skipped {{ e.skipped }}×</div></div></template>
+      <template v-if="skipped.length"><div class="sh"><h2>Most skipped</h2></div><div class="card"><div class="list"><div v-for="e in skipped" :key="e.exerciseId" class="li click" @click="router.push(`/exercises/${e.exerciseId}`)"><div class="grow"><div class="t">{{ e.name }}</div></div><span class="tiny">skipped {{ e.skipped }}×</span></div></div></div></template>
     </template>
 
     <template v-else-if="tab === 'muscles'">
-      <div class="grid g2">
-        <div class="card"><div class="lbl" style="margin-bottom:8px">Sets per muscle in this period</div><BodyMap :values="d.muscles" :height="240" legend />
+      <div v-if="!Object.keys(d.muscles).length" class="card empty"><Icon name="activity" :size="34" /><b>No sets in this period</b>The muscles you train, and how evenly, show here once you've done some workouts.</div>
+      <div v-else class="grid g2">
+        <div class="card"><div class="lbl hgap">Sets per muscle in this period</div><BodyMap :values="d.muscles" :height="240" legend />
           <div class="grid g2 keep" style="margin-top:12px;gap:6px 28px"><div v-for="[m, n] in Object.entries(d.muscles).sort((a: any, b: any) => b[1] - a[1])" :key="m" class="row tiny"><span class="grow" style="color:var(--tx)">{{ muscleName(m) }}</span>{{ Math.round(Number(n)) }}</div></div></div>
-        <div class="col" style="gap:var(--spg)">
-          <div class="card"><div class="lbl" style="margin-bottom:10px">Working sets this week · target {{ WEEKLY_SET_RANGE[0] }}–{{ WEEKLY_SET_RANGE[1] }} per group</div><BarChart :bars="groupWeek" horizontal :band="WEEKLY_SET_RANGE" /></div>
-          <div class="card"><div class="lbl" style="margin-bottom:10px">Average per training week</div><BarChart :bars="groupAvg" horizontal /></div>
-          <div class="card"><div class="lbl" style="margin-bottom:8px">Balance</div>
+        <div class="stack">
+          <div class="card"><div class="lbl hgap">Working sets this week · target {{ WEEKLY_SET_RANGE[0] }}-{{ WEEKLY_SET_RANGE[1] }} per group</div><BarChart :bars="groupWeek" horizontal :band="WEEKLY_SET_RANGE" /></div>
+          <div class="card"><div class="lbl hgap">Average per training week</div><BarChart :bars="groupAvg" horizontal /></div>
+          <div class="card"><div class="lbl hgap">Balance</div>
             <div class="row tiny" style="margin-bottom:6px"><span style="width:60px">Push</span><div class="pbar grow"><i :style="{ width: (balance.push / Math.max(1, balance.push + balance.pull)) * 100 + '%' }" /></div><span style="width:60px;text-align:end">Pull</span></div>
             <div class="row tiny"><span style="width:60px">Upper</span><div class="pbar grow"><i :style="{ width: (balance.upper / Math.max(1, balance.upper + balance.lower)) * 100 + '%' }" /></div><span style="width:60px;text-align:end">Lower</span></div>
             <div v-if="neglected.length" class="tiny" style="margin-top:10px">Not trained in this period: {{ neglected.join(", ") }}</div></div>
@@ -152,24 +177,45 @@ const measures = computed(() => { const m = new Map<string, any[]>(); for (const
     <template v-else-if="tab === 'activities'">
       <div v-if="!d.activities.length && !steps.length" class="card empty"><Icon name="walk" :size="34" /><b>No activities in this period</b></div>
       <div class="grid g3"><div v-for="t in actTypes" :key="t.type" class="card stat"><div class="lbl" style="text-transform:capitalize">{{ t.type }}</div><div class="val">{{ t.m ? fmt.dist(t.m, 1) : fmt.dur(t.s, true) }}</div><div class="sub">{{ t.n }} sessions · {{ fmt.dur(t.s, true) }}{{ t.m && t.s ? " · " + fmt.pace(t.s, t.m) : "" }}</div></div></div>
-      <div v-if="d.activities.length" class="card" style="margin-top:var(--spg)"><div class="lbl" style="margin-bottom:8px">Distance per week ({{ fmt.du }})</div><BarChart :bars="actWeeks.slice(-16).map((w) => ({ ...w, label: w.label.split(' ')[0]! }))" :height="160" :fmt="(v) => fmt.num(v, 1)" /></div>
-      <div v-if="steps.length" class="card" style="margin-top:var(--spg)"><div class="lbl" style="margin-bottom:8px">Daily steps · goal {{ s.stepGoal.toLocaleString() }}</div><LineChart :points="steps" :height="160" :fmt="(v) => fmt.num(v, 0)" /></div>
+      <div v-if="d.activities.length" class="card spt"><div class="lbl hgap">Distance per week ({{ fmt.du }})</div><BarChart :bars="actWeeks.slice(-16).map((w) => ({ ...w, label: w.label.split(' ')[0]! }))" :height="160" :fmt="(v) => fmt.num(v, 1)" /></div>
+      <div v-if="steps.length" class="card spt"><div class="lbl hgap">Daily steps{{ stepGoal ? ` · goal ${fmt.num(stepGoal.target, 0)}` : "" }}</div><LineChart :points="steps" :height="160" :fmt="(v) => fmt.num(v, 0)" /></div>
     </template>
 
     <template v-else-if="tab === 'body'">
-      <div class="row" style="margin-bottom:12px"><div class="grow" /><button class="btn tonal s" @click="bodySheet = true"><Icon name="plus" :size="16" />Log</button><button class="qb" @click="router.push('/body')">All entries</button></div>
-      <div class="card"><div class="lbl" style="margin-bottom:8px">Body weight ({{ fmt.wu }}) · smoothed trend</div>
-        <div v-if="!bw.length" class="empty" style="padding:24px"><b>No body weight yet</b></div>
+      <!-- charts only: logging, entries and height live on the Body page -->
+      <div class="row hgap"><div class="grow tiny">Your body over this period. Log and edit entries on the Body page.</div><button class="qb" @click="router.push('/body')">Body page <Icon name="right" :size="14" /></button></div>
+      <div class="card"><div class="lbl hgap">Body weight ({{ fmt.wu }}) · smoothed trend</div>
+        <div v-if="!bw.length" class="empty sm"><b>No body weight yet</b></div>
         <LineChart v-else :points="bwTrend" :height="220" :fmt="(v) => fmt.num(v, 1)" />
         <div v-if="bw.length" class="tiny" style="margin-top:6px">Latest {{ bw.at(-1)!.y }} {{ fmt.wu }} · trend {{ bwTrend.at(-1)!.y }} {{ fmt.wu }}{{ bwTrend.length > 7 ? ` · ${bwTrend.at(-1)!.y - bwTrend.at(-8)!.y >= 0 ? "+" : ""}${fmt.num(bwTrend.at(-1)!.y - bwTrend.at(-8)!.y, 1)} over the last 7 entries` : "" }}</div></div>
-      <div v-if="s.features.measurements" class="grid g2" style="margin-top:var(--spg)"><div v-for="[k, pts] in measures" :key="k" class="card"><div class="lbl" style="margin-bottom:8px;text-transform:capitalize">{{ k.replace("_", " ") }}</div><LineChart :points="pts" :height="140" /></div></div>
+      <div v-if="s.features.measurements" class="grid g2 spt"><div v-for="[k, pts] in measures" :key="k" class="card click" role="button" tabindex="0" @click="router.push(`/body?tab=measurements&kind=${k}`)" @keydown.enter="router.push(`/body?tab=measurements&kind=${k}`)"><div class="lbl hgap">{{ bodyName(k) }} ({{ mUnit(k) }})</div><LineChart :points="pts" :height="140" /></div></div>
     </template>
 
     <Reports v-else-if="tab === 'reports'" />
 
     <template v-else-if="tab === 'achievements'">
-      <div class="grid g4"><div v-for="a in ach.data.value ?? []" :key="a.id" class="card tight" :style="!a.reached ? { opacity: .55 } : undefined"><Icon name="trophy" :style="{ color: a.reached ? '#e9b52f' : 'var(--tx2)' }" /><div style="font-weight:600;margin-top:6px">{{ a.name }}</div><div class="pbar" style="margin-top:8px;height:5px"><i :style="{ width: a.progress * 100 + '%' }" /></div></div></div>
+      <div v-if="!ach.data.value" class="empty">Loading…</div>
+      <div v-else class="grid g2">
+        <div v-for="a in ach.data.value" :key="a.id" class="card">
+          <div class="row"><b class="grow">{{ a.title }}</b><span class="tiny">{{ achAmount(a.unit, a.value) }}</span></div>
+          <div class="tiny" style="margin-top:2px">{{ a.desc }}</div>
+          <div class="achs">
+            <div v-for="x in a.steps" :key="x.id" class="ach" :class="{ on: x.reachedAt }" :title="x.reachedAt ? `Reached ${fmt.date(x.reachedAt, { day: 'numeric', month: 'short', year: 'numeric' })}` : `${achAmount(a.unit, a.value)} of ${achAmount(a.unit, x.target)}`">
+              <Icon name="trophy" :size="16" /><div class="grow"><div class="t">{{ x.name }}</div><div class="s">{{ x.reachedAt ? fmt.date(x.reachedAt, { day: "numeric", month: "short", year: "numeric" }) : `${Math.floor(Math.min(1, a.value / x.target) * 100)}%` }}</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
     </template>
 </div></Transition>
   </div>
 </template>
+
+<style scoped>
+.achs { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; margin-top: 12px; }
+.ach { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 10px; background: var(--s2); color: var(--tx2); opacity: .6; }
+.ach.on { opacity: 1; }
+.ach.on svg { color: var(--warn); }
+.ach .t { font-size: 13px; font-weight: 600; color: var(--tx); }
+.ach .s { font-size: 11.5px; }
+</style>

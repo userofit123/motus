@@ -29,7 +29,7 @@ export async function suggestions(q: Sql, routines: RoutineSummary[], now: Date,
   // 0. a program you're following says what's next
   for (const p of (await q.query("SELECT * FROM programs WHERE active ORDER BY created_at DESC")).rows) {
     const next = (await programState(q, p)).next;
-    if (next && byId.has(next.routineId)) add({ kind: "program", title: next.name, reason: `${p.name}: week ${next.week}, day ${next.day}${next.deload ? " (deload)" : ""}`, routineId: next.routineId, color: next.color });
+    if (next && byId.has(next.routineId)) add({ kind: "program", title: next.name, reason: `${p.name}: week ${next.week}, workout ${next.day}${next.deload ? " (deload)" : ""}`, routineId: next.routineId, color: next.color });
   }
 
   // 1. your usual order: which routine most often came right after the one you did last

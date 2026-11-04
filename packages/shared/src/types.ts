@@ -1,6 +1,8 @@
 // The shapes the API sends and receives. Weights are always kg and distances metres; the apps convert for display.
 
 export type SetKind = "warmup" | "normal" | "drop" | "failure";
+/** Rest after each kind of set other than working sets (those use the exercise's own rest), in seconds; null = as working sets. */
+export type RestByKind = Partial<Record<Exclude<SetKind, "normal">, number | null>>;
 export type Tracking =
   | "weight_reps" // 80 kg × 8
   | "bodyweight_reps" // push-ups: reps, optional added weight
@@ -59,6 +61,7 @@ export interface Progression {
   // double progression: work up to repsMax in every set, then add weight and go back to reps
   deloadAfter?: number; // failed sessions in a row before a deload
   deloadPct?: number; // e.g. 10 → −10%
+  deloadKg?: number | null; // a fixed amount instead, for machines whose stack has no 10% steps
 }
 
 export interface RoutineExercise {
@@ -68,6 +71,7 @@ export interface RoutineExercise {
   superset: string | null;
   restS: number | null;
   restAfterS: number | null;
+  restByKind?: RestByKind | null;
   repRestS: number | null;
   prefill: "last" | "target";
   prefillScope: "any" | "routine";
@@ -109,10 +113,41 @@ export interface RoutineSummary {
   setCount: number;
   estimateS: number;
   muscles: string[];
+  /** muscles that only help (no exercise here works them as a main muscle) */
+  helpers?: string[];
   lastDoneAt: string | null;
   timesDone: number;
   pendingReminders: number;
   exerciseNames: string[];
+}
+
+/** A program: weeks of routines done in order, some weeks lighter (deload). */
+export interface Program {
+  id: string;
+  name: string;
+  description: string;
+  weeks: { days: string[]; deload?: boolean }[];
+  deloadPct: number;
+  startDate: string;
+  active: boolean;
+  createdAt: string;
+  state: ProgramState;
+}
+export interface ProgramSlot { routineId: string; week: number; day: number; deload: boolean; name: string; color: string | null }
+/** Where you are: the next routine in order, and how many of the planned workouts are done. */
+export interface ProgramState { next: ProgramSlot | null; done: number; total: number; finished?: boolean }
+export interface ProgramWorkout { id: string; name: string; startedAt: string; durationS: number; volumeKg: number; week: number | null; day: number | null }
+/** One program in full, for its page. */
+export interface ProgramDetail extends Program {
+  status: "active" | "paused" | "finished";
+  /** The week the calendar is in since the start (0 = not started yet); compared with state.next.week to see if you're behind. */
+  calendarWeek: number;
+  /** done: finished (with its workout); next: the one to do now; late: from a week the calendar has passed; todo: still to come */
+  plan: { week: number; deload: boolean; days: (ProgramSlot & { status: "done" | "next" | "late" | "todo"; workout: ProgramWorkout | null })[] }[];
+  stats: { done: number; total: number; weeksDone: number; expected: number; adherencePct: number | null; volumeKg: number; durationS: number;
+    perRoutine: { routineId: string; name: string; done: number; planned: number }[] };
+  /** Workouts in this program, newest first: the ones that counted, and any extra started from it */
+  recent: ProgramWorkout[];
 }
 
 export interface Folder {
@@ -250,7 +285,9 @@ export interface Goal {
   metric: string;
   comparator: ">=" | "<=";
   target: number;
-  period: "once" | "week" | "month";
+  period: "once" | "day" | "week" | "month";
+  /** a daily goal's days: null every day, "workdays" the work week in settings, or chosen days (Sunday = 0) */
+  days?: GoalDays;
   startDate: string;
   deadline: string | null;
   status: "active" | "achieved" | "archived";
@@ -268,6 +305,8 @@ export interface GoalProgress {
   unit?: string;
   history: { date: string; value: number }[];
   pace?: string;
+  /** weekly and monthly goals: weeks (or months) in a row reaching it, ending with this one once it's reached, else the last */
+  streak?: number;
 }
 
 export interface Activity {
@@ -348,3 +387,5 @@ export interface LiveEvent {
   topics: string[];
   at: number;
 }
+
+export type GoalDays = null | "workdays" | number[];

@@ -4,12 +4,18 @@ import m001 from "./migrations/001_init";
 import m002 from "./migrations/002_isolation";
 import m003 from "./migrations/003_programs";
 import m004 from "./migrations/004_sync";
+import m005 from "./migrations/005_rest_by_kind";
+import m006 from "./migrations/006_log_index";
+import m007 from "./migrations/007_goal_days";
 
 export const MIGRATIONS: [string, string][] = [
   ["001_init", m001],
   ["002_isolation", m002],
   ["003_programs", m003],
   ["004_sync", m004],
+  ["005_rest_by_kind", m005],
+  ["006_log_index", m006],
+  ["007_goal_days", m007],
 ];
 
 export async function migrate(db: Db): Promise<string[]> {

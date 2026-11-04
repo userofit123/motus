@@ -1,129 +1,86 @@
 <script setup lang="ts">
-// Recording a walk, run or ride (requirement 18): time, distance, pace and the route on a map.
-// The points are saved on this device as they come in, so closing the app never loses a walk. In a browser it records
-// while the page is open; the Android app keeps recording with the screen off, and also counts steps with the phone's
-// step counter (browsers have no access to it).
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+// Recording an activity (requirement 18): any of your activity types. Those with a route (walk, run, ride…) get distance,
+// pace and the map from GPS; the rest (yoga, climbing, a class) record time only. The recording itself
+// lives in workout/recording.ts, so it keeps going while you use other pages (or run a workout); this page shows it and
+// starts, pauses and ends it.
+import { goBack } from "../core/leave";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { useActivityTypes } from "../api/queries";
-import { api } from "../api/client";
-import { invalidate } from "../api/live";
-import { readJson, writeJson } from "../core/prefs";
+import { useActivityTypes, useActive, loaded } from "../api/queries";
 import { useFmt } from "../core/format";
 import { confirm } from "../core/ask";
 import { toast, toastError } from "../core/toast";
-import { keepAwake } from "../workout/native";
+import { isNativeApp } from "../workout/native";
+import { recording as rec, recDistM, recElapsedS, recStepsShown, gpsError, stepsError, here, previewLocation, startRecording, togglePause, finishRecording, discardRecording } from "../workout/recording";
 import { clock } from "@motus/shared";
 import Icon from "../components/Icon.vue";
 import RouteMap from "../components/RouteMap.vue";
+import ChoiceTiles from "../components/ChoiceTiles.vue";
+import { newActivityType } from "../core/activityTypes";
 
 const route = useRoute(), router = useRouter();
 const types = useActivityTypes();
+const active = useActive();
 const fmt = useFmt();
-interface Rec { type: string; startedAt: number; route: number[][]; pausedMs: number; pauseAt: number | null; running: boolean;
-  /** step counter totals (steps since the phone started): where the walk began, steps taken while paused, the total at the pause */
-  stepBase?: number | null; stepPaused?: number; stepPauseAt?: number | null; stepNow?: number | null }
-const KEY = "motusRecording";
-const rec = ref<Rec>(readJson<Rec | null>(KEY, null) ?? { type: String(route.query.type ?? "walk"), startedAt: 0, route: [], pausedMs: 0, pauseAt: null, running: false });
-const save = () => writeJson(KEY, rec.value);
-const now = ref(Date.now());
-let watchId: number | null = null, tick: ReturnType<typeof setInterval> | null = null;
-const R = 6371000, rad = (d: number) => (d * Math.PI) / 180;
-const hav = (a: number[], b: number[]) => { const dLat = rad(b[0]! - a[0]!), dLon = rad(b[1]! - a[1]!); const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a[0]!)) * Math.cos(rad(b[0]!)) * Math.sin(dLon / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(h)); };
-const dist = computed(() => rec.value.route.reduce((t, p, i, a) => (i ? t + hav(a[i - 1]!, p) : 0), 0));
-const elapsed = computed(() => rec.value.startedAt ? Math.max(0, ((rec.value.pauseAt ?? now.value) - rec.value.startedAt - rec.value.pausedMs) / 1000) : 0);
-const gpsError = ref("");
-// steps (Android app only)
-const WP = () => (globalThis as any).Capacitor?.Plugins?.MotusWorkout;
-const stepsOn = ref(false);
-let stepSub: any = null;
-function onSteps(total: number) {
-  if (total < 0 || !rec.value.running) return;
-  const r = rec.value;
-  if (r.stepBase == null || total < (r.stepNow ?? 0)) { r.stepBase = total - (r.stepNow != null && r.stepBase != null ? r.stepNow - r.stepBase : 0); r.stepPaused = r.stepPaused ?? 0; } // first reading, or the phone restarted
-  r.stepNow = total; save();
-}
-const steps = computed(() => { const r = rec.value; if (r.stepBase == null || r.stepNow == null) return 0; const pausing = r.pauseAt && r.stepPauseAt != null ? r.stepNow - r.stepPauseAt : 0; return Math.max(0, r.stepNow - r.stepBase - (r.stepPaused ?? 0) - pausing); });
-async function startSteps() {
-  const p = WP(); if (!p?.startSteps) return;
-  try {
-    const r = await p.startSteps();
-    if (!r?.available) return;
-    stepsOn.value = true;
-    stepSub = await p.addListener("steps", (e: any) => onSteps(Number(e.total)));
-    if (r.total >= 0) onSteps(Number(r.total));
-  } catch { /* no step counter */ }
-}
-const stopSteps = () => { stepSub?.remove?.(); stepSub = null; WP()?.stopSteps?.().catch?.(() => {}); };
-// in the Android app a foreground service keeps recording with the screen off
-const BG = () => (globalThis as any).Capacitor?.Plugins?.BackgroundGeolocation;
-let bgId: string | null = null;
-function onPoint(lat: number, lon: number, time: number, alt: number | null | undefined, acc: number) {
-  if (!rec.value.running || rec.value.pauseAt) return;
-  if (acc > 40) return; // ignore rough fixes
-  const pt = [lat, lon, Math.round(time / 1000), alt ?? undefined] as number[];
-  const last = rec.value.route.at(-1);
-  if (last && hav(last, pt) < 3) return; // standing still
-  rec.value.route.push(pt); save();
-}
-async function startGps() {
-  if (BG()) {
-    try {
-      bgId = await BG().addWatcher({ backgroundTitle: "Recording your " + (t.value?.name ?? "activity").toLowerCase(), backgroundMessage: "Motus is tracking your route", requestPermissions: true, stale: false, distanceFilter: 3 },
-        (loc: any, err: any) => { if (err) { gpsError.value = err.code === "NOT_AUTHORIZED" ? "Allow location to record the route" : "Looking for GPS…"; return; } if (loc) onPoint(loc.latitude, loc.longitude, loc.time ?? Date.now(), loc.altitude, loc.accuracy ?? 0); });
-      return;
-    } catch { /* fall back to the browser's location */ }
-  }
-  if (!("geolocation" in navigator)) { gpsError.value = "Location is not available here"; return; }
-  watchId = navigator.geolocation.watchPosition((p) => {
-    onPoint(p.coords.latitude, p.coords.longitude, p.timestamp, p.coords.altitude, p.coords.accuracy);
-  }, (e) => (gpsError.value = e.code === 1 ? "Allow location to record the route" : "Looking for GPS…"), { enableHighAccuracy: true, maximumAge: 2000, timeout: 20000 });
-}
-function start() { rec.value = { ...rec.value, startedAt: Date.now(), route: [], pausedMs: 0, pauseAt: null, running: true, stepBase: null, stepPaused: 0, stepPauseAt: null, stepNow: null }; save(); startGps(); startSteps(); keepAwake(true); }
-function pause() {
-  const r = rec.value;
-  if (r.pauseAt) {
-    r.pausedMs += Date.now() - r.pauseAt; r.pauseAt = null;
-    if (r.stepPauseAt != null && r.stepNow != null) r.stepPaused = (r.stepPaused ?? 0) + r.stepNow - r.stepPauseAt;
-    r.stepPauseAt = null;
-  } else { r.pauseAt = Date.now(); r.stepPauseAt = r.stepNow ?? null; }
-  save();
-}
+const pick = ref(String(route.query.type ?? "walk"));
+const slug = computed(() => rec.value?.type ?? pick.value);
+const t = computed(() => (types.data.value ?? []).find((x: any) => x.slug === slug.value));
+const noRoute: number[][] = [];
+const gps = computed(() => t.value?.hasGps !== false);
+// before you start, the map finds you (only for types with a route)
+watch([gps, () => !!rec.value], ([g, r]) => previewLocation(g && !r), { immediate: true });
+onBeforeUnmount(() => previewLocation(false));
+// every type you have, the same list as logging one and goals; the last tile adds a new type and picks it
+const NEW = "__new";
+const tiles = computed(() => [...(types.data.value ?? []).map((x: any) => ({ value: x.slug, label: x.name, icon: x.icon })), { value: NEW, label: "New type", icon: "plus" }]);
+let lastPick = pick.value;
+watch(pick, async (v, old) => { if (v !== NEW) { lastPick = v; return; } pick.value = old ?? lastPick; const slug = await newActivityType(); if (slug) { await types.refetch(); pick.value = slug; } });
+// a ride reads better as speed, on foot as pace (time per km or mile); nothing until there's a little distance to go on
+const ride = computed(() => slug.value === "cycle");
+const pace = computed(() => {
+  const d = fmt.value.distNum(recDistM.value), s = recElapsedS.value;
+  if (recDistM.value < 20 || !s) return null;
+  return ride.value ? fmt.value.num(d / (s / 3600), 1) : clock(s / d);
+});
+const busy = ref(false);
 async function finish() {
-  try {
-    const end = rec.value.pauseAt ?? Date.now();
-    const r = await api.post("/activities", { type: rec.value.type, startedAt: new Date(rec.value.startedAt).toISOString(), endedAt: new Date(end).toISOString(), durationS: Math.round(elapsed.value), route: rec.value.route, steps: stepsOn.value ? steps.value : null, source: "gps", clientId: `gps:${rec.value.startedAt}` });
-    localStorage.removeItem(KEY); keepAwake(false); stopGps(); stopSteps();
-    invalidate(["activities", "stats", "goals", "home", "calendar"]); toast("Saved");
-    router.replace(`/activities/${r.id}`);
-  } catch (e) { toastError(e); }
+  busy.value = true;
+  try { const name = t.value?.name ?? "Activity"; const id = await finishRecording(); toast(`${name} saved`); router.replace(`/activities/${id}`); }
+  catch (e) { toastError(e); } finally { busy.value = false; }
 }
-async function discard() { if (await confirm("Discard this recording?", { ok: "Discard", danger: true })) { localStorage.removeItem(KEY); keepAwake(false); stopSteps(); router.back(); } }
-onMounted(() => { tick = setInterval(() => (now.value = Date.now()), 1000); if (rec.value.running) { startGps(); startSteps(); keepAwake(true); } });
-const stopGps = () => { if (bgId) BG()?.removeWatcher({ id: bgId }).catch?.(() => {}); bgId = null; };
-onBeforeUnmount(() => { stopGps(); stepSub?.remove?.(); if (watchId != null) navigator.geolocation.clearWatch(watchId); if (tick) clearInterval(tick); });
-const t = computed(() => (types.data.value ?? []).find((x: any) => x.slug === rec.value.type));
+async function discard() { if (await confirm("Discard this recording?", { ok: "Discard", danger: true, noHistory: true })) { discardRecording(); router.back(); } }
+// show the page once its data is in, all at once
+await loaded(types, active);
 </script>
 
 <template>
   <div class="page">
-    <button class="back" @click="router.back()"><Icon name="left" :size="16" />Back</button>
-    <div class="ph"><div><h1>{{ t?.name ?? "Activity" }}</h1><div class="sub">{{ rec.running ? (rec.pauseAt ? "Paused" : "Recording") : "Ready" }}{{ gpsError ? " · " + gpsError : "" }}</div></div></div>
-    <div v-if="!rec.running" class="chips" style="margin-bottom:12px"><button v-for="x in (types.data.value ?? []).filter((y: any) => y.hasGps)" :key="x.slug" class="fchip" :class="{ on: rec.type === x.slug }" @click="rec.type = x.slug"><Icon :name="x.icon" :size="15" />{{ x.name }}</button></div>
-    <RouteMap :route="rec.route" follow />
-    <div class="grid g4" style="margin-top:var(--spg)">
-      <div class="card stat hero"><div class="lbl">Time</div><div class="val">{{ clock(elapsed) }}</div></div>
-      <div class="card stat"><div class="lbl">Distance</div><div class="val">{{ fmt.num(fmt.distNum(dist), 2) }}<small>{{ fmt.du }}</small></div></div>
-      <div class="card stat"><div class="lbl">Pace</div><div class="val">{{ fmt.pace(elapsed, dist) || "–" }}</div></div>
-      <div v-if="stepsOn" class="card stat"><div class="lbl">Steps</div><div class="val">{{ steps.toLocaleString() }}</div></div>
+    <button class="back" @click="goBack(router, '/')"><Icon name="left" :size="16" /><span>Back</span></button>
+    <div class="ph"><div><h1>{{ t?.name ?? "Activity" }}</h1><div class="sub">{{ rec ? (rec.pauseAt ? "Paused" : "Recording") : "Ready" }}{{ gps && gpsError ? " · " + gpsError : "" }}{{ rec && stepsError ? " · " + stepsError : "" }}</div></div></div>
+    <ChoiceTiles v-if="!rec" v-model="pick" class="hgap" :options="tiles" compact min="110px" label="Activity" />
+    <p v-if="!rec && active.data.value" class="tiny hgap">Your workout keeps going while you record. Each has its own bar at the bottom of the screen.</p>
+    <RouteMap v-if="gps" :route="rec?.route ?? noRoute" :here="here" follow />
+    <div class="grid rs spt">
+      <div class="card stat hero"><div class="lbl">Time</div><div class="val">{{ clock(recElapsedS) }}</div></div>
+      <div v-if="gps" class="card stat"><div class="lbl">Distance</div><div class="val">{{ fmt.num(fmt.distNum(recDistM), 2) }}<small>{{ fmt.du }}</small></div></div>
+      <div v-if="gps" class="card stat"><div class="lbl">{{ ride ? "Speed" : "Pace" }}</div><div class="val">{{ pace ?? "-" }}<small v-if="pace">{{ ride ? `${fmt.du}/h` : `/${fmt.du}` }}</small></div></div>
+      <div v-if="recStepsShown" class="card stat"><div class="lbl">Steps</div><div class="val">{{ fmt.num(rec!.steps, 0) }}</div><div v-if="!isNativeApp()" class="sub">Counted while Motus is on screen</div></div>
     </div>
-    <div class="row" style="margin-top:var(--spg);justify-content:center">
-      <button v-if="!rec.running" class="btn lg" @click="start"><Icon name="play" />Start</button>
+    <div class="row spt" style="justify-content:center">
+      <button v-if="!rec" class="btn lg" @click="startRecording(pick)"><Icon name="play" />Start</button>
       <template v-else>
-        <button class="btn o lg" @click="pause"><Icon :name="rec.pauseAt ? 'play' : 'pause'" />{{ rec.pauseAt ? "Resume" : "Pause" }}</button>
-        <button class="btn lg" @click="finish"><Icon name="check" />Finish</button>
+        <button class="btn o lg" @click="togglePause"><Icon :name="rec.pauseAt ? 'play' : 'pause'" />{{ rec.pauseAt ? "Resume" : "Pause" }}</button>
+        <button class="btn lg" :disabled="busy" @click="finish"><Icon name="check" />Finish</button>
         <button class="qb danger" @click="discard">Discard</button>
       </template>
     </div>
   </div>
 </template>
+
+<style scoped>
+/* as many across as fit, never narrower than a pace or a long time needs, so nothing is cut off */
+.rs { grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr)); }
+.rs .stat { min-height: 0; }
+.rs .val { font-size: clamp(22px, 6.4vw, var(--fs-val)); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rs .val small { font-size: 13px; }
+</style>

@@ -1,6 +1,6 @@
 // The exercise library: the shared catalog plus each person's own exercises, their per-exercise settings,
 // and every exercise's history, charts and records.
-import { e1rm, type Exercise, type Tracking } from "@motus/shared";
+import { e1rm, liftedKg, type Exercise, type Tracking } from "@motus/shared";
 import type { Router, Ctx } from "../router";
 import type { Sql } from "../db";
 import { camel, id, str, numOrNull, intOrNull, bool, oneOf } from "../util";
@@ -33,6 +33,7 @@ export async function getExercises(q: Sql, ids: string[]): Promise<Map<string, E
 export async function exerciseSessions(q: Sql, exerciseId: string, limit = 200, routineId?: string | null) {
   const { rows } = await q.query(
     `SELECT w.id AS workout_id, w.name AS workout_name, w.routine_id, w.started_at, we.id AS we_id, we.position, we.status,
+       (SELECT tracking FROM exercises e WHERE e.id = we.exercise_id) AS tracking,
        (SELECT count(*) FROM workout_exercises x WHERE x.workout_id = w.id) AS of_n,
        coalesce(json_agg(json_build_object('id', s.id, 'position', s.position, 'kind', s.kind, 'weightKg', s.weight_kg, 'reps', s.reps,
          'durationS', s.duration_s, 'distanceM', s.distance_m, 'rpe', s.rpe, 'rir', s.rir, 'side', s.side, 'doneAt', s.done_at, 'restActualS', s.rest_actual_s)
@@ -47,8 +48,8 @@ export async function exerciseSessions(q: Sql, exerciseId: string, limit = 200, 
     const work = sets.filter((s) => s.kind !== "warmup");
     const best = work.reduce<any>((b, s) => ((e1rm(s.weightKg, s.reps) ?? 0) > (e1rm(b?.weightKg, b?.reps) ?? -1) ? s : b), null);
     return {
-      workoutId: r.workout_id, workoutName: r.workout_name, routineId: r.routine_id, startedAt: r.started_at, position: r.position + 1, ofN: Number(r.of_n), status: r.status,
-      sets, bestSet: best, volumeKg: work.reduce((a, s) => a + (s.weightKg ?? 0) * (s.reps ?? 0), 0),
+      workoutId: r.workout_id, workoutName: r.workout_name, routineId: r.routine_id, tracking: r.tracking as Tracking, startedAt: r.started_at, position: r.position + 1, ofN: Number(r.of_n), status: r.status,
+      sets, bestSet: best, volumeKg: work.reduce((a, s) => a + liftedKg(s.weightKg, s.reps, r.tracking), 0),
       maxWeightKg: work.reduce((a, s) => Math.max(a, s.weightKg ?? 0), 0) || null,
       e1rm: work.reduce((a, s) => Math.max(a, e1rm(s.weightKg, s.reps) ?? 0), 0) || null,
       reps: work.reduce((a, s) => a + (s.reps ?? 0), 0),
@@ -69,7 +70,7 @@ export function recordsOf(sessions: Awaited<ReturnType<typeof exerciseSessions>>
       put("maxWeight", x.weightKg, s, x.reps ? `× ${x.reps}` : undefined);
       put("e1rm", e1rm(x.weightKg, x.reps), s, x.weightKg ? `${x.weightKg} × ${x.reps}` : undefined);
       put("maxReps", x.reps, s, x.weightKg ? `@ ${x.weightKg} kg` : undefined);
-      put("setVolume", (x.weightKg ?? 0) * (x.reps ?? 0), s);
+      put("setVolume", liftedKg(x.weightKg, x.reps, s.tracking), s);
       put("maxDuration", x.durationS, s);
       put("maxDistance", x.distanceM, s);
       if (x.weightKg && x.reps && x.reps <= 12) for (let r = 1; r <= x.reps; r++) if (!repMax[r] || x.weightKg > repMax[r]!.weightKg) repMax[r] = { weightKg: x.weightKg, at: s.startedAt };

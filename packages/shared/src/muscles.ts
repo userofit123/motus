@@ -27,6 +27,13 @@ export function muscleSets(rows: { primary: string[]; secondary: string[]; sets:
   return out;
 }
 
+/** Which muscles a plan works: main where any exercise has it as a main muscle, helped where it only ever helps.
+ * For a routine or a workout this reads better than amounts, where a busy helper would show up as a main muscle. */
+export function musclesWorked(rows: { primary: string[]; secondary: string[] }[]): { primary: string[]; secondary: string[] } {
+  const primary = new Set(rows.flatMap((r) => r.primary));
+  return { primary: [...primary], secondary: [...new Set(rows.flatMap((r) => r.secondary))].filter((m) => !primary.has(m)) };
+}
+
 /** A sensible weekly target range of hard sets per muscle (used by the weekly-sets view) */
 export const WEEKLY_SET_RANGE: [number, number] = [10, 20];
 

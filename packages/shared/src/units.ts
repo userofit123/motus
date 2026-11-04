@@ -19,7 +19,7 @@ export function num(v: number | null | undefined, dp = 1): string {
   if (v == null || !Number.isFinite(v)) return "";
   const f = 10 ** dp;
   const r = Math.round(v * f) / f;
-  return r.toLocaleString("en-US", { maximumFractionDigits: dp, useGrouping: Math.abs(r) >= 10000 });
+  return r.toLocaleString("en-US", { maximumFractionDigits: dp, useGrouping: Math.abs(r) >= 1000 });
 }
 
 /** Rounds a weight in the person's unit to the nearest step (2.5 kg / 5 lb plates by default), so 80 kg shown in lb is 176.4 not 176.369... */
@@ -35,7 +35,7 @@ export function clock(totalS: number): string {
   return h ? `${h}:${String(m).padStart(2, "0")}:${String(r).padStart(2, "0")}` : `${m}:${String(r).padStart(2, "0")}`;
 }
 
-/** 45 s, 1 min 30 s, 1 h 5 min — the long, friendly form */
+/** 45 s, 1 min 30 s, 1 h 5 min - the long, friendly form */
 export function duration(totalS: number, short = false): string {
   const s = Math.max(0, Math.round(totalS));
   const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), r = s % 60;
