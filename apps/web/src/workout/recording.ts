@@ -11,6 +11,7 @@ import { computed, ref, watch } from "vue";
 import { readJson, writeJson } from "../core/prefs";
 import { api } from "../api/client";
 import { invalidate, queryClient } from "../api/live";
+import type { SettingsMe } from "../api/queries";
 import { keepAwake, showRecording, clearRecording, isNativeApp, onNoticeAction, askNotificationsOnce } from "./native";
 import { fromM } from "@motus/shared";
 
@@ -241,7 +242,7 @@ if (typeof document !== "undefined") document.addEventListener("visibilitychange
 const recNotice = computed(() => {
   const r = recording.value;
   if (!r) return null;
-  const du = queryClient.getQueryData<any>(["settings", "me"])?.settings?.units?.distance === "mi" ? "mi" : "km";
+  const du = queryClient.getQueryData<SettingsMe>(["settings", "me"])?.settings?.units?.distance === "mi" ? "mi" : "km";
   return { type: r.type, paused: !!r.pauseAt, since: r.startedAt + r.pausedMs, startedAt: r.startedAt, du, dist: Math.floor(fromM(recDistM.value, du) * 10) / 10, steps: countsSteps(r.type) ? Math.floor(r.steps / 50) * 50 : null };
 });
 // compared as text, so a new GPS point that changes none of it shows nothing again. The setting is part of it, so
@@ -249,7 +250,7 @@ const recNotice = computed(() => {
 // reactive by itself: a count bumped on each change to them lets this follow.
 const settingsSeen = ref(0);
 queryClient.getQueryCache().subscribe((e) => { if (e.query.queryKey[0] === "settings" && e.query.queryKey[1] === "me") settingsSeen.value++; });
-const noticeOn = () => { void settingsSeen.value; return queryClient.getQueryData<any>(["settings", "me"])?.settings?.workout?.sessionNotice !== false; };
+const noticeOn = () => { void settingsSeen.value; return queryClient.getQueryData<SettingsMe>(["settings", "me"])?.settings?.workout?.sessionNotice !== false; };
 let recShown = !recording.value; // with nothing saved, one left behind by an app closed mid-recording is taken off below
 watch(() => JSON.stringify([recNotice.value, noticeOn()]), () => {
   const n = recNotice.value;

@@ -1,6 +1,6 @@
 // The running workout, as one shared object: a local copy that every change updates at once (so typing and ticking never
 // wait for the network), with each change sent to the server (or kept for later when offline).
-import { computed, effectScope, reactive, ref, watch } from "vue";
+import { computed, effectScope, nextTick, reactive, ref, watch } from "vue";
 import { restAfterSet, restDefaultsOf, dropWeightKg, toKg, type Workout, type WorkoutExercise, type WorkoutSet, type WorkoutPrefs } from "@motus/shared";
 import { useActive, useSettings } from "../api/queries";
 import { send, endedHere, markEnded } from "../api/outbox";
@@ -17,6 +17,10 @@ import { choose } from "../core/ask";
 const state = reactive<{ w: Workout | null; pending: number; cur: number; active: number }>({ w: null, pending: 0, cur: 0, active: 0 });
 let wired = false;
 let actionsWired = false;
+// settled once the active workout has been asked for the first time (and state.w taken from it): a notification tap
+// that opened the app waits for this, or Pause and Set done would find no workout yet
+let activeLoaded!: () => void;
+const activeReady = new Promise<void>((res) => { activeLoaded = res; });
 
 // The watchers below run once for the whole app, in their own scope: made inside the first screen that asked, they
 // would stop when that screen closed, and a workout started from elsewhere would then never reach the workout screen
@@ -45,6 +49,8 @@ export function useWorkout() {
         state.active = act != null && act < v.exercises.length ? act : firstPending;
       }
     }, { immediate: true });
+    // after the watcher above has taken the answer (nextTick), also when it failed (offline: whatever is kept here counts)
+    watch(() => active.isFetched.value || active.data.value !== undefined, (ok) => { if (ok) void nextTick(activeLoaded); }, { immediate: true });
     watch(() => state.cur, (c) => { if (state.w) writeJson("motusCur", { [state.w.id]: c }); });
     watch(() => state.active, (c) => { if (state.w) writeJson("motusActive", { [state.w.id]: c }); });
     // the same as prefs and fmt below, kept here so the notification lives as long as the app
@@ -89,18 +95,19 @@ export function useWorkout() {
   const incKg = computed(() => settings.value.units.weight === "lb" ? toKg(settings.value.increments.lb, "lb") : settings.value.increments.kg);
   const tickNext = () => { const e = state.w?.exercises.find((x) => x.status === "pending" && x.sets.some((y) => !y.done)); if (e) tick(e, e.sets.findIndex((y) => !y.done)); };
   const restLonger = () => startRest(30, { setId: null, label: "Rest", next: "", workoutId: state.w?.id ?? "" });
-  watch(() => settings.value.features.notifLogging, (on) => enableNotificationActions(!!on, { done: tickNext, more: restLonger }), { immediate: true });
+  watch(() => settings.value.features.notifLogging, (on) => enableNotificationActions(!!on), { immediate: true });
   // the buttons on the workout's and the rest's notifications (native.ts), registered once; a rest that is over (still
-  // saying "Rest over") gets 30 seconds from now, one that runs 30 more, and with none a new one starts (only during a
-  // workout). Pause and Resume do nothing when the workout already is so.
+  // saying "Rest over") gets 30 seconds from now, one that runs 30 more, and with none a new one starts; all of them
+  // only during a workout. Pause and Resume do nothing when the workout already is so. Each waits for the workout to
+  // load (activeReady), for a tap that opened the app.
   if (!actionsWired) {
     actionsWired = true;
     const going = () => state.w?.status === "in_progress";
-    onNoticeAction("workout-done", tickNext);
-    onNoticeAction("workout-pause", () => { if (going() && !state.w!.pauseStartedAt) togglePause(); });
-    onNoticeAction("workout-resume", () => { if (going() && state.w!.pauseStartedAt) togglePause(); });
-    onNoticeAction("rest-more", () => { if (!rest.endAt) { if (going()) restLonger(); } else if (rest.done) setRest(30); else adjustRest(30); });
-    onNoticeAction("rest-skip", () => finishRest(true));
+    onNoticeAction("workout-done", () => { if (going()) tickNext(); }, activeReady);
+    onNoticeAction("workout-pause", () => { if (going() && !state.w!.pauseStartedAt) togglePause(); }, activeReady);
+    onNoticeAction("workout-resume", () => { if (going() && state.w!.pauseStartedAt) togglePause(); }, activeReady);
+    onNoticeAction("rest-more", () => { if (!going()) return; if (!rest.endAt) restLonger(); else if (rest.done) setRest(30); else adjustRest(30); }, activeReady);
+    onNoticeAction("rest-skip", () => finishRest(true), activeReady);
   }
 
   async function call(method: "post" | "put" | "del", path: string, body?: unknown, refresh = false) {
@@ -298,6 +305,8 @@ export const isEmptyWorkout = ref(false);
  */
 export function endWorkout(id: string) {
   markEnded(id);
+  // its rest goes with it, with the "Rest over" alarm the Android app has scheduled for it
+  if (rest.workoutId === id) finishRest(false);
   if (state.w?.id === id) state.w = null;
   queryClient.setQueryData(["workouts", "active"], null);
   invalidate(["*"]);

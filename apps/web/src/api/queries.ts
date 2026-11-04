@@ -8,7 +8,9 @@ import { endedHere } from "./outbox";
 import { invalidate, queryClient } from "./live";
 import { toastError, savedToast, savedError } from "../core/toast";
 
-export const useMe = () => useQuery({ queryKey: ["settings", "me"], queryFn: () => api.get<{ user: Me; settings: Settings }>("/me"), staleTime: 60_000 });
+/** What ["settings", "me"] holds: who is signed in and their settings. */
+export type SettingsMe = { user: Me; settings: Settings };
+export const useMe = () => useQuery({ queryKey: ["settings", "me"], queryFn: () => api.get<SettingsMe>("/me"), staleTime: 60_000 });
 export function useSettings(): Ref<Settings> {
   const me = useMe();
   return computed(() => withDefaults(me.data.value?.settings ?? {}));

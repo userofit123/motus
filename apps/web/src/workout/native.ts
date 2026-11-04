@@ -14,14 +14,30 @@ export interface NoticeButton { id: NoticeAction; title: string }
 const NOTICE_ACTIONS = ["rest-more", "rest-skip", "workout-pause", "workout-resume", "workout-done", "rec-pause", "rec-resume", "iv-pause", "iv-resume", "iv-skip"] as const;
 export type NoticeAction = (typeof NOTICE_ACTIONS)[number];
 const isNoticeAction = (a: unknown): a is NoticeAction => typeof a === "string" && (NOTICE_ACTIONS as readonly string[]).includes(a);
-const handlers = new Map<NoticeAction, () => void>();
-// taps that came before their handler was registered (the app was still starting), run once it is
-const waiting: NoticeAction[] = [];
+const handlers = new Map<NoticeAction, { run: () => void; ready?: Promise<unknown> }>();
+// Taps that came before their handler was registered (the app was still starting), each with when it came: run once it
+// is, unless that took so long that the tap no longer means anything (a stale "Pause" would surprise). The same button
+// tapped again while waiting counts once, and only the last few are kept.
+const waiting: { a: NoticeAction; at: number }[] = [];
+const WAIT_MAX = 10, HANDLER_WITHIN_MS = 10_000, READY_WITHIN_MS = 15_000;
 let listening = false;
 function dispatch(a: unknown) {
   if (!isNoticeAction(a)) return;
-  const run = handlers.get(a);
-  if (run) run(); else waiting.push(a);
+  const at = Date.now();
+  if (handlers.has(a)) { deliver(a, at); return; }
+  if (waiting.some((x) => x.a === a)) return;
+  waiting.push({ a, at });
+  if (waiting.length > WAIT_MAX) waiting.shift();
+}
+// a handler can say what it needs first (the workout's: the active workout loaded, or Pause would find none); the tap
+// still runs if that comes within READY_WITHIN_MS of the tap
+function deliver(a: NoticeAction, at: number) {
+  const h = handlers.get(a);
+  if (!h) return;
+  if (!h.ready) { h.run(); return; }
+  let late = false;
+  const timer = setTimeout(() => { late = true; }, Math.max(0, at + READY_WITHIN_MS - Date.now()));
+  void h.ready.then(() => { clearTimeout(timer); if (!late) h.run(); }, () => clearTimeout(timer));
 }
 // One listener for all of them, made at once: Android holds a tap back until the first listener, which then gets it,
 // so every id has to go through this one.
@@ -32,11 +48,16 @@ function listen() {
   try { navigator.serviceWorker?.addEventListener("message", (e: MessageEvent<{ motusAction?: unknown } | null>) => dispatch(e.data?.motusAction)); } catch { /* no service worker here */ }
 }
 /** What a notification button does. Android sends the tap as an "action" event, a browser's service worker as a message
- *  (or, with no window open, in the address of the one it opens: takeUrlAction). */
-export function onNoticeAction(id: NoticeAction, run: () => void) {
-  handlers.set(id, run);
+ *  (or, with no window open, in the address of the one it opens: takeUrlAction). `ready`: what has to be there before
+ *  a tap can do anything (taps wait for it). */
+export function onNoticeAction(id: NoticeAction, run: () => void, ready?: Promise<unknown>) {
+  handlers.set(id, { run, ready });
   listen();
-  for (let i = waiting.indexOf(id); i >= 0; i = waiting.indexOf(id)) { waiting.splice(i, 1); run(); }
+  const now = Date.now();
+  for (let i = waiting.findIndex((x) => x.a === id); i >= 0; i = waiting.findIndex((x) => x.a === id)) {
+    const [w] = waiting.splice(i, 1);
+    if (now - w!.at <= HANDLER_WITHIN_MS) deliver(id, w!.at);
+  }
 }
 /** A button tapped while no window was open: the service worker opens the app with it in the address (?motusAction=…).
  *  Taken out of the address at once, so a reload doesn't do it again, and run once its handler is registered. */
@@ -201,13 +222,15 @@ export const haptic = (style: "light" | "medium" = "light") => {
 // "Log from the notification" (optional feature): the rest-over notification gets buttons to tick the next set or rest longer
 let logFromNotification = false;
 let registered = false;
-export async function enableNotificationActions(on: boolean, handlers: { done: () => void; more: () => void }) {
+// Its buttons go through the same dispatcher as every other notification button, so they wait for the workout like the
+// rest and do nothing once it is over.
+export async function enableNotificationActions(on: boolean) {
   logFromNotification = on;
   const ln = plugin("LocalNotifications");
   if (!ln || !on || registered) return;
   registered = true;
   try {
     await ln.registerActionTypes({ types: [{ id: "rest", actions: [{ id: "done", title: "Tick the next set" }, { id: "more", title: "+30s" }] }] });
-    ln.addListener("localNotificationActionPerformed", (e: any) => { if (e.actionId === "done") handlers.done(); else if (e.actionId === "more") handlers.more(); });
+    ln.addListener("localNotificationActionPerformed", (e: { actionId?: string } | undefined) => { if (e?.actionId === "done") dispatch("workout-done"); else if (e?.actionId === "more") dispatch("rest-more"); });
   } catch { /* buttons not available */ }
 }
