@@ -118,6 +118,22 @@ hr.sep { border: 0; border-top: 1px solid var(--ol); margin: 14px 0; }
 .card.flush { padding: 0; overflow: hidden; }
 .card.flush .li { padding-inline: var(--cpx); border-bottom: 0; position: relative; }
 .card.flush .li:not(:last-child)::after { content: ""; position: absolute; inset-inline: var(--cpx); bottom: 0; height: 1px; background: var(--ol); }
+/* rows inside a padded card: the card's padding is the space at its top and bottom, so the first and last row drop
+   their own --lpy there (down to the 4px they keep at the sides, which keeps the inset equal all round) and their
+   least height shrinks by the same amount. Without this the card's padding and the row's padding added up, and blocks
+   looked taller at the top and bottom than at the sides. A flush card has no padding, so its rows keep theirs */
+.card:not(.flush, .aw-list) > :is(.li, .tgl):first-child,
+.card:not(.flush, .aw-list) > .list:first-child > .li:first-child { padding-top: 4px; min-height: calc(var(--lmh) - var(--lpy) + 4px); }
+.card:not(.flush, .aw-list) > :is(.li, .tgl):last-child,
+.card:not(.flush, .aw-list) > .list:last-child > .li:last-child { padding-bottom: 4px; min-height: calc(var(--lmh) - var(--lpy) + 4px); }
+.card:not(.flush, .aw-list) > :is(.li, .tgl):only-child,
+.card:not(.flush, .aw-list) > .list:only-child > .li:only-child { min-height: calc(var(--lmh) - 2 * var(--lpy) + 8px); }
+/* the same at a card's end for fields and headings: their own outer margin would add to the card's padding */
+.card > :is(.fld, .frow):last-child, .card > .frow:last-child > .fld, .sh_b > :is(.fld, .frow):last-child, .sh_b > .frow:last-child > .fld { margin-bottom: 0; }
+.card > h2:first-child { margin-top: 0; }
+/* an empty state inside a card: the card already gives the side space, so it adds only height */
+.card > .empty { padding-inline: 0; }
+.card > .empty.sm { padding: 0; }
 .li .t { font-weight: 500; font-size: 15px; }
 .li .s:not(.btn) { font-size: 12.5px; color: var(--tx2); margin-top: 1px; }
 .li .r { text-align: end; flex: none; }
