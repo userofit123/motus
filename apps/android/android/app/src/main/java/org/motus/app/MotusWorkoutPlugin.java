@@ -23,6 +23,7 @@ import com.getcapacitor.annotation.PermissionCallback;
 
 /**
  * The rest timer in the notification shade and on the lock screen: a live countdown while a rest runs.
+ * The interval timer the same way, as its own notification, so it can sit beside a running workout's.
  * Also the phone's step counter while a walk is recorded: the hardware counter keeps counting with the screen off,
  * and the recording reads the running total (steps since the phone started) and subtracts where it began.
  */
@@ -30,6 +31,9 @@ import com.getcapacitor.annotation.PermissionCallback;
 public class MotusWorkoutPlugin extends Plugin implements SensorEventListener {
     private static final String CHANNEL = "workout";
     private static final int ID = 7002;
+    private static final int TIMER_ID = 7003;
+    // the page a tap on a notification opens, handed to the web app as an "open" event
+    private static final String EXTRA_PATH = "motusPath";
 
     private void channel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -101,6 +105,62 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener {
     public void clearRest(PluginCall call) {
         NotificationManagerCompat.from(getContext()).cancel(ID);
         call.resolve();
+    }
+
+    /** The running interval timer: the part and round, and a countdown to the end of the part (`endAt`; none while
+     *  paused). Shown again by the app at each change of part; tapping it opens the timer. */
+    @PluginMethod
+    public void showTimer(PluginCall call) {
+        channel();
+        Long endAt = call.getLong("endAt");
+        Intent open = new Intent(getContext(), MainActivity.class);
+        open.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        open.putExtra(EXTRA_PATH, "/timer");
+        // its own request code, so this intent's extra never ends up on the workout notification's
+        PendingIntent pi = PendingIntent.getActivity(getContext(), 1, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+        String body = call.getString("body", "");
+        NotificationCompat.Builder b = new NotificationCompat.Builder(getContext(), CHANNEL)
+            .setSmallIcon(R.drawable.ic_stat_motus)
+            .setContentTitle(call.getString("title", "Interval timer"))
+            .setContentText(body)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setSilent(true)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setCategory(NotificationCompat.CATEGORY_STOPWATCH)
+            .setContentIntent(pi);
+        if (endAt != null) b.setWhen(endAt).setUsesChronometer(true).setChronometerCountDown(true).setShowWhen(true);
+        else b.setShowWhen(false);
+        try { NotificationManagerCompat.from(getContext()).notify(TIMER_ID, b.build()); } catch (SecurityException e) { /* notifications not allowed */ }
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void clearTimer(PluginCall call) {
+        NotificationManagerCompat.from(getContext()).cancel(TIMER_ID);
+        call.resolve();
+    }
+
+    // A tap on the timer's notification: with the app open it arrives here; with the app started by the tap it is on the
+    // starting intent. Kept until the web app listens, since it may not have loaded yet.
+    @Override
+    public void load() {
+        if (getActivity() != null) openFrom(getActivity().getIntent());
+    }
+
+    @Override
+    protected void handleOnNewIntent(Intent intent) {
+        super.handleOnNewIntent(intent);
+        openFrom(intent);
+    }
+
+    private void openFrom(Intent intent) {
+        String path = intent == null ? null : intent.getStringExtra(EXTRA_PATH);
+        if (path == null) return;
+        intent.removeExtra(EXTRA_PATH); // once only, not again after a rotation
+        JSObject r = new JSObject();
+        r.put("path", path);
+        notifyListeners("open", r, true);
     }
 
     // ---- steps ----

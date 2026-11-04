@@ -118,17 +118,18 @@ export type Overtone = readonly [number, number, number];
 export const BELL: Overtone[] = [[1, 1, 1], [2, 0.32, 0.6], [2.76, 0.16, 0.4], [5.4, 0.05, 0.2]];
 /** Round and soft: the note with a little warmth on top. */
 export const SOFT: Overtone[] = [[1, 1, 1], [2, 0.18, 0.5]];
-/** One note starting `delay` seconds from now that rings for `dur` seconds. */
-export function tone(freq: number, { delay = 0, dur = 0.5, vol = 0.3, partials = BELL }: { delay?: number; dur?: number; vol?: number; partials?: readonly Overtone[] } = {}) {
+/** One note starting `delay` seconds from now that rings for `dur` seconds; `attack` is how long it takes to reach full
+ *  loudness (a few ms for a struck note, longer for one that swells in). */
+export function tone(freq: number, { delay = 0, dur = 0.5, vol = 0.3, partials = BELL, attack = 0.005 }: { delay?: number; dur?: number; vol?: number; partials?: readonly Overtone[]; attack?: number } = {}) {
   try {
     const { ac, dest } = audio(), t = ac.currentTime + 0.01 + delay;
     for (const [ratio, amp, ring] of partials) {
       const f = freq * ratio;
       if (f > 16000) continue;
-      const o = ac.createOscillator(), g = ac.createGain(), end = t + Math.max(0.05, dur * ring);
+      const o = ac.createOscillator(), g = ac.createGain(), end = t + Math.max(attack + 0.05, dur * ring);
       o.type = "sine"; o.frequency.value = f;
-      // a 5 ms rise takes the click off the start; the exponential fall to near silence takes it off the end
-      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol * amp, t + 0.005); g.gain.exponentialRampToValueAtTime(0.0001, end);
+      // a rise of at least 5 ms takes the click off the start; the exponential fall to near silence takes it off the end
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol * amp, t + attack); g.gain.exponentialRampToValueAtTime(0.0001, end);
       o.connect(g).connect(dest); o.start(t); o.stop(end + 0.02);
     }
   } catch { /* no sound */ }

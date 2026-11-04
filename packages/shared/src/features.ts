@@ -12,7 +12,7 @@ export const FEATURES: FeatureDef[] = [
   { id: "unilateral", group: "Logging", name: "Left / right sides", desc: "Log single-arm and single-leg exercises per side.", on: true },
   { id: "quickEntry", group: "Logging", name: "Quick entry", desc: 'Type "3x8 80" to fill sets.', on: false },
   { id: "voice", group: "Logging", name: "Voice cues", desc: "Hear what's next when a rest ends.", on: false },
-  { id: "adaptiveRest", group: "Logging", name: "Longer rest after a missed set", desc: "Adds 30 s to the rest when a set falls short of its target.", on: true },
+  { id: "adaptiveRest", group: "Logging", name: "Longer rest after a missed set", desc: "Adds 30s to the rest when a set falls short of its target.", on: true },
   { id: "notifLogging", group: "Logging", name: "Log from the notification", desc: "Tick the next set from the lock-screen timer (Android).", on: true },
   // Training
   { id: "progression", group: "Training", name: "Progression rules", desc: "Let a routine suggest the next weight: add weight when you hit your reps, lower it after repeated misses.", on: true },

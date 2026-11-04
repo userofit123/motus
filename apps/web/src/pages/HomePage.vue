@@ -121,7 +121,7 @@ const achSteps = computed(() => (ach.data.value ?? []).flatMap((a: any) => a.ste
 const achRecent = computed(() => achSteps.value.filter((x) => x.reachedAt).sort((a, b) => b.reachedAt.localeCompare(a.reachedAt)).slice(0, 3));
 const achNext = computed(() => (ach.data.value ?? []).map((a: any) => a.steps.find((x: any) => !x.reachedAt) && { ...a.steps.find((x: any) => !x.reachedAt), unit: a.unit, value: a.value })
   .filter(Boolean).sort((a: any, b: any) => b.value / b.target - a.value / a.target)[0]);
-const achAmount = (unit: string, v: number) => unit === "kg" ? fmt.value.vol(v) : unit === "m" ? fmt.value.dist(v, v < 10000 ? 1 : 0) : unit === "s" ? `${num(v / 3600, 0)} h` : unit === "weeks" ? `${num(v, 0)} wk` : num(v, 0);
+const achAmount = (unit: string, v: number) => unit === "kg" ? fmt.value.vol(v) : unit === "m" ? fmt.value.dist(v, v < 10000 ? 1 : 0) : unit === "s" ? `${num(v / 3600, 0)}h` : unit === "weeks" ? `${num(v, 0)} wk` : num(v, 0);
 const dayName = (d: string) => { const t = new Date().toLocaleDateString("sv-SE"); const tm = new Date(Date.now() + 86400000).toLocaleDateString("sv-SE"); return d === t ? "Today" : d === tm ? "Tomorrow" : fmt.value.date(d, { weekday: "long" }); };
 // show the page once its data is in, all at once
 await loaded(home, ach);

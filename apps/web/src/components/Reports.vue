@@ -28,7 +28,7 @@ const label = (k: string) => (k.length === 4 ? k : new Date(k + "-15").toLocaleD
         <div class="lbl">{{ y.k }} in review</div>
         <div class="grid g4" style="margin-top:10px">
           <div><div class="val" style="font-size:28px">{{ y.workouts }}</div><div class="sub">workouts</div></div>
-          <div><div class="val" style="font-size:28px">{{ Math.round(y.timeS / 3600) }} h</div><div class="sub">moving</div></div>
+          <div><div class="val" style="font-size:28px">{{ Math.round(y.timeS / 3600) }}h</div><div class="sub">moving</div></div>
           <div><div class="val" style="font-size:28px">{{ fmt.vol(y.volumeKg) }}</div><div class="sub">lifted</div></div>
           <div><div class="val" style="font-size:28px">{{ y.days }}</div><div class="sub">active days{{ y.top ? ` · most: ${y.top}` : "" }}</div></div>
         </div>

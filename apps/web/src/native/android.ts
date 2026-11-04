@@ -3,6 +3,7 @@
 import { accounts, addLocal, addServer, open, remove, rename, chooser } from "./accounts";
 import { sheetIsOpen, closeTopSheet } from "../core/sheets";
 import { REPO, newer } from "../core/releases";
+import { router } from "../router";
 
 const cap = () => (globalThis as any).Capacitor;
 const P = (n: string) => cap()?.Plugins?.[n];
@@ -54,6 +55,8 @@ export function installAndroidBridge() {
   };
   // the hardware back button closes an open sheet, goes back in the app, and leaves it from the home page
   P("App")?.addListener?.("backButton", ({ canGoBack }: { canGoBack: boolean }) => { if (sheetIsOpen()) closeTopSheet(); else if (canGoBack && location.pathname !== "/") history.back(); else P("App").minimizeApp?.(); });
+  // a tap on an ongoing notification that names a page (the interval timer's) opens that page
+  P("MotusWorkout")?.addListener?.("open", ({ path }: { path?: string }) => { if (typeof path === "string" && path.startsWith("/")) void router.push(path); });
   // the status bar follows the look (theme.ts calls motusApp.setBars)
   (globalThis as any).motusApp = { setBars: (bg: string, dark: boolean) => { P("StatusBar")?.setBackgroundColor?.({ color: bg }).catch?.(() => {}); P("StatusBar")?.setStyle?.({ style: dark ? "DARK" : "LIGHT" }).catch?.(() => {}); } };
 }

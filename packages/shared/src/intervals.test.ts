@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { intervalPhases, intervalAt, intervalTotalS, cleanInterval, cleanIntervalPresets, intervalSummary, INTERVAL_SOUNDS_DEFAULT } from "./intervals";
+import { intervalPhases, intervalAt, intervalTotalS, cleanInterval, cleanIntervalPresets, cleanSounds, intervalSummary, INTERVAL_SOUNDS, INTERVAL_SOUNDS_DEFAULT } from "./intervals";
 import { withDefaults } from "./settings";
 
 describe("interval timer", () => {
@@ -46,13 +46,16 @@ describe("interval timer", () => {
     expect(cleanInterval({ sounds: { work: "bell", rest: "none", done: 5 } as never }).sounds).toEqual({ ...INTERVAL_SOUNDS_DEFAULT, rest: "none" });
     const [p] = cleanIntervalPresets([{ id: "a", name: "A", sounds: { prep: "high", work: "rising" } }, { id: "b", name: "B" }]);
     expect(p!.sounds).toMatchObject({ prep: "high", work: "rising", done: "triple" });
+    // the soft alarms added later are kept like the first ones
+    expect(cleanSounds({ work: "softAlarm", rest: "gong", done: "wake", prep: "siren" })).toEqual({ ...INTERVAL_SOUNDS_DEFAULT, work: "softAlarm", rest: "gong", done: "wake" });
+    for (const id of INTERVAL_SOUNDS) expect(cleanSounds({ work: id }).work).toBe(id);
     expect(cleanIntervalPresets([{ id: "b", name: "B", sounds: "loud" }])[0]!.sounds).toEqual(INTERVAL_SOUNDS_DEFAULT);
   });
   it("sums the setup up in plain words, leaving out what is 0", () => {
     expect(intervalSummary({ prepS: 10, workS: 40, restS: 20, rounds: 8, sets: 3, setRestS: 60 }))
-      .toBe("10 s to get ready, then 8 rounds of 40 s work and 20 s rest. Repeat for 3 sets with 1 min rest between sets.");
-    expect(intervalSummary({ prepS: 0, workS: 60, restS: 0, rounds: 10, sets: 1, setRestS: 60 })).toBe("10 rounds of 1 min work.");
-    expect(intervalSummary({ prepS: 5, workS: 90, restS: 30, rounds: 1, sets: 2, setRestS: 0 })).toBe("5 s to get ready, then 1 round of 1 min 30 s work. Repeat for 2 sets.");
+      .toBe("10s to get ready, then 8 rounds of 40s work and 20s rest. Repeat for 3 sets with 1m rest between sets.");
+    expect(intervalSummary({ prepS: 0, workS: 60, restS: 0, rounds: 10, sets: 1, setRestS: 60 })).toBe("10 rounds of 1m work.");
+    expect(intervalSummary({ prepS: 5, workS: 90, restS: 30, rounds: 1, sets: 2, setRestS: 0 })).toBe("5s to get ready, then 1 round of 1m 30s work. Repeat for 2 sets.");
   });
   it("cleans bad input", () => {
     expect(cleanInterval({ workS: -3, rounds: 1000 })).toMatchObject({ workS: 1, rounds: 99 });

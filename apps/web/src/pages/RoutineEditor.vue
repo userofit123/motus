@@ -433,7 +433,7 @@ await loaded(src, all, folders, routines, templates);
 
             <div class="sect">
               <div class="sect-h"><span class="si"><Icon name="clock" :size="16" /></span><span class="grow"><b>Timer between reps</b><span class="tiny">Beeps every few seconds during a set, for slow or paused reps</span></span>
-                <button class="ritem" style="flex:none" @click="restFor = { ex: i, kind: 'rep' }"><b :class="{ dim: !e.repRestS }">{{ e.repRestS ? `Every ${e.repRestS} s` : "Off" }}</b></button></div>
+                <button class="ritem" style="flex:none" @click="restFor = { ex: i, kind: 'rep' }"><b :class="{ dim: !e.repRestS }">{{ e.repRestS ? `Every ${e.repRestS}s` : "Off" }}</b></button></div>
             </div>
 
             <details v-if="s.features.progression && (!planMode || asRoutine)" class="fold sect prog">

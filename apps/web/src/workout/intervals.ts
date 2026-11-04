@@ -4,8 +4,8 @@
 import { computed, reactive } from "vue";
 import { intervalPhases, intervalAt, intervalTotalS, cleanInterval, INTERVAL_DEFAULT, type IntervalConfig, type IntervalKind, type IntervalSound } from "@motus/shared";
 import { readJson, writeJson } from "../core/prefs";
-import { now, tone, SOFT, savedCues, vibrate } from "./runtime";
-import { keepAwake, scheduleIntervalCues, cancelIntervalCues, INTERVAL_CUE_MAX } from "./native";
+import { now, tone, SOFT, savedCues, vibrate, type Overtone } from "./runtime";
+import { keepAwake, scheduleIntervalCues, cancelIntervalCues, showIntervalNotice, clearIntervalNotice, INTERVAL_CUE_MAX } from "./native";
 
 interface IntervalRun {
   cfg: Required<IntervalConfig>; // sounds filled in
@@ -16,13 +16,22 @@ interface IntervalRun {
 const KEY = "motusIntervals";
 const saved = readJson<Partial<IntervalRun>>(KEY, {});
 export const iv = reactive<IntervalRun>({ cfg: cleanInterval(saved.cfg ?? INTERVAL_DEFAULT), name: saved.name ?? "", startedAt: saved.startedAt ?? null, pausedAt: saved.pausedAt ?? null });
-const save = () => writeJson(KEY, iv);
+// every change of state is saved, and shown in the ongoing notification
+const save = () => { writeJson(KEY, iv); notice(); };
 
 export const PHASE_NAME: Record<IntervalKind, string> = { prep: "Get ready", work: "Work", rest: "Rest", setRest: "Rest between sets" };
 
-export const SOUND_NAME: Record<IntervalSound, string> = { beep: "Beep", double: "Double beep", triple: "Three beeps", high: "High", low: "Low", rising: "Rising", none: "None" };
+export const SOUND_NAME: Record<IntervalSound, string> = {
+  beep: "Beep", double: "Double beep", triple: "Three beeps", high: "High", low: "Low", rising: "Rising",
+  softAlarm: "Soft alarm", chime: "Chime", marimba: "Marimba", pulse: "Pulse", gong: "Gong", digital: "Digital", wake: "Wake", none: "None",
+};
 // notes of a C major chord, so every sound (and any two in a row) sits in tune with the others
-const C5 = 523.25, E5 = 659.25, G5 = 783.99, C6 = 1046.5, E6 = 1318.5, G6 = 1567.98, C7 = 2093;
+const C4 = 261.63, C5 = 523.25, E5 = 659.25, G5 = 783.99, C6 = 1046.5, E6 = 1318.5, G6 = 1567.98, C7 = 2093;
+// a wooden bar: the strong 4th and 10th overtones of a marimba, gone almost at once, so it knocks rather than rings
+const WOOD: Overtone[] = [[1, 1, 1], [4, 0.22, 0.12], [10, 0.04, 0.05]];
+// a small gong: a low note with off-key overtones that shimmer and die away slowly
+const GONG: Overtone[] = [[1, 1, 1], [1.5, 0.22, 0.8], [2, 0.3, 0.65], [2.76, 0.16, 0.45], [4.07, 0.05, 0.25]];
+const PURE: Overtone[] = [[1, 1, 1]];
 /** Plays one of the built-in sounds (also the preview when one is chosen). The ids stay as saved in presets. */
 export function playIntervalSound(sound: IntervalSound) {
   if (sound === "beep") tone(G5, { dur: 0.9 }); // one bell
@@ -31,6 +40,15 @@ export function playIntervalSound(sound: IntervalSound) {
   else if (sound === "high") tone(G6, { dur: 0.8, vol: 0.24 });
   else if (sound === "low") tone(C5, { dur: 1, vol: 0.34, partials: SOFT }); // round and gentle, no bright overtones
   else if (sound === "rising") [C6, E6, G6, C7].forEach((f, i) => tone(f, { delay: i * 0.11, dur: i === 3 ? 1.1 : 0.45, vol: 0.24 })); // chime
+  // The soft alarms: meant to be noticed across the room, but rounded off (slower attacks, few bright overtones)
+  // so none of them is shrill.
+  else if (sound === "softAlarm") [E5, C5, E5, C5].forEach((f, i) => tone(f, { delay: i * 0.3, dur: 0.38, vol: 0.3, partials: SOFT, attack: 0.03 })); // two-tone, twice
+  else if (sound === "chime") [E6, C6, G5].forEach((f, i) => tone(f, { delay: i * 0.22, dur: i === 2 ? 1.1 : 0.6, vol: 0.24 })); // three bells, falling
+  else if (sound === "marimba") [G5, C6, G5, C6].forEach((f, i) => tone(f, { delay: i * 0.14, dur: i === 3 ? 0.7 : 0.45, vol: 0.32, partials: WOOD }));
+  else if (sound === "pulse") [C5, E5, G5].forEach((f, i) => tone(f, { delay: i * 0.3, dur: 0.32, vol: 0.28 + i * 0.03, partials: SOFT, attack: 0.05 })); // three soft swells, rising
+  else if (sound === "gong") tone(C4, { dur: 2.2, vol: 0.4, partials: GONG, attack: 0.02 }); // long, so it sits under the next part's start
+  else if (sound === "digital") [0, 0.1, 0.38, 0.48].forEach((d) => tone(E6, { delay: d, dur: 0.07, vol: 0.16, partials: PURE, attack: 0.004 })); // a watch's double chirp, quieter
+  else if (sound === "wake") { tone(G5, { dur: 1.6, vol: 0.24, partials: SOFT, attack: 0.6 }); tone(C6, { delay: 0.35, dur: 1.4, vol: 0.16, partials: SOFT, attack: 0.6 }); } // fades in, no edge
 }
 /** The countdown in the last three seconds of a part: short soft blips, the last one higher so you know "now". */
 export function playTick(last: boolean) {
@@ -109,7 +127,7 @@ setInterval(() => {
     const sinceMs = index >= ph.length ? run - intervalTotalS(ph) * 1000 : ph[index]!.durS * 1000 - leftMs;
     const fresh = sinceMs <= FRESH_MS;
     if (index >= ph.length) { finish(fresh); return; }
-    lastIndex = index; lastSecond = -1;
+    lastIndex = index; lastSecond = -1; notice();
     if (!fresh) return;
     if (!inAppCues()) return;
     const c = savedCues();
@@ -149,5 +167,19 @@ if (typeof document !== "undefined") document.addEventListener("visibilitychange
   }
   scheduleIntervalCues(out); scheduledForHide = out.length > 0;
 });
-// a timer left running from before a reload keeps the screen on again
+// The ongoing notification (Android app): the preset's name, the part and round, and a countdown to the end of the part.
+// Shown again at each change of part, pause or skip, and taken off once the run stops or is done.
+let noticeShown = false;
+function notice() {
+  // worked out from the clock now, not the shared `now` (up to a tick behind, which would be wrong just after a skip)
+  const paused = iv.pausedAt != null, ph = ivPhases.value;
+  const { index, leftMs } = intervalAt(ph, iv.startedAt == null ? 0 : (iv.pausedAt ?? Date.now()) - iv.startedAt), p = ph[index];
+  if (iv.startedAt == null || !p) { if (noticeShown) { clearIntervalNotice(); noticeShown = false; } return; }
+  const sets = iv.cfg.sets > 1 ? ` · Set ${p.set} of ${iv.cfg.sets}` : "";
+  showIntervalNotice({ title: iv.name || "Interval timer", body: `${paused ? "Paused · " : ""}${PHASE_NAME[p.kind]} · Round ${p.round} of ${iv.cfg.rounds}${sets}`, endAt: paused ? null : Date.now() + leftMs });
+  noticeShown = true;
+}
+// a timer left running from before a reload keeps the screen on again, and its notification shows again
 if (ivRunning.value && iv.pausedAt == null) keepAwake(true, "intervals");
+// counted as shown at start, so one left behind by an app that was closed mid-run is taken off when nothing runs
+noticeShown = true; notice();

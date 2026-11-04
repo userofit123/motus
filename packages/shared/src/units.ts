@@ -35,11 +35,12 @@ export function clock(totalS: number): string {
   return h ? `${h}:${String(m).padStart(2, "0")}:${String(r).padStart(2, "0")}` : `${m}:${String(r).padStart(2, "0")}`;
 }
 
-/** 45 s, 1 min 30 s, 1 h 5 min - the long, friendly form */
+/** 45s, 1m 30s, 1h 5m - one compact form for every length of time in the app (timers, estimates, workouts);
+ *  `short` leaves the seconds off once there are minutes ("~45m"). */
 export function duration(totalS: number, short = false): string {
   const s = Math.max(0, Math.round(totalS));
   const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), r = s % 60;
-  if (h) return m ? `${h} h ${m} min` : `${h} h`;
-  if (m) return short || !r ? `${m} min` : `${m} min ${r} s`;
-  return short && !r ? "0 min" : `${r} s`;
+  if (h) return m ? `${h}h ${m}m` : `${h}h`;
+  if (m) return short || !r ? `${m}m` : `${m}m ${r}s`;
+  return short && !r ? "0m" : `${r}s`;
 }

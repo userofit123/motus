@@ -19,8 +19,9 @@ export interface IntervalPreset extends IntervalConfig { id: string; name: strin
 export type IntervalKind = "prep" | "work" | "rest" | "setRest";
 export interface IntervalPhase { kind: IntervalKind; durS: number; round: number; set: number }
 
-/** The built-in sounds, all made from the app's own beep (no audio files to ship). */
-export const INTERVAL_SOUNDS = ["beep", "double", "triple", "high", "low", "rising", "none"] as const;
+/** The built-in sounds, all made from the app's own beep (no audio files to ship). New ids go before "none" so the
+ *  ones saved in presets keep working; the later ones are soft alarms (gentle, but meant to be noticed). */
+export const INTERVAL_SOUNDS = ["beep", "double", "triple", "high", "low", "rising", "softAlarm", "chime", "marimba", "pulse", "gong", "digital", "wake", "none"] as const;
 export type IntervalSound = (typeof INTERVAL_SOUNDS)[number];
 /** A sound for the start of each part, and "done" for the end of the whole run. */
 export type IntervalSounds = Record<IntervalKind | "done", IntervalSound>;
@@ -96,7 +97,7 @@ export function intervalPhases(cfg: IntervalConfig): IntervalPhase[] {
 export const intervalTotalS = (phases: IntervalPhase[]) => phases.reduce((a, p) => a + p.durS, 0);
 
 /** The whole setup in a sentence or two, so "rest" vs "rest between sets" needs no guessing; parts that are 0 are left out.
- *  "10 s to get ready, then 8 rounds of 40 s work and 20 s rest. Repeat for 3 sets with 1 min rest between sets." */
+ *  "10s to get ready, then 8 rounds of 40s work and 20s rest. Repeat for 3 sets with 1m rest between sets." */
 export function intervalSummary(cfg: IntervalConfig): string {
   const c = cleanInterval(cfg);
   const prep = c.prepS ? `${duration(c.prepS)} to get ready, then ` : "";

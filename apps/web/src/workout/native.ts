@@ -81,6 +81,15 @@ export async function scheduleIntervalCues(cues: { at: number; title: string; bo
   } catch { /* the in-app timer still runs */ }
 }
 export const cancelIntervalCues = () => scheduleIntervalCues([]);
+// The running interval timer as its own ongoing notification (beside the workout's, since both can run at once), also on
+// the lock screen: the part and round, and a countdown to the end of the part (none while paused); tapping it opens the
+// timer. Android app only: a browser has no live countdown in a notification, so there the phase-change cues are all.
+export function showIntervalNotice(o: { title: string; body: string; endAt: number | null }) {
+  plugin("MotusWorkout")?.showTimer?.(o).catch?.(() => {});
+}
+export function clearIntervalNotice() {
+  plugin("MotusWorkout")?.clearTimer?.().catch?.(() => {});
+}
 export const haptic = (style: "light" | "medium" = "light") => {
   const h = plugin("Haptics");
   try { if (h) h.impact({ style: style === "light" ? "LIGHT" : "MEDIUM" }); else navigator.vibrate?.(style === "light" ? 12 : 25); } catch { /* none */ }
@@ -95,7 +104,7 @@ export async function enableNotificationActions(on: boolean, handlers: { done: (
   if (!ln || !on || registered) return;
   registered = true;
   try {
-    await ln.registerActionTypes({ types: [{ id: "rest", actions: [{ id: "done", title: "Tick the next set" }, { id: "more", title: "+30 s" }] }] });
+    await ln.registerActionTypes({ types: [{ id: "rest", actions: [{ id: "done", title: "Tick the next set" }, { id: "more", title: "+30s" }] }] });
     ln.addListener("localNotificationActionPerformed", (e: any) => { if (e.actionId === "done") handlers.done(); else if (e.actionId === "more") handlers.more(); });
   } catch { /* buttons not available */ }
 }

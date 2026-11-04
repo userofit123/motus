@@ -189,7 +189,7 @@ const menu = computed(() => [
         <div class="card">
           <div class="grid g2" style="gap:10px">
             <div><div class="lbl">Volume</div><div style="font-weight:600;font-size:18px">{{ fmt.vol(volume) }}</div></div>
-            <div><div class="lbl">Time left</div><div style="font-weight:600;font-size:18px">about {{ Math.round(remainingS / 60) }} min</div></div>
+            <div><div class="lbl">Time left</div><div style="font-weight:600;font-size:18px">about {{ Math.round(remainingS / 60) }}m</div></div>
           </div>
           <div class="chips" style="margin-top:10px"><span v-for="m in [...new Set(w.exercises.filter((e) => e.sets.some((s) => s.done)).flatMap((e) => e.exercise.primaryMuscles))]" :key="m" class="mchip">{{ muscleName(m) }}</span></div>
         </div>
