@@ -6,9 +6,9 @@ const ex = (id: string, sets: number, reps: number, repsMax?: number, restS?: nu
 const hold = (id: string, sets: number, durationS: number): TemplateExercise => ({ id, sets, reps: 0, durationS, restS: 30 });
 
 export const TEMPLATES: Template[] = [
-  { slug: "full-a", group: "Full body (3 days)", name: "Full Body A", description: "Squat, bench and row: the base of a three-day week. Alternate with Full Body B.", exercises: [
+  { slug: "full-a", group: "Full body (alternate A and B)", name: "Full Body A", description: "Squat, bench and row. Alternate with Full Body B, three days a week: A, B, A, then B, A, B.", exercises: [
     ex("Barbell_Squat", 3, 5, 8, 180), ex("Barbell_Bench_Press_-_Medium_Grip", 3, 5, 8, 180), ex("Bent_Over_Barbell_Row", 3, 6, 10, 150), hold("Plank", 3, 45)] },
-  { slug: "full-b", group: "Full body (3 days)", name: "Full Body B", description: "Deadlift, overhead press and pull-ups. Alternate with Full Body A.", exercises: [
+  { slug: "full-b", group: "Full body (alternate A and B)", name: "Full Body B", description: "Deadlift, overhead press and pull-ups. Alternate with Full Body A.", exercises: [
     ex("Barbell_Deadlift", 3, 5, 6, 180), ex("Standing_Military_Press", 3, 5, 8, 150), ex("Pullups", 3, 5, 10, 150), ex("Hanging_Leg_Raise", 3, 10, 15, 60)] },
   { slug: "push", group: "Push / Pull / Legs", name: "Push", description: "Chest, shoulders and triceps.", exercises: [
     ex("Barbell_Bench_Press_-_Medium_Grip", 4, 6, 10, 150), ex("Incline_Dumbbell_Press", 3, 8, 12, 120), ex("Dumbbell_Shoulder_Press", 3, 8, 12, 120),

@@ -1,6 +1,6 @@
 // Turning a routine into today's plan: the sets to do, pre-filled from last time (PLAN.md §8.7), with reminders,
 // pinned notes, progression suggestions and an estimate of how long it takes. Used by the pre-start preview and by "Start".
-import { estimate, nextProgression, restAfterSet, type Exercise, type Reminder, type Note, type Settings, type SetKind, type Progression } from "@motus/shared";
+import { estimate, nextProgression, restAfterSet, restDefaultsOf, type Exercise, type Reminder, type Note, type Settings, type SetKind, type Progression } from "@motus/shared";
 import type { Sql } from "../db";
 import { camel } from "../util";
 import { exerciseSessions, getExercises } from "./library";
@@ -91,7 +91,7 @@ export async function buildPlan(q: Sql, routine: any, settings: Settings, today:
     ...routine.exercises.flatMap((e: any) => [{ type: "exercise", id: e.exerciseId }, ...(e.id ? [{ type: "routine_exercise", id: e.id }] : [])]),
   ]);
   const prefs = new Map((await q.query("SELECT * FROM exercise_prefs WHERE exercise_id = ANY($1::uuid[])", [exIds])).rows.map((p: any) => [p.exercise_id, p]));
-  const d = { betweenSetsS: settings.workout.restBetweenSetsS, afterExerciseS: settings.workout.restAfterExerciseS };
+  const d = restDefaultsOf(settings.workout);
   const progressionOn = !!settings.features.progression;
 
   const out: PlannedExercise[] = [];
@@ -116,6 +116,8 @@ export async function buildPlan(q: Sql, routine: any, settings: Settings, today:
       else if (res) suggestion = res.reason;
     }
 
+    // a drop set moves with the set it drops from: when progression changes that set's weight, the drop shifts by as much
+    let parentShift = 0;
     const sets: PlannedSet[] = re.sets.map((s: any, i: number) => {
       const prev = prevs[i];
       const fromLast = useLast && prev && (prev.weightKg != null || prev.reps != null || prev.durationS != null);
@@ -123,7 +125,9 @@ export async function buildPlan(q: Sql, routine: any, settings: Settings, today:
       let reps = fromLast ? prev.reps : s.reps;
       let adjusted = false;
       if (s.kind !== "warmup") {
-        if (progWeight != null) { weightKg = progWeight; reps = s.reps ?? reps; adjusted = true; }
+        if (s.kind === "drop") { if (parentShift && weightKg != null) { weightKg = Math.max(0, weightKg + parentShift); adjusted = true; } }
+        else if (progWeight != null) { parentShift = weightKg != null ? progWeight - weightKg : 0; weightKg = progWeight; reps = s.reps ?? reps; adjusted = true; }
+        else parentShift = 0;
         if (delta.w && weightKg != null) { weightKg = Math.round((weightKg + delta.w) * 100) / 100; adjusted = true; }
         if (delta.r && reps != null) { reps += delta.r; adjusted = true; }
       }
@@ -133,7 +137,7 @@ export async function buildPlan(q: Sql, routine: any, settings: Settings, today:
         durationS: fromLast && prev.durationS != null ? prev.durationS : s.durationS,
         distanceM: fromLast && prev.distanceM != null ? prev.distanceM : s.distanceM,
         rpe: s.rpe,
-        restS: restAfterSet({ setRestS: s.restS, exRestS: re.restS, prefRestS: pref?.rest_s, isLastSet, exRestAfterS: re.restAfterS, prefRestAfterS: pref?.rest_after_s }, d),
+        restS: restAfterSet({ setRestS: s.restS, kind: s.kind, nextKind: re.sets[i + 1]?.kind, byKindS: re.restByKind, exRestS: re.restS, prefRestS: pref?.rest_s, isLastSet, exRestAfterS: re.restAfterS, prefRestAfterS: pref?.rest_after_s }, d),
         targetReps: s.reps, targetRepsMax: s.repsMax, targetWeightKg: s.weightKg,
         prev: prev ? { weightKg: prev.weightKg, reps: prev.reps, durationS: prev.durationS, distanceM: prev.distanceM } : null,
         prefilled: !!fromLast, adjusted,

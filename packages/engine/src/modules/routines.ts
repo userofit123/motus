@@ -1,6 +1,6 @@
 // Routines (saved plans) and their folders: list, open, create (from scratch, from another routine, from a workout,
 // from a template), edit, duplicate, version history, and the pre-start preview.
-import { TEMPLATES, estimate, restAfterSet, ymd, type RoutineSummary } from "@motus/shared";
+import { TEMPLATES, estimate, restAfterSet, restDefaultsOf, ymd, LIFTED_SQL, type RoutineSummary } from "@motus/shared";
 import { SOURCE } from "@motus/exercise-data/meta";
 import type { Router, Ctx } from "../router";
 import type { Sql } from "../db";
@@ -14,7 +14,7 @@ const KINDS = ["warmup", "normal", "drop", "failure"] as const;
 
 export async function routineSummaries(q: Sql, userId: string, where = "r.deleted_at IS NULL"): Promise<RoutineSummary[]> {
   const settings = await getSettings(q, userId);
-  const d = { betweenSetsS: settings.workout.restBetweenSetsS, afterExerciseS: settings.workout.restAfterExerciseS };
+  const d = restDefaultsOf(settings.workout);
   const { rows } = await q.query(
     `SELECT r.*,
        (SELECT count(*) FROM workouts w WHERE w.routine_id = r.id AND w.status = 'completed') AS times_done,
@@ -22,7 +22,7 @@ export async function routineSummaries(q: Sql, userId: string, where = "r.delete
        (SELECT count(*) FROM reminders m WHERE m.status = 'pending' AND ((m.target_type = 'routine' AND m.target_id = r.id)
           OR (m.target_type = 'exercise' AND m.target_id IN (SELECT exercise_id FROM routine_exercises WHERE routine_id = r.id)
               AND (m.scope_routine_id IS NULL OR m.scope_routine_id = r.id)))) AS pending_reminders,
-       coalesce((SELECT json_agg(json_build_object('name', e.name, 'primary', e.primary_muscles, 'restS', re.rest_s, 'restAfterS', re.rest_after_s,
+       coalesce((SELECT json_agg(json_build_object('name', e.name, 'primary', e.primary_muscles, 'secondary', e.secondary_muscles, 'restS', re.rest_s, 'restAfterS', re.rest_after_s, 'restByKind', re.rest_by_kind,
           'sets', (SELECT coalesce(json_agg(json_build_object('kind', s.kind, 'reps', s.reps, 'durationS', s.duration_s, 'restS', s.rest_s) ORDER BY s.position), '[]')
                    FROM routine_sets s WHERE s.routine_exercise_id = re.id)) ORDER BY re.position)
          FROM routine_exercises re JOIN exercises e ON e.id = re.exercise_id WHERE re.routine_id = r.id), '[]') AS exs
@@ -30,15 +30,25 @@ export async function routineSummaries(q: Sql, userId: string, where = "r.delete
   return rows.map((r: any) => {
     const exs = r.exs as any[];
     const est = estimate(exs.map((e, i) => ({
-      sets: (e.sets as any[]).map((s, j) => ({ ...s, restS: restAfterSet({ setRestS: s.restS, exRestS: e.restS, isLastSet: j === e.sets.length - 1, exRestAfterS: e.restAfterS }, d) })),
+      sets: (e.sets as any[]).map((s, j) => ({ ...s, restS: restAfterSet({ setRestS: s.restS, kind: s.kind, nextKind: e.sets[j + 1]?.kind, byKindS: e.restByKind, exRestS: e.restS, isLastSet: j === e.sets.length - 1, exRestAfterS: e.restAfterS }, d) })),
     })).map((x, i, a) => x));
     const muscles = [...new Set(exs.flatMap((e) => e.primary as string[]))];
+    // helpers that are nobody's main muscle here, for the little body on the routine card
+    const helpers = [...new Set(exs.flatMap((e) => (e.secondary ?? []) as string[]))].filter((m) => !muscles.includes(m));
     return {
       id: r.id, folderId: r.folder_id, name: r.name, description: r.description, color: r.color, pinned: r.pinned, archived: r.archived, position: r.position,
-      exerciseCount: exs.length, setCount: exs.reduce((a, e) => a + e.sets.length, 0), estimateS: est.totalS, muscles,
+      exerciseCount: exs.length, setCount: exs.reduce((a, e) => a + e.sets.length, 0), estimateS: est.totalS, muscles, helpers,
       lastDoneAt: r.last_done_at, timesDone: Number(r.times_done), pendingReminders: Number(r.pending_reminders), exerciseNames: exs.map((e) => e.name),
     };
   });
+}
+
+/** Only the kinds of set that have their own rest, each 0-60 min; null when none do. */
+function restByKind(v: unknown): string | null {
+  if (!v || typeof v !== "object") return null;
+  const out: Record<string, number> = {};
+  for (const k of ["warmup", "drop", "failure"]) { const n = intOrNull((v as any)[k], 0, 3600); if (n != null) out[k] = n; }
+  return Object.keys(out).length ? JSON.stringify(out) : null;
 }
 
 /** Writes a routine's exercises and sets, keeping the ids of exercises that stay (workouts point at them). */
@@ -52,11 +62,11 @@ export async function writeRoutineBody(ctx: Ctx, routineId: string, exercises: a
     await visible(ctx.q, "exercises", id(e.exerciseId, "exercise"), "exercise");
     const vals = [reId, ctx.userId, routineId, id(e.exerciseId, "exercise"), pos, e.superset ? str(e.superset, 20) : null, intOrNull(e.restS, 0, 3600),
       intOrNull(e.restAfterS, 0, 3600), intOrNull(e.repRestS, 0, 600), oneOf(e.prefill, ["last", "target"], "last"), oneOf(e.prefillScope, ["any", "routine"], "any"),
-      e.progression && typeof e.progression === "object" ? JSON.stringify(e.progression) : null, str(e.note, 2000)];
+      e.progression && typeof e.progression === "object" ? JSON.stringify(e.progression) : null, str(e.note, 2000), restByKind(e.restByKind)];
     await ctx.q.query(
-      `INSERT INTO routine_exercises (id, user_id, routine_id, exercise_id, position, superset, rest_s, rest_after_s, rep_rest_s, prefill, prefill_scope, progression, note)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-       ON CONFLICT (id) DO UPDATE SET exercise_id=$4, position=$5, superset=$6, rest_s=$7, rest_after_s=$8, rep_rest_s=$9, prefill=$10, prefill_scope=$11, progression=$12, note=$13
+      `INSERT INTO routine_exercises (id, user_id, routine_id, exercise_id, position, superset, rest_s, rest_after_s, rep_rest_s, prefill, prefill_scope, progression, note, rest_by_kind)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+       ON CONFLICT (id) DO UPDATE SET exercise_id=$4, position=$5, superset=$6, rest_s=$7, rest_after_s=$8, rep_rest_s=$9, prefill=$10, prefill_scope=$11, progression=$12, note=$13, rest_by_kind=$14
        WHERE routine_exercises.routine_id = $3`, vals);
     await ctx.q.query("DELETE FROM routine_sets WHERE routine_exercise_id = $1", [reId]);
     const sets = Array.isArray(e.sets) ? e.sets.slice(0, 50) : [];
@@ -111,7 +121,12 @@ export async function updateRoutineFromWorkout(ctx: Ctx, routineId: string, work
   if (!body.length) return;
   await snapshot(ctx, routineId);
   const cur = new Map(((await loadRoutine(ctx.q, routineId))?.exercises ?? []).map((e: any) => [e.id, e]));
-  await writeRoutineBody(ctx, routineId, body.map((e) => {
+  // skipping an exercise today doesn't take it out of the routine: it stays where it was, as it was
+  const order = (await ctx.q.query("SELECT routine_exercise_id, status FROM workout_exercises WHERE workout_id = $1 ORDER BY position", [workoutId])).rows;
+  let k = 0;
+  const merged = order.map((x: any) => (x.status === "skipped" ? (x.routine_exercise_id ? { kept: cur.get(x.routine_exercise_id) } : null) : body[k++])).filter((x: any) => x && (!("kept" in x) || x.kept));
+  await writeRoutineBody(ctx, routineId, merged.map((e: any) => {
+    if ("kept" in e) return e.kept;
     const old: any = e.id ? cur.get(e.id) : null;
     if (!old) return e;
     return { ...old, exerciseId: e.exerciseId, sets: e.sets.map((s: any, i: number) => ({ ...(old.sets?.[i] ?? old.sets?.at(-1) ?? {}), ...s })) };
@@ -239,12 +254,22 @@ export function routineRoutes(r: Router) {
   r.get("/routines/:id/workouts", async ({ q }, p) =>
     (await q.query(
       `SELECT w.id, w.name, w.started_at, w.ended_at, extract(epoch FROM coalesce(w.ended_at, w.started_at) - w.started_at)::int - w.paused_s AS duration_s,
-         coalesce((SELECT sum(s.weight_kg * s.reps) FROM workout_sets s JOIN workout_exercises we ON we.id = s.workout_exercise_id
+         coalesce((SELECT sum(${LIFTED_SQL}) FROM workout_sets s JOIN workout_exercises we ON we.id = s.workout_exercise_id JOIN exercises e ON e.id = we.exercise_id
                    WHERE we.workout_id = w.id AND s.done AND s.kind <> 'warmup'), 0) AS volume_kg,
          (SELECT count(*) FROM workout_exercises we WHERE we.workout_id = w.id AND we.status = 'skipped') AS skipped
        FROM workouts w WHERE w.routine_id = $1 AND w.status = 'completed' ORDER BY w.started_at DESC LIMIT 200`, [id(p.id)])).rows.map((x: any) => camel(x)));
 
-  r.get("/templates", async () => TEMPLATES.map((t) => ({ slug: t.slug, group: t.group, name: t.name, description: t.description, exercises: t.exercises.length })));
+  // each template carries the muscles its exercises work (from the built-in library), for the same little body the routine cards show
+  r.get("/templates", async ({ q }) => {
+    const lib = new Map((await q.query("SELECT source_id, primary_muscles, secondary_muscles FROM exercises WHERE owner_id IS NULL AND source = $1 AND source_id = ANY($2::text[])",
+      [SOURCE, [...new Set(TEMPLATES.flatMap((t) => t.exercises.map((e) => e.id)))]])).rows.map((x: any) => [x.source_id, x]));
+    return TEMPLATES.map((t) => {
+      const exs = t.exercises.map((e) => lib.get(e.id)).filter(Boolean);
+      const muscles = [...new Set(exs.flatMap((e) => e.primary_muscles as string[]))];
+      const helpers = [...new Set(exs.flatMap((e) => (e.secondary_muscles ?? []) as string[]))].filter((m) => !muscles.includes(m));
+      return { slug: t.slug, group: t.group, name: t.name, description: t.description, exercises: t.exercises.length, muscles, helpers };
+    });
+  });
 
   // folders
   r.get("/folders", async ({ q }) => (await q.query("SELECT id, name, position, color FROM folders ORDER BY position, name")).rows);

@@ -10,10 +10,13 @@ import { api, mediaUrl } from "../api/client";
 import { useFmt, ago } from "../core/format";
 import { noteSheet, reminderSheet, exerciseSheet } from "../core/ui";
 import { confirm } from "../core/ask";
+import { toast, savedToast } from "../core/toast";
 import Icon from "./Icon.vue";
 import BodyMap from "./BodyMap.vue";
 import LineChart from "./LineChart.vue";
 import Menu from "./Menu.vue";
+import NoteItem from "./NoteItem.vue";
+import ReminderItem from "./ReminderItem.vue";
 import ExerciseEditor from "./ExerciseEditor.vue";
 
 const props = defineProps<{ id: string; startTab?: string; inSheet?: boolean }>();
@@ -54,10 +57,10 @@ const best1rm = computed(() => hist.data.value?.records?.e1rm?.value ?? null);
 const setText = (s: any) => [s.weightKg != null && usesWeight(tracking.value) ? fmt.value.w(s.weightKg) + " " + fmt.value.wu : "", s.reps != null && usesReps(tracking.value) ? (s.weightKg != null && usesWeight(tracking.value) ? "× " : "") + s.reps : "", s.durationS ? fmt.value.clock(s.durationS) : "", s.distanceM ? fmt.value.dist(s.distanceM) : ""].filter(Boolean).join(" ");
 const REC: Record<string, string> = { maxWeight: "Heaviest weight", e1rm: "Best estimated 1RM", maxReps: "Most reps in a set", setVolume: "Best set (weight × reps)", sessionVolume: "Most volume in a session", maxDuration: "Longest", maxDistance: "Farthest" };
 const recVal = (k: string, v: number) => (["maxWeight", "e1rm", "setVolume", "sessionVolume"].includes(k) ? fmt.value.wu_(v) : k === "maxDuration" ? fmt.value.clock(v) : k === "maxDistance" ? fmt.value.dist(v) : String(v));
-const fav = useChange((v: boolean) => api.put(`/exercises/${props.id}/prefs`, { ...(e.value?.prefs ?? {}), favourite: v }), ["exercises"]);
-const delNote = useChange((id: string) => api.del(`/notes/${id}`), ["notes"]);
-const remDone = useChange((id: string, status: string) => api.put(`/reminders/${id}`, { status }), ["reminders"]);
-const pinNote = useChange((n: any) => api.put(`/notes/${n.id}`, { pinned: !n.pinned }), ["notes"]);
+const fav = useChange(async (v: boolean) => { await api.put(`/exercises/${props.id}/prefs`, { ...(e.value?.prefs ?? {}), favourite: v }); savedToast(v ? "Added to favourites" : "Removed from favourites"); }, ["exercises"]);
+const delNote = useChange(async (id: string) => { await api.del(`/notes/${id}`); toast("Note deleted"); }, ["notes"]);
+const remDone = useChange(async (id: string, status: string) => { await api.put(`/reminders/${id}`, { status }); toast(status === "done" ? "Reminder done" : "Reminder dismissed"); }, ["reminders"]);
+const pinNote = useChange(async (n: any) => { await api.put(`/notes/${n.id}`, { pinned: !n.pinned }); toast(n.pinned ? "Note kept on record only" : "Note shows in every workout"); }, ["notes"]);
 const own = computed(() => !!e.value?.ownerId);
 // strength standards (optional feature): needs a body weight
 const bodyQ = useBody("weight");
@@ -68,7 +71,7 @@ const standard = computed(() => {
 async function del() {
   if (!(await confirm(`Delete ${e.value.name}?`, { text: "If it has history it is archived instead, so your past workouts keep it.", ok: "Delete", danger: true }))) return;
   await api.del(`/exercises/${props.id}`);
-  invalidate(["exercises"]);
+  invalidate(["exercises"]); toast("Exercise deleted");
   exerciseSheet.value = null;
   router.push("/exercises");
 }
@@ -78,7 +81,7 @@ const menu = computed(() => [
   { label: "Remind me next time", icon: "bell", run: () => (reminderSheet.value = { targetType: "exercise", targetId: props.id, label: e.value.name }) },
   { label: "Add a note", icon: "note", run: () => (noteSheet.value = { targets: [{ type: "exercise", id: props.id, label: e.value.name }] }) },
   { label: "Edit", icon: "edit", run: () => (editing.value = true), hidden: !own.value },
-  { label: "Make my own copy", icon: "copy", run: async () => { const r = await api.post("/exercises", { ...e.value, name: e.value.name + " (mine)" }); invalidate(["exercises"]); exerciseSheet.value = null; router.push(`/exercises/${r.id}`); }, hidden: own.value },
+  { label: "Make my own copy", icon: "copy", run: async () => { const r = await api.post("/exercises", { ...e.value, name: e.value.name + " (mine)" }); invalidate(["exercises"]); toast("Copy created"); exerciseSheet.value = null; router.push(`/exercises/${r.id}`); }, hidden: own.value },
   { label: "Open as a page", icon: "right", run: () => { exerciseSheet.value = null; router.push(`/exercises/${props.id}`); }, hidden: !props.inSheet },
   { label: "Delete", icon: "trash", danger: true, run: del, hidden: !own.value, sep: true },
 ]);
@@ -110,10 +113,10 @@ const menu = computed(() => [
           <img v-if="e.images[1]" class="b" :src="mediaUrl(e.images[1])" alt="" loading="lazy" />
         </div>
         <a v-if="e.videoUrl" :href="e.videoUrl" target="_blank" rel="noopener" class="qb acc" style="margin-top:8px"><Icon name="play" />Watch a video</a>
-        <div class="card" style="margin-top:var(--spg)"><BodyMap :values="{}" :highlight="e.primaryMuscles" :secondary="e.secondaryMuscles" :height="200" legend /></div>
+        <div class="card spt"><BodyMap :values="{}" :highlight="e.primaryMuscles" :secondary="e.secondaryMuscles" :height="200" legend /></div>
       </div>
       <div>
-        <div v-if="sessions[0]" class="card" style="margin-bottom:var(--spg)">
+        <div v-if="sessions[0]" class="card spb">
           <div class="lbl">Last time · {{ ago(sessions[0].startedAt) }}</div>
           <div style="margin:6px 0 2px;font-weight:600">{{ sessions[0].sets.map(setText).join(", ") }}</div>
           <div class="tiny">{{ sessions[0].workoutName }} · exercise {{ sessions[0].position }} of {{ sessions[0].ofN }}</div>
@@ -134,7 +137,7 @@ const menu = computed(() => [
     </div>
 
     <div v-else-if="tab === 'history'">
-      <div v-if="hist.data.value?.summary?.timesDone" class="grid g3" style="margin-bottom:var(--spg)">
+      <div v-if="hist.data.value?.summary?.timesDone" class="grid g3 spb">
         <div class="card tight"><div class="lbl">Times done</div><div class="val" style="font-size:24px">{{ hist.data.value.summary.timesDone }}</div><div class="tiny">since {{ fmt.date(hist.data.value.summary.firstAt, { month: "short", year: "numeric" }) }}</div></div>
         <div class="card tight"><div class="lbl">Usually</div><div class="val" style="font-size:24px">#{{ hist.data.value.summary.usualPosition }}</div><div class="tiny">in the workout · first {{ Math.round(hist.data.value.summary.firstPositionShare * 100) }}% of the time</div></div>
         <div class="card tight"><div class="lbl">Last done</div><div class="val" style="font-size:24px">{{ ago(hist.data.value.summary.lastAt) }}</div><div class="tiny">usually around {{ usualHour }}</div></div>
@@ -152,12 +155,13 @@ const menu = computed(() => [
     </div>
 
     <div v-else-if="tab === 'charts'">
-      <div class="chips" style="margin-bottom:12px"><button v-for="[k, l] in CHARTS" :key="k" class="fchip" :class="{ on: chart === k }" @click="chart = k">{{ l }}</button></div>
-      <div class="card"><LineChart :points="points" :height="220" :fmt="(v) => fmt.num(v, 1)" @pick="openWorkout" /></div>
+      <div class="chips hgap"><button v-for="[k, l] in CHARTS" :key="k" class="fchip" :class="{ on: chart === k }" @click="chart = k">{{ l }}</button></div>
+      <div v-if="!sessions.length" class="empty"><Icon name="stats" :size="32" /><b>No charts yet</b>Its progress is charted here after your first workout with it.</div>
+      <div v-else class="card"><LineChart :points="points" :height="220" :fmt="(v) => fmt.num(v, 1)" @pick="openWorkout" /></div>
     </div>
 
     <div v-else-if="tab === 'records'">
-      <div v-if="!sessions.length" class="empty"><Icon name="trophy" :size="32" /><b>No records yet</b></div>
+      <div v-if="!sessions.length" class="empty"><Icon name="trophy" :size="32" /><b>No records yet</b>Your heaviest weight, most reps and best estimated max show here.</div>
       <div class="grid g2">
         <div v-for="(r, k) in hist.data.value?.records ?? {}" :key="k" class="card tight click" @click="openWorkout(r.workoutId)">
           <div class="lbl">{{ REC[k] ?? k }}</div>
@@ -165,37 +169,33 @@ const menu = computed(() => [
           <div class="tiny">{{ r.detail ? r.detail + " · " : "" }}{{ fmt.date(r.at, { day: "numeric", month: "short", year: "numeric" }) }}</div>
         </div>
       </div>
-      <div v-if="standard" class="card" style="margin-top:var(--spg)">
+      <div v-if="standard" class="card spt">
         <div class="lbl">Strength standard</div>
         <div style="font-weight:600;font-size:20px;margin-top:4px">{{ standard.level }}</div>
         <div class="tiny">1RM {{ fmt.num(standard.ratio, 2) }}× body weight{{ standard.next ? ` · ${standard.next.level} at ${fmt.wu_(standard.next.kg)}` : "" }}</div>
         <div class="row" style="gap:4px;margin-top:10px"><div v-for="(t, i) in standard.thresholds" :key="i" class="grow" style="text-align:center"><div class="pbar" style="height:6px"><i :style="{ width: best1rm! >= t ? '100%' : '0%' }" /></div><div class="tiny" style="margin-top:3px">{{ LEVELS[i] }}</div></div></div>
-        <p class="tiny" style="margin-top:8px">A rough guide from common gym rules of thumb, using your latest body weight{{ settings.profile.sex ? "" : " (set your sex in Settings → Account for a closer match)" }}.</p>
+        <p class="tiny" style="margin-top:8px">A rough guide from common gym rules of thumb, using your latest body weight{{ settings.profile.sex ? "" : " (set your sex on the Body page for a closer match)" }}.</p>
       </div>
       <template v-if="best1rm">
         <h2>Rep maxes</h2>
         <table class="sets"><thead><tr><th>Reps</th><th>Best done</th><th>Estimated</th><th>% of 1RM</th></tr></thead>
-          <tbody><tr v-for="n in [1, 2, 3, 4, 5, 6, 8, 10, 12]" :key="n"><td>{{ n }}</td><td>{{ hist.data.value?.repMax?.[n] ? fmt.wu_(hist.data.value.repMax[n].weightKg) : "—" }}</td><td>{{ fmt.wu_(weightForReps(best1rm, n)) }}</td><td class="muted">{{ Math.round((weightForReps(best1rm, n) / best1rm) * 100) }}%</td></tr></tbody>
+          <tbody><tr v-for="n in [1, 2, 3, 4, 5, 6, 8, 10, 12]" :key="n"><td>{{ n }}</td><td>{{ hist.data.value?.repMax?.[n] ? fmt.wu_(hist.data.value.repMax[n].weightKg) : "-" }}</td><td>{{ fmt.wu_(weightForReps(best1rm, n)) }}</td><td class="muted">{{ Math.round((weightForReps(best1rm, n) / best1rm) * 100) }}%</td></tr></tbody>
         </table>
       </template>
     </div>
 
     <div v-else-if="tab === 'notes'">
-      <div class="row" style="margin-bottom:10px">
+      <div class="row hgap">
         <button class="btn tonal s" @click="noteSheet = { targets: [{ type: 'exercise', id: props.id, label: e.name }] }"><Icon name="plus" :size="16" />Note</button>
         <button class="btn o s" @click="reminderSheet = { targetType: 'exercise', targetId: props.id, label: e.name }"><Icon name="bell" :size="16" />Reminder</button>
       </div>
-      <div v-for="r in pending" :key="r.id" class="banner"><Icon name="bell" /><div class="grow"><b>{{ r.body }}</b><div class="tiny">{{ r.trigger === "next" ? "Shows next time" : r.trigger === "every" ? "Shows every time" : r.trigger === "after_n" ? `After ${r.triggerN} sessions` : `From ${fmt.date(r.triggerDate)}` }}</div>
-        <div class="acts"><button class="qb acc" @click="remDone.run(r.id, 'done')">Done</button><button class="qb" @click="remDone.run(r.id, 'dismissed')">Dismiss</button></div></div></div>
       <div v-if="!notes.data.value?.length && !pending.length" class="empty"><Icon name="note" :size="32" /><b>No notes yet</b>Write how it felt, what to change, or whether it suits you.</div>
-      <div class="list">
-        <div v-for="n in notes.data.value" :key="n.id" class="li">
-          <div class="grow">
-            <div style="white-space:pre-wrap">{{ n.body }}</div>
-            <div class="s"><Icon v-if="n.pinned" name="pin" :size="12" style="display:inline;vertical-align:-1px" /> {{ fmt.date(n.createdAt, { day: "numeric", month: "short", year: "numeric" }) }}{{ n.workoutName ? " · " + n.workoutName : "" }}{{ n.difficulty ? " · difficulty " + n.difficulty + "/5" : "" }}<span v-for="t in n.tags" :key="t" class="mchip" style="margin-inline-start:6px">{{ t }}</span></div>
-          </div>
-          <Menu :items="[{ label: n.pinned ? 'Unpin' : 'Pin (show during workouts)', icon: 'pin', run: () => pinNote.run(n) }, { label: 'Edit', icon: 'edit', run: () => (noteSheet = { targets: [{ type: n.targetType, id: n.targetId, label: e.name }], edit: n }) }, { label: 'Delete', icon: 'trash', danger: true, run: () => delNote.run(n.id) }]" />
-        </div>
+      <div v-if="pending.length" class="col" style="gap:8px;margin-bottom:var(--hg)">
+        <ReminderItem v-for="r in pending" :key="r.id" :reminder="r" when :actions="[{ label: 'Done', primary: true, run: () => remDone.run(r.id, 'done') }, { label: 'Dismiss', run: () => remDone.run(r.id, 'dismissed') }]" />
+      </div>
+      <div v-if="notes.data.value?.length">
+        <NoteItem v-for="n in notes.data.value" :key="n.id" :note="n" flat date
+          :menu="[{ label: n.pinned ? 'Stop showing in workouts' : 'Show in every workout', icon: 'pin', hidden: n.targetType !== 'exercise' && n.targetType !== 'routine_exercise', run: () => pinNote.run(n) }, { label: 'Edit', icon: 'edit', run: () => (noteSheet = { targets: [{ type: n.targetType, id: n.targetId, label: e.name }], edit: n }) }, { label: 'Delete', icon: 'trash', danger: true, run: () => delNote.run(n.id) }]" />
       </div>
     </div>
     </Transition>

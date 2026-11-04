@@ -1,29 +1,39 @@
 <script setup lang="ts">
 // All routines (requirement 13), in folders, pinned first; start, preview, edit, duplicate, base a new one on it, archive.
-import { computed, ref } from "vue";
-import { useRouter } from "vue-router";
+// With programs switched on, they get a tab of their own next to the routines.
+import { computed, ref, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import { duration, muscleName, type RoutineSummary } from "@motus/shared";
-import { useRoutines, useFolders, useChange, useTemplates } from "../api/queries";
+import BodyMap from "../components/BodyMap.vue";
+import { useRoutines, useFolders, useChange, useTemplates, usePrograms, loaded } from "../api/queries";
 import { api } from "../api/client";
 import { ago } from "../core/format";
+import { readJson, writeJson } from "../core/prefs";
 import { confirm, prompt, choose } from "../core/ask";
 import { toast } from "../core/toast";
 import { invalidate } from "../api/live";
 import Icon from "../components/Icon.vue";
 import Menu from "../components/Menu.vue";
+import Collapse from "../components/Collapse.vue";
 import Sheet from "../components/Sheet.vue";
 import ProgramsSection from "../components/ProgramsSection.vue";
 import { useSettings } from "../api/queries";
 
-const router = useRouter();
+const route = useRoute(), router = useRouter();
 const settings = useSettings();
+const tab = ref(route.query.tab === "programs" ? "programs" : "routines");
+watch(tab, (t) => router.replace({ query: t === "programs" ? { tab: t } : {} }));
+// Programs switched off: no tabs, and a remembered ?tab=programs falls back to the routines
+const onPrograms = computed(() => settings.value.features.programs && tab.value === "programs");
+const programsRef = ref<InstanceType<typeof ProgramsSection> | null>(null);
+const programs = usePrograms();
 const showArchived = ref(false);
 const routines = useRoutines();
 const archived = useRoutines(true);
 const folders = useFolders();
 const templates = useTemplates();
 const q = ref("");
-const fromTemplate = ref(false);
+const fromTemplate = ref(route.query.template === "1"); // Home's first-run card opens the templates straight away
 const list = computed(() => (showArchived.value ? archived.data.value ?? [] : (routines.data.value ?? []).filter((r) => !r.archived)).filter((r) => r.name.toLowerCase().includes(q.value.toLowerCase())));
 const groups = computed(() => {
   const fs = (folders.data.value ?? []) as any[];
@@ -35,8 +45,13 @@ const groups = computed(() => {
   if (rest.length) out.push({ id: null, name: fs.length || pinned.length ? "Other" : "", items: rest });
   return out;
 });
+// folded folders are remembered on this device (a search shows everything)
+const folded = ref<string[]>(readJson<string[]>("motusFolded", []));
+const fkey = (g: { id: string | null }) => g.id ?? "other";
+const isFolded = (g: { id: string | null }) => folded.value.includes(fkey(g));
+function fold(g: { id: string | null }) { const k = fkey(g); folded.value = isFolded(g) ? folded.value.filter((x) => x !== k) : [...folded.value, k]; writeJson("motusFolded", folded.value); }
 const upd = useChange((id: string, b: any) => api.put(`/routines/${id}`, b), ["routines"]);
-const dup = useChange((id: string) => api.post(`/routines/${id}/duplicate`), ["routines"]);
+const dup = useChange(async (id: string) => { await api.post(`/routines/${id}/duplicate`); toast("Routine duplicated"); }, ["routines"]);
 async function del(r: RoutineSummary) {
   if (!(await confirm(`Delete ${r.name}?`, { text: "Its past workouts stay in your history.", ok: "Delete", danger: true }))) return;
   await api.del(`/routines/${r.id}`);
@@ -45,7 +60,7 @@ async function del(r: RoutineSummary) {
 }
 async function newFolder() {
   const name = await prompt("New folder", { placeholder: "e.g. Push / Pull / Legs" });
-  if (name) { await api.post("/folders", { name }); invalidate(["routines"]); }
+  if (name) { await api.post("/folders", { name }); invalidate(["routines"]); toast("Folder created"); }
 }
 async function moveTo(r: RoutineSummary) {
   const fs = (folders.data.value ?? []) as any[];
@@ -54,38 +69,50 @@ async function moveTo(r: RoutineSummary) {
   let fid: string | null = v || null;
   if (v === "__new") { const name = await prompt("New folder"); if (!name) return; fid = (await api.post("/folders", { name })).id; }
   await upd.run(r.id, { folderId: fid });
+  toast(fid ? "Routine moved" : "Routine taken out of its folder");
 }
-async function renameFolder(f: { id: string; name: string }) { const n = await prompt("Rename folder", { value: f.name }); if (n) { await api.put(`/folders/${f.id}`, { name: n }); invalidate(["routines"]); } }
-async function delFolder(f: { id: string; name: string }) { if (await confirm(`Delete the folder ${f.name}?`, { text: "Its routines stay, without a folder.", ok: "Delete", danger: true })) { await api.del(`/folders/${f.id}`); invalidate(["routines"]); } }
+async function renameFolder(f: { id: string; name: string }) { const n = await prompt("Rename folder", { value: f.name }); if (n) { await api.put(`/folders/${f.id}`, { name: n }); invalidate(["routines"]); toast("Folder renamed"); } }
+async function delFolder(f: { id: string; name: string }) { if (await confirm(`Delete the folder ${f.name}?`, { text: "Its routines stay, without a folder.", ok: "Delete", danger: true })) { await api.del(`/folders/${f.id}`); invalidate(["routines"]); toast("Folder deleted"); } }
 async function useTemplate(slug: string) {
   const r = await api.post("/routines", { template: slug });
   invalidate(["routines"]);
   fromTemplate.value = false;
+  toast("Routine created");
   router.push(`/routines/${r.id}`);
 }
 const items = (r: RoutineSummary) => [
   { label: "Start", icon: "play", run: () => router.push(`/routines/${r.id}/start`) },
   { label: "Edit", icon: "edit", run: () => router.push(`/routines/${r.id}/edit`) },
   { label: "Duplicate", icon: "copy", run: () => dup.run(r.id) },
-  { label: "New routine based on this", icon: "layers", run: async () => { const n = await prompt("Name the new routine", { value: r.name + " v2" }); if (n) { const x = await api.post("/routines", { fromRoutineId: r.id, name: n }); invalidate(["routines"]); router.push(`/routines/${x.id}/edit`); } } },
-  { label: r.pinned ? "Unpin" : "Pin to top", icon: "pin", run: () => upd.run(r.id, { pinned: !r.pinned }) },
+  { label: "New routine based on this", icon: "layers", run: async () => { const n = await prompt("Name the new routine", { value: r.name + " v2", ok: "Create", text: "A copy you can change; this one stays as it is." }); if (n) { const x = await api.post("/routines", { fromRoutineId: r.id, name: n }); invalidate(["routines"]); toast(`${n} created`); router.push(`/routines/${x.id}/edit`); } } },
+  { label: r.pinned ? "Unpin" : "Pin to top", icon: "pin", run: () => { const msg = r.pinned ? "Routine unpinned" : "Routine pinned to top"; upd.run(r.id, { pinned: !r.pinned }).then(() => toast(msg)); } },
   { label: "Move to folder", icon: "folder", run: () => moveTo(r) },
-  { label: r.archived ? "Restore from archive" : "Archive", icon: "archive", run: () => upd.run(r.id, { archived: !r.archived }) },
+  { label: r.archived ? "Restore from archive" : "Archive", icon: "archive", run: () => upd.run(r.id, { archived: !r.archived }).then(() => toast(r.archived ? "Routine restored" : "Routine archived")) },
   { label: "Delete", icon: "trash", danger: true, sep: true, run: () => del(r) },
 ];
 const tgroups = computed(() => { const m = new Map<string, any[]>(); for (const t of templates.data.value ?? []) m.set(t.group, [...(m.get(t.group) ?? []), t]); return [...m]; });
+// show the page once its data is in, all at once
+// the programs below are read here too, so they arrive with the routines rather than after them
+await loaded(routines, folders, ...(settings.value.features.programs ? [programs] : []));
 </script>
 
 <template>
   <div class="page">
     <div class="ph">
-      <div><h1>Routines</h1><div class="sub">{{ routines.data.value?.filter((r) => !r.archived).length ?? 0 }} routines</div></div>
+      <div><h1>Routines</h1><div class="sub">{{ onPrograms ? `${programs.data.value?.length ?? 0} program${programs.data.value?.length === 1 ? "" : "s"}` : `${routines.data.value?.filter((r) => !r.archived).length ?? 0} routines` }}</div></div>
       <div class="acts">
-        <button class="btn keep" @click="router.push('/routines/new/edit')"><Icon name="plus" :size="18" />New routine</button>
-        <Menu :items="[{ label: 'New folder', icon: 'folder', run: newFolder }, { label: 'From a template', icon: 'layers', run: () => (fromTemplate = true) }, { label: showArchived ? 'Hide archived' : 'Show archived', icon: 'archive', run: () => (showArchived = !showArchived) }]" />
+        <template v-if="onPrograms"><button class="btn keep" @click="programsRef?.create()"><Icon name="plus" :size="18" />New program</button></template>
+        <template v-else>
+          <Menu :items="[{ label: 'New folder', icon: 'folder', run: newFolder }, { label: 'From a template', icon: 'layers', run: () => (fromTemplate = true) }, { label: showArchived ? 'Hide archived' : 'Show archived', icon: 'archive', run: () => (showArchived = !showArchived) }]" />
+          <button class="btn keep" @click="router.push('/routines/new/edit')"><Icon name="plus" :size="18" />New routine</button>
+        </template>
       </div>
     </div>
-    <div v-if="(routines.data.value?.length ?? 0) > 6" class="search" style="margin-bottom:6px;max-width:360px"><Icon name="search" :size="18" /><input v-model="q" placeholder="Search routines" /></div>
+    <div v-if="settings.features.programs" class="tabs"><button :class="{ on: !onPrograms }" @click="tab = 'routines'">Routines</button><button :class="{ on: onPrograms }" @click="tab = 'programs'">Programs</button></div>
+<Transition name="sw" mode="out-in">
+    <div v-if="onPrograms" key="programs"><ProgramsSection ref="programsRef" /></div>
+    <div v-else key="routines">
+    <div v-if="(routines.data.value?.length ?? 0) > 6" class="search hgap"><Icon name="search" :size="18" /><input v-model="q" placeholder="Search routines" /></div>
     <div v-if="showArchived" class="banner note"><Icon name="archive" />Showing archived routines<button class="qb acc" style="margin-inline-start:auto;padding:0 6px" @click="showArchived = false">Done</button></div>
 
     <div v-if="routines.data.value && !list.length && !showArchived" class="card empty">
@@ -94,33 +121,67 @@ const tgroups = computed(() => { const m = new Map<string, any[]>(); for (const 
     </div>
 
     <section v-for="g in groups" :key="g.id ?? 'none'">
-      <div v-if="g.name" class="sh"><h2><Icon v-if="g.id === 'pinned'" name="pin" :size="13" style="display:inline;vertical-align:-2px;margin-inline-end:4px" />{{ g.name }}</h2>
+      <div v-if="g.name" class="sh fh">
+        <button class="fh-b" :aria-expanded="!isFolded(g)" @click="fold(g)">
+          <span class="fi"><Icon :name="g.id === 'pinned' ? 'pin' : g.id ? 'folder' : 'routines'" :size="15" /></span>
+          <h2>{{ g.name }}</h2><span class="sep" aria-hidden="true">·</span><span class="fn">{{ g.items.length }}</span>
+          <Icon name="down" :size="16" class="fc" :class="{ shut: isFolded(g) }" />
+        </button>
         <Menu v-if="g.id && g.id !== 'pinned'" :items="[{ label: 'Rename', icon: 'edit', run: () => renameFolder(g as any) }, { label: 'Delete folder', icon: 'trash', danger: true, run: () => delFolder(g as any) }]" /></div>
-      <div v-if="!g.items.length" class="tiny" style="padding:4px 0 8px">Empty. Move a routine here from its ⋮ menu.</div>
-      <div class="grid gauto">
-        <div v-for="r in g.items" :key="r.id" class="card click rcard" @click="router.push(`/routines/${r.id}`)">
-          <div class="row" style="align-items:flex-start">
-            <span class="dot" :style="{ marginTop: '6px', background: r.color ?? undefined }" />
-            <div class="grow"><div style="font-weight:600;font-size:15.5px">{{ r.name }}</div><div class="tiny" style="margin-top:2px">{{ r.exerciseCount }} exercises · ~{{ duration(r.estimateS, true) }}</div></div>
-            <span @click.stop><Menu :items="items(r)" /></span>
-          </div>
-          <div class="tiny ellipsis" style="margin:10px 0 0">{{ r.exerciseNames.join(" · ") || "No exercises yet" }}</div>
-          <div class="chips" style="margin-top:8px"><span v-for="m in r.muscles.slice(0, 4)" :key="m" class="mchip">{{ muscleName(m) }}</span></div>
-          <div class="row" style="margin-top:auto;padding-top:12px">
-            <span class="tiny grow">{{ r.lastDoneAt ? `Last done ${ago(r.lastDoneAt)} · ${r.timesDone}×` : "Not done yet" }}<template v-if="r.pendingReminders"> · <Icon name="bell" :size="12" style="display:inline;vertical-align:-1px" /> {{ r.pendingReminders }}</template></span>
-            <button class="btn o s" @click.stop="router.push(`/routines/${r.id}/start`)"><Icon name="play" :size="14" />Start</button>
+      <Collapse :open="!isFolded(g) || !!q">
+      <div v-if="!g.items.length" class="tiny hgap">Empty. Move a routine here from its ⋮ menu.</div>
+      <div class="grid gauto rgrid">
+        <div v-for="r in g.items" :key="r.id" class="card click rcard" :class="{ wbody: r.muscles.length }" @click="router.push(`/routines/${r.id}`)">
+          <!-- the muscles this routine works, at a glance, down the whole left side; the routine's colour is the dot by the name -->
+          <BodyMap v-if="r.muscles.length" class="rbody" :values="{}" :highlight="r.muscles" :secondary="r.helpers ?? []" />
+          <div class="rmain">
+            <div class="row" style="align-items:flex-start">
+              <div class="grow" style="min-width:0"><div class="row" style="gap:8px"><span class="dot" :style="{ background: r.color ?? undefined }" /><span class="ellipsis" style="font-weight:600;font-size:15.5px">{{ r.name }}</span></div><div class="tiny" style="margin-top:2px">{{ r.exerciseCount }} exercises · ~{{ duration(r.estimateS, true) }}</div></div>
+              <span @click.stop><Menu :items="items(r)" /></span>
+            </div>
+            <div class="tiny ellipsis" style="margin:10px 0 0">{{ r.exerciseNames.join(" · ") || "No exercises yet" }}</div>
+            <div class="chips" style="margin-top:8px"><span v-for="m in r.muscles.slice(0, 4)" :key="m" class="mchip">{{ muscleName(m) }}</span></div>
+            <div class="row" style="margin-top:auto;padding-top:12px">
+              <span class="tiny grow">{{ r.lastDoneAt ? `Last done ${ago(r.lastDoneAt)} · ${r.timesDone}×` : "Not done yet" }}<template v-if="r.pendingReminders"> · <Icon name="bell" :size="12" style="display:inline;vertical-align:-1px" /> {{ r.pendingReminders }}</template></span>
+              <button class="btn o s" @click.stop="router.push(`/routines/${r.id}/start`)"><Icon name="play" :size="14" />Start</button>
+            </div>
           </div>
         </div>
       </div>
+      </Collapse>
     </section>
-
-    <ProgramsSection v-if="settings.features.programs && !showArchived" />
+    </div>
+</Transition>
 
     <Sheet v-if="fromTemplate" title="Start from a template" size="wide" @close="fromTemplate = false">
-      <p class="tiny" style="margin-bottom:6px">A copy is added to your routines, ready to change.</p>
-      <template v-for="[grp, ts] in tgroups" :key="grp"><h2>{{ grp }}</h2>
-        <div class="list"><div v-for="t in ts" :key="t.slug" class="li click" @click="useTemplate(t.slug)"><div class="grow"><div class="t">{{ t.name }}</div><div class="s">{{ t.description }} · {{ t.exercises }} exercises</div></div><Icon name="plus" /></div></div>
+      <p class="tiny hgap">A copy is added to your routines, ready to change.</p>
+      <template v-for="([grp, ts], i) in tgroups" :key="grp">
+        <div class="sh" :class="{ first: i === 0 }"><h2>{{ grp }}</h2><span class="tiny">{{ ts.length }} {{ ts.length === 1 ? "routine" : "routines" }}</span></div>
+        <div class="opt-list">
+          <button v-for="t in ts" :key="t.slug" class="optb" :class="{ wbody: t.muscles?.length }" @click="useTemplate(t.slug)">
+            <!-- the muscles this template works, drawn like the routine cards -->
+            <BodyMap v-if="t.muscles?.length" class="rbody" :values="{}" :highlight="t.muscles" :secondary="t.helpers ?? []" />
+            <span v-else class="oi"><Icon name="routines" /></span>
+            <div class="grow" style="align-self:center"><div class="t">{{ t.name }}</div><div class="s">{{ t.exercises }} exercises</div><div class="s">{{ t.description }}</div></div>
+            <Icon name="plus" style="align-self:center" />
+          </button>
+        </div>
       </template>
     </Sheet>
   </div>
 </template>
+
+<style scoped>
+/* wide enough for the body plus the text beside it (the body itself: .wbody / .rbody in app.css) */
+.rgrid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 360px), 1fr)); }
+.rmain { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.fh { justify-content: flex-start; gap: 4px; }
+.fh-b { display: inline-flex; align-items: center; gap: 6px; border: 0; background: none; color: var(--tx); cursor: pointer; padding: 4px 8px 4px 0; border-radius: var(--r-sm); min-width: 0; }
+.fh-b h2 { margin: 0; }
+.fi { width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center; background: var(--s2); color: var(--acc); flex: none; }
+.fn { color: var(--tx2); font-size: 13px; font-weight: 500; }
+.fc { color: var(--tx2); transition: transform .2s; }
+.fc.shut { transform: rotate(-90deg); }
+html.he .fc.shut { transform: rotate(90deg); }
+</style>
+

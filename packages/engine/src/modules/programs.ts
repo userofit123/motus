@@ -5,21 +5,63 @@ import type { Sql } from "../db";
 import { camel, id, str, intOrNull, bool, dateStr, visible } from "../util";
 import { uuidv7 } from "../ids";
 import { notFound, bad } from "../errors";
+import { LIFTED_SQL } from "@motus/shared";
+import { dayIn } from "./achievements";
 
 interface Week { days: string[]; deload?: boolean }
+const DAY = 86400000;
 
-export async function programState(q: Sql, p: any) {
+/** The planned workouts in order, and which finished workout counted for each (walked in time order since the start). */
+async function walk(q: Sql, p: any) {
   const weeks: Week[] = p.weeks ?? [];
   const seq = weeks.flatMap((w, wi) => w.days.map((r, di) => ({ routineId: r, week: wi + 1, day: di + 1, deload: !!w.deload })));
-  if (!seq.length) return { next: null, done: 0, total: 0 };
-  const done = (await q.query(
-    "SELECT routine_id FROM workouts WHERE status = 'completed' AND started_at >= $1::date AND (program_id = $2 OR routine_id = ANY($3::uuid[])) ORDER BY started_at",
-    [p.start_date ?? p.startDate, p.id, [...new Set(seq.map((s) => s.routineId))]])).rows;
+  const rows = seq.length ? (await q.query(
+    "SELECT id, routine_id, program_id FROM workouts WHERE status = 'completed' AND started_at >= $1::date AND (program_id = $2 OR routine_id = ANY($3::uuid[])) ORDER BY started_at",
+    [p.start_date ?? p.startDate, p.id, [...new Set(seq.map((s) => s.routineId))]])).rows : [];
+  const hit: (string | null)[] = seq.map(() => null);
+  const extra: string[] = []; // started from this program but out of order: still the program's, just not a step forward
   let i = 0;
-  for (const w of done) { if (i < seq.length && w.routine_id === seq[i]!.routineId) i++; }
-  const names = new Map((await q.query("SELECT id, name, color FROM routines WHERE id = ANY($1::uuid[])", [seq.map((s) => s.routineId)])).rows.map((r: any) => [r.id, r]));
-  const next = i < seq.length ? { ...seq[i]!, name: names.get(seq[i]!.routineId)?.name ?? "Routine", color: names.get(seq[i]!.routineId)?.color ?? null } : null;
-  return { next, done: i, total: seq.length, finished: i >= seq.length };
+  for (const w of rows) { if (i < seq.length && w.routine_id === seq[i]!.routineId) hit[i++] = w.id; else if (w.program_id === p.id) extra.push(w.id); }
+  const names = new Map((await q.query("SELECT id, name, color FROM routines WHERE id = ANY($1::uuid[])", [[...new Set(seq.map((s) => s.routineId))]])).rows.map((r: any) => [r.id, r]));
+  const slots = seq.map((s) => ({ ...s, name: names.get(s.routineId)?.name ?? "Deleted routine", color: names.get(s.routineId)?.color ?? null }));
+  return { slots, hit, extra, i };
+}
+
+export async function programState(q: Sql, p: any) {
+  const { slots, i } = await walk(q, p);
+  if (!slots.length) return { next: null, done: 0, total: 0 };
+  return { next: slots[i] ?? null, done: i, total: slots.length, finished: i >= slots.length };
+}
+
+/** One program in full: the plan week by week with what was done, where you are against the calendar, and totals. */
+export async function programDetail(q: Sql, p: any, today: string) {
+  const { slots, hit, extra, i } = await walk(q, p);
+  const start = String(p.start_date).slice(0, 10);
+  const calendarWeek = today < start ? 0 : Math.floor((Date.parse(today) - Date.parse(start)) / (7 * DAY)) + 1;
+  const ids = [...hit.filter((x): x is string => !!x), ...extra];
+  const ws = new Map((ids.length ? (await q.query(
+    `SELECT w.id, w.name, w.started_at, greatest(0, extract(epoch FROM coalesce(w.ended_at, w.started_at) - w.started_at)::int - w.paused_s) AS duration_s,
+       coalesce((SELECT sum(${LIFTED_SQL}) FROM workout_sets s JOIN workout_exercises we ON we.id = s.workout_exercise_id JOIN exercises e ON e.id = we.exercise_id
+                 WHERE we.workout_id = w.id AND s.done AND s.kind <> 'warmup'), 0) AS volume_kg
+     FROM workouts w WHERE w.id = ANY($1::uuid[])`, [ids])).rows : []).map((r: any) => [r.id, { ...camel<any>(r), week: null, day: null }]));
+  slots.forEach((s, k) => { const w = hit[k] && ws.get(hit[k]!); if (w) Object.assign(w, { week: s.week, day: s.day }); });
+  const plan = (p.weeks as Week[]).map((w, wi) => ({ week: wi + 1, deload: !!w.deload, days: [] as any[] }));
+  slots.forEach((s, k) => plan[s.week - 1]!.days.push({ ...s, workout: hit[k] ? ws.get(hit[k]!) ?? null : null,
+    status: hit[k] ? "done" : k === i ? "next" : s.week < calendarWeek ? "late" : "todo" }));
+  // how many should be done by now: every week the calendar has fully passed
+  const expected = slots.filter((s) => s.week < calendarWeek).length;
+  const per = new Map<string, { routineId: string; name: string; done: number; planned: number }>();
+  slots.forEach((s, k) => { const x = per.get(s.routineId) ?? { routineId: s.routineId, name: s.name, done: 0, planned: 0 }; x.planned++; if (hit[k]) x.done++; per.set(s.routineId, x); });
+  const all = [...ws.values()];
+  return {
+    state: { next: slots[i] ?? null, done: i, total: slots.length, finished: !!slots.length && i >= slots.length },
+    status: i >= slots.length && slots.length ? "finished" : p.active ? "active" : "paused",
+    calendarWeek, plan,
+    stats: { done: i, total: slots.length, weeksDone: plan.filter((w) => w.days.length && w.days.every((d) => d.status === "done")).length, expected,
+      adherencePct: expected ? Math.min(100, Math.round((Math.min(i, expected) / expected) * 100)) : null,
+      volumeKg: all.reduce((a, w) => a + Number(w.volumeKg), 0), durationS: all.reduce((a, w) => a + Number(w.durationS), 0), perRoutine: [...per.values()] },
+    recent: all.sort((a, b) => b.startedAt.localeCompare(a.startedAt)).slice(0, 10),
+  };
 }
 
 export function programRoutes(r: Router) {
@@ -28,6 +70,14 @@ export function programRoutes(r: Router) {
     const out = [];
     for (const p of rows) { const c = camel<any>(p); delete c.userId; out.push({ ...c, state: await programState(q, p) }); }
     return out;
+  });
+  r.get("/programs/:id", async ({ q }, p, _b, qs) => {
+    const row = (await q.query("SELECT * FROM programs WHERE id = $1", [id(p.id)])).rows[0];
+    if (!row) throw notFound("Program not found");
+    // today in the app's time zone (tz = its offset from UTC in minutes), so the week turns over at its midnight
+    const today = dayIn(new Date(), Number(qs.tz) || 0);
+    const c = camel<any>(row); delete c.userId;
+    return { ...c, ...(await programDetail(q, row, today)) };
   });
   r.post("/programs", async (ctx, _p, b) => {
     const weeks = sanitize(b.weeks);

@@ -3,12 +3,15 @@
 import { computed, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { GROUPS, EQUIPMENT, muscleName, groupOf } from "@motus/shared";
-import { useExercises } from "../api/queries";
+import { useExercises, loaded } from "../api/queries";
 import { mediaUrl } from "../api/client";
 import { ago } from "../core/format";
 import Icon from "../components/Icon.vue";
 import ExerciseEditor from "../components/ExerciseEditor.vue";
 import Sheet from "../components/Sheet.vue";
+import AppSelect from "../components/AppSelect.vue";
+import FilterPanel from "../components/FilterPanel.vue";
+import FilterRow from "../components/FilterRow.vue";
 
 const router = useRouter(), route = useRoute();
 const all = useExercises();
@@ -30,24 +33,26 @@ const shown = ref(60);
 const filtersOpen = ref(false);
 const filterCount = computed(() => Number(!!equip.value) + Number(!!only.value) + Number(sort.value !== "used"));
 const clearFilters = () => { equip.value = ""; only.value = ""; sort.value = "used"; };
+const GROUP_OPTS = GROUPS.map((g) => ({ value: g.id, label: g.name }));
+// show the page once its data is in, all at once
+await loaded(all);
 </script>
 
 <template>
   <div class="page">
     <div class="ph"><div><h1>Exercises</h1><div class="sub">{{ all.data.value?.length ?? 0 }} in the library</div></div>
       <div class="acts"><button class="btn keep" @click="creating = true"><Icon name="plus" :size="18" />New exercise</button></div></div>
-    <div class="row" style="margin-bottom:10px">
-      <div class="search grow" style="max-width:480px"><Icon name="search" :size="18" /><input v-model="q" placeholder="Search exercises" @input="shown = 60" /></div>
+    <div class="row hgap">
+      <div class="search grow"><Icon name="search" :size="18" /><input v-model="q" placeholder="Search exercises" @input="shown = 60" /></div>
       <button class="ib" aria-label="Filters" title="Filters" @click="filtersOpen = true"><Icon name="filter" /><span v-if="filterCount" class="badge">{{ filterCount }}</span></button>
     </div>
-    <div class="chips hscroll" style="margin-bottom:16px">
-      <button class="fchip" :class="{ on: !group }" @click="group = ''">All</button>
-      <button v-for="g in GROUPS" :key="g.id" class="fchip" :class="{ on: group === g.id }" @click="group = group === g.id ? '' : g.id">{{ g.name }}</button>
-    </div>
+    <FilterPanel :count="`${list.length} exercise${list.length === 1 ? '' : 's'}`" :active="!!group || !!filterCount" @clear="group = ''; clearFilters()">
+      <FilterRow v-model="group" label="Muscle group" all="All" :options="GROUP_OPTS" />
+    </FilterPanel>
     <Sheet v-if="filtersOpen" title="Filters" @close="filtersOpen = false">
       <div class="fld"><label>Show</label><div class="seg block"><button v-for="[k, l] in [['', 'All'], ['fav', 'Favourites'], ['done', 'Done before'], ['mine', 'My own']]" :key="k" :class="{ on: only === k }" @click="only = k as any">{{ l }}</button></div></div>
-      <div class="fld"><label>Sort</label><div class="seg block"><button v-for="[k, l] in [['used', 'Most used'], ['recent', 'Recent'], ['name', 'A–Z']]" :key="k" :class="{ on: sort === k }" @click="sort = k as any">{{ l }}</button></div></div>
-      <div class="fld"><label>Equipment</label><div class="chips"><button class="fchip" :class="{ on: !equip }" @click="equip = ''">Any</button><button v-for="eq in EQUIPMENT" :key="eq" class="fchip" :class="{ on: equip === eq }" style="text-transform:capitalize" @click="equip = equip === eq ? '' : eq">{{ eq }}</button></div></div>
+      <div class="fld"><label>Sort</label><div class="seg block"><button v-for="[k, l] in [['used', 'Most used'], ['recent', 'Recent'], ['name', 'A-Z']]" :key="k" :class="{ on: sort === k }" @click="sort = k as any">{{ l }}</button></div></div>
+      <div class="fld"><label>Equipment</label><AppSelect v-model="equip" :options="[{ value: '', label: 'Any' }, ...EQUIPMENT.map((q) => ({ value: q, label: q.replace(/\b\w/g, (c) => c.toUpperCase()) }))]" title="Equipment" /></div>
       <template #foot><button class="btn o" :disabled="!filterCount" @click="clearFilters">Clear</button><button class="btn" @click="filtersOpen = false">Show {{ list.length }}</button></template>
     </Sheet>
     <div class="grid gauto">
@@ -60,7 +65,7 @@ const clearFilters = () => { equip.value = ""; only.value = ""; sort.value = "us
         </div>
       </div>
     </div>
-    <div v-if="list.length > shown" class="center" style="margin-top:16px"><button class="btn o" @click="shown += 90">Show more ({{ list.length - shown }})</button></div>
+    <div v-if="list.length > shown" class="center spt"><button class="btn o" @click="shown += 90">Show more ({{ list.length - shown }})</button></div>
     <div v-if="all.data.value && !list.length" class="card empty"><b>No exercises match</b><button class="btn tonal" @click="creating = true">Create "{{ q || "a new one" }}"</button></div>
     <ExerciseEditor v-if="creating" :name="q" @close="creating = false" @saved="(id) => router.push(`/exercises/${id}`)" />
   </div>

@@ -4,7 +4,7 @@ import { api } from "../api/client";
 import { localYmd } from "../core/format";
 
 const P = (n: string) => (globalThis as any).Capacitor?.Plugins?.[n];
-const BASE = 8000; // notification ids 8000–8999 belong to planned workouts
+const BASE = 8000; // notification ids 8000-8999 belong to planned workouts
 
 export async function schedulePlanned(enabled: boolean) {
   const ln = P("LocalNotifications");

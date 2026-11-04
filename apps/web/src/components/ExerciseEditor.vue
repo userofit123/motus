@@ -6,6 +6,8 @@ import { api, mediaUrl } from "../api/client";
 import { invalidate } from "../api/live";
 import { toast, toastError } from "../core/toast";
 import Sheet from "./Sheet.vue";
+import AppSelect from "./AppSelect.vue";
+import ChoiceTiles from "./ChoiceTiles.vue";
 import Icon from "./Icon.vue";
 
 const props = defineProps<{ exercise?: any; name?: string }>();
@@ -19,7 +21,13 @@ const f = ref({
 const TRACK: [string, string][] = [["weight_reps", "Weight and reps"], ["bodyweight_reps", "Bodyweight reps (+ optional weight)"], ["assisted", "Assisted (weight helps)"], ["reps_only", "Reps only"],
   ["duration", "Time (holds, planks)"], ["weight_duration", "Weight and time (carries)"], ["distance_duration", "Distance and time"], ["distance_weight", "Distance and weight (sled)"]];
 const busy = ref(false);
-const toggle = (list: string[], m: string, other: string[]) => { const i = list.indexOf(m); if (i >= 0) list.splice(i, 1); else { list.push(m); const j = other.indexOf(m); if (j >= 0) other.splice(j, 1); } };
+const cap = (s: string) => s.replace(/\b\w/g, (c) => c.toUpperCase());
+const MUSCLE_OPTS = MUSCLES.map((m) => ({ value: m, label: muscleName(m) }));
+// a muscle is either main or helping: ticking it in one list takes it out of the other
+function setMuscles(k: "primaryMuscles" | "secondaryMuscles", v: string[]) {
+  const other = k === "primaryMuscles" ? "secondaryMuscles" : "primaryMuscles";
+  f.value[k] = v; f.value[other] = f.value[other].filter((m) => !v.includes(m));
+}
 async function upload(ev: Event) {
   const files = (ev.target as HTMLInputElement).files;
   for (const file of Array.from(files ?? []).slice(0, 4)) {
@@ -34,6 +42,7 @@ async function save() {
     let id = e?.id;
     if (e) await api.put(`/exercises/${e.id}`, body); else id = (await api.post("/exercises", body)).id;
     invalidate(["exercises", "routines", "workouts"]);
+    toast(e ? "Exercise saved" : "Exercise created");
     emit("saved", id); emit("close");
   } catch (err) { toastError(err); } finally { busy.value = false; }
 }
@@ -42,13 +51,13 @@ async function save() {
 <template>
   <Sheet :title="e ? 'Edit exercise' : 'New exercise'" size="wide" @close="emit('close')">
     <div class="fld"><label>Name</label><input v-model="f.name" placeholder="e.g. Landmine press" /></div>
+    <div class="fld"><label>Track it by</label><AppSelect v-model="f.tracking" :options="TRACK.map(([value, label]) => ({ value, label }))" title="Track it by" /></div>
     <div class="frow">
-      <div class="fld"><label>Track it by</label><select v-model="f.tracking"><option v-for="[v, l] in TRACK" :key="v" :value="v">{{ l }}</option></select></div>
-      <div class="fld"><label>Equipment</label><select v-model="f.equipment"><option value="">None</option><option v-for="q in EQUIPMENT" :key="q" :value="q" style="text-transform:capitalize">{{ q }}</option></select></div>
+      <div class="fld"><label>Category</label><AppSelect v-model="f.category" :options="CATEGORIES.map((c) => ({ value: c, label: cap(c) }))" title="Category" /></div>
+      <div class="fld"><label>Equipment</label><AppSelect v-model="f.equipment" :options="[{ value: '', label: 'None' }, ...EQUIPMENT.map((q) => ({ value: q, label: cap(q) }))]" title="Equipment" /></div>
     </div>
-    <div class="fld"><label>Category</label><div class="chips"><button v-for="c in CATEGORIES" :key="c" class="fchip" :class="{ on: f.category === c }" style="text-transform:capitalize" @click="f.category = c">{{ c }}</button></div></div>
-    <div class="fld"><label>Main muscles</label><div class="chips"><button v-for="m in MUSCLES" :key="m" class="fchip" :class="{ on: f.primaryMuscles.includes(m) }" @click="toggle(f.primaryMuscles, m, f.secondaryMuscles)">{{ muscleName(m) }}</button></div></div>
-    <div class="fld"><label>Also works</label><div class="chips"><button v-for="m in MUSCLES" :key="m" class="fchip" :class="{ on: f.secondaryMuscles.includes(m) }" @click="toggle(f.secondaryMuscles, m, f.primaryMuscles)">{{ muscleName(m) }}</button></div></div>
+    <div class="fld"><label>Main muscles</label><ChoiceTiles :model-value="f.primaryMuscles" :options="MUSCLE_OPTS" multiple compact label="Main muscles" @update:model-value="(v) => setMuscles('primaryMuscles', v)" /></div>
+    <div class="fld"><label>Also works</label><ChoiceTiles :model-value="f.secondaryMuscles" :options="MUSCLE_OPTS" multiple compact label="Also works" @update:model-value="(v) => setMuscles('secondaryMuscles', v)" /></div>
     <div class="fld"><label>How to do it (one step per line)</label><textarea v-model="f.instructions" rows="4" /></div>
     <div class="fld"><label>Photos</label>
       <div class="row wrap">

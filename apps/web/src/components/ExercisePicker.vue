@@ -7,6 +7,8 @@ import { mediaUrl } from "../api/client";
 import Sheet from "./Sheet.vue";
 import Icon from "./Icon.vue";
 import ExerciseEditor from "./ExerciseEditor.vue";
+import FilterPanel from "./FilterPanel.vue";
+import FilterRow from "./FilterRow.vue";
 import { exerciseSheet } from "../core/ui";
 
 const props = defineProps<{ title?: string; multi?: boolean; exclude?: string[]; suggest?: any[] }>();
@@ -20,7 +22,7 @@ const q = ref(""), group = ref(""), equip = ref(""), picked = ref<string[]>([]),
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ");
 const list = computed(() => {
   const words = norm(q.value).split(" ").filter(Boolean);
-  const g = GROUPS.find((x) => x.id === group.value);
+  const g = PICK_GROUPS.find((x) => x.id === group.value);
   return (all.data.value ?? []).filter((e) => !e.hidden && !props.exclude?.includes(e.id)
     && (!g || e.primaryMuscles.some((m) => g.muscles.includes(m)))
     && (!equip.value || e.equipment === equip.value)
@@ -29,6 +31,16 @@ const list = computed(() => {
     .sort((a, b) => Number(b.favourite) - Number(a.favourite) || (b.timesDone ?? 0) - (a.timesDone ?? 0) || (b.lastDoneAt ?? "").localeCompare(a.lastDoneAt ?? "") || a.name.localeCompare(b.name))
     .slice(0, 150);
 });
+// shorter, friendlier names for the catalog's equipment
+const EQ_NAME: Record<string, string> = { "body only": "Bodyweight", "e-z curl bar": "EZ bar", kettlebells: "Kettlebell", "medicine ball": "Medicine ball", "exercise ball": "Exercise ball", "foam roll": "Foam roller" };
+const eqName = (e: string) => EQ_NAME[e] ?? e[0]!.toUpperCase() + e.slice(1);
+// the muscle groups, with biceps and triceps on their own after Arms: people often pick an exercise for just one
+const PICK_GROUPS = GROUPS.flatMap((g) => g.id === "arms" ? [g, { id: "biceps", name: "Biceps", muscles: ["biceps"] }, { id: "triceps", name: "Triceps", muscles: ["triceps"] }] : [g]);
+const GROUP_OPTS = PICK_GROUPS.map((g) => ({ value: g.id, label: g.name }));
+const EQUIP_OPTS = EQUIPMENT.map((e) => ({ value: e, label: eqName(e) }));
+const showSuggest = computed(() => !!props.suggest?.length && !q.value && !filtered.value);
+const filtered = computed(() => !!group.value || !!equip.value || (!!gym.value && anyEquip.value));
+function clear() { group.value = ""; equip.value = ""; anyEquip.value = false; }
 function tap(id: string) {
   if (!props.multi) { emit("pick", [id]); return; }
   const i = picked.value.indexOf(id);
@@ -38,15 +50,20 @@ function tap(id: string) {
 
 <template>
   <Sheet :title="title ?? 'Add exercises'" size="wide" @close="emit('close')">
-    <div class="search" style="margin-bottom:10px"><Icon name="search" :size="18" /><input v-model="q" placeholder="Search exercises" autofocus /></div>
-    <div class="chips" style="margin-bottom:6px"><button class="fchip" :class="{ on: !group }" @click="group = ''">All</button><button v-for="g in GROUPS" :key="g.id" class="fchip" :class="{ on: group === g.id }" @click="group = group === g.id ? '' : g.id">{{ g.name }}</button></div>
-    <div v-if="gym" class="chips" style="margin-bottom:6px"><button class="fchip" :class="{ on: !anyEquip }" @click="anyEquip = false">At {{ gym.name }}</button><button class="fchip" :class="{ on: anyEquip }" @click="anyEquip = true">All equipment</button></div>
-    <div class="chips" style="margin-bottom:10px"><button v-for="eq in EQUIPMENT.slice(0, 8)" :key="eq" class="fchip" :class="{ on: equip === eq }" style="text-transform:capitalize" @click="equip = equip === eq ? '' : eq">{{ eq }}</button></div>
-    <div v-if="suggest?.length && !q" style="margin-bottom:8px"><div class="tiny" style="margin-bottom:4px">Works the same muscles</div></div>
+    <div class="search hgap"><Icon name="search" :size="18" /><input v-model="q" placeholder="Search exercises" autofocus /></div>
+    <FilterPanel :count="showSuggest ? 'Works the same muscles' : `${list.length === 150 ? '150+' : list.length} exercises`" :active="filtered" @clear="clear">
+      <FilterRow v-model="group" label="Muscle group" all="All" :options="GROUP_OPTS" />
+      <FilterRow v-if="!gym" v-model="equip" label="Equipment" all="Any" :options="EQUIP_OPTS" />
+      <!-- with a gym profile the row starts with what that gym has, then "Any" -->
+      <FilterRow v-else label="Equipment">
+        <button class="fchip" :class="{ on: !anyEquip && !equip }" @click="anyEquip = false; equip = ''">At {{ gym.name }}</button><button class="fchip" :class="{ on: anyEquip && !equip }" @click="anyEquip = true; equip = ''">Any</button>
+        <button v-for="o in EQUIP_OPTS" :key="o.value" class="fchip" :class="{ on: equip === o.value }" @click="equip = equip === o.value ? '' : o.value">{{ o.label }}</button>
+      </FilterRow>
+    </FilterPanel>
     <div class="list">
-      <div v-for="e in (suggest?.length && !q && !group && !equip ? suggest : list)" :key="e.id" class="li click" @click="tap(e.id)">
+      <div v-for="e in (showSuggest ? suggest : list)" :key="e.id" class="li click" @click="tap(e.id)">
         <div class="thumb"><img v-if="e.images?.[0]" :src="mediaUrl(e.images[0])" alt="" loading="lazy" /><Icon v-else name="dumbbell" /></div>
-        <div class="grow"><div class="t">{{ e.name }}</div><div class="s" style="text-transform:capitalize">{{ e.primaryMuscles.join(", ") }}{{ e.equipment ? " · " + e.equipment : "" }}{{ e.timesDone ? ` · done ${e.timesDone}×` : "" }}</div></div>
+        <div class="grow"><div class="t">{{ e.name }}</div><div class="s"><span style="text-transform:capitalize">{{ e.primaryMuscles.join(", ") }}</span>{{ e.equipment ? " · " + eqName(e.equipment) : "" }}{{ e.timesDone ? ` · done ${e.timesDone}×` : "" }}</div></div>
         <button class="ib sm plain" aria-label="About this exercise" @click.stop="exerciseSheet = e.id"><Icon name="info" :size="18" /></button>
         <span v-if="multi" class="tick" :class="{ on: picked.includes(e.id) }"><Icon v-if="picked.includes(e.id)" name="check" :size="18" /></span>
       </div>
@@ -60,3 +77,4 @@ function tap(id: string) {
     <ExerciseEditor v-if="creating" :name="q" @close="creating = false" @saved="(id) => (multi ? picked.push(id) : emit('pick', [id]))" />
   </Sheet>
 </template>
+

@@ -1,60 +1,46 @@
 <script setup lang="ts">
-// Programs (optional feature): weeks of routines done in order, with deload weeks. Shows where you are and what's next.
+// Programs (optional feature): weeks of routines done in order, with deload weeks. Each card says where you are and opens the program's page.
 import { ref } from "vue";
 import { useRouter } from "vue-router";
-import { useQuery } from "@tanstack/vue-query";
-import { useRoutines } from "../api/queries";
+import { usePrograms } from "../api/queries";
+import type { Program } from "@motus/shared";
 import { api } from "../api/client";
 import { invalidate } from "../api/live";
 import { confirm } from "../core/ask";
-import { toastError } from "../core/toast";
-import { localYmd } from "../core/format";
+import { toast } from "../core/toast";
 import Icon from "./Icon.vue";
 import Menu from "./Menu.vue";
-import Sheet from "./Sheet.vue";
+import ProgramEditor from "./ProgramEditor.vue";
 
 const router = useRouter();
-const programs = useQuery({ queryKey: ["routines", "programs"], queryFn: () => api.get("/programs") });
-const routines = useRoutines();
-const edit = ref<any>(null);
-const nameOf = (id: string) => routines.data.value?.find((r) => r.id === id)?.name ?? "?";
-function blank() { edit.value = { name: "", description: "", startDate: localYmd(new Date()), deloadPct: 40, weeks: [{ days: [], deload: false }] }; }
-function editP(p: any) { edit.value = JSON.parse(JSON.stringify({ ...p, startDate: p.startDate })); }
-async function save() {
-  try {
-    const e = edit.value;
-    if (e.id) await api.put(`/programs/${e.id}`, e); else await api.post("/programs", e);
-    invalidate(["routines", "home"]); edit.value = null;
-  } catch (err) { toastError(err); }
-}
-async function del(p: any) { if (await confirm(`Delete ${p.name}?`, { text: "Its routines and workouts stay.", ok: "Delete", danger: true })) { await api.del(`/programs/${p.id}`); invalidate(["routines", "home"]); } }
-const start = (p: any) => router.push(`/routines/${p.state.next.routineId}/start?program=${p.id}${p.state.next.deload ? `&deload=${p.deloadPct}` : ""}`);
-const copyWeek = (i: number) => { const w = edit.value.weeks[i]; edit.value.weeks.splice(i + 1, 0, { days: [...w.days], deload: false }); };
+const programs = usePrograms();
+const edit = ref<Program | null | undefined>(undefined); // undefined: closed; null: a new one
+async function del(p: Program) { if (await confirm(`Delete ${p.name}?`, { text: "Its routines and workouts stay.", ok: "Delete", danger: true })) { await api.del(`/programs/${p.id}`); invalidate(["routines", "home"]); toast("Program deleted"); } }
+async function pause(p: Program) { await api.put(`/programs/${p.id}`, { active: !p.active }); invalidate(["routines", "home"]); toast(p.active ? "Program paused" : "Program resumed"); }
+const start = (p: Program) => router.push(`/routines/${p.state.next!.routineId}/start?program=${p.id}${p.state.next!.deload ? `&deload=${p.deloadPct}` : ""}`);
+/** "Week 2 of 6 · Next: Push A" */
+const where = (p: Program) => !p.state.total ? "No routines yet" : p.state.finished ? `All ${p.weeks.length} weeks done`
+  : `Week ${p.state.next!.week} of ${p.weeks.length} · Next: ${p.state.next!.name}${p.state.next!.deload ? " (deload)" : ""}`;
+// the Routines page's Programs tab puts "New program" in its header, so it opens the editor from there
+defineExpose({ create: () => (edit.value = null) });
 </script>
 
 <template>
   <section>
-    <div class="sh"><h2>Programs</h2><button class="lnk" @click="blank">New program</button></div>
-    <div v-if="!programs.data.value?.length" class="card tiny">A program puts routines in order over weeks (e.g. A, B, A then B, A, B) with deload weeks. Motus then tells you what's next.</div>
+    <div v-if="programs.data.value && !programs.data.value.length" class="card empty">
+      <Icon name="layers" :size="34" /><b>No programs yet</b>A program puts routines in order over weeks (e.g. A, B, A then B, A, B), with lighter deload weeks to recover. Motus then tells you what's next and how you're keeping up.
+      <div class="row" style="justify-content:center;margin-top:14px"><button class="btn" @click="edit = null">Create one</button></div>
+    </div>
     <div class="grid gauto">
-      <div v-for="p in programs.data.value ?? []" :key="p.id" class="card">
-        <div class="row"><b class="grow">{{ p.name }}</b><Menu :items="[{ label: 'Edit', icon: 'edit', run: () => editP(p) }, { label: p.active ? 'Pause' : 'Resume', icon: 'pause', run: async () => { await api.put(`/programs/${p.id}`, { active: !p.active }); invalidate(['routines']); } }, { label: 'Delete', icon: 'trash', danger: true, run: () => del(p) }]" /></div>
-        <div class="tiny">{{ p.weeks.length }} weeks · {{ p.state.done }} of {{ p.state.total }} workouts done{{ p.active ? "" : " · paused" }}</div>
+      <div v-for="p in programs.data.value ?? []" :key="p.id" class="card click" @click="router.push(`/programs/${p.id}`)">
+        <div class="row"><b class="grow">{{ p.name }}</b><span @click.stop><Menu :items="[{ label: 'Edit', icon: 'edit', run: () => (edit = p) }, { label: p.active ? 'Pause' : 'Resume', icon: p.active ? 'pause' : 'play', run: () => pause(p) }, { label: 'Delete', icon: 'trash', danger: true, sep: true, run: () => del(p) }]" /></span></div>
+        <div class="tiny">{{ p.state.done }} of {{ p.state.total }} workouts done{{ p.active || p.state.finished ? "" : " · paused" }}</div>
         <div class="pbar" style="margin:10px 0"><i :style="{ width: (p.state.total ? p.state.done / p.state.total : 0) * 100 + '%' }" /></div>
-        <div v-if="!p.active" class="tiny">Paused. Resume it from ⋮ to carry on where you left off.</div>
-        <div v-else-if="p.state.next" class="row"><div class="grow"><div style="font-weight:600">Next: {{ p.state.next.name }}</div><div class="tiny">Week {{ p.state.next.week }}, day {{ p.state.next.day }}{{ p.state.next.deload ? ` · deload (−${p.deloadPct}%)` : "" }}</div></div><button class="btn o s" @click="start(p)"><Icon name="play" :size="14" />Start</button></div>
-        <div v-else class="tiny pos">Program complete</div>
+        <div class="row"><div class="grow" :class="{ pos: p.state.finished, muted: !p.active && !p.state.finished }" style="font-weight:600">{{ where(p) }}</div>
+          <button v-if="p.active && p.state.next" class="btn o s" @click.stop="start(p)"><Icon name="play" :size="14" />Start</button></div>
       </div>
     </div>
-    <Sheet v-if="edit" :title="edit.id ? 'Edit program' : 'New program'" size="wide" @close="edit = null">
-      <div class="frow"><div class="fld"><label>Name</label><input v-model="edit.name" placeholder="e.g. 8-week push/pull/legs" /></div><div class="fld"><label>Starts</label><input v-model="edit.startDate" type="date" /></div><div class="fld"><label>Deload: lighter by (%)</label><input v-model.number="edit.deloadPct" type="number" min="0" max="90" /></div></div>
-      <div v-for="(w, i) in edit.weeks" :key="i" class="card tight" style="margin-bottom:10px">
-        <div class="row" style="margin-bottom:6px"><b class="grow">Week {{ i + 1 }}</b><label class="row tiny" style="gap:6px"><span class="tg"><input v-model="w.deload" type="checkbox" /></span>Deload</label><button class="qb" @click="copyWeek(i)">Copy</button><button class="qb danger" @click="edit.weeks.splice(i, 1)">Remove</button></div>
-        <div class="chips" style="margin-bottom:6px"><span v-for="(d, j) in w.days" :key="j" class="fchip on" @click="w.days.splice(j, 1)">{{ j + 1 }}. {{ nameOf(d) }} ×</span><span v-if="!w.days.length" class="tiny">Add routines in the order you'll do them:</span></div>
-        <div class="chips"><button v-for="r in routines.data.value ?? []" :key="r.id" class="fchip" @click="w.days.push(r.id)">+ {{ r.name }}</button></div>
-      </div>
-      <button class="qb acc" @click="edit.weeks.push({ days: [...(edit.weeks.at(-1)?.days ?? [])], deload: false })"><Icon name="plus" :size="16" />Add a week</button>
-      <template #foot><button class="btn o" @click="edit = null">Cancel</button><button class="btn" @click="save">Save</button></template>
-    </Sheet>
+    <ProgramEditor v-if="edit !== undefined" :program="edit" @close="edit = undefined" @saved="(id) => !edit && router.push(`/programs/${id}`)" />
   </section>
 </template>
+
