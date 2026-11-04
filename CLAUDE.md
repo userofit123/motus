@@ -1,5 +1,8 @@
 # Motus: working notes
 
+## Task queue
+The chat message "Work the queue" means: read and follow `workflow/RUNNER.md` (tasks from the Focus list "Motus", account "New Team"). Otherwise tasks come from the chat as usual.
+
 Self-hosted fitness tracker. Plan: PLAN.md (decisions in §16, anti-bloat rules in §10.0). Research: RESEARCH.md.
 
 ## Layout
@@ -16,6 +19,10 @@ Self-hosted fitness tracker. Plan: PLAN.md (decisions in §16, anti-bloat rules 
 - Every user-owned table has `user_id` and a row-level-security policy (migration 002). References to other rows go through `visible()`.
 - Weights are stored in kg and distances in metres; convert only for display.
 - Plain wording in the UI. Comments say why.
+- Only plain dashes "-" in the UI (ranges "8-12", empty values "-"), never "–" or "—".
+- Dot separators ("Legs · 5") always have equal space on both sides: in text " · " with single spaces; in a flex row the dot is its own element (`<span class="sep">·</span>`) so the row's gap spaces it, never "· 5" as one item next to a gap.
+- Spacing inside blocks comes from the density tokens (`--cpy`, `--cpx`, `--lpy`, `--lmh`, `--tdy`) and between blocks from `--spg` / `--hg`; no fixed paddings on cards, rows or sections.
+- Cards that show the muscle figure (routine, template, program day, exercise) use the Routines list's routine card as the template - figure on the left, info on the right, never the figure above the info; change the other card to match, never the routine card: `<BodyMap class="rbody" :values="{}" :highlight="muscles" :secondary="helpers" />` as the card's first child, card gets class `wbody` (styles in app.css); main muscles = every exercise's primary ones, helpers = secondary ones that are nobody's main.
 
 ## Develop
 - `docker compose -f docker-compose.dev.yml up -d` → https://motus.local (see docs/development.md).

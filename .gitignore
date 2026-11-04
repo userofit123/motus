@@ -38,3 +38,6 @@ Thumbs.db
 
 # exercise photos, downloaded by scripts/fetch-exercise-images.mjs
 packages/exercise-data/images/
+
+# personal task-queue runner and its logins (see CLAUDE.md "Task queue")
+/workflow/

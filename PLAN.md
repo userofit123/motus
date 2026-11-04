@@ -273,10 +273,17 @@ file each. The rest of this section is about **server** accounts.
 - **Registration modes** (admin setting): closed (admin creates users), invite link/code (default),
   or open.
 - **Login:** username/email + password. Optional TOTP 2FA. Passkeys are a later suggestion.
-- **Session management:** a list of signed-in devices, with "sign out" per device and "sign out
-  everywhere".
-- **Profile:** display name, avatar, birth date (optional), sex (optional, used for strength
-  standards if accepted), height, units, and a body weight history link.
+- **Session management:** Settings → Account lists every place the account is signed in: this
+  device marked, each other one named from its browser and system ("Firefox on Linux", "Motus app on
+  Android"), when it was last active and when it signed in, with "sign out" per device and "sign out
+  the others". A line above the list says how many other devices are signed in. Local accounts have
+  no such list.
+- **Account page:** one page in Settings → You: initials, name, optional email, username and role,
+  password (server accounts), sign out, sync status, signed-in devices and delete account. A local
+  account shows name, email, sign out, and delete (which points to Accounts on this device).
+- **Body facts:** year of birth, sex and height (all optional, height stored in cm) sit on the Body
+  page, as one quiet card at the top of the Weight tab ("178 cm · 34 · Male") that opens a small
+  sheet. Only sex (with the latest weight) is used, for the strength standards.
 - **Account deletion:** deletes all of the user's data, after offering a final export.
 - **Admin panel:** users (create, disable, reset password, delete), registration mode, exercise
   catalog sync, server backups, storage usage. **Admins cannot see other users' workout data in the
@@ -957,7 +964,7 @@ tappable through to its source.
 
 | Section | Options |
 |---|---|
-| **Account** | Profile, password, 2FA, signed-in devices, delete account |
+| **Account** | Name, email, username, password, 2FA, sync, signed-in devices (every other place signed in), delete account. Year of birth, sex and height are on the Body page |
 | **Features** | One switch per optional feature (§10.0): when off, the feature disappears from every screen. Grouped as Logging, Training, Body & activity, Insights, Integrations |
 | **Units & formats** | Measurement system **Metric / Imperial** (one switch), with individual overrides: weight kg/lb, distance km/mi, body measurements cm/in, height cm/ft-in. First day of week, date format, 12/24 h |
 | **Workout defaults** | Default rest between sets / after exercise, all toggles from §8.4.3, pre-fill rule (same routine vs. anywhere), "update routine on finish" behaviour, default set type, weight increments (kg/lb), bar weight, available plates (for the plate calculator if accepted) |
@@ -1050,22 +1057,23 @@ change:
    quiet text or icon button.
 2. **Progressive disclosure.** Secondary actions live in a ⋮ menu or a sheet, never in a toolbar row.
    A card shows a summary; details are one tap away.
-3. **Optional features are off until you turn them on**, in Settings → Features. When a feature is
+3. **Optional features are switched on and off** in Settings → Features. When a feature is
    off it is **completely absent**: no greyed buttons, no empty tabs, no upsell. Turning one on adds
    it exactly where it belongs.
-   - **On by default (the core):** routines, workouts, rest timers, pre-fill, skip, notes,
+   - **Always there (the core):** routines, workouts, rest timers, pre-fill, skip, notes,
      reminders, goals, history, stats, exercise library, walks, backups, PR detection.
-   - **Off by default (switch on as wanted):** RPE/RIR, set types menu, supersets, plate calculator,
-     warm-up calculator, unilateral logging, voice cues, progression rules, programs, training-max
-     programming, gym profiles, quick text entry, body measurements, progress photos, Health Connect,
-     step goals, sleep/water/mood, achievements, monthly report and year in review, strength
-     standards, share images, Strava, Wear OS, API tokens, MCP / "send to Claude", web-bundle live
-     updates, command palette.
+   - **On by default for a new account:** set types menu, supersets, plate calculator, warm-up
+     calculator, unilateral logging, longer rest after a missed set, logging from the notification,
+     progression rules, programs, body measurements, steps, sleep/water/mood, achievements, monthly
+     report and year in review, strength standards.
+   - **Off by default (switch on as wanted):** RPE/RIR, voice cues, gym profiles, sharing routines,
+     quick text entry, progress photos, share images, Health Connect, Strava, Wear OS, API tokens,
+     MCP / "send to Claude", web-bundle live updates, command palette.
 4. **The set table shows four columns**: `Previous · kg · Reps · ✓`. RPE, set type and timing
    appear only if their feature is on.
 5. **Button budget.** The active workout shows at most: the set table, "+ Add set", Notes, the timer,
    and Finish. Everything else (skip, replace, reorder, reminder, settings) is in the exercise ⋮ menu.
-6. **Short navigation**: 7 rail items on desktop, 5 tabs on the phone (§8.1). New features join an
+6. **Short navigation**: 7 rail items on desktop, 6 tabs and Start on the phone (§8.1). New features join an
    existing page; they never get their own nav item without a strong reason.
 7. **No noise:** no badges except real pending items (an update, a reminder due today), no
    motivational pop-ups, no red dots for "new feature", toasts only for results (Saved · Undo,
@@ -1200,7 +1208,7 @@ Triggered when `CHANGELOG.md` gets a new version on `main` (or manually):
      (or via the server's `/api/update-check` proxy, which caches it and avoids GitHub rate limits)
    - compare with the app's own `versionCode` (from `App.getInfo()`, not the server version, a Money
      Manager gap)
-2. **Notify:** an "Update available: 1.4.0" banner with release notes. Settings → Updates has the
+2. **Notify:** an "Update available: 1.4.0" banner with release notes. Settings → App & Versions has the
    switches.
 3. **Download:** automatic if **auto-download** is on (Wi-Fi only option), otherwise on tap. Progress
    shown; resumes on failure.
@@ -1311,6 +1319,7 @@ Research items (IDs from §18) are placed in the phase they belong to.
 | 2026-11-01 | Repository `userofit123/motus` created (private until the first release, §12.0) |
 | 2026-11-01 | **All research suggestions accepted** (§18); optional ones stay off until switched on (§10.0) |
 | 2026-11-01 | Overriding design rule: extremely clean, no clutter (§10.0) |
+| 2026-11-03 | The everyday optional features (set types, supersets, plates, warm-ups, sides, progression, programs, body, steps, daily log, achievements, reports, standards…) start **on** for new accounts; the rest stay off (§10.0) |
 
 Still open, not blocking: server port/domain for your deployment (default `127.0.0.1:8790`).
 
@@ -1406,7 +1415,7 @@ until switched on in Settings → Features (§10.0), and absent from the UI unti
 | D4 | App shortcuts (long-press icon) | Android launcher | Core | 4 |
 | D5 | Personal API tokens + API docs | Settings → Integrations (server accounts) | Optional | 11 |
 | D6 | MCP server / "send workout to Claude" | Settings → Integrations; workout ⋮ | Optional | 11 |
-| D7 | Web-bundle live updates | Settings → Updates | Optional | 11 |
+| D7 | Web-bundle live updates | Settings → App & Versions | Optional | 11 |
 | D8 | Obtainium-friendly releases | Docs + release naming | Core | 4 |
 | D9 | Passkeys | Settings → Account | Optional | 11 |
 | D10 | OIDC / SSO | Server admin settings | Optional | 11 |
