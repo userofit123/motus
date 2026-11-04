@@ -2,6 +2,7 @@
 // App & Versions: the version installed here, whether a newer one exists, the download that fits this device
 // (in the apps, the in-app updater instead), the other downloads, and the GitHub repository.
 import { computed, ref } from "vue";
+import { useRouter } from "vue-router";
 import { useQuery, useQueryClient } from "@tanstack/vue-query";
 import { useSettings, saveSettings } from "../../api/queries";
 import { session, isLocalAccount } from "../../core/session";
@@ -10,6 +11,7 @@ import { latestRelease, detectPlatform, downloads, newer, REPO, REPO_URL } from 
 import AppSelect from "../AppSelect.vue";
 
 const s = useSettings();
+const router = useRouter();
 const qc = useQueryClient();
 const rel = useQuery({ queryKey: ["static", "release"], queryFn: latestRelease, staleTime: 3600_000, refetchOnWindowFocus: false, retry: false });
 const checkNow = () => { rel.refetch(); qc.invalidateQueries({ queryKey: ["static", "update"] }); };
@@ -37,7 +39,6 @@ const RELEASES_URL = `${REPO_URL}/releases`;
 const suggest = computed(() => (platform.app ? null : platform.key === "android" ? "android" : ["windows", "linux", "mac"].includes(platform.key) && mine.value ? "desktop" : null));
 const showServer = computed(() => session.user?.role === "admin" && !localAccount.value && !!latest.value);
 const mb = (n?: number) => (n ? ` · ${Math.max(1, Math.round(n / 1e6))} MB` : "");
-const notes = computed(() => String(rel.data.value?.notes ?? "").split("\n").filter((l) => l.trim()).slice(0, 30));
 </script>
 
 <template>
@@ -72,8 +73,8 @@ const notes = computed(() => String(rel.data.value?.notes ?? "").split("\n").fil
       <label class="tgl"><div class="grow"><div class="t">Only on Wi-Fi</div></div><span class="tg"><input type="checkbox" :checked="s.updates.wifiOnly" @change="set({ wifiOnly: ($event.target as HTMLInputElement).checked })" /></span></label>
       <div class="li"><div class="grow"><div class="t">Channel</div></div><AppSelect :model-value="s.updates.channel" :options="[{ value: 'stable', label: 'Stable' }, { value: 'beta', label: 'Beta' }]" title="Channel" style="width:auto" @update:model-value="(v) => set({ channel: v })" /></div>
     </div>
-    <div v-if="notes.length" class="card"><div class="lbl hgap">What's new in {{ latest }}</div><div v-for="(l, i) in notes" :key="i" class="tiny" style="color:var(--tx);line-height:1.6">{{ l.replace(/^[-*#]+\s*/, "") }}</div></div>
     <div class="card">
+      <div class="li"><div class="grow"><div class="t">What's new</div><div class="s">Release notes for every version</div></div><button class="btn o s" @click="router.push('/settings/changelog')">Open</button></div>
       <div class="li"><div class="grow"><div class="t">Motus on GitHub</div><div class="s">Source code, all releases and installation help</div></div><a class="btn o s" :href="REPO_URL" target="_blank" rel="noopener">Open</a></div>
     </div>
   </div>

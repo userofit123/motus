@@ -23,6 +23,7 @@ import AccountSection from "../components/settings/AccountSection.vue";
 import DataSection from "../components/settings/DataSection.vue";
 import AdminSection from "../components/settings/AdminSection.vue";
 import AppVersionsSection from "../components/settings/AppVersionsSection.vue";
+import ChangelogSection from "../components/settings/ChangelogSection.vue";
 import AccountsSection from "../components/settings/AccountsSection.vue";
 import IntegrationsSection from "../components/settings/IntegrationsSection.vue";
 import ActivityLogSection from "../components/settings/ActivityLogSection.vue";
@@ -40,7 +41,7 @@ const GROUPS = computed<[string, Section[]][]>(() => [
   ["Training", [["workout", "Workout defaults", "dumbbell", "Rest times, timer, filling in sets"], ["activities", "Activity types", "walk", "Walk, run, ride and your own"], ["features", "Features", "sparkle", "Switch extras on or off"]]],
   ["App", [["units", "Units & formats", "scale", "kg or lb, dates, work week"], ["appearance", "Appearance", "palette", "Colours, style, layout"], ["notifications", "Notifications", "bell", "Planned workouts"]]],
   ["Your data", [["backup", "Backup & restore", "download", "A copy of everything"], ["data", "Export & import", "upload", "CSV, other apps"], ["log", "Activity log", "history", "Everything you changed"]]],
-  ["About", [["versions", "App & Versions", "refresh", "Installed version, downloads"], ...(s.value.features.apiTokens || s.value.features.mcp ? [["integrations", "Integrations", "link", "API tokens, Ask Claude"] as Section] : []),
+  ["About", [["versions", "App & Versions", "refresh", "Installed version, downloads"], ["changelog", "What's new", "sparkle", "Release notes"], ...(s.value.features.apiTokens || s.value.features.mcp ? [["integrations", "Integrations", "link", "API tokens, Ask Claude"] as Section] : []),
     ...(session.user?.role === "admin" ? [["admin", "Server admin", "server", "People, invites, sign-ups"] as Section] : []), ["about", "About Motus", "info", "Version, credits"]]],
 ]);
 const SECTIONS = computed(() => GROUPS.value.flatMap(([, xs]) => xs));
@@ -228,6 +229,7 @@ await loaded(me);
         <DataSection v-else-if="sec === 'data'" />
         <ActivityLogSection v-else-if="sec === 'log'" />
         <AppVersionsSection v-else-if="sec === 'versions'" />
+        <ChangelogSection v-else-if="sec === 'changelog'" />
         <AccountsSection v-else-if="sec === 'accounts'" />
         <IntegrationsSection v-else-if="sec === 'integrations'" />
         <AdminSection v-else-if="sec === 'admin'" />
