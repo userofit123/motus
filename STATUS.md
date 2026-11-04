@@ -47,5 +47,7 @@ monthly report and year in review, strength standards, share image, buttons on t
 
 ## Needs you
 - **Make the GitHub repository public** when you are ready: the apps check for updates through GitHub's public API, and Docker/apps download from the release.
+  After the first release, check on GitHub that the `motus` package (ghcr.io) is public (package settings → visibility), so servers can pull it without signing in.
+- **Cut a release**: `node scripts/bump.mjs x.y.z`, write the new CHANGELOG.md section, push to main. The Release workflow then creates the release `vx.y.z` with the signed `motus-x.y.z.apk`, `android-latest.json`, the Linux and Windows installers, and the server image.
 - **Android signing key**: created outside the repository (the keystore and its password file) and stored as repository secrets. Keep a copy somewhere safe: every future update must be signed with it.
 - **Dev account**: `demo` / `demo-password-1` (admin) exists in the dev database with test data. Create your own account or ask to reset the dev database.

@@ -9,6 +9,7 @@ goals and stats. Runs fully on your device, or syncs an account with your own se
 
 **Status:** first version (0.1.0). What's built and what's left: [STATUS.md](STATUS.md). Design: [PLAN.md](PLAN.md), research: [RESEARCH.md](RESEARCH.md).
 
+- Download: the Android APK (`motus-x.y.z.apk`) and the desktop installers are on the [latest release](https://github.com/userofit123/motus/releases/latest); the server image is `ghcr.io/userofit123/motus`.
 - Self-hosting: [docs/self-hosting.md](docs/self-hosting.md)
 - Desktop and Android apps: [docs/apps.md](docs/apps.md)
 

@@ -17,7 +17,8 @@ async function one(rel) {
   fs.mkdirSync(path.dirname(dest), { recursive: true });
   for (let i = 0; i < 3; i++) {
     try {
-      const r = await fetch(BASE + rel.split("/").map(encodeURIComponent).join("/"));
+      // a stalled download must give up: without a time limit one hung request kept a release build waiting for hours
+      const r = await fetch(BASE + rel.split("/").map(encodeURIComponent).join("/"), { signal: AbortSignal.timeout(30_000) });
       if (!r.ok) throw new Error(String(r.status));
       fs.writeFileSync(dest + ".tmp", Buffer.from(await r.arrayBuffer()));
       fs.renameSync(dest + ".tmp", dest);

@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "description": "Motus fitness tracker",
   "author": "Motus",
+  "homepage": "https://github.com/userofit123/motus",
   "private": true,
   "main": "dist/main.cjs",
   "scripts": {
@@ -57,6 +58,7 @@
         "rpm"
       ],
       "category": "Utility",
+      "maintainer": "Motus",
       "icon": "assets/icon.png"
     },
     "win": {

@@ -55,6 +55,7 @@ jobs:
   docker:
     needs: [version, release]
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-qemu-action@v3
@@ -75,6 +76,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -85,7 +87,8 @@ jobs:
       - run: pnpm --filter @motus/web exec vite build
       - name: Build and publish
         working-directory: apps/desktop
-        env: { GH_TOKEN: "${{ github.token }}" }
+        # EP_GH_IGNORE_TIME: electron-builder skips uploading to a release published over 2 hours ago (a rebuild)
+        env: { GH_TOKEN: "${{ github.token }}", EP_GH_IGNORE_TIME: "true" }
         shell: bash
         run: |
           npm pkg set version=${{ needs.version.outputs.version }}
@@ -94,6 +97,7 @@ jobs:
   android:
     needs: [version, release]
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
