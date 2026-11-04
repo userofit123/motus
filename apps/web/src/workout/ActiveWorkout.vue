@@ -6,7 +6,7 @@ import { computed, nextTick, onMounted, onBeforeUnmount, ref, watch } from "vue"
 import { useRouter } from "vue-router";
 import { clock, muscleName } from "@motus/shared";
 import { useWorkout, endWorkout } from "./useWorkout";
-import { elapsed, finishRest, pauseRest, resumeRest } from "./runtime";
+import { elapsed, finishRest } from "./runtime";
 import { keepAwake } from "./native";
 import { isPhone } from "../core/device";
 import { confirm, prompt } from "../core/ask";
@@ -105,12 +105,7 @@ async function discard() {
 }
 async function rename() { const n = await prompt("Workout name", { value: w.value!.name }); if (n) W.patchWorkout({ name: n }); }
 const move = (i: number, d: number) => { const ids = w.value!.exercises.map((e) => e.id); const j = i + d; if (j < 0 || j >= ids.length) return; [ids[i], ids[j]] = [ids[j]!, ids[i]!]; W.reorder(ids); };
-// pausing the workout pauses everything: its clock and a rest that's running
-function togglePause() {
-  const p = !paused.value;
-  if (p) pauseRest(); else resumeRest();
-  W.patchWorkout({ pause: p, pauseStartedAt: p ? new Date().toISOString() : null });
-}
+const togglePause = () => W.togglePause();
 const menu = computed(() => [
   { label: "Add exercise", icon: "plus", run: () => (adding.value = true) },
   { label: "Reorder exercises", icon: "routines", run: () => (listOpen.value = true), hidden: !isPhone.value },

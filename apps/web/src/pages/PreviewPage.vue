@@ -13,7 +13,7 @@ import { useFmt, ago } from "../core/format";
 import { exerciseSheet, noteSheet } from "../core/ui";
 import { choose } from "../core/ask";
 import { toastError } from "../core/toast";
-import { askNotificationPermission } from "../workout/native";
+import { askNotificationsOnce } from "../workout/native";
 import Icon from "../components/Icon.vue";
 import MuscleFig from "../components/MuscleFig.vue";
 import NoteItem from "../components/NoteItem.vue";
@@ -65,7 +65,7 @@ async function start(force = false) {
     const replaced = force ? replacingWorkout() : null;
     await api.post("/workouts/start", { routineId: id.value, skip: skip.value, order: order.value, settings: overrides.value, scheduleId: route.query.schedule ?? null, scheduledDate: route.query.date ?? null, programId: route.query.program ?? null, deloadPct: route.query.deload ? Number(route.query.deload) : null, force });
     replaced?.();
-    askNotificationPermission();
+    void askNotificationsOnce();
     invalidate(["workouts", "home", "calendar"]);
     router.replace("/workout");
   } catch (e) {

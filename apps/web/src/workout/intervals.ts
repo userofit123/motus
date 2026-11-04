@@ -5,7 +5,7 @@ import { computed, reactive } from "vue";
 import { intervalPhases, intervalAt, intervalTotalS, cleanInterval, INTERVAL_DEFAULT, type IntervalConfig, type IntervalKind, type IntervalSound } from "@motus/shared";
 import { readJson, writeJson } from "../core/prefs";
 import { now, tone, SOFT, savedCues, vibrate, type Overtone } from "./runtime";
-import { keepAwake, scheduleIntervalCues, cancelIntervalCues, showIntervalNotice, clearIntervalNotice, INTERVAL_CUE_MAX } from "./native";
+import { keepAwake, scheduleIntervalCues, cancelIntervalCues, showIntervalNotice, clearIntervalNotice, onNoticeAction, INTERVAL_CUE_MAX } from "./native";
 
 interface IntervalRun {
   cfg: Required<IntervalConfig>; // sounds filled in
@@ -167,8 +167,8 @@ if (typeof document !== "undefined") document.addEventListener("visibilitychange
   }
   scheduleIntervalCues(out); scheduledForHide = out.length > 0;
 });
-// The ongoing notification (Android app): the preset's name, the part and round, and a countdown to the end of the part.
-// Shown again at each change of part, pause or skip, and taken off once the run stops or is done.
+// The ongoing notification: the preset's name, the part and round, a countdown to the end of the part (Android app), and
+// Pause or Resume and Skip. Shown again at each change of part, pause or skip, and taken off once the run stops or is done.
 let noticeShown = false;
 function notice() {
   // worked out from the clock now, not the shared `now` (up to a tick behind, which would be wrong just after a skip)
@@ -176,9 +176,12 @@ function notice() {
   const { index, leftMs } = intervalAt(ph, iv.startedAt == null ? 0 : (iv.pausedAt ?? Date.now()) - iv.startedAt), p = ph[index];
   if (iv.startedAt == null || !p) { if (noticeShown) { clearIntervalNotice(); noticeShown = false; } return; }
   const sets = iv.cfg.sets > 1 ? ` · Set ${p.set} of ${iv.cfg.sets}` : "";
-  showIntervalNotice({ title: iv.name || "Interval timer", body: `${paused ? "Paused · " : ""}${PHASE_NAME[p.kind]} · Round ${p.round} of ${iv.cfg.rounds}${sets}`, endAt: paused ? null : Date.now() + leftMs });
+  showIntervalNotice({ title: iv.name || "Interval timer", body: `${paused ? "Paused · " : ""}${PHASE_NAME[p.kind]} · Round ${p.round} of ${iv.cfg.rounds}${sets}`, endAt: paused ? null : Date.now() + leftMs,
+    actions: [{ id: "iv-pause", title: paused ? "Resume" : "Pause" }, { id: "iv-skip", title: "Skip" }] });
   noticeShown = true;
 }
+onNoticeAction("iv-pause", () => { if (iv.pausedAt != null) resumeIntervals(); else pauseIntervals(); });
+onNoticeAction("iv-skip", () => skipInterval(1));
 // a timer left running from before a reload keeps the screen on again, and its notification shows again
 if (ivRunning.value && iv.pausedAt == null) keepAwake(true, "intervals");
 // counted as shown at start, so one left behind by an app that was closed mid-run is taken off when nothing runs

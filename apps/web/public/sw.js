@@ -11,13 +11,15 @@ self.addEventListener("activate", (e) => e.waitUntil((async () => {
   await self.clients.claim();
 })()));
 
-// tapping the workout notification opens the app on the workout
+// tapping a notification (the workout, a recording, the interval timer) opens the app on it; a button on it (Pause,
+// +30s…) is passed to the open app instead (workout/native.ts), which then shows the notification again as it now is
 self.addEventListener("notificationclick", (e) => {
   e.notification.close();
   const url = e.notification.data?.url ?? "/";
   e.waitUntil((async () => {
     const all = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
     const c = all.find((x) => new URL(x.url).origin === location.origin);
+    if (e.action && c) { c.postMessage({ motusAction: e.action }); return; }
     if (c) { await c.focus(); c.navigate?.(url).catch?.(() => {}); } else await self.clients.openWindow(url);
   })());
 });

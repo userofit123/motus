@@ -20,7 +20,7 @@ const empty = () => !!asking.cur?.input?.secret && !asking.cur.input.value;
       <button v-for="c in asking.cur.choices" :key="c.value" class="optb" @click="done(c.value)"><span class="t">{{ c.label }}</span></button>
     </div>
     <template v-if="!asking.cur.choices" #foot>
-      <button class="btn o" @click="cancel">Cancel</button>
+      <button class="btn o" @click="cancel">{{ asking.cur.no ?? "Cancel" }}</button>
       <button class="btn" :class="{ r: asking.cur.danger }" :disabled="empty()" @click="done(typed())">{{ asking.cur.ok }}</button>
     </template>
   </Sheet>

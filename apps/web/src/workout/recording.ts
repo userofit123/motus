@@ -11,7 +11,8 @@ import { computed, ref, watch } from "vue";
 import { readJson, writeJson } from "../core/prefs";
 import { api } from "../api/client";
 import { invalidate, queryClient } from "../api/live";
-import { keepAwake, showRecording, clearRecording, isNativeApp } from "./native";
+import { keepAwake, showRecording, clearRecording, isNativeApp, onNoticeAction, askNotificationsOnce } from "./native";
+import { fromM } from "@motus/shared";
 
 export interface Rec {
   type: string; startedAt: number; route: number[][]; pausedMs: number; pauseAt: number | null;
@@ -204,6 +205,7 @@ export function startRecording(type: string) {
   previewLocation(false);
   recording.value = { type, startedAt: Date.now(), route: [], pausedMs: 0, pauseAt: null, steps: 0, stepLast: null };
   persist(); startSensors(true);
+  void askNotificationsOnce();
 }
 export function togglePause() {
   const r = recording.value; if (!r) return;
@@ -229,12 +231,28 @@ if (recording.value) startSensors(false);
 // a browser lets go of "keep the screen on" whenever the page is hidden; take it again on coming back
 if (typeof document !== "undefined") document.addEventListener("visibilitychange", () => { if (recording.value && document.visibilityState === "visible") keepAwake(true, "recording"); });
 
-// In a browser, the recording as a notification too (same setting as the workout's), so it's one tap away from other apps.
-// A browser notification can't run a clock, so it says when it started.
-watch(() => recording.value && { type: recording.value.type, paused: !!recording.value.pauseAt, startedAt: recording.value.startedAt }, (n) => {
-  if (!n || isNativeApp()) return;
+// The recording as a notification too (same setting as the workout's), also on the lock screen in the Android app: its
+// clock there (a browser's can't run one, so it says when it started), the distance in your units and the steps so far,
+// and Pause or Resume. Shown again when those change: the distance by a tenth, the steps by fifty, so not all the time.
+const recNotice = computed(() => {
+  const r = recording.value;
+  if (!r) return null;
+  const du = queryClient.getQueryData<any>(["settings", "me"])?.settings?.units?.distance === "mi" ? "mi" : "km";
+  return { type: r.type, paused: !!r.pauseAt, since: r.startedAt + r.pausedMs, startedAt: r.startedAt, du, dist: Math.floor(fromM(recDistM.value, du) * 10) / 10, steps: countsSteps(r.type) ? Math.floor(r.steps / 50) * 50 : null };
+});
+// compared as text, so a new GPS point that changes none of it shows nothing again
+watch(() => JSON.stringify(recNotice.value), () => {
+  const n = recNotice.value;
+  if (!n) return;
   const me = queryClient.getQueryData<any>(["settings", "me"]);
   if (me?.settings?.workout?.sessionNotice === false) return;
   const at = new Date(n.startedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-  showRecording({ title: `${typeName(n.type)}${n.paused ? " (paused)" : ": recording"}`, body: `Started ${at}. Keep Motus open on screen to record the route.`, since: n.paused ? null : n.startedAt });
+  const so = [n.dist > 0 ? `${n.dist.toFixed(1)} ${n.du}` : "", n.steps ? `${n.steps.toLocaleString()} steps` : ""].filter(Boolean).join(" · ");
+  showRecording({
+    title: `${typeName(n.type)}${n.paused ? " (paused)" : ": recording"}`,
+    body: isNativeApp() ? so || `Started ${at}` : [so, `Started ${at}. Keep Motus open on screen to record the route.`].filter(Boolean).join("\n"),
+    since: n.paused ? null : n.since,
+    actions: [{ id: "rec-pause", title: n.paused ? "Resume" : "Pause" }],
+  });
 }, { immediate: true });
+onNoticeAction("rec-pause", () => togglePause());

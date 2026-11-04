@@ -8,8 +8,8 @@ import { api } from "../api/client";
 import { invalidate, queryClient } from "../api/live";
 import { toastError } from "../core/toast";
 import { readJson, writeJson } from "../core/prefs";
-import { startRest, finishRest, rest, setCues, restActive } from "./runtime";
-import { haptic, enableNotificationActions, showSession, clearSession, isNativeApp } from "./native";
+import { startRest, finishRest, rest, setCues, restActive, adjustRest, setRest, pauseRest, resumeRest } from "./runtime";
+import { haptic, enableNotificationActions, showSession, clearSession, isNativeApp, onNoticeAction, type NoticeButton } from "./native";
 import { makeFmt } from "../core/format";
 import { choose } from "../core/ask";
 
@@ -51,12 +51,13 @@ export function useWorkout() {
     const appPrefs = computed<WorkoutPrefs>(() => ({ ...appSettings.value.workout, ...((state.w?.settings ?? {}) as Partial<WorkoutPrefs>) }));
     const appFmt = computed(() => makeFmt(appSettings.value));
     watch(appPrefs, (p) => setCues({ sound: p.sound, vibrate: p.vibrate, warn10: p.warn10, voice: p.voice && !!appSettings.value.features.voice, next: p.restEndNext }), { immediate: true });
-    // the workout as a notification: what you're on now; in the Android app the rest countdown replaces it while resting.
-    // A browser can't run a clock in a notification, so it says when the workout started instead
+    // the workout as a notification: what you're on now; in the Android app the rest countdown replaces it while resting
+    // (not while the rest is paused, which takes the countdown off). A browser can't run a clock in a notification, so
+    // it says when the workout started instead
     const notice = computed(() => {
       const w = state.w;
       if (!w || w.status !== "in_progress" || !appPrefs.value.sessionNotice) return null;
-      if (restActive() && isNativeApp()) return "rest";
+      if (restActive() && rest.pausedLeftS == null && isNativeApp()) return "rest";
       const e = w.exercises[state.active], sets = w.exercises.filter((x) => x.status !== "skipped").flatMap((x) => x.sets);
       const work = e?.sets.filter((x) => x.kind !== "warmup") ?? [], cur = e?.sets.find((x) => !x.done);
       const setTxt = !e ? "" : !cur ? "all sets done" : cur.kind === "warmup" ? "warm-up set" : `set ${work.indexOf(cur) + 1} of ${work.length}`;
@@ -64,6 +65,11 @@ export function useWorkout() {
         title: w.pauseStartedAt ? `${w.name} (paused)` : `${w.name}: workout in progress`,
         body: [e ? `Exercise ${state.active + 1} of ${w.exercises.length}: ${e.exercise.name}, ${setTxt}` : "", `${sets.filter((x) => x.done).length} of ${sets.length} sets done, started ${appFmt.value.time(w.startedAt)}`].filter(Boolean).join("\n"),
         since: w.pauseStartedAt ? null : new Date(w.startedAt).getTime() + (w.pausedS ?? 0) * 1000,
+        // ticking from the notification is the optional "Log from the notification"; pausing is always there
+        actions: [
+          ...(appSettings.value.features.notifLogging && cur && !w.pauseStartedAt ? [{ id: "workout-done", title: "Set done" } as NoticeButton] : []),
+          { id: "workout-pause", title: w.pauseStartedAt ? "Resume" : "Pause" } as NoticeButton,
+        ],
       };
     });
     let t: ReturnType<typeof setTimeout> | null = null;
@@ -77,10 +83,15 @@ export function useWorkout() {
   const fmt = computed(() => makeFmt(settings.value));
   // the weight step in your units (5 lb or 2.5 kg), kept in kg
   const incKg = computed(() => settings.value.units.weight === "lb" ? toKg(settings.value.increments.lb, "lb") : settings.value.increments.kg);
-  watch(() => settings.value.features.notifLogging, (on) => enableNotificationActions(!!on, {
-    done: () => { const e = state.w?.exercises.find((x) => x.status === "pending" && x.sets.some((y) => !y.done)); if (e) tick(e, e.sets.findIndex((y) => !y.done)); },
-    more: () => import("./runtime").then((r) => r.startRest(30, { setId: null, label: "Rest", next: "", workoutId: state.w?.id ?? "" })),
-  }), { immediate: true });
+  const tickNext = () => { const e = state.w?.exercises.find((x) => x.status === "pending" && x.sets.some((y) => !y.done)); if (e) tick(e, e.sets.findIndex((y) => !y.done)); };
+  const restLonger = () => startRest(30, { setId: null, label: "Rest", next: "", workoutId: state.w?.id ?? "" });
+  watch(() => settings.value.features.notifLogging, (on) => enableNotificationActions(!!on, { done: tickNext, more: restLonger }), { immediate: true });
+  // the buttons on the workout's and the rest's notifications (native.ts); a rest that is over (still saying "Rest
+  // over") gets 30 seconds from now, one that runs 30 more, and with none a new one starts
+  onNoticeAction("workout-done", tickNext);
+  onNoticeAction("workout-pause", () => { if (state.w?.status === "in_progress") togglePause(); });
+  onNoticeAction("rest-more", () => { if (!rest.endAt) restLonger(); else if (rest.done) setRest(30); else adjustRest(30); });
+  onNoticeAction("rest-skip", () => finishRest(true));
 
   async function call(method: "post" | "put" | "del", path: string, body?: unknown, refresh = false) {
     state.pending++;
@@ -244,7 +255,13 @@ export function useWorkout() {
     Object.assign(state.w!, patch);
     await call("put", `/workouts/${state.w!.id}`, patch, true);
   }
-  return { state, prefs, settings, fmt, incKg, ex, activate, restChanged, keepRest, skipExercise, tick, editSet, addSet, addDrop, removeSet, setStatus, reorder, patchExercise, addExercises, removeExercise, patchWorkout, restFor, call, active };
+  // pausing the workout pauses everything: its clock and a rest that's running
+  function togglePause() {
+    const p = !state.w!.pauseStartedAt;
+    if (p) pauseRest(); else resumeRest();
+    patchWorkout({ pause: p, pauseStartedAt: p ? new Date().toISOString() : null });
+  }
+  return { state, prefs, settings, fmt, incKg, ex, activate, restChanged, keepRest, skipExercise, tick, editSet, addSet, addDrop, removeSet, setStatus, reorder, patchExercise, addExercises, removeExercise, patchWorkout, togglePause, restFor, call, active };
 }
 
 /**

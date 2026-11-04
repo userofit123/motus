@@ -11,7 +11,7 @@ import { isPhone, layoutChoice, setLayout } from "../core/device";
 import { appearanceOpen } from "../core/ui";
 import { prompt } from "../core/ask";
 import { toast } from "../core/toast";
-import { askNotificationPermission } from "../workout/native";
+import { askNotificationPermission, notificationState, isNativeApp, type NotificationState } from "../workout/native";
 import Icon from "../components/Icon.vue";
 import RestPicker from "../components/RestPicker.vue";
 import AppSelect from "../components/AppSelect.vue";
@@ -100,9 +100,12 @@ const delGym = (g: any) => set({ gyms: s.value.gyms.filter((x) => x.id !== g.id)
 const groups = computed(() => { const m = new Map<string, typeof READY_FEATURES>(); for (const f of READY_FEATURES) m.set(f.group, [...(m.get(f.group) ?? []), f]); return [...m]; });
 // only the notifications the app actually sends are offered
 const NOTIF: [keyof Settings["notifications"], string, string][] = [["scheduled", "Planned workouts", "Before a routine's scheduled time"]];
-const notifPerm = ref(typeof Notification !== "undefined" ? Notification.permission : "unsupported");
+// asked of Android in the app (its web view has no browser notifications, which used to read as "Not available here"),
+// of the browser otherwise
+const notifPerm = ref<NotificationState | null>(null);
 // on a phone, the system's own permission screen can come up over the app; coming back, show what was chosen there
-const readPerm = () => { if (typeof Notification !== "undefined") notifPerm.value = Notification.permission; };
+const readPerm = () => { void notificationState().then((v) => (notifPerm.value = v)); };
+readPerm();
 async function allowNotifications() { try { await askNotificationPermission(); } finally { readPerm(); } }
 onMounted(() => { addEventListener("focus", readPerm); document.addEventListener("visibilitychange", readPerm); });
 onBeforeUnmount(() => { removeEventListener("focus", readPerm); document.removeEventListener("visibilitychange", readPerm); });
@@ -218,7 +221,7 @@ await loaded(me);
 
         <template v-else-if="sec === 'notifications'">
           <div class="card">
-            <div class="li"><div class="grow"><div class="t">Notifications on this device</div><div class="s">{{ notifPerm === "granted" ? "Allowed" : notifPerm === "denied" ? "Blocked in your browser settings" : notifPerm === "unsupported" ? "Not available here" : "Not allowed yet" }}</div></div><button v-if="notifPerm === 'default'" class="btn s" @click="allowNotifications">Allow</button></div>
+            <div class="li"><div class="grow"><div class="t">Notifications on this device</div><div class="s">{{ notifPerm === "granted" ? "Allowed: workouts, rests, activities and the interval timer show while they run" : notifPerm === "denied" ? (isNativeApp() ? "Blocked: allow them for Motus in the phone's settings" : "Blocked in your browser settings") : notifPerm === "unsupported" ? "This browser can't show notifications" : notifPerm === "prompt" ? "Not allowed yet" : "-" }}</div></div><button v-if="notifPerm === 'prompt'" class="btn s" @click="allowNotifications">Allow</button></div>
             <label v-for="[k, l, d] in NOTIF" :key="k" class="tgl"><div class="grow"><div class="t">{{ l }}</div><div v-if="d" class="s">{{ d }}</div></div><span class="tg"><input type="checkbox" :checked="s.notifications[k]" @change="set({ notifications: { [k]: ($event.target as HTMLInputElement).checked } })" /></span></label>
           </div>
           <p class="tiny">Sounds and vibration when a rest ends are in <button class="lnk inl" @click="go('workout')">Workout defaults</button>.</p>

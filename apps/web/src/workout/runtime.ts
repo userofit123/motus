@@ -6,7 +6,7 @@ import { readJson, writeJson } from "../core/prefs";
 import { withDefaults } from "@motus/shared";
 import { api } from "../api/client";
 import { queryClient } from "../api/live";
-import { notifyRestEnd, cancelRestNotification } from "./native";
+import { notifyRestEnd, cancelRestNotification, notifyRestOverWeb } from "./native";
 
 export interface RestState {
   endAt: number | null; // ms
@@ -95,8 +95,9 @@ function restEnded() {
   if (cues.sound) beep(3, 880);
   if (cues.vibrate) vibrate([300, 150, 300]);
   if (cues.voice && rest.next) speak(`Rest over. ${rest.next}`);
-  if (document.hidden && "Notification" in window && Notification.permission === "granted")
-    try { new Notification("Rest over", { body: rest.next, tag: "motus-rest", icon: "/icon-192.png" }); } catch { /* not allowed here */ }
+  // a browser's own notification (the Android app has its alarm, native.ts); a phone's browser allows only the service
+  // worker's kind, which also carries a "+30s" button
+  if (document.hidden) void notifyRestOverWeb(rest.next);
 }
 
 // Sounds are made here rather than shipped as files. Each note is a few sine partials with a quick (but not instant)

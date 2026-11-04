@@ -8,7 +8,7 @@ import { INTERVAL_STARTERS, clock, duration, intervalSummary, type IntervalConfi
 import { useMe, useSettings, saveSettings } from "../api/queries";
 import { goBack } from "../core/leave";
 import { prompt, confirm } from "../core/ask";
-import { askNotificationPermission } from "../workout/native";
+import { askNotificationsOnce } from "../workout/native";
 import { iv, ivPhases, ivNow, ivRunning, ivDone, ivElapsedS, ivTotalS, PHASE_NAME, SOUND_NAME, playIntervalSound, setIntervalConfig, startIntervals, pauseIntervals, resumeIntervals, stopIntervals, skipInterval } from "../workout/intervals";
 import AppSelect from "../components/AppSelect.vue";
 import Icon from "../components/Icon.vue";
@@ -81,8 +81,8 @@ async function stop() {
   stopIntervals();
 }
 function primary() {
-  if (ivDone.value) { stopIntervals(); askNotificationPermission(); startIntervals(); }
-  else if (!started.value) { askNotificationPermission(); startIntervals(); }
+  if (ivDone.value) { stopIntervals(); void askNotificationsOnce(); startIntervals(); }
+  else if (!started.value) { void askNotificationsOnce(); startIntervals(); }
   else if (paused.value) resumeIntervals();
   else pauseIntervals();
 }

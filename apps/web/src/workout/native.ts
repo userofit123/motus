@@ -1,8 +1,40 @@
-// What only the installed apps can do during a workout: a notification when the rest ends while the phone is locked,
-// an ongoing countdown in the notification shade, and keeping the screen on. In a browser these quietly do nothing
-// (the web app beeps and shows a system notification instead, see runtime.ts).
+// What runs in the notification shade while something is going on (a workout, its rest, a recorded activity, the
+// interval timer), with buttons to control it, plus keeping the screen on. The Android app shows these natively, on the
+// lock screen too, with live clocks; a browser shows them through the service worker (sw.js), without a live clock.
+import { confirm } from "../core/ask";
+import { readJson, writeJson } from "../core/prefs";
+
 const cap = () => (globalThis as any).Capacitor;
 const plugin = (name: string) => cap()?.Plugins?.[name];
+
+// A button on a notification: its id names what it does (handled by onNoticeAction), its title is what it says.
+export interface NoticeButton { id: NoticeAction; title: string }
+export type NoticeAction = "rest-more" | "rest-skip" | "workout-pause" | "workout-done" | "rec-pause" | "iv-pause" | "iv-skip";
+const handlers = new Map<string, () => void>();
+let listening = false;
+/** What a notification button does. Android sends the tap as an "action" event, a browser's service worker as a message. */
+export function onNoticeAction(id: NoticeAction, run: () => void) {
+  handlers.set(id, run);
+  if (listening) return;
+  listening = true;
+  const go = (a: unknown) => { if (typeof a === "string") handlers.get(a)?.(); };
+  plugin("MotusWorkout")?.addListener?.("action", (e: any) => go(e?.action));
+  try { navigator.serviceWorker?.addEventListener("message", (e) => go(e.data?.motusAction)); } catch { /* no service worker here */ }
+}
+// A browser notification through the service worker (only that kind can carry buttons, and a phone's browser allows
+// no other); `tag` replaces the one shown before, quietly. Chrome shows at most two buttons.
+async function webNotice(title: string, o: { body: string; tag: string; url: string; buttons?: NoticeButton[]; since?: number | null; silent?: boolean; sticky?: boolean }) {
+  if (isNativeApp() || !("Notification" in window) || Notification.permission !== "granted") return;
+  try {
+    const reg = await navigator.serviceWorker?.getRegistration();
+    await reg?.showNotification(title, { body: o.body, tag: o.tag, silent: o.silent ?? true, requireInteraction: o.sticky ?? true, icon: "/icon-192.png", timestamp: o.since ?? undefined, data: { url: o.url }, actions: (o.buttons ?? []).slice(0, 2).map((b) => ({ action: b.id, title: b.title })) } as NotificationOptions);
+  } catch { /* not allowed here */ }
+}
+async function closeWebNotice(tag: string) {
+  try { for (const n of (await (await navigator.serviceWorker?.getRegistration())?.getNotifications({ tag })) ?? []) n.close(); } catch { /* none shown */ }
+}
+// the rest countdown's buttons (Android): the same as the workout screen's +15 and Skip rest, a bit more at a time
+const REST_BUTTONS: NoticeButton[] = [{ id: "rest-more", title: "+30s" }, { id: "rest-skip", title: "Skip rest" }];
 
 export async function notifyRestEnd(endAt: number, body: string) {
   const ln = plugin("LocalNotifications");
@@ -11,36 +43,37 @@ export async function notifyRestEnd(endAt: number, body: string) {
     await ln.cancel({ notifications: [{ id: 7001 }] });
     await ln.schedule({ notifications: [{ id: 7001, title: "Rest over", body: body || "Time for the next set", schedule: { at: new Date(endAt), allowWhileIdle: true }, channelId: "rest", smallIcon: "ic_stat_motus", actionTypeId: logFromNotification ? "rest" : undefined }] });
   } catch { /* the in-app timer still runs */ }
-  plugin("MotusWorkout")?.showRest?.({ endAt, body }).catch?.(() => {});
+  plugin("MotusWorkout")?.showRest?.({ endAt, body, actions: REST_BUTTONS }).catch?.(() => {});
+}
+// The rest is over, in a browser with the app in the background (the Android app has its alarm above): "+30s" rests a
+// little longer. The page's timers are slowed down in the background, so this can come a few seconds late.
+export function notifyRestOverWeb(body: string) {
+  return webNotice("Rest over", { body: body || "Time for the next set", tag: "motus-rest", url: "/workout", buttons: [REST_BUTTONS[0]!], silent: false, sticky: false });
 }
 // The workout in progress as a notification (setting "sessionNotice"): its name, the exercise and set you're on, and
-// a running clock in the Android app. Updated when something changes, not every second; on Android the rest countdown
-// takes its place while a rest runs. In a browser it goes through the service worker, so it can be updated in place.
-export async function showSession(o: { title: string; body: string; since: number | null }) {
+// a running clock in the Android app, with buttons (pause or go on, and tick the set with "Log from the notification").
+// Updated when something changes, not every second; on Android the rest countdown takes its place while a rest runs.
+export async function showSession(o: { title: string; body: string; since: number | null; actions: NoticeButton[] }) {
   const p = plugin("MotusWorkout");
   if (p?.showSession) { p.showSession(o).catch?.(() => {}); return; }
-  if (!("Notification" in window) || Notification.permission !== "granted") return;
-  try {
-    const reg = await navigator.serviceWorker?.getRegistration();
-    await reg?.showNotification(o.title, { body: o.body, tag: "motus-session", silent: true, requireInteraction: true, icon: "/icon-192.png", data: { url: "/workout" } } as NotificationOptions);
-  } catch { /* not allowed here */ }
+  await webNotice(o.title, { body: o.body, tag: "motus-session", url: "/workout", buttons: o.actions });
 }
 export async function clearSession() {
   plugin("MotusWorkout")?.clearSession?.().catch?.(() => {});
-  try { for (const n of (await (await navigator.serviceWorker?.getRegistration())?.getNotifications({ tag: "motus-session" })) ?? []) n.close(); } catch { /* none shown */ }
+  await closeWebNotice("motus-session");
 }
-// A walk being recorded (workout/recording.ts), as its own notification next to the workout's, since both can run at once.
-// Only in a browser: in the Android app the location service that keeps recording with the screen off already shows
-// one ("Recording your walk"), and a second would just repeat it.
-export async function showRecording(o: { title: string; body: string; since: number | null }) {
-  if (isNativeApp() || !("Notification" in window) || Notification.permission !== "granted") return;
-  try {
-    const reg = await navigator.serviceWorker?.getRegistration();
-    await reg?.showNotification(o.title, { body: o.body, tag: "motus-recording", silent: true, requireInteraction: true, icon: "/icon-192.png", timestamp: o.since ?? undefined, data: { url: "/activities/record" } } as NotificationOptions);
-  } catch { /* not allowed here */ }
+// An activity being recorded (workout/recording.ts), as its own notification next to the workout's, since both can run
+// at once: the clock (Android), distance and steps so far, and Pause or Resume. In the Android app the location service
+// that keeps recording with the screen off shows one more of its own while the app is in the background (Android
+// requires it); this one is the one with the numbers and the button.
+export async function showRecording(o: { title: string; body: string; since: number | null; actions: NoticeButton[] }) {
+  const p = plugin("MotusWorkout");
+  if (p?.showRecording) { p.showRecording(o).catch?.(() => {}); return; }
+  await webNotice(o.title, { body: o.body, tag: "motus-recording", url: "/activities/record", buttons: o.actions, since: o.since });
 }
 export async function clearRecording() {
-  try { for (const n of (await (await navigator.serviceWorker?.getRegistration())?.getNotifications({ tag: "motus-recording" })) ?? []) n.close(); } catch { /* none shown */ }
+  plugin("MotusWorkout")?.clearRecording?.().catch?.(() => {});
+  await closeWebNotice("motus-recording");
 }
 export const isNativeApp = () => !!cap()?.isNativePlatform?.();
 export async function cancelRestNotification() {
@@ -60,10 +93,36 @@ export async function keepAwake(on: boolean, who: "workout" | "recording" | "int
     else { await wake?.release(); wake = null; }
   } catch { /* the screen may dim */ }
 }
+/** Whether this device lets Motus show notifications: the Android app asks Android (13+ needs the permission), a
+ *  browser has its own; "unsupported" where there are none (a browser without them, such as Safari outside the home screen). */
+export type NotificationState = "granted" | "denied" | "prompt" | "unsupported";
+export async function notificationState(): Promise<NotificationState> {
+  const ln = plugin("LocalNotifications");
+  if (ln) {
+    try { const d = (await ln.checkPermissions())?.display; return d === "granted" ? "granted" : d === "denied" ? "denied" : "prompt"; }
+    catch { return "unsupported"; }
+  }
+  if (typeof Notification === "undefined") return "unsupported";
+  return Notification.permission === "default" ? "prompt" : Notification.permission;
+}
+// Starting a workout, an activity or the interval timer while notifications aren't allowed yet: ask once on this device,
+// in the app's own words first, then the system's question. Whatever the answer, never again (Settings → Notifications
+// can still turn them on).
+const ASKED = "motusNotifAsked";
+export async function askNotificationsOnce() {
+  await restChannel(); // the rest alarm's sound channel, also when nothing needs asking (allowed already, Android 12 and older)
+  if (readJson<boolean>(ASKED, false) || (await notificationState()) !== "prompt") return;
+  writeJson(ASKED, true);
+  const yes = await confirm("Show a notification while it runs?", { text: "The time, where you are and buttons to pause or skip, in the notification shade and on the lock screen. You can change this later in Settings → Notifications.", ok: "Turn on", no: "Not now" });
+  if (yes) await askNotificationPermission();
+}
+async function restChannel() {
+  try { await plugin("LocalNotifications")?.createChannel?.({ id: "rest", name: "Rest timer", importance: 5, vibration: true }); } catch { /* made next time */ }
+}
 export async function askNotificationPermission() {
   const ln = plugin("LocalNotifications");
   try {
-    if (ln) { await ln.requestPermissions(); await ln.createChannel?.({ id: "rest", name: "Rest timer", importance: 5, vibration: true }); }
+    if (ln) { await ln.requestPermissions(); await restChannel(); }
     else if ("Notification" in window && Notification.permission === "default") await Notification.requestPermission();
   } catch { /* the in-app timer still works */ }
 }
@@ -82,13 +141,16 @@ export async function scheduleIntervalCues(cues: { at: number; title: string; bo
 }
 export const cancelIntervalCues = () => scheduleIntervalCues([]);
 // The running interval timer as its own ongoing notification (beside the workout's, since both can run at once), also on
-// the lock screen: the part and round, and a countdown to the end of the part (none while paused); tapping it opens the
-// timer. Android app only: a browser has no live countdown in a notification, so there the phase-change cues are all.
-export function showIntervalNotice(o: { title: string; body: string; endAt: number | null }) {
-  plugin("MotusWorkout")?.showTimer?.(o).catch?.(() => {});
+// the lock screen: the part and round, a countdown to the end of the part (Android; none while paused), and Pause or
+// Resume and Skip; tapping it opens the timer. A browser has no live countdown, so there it shows the part only.
+export function showIntervalNotice(o: { title: string; body: string; endAt: number | null; actions: NoticeButton[] }) {
+  const p = plugin("MotusWorkout");
+  if (p?.showTimer) { p.showTimer(o).catch?.(() => {}); return; }
+  void webNotice(o.title, { body: o.body, tag: "motus-timer", url: "/timer", buttons: o.actions });
 }
 export function clearIntervalNotice() {
   plugin("MotusWorkout")?.clearTimer?.().catch?.(() => {});
+  void closeWebNotice("motus-timer");
 }
 export const haptic = (style: "light" | "medium" = "light") => {
   const h = plugin("Haptics");

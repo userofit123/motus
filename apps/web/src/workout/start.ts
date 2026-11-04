@@ -4,9 +4,10 @@ import { api, ApiError } from "../api/client";
 import { choose } from "../core/ask";
 import { router } from "../router";
 import { replacingWorkout } from "./useWorkout";
+import { askNotificationsOnce } from "./native";
 
 export async function startWorkout(body: Record<string, unknown>): Promise<boolean> {
-  try { await api.post("/workouts/start", body); return true; }
+  try { await api.post("/workouts/start", body); void askNotificationsOnce(); return true; }
   catch (e) {
     if (!(e instanceof ApiError) || e.status !== 409) throw e;
     const v = await choose("A workout is already in progress", [{ label: "Go back to it", value: "resume" }, { label: "Discard it and start this one", value: "new" }]);
@@ -15,6 +16,7 @@ export async function startWorkout(body: Record<string, unknown>): Promise<boole
     const replaced = replacingWorkout();
     await api.post("/workouts/start", { ...body, force: true });
     replaced();
+    void askNotificationsOnce();
     return true;
   }
 }
