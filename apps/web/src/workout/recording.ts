@@ -118,10 +118,13 @@ function stopGps() {
 // The app counts both itself (MotusWorkoutPlugin) and sends the counts so far with each step; the recording adds what
 // they grew by (addStepReading). So nothing is lost while this page is held up with the screen off, or reloaded.
 const WP = () => (globalThis as any).Capacitor?.Plugins?.MotusWorkout;
-let stepSub: any = null;
+// (the web app doesn't depend on Capacitor, so this is the shape of its PluginListenerHandle)
+let stepSub: { remove: () => Promise<void> | void } | null = null;
 /** the Android app's step sensors count for this recording (and the recording's notification keeps them going) */
 const nativeSteps = ref(false);
-function onReading(e: any) {
+/** what the Android plugin sends: counts since `session`, the counter -1 before its first reading */
+interface NativeReading { session?: number; counter?: number; detector?: number }
+function onReading(e: NativeReading | null | undefined) {
   const r = recording.value;
   const x: StepReading = { session: Number(e?.session), counter: Number(e?.counter ?? -1), detector: Number(e?.detector ?? 0) };
   if (!r || !Number.isFinite(x.session) || !Number.isFinite(x.counter) || !Number.isFinite(x.detector)) return;
@@ -202,15 +205,16 @@ function stopSteps() {
 let tick: ReturnType<typeof setInterval> | null = null;
 const typeName = (slug: string) => ((queryClient.getQueryData<any[]>(["activities", "types"]) ?? []).find((x) => x.slug === slug)?.name as string | undefined) ?? (slug[0]?.toUpperCase() + slug.slice(1));
 /** `fresh`: a new recording, so the step sensors count from zero; otherwise one left running picks up where it was */
-function startSensors(fromTap: boolean, fresh: boolean) {
+async function startSensors(fromTap: boolean, fresh: boolean) {
   const r = recording.value; if (!r) return;
   recNow.value = Date.now();
   if (!tick) tick = setInterval(() => (recNow.value = Date.now()), 1000);
   // the motion sensor's permission (iPhone) has to be asked straight from the tap, so nothing is awaited before it
-  if (countsSteps(r.type)) { if (WP()?.startSteps) startNativeSteps(fresh); else startMotion(fromTap); }
-  // a type without a route (yoga, a spin class, climbing) records time only, so location is never asked for
-  if (typeInfo(r.type)?.hasGps !== false) startGps();
   keepAwake(true, "recording");
+  // Android shows one permission question at a time, so the steps' (physical activity) is answered before location is asked
+  if (countsSteps(r.type)) { if (WP()?.startSteps) await startNativeSteps(fresh); else void startMotion(fromTap); }
+  // a type without a route (yoga, a spin class, climbing) records time only, so location is never asked for
+  if (recording.value && typeInfo(r.type)?.hasGps !== false) startGps();
 }
 function stopAll() {
   stopGps(); stopSteps();
@@ -221,7 +225,7 @@ function stopAll() {
 export function startRecording(type: string) {
   previewLocation(false);
   recording.value = { type, startedAt: Date.now(), route: [], pausedMs: 0, pauseAt: null, steps: 0, stepSession: null, stepSeen: 0, breaks: [] };
-  persist(); startSensors(true, true);
+  persist(); void startSensors(true, true);
   void askNotificationsOnce();
 }
 export function togglePause() {
@@ -251,7 +255,7 @@ export function discardRecording() { recording.value = null; persist(); stopAll(
 export const recTypeName = () => typeName(recording.value?.type ?? "walk");
 
 // a recording left running (a reload, or the app was closed) picks up where it was
-if (recording.value) startSensors(false, false);
+if (recording.value) void startSensors(false, false);
 // a browser lets go of "keep the screen on" whenever the page is hidden; take it again on coming back
 if (typeof document !== "undefined") document.addEventListener("visibilitychange", () => { if (recording.value && document.visibilityState === "visible") { keepAwake(true, "recording"); void catchUpSteps(); } });
 

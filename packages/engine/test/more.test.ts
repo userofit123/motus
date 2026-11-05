@@ -122,6 +122,17 @@ describe("activities", () => {
     expect(read(-1, 5, false, 2)).toBe(22);
     expect(read(7, 7, false, 2)).toBe(24);
   });
+  it("doesn't let a step detector that runs far ahead of the step counter inflate the steps", () => {
+    let s: StepState = { steps: 0, session: null, seen: 0 };
+    const read = (counter: number, detector: number) => (s = addStepReading(s, { session: 1, counter, detector }, false)).steps;
+    expect(read(100, 100)).toBe(100);
+    // handling the phone or a bus ride: the detector fires, the counter doesn't follow
+    expect(read(105, 400)).toBe(135); // only 30 ahead of the counter is believed
+    expect(read(110, 900)).toBe(140);
+    // the count never goes back, and the counter takes over once it passes the capped lead
+    expect(read(120, 120)).toBe(140); // below what was already counted: nothing added
+    expect(read(200, 200)).toBe(200);
+  });
   it("takes a GPS fix on the route only when it means ground covered", () => {
     const route = [[32, 34.8, 0]];
     expect(takesPoint(route, [32.0005, 34.8, 30], 8, false)).toBe(true); // ~55 m on

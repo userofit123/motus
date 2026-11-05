@@ -55,13 +55,17 @@ export interface StepReading { session: number; counter: number; detector: numbe
 /** Where a recording's step count stands: `steps` so far, and the sensors' own count (`seen`) at the last reading of `session`. */
 export interface StepState { steps: number; session: number | null; seen: number }
 
+/** How many steps the detector may run ahead of the counter (which holds back its first steps) before it's taken for false positives. */
+export const STEP_DETECTOR_LEAD = 30;
+
 /** Adds a step reading to the recording's count. The step counter is the accurate one but holds back the first ten or
  *  so steps each time you set off; the step detector reports each step at once but may miss some. Both are counts
  *  since the sensors started, so the larger of the two is how far you've walked, and only its growth since the last
  *  reading is added: a reading that comes late, twice or out of order adds nothing twice. While paused the readings
  *  move `seen` on without counting. A new session (the app was restarted) counts from its own zero. */
 export function addStepReading(s: StepState, r: StepReading, paused: boolean): StepState {
-  const now = Math.max(r.counter, r.detector, 0);
+  // the detector can fire on handling the phone or a bus ride, so once the counter has reported it may only lead by a few steps
+  const now = r.counter >= 0 ? Math.max(r.counter, Math.min(r.detector, r.counter + STEP_DETECTOR_LEAD)) : Math.max(r.detector, 0);
   const from = s.session === r.session ? s.seen : 0;
   const grew = Math.max(0, now - from);
   return { steps: s.steps + (paused ? 0 : grew), session: r.session, seen: Math.max(from, now) };

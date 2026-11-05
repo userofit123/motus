@@ -63,8 +63,9 @@ public class RecordingService extends Service {
         return ContextCompat.checkSelfPermission(ctx, permission) == PackageManager.PERMISSION_GRANTED;
     }
 
-    /** What the service keeps going, by what's allowed: the route (location) and the steps (health, Android 14+: without
-     *  it the step sensors send nothing once the screen is off). 0: nothing allowed yet, so it can't start. */
+    /** The service's foreground types, by what's allowed. Any foreground type keeps the process and its sensors alive with
+     *  the screen off; "health" (Android 14+) only lets it start when location isn't allowed, so steps alone can run it.
+     *  0: nothing allowed yet, so it can't start. */
     private static int types(Context ctx) {
         int t = 0;
         if (allowed(ctx, Manifest.permission.ACCESS_FINE_LOCATION) || allowed(ctx, Manifest.permission.ACCESS_COARSE_LOCATION)) t |= ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION;
@@ -84,7 +85,12 @@ public class RecordingService extends Service {
                 else startForeground(REC_ID, n);
                 running = this;
             }
-        } catch (Exception e) { /* not allowed now: the route records while the app is open */ }
+        } catch (Exception e) {
+            // not allowed now (the route records while the app is open); without a foreground notice the service must not linger
+            running = null;
+            stopSelf();
+            return START_NOT_STICKY;
+        }
         if (n == null || !wanted || running == null) stop(this, false);
         if (running == null) stopSelf();
         return START_NOT_STICKY;
