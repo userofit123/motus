@@ -7,6 +7,7 @@ import { useQuery, useQueryClient } from "@tanstack/vue-query";
 import { useSettings, saveSettings } from "../../api/queries";
 import { session, isLocalAccount } from "../../core/session";
 import { updater } from "../../core/updater";
+import { useFmt } from "../../core/format";
 import { latestRelease, detectPlatform, downloads, newer, REPO, REPO_URL } from "../../core/releases";
 import AppSelect from "../AppSelect.vue";
 
@@ -14,7 +15,8 @@ const s = useSettings();
 const router = useRouter();
 const qc = useQueryClient();
 const rel = useQuery({ queryKey: ["static", "release"], queryFn: latestRelease, staleTime: 3600_000, refetchOnWindowFocus: false, retry: false });
-const checkNow = () => { rel.refetch(); qc.invalidateQueries({ queryKey: ["static", "update"] }); };
+const checkNow = () => { void rel.refetch(); void qc.invalidateQueries({ queryKey: ["static", "update"] }); };
+const f = useFmt();
 const set = (patch: Record<string, unknown>) => saveSettings({ updates: patch });
 
 const platform = detectPlatform();
@@ -26,7 +28,16 @@ const installed = computed(() => (platform.app && updater.appVersion) || webVers
 const serverVersion = computed(() => (!localAccount.value && session.version && session.version !== installed.value ? session.version : ""));
 const latest = computed(() => rel.data.value?.latest ?? null);
 const isNewer = computed(() => !!latest.value && installed.value !== "-" && newer(latest.value, installed.value));
-const status = computed(() => (rel.isFetching.value && !rel.data.value ? "Checking…" : !latest.value ? rel.data.value?.error ?? "No releases found" : isNewer.value ? `Version ${latest.value} available` : "Up to date"));
+// "Checking…" on every check, not only the first: a second check with the same answer would otherwise change nothing on
+// screen, and the button would seem not to work
+const checking = computed(() => rel.isFetching.value);
+const status = computed(() => (checking.value ? "Checking…" : !latest.value ? rel.data.value?.error ?? "Could not check for updates" : isNewer.value ? `Version ${latest.value} available` : "Up to date"));
+const checkedAt = computed(() => (rel.dataUpdatedAt.value ? `Checked at ${f.value.time(new Date(rel.dataUpdatedAt.value).toISOString())}` : ""));
+// how a browser (or the installed web app) gets a new version: it loads whatever its server runs, so the server is updated
+const isAdmin = computed(() => session.user?.role === "admin");
+const webHow = computed(() => (isAdmin.value
+  ? `Update your server to it (Docker image ghcr.io/${REPO}:${latest.value}), then reload this page.`
+  : "This page gets it once the person who runs your server updates it."));
 
 const all = computed(() => downloads(rel.data.value?.assets ?? []));
 // the first matching download for this system (Linux: the AppImage, which runs on any distribution)
@@ -44,11 +55,15 @@ const mb = (n?: number) => (n ? ` · ${Math.max(1, Math.round(n / 1e6))} MB` : "
 <template>
   <div class="stack">
     <div class="card">
-      <div class="li"><div class="grow"><div class="t">Installed version</div><div class="s">{{ installed }} · {{ platform.name }}<template v-if="serverVersion"> · server {{ serverVersion }}</template></div></div><button class="btn o s" @click="checkNow">Check now</button></div>
+      <div class="li"><div class="grow"><div class="t">Installed version</div><div class="s">{{ installed }} · {{ platform.name }}<template v-if="serverVersion"> · server {{ serverVersion }}</template></div></div><button class="btn o s" :disabled="checking" @click="checkNow">Check now</button></div>
       <div class="li"><div class="grow"><div class="t">{{ status }}</div>
+        <template v-if="!checking">
         <div v-if="platform.app && updater.status" class="s">{{ updater.status }}</div>
-        <div v-else-if="platform.key === 'ios'" class="s">There is no iPhone or iPad app yet. Motus works in Safari: tap Share, then Add to Home Screen.</div></div>
-        <button v-if="platform.app && isNewer" class="btn s" @click="updater.install()">{{ updater.ready ? "Install" : "Download update" }}</button>
+        <div v-else-if="isNewer && !platform.app" class="s">{{ webHow }}</div>
+        <div v-else-if="platform.key === 'ios'" class="s">There is no iPhone or iPad app yet. Motus works in Safari: tap Share, then Add to Home Screen.</div>
+        <div v-else-if="checkedAt" class="s">{{ checkedAt }}</div>
+        </template></div>
+        <button v-if="platform.app && isNewer && !checking" class="btn s" @click="updater.install()">{{ updater.ready ? "Install" : "Download update" }}</button>
 </div>
     </div>
     <div v-if="suggest === 'android'" class="card">

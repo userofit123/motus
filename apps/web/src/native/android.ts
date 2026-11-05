@@ -2,7 +2,7 @@
 // colours, and the back button. Exposed as window.motusNative, like the desktop app.
 import { accounts, addLocal, addServer, open, remove, rename, chooser } from "./accounts";
 import { sheetIsOpen, closeTopSheet } from "../core/sheets";
-import { REPO, newer } from "../core/releases";
+import { REPO, newer, fetchWithin } from "../core/releases";
 import { router } from "../router";
 import { applyTheme } from "../core/theme";
 
@@ -11,11 +11,11 @@ const P = (n: string) => cap()?.Plugins?.[n];
 export const isAndroid = () => cap()?.getPlatform?.() === "android";
 
 async function latestApk() {
-  const r = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`, { headers: { accept: "application/vnd.github+json" } });
+  const r = await fetchWithin(`https://api.github.com/repos/${REPO}/releases/latest`, { headers: { accept: "application/vnd.github+json" } });
   if (!r.ok) throw new Error("Could not reach GitHub");
   const j = await r.json();
   const manifest = j.assets?.find((a: any) => a.name === "android-latest.json");
-  const meta = manifest ? await (await fetch(manifest.browser_download_url)).json() : null;
+  const meta = manifest ? await (await fetchWithin(manifest.browser_download_url)).json() : null;
   const apk = j.assets?.find((a: any) => a.name.endsWith(".apk"));
   return { version: String(j.tag_name).replace(/^v/, ""), url: meta?.url ?? apk?.browser_download_url, sha256: meta?.sha256 ?? null, notes: j.body ?? "", html: j.html_url };
 }
