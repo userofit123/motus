@@ -57,7 +57,10 @@ export function installAndroidBridge() {
         try { res = await P("MotusUpdater").download({ url: l.url, sha256: l.sha256, version: l.version }); } finally { h?.remove?.(); }
         onProgress(1);
         staged = res.path;
+        return l.version as string;
       },
+      // a newer release replaced the one that was ready: its file is deleted
+      async forget() { staged = null; await P("MotusUpdater")?.discard?.().catch(() => {}); },
       async install() { if (staged) await P("MotusUpdater").install({ path: staged }); },
       // an update downloaded before the app was last closed, still ready to install: its version, or null
       async staged(): Promise<string | null> {

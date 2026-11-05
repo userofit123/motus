@@ -7,6 +7,10 @@ export const updater = reactive({
   appVersion: "" as string,
   status: "" as string,
   ready: false,
+  // the version of the downloaded file that is ready (so Install names what it installs, also offline after a restart)
+  stagedVersion: "" as string,
+  // the newest release, kept here by the App & Versions screen: a download for another version is then not the one to install
+  latest: "" as string,
   // share downloaded (0-1) while a download runs; null when idle or when the size is unknown
   progress: null as number | null,
   // a download is running: a second tap would start a second download of the same file
@@ -17,20 +21,29 @@ export const updater = reactive({
       if (!updater.ready) {
         updater.downloading = true; updater.status = "Downloading"; updater.progress = null;
         // p < 0 means the size is unknown: show the megabytes so far instead of a percentage
-        await u.download((p: number, bytes?: number) => {
+        const got = await u.download((p: number, bytes?: number) => {
           updater.progress = p >= 0 ? p : null;
           updater.status = p >= 0 ? `Downloading ${Math.round(p * 100)}%` : bytes ? `Downloading ${(bytes / 1e6).toFixed(1)} MB` : "Downloading";
         });
-        updater.progress = null; updater.ready = true; updater.status = "Ready to install";
+        updater.progress = null; updater.ready = true;
+        updater.stagedVersion = typeof got === "string" && got ? got : updater.latest;
+        updater.status = `Ready to install${updater.stagedVersion ? " " + updater.stagedVersion : ""}`;
       }
       else await u.install();
     } catch (e) { updater.progress = null; updater.status = (e as Error).message; }
     finally { updater.downloading = false; }
+  },
+  // the ready file is out of date (a newer release exists): forget it, and delete it where the app can, so the next
+  // tap downloads the newer one
+  forget() {
+    if (updater.downloading) return;
+    updater.ready = false; updater.stagedVersion = ""; updater.status = ""; updater.progress = null;
+    try { nat()?.forget?.()?.catch?.(() => {}); } catch { /* nothing to delete */ }
   },
 });
 nat()?.version?.().then((v: string) => (updater.appVersion = v)).catch?.(() => {});
 // a download that finished before the app was closed (Android keeps the file and remembers it): offer Install, not
 // another download, as the "ready to install" notification promises
 nat()?.staged?.().then((v: string | null) => {
-  if (v && !updater.ready && !updater.downloading) { updater.ready = true; updater.status = "Ready to install"; }
+  if (v && !updater.ready && !updater.downloading) { updater.ready = true; updater.stagedVersion = v; updater.status = `Ready to install ${v}`; }
 }).catch?.(() => {});

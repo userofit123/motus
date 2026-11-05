@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // App & Versions: the version installed here, whether a newer one exists, the download that fits this device
 // (in the apps, the in-app updater instead), the other downloads, and the GitHub repository.
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { useQuery, useQueryClient } from "@tanstack/vue-query";
 import { useSettings, saveSettings } from "../../api/queries";
@@ -29,6 +29,12 @@ const latest = computed(() => rel.data.value?.latest ?? null);
 const isNewer = computed(() => !!latest.value && installed.value !== "-" && newer(latest.value, installed.value));
 // "Checking…" on every check, not only the first: a second check with the same answer would otherwise change nothing on
 // screen, and the button would seem not to work
+// a ready download of an older version than the newest release is dropped, so Install never installs another version
+// than the one shown as available
+watch([latest, () => updater.stagedVersion, () => updater.ready], () => {
+  if (updater.ready && !updater.downloading && latest.value && updater.stagedVersion && newer(latest.value, updater.stagedVersion)) updater.forget();
+}, { immediate: true });
+watch(latest, (v) => { updater.latest = v ?? ""; }, { immediate: true });
 const checking = computed(() => rel.isFetching.value);
 const status = computed(() => (checking.value ? "Checking…" : !latest.value ? rel.data.value?.error ?? "Could not check for updates" : isNewer.value ? `Version ${latest.value} available` : "Up to date"));
 const checkedAt = computed(() => (rel.dataUpdatedAt.value ? `Checked at ${f.value.time(new Date(rel.dataUpdatedAt.value).toISOString())}` : ""));
@@ -63,7 +69,7 @@ const mb = (n?: number) => (n ? ` · ${Math.max(1, Math.round(n / 1e6))} MB` : "
         <div v-else-if="checkedAt" class="s">{{ checkedAt }}</div>
         <div v-if="platform.app && updater.progress !== null" class="pbar" :style="{ marginTop: 'var(--lpy)' }"><i :style="{ width: Math.round(updater.progress * 100) + '%' }"></i></div>
         </template></div>
-        <button v-if="platform.app && isNewer && !checking" class="btn s" :disabled="updater.downloading" @click="updater.install()">{{ updater.ready ? "Install" : "Download update" }}</button>
+        <button v-if="platform.app && (updater.ready || (isNewer && !checking))" class="btn s" :disabled="updater.downloading" @click="updater.install()">{{ updater.ready ? (updater.stagedVersion ? `Install ${updater.stagedVersion}` : "Install") : "Download update" }}</button>
 </div>
     </div>
     <div v-if="suggest === 'android'" class="card">
