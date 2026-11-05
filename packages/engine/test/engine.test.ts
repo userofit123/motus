@@ -117,8 +117,9 @@ describe("engine", () => {
     await call(A, "POST", "/schedules", { routineId, rule: "interval", intervalDays: 1, startDate: today, timeOfDay: null });
     await call(A, "POST", "/schedules", { routineId, rule: "once", startDate: addDays(today, 1), timeOfDay: "07:30" });
     await call(A, "POST", "/schedules", { routineId, rule: "once", startDate: addDays(today, 1), timeOfDay: "06:00" });
-    const plan = (await call(A, "GET", "/calendar", undefined, { from: today, to: addDays(today, 2) })).planned;
-    expect(plan.map((p: any) => [p.date, p.timeOfDay])).toEqual([[today, null], [addDays(today, 1), "06:00"], [addDays(today, 1), "07:30"], [addDays(today, 1), null], [addDays(today, 2), null]]);
+    const plan = (await call(A, "GET", "/calendar", undefined, { from: today, to: addDays(today, 2), tz: "0" })).planned;
+    // today's is left out: this routine was already done today
+    expect(plan.map((p: any) => [p.date, p.timeOfDay])).toEqual([[addDays(today, 1), "06:00"], [addDays(today, 1), "07:30"], [addDays(today, 1), null], [addDays(today, 2), null]]);
     for (const s of await call(A, "GET", "/schedules")) await call(A, "DELETE", `/schedules/${s.id}`);
   });
 

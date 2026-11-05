@@ -15,7 +15,7 @@ export async function schedulePlanned(enabled: boolean) {
     if (ours.length) await ln.cancel({ notifications: ours.map((n: any) => ({ id: n.id })) });
     if (!enabled) return;
     const from = localYmd(new Date()), to = localYmd(new Date(Date.now() + 14 * 86400000));
-    const cal = await api.get("/calendar", { from, to });
+    const cal = await api.get("/calendar", { from, to, tz: new Date().getTimezoneOffset() });
     const list = (cal.planned ?? []).filter((p: any) => p.timeOfDay && p.remindMin != null).map((p: any, i: number) => {
       const at = new Date(`${p.date}T${p.timeOfDay}:00`); at.setMinutes(at.getMinutes() - p.remindMin);
       return { id: BASE + i, title: p.name, body: p.remindMin ? `In ${p.remindMin} minutes` : "Time for your workout", schedule: { at, allowWhileIdle: true }, extra: { routineId: p.routineId } };

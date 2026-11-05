@@ -7,7 +7,7 @@ import { getSettings } from "./settings";
 import { goalsWithProgress, ensureStarterGoal } from "./goals";
 import { stepsByDay } from "./activities";
 import { achievementRoutes, currentStreak, dayIn, weekIn } from "./achievements";
-import { plannedBetween } from "./schedule";
+import { plannedOpen } from "./schedule";
 import { workoutSummaries } from "./workouts";
 import { routineSummaries } from "./routines";
 import { suggestions } from "./suggest";
@@ -144,9 +144,8 @@ export function statsRoutes(r: Router) {
     const active = (await ctx.q.query("SELECT id, name, started_at FROM workouts WHERE status = 'in_progress' ORDER BY started_at DESC LIMIT 1")).rows[0] ?? null;
     const today = dayIn(now, tzMin);
     const end = dayIn(new Date(now.getTime() + 7 * 86400000), tzMin);
-    const planned = (await plannedBetween(ctx.q, today, end));
-    const doneToday = rows.filter((x) => dayIn(x.startedAt, tzMin) === today).map((x) => x.routineId);
-    const upNext = planned.filter((p) => !(p.date === today && p.routineId && doneToday.includes(p.routineId))).slice(0, 5);
+    // the same rule as the calendar: a plan done (by its routine, its activity type, or started from it) drops out
+    const upNext = (await plannedOpen(ctx.q, today, end, tzMin)).slice(0, 5);
     // the programs you're following get their own card on Home, so their next workout isn't also a suggestion
     const programs = [];
     for (const p of (await ctx.q.query("SELECT * FROM programs WHERE active ORDER BY created_at DESC")).rows) {

@@ -48,10 +48,8 @@ const byDay = computed(() => {
   if (!c) return m;
   for (const w of c.workouts) add(localYmd(new Date(w.startedAt)), { kind: "workout", ...w });
   for (const a of c.activities) add(localYmd(new Date(a.startedAt)), { kind: "activity", ...a });
-  for (const p of c.planned) {
-    const done = (m.get(p.date) ?? []).some((x) => x.kind === "workout" && x.routineId === p.routineId);
-    if (!done) add(p.date, { kind: "planned", missed: p.date < today, ...p });
-  }
+  // the engine leaves out plans already done (by their routine, activity type, or started from the plan)
+  for (const p of c.planned) add(p.date, { kind: "planned", missed: p.date < today, ...p });
   return m;
 });
 const DOW = computed(() => Array.from({ length: 7 }, (_, i) => ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][(i + first.value) % 7]));

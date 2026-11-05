@@ -156,3 +156,34 @@ describe("body and daily log", () => {
     expect((await call("GET", "/daily", undefined, { from: "2026-10-01" })).find((x: any) => x.kind === "steps").value).toBe(9000);
   });
 });
+
+describe("calendar: done plans", () => {
+  it("leaves out a planned day once it's done, by routine, activity type or the plan itself, on the app's day", async () => {
+    const r = (await call("POST", "/routines", { name: "Legs" })).id;
+    const walk = (await call("POST", "/schedules", { activityType: "walk", rule: "interval", intervalDays: 1, startDate: "2026-11-01", endDate: "2026-11-06" })).id;
+    await call("POST", "/schedules", { routineId: r, rule: "once", startDate: "2026-11-04", timeOfDay: "18:00" });
+    const late = (await call("POST", "/schedules", { routineId: r, rule: "once", startDate: "2026-11-05" })).id;
+    const tz = { tz: "-120" }; // UTC+2
+    // 23:30 UTC on the 1st is the 2nd in the app's day
+    await call("POST", "/activities", { type: "walk", startedAt: "2026-11-01T23:30:00Z", durationS: 1800 });
+    // a run is not a walk, and a free workout (no routine) is not a planned walk either
+    await call("POST", "/activities", { type: "run", startedAt: "2026-11-03T08:00:00Z", durationS: 1800 });
+    const free = await call("POST", "/workouts/start", { name: "Free", startedAt: "2026-11-03T09:00:00Z" });
+    await call("POST", `/workouts/${free.id}/finish`, {});
+    // the routine on its planned day; and the plan for the 5th started a day late from the plan itself
+    const w1 = await call("POST", "/workouts/start", { routineId: r, startedAt: "2026-11-04T17:00:00Z" });
+    await call("POST", `/workouts/${w1.id}/finish`, {});
+    const w2 = await call("POST", "/workouts/start", { routineId: r, scheduleId: late, scheduledDate: "2026-11-05", startedAt: "2026-11-06T10:00:00Z" });
+    await call("POST", `/workouts/${w2.id}/finish`, {});
+    const cal = await call("GET", "/calendar", undefined, { from: "2026-11-01", to: "2026-11-06", ...tz });
+    const left = cal.planned.map((p: any) => `${p.date} ${p.scheduleId === walk ? "walk" : "legs"}`);
+    expect(left).toEqual(["2026-11-01 walk", "2026-11-03 walk", "2026-11-04 walk", "2026-11-05 walk", "2026-11-06 walk"]);
+    // what was done is still all there
+    expect(cal.activities.filter((a: any) => a.startedAt.startsWith("2026-11-0")).length).toBe(2);
+    expect([free.id, w1.id, w2.id].every((x) => cal.workouts.some((w: any) => w.id === x))).toBe(true);
+    // in UTC the walk falls on the 1st instead
+    const utc = await call("GET", "/calendar", undefined, { from: "2026-11-01", to: "2026-11-02", tz: "0" });
+    expect(utc.planned.filter((p: any) => p.scheduleId === walk).map((p: any) => p.date)).toEqual(["2026-11-02"]);
+    for (const s of await call("GET", "/schedules")) await call("DELETE", `/schedules/${s.id}`);
+  });
+});

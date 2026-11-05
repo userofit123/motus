@@ -3,7 +3,8 @@
 import type { Schedule } from "@motus/shared";
 import type { Router } from "../router";
 import type { Sql } from "../db";
-import { camel, id, optId, str, intOrNull, bool, oneOf, dateStr, visible } from "../util";
+import { camel, id, optId, str, intOrNull, oneOf, dateStr, visible, tzOf } from "../util";
+import { dayIn } from "./achievements";
 import { uuidv7 } from "../ids";
 import { bad } from "../errors";
 
@@ -43,6 +44,34 @@ export async function plannedBetween(q: Sql, from: string, to: string) {
   return list.flatMap((s) => occurrences(s, s.exceptions, from, to).map((date) => ({
     scheduleId: s.id, date, routineId: s.routineId, activityType: s.activityType, name: s.name ?? "Planned", color: (s as any).color ?? null, timeOfDay: s.timeOfDay, remindMin: s.remindMin,
   }))).sort((a, b) => { const x = a.date + (a.timeOfDay ?? "~"), y = b.date + (b.timeOfDay ?? "~"); return x < y ? -1 : x > y ? 1 : 0; });
+}
+
+type Planned = Awaited<ReturnType<typeof plannedBetween>>[number];
+type DoneW = { routineId: string | null; scheduleId: string | null; scheduledDate: string | null; startedAt: string };
+type DoneA = { type: string; startedAt: string };
+
+/** Whether a planned day is already done, so the calendar and Home show what was done instead of the plan as well.
+ * A workout started from that very plan counts on the planned day even when done on another; otherwise a workout of
+ * the planned routine, or an activity of the planned type, on that day in the app's time zone. */
+export function planDone(p: Planned, workouts: DoneW[], activities: DoneA[], tzMin: number): boolean {
+  if (workouts.some((w) => w.scheduleId === p.scheduleId && w.scheduledDate === p.date)) return true;
+  // routineId and activityType are each null on the other kind of plan: never let null match null (a free workout isn't a walk)
+  if (p.routineId) return workouts.some((w) => w.routineId === p.routineId && dayIn(w.startedAt, tzMin) === p.date);
+  if (p.activityType) return activities.some((a) => a.type === p.activityType && dayIn(a.startedAt, tzMin) === p.date);
+  return false;
+}
+
+/** Planned days between from and to that aren't done yet. */
+export async function plannedOpen(q: Sql, from: string, to: string, tzMin: number) {
+  const planned = await plannedBetween(q, from, to);
+  if (!planned.length) return planned;
+  // a day either side, as the app's day can start up to 14 hours before or after UTC's
+  const lo = addDays(from, -1), hi = addDays(to, 2);
+  const workouts = (await q.query(
+    `SELECT routine_id, schedule_id, scheduled_date, started_at FROM workouts
+     WHERE status <> 'discarded' AND ((started_at >= $1::date AND started_at < $2::date) OR scheduled_date BETWEEN $3 AND $4)`, [lo, hi, from, to])).rows.map((x: any) => camel<DoneW>(x));
+  const activities = (await q.query("SELECT type, started_at FROM activities WHERE started_at >= $1::date AND started_at < $2::date", [lo, hi])).rows.map((x: any) => camel<DoneA>(x));
+  return planned.filter((p) => !planDone(p, workouts, activities, tzMin));
 }
 
 export function scheduleRoutes(r: Router) {
@@ -89,7 +118,8 @@ export function scheduleRoutes(r: Router) {
     return { ok: true };
   });
 
-  // the calendar: done workouts and activities (times, bucketed into days by the app in its own time zone) and planned days
+  // the calendar: done workouts and activities (times, bucketed into days by the app in its own time zone) and the planned
+  // days not done yet (a done plan shows as what was done, not twice)
   r.get("/calendar", async ({ q }, _p, _b, qs) => {
     const from = dateStr(qs.from), to = dateStr(qs.to);
     if (!from || !to) throw bad("from and to are required");
@@ -101,7 +131,7 @@ export function scheduleRoutes(r: Router) {
        FROM workouts w LEFT JOIN routines r ON r.id = w.routine_id WHERE w.status <> 'discarded' AND w.started_at >= $1::date AND w.started_at < $2::date ORDER BY w.started_at`, [lo, hi])).rows.map((x: any) => camel(x));
     const activities = (await q.query(
       `SELECT id, type, name, started_at, duration_s, distance_m FROM activities WHERE started_at >= $1::date AND started_at < $2::date ORDER BY started_at`, [lo, hi])).rows.map((x: any) => camel(x));
-    const planned = await plannedBetween(q, from, to);
+    const planned = await plannedOpen(q, from, to, tzOf(qs));
     return { workouts, activities, planned };
   });
 }
