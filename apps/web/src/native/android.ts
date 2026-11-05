@@ -59,8 +59,12 @@ export function installAndroidBridge() {
   // a tap on an ongoing notification that names a page (the interval timer's) opens that page
   P("MotusWorkout")?.addListener?.("open", ({ path }: { path?: string }) => { if (typeof path === "string" && path.startsWith("/")) void router.push(path); });
   // the page runs behind clear status and navigation bars (MotusBarsPlugin), so its own background shows under the
-  // clock; it pads itself by the bars' heights (--nst / --nsb, used by --st / --sb in tokens.css)
-  const pad = ({ top, bottom }: { top: number; bottom: number }) => { const r = document.documentElement.style; r.setProperty("--nst", top + "px"); r.setProperty("--nsb", bottom + "px"); };
+  // clock and beside a side bar; it pads itself by the bars' sizes (--nst / --nsb / --nsl / --nsr, used by --st / --sb /
+  // --sl / --sr in tokens.css)
+  const pad = ({ top, bottom, left = 0, right = 0 }: { top: number; bottom: number; left?: number; right?: number }) => {
+    const r = document.documentElement.style;
+    r.setProperty("--nst", top + "px"); r.setProperty("--nsb", bottom + "px"); r.setProperty("--nsl", left + "px"); r.setProperty("--nsr", right + "px");
+  };
   P("MotusBars")?.addListener?.("insets", pad);
   P("MotusBars")?.insets?.().then(pad, () => {});
   // the clock and icons follow the look, dark or light (theme.ts calls motusApp.setBars); phones before Android 6 also

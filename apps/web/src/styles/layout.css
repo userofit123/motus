@@ -1,7 +1,8 @@
 /* The app frame from Money Manager: the rail, its gliding highlight, main, the + button. */
+/* --st / --sb / --sl / --sr: room for the Android app's bars (0 on the web and the desktop app) */
 nav {
   width: 88px;
-  padding: 18px 0 12px;
+  padding: calc(18px + var(--st)) 0 calc(12px + var(--sb));
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -194,7 +195,7 @@ main {
   width: 100%;
   max-width: 1320px;
   margin: 0 auto;
-  padding: 24px 32px 90px;
+  padding: calc(24px + var(--st)) 32px calc(90px + var(--sb));
   min-width: 0;
 }
 
@@ -207,8 +208,8 @@ header {
 }
 .fab {
   position: fixed;
-  right: 22px; /* fixed side */
-  bottom: 22px;
+  right: calc(22px + var(--sr)); /* fixed side */
+  bottom: calc(22px + var(--sb));
   z-index: 40;
   width: 58px;
   height: 58px;

@@ -20,14 +20,14 @@ import com.getcapacitor.annotation.CapacitorPlugin;
  * The page runs behind clear status and navigation bars, so its background (with the look's glow at the top)
  * continues under the clock, the same as Money Manager. A flat bar colour can't do that: it would always be the
  * page's plain base colour, darker than the glowing top. The page pads itself by the bars' heights, which we hand
- * it as --nst / --nsb (see tokens.css), because older WebViews report no safe-area insets.
+ * it as --nst / --nsb / --nsl / --nsr (see tokens.css), because older WebViews report no safe-area insets.
  * The clock and icons switch between dark and light with the look (the page tells us; see theme.ts).
  * Phones before Android 6 can't show dark status-bar icons, so they keep the bars coloured and the page below them.
  */
 @CapacitorPlugin(name = "MotusBars")
 public class MotusBarsPlugin extends Plugin {
     private static final boolean EDGE = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M;
-    private int top, bottom;
+    private int top, bottom, left, right;
 
     @Override
     public void load() {
@@ -43,17 +43,21 @@ public class MotusBarsPlugin extends Plugin {
             Insets bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout());
             Insets ime = insets.getInsets(WindowInsetsCompat.Type.ime());
             boolean typing = insets.isVisible(WindowInsetsCompat.Type.ime());
-            // the keyboard and side bars (landscape) shrink the page itself; the top and bottom bars are the page's to pad
+            // only the keyboard shrinks the page; every bar, the side ones in landscape too, is the page's to pad, so its
+            // background fills the strip beside a side navigation bar instead of the window's plain colour showing there
             ViewGroup.MarginLayoutParams lp = (ViewGroup.MarginLayoutParams) v.getLayoutParams();
             int b = typing ? ime.bottom : 0;
-            if (lp.leftMargin != bars.left || lp.rightMargin != bars.right || lp.bottomMargin != b) {
-                lp.setMargins(bars.left, 0, bars.right, b);
+            if (lp.leftMargin != 0 || lp.rightMargin != 0 || lp.bottomMargin != b) {
+                lp.setMargins(0, 0, 0, b);
                 v.setLayoutParams(lp);
             }
             float d = v.getResources().getDisplayMetrics().density;
             int t = Math.round(bars.top / d), bo = typing ? 0 : Math.round(bars.bottom / d);
-            if (t != top || bo != bottom) { top = t; bottom = bo; notifyListeners("insets", sizes()); }
-            return ViewCompat.onApplyWindowInsets(v, insets);
+            int l = Math.round(bars.left / d), r = Math.round(bars.right / d);
+            if (t != top || bo != bottom || l != left || r != right) { top = t; bottom = bo; left = l; right = r; notifyListeners("insets", sizes()); }
+            // newer WebViews turn the insets they get into env(safe-area-inset-*): take off the part the keyboard margin
+            // already covers, so the bottom padding doesn't stay at the navigation bar's height while typing
+            return ViewCompat.onApplyWindowInsets(v, b > 0 ? insets.inset(0, 0, 0, b) : insets);
         });
         ViewCompat.requestApplyInsets(web);
     }
@@ -62,10 +66,12 @@ public class MotusBarsPlugin extends Plugin {
         JSObject o = new JSObject();
         o.put("top", top);
         o.put("bottom", bottom);
+        o.put("left", left);
+        o.put("right", right);
         return o;
     }
 
-    /** The bars' heights in CSS pixels, for a page that has just loaded. */
+    /** The bars' sizes (top, bottom and the sides) in CSS pixels, for a page that has just loaded. */
     @PluginMethod
     public void insets(PluginCall call) { call.resolve(sizes()); }
 

@@ -34,6 +34,8 @@ hr.sep { border: 0; border-top: 1px solid var(--ol); margin: 14px 0; }
 /* ---------- page frame ---------- */
 /* dvh: the height actually visible; plain vh on a phone browser counts the hidden address bar too, so a short page
    would still scroll by that much */
+/* the sides leave room for a side navigation bar in the Android app's landscape; the page's background fills it */
+.shell, .pshell { padding-inline: var(--sl) var(--sr); }
 .shell { display: flex; width: 100%; min-height: 100vh; min-height: 100dvh; }
 .page { width: 100%; max-width: 1100px; margin: 0 auto; }
 .ph { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: calc(var(--spg) + 6px); }
@@ -200,20 +202,21 @@ html[data-mode="light"] .pr { color: #9a6d00; }
 @keyframes fi { from { opacity: 0; transform: translateY(4px); } }
 
 /* ---------- sheets: bottom sheet on the phone, centred window on a computer ---------- */
-.scr { position: fixed; inset: 0; overscroll-behavior: contain; z-index: 200; background: var(--scrim); display: flex; align-items: center; justify-content: center; padding: 24px; animation: fo .15s; }
+.scr { position: fixed; inset: 0; overscroll-behavior: contain; z-index: 200; background: var(--scrim); display: flex; align-items: center; justify-content: center; padding: calc(24px + var(--st)) calc(24px + var(--sr)) calc(24px + var(--sb)) calc(24px + var(--sl)); animation: fo .15s; }
 @keyframes fo { from { opacity: 0; } }
-.sht { background: var(--bg); border: 1px solid var(--ol); border-radius: var(--r-sheet); width: min(560px, 100%); max-height: calc(100vh - 48px); display: flex; flex-direction: column; box-shadow: var(--shadow-sheet); animation: su .22s var(--ease); overflow: hidden; }
+.sht { background: var(--bg); border: 1px solid var(--ol); border-radius: var(--r-sheet); width: min(560px, 100%); max-height: calc(100vh - 48px - var(--st) - var(--sb)); display: flex; flex-direction: column; box-shadow: var(--shadow-sheet); animation: su .22s var(--ease); overflow: hidden; }
 .sht.wide { width: min(860px, 100%); }
-.sht.full { width: min(1100px, 100%); height: calc(100vh - 48px); }
+.sht.full { width: min(1100px, 100%); height: calc(100vh - 48px - var(--st) - var(--sb)); }
 /* a sheet's sides follow the density like a card's (a little wider on a computer), so its content lines up with cards in it */
 .sht .sh_h { display: flex; align-items: center; gap: 10px; padding: 16px calc(var(--cpx) + 2px) 12px calc(var(--cpx) + 6px); flex: none; }
 .sht .sh_h b { font-size: 17px; font-weight: 600; flex: 1; letter-spacing: -.2px; }
 .sht .sh_b { padding: 4px calc(var(--cpx) + 6px) calc(var(--cpy) + 3px); overflow: auto; overscroll-behavior: contain; flex: 1; min-height: 0; }
 .sht .sh_f { padding: 12px calc(var(--cpx) + 6px) calc(16px + var(--sb)); border-top: 1px solid var(--ol); display: flex; gap: 10px; justify-content: flex-end; flex: none; }
 @keyframes su { from { transform: translateY(16px); opacity: 0; } }
-html.phone .scr { padding: 0; align-items: flex-end; }
-html.phone .sht { width: 100%; max-height: 92vh; border-radius: var(--r-sheet) var(--r-sheet) 0 0; border-bottom: 0; animation: up .26s var(--ease); }
-html.phone .sht.full { height: 92vh; }
+html.phone .scr { padding: 0 var(--sr) 0 var(--sl); align-items: flex-end; }
+/* never higher than just below the clock (the Android app's status bar, landscape or a tall cutout) */
+html.phone .sht { width: 100%; max-height: min(92vh, calc(100vh - var(--st) - 8px)); border-radius: var(--r-sheet) var(--r-sheet) 0 0; border-bottom: 0; animation: up .26s var(--ease); }
+html.phone .sht.full { height: min(92vh, calc(100vh - var(--st) - 8px)); }
 html.phone .sht .sh_h::before { content: ""; position: absolute; left: 50%; top: 7px; width: 36px; height: 4px; border-radius: 4px; background: var(--ol); transform: translateX(-50%); }
 html.phone .sht .sh_h { position: relative; padding-top: 22px; }
 html.phone .sht .sh_b { padding: 4px var(--cpx) calc(var(--cpy) + 3px); }
@@ -268,7 +271,7 @@ main { position: relative; }
 .mb-clock { display: flex; flex-direction: column; align-items: flex-end; flex: none; }
 .mb-clock b { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -.3px; line-height: 1.1; }
 .mb-clock span { font-size: 11px; opacity: .75; }
-html:not(.phone) .minibars:not(.strip-host) { position: fixed; z-index: 45; left: calc(88px + 50%); transform: translateX(-50%); bottom: 22px; min-width: 360px; }
+html:not(.phone) .minibars:not(.strip-host) { position: fixed; z-index: 45; left: calc(88px + 50%); transform: translateX(-50%); bottom: calc(22px + var(--sb)); min-width: 360px; }
 html:not(.phone)[data-nav="mini"] .minibars { left: calc(68px + 50%); }
 html.phone .minibar { margin: 8px 10px 0; box-shadow: none; }
 html.phone .minibars { gap: 0; }
@@ -301,7 +304,7 @@ html.phone { --tabh: 64px; }
 .pmain .ph .acts .btn { min-height: 38px; padding: 8px 16px; }
 .pmain .ph .acts .btn.lg { min-height: 44px; padding: 10px 20px; font-size: 15px; }
 /* the bottom dock: the running workout (when there is one) above the tabs, on one blurred background */
-.dock { position: fixed; left: 0; right: 0; bottom: 0; z-index: 50; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(16px) saturate(1.4); border-top: 1px solid var(--ol); }
+.dock { position: fixed; left: 0; right: 0; bottom: 0; padding-inline: var(--sl) var(--sr); z-index: 50; background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: blur(16px) saturate(1.4); border-top: 1px solid var(--ol); }
 .tabbar { display: grid; grid-template-columns: repeat(7, 1fr); align-items: center; height: calc(var(--tabh) + var(--sb)); padding: 0 4px var(--sb); }
 .tabbar button { border: 0; background: none; display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 10.5px; color: var(--tx2); padding: 4px 0; min-width: 0; cursor: pointer; }
 .tabbar button .ic { width: 44px; height: 30px; border-radius: 15px; display: grid; place-items: center; transition: background .2s; }
@@ -503,9 +506,9 @@ html:not(.phone) .chips.hscroll { margin-inline: 0; padding-inline: 0; flex-wrap
 /* a setting row with a control: the label keeps at least ~half the row, the control gives way */
 .li > .grow { min-width: 42%; }
 .li > select, .li > .fpick, .li > input:not([type=checkbox]) { flex: 0 1 auto; min-width: 0; max-width: 56%; }
-main.withbar { padding-bottom: 120px; }
-main.withbar2 { padding-bottom: 190px; }
-main.withbar3 { padding-bottom: 260px; }
+main.withbar { padding-bottom: calc(120px + var(--sb)); }
+main.withbar2 { padding-bottom: calc(190px + var(--sb)); }
+main.withbar3 { padding-bottom: calc(260px + var(--sb)); }
 /* inside a card, toggles line up with list rows */
 .card .tgl { padding-inline: 4px; }
 .rcard { display: flex; flex-direction: column; }
@@ -516,9 +519,9 @@ html.phone .tabs button { padding: 10px 11px; }
 .grid.g2.keep { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 
 /* offline: a small note at the top while the server can't be reached (shell/SyncPill.vue) */
-.syncpill { position: fixed; bottom: 24px; left: 112px; z-index: 150; display: flex; align-items: center; gap: 6px; padding: 6px 12px;
+.syncpill { position: fixed; bottom: calc(24px + var(--sb)); left: calc(112px + var(--sl)); z-index: 150; display: flex; align-items: center; gap: 6px; padding: 6px 12px;
   border-radius: 999px; background: var(--s2); border: 1px solid var(--ol); color: var(--tx2); font-size: 12.5px; box-shadow: var(--shadow-sheet); pointer-events: none; }
-html[data-nav="mini"]:not(.phone) .syncpill { left: 92px; }
+html[data-nav="mini"]:not(.phone) .syncpill { left: calc(92px + var(--sl)); }
 html.phone .syncpill { left: 50%; translate: -50% 0; bottom: calc(var(--tabh) + var(--sb) + 12px); white-space: nowrap; }
 html.phone .pshell.withbar .syncpill { bottom: calc(var(--tabh) + var(--sb) + 80px); }
 html.phone .pshell.withbar2 .syncpill { bottom: calc(var(--tabh) + var(--sb) + 132px); }
