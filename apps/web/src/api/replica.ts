@@ -137,14 +137,16 @@ export function schedule(ms = 400) {
 async function run() {
   if (running) { again = true; return; }
   running = true; sync.syncing = true;
-  const started = Date.now();
+  // when the request now in flight began: the grace counts from there, not from the start of a long sync
+  let tried = Date.now();
+  const call = <T = any>(method: string, path: string, body?: unknown) => { tried = Date.now(); return http<T>(method, path, body); };
   let changed = false, failed = 0;
   try {
     const meta = await R.replicaMeta(db);
     for (;;) {
       const out = await R.localChanges(db);
       if (!out.changes.length) break;
-      const res = await http("POST", "/sync/push", { device: meta.device, changes: out.changes });
+      const res = await call("POST", "/sync/push", { device: meta.device, changes: out.changes });
       await R.markSent(db, out.upTo);
       if (res.rejected.length) { await R.applyRemote(db, userId, res.rejected); changed = true; }
       // the server couldn't take some (they no longer fit its data): say so rather than lose them without a word
@@ -153,8 +155,8 @@ async function run() {
     const retry: any[] = [];
     for (;;) {
       const m = await R.replicaMeta(db);
-      const p = await http("GET", `/sync/pull?since=${m.cursor}&device=${encodeURIComponent(m.device)}`);
-      if (p.catalog !== m.catalog) { const cat = await http("GET", "/sync/catalog"); await R.loadCatalog(db, cat.stamp, cat.rows); changed = true; }
+      const p = await call("GET", `/sync/pull?since=${m.cursor}&device=${encodeURIComponent(m.device)}`);
+      if (p.catalog !== m.catalog) { const cat = await call("GET", "/sync/catalog"); await R.loadCatalog(db, cat.stamp, cat.rows); changed = true; }
       const r = await R.applyRemote(db, userId, p.changes, p.cursor);
       if (p.changes.length) changed = true;
       retry.push(...r.failed.map((f: any) => f.change));
@@ -165,8 +167,12 @@ async function run() {
     failingSince = 0;
     Object.assign(sync, { online: true, error: failed ? `${failed} change${failed === 1 ? "" : "s"} from this device didn't fit the server's data` : "", lastAt: Date.now() });
   } catch (e) {
-    if (e instanceof ApiError && e.status === 0) unreachable(started);
-    else sync.error = (e as Error).message;
+    if (e instanceof ApiError && e.status === 0) unreachable(tried);
+    else {
+      // the server answered (with an error), so it is reachable: a later network failure gets its own grace
+      failingSince = 0;
+      sync.error = (e as Error).message;
+    }
   } finally {
     sync.waiting = await R.waitingCount(db).catch(() => sync.waiting);
     noteUnsent(sync.waiting);
@@ -177,7 +183,7 @@ async function run() {
 }
 
 /** The server didn't answer (or the device says it has no network): Offline once that has lasted OFFLINE_GRACE. */
-function unreachable(since = Date.now()) {
+export function unreachable(since = Date.now()) {
   // in the background the pill isn't seen, and the failure may only be the phone holding back the network
   if (document.visibilityState !== "visible" || !sync.online) return;
   const now = Date.now();

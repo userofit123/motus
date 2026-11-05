@@ -3,7 +3,7 @@ import { reactive } from "vue";
 import { api, setOnUnauthorized, ApiError, server, usingHttp } from "../api/client";
 import { queryClient, invalidate } from "../api/live";
 import { readJson, writeJson } from "./prefs";
-import { startReplica, eraseReplica, sync, copyHasUnsent } from "../api/replica";
+import { startReplica, eraseReplica, sync, copyHasUnsent, unreachable } from "../api/replica";
 import { confirm } from "./ask";
 import { setToken } from "../native/accounts";
 
@@ -22,7 +22,7 @@ export async function loadSession() {
   const answer = api.get("/auth/status", undefined, saved ? undefined : { wait: 0 });
   const slow = () => new Promise<never>((_, no) => setTimeout(() => no(new ApiError(0, "No answer")), 5000));
   try { s = await (saved ? Promise.race([answer, slow()]) : answer); writeJson(KEY(), s.user ? s : null); }
-  catch (e) { if (e instanceof ApiError && e.status === 0) { s = saved; offline = true; sync.online = false; } }
+  catch (e) { if (e instanceof ApiError && e.status === 0) { s = saved; offline = true; if (navigator.onLine) unreachable(); else sync.online = false; } }
   if (s) Object.assign(session, { setupNeeded: s.setupNeeded, user: s.user, registration: s.registration, version: s.version, apiLevel: s.apiLevel });
   else session.user = null;
   // a server account works on a copy on this device (offline use); local accounts already are one
