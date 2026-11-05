@@ -10,6 +10,10 @@ import { watchRouter } from "./core/sheets";
 import { takeUrlAction } from "./workout/native";
 import type { RouteRecordNormalized } from "vue-router";
 
+// the one piece of the desktop app's window.motusNative (apps/desktop/src/preload.ts) this file uses
+interface DesktopBridge { onOpen?: (cb: (path: string) => void) => void }
+const desktopBridge = (): DesktopBridge | undefined => (globalThis as { motusNative?: DesktopBridge }).motusNative;
+
 // The browser lists only 250 loaded files by default, fewer than the app has; the list is handed to the service
 // worker below, so make room before the pages' code starts loading.
 performance.setResourceTimingBufferSize?.(2000);
@@ -20,7 +24,7 @@ startTheme();
 watchRouter(router);
 createApp(App).use(router).use(VueQueryPlugin, { queryClient }).mount("#app");
 // the desktop app asks for a page when its update notification is clicked (Android does this in native/android.ts)
-(globalThis as any).motusNative?.onOpen?.((path: string) => { if (typeof path === "string" && path.startsWith("/")) void router.push(path); });
+desktopBridge()?.onOpen?.((path) => { if (typeof path === "string" && path.startsWith("/")) void router.push(path); });
 // every row of tabs gets its gliding highlight without any code in the pages
 startSegSlide();
 startTabSlide();

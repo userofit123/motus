@@ -5,6 +5,7 @@ import { sheetIsOpen, closeTopSheet } from "../core/sheets";
 import { REPO, newer, fetchWithin } from "../core/releases";
 import { router } from "../router";
 import { applyTheme } from "../core/theme";
+import { notificationState, askNotificationPermission } from "../workout/native";
 
 const cap = () => (globalThis as any).Capacitor;
 const P = (n: string) => cap()?.Plugins?.[n];
@@ -47,6 +48,9 @@ export function installAndroidBridge() {
       // download the APK, check its SHA-256, then hand it to Android's installer (one tap to confirm, Android's rule)
       async download(onProgress: (p: number, bytes?: number) => void) {
         const l = await latestApk();
+        // Android 13+ shows the download's notification only once allowed: ask now if it was never asked (the workout
+        // flows ask the same way); a "no" changes nothing, the download runs without it
+        if ((await notificationState()) === "prompt") await askNotificationPermission();
         // p is the share done (0-1), or -1 when the size is unknown
         const h = await P("MotusUpdater").addListener("progress", ({ loaded, total }: { loaded: number; total: number }) => onProgress(total > 0 ? loaded / total : -1, loaded));
         let res;
@@ -55,6 +59,13 @@ export function installAndroidBridge() {
         staged = res.path;
       },
       async install() { if (staged) await P("MotusUpdater").install({ path: staged }); },
+      // an update downloaded before the app was last closed, still ready to install: its version, or null
+      async staged(): Promise<string | null> {
+        const r = await P("MotusUpdater")?.staged?.().catch(() => null);
+        if (!r?.path || !r.version) return null;
+        staged = r.path;
+        return r.version;
+      },
     },
   };
   // the hardware back button closes an open sheet, goes back in the app, and leaves it from the home page

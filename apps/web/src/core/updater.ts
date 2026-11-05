@@ -29,3 +29,8 @@ export const updater = reactive({
   },
 });
 nat()?.version?.().then((v: string) => (updater.appVersion = v)).catch?.(() => {});
+// a download that finished before the app was closed (Android keeps the file and remembers it): offer Install, not
+// another download, as the "ready to install" notification promises
+nat()?.staged?.().then((v: string | null) => {
+  if (v && !updater.ready && !updater.downloading) { updater.ready = true; updater.status = "Ready to install"; }
+}).catch?.(() => {});

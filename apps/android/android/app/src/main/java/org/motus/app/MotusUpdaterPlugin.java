@@ -5,6 +5,8 @@ import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
+import android.content.pm.PackageInfo;
 import android.net.Uri;
 import android.os.Build;
 import android.provider.Settings;
@@ -27,7 +29,8 @@ import java.security.MessageDigest;
  * In-app updates from GitHub Releases: downloads the new APK into the app's cache, checks its SHA-256 against the
  * release's android-latest.json, and hands it to Android's installer (which always asks the person to confirm).
  * While it downloads, a notification shows how far it is (so leaving the app doesn't hide it), then that it's ready or
- * that it failed; a tap opens Settings, App & Versions, where Install is.
+ * that it failed; a tap opens Settings, App & Versions, where Install is. The downloaded file is remembered here (not
+ * only in the page), so after Android closes the app that page still offers Install instead of downloading again.
  */
 @CapacitorPlugin(name = "MotusUpdater")
 public class MotusUpdaterPlugin extends Plugin {
@@ -35,6 +38,50 @@ public class MotusUpdaterPlugin extends Plugin {
     // importance: a progress bar that changes every second must not sound or pop up
     private static final String CHANNEL = "updates";
     private static final int ID = 7005;
+    // the file that's ready and its version, kept across the app being closed (see staged())
+    private static final String PREFS = "motus-updater", K_PATH = "path", K_VERSION = "version";
+    // a download is running; set false when the app is closed so the download stops instead of carrying on unseen
+    private volatile boolean downloading = false;
+
+    // The app is closed (swiped away) mid-download: the download stops with it, so its ongoing notification would stay
+    // forever with a bar that never moves. It goes, and the partial file is thrown away by the download itself.
+    @Override
+    protected void handleOnDestroy() {
+        if (downloading) {
+            downloading = false;
+            NotificationManagerCompat.from(getContext()).cancel(ID);
+        }
+        super.handleOnDestroy();
+    }
+
+    private SharedPreferences prefs() { return getContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE); }
+
+    private String installedVersion() {
+        try { return getContext().getPackageManager().getPackageInfo(getContext().getPackageName(), 0).versionName; }
+        catch (Exception e) { return null; }
+    }
+
+    /** The update downloaded earlier, if it's still there, is really that version, and isn't the one installed now:
+     *  {path, version}, or nothing. Anything else is forgotten (and its file deleted). */
+    @PluginMethod
+    public void staged(PluginCall call) {
+        SharedPreferences sp = prefs();
+        String path = sp.getString(K_PATH, null), version = sp.getString(K_VERSION, null);
+        JSObject r = new JSObject();
+        if (path != null && version != null) {
+            File f = new File(path);
+            PackageInfo pi = f.isFile() ? getContext().getPackageManager().getPackageArchiveInfo(path, 0) : null;
+            if (pi != null && version.equals(pi.versionName) && getContext().getPackageName().equals(pi.packageName) && !version.equals(installedVersion())) {
+                r.put("path", path);
+                r.put("version", version);
+                call.resolve(r);
+                return;
+            }
+            f.delete();
+        }
+        sp.edit().clear().apply();
+        call.resolve(r);
+    }
 
     private void channel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -64,7 +111,9 @@ public class MotusUpdaterPlugin extends Plugin {
             .setShowWhen(false)
             .setCategory(NotificationCompat.CATEGORY_PROGRESS)
             .setContentIntent(pi);
-        if (busy) b.setProgress(100, Math.max(0, pct), pct < 0);
+        // while it runs, it also goes by itself if nothing updates it for two minutes: if Android ends the app without
+        // warning (no handleOnDestroy), nothing is left behind claiming a download that stopped
+        if (busy) b.setProgress(100, Math.max(0, pct), pct < 0).setTimeoutAfter(120_000);
         try { NotificationManagerCompat.from(getContext()).notify(ID, b.build()); } catch (SecurityException e) { /* notifications not allowed */ }
     }
 
@@ -74,19 +123,29 @@ public class MotusUpdaterPlugin extends Plugin {
         String sha = call.getString("sha256");
         if (url == null) { call.reject("No download address"); return; }
         channel();
-        String title = "Downloading Motus " + call.getString("version", "");
-        notice(title.trim(), "Starting", -1, true);
+        String version = call.getString("version", "");
+        String title = ("Downloading Motus " + version).trim();
+        if (downloading) { call.reject("Already downloading"); return; }
+        downloading = true;
+        // the file about to be overwritten is no longer the ready one
+        prefs().edit().clear().apply();
+        notice(title, "Starting", -1, true);
         new Thread(() -> {
+            File out = new File(getContext().getCacheDir(), "motus-update.apk");
             try {
-                File out = new File(getContext().getCacheDir(), "motus-update.apk");
                 HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
                 c.setInstanceFollowRedirects(true);
+                // a connection that goes quiet fails the download instead of leaving it (and its notification) hanging
+                c.setConnectTimeout(30_000);
+                c.setReadTimeout(60_000);
                 MessageDigest md = MessageDigest.getInstance("SHA-256");
                 try (InputStream in = c.getInputStream(); FileOutputStream fo = new FileOutputStream(out)) {
                     byte[] buf = new byte[65536];
                     int n;
                     long total = c.getContentLengthLong(), done = 0, last = 0, lastNotice = 0;
                     while ((n = in.read(buf)) > 0) {
+                        // the app was closed: stop here (handleOnDestroy already took the notification away)
+                        if (!downloading) throw new InterruptedException("closed");
                         fo.write(buf, 0, n); md.update(buf, 0, n); done += n;
                         // tell the page how far it is, at most four times a second
                         long now = System.currentTimeMillis();
@@ -97,10 +156,10 @@ public class MotusUpdaterPlugin extends Plugin {
                             notifyListeners("progress", p);
                         }
                         // the notification once a second: Android drops updates that come faster
-                        if (now - lastNotice >= 1000) {
+                        if (downloading && now - lastNotice >= 1000) {
                             lastNotice = now;
-                            if (total > 0) { int pct = (int) (done * 100 / total); notice(title.trim(), pct + "%", pct, true); }
-                            else notice(title.trim(), String.format(java.util.Locale.ROOT, "%.1f MB", done / 1e6), -1, true);
+                            if (total > 0) { int pct = (int) (done * 100 / total); notice(title, pct + "%", pct, true); }
+                            else notice(title, String.format(java.util.Locale.ROOT, "%.1f MB", done / 1e6), -1, true);
                         }
                     }
                 }
@@ -108,16 +167,25 @@ public class MotusUpdaterPlugin extends Plugin {
                 for (byte b : md.digest()) hex.append(String.format("%02x", b));
                 if (sha != null && !sha.isEmpty() && !sha.equalsIgnoreCase(hex.toString())) {
                     out.delete();
+                    downloading = false;
                     notice("Update failed", "The download was damaged. Tap to try again.", 0, false);
                     call.reject("The download was damaged. Try again.");
                     return;
                 }
                 JSObject r = new JSObject();
                 r.put("path", out.getAbsolutePath());
+                prefs().edit().putString(K_PATH, out.getAbsolutePath()).putString(K_VERSION, version).apply();
+                downloading = false;
                 notice("Update ready to install", "Tap to open App & Versions, then Install", 0, false);
                 call.resolve(r);
+            } catch (InterruptedException e) {
+                out.delete();
+                call.reject("The app was closed during the download");
             } catch (Exception e) {
-                notice("Update failed", "The download didn't finish. Tap to try again.", 0, false);
+                out.delete();
+                boolean shown = downloading; // false: the app was closed and the notification is already gone
+                downloading = false;
+                if (shown) notice("Update failed", "The download didn't finish. Tap to try again.", 0, false);
                 call.reject("Download failed: " + e.getMessage());
             }
         }).start();
@@ -141,6 +209,8 @@ public class MotusUpdaterPlugin extends Plugin {
         i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
         getContext().startActivity(i);
         NotificationManagerCompat.from(getContext()).cancel(ID); // done with: Android's installer takes over
+        // the file stays remembered: if the person backs out of Android's installer, Install still works next time;
+        // once the new version runs, staged() sees it's installed and forgets it
         call.resolve();
     }
 }

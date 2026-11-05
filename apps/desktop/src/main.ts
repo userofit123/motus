@@ -186,9 +186,10 @@ ipcMain.handle("backup:open", () => shell.openPath(backupDir()));
 // ----- updates from GitHub Releases -----
 autoUpdater.autoDownload = false;
 autoUpdater.autoInstallOnAppQuit = true;
-// the download also shows on the taskbar / dock icon (a value above 1 is a moving bar, for an unknown size; -1 clears it)
+// the download also shows on the taskbar / dock icon. With the size unknown, a value above 1 is a moving bar only on
+// Windows; macOS and Linux would draw it full, as if done, so there it stays off until the size is known (-1 clears it)
 autoUpdater.on("download-progress", (p) => {
-  win?.setProgressBar(p.total > 0 ? p.percent / 100 : 2);
+  win?.setProgressBar(p.total > 0 ? p.percent / 100 : process.platform === "win32" ? 2 : -1);
   win?.webContents.send("update:progress", p.total > 0 ? p.percent / 100 : -1, p.transferred);
 });
 // held here: a notification that is garbage-collected loses its click
