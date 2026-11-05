@@ -24,7 +24,7 @@ export const ICONS: Record<string, string> = {
   left: "M15 18l-6-6 6-6",
   right: "M9 18l6-6-6-6",
   expand: "M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7",
-  shrink: "M14 10l7-7M21 8V3h-5M10 14l-7 7M3 16v5h5",
+  shrink: "M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7",
   down: "M6 9l6 6 6-6",
   up: "M18 15l-6-6-6 6",
   timer: "M12 21a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM12 9v4l2.5 2.5M9 2h6",
