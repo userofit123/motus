@@ -477,8 +477,8 @@ html.phone .cal .dots i.plan { background: none; border: 1px solid var(--ec, var
 html.phone .map { height: 240px; }
 .mapw { position: relative; }
 .mapbig { position: absolute; top: 10px; right: 10px; z-index: 500; background: var(--s1); }
-/* enlarged: edge to edge past the page's side padding (32px, 16px on the phone), about a screen tall, square corners; it stays in the page flow so everything below moves down */
-.mapw.big { margin-inline: -32px; }
+/* enlarged: edge to edge - on the computer from the rail to the window's edge (RouteMap measures --mbl/--mbr, since the page is capped and centred), 16px past the phone's padding, about a screen tall, square corners; it stays in the page flow so everything below moves down */
+.mapw.big { margin-inline: var(--mbl, -32px) var(--mbr, -32px); }
 html.phone .mapw.big { margin-inline: -16px; }
 .mapw.big .map, html.phone .mapw.big .map { height: calc(100dvh - var(--st) - var(--sb) - var(--tabh, 0px) - 72px); border-radius: 0; }
 /* the map keeps its own layers (z-index 400-1000) inside itself, so sheets, menus and the + popup stay above it */

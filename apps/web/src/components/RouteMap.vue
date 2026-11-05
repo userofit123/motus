@@ -9,6 +9,7 @@ import "leaflet/dist/leaflet.css";
 const props = defineProps<{ route: number[][]; follow?: boolean; here?: { lat: number; lon: number; acc: number } | null }>();
 const el = ref<HTMLElement | null>(null);
 const big = ref(false);
+const wrap = ref<HTMLElement | null>(null);
 let map: L.Map | null = null, line: L.Polyline | null = null, dot: L.CircleMarker | null = null, ring: L.Circle | null = null, centred = false;
 const color = () => getComputedStyle(document.documentElement).getPropertyValue("--route").trim() || "#d32f2f";
 function draw() {
@@ -41,19 +42,31 @@ onMounted(() => {
   draw();
 });
 // Enlarging changes the box, so the map re-measures and keeps the whole route (or you) in view
+// On the computer the page is centred and capped, so the enlarged map's side margins are measured: from the rail's edge to the window's edge
+function fit() {
+  const w = wrap.value, host = w?.parentElement, nav = document.querySelector("nav"), shell = w?.closest(".shell");
+  if (!w || !host || !nav || !shell) { w?.style.removeProperty("--mbl"); w?.style.removeProperty("--mbr"); return; }
+  const h = host.getBoundingClientRect(), sh = shell.getBoundingClientRect();
+  const right = sh.right - parseFloat(getComputedStyle(shell).paddingRight);
+  w.style.setProperty("--mbl", `${nav.getBoundingClientRect().right - h.left}px`);
+  w.style.setProperty("--mbr", `${h.right - right}px`);
+}
+function refit() { if (big.value) { fit(); map?.invalidateSize(); } }
 async function toggle() {
   big.value = !big.value;
+  if (big.value) fit();
   await nextTick();
   map?.invalidateSize();
   draw();
 }
 watch(() => props.route.length, draw);
 watch(() => props.here, () => drawHere(!props.route.length));
-onBeforeUnmount(() => map?.remove());
+onMounted(() => window.addEventListener("resize", refit));
+onBeforeUnmount(() => { window.removeEventListener("resize", refit); map?.remove(); });
 </script>
 
 <template>
-  <div class="mapw" :class="{ big }">
+  <div ref="wrap" class="mapw" :class="{ big }">
     <div ref="el" class="map" />
     <button class="ib sm mapbig" :aria-label="big ? 'Shrink map' : 'Enlarge map'" @click="toggle"><Icon :name="big ? 'shrink' : 'expand'" :size="18" /></button>
   </div>
