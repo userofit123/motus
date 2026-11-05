@@ -45,8 +45,9 @@
   --scrim: #0007;
   --ease: cubic-bezier(.2, .8, .2, 1);
   --t-slide: .25s;
-  --sb: env(safe-area-inset-bottom, 0px);
-  --st: env(safe-area-inset-top, 0px);
+  /* the Android app hands the bars' heights over as --nst / --nsb (older WebViews report no safe area) */
+  --sb: max(env(safe-area-inset-bottom, 0px), var(--nsb, 0px));
+  --st: max(env(safe-area-inset-top, 0px), var(--nst, 0px));
 }
 
 @media (prefers-color-scheme: dark) {

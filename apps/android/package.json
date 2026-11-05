@@ -5,15 +5,14 @@
     "sync": "node prepare-web.mjs && cap sync android"
   },
   "dependencies": {
+    "@capacitor-community/background-geolocation": "1.2.17",
+    "@capacitor-community/keep-awake": "5.0.1",
     "@capacitor/android": "6.2.0",
     "@capacitor/app": "6.0.2",
     "@capacitor/core": "6.2.0",
     "@capacitor/filesystem": "6.0.2",
     "@capacitor/haptics": "6.0.2",
-    "@capacitor/local-notifications": "6.1.1",
-    "@capacitor/status-bar": "6.0.2",
-    "@capacitor-community/keep-awake": "5.0.1",
-    "@capacitor-community/background-geolocation": "1.2.17"
+    "@capacitor/local-notifications": "6.1.1"
   },
   "devDependencies": {
     "@capacitor/cli": "6.2.0"
