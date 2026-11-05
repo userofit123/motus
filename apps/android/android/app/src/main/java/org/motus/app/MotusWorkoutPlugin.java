@@ -53,6 +53,8 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener {
     // the recording's notification while a route is recorded, so the location service can be started again if it
     // couldn't be when asked (location not yet allowed, the permission question still on screen)
     private static volatile Notification recNotice;
+    // the recording's notification as last shown (with or without the service), put back when it's swiped away
+    private static volatile Notification recShown;
     // a button's tap, as a broadcast only this app can send and receive
     private static final String ACTION = "org.motus.app.NOTICE_ACTION";
     private static final String EXTRA_ACTION = "motusAction";
@@ -317,11 +319,13 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener {
             .setSilent(true)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setCategory(NotificationCompat.CATEGORY_STOPWATCH)
-            .setContentIntent(pi);
+            .setContentIntent(pi)
+            .setDeleteIntent(PendingIntent.getBroadcast(getContext(), 0, new Intent(getContext(), RecordingSwiped.class), PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT));
         if (since != null) b.setWhen(since).setUsesChronometer(true).setShowWhen(true);
         else b.setShowWhen(false);
         addActions(b, call, 40);
         Notification n = b.build();
+        recShown = n;
         if (call.getBoolean("keepAlive", false)) {
             recNotice = n;
             if (RecordingService.start(getContext(), n)) { call.resolve(); return; }
@@ -341,8 +345,23 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener {
 
     private void stopRecordingService() {
         recNotice = null;
+        recShown = null;
         RecordingService.stop(getContext(), false);
         NotificationManagerCompat.from(getContext()).cancel(REC_ID);
+    }
+
+    /** The recording's notification swiped away. Android 14+ lets ongoing notifications, even a foreground service's, be
+     *  swiped away (not on the lock screen, not with "Clear all"); the service and the recording go on regardless, but
+     *  without it there'd be no way back to the walk or its Pause from the shade, so it is put straight back. Not once the
+     *  recording has ended (recShown cleared; the app's own cancel doesn't come here anyway) or the app is gone. */
+    public static class RecordingSwiped extends BroadcastReceiver {
+        @Override
+        public void onReceive(Context ctx, Intent intent) {
+            Notification n = recShown;
+            if (!live || n == null) return;
+            // with the service running, the same id is its notification again (posting it doesn't start anything)
+            try { NotificationManagerCompat.from(ctx).notify(REC_ID, n); } catch (SecurityException e) { /* notifications not allowed */ }
+        }
     }
 
     // The location service couldn't start when the route did (the permission question was on screen): on coming back to

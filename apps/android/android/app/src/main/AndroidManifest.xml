@@ -28,6 +28,8 @@
 
         <!-- the interval timer's changes while the app is in the background (MotusWorkoutPlugin.TimerCue) -->
         <receiver android:name=".MotusWorkoutPlugin$TimerCue" android:exported="false" />
+        <!-- puts the recording's notification back when it is swiped away (Android 14+ allows that even for ongoing ones) -->
+        <receiver android:name=".MotusWorkoutPlugin$RecordingSwiped" android:exported="false" />
 
         <!-- keeps a walk's route and steps recording with the screen off; its notification is the recording's own (RecordingService) -->
         <service android:name=".RecordingService" android:exported="false" android:foregroundServiceType="location|health" />
