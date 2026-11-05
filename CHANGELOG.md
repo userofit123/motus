@@ -2,6 +2,20 @@
 
 The top entry's version is the one the release workflow publishes. Add a new `## [x.y.z]` section to release.
 
+## [0.1.5] - 2026-11-05
+
+- 
+
+## [0.1.5] - 2026-11-05
+
+- Routes are drawn in red, and a button on the map enlarges it to full width and nearly full screen height.
+- A walk shows one notification instead of two, and that notification keeps the route recording with the screen off.
+- Switching to another app and back no longer flashes Offline; it only shows when the server stays unreachable for a few seconds.
+- Steps from recorded walks count toward the day's steps on Home, in step goals and in Stats; the steps box keeps what you typed and shows the steps from activities below it.
+- Weekly targets count activities for people who log activities, not only gym workouts.
+- A planned walk or other activity leaves the calendar and Up next once you record one of that type that day.
+- The Appearance panel and the ⋮ menus keep the page behind them still, and on the phone pulling the panel down closes it.
+
 ## [0.1.4] - 2026-11-05
 
 - Steps start counting within a step or two instead of after about twenty, in the Android app and the web app; distance, moving time, climb and steps covered while paused no longer count, and a new walk starts its steps from zero.
