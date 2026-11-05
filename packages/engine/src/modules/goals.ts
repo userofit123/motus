@@ -5,7 +5,7 @@
 import { e1rm, GROUPS, LIFTED_SQL, withDefaults, bodyMeasure, bodyUnit, bodyGoalDirection, goalDaysOf, orderGoals, type Goal, type GoalProgress, type Settings } from "@motus/shared";
 import type { Router, Ctx } from "../router";
 import type { Sql } from "../db";
-import { camel, id, str, numOrNull, oneOf, dateStr } from "../util";
+import { camel, id, str, numOrNull, oneOf, dateStr, startOfDay, tzOf } from "../util";
 import { uuidv7 } from "../ids";
 import { notFound, bad } from "../errors";
 import { getSettings } from "./settings";
@@ -14,10 +14,6 @@ import { currentStreak, dayIn, weekIn } from "./achievements";
 import { stepsByDay } from "./activities";
 
 const DAY = 86400000;
-/** The instant a calendar day (YYYY-MM-DD) starts for an app tzMin minutes behind UTC. */
-const startOfDay = (day: string, tzMin: number) => new Date(new Date(day + "T00:00:00Z").getTime() + tzMin * 60000);
-/** The app's offset: the one it sends, else (an older app) the process's, which is the device's own on the device. */
-export const tzOf = (qs: Record<string, string>) => (qs.tz != null && qs.tz !== "" && Number.isFinite(Number(qs.tz)) ? Number(qs.tz) : new Date().getTimezoneOffset());
 
 interface Window { from: string; to: string; fromDay: string; toDay: string }
 /** A daily goal's days as stored: null (every day), "workdays", or the chosen days of the week, as JSON. */

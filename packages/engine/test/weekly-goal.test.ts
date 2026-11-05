@@ -4,6 +4,7 @@ import { describe, it, expect, beforeAll } from "vitest";
 import { createEngine, type Engine } from "../src/index";
 import { pgliteDb } from "../src/adapters/pglite";
 import { uuidv7 } from "../src/ids";
+import { migrate } from "../src/migrate";
 
 let eng: Engine, U: string;
 let NOW = new Date("2026-10-07T10:00:00Z"); // a Wednesday
@@ -50,6 +51,35 @@ describe("starting goals", () => {
     const [wt] = await as("GET", "/goals");
     expect(wt).toMatchObject({ title: "Weekly target", metric: "sessions", scopeId: null });
     expect(wt.progress.current).toBe(1);
+  });
+
+  it("switches a Weekly target seeded gym-only before to everything for someone with only activities (migration 010)", async () => {
+    // seeded the old way: the goal counts gym workouts whatever the person had logged
+    const seedOld = async (name: string, settings: object, log: (as: (m: string, p: string, b?: unknown) => Promise<any>) => Promise<unknown>) => {
+      const P = uuidv7();
+      await eng.db.admin.query("INSERT INTO users (id, username, display_name) VALUES ($1,$2,$2)", [P, name]);
+      await eng.db.admin.query("INSERT INTO user_settings (user_id, data) VALUES ($1, $2)", [P, JSON.stringify({ goalsSeeded: true, ...settings })]);
+      await eng.db.admin.query(`INSERT INTO goals (id, user_id, title, scope, scope_id, metric, comparator, target, period)
+        VALUES (md5($1::text || ':weekly-target')::uuid, $1::uuid, 'Weekly target', 'activity', 'workout', 'sessions', '>=', 1, 'week')`, [P]);
+      const as = async (method: string, path: string, body?: unknown) => (await eng.handle({ method, path, body, query: { tz: "0" }, userId: P })).body as any;
+      await log(as);
+      return as;
+    };
+    const walker = await seedOld("oldwalker", {}, (as) => as("POST", "/activities", { type: "walk", startedAt: "2026-10-06T18:00:00Z", durationS: 1200 }));
+    const lifter = await seedOld("oldlifter", {}, async (as) => {
+      await as("POST", "/activities", { type: "walk", startedAt: "2026-10-06T18:00:00Z", durationS: 1200 });
+      await as("POST", "/workouts/log", { startedAt: "2026-10-06T08:00:00Z", durationS: 1800, exercises: [], name: "Gym" });
+    });
+    const setNumber = await seedOld("oldnumber", { weeklyGoal: 3 }, (as) => as("POST", "/activities", { type: "walk", startedAt: "2026-10-06T18:00:00Z", durationS: 1200 }));
+    const idle = await seedOld("oldidle", {}, async () => undefined);
+    await eng.db.admin.query("DELETE FROM schema_migrations WHERE name = '010_weekly_target_scope'");
+    expect(await migrate(eng.db)).toEqual(["010_weekly_target_scope"]);
+    const [w] = await walker("GET", "/goals");
+    expect(w.scopeId).toBeNull();
+    expect(w.progress.current).toBe(1);
+    expect((await lifter("GET", "/goals"))[0].scopeId).toBe("workout");
+    expect((await setNumber("GET", "/goals"))[0].scopeId).toBe("workout");
+    expect((await idle("GET", "/goals"))[0].scopeId).toBe("workout");
   });
 });
 

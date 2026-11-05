@@ -197,7 +197,11 @@ describe("goals on the app's calendar", () => {
     await call("POST", "/activities", { type: "walk", startedAt: "2026-10-07T22:20:00Z", durationS: 300, steps: 500 });
     expect((await call("GET", `/goals/${day.id}`, undefined, { tz: AHEAD })).progress.current).toBe(2000);
     const daily = await call("GET", "/daily", undefined, { from: "2026-10-01", tz: AHEAD });
-    expect(daily.filter((x: any) => x.kind === "steps")).toMatchObject([{ date: "2026-10-08", value: 2000, source: "activities" }]);
+    expect(daily.filter((x: any) => x.kind === "steps")).toMatchObject([{ date: "2026-10-08", value: 2000, source: "activities", logged: null, walked: 2000 }]);
+    // a lower number typed in stays what the log box shows, while the day still counts the walks
+    await call("PUT", "/daily", { date: "2026-10-08", kind: "steps", value: 1200 });
+    expect((await call("GET", "/daily", undefined, { from: "2026-10-01", tz: AHEAD })).filter((x: any) => x.kind === "steps"))
+      .toMatchObject([{ date: "2026-10-08", value: 2000, logged: 1200, walked: 2000 }]);
     // the phone's count for the day already holds the walks: it wins, not 2000 on top
     await call("PUT", "/daily", { date: "2026-10-08", kind: "steps", value: 6000 });
     expect((await call("GET", `/goals/${day.id}`, undefined, { tz: AHEAD })).progress.current).toBe(6000);
