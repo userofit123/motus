@@ -975,7 +975,7 @@ tappable through to its source.
 | **Activities** | Activity types, GPS accuracy/battery mode, map tile source |
 | **Backup & Restore** | §9.2 |
 | **Export & Import** | §9.3, §9.4 |
-| **Updates** | Current version, check now, auto-check (on), **auto-download** (on/off), install on restart, release notes |
+| **Updates** | Current version, check now, auto-check (on; on start and every 6 h), **auto-download** (on/off, shown only with auto-check), only on Wi-Fi (shown only with auto-download), release notes |
 | **Accounts** (apps) | Account list (local and server accounts), add a local account, connect to a server, switch, remove; "keep offline data on device" for server accounts |
 | **Privacy & security** | App lock (biometric/PIN, Android), clear local cache |
 | **Admin** (admins only) | Users, registration mode, exercise catalog sync (wger), server backups, storage |
@@ -1210,8 +1210,9 @@ Triggered when `CHANGELOG.md` gets a new version on `main` (or manually):
      Manager gap)
 2. **Notify:** an "Update available: 1.4.0" banner with release notes. Settings → App & Versions has the
    switches.
-3. **Download:** automatic if **auto-download** is on (Wi-Fi only option), otherwise on tap. Progress
-   shown; resumes on failure.
+3. **Download:** automatic if **auto-download** is on (Wi-Fi only option: waits while
+   `ConnectivityManager.isActiveNetworkMetered()`, i.e. mobile data or a metered Wi-Fi), otherwise on tap.
+   Progress shown; resumes on failure.
 4. **Verify:** SHA-256 must match the manifest.
 5. **Install:**
    - fire the system installer via `FileProvider` + `ACTION_VIEW` / `PackageInstaller`
@@ -1225,9 +1226,10 @@ Triggered when `CHANGELOG.md` gets a new version on `main` (or manually):
 ### 12.4 Desktop updater
 
 electron-updater against GitHub Releases (Money Manager `desktop/main.js` lines ~294–352):
-- auto-check
-- **auto-download** following the setting
-- install on quit
+- auto-check (on start and every 6 h) following the setting; never on its own when it is off
+- **auto-download** following the setting; "Only on Wi-Fi" asks the system whether the connection is metered
+  (Windows: the network's cost; Linux: NetworkManager's Metered; macOS can't tell, so it counts as not metered)
+- never installs on quit: a download ends in "ready to install" and only Install installs it
 - a "Restart to update" button in the rail and tray
 - deferred during an active workout
 

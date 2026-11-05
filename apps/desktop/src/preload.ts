@@ -36,6 +36,7 @@ const api = {
     check: () => ipcRenderer.invoke("update:check"),
     download: (cb: (p: number, bytes?: number) => void) => { onProgress = cb; return ipcRenderer.invoke("update:download"); },
     install: () => ipcRenderer.invoke("update:install"),
+    metered: () => ipcRenderer.invoke("update:metered"),
   },
 };
 contextBridge.exposeInMainWorld("motusNative", api);

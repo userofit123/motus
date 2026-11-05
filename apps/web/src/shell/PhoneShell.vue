@@ -12,6 +12,9 @@ import { sheetIsOpen } from "../core/sheets";
 import { recording } from "../workout/recording";
 import { ivRunning } from "../workout/intervals";
 import { useWorkout } from "../workout/useWorkout";
+import { useAutoUpdate } from "../core/updater";
+// the apps check for (and, if chosen, download) updates on their own while someone is signed in
+useAutoUpdate();
 
 const route = useRoute(), router = useRouter();
 const cur = computed(() => section(route.name as string));

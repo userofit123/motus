@@ -9,6 +9,7 @@ import https from "node:https";
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
+import { execFile } from "node:child_process";
 
 interface Account { id: string; kind: "local" | "server"; name: string; url?: string; port?: number }
 const USER = app.getPath("userData");
@@ -184,8 +185,10 @@ ipcMain.handle("backup:save", (_e, name: string, bytes: Uint8Array, keep: number
 ipcMain.handle("backup:open", () => shell.openPath(backupDir()));
 
 // ----- updates from GitHub Releases -----
+// the screens decide when to check and download (Settings, App & Versions: automatic checks, downloads, Only on
+// Wi-Fi); a download only ever ends in "ready to install", and only the person's Install installs it, never a quit
 autoUpdater.autoDownload = false;
-autoUpdater.autoInstallOnAppQuit = true;
+autoUpdater.autoInstallOnAppQuit = false;
 // the download also shows on the taskbar / dock icon. With the size unknown, a value above 1 is a moving bar only on
 // Windows; macOS and Linux would draw it full, as if done, so there it stays off until the size is known (-1 clears it)
 autoUpdater.on("download-progress", (p) => {
@@ -212,6 +215,22 @@ ipcMain.handle("update:download", async () => {
   return true;
 });
 ipcMain.handle("update:install", () => autoUpdater.quitAndInstall());
+// whether the connection is metered, for Only on Wi-Fi: Windows knows it as the network's cost (a connection set as
+// metered, or mobile data), Linux through NetworkManager's own Metered (set or guessed, e.g. a phone's hotspot);
+// macOS can't be asked without native code, so there, like when the answer can't be had, it counts as not metered
+ipcMain.handle("update:metered", () => new Promise<boolean>((done) => {
+  const ask = (cmd: string, args: string[], metered: (out: string) => boolean) =>
+    execFile(cmd, args, { timeout: 8000, windowsHide: true }, (err, out) => done(!err && metered(String(out))));
+  if (process.platform === "win32") ask("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
+    "[void][Windows.Networking.Connectivity.NetworkInformation,Windows.Networking.Connectivity,ContentType=WindowsRuntime]; " +
+    "$p = [Windows.Networking.Connectivity.NetworkInformation]::GetInternetConnectionProfile(); if ($p) { $p.GetConnectionCost().NetworkCostType }"],
+    (out) => /Fixed|Variable/.test(out));
+  // NMMetered: 1 yes, 3 guessed yes (0 unknown, 2 no, 4 guessed no)
+  else if (process.platform === "linux") ask("gdbus", ["call", "--system", "--dest", "org.freedesktop.NetworkManager", "--object-path", "/org/freedesktop/NetworkManager",
+    "--method", "org.freedesktop.DBus.Properties.Get", "org.freedesktop.NetworkManager", "Metered"],
+    (out) => /uint32 [13]\b/.test(out));
+  else done(false);
+}));
 
 app.setAppUserModelId("org.motus.app");
 if (!app.requestSingleInstanceLock()) app.quit();
@@ -221,6 +240,5 @@ app.whenReady().then(async () => {
   const a = readAccounts();
   if (a.active && a.list.some((x) => x.id === a.active)) await openAccount(a.active).catch(() => showChooser());
   else showChooser();
-  setTimeout(() => autoUpdater.checkForUpdates().catch(() => {}), 15000);
 });
 app.on("window-all-closed", async () => { if (running) await running.close().catch(() => {}); app.quit(); });

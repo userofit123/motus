@@ -7,6 +7,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageInfo;
+import android.net.ConnectivityManager;
 import android.net.Uri;
 import android.os.Build;
 import android.provider.Settings;
@@ -70,6 +71,16 @@ public class MotusUpdaterPlugin extends Plugin {
     private long installedCode() {
         try { return code(getContext().getPackageManager().getPackageInfo(getContext().getPackageName(), 0)); }
         catch (Exception e) { return Long.MAX_VALUE; } // unknown: nothing counts as newer
+    }
+
+    /** Whether the connection now is metered (mobile data, or a Wi-Fi Android counts as metered, like a phone's
+     *  hotspot), for "Only on Wi-Fi": automatic downloads wait until it isn't. */
+    @PluginMethod
+    public void metered(PluginCall call) {
+        ConnectivityManager cm = (ConnectivityManager) getContext().getSystemService(Context.CONNECTIVITY_SERVICE);
+        JSObject r = new JSObject();
+        r.put("metered", cm != null && cm.isActiveNetworkMetered());
+        call.resolve(r);
     }
 
     /** The ready update is out of date (a newer release exists): its file is deleted and forgotten. Never while a

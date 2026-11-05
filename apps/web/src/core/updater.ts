@@ -1,6 +1,9 @@
 // In-app updates for the installed apps. The desktop app (Electron) and the Android app (Capacitor) each provide
 // window.motusNative.update; in a browser there is nothing to install (the page simply loads the new version).
-import { reactive } from "vue";
+import { reactive, watch, onBeforeUnmount } from "vue";
+import { useQueryClient } from "@tanstack/vue-query";
+import { useMe, useSettings } from "../api/queries";
+import { latestRelease, detectPlatform, newer } from "./releases";
 
 const nat = () => (globalThis as any).motusNative?.update;
 export const updater = reactive({
@@ -41,9 +44,70 @@ export const updater = reactive({
     try { nat()?.forget?.()?.catch?.(() => {}); } catch { /* nothing to delete */ }
   },
 });
-nat()?.version?.().then((v: string) => (updater.appVersion = v)).catch?.(() => {});
-// a download that finished before the app was closed (Android keeps the file and remembers it): offer Install, not
-// another download, as the "ready to install" notification promises
-nat()?.staged?.().then((v: string | null) => {
-  if (v && !updater.ready && !updater.downloading) { updater.ready = true; updater.stagedVersion = v; updater.status = `Ready to install ${v}`; }
-}).catch?.(() => {});
+// what the app knows from the start: its version, and a download that finished before the app was closed (Android
+// keeps the file and remembers it), which is offered as Install, not another download, as the "ready to install"
+// notification promises. Started on first use, not at import: the Android app's bridge appears only once the page runs.
+let started: Promise<unknown> | null = null;
+export function startUpdater(): Promise<unknown> {
+  const u = nat();
+  if (!u) return Promise.resolve();
+  return (started ??= Promise.all([
+    u.version?.().then((v: string) => (updater.appVersion = v)).catch?.(() => {}),
+    u.staged?.().then((v: string | null) => {
+      if (v && !updater.ready && !updater.downloading) { updater.ready = true; updater.stagedVersion = v; updater.status = `Ready to install ${v}`; }
+    }).catch?.(() => {}),
+  ]));
+}
+startUpdater();
+
+// Automatic updates in the apps (Settings, App & Versions). "Check for updates automatically": on start and then every
+// 6 hours (PLAN.md §12.3), never otherwise (only Check now). "Download updates automatically": what such a check finds is
+// downloaded in the background and left ready to install; installing is always the person's tap. "Only on Wi-Fi": that
+// download waits while the connection is metered (mobile data); the check itself is a few kilobytes and doesn't wait.
+const CHECK_EVERY = 6 * 3600_000;
+// how often to look whether a check is due or a waiting download can start (a phone back on Wi-Fi)
+const TICK = 15 * 60_000;
+let lastCheck = 0;
+// the newer version the last automatic check found and that isn't downloaded yet
+let pending = "";
+let busy = false;
+
+/** Runs the automatic checks and downloads while a signed-in screen is open; the shells call it. */
+export function useAutoUpdate() {
+  void startUpdater();
+  if (!detectPlatform().app) return;
+  const me = useMe(), s = useSettings(), qc = useQueryClient();
+  const tick = async () => {
+    const u = s.value.updates;
+    // until the person's settings have arrived, the defaults would speak for them
+    if (!me.data.value || !u.autoCheck || busy) return;
+    busy = true;
+    try {
+      await startUpdater();
+      if (Date.now() - lastCheck >= CHECK_EVERY) {
+        // the same answer App & Versions shows (its "Checked at" follows); a check that failed (offline) is tried
+        // again at the next look, not 6 hours later
+        const r = await qc.fetchQuery({ queryKey: ["static", "release"], queryFn: latestRelease, staleTime: 0 }).catch(() => null);
+        const v = r?.latest ?? "";
+        if (!v) return;
+        lastCheck = Date.now();
+        updater.latest = v;
+        pending = v && updater.appVersion && newer(v, updater.appVersion) && !(updater.ready && updater.stagedVersion === v) ? v : "";
+      }
+      if (!pending || !u.autoDownload || updater.downloading) return;
+      if (u.wifiOnly && (await nat()?.metered?.().catch(() => false))) return;
+      // a ready download of an older release gives way to the newer one
+      if (updater.ready && updater.stagedVersion !== pending) updater.forget();
+      pending = "";
+      if (!updater.ready) await updater.install();
+    } finally { busy = false; }
+  };
+  const run = () => { void tick(); };
+  const timer = setInterval(run, TICK);
+  const onShow = () => { if (document.visibilityState === "visible") run(); };
+  document.addEventListener("visibilitychange", onShow);
+  window.addEventListener("online", run);
+  // at the start (once the settings are in), and when a switch is turned on
+  watch(() => [!!me.data.value, s.value.updates.autoCheck, s.value.updates.autoDownload, s.value.updates.wifiOnly], run, { immediate: true });
+  onBeforeUnmount(() => { clearInterval(timer); document.removeEventListener("visibilitychange", onShow); window.removeEventListener("online", run); });
+}
