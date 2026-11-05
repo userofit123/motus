@@ -18,10 +18,12 @@ export function routeStats(route: number[][], breaks: number[] = []) {
   // a phone's GPS altitude wobbles a few metres from point to point; adding up every small rise would turn a flat walk
   // into a hill, so a climb counts once it's 5 m above the lowest point since the last one counted
   let low: number | null = null;
+  let seen = false; // any altitude at all, kept apart from `low` because a pause break resets `low`
   for (let i = 0; i < route.length; i++) {
     const b = route[i]!, alt = b[3];
     if (skip.has(i)) low = null; // what was climbed while paused doesn't count
     if (alt != null && Number.isFinite(alt)) {
+      seen = true;
       if (low == null || alt < low) low = alt;
       else if (alt - low >= 5) { climb += alt - low; low = alt; }
     }
@@ -33,5 +35,5 @@ export function routeStats(route: number[][], breaks: number[] = []) {
     if (dt > 0 && dt < 120 && d / dt > 0.3) moving += dt; // faster than ~1 km/h counts as moving
   }
   // no altitude anywhere on the route: the climb is unknown, not 0 m
-  return { distanceM: Math.round(dist), movingS: Math.round(moving), elevationM: low == null ? null : Math.round(climb) };
+  return { distanceM: Math.round(dist), movingS: Math.round(moving), elevationM: !seen ? null : Math.round(climb) };
 }
