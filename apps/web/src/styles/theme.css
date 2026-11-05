@@ -151,7 +151,7 @@ html[data-nav="mini"]:not(.phone) .syncb #sync {
 }
 
 html[data-nav="mini"]:not(.phone) .pop {
-  left: 80px; /* fixed side */
+  left: calc(80px + var(--sl)); /* fixed side */
 }
 
 html[data-nav="mini"]:not(.phone) .badge {

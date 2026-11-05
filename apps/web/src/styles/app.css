@@ -474,7 +474,7 @@ html.phone .map { height: 240px; }
 
 @media (max-width: 860px) { .ph .acts .btn:not(.keep) { display: none; } }
 /* on the phone the Appearance panel is a bottom sheet, over the tab bar like the other sheets */
-html.phone #pop { left: 0; right: 0; bottom: 0; width: auto; height: min(640px, 88vh); max-height: 88vh; z-index: 201; border-radius: var(--r-sheet) var(--r-sheet) 0 0; border-bottom: 0; padding-bottom: var(--sb); box-shadow: var(--shadow-sheet); }
+html.phone #pop { left: 0; right: 0; bottom: 0; width: auto; height: min(640px, 88vh); max-height: 88vh; z-index: 201; border-radius: var(--r-sheet) var(--r-sheet) 0 0; border-bottom: 0; padding-bottom: var(--sb); padding-inline: var(--sl) var(--sr); box-shadow: var(--shadow-sheet); }
 html.phone #pop.on { animation: up .26s var(--ease); }
 html.phone #pop.out { animation: down .2s var(--ease) forwards; }
 @keyframes down { to { transform: translateY(100%); } }
