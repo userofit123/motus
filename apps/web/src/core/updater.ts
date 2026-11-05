@@ -51,12 +51,17 @@ export const updater = reactive({
 // keeps the file and remembers it), which is offered as Install, not another download, as the "ready to install"
 // notification promises. Started on first use, not at import: the Android app's bridge appears only once the page runs.
 let started: Promise<unknown> | null = null;
+// whether the app can tell mobile data apart; asked again at every look until it can, because it can answer "unknown"
+// only because the network was down at that moment (Windows offline, NetworkManager not up yet)
+function askMetered(): Promise<unknown> {
+  return Promise.resolve(nat()?.metered?.()).then((m: { known?: boolean } | undefined) => (updater.canTellMetered = !!m?.known)).catch(() => {});
+}
 export function startUpdater(): Promise<unknown> {
   const u = nat();
   if (!u) return Promise.resolve();
   return (started ??= Promise.all([
     u.version?.().then((v: string) => (updater.appVersion = v)).catch?.(() => {}),
-    u.metered?.().then((m: { known?: boolean }) => (updater.canTellMetered = !!m?.known)).catch?.(() => {}),
+    askMetered(),
     u.staged?.().then((v: string | null) => {
       if (v && !updater.ready && !updater.downloading) { updater.ready = true; updater.stagedVersion = v; updater.status = `Ready to install ${v}`; }
     }).catch?.(() => {}),
@@ -91,13 +96,14 @@ export function useAutoUpdate() {
     busy = true;
     try {
       await startUpdater();
+      if (!updater.canTellMetered) await askMetered();
       if (Date.now() - lastCheck >= CHECK_EVERY && Date.now() - lastFail >= RETRY_GAP) {
         // the same answer App & Versions shows (its "Checked at" follows); a check that failed (offline) is tried
-        // again at the next look, not 6 hours later
+        // again after RETRY_GAP, not 6 hours later
         const r = await qc.fetchQuery({ queryKey: ["static", "release"], queryFn: latestRelease, staleTime: 0 }).catch(() => null);
         const v = r?.latest ?? "";
         if (!v) { lastFail = Date.now(); return; }
-        lastCheck = Date.now();
+        lastCheck = Date.now(); lastFail = 0;
         updater.latest = v;
         pending = updater.appVersion && newer(v, updater.appVersion) && !(updater.ready && updater.stagedVersion === v) ? v : "";
       }
@@ -107,7 +113,7 @@ export function useAutoUpdate() {
       if (updater.ready && updater.stagedVersion !== pending) updater.forget();
       // pending stays until the file is really downloaded, so a failed download is tried again (after the gap)
       if (!updater.ready) await updater.install();
-      if (updater.ready) pending = ""; else lastFail = Date.now();
+      if (updater.ready) { pending = ""; lastFail = 0; } else lastFail = Date.now();
     } finally { busy = false; }
   };
   const run = () => { void tick(); };
