@@ -2,7 +2,7 @@
 
 Both apps work on their own (a **local account**: everything stays on the device) or with your server
 (a **server account**: the data is on your Motus server; the app and the exercise photos stay on the device).
-Both kinds can be added side by side and switched in Settings → Accounts on this device.
+Both kinds can be added side by side and switched in Settings → Servers & accounts (on a phone: More → Servers & accounts). In a browser, the server is the site whose address you open.
 
 ## Install
 

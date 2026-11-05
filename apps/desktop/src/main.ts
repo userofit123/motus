@@ -162,8 +162,10 @@ ipcMain.handle("accounts:remove", async (_e, id: string) => {
   if (running?.id === id) { await running.close(); running = null; }
   if (acc.kind === "local") fs.rmSync(path.join(USER, "accounts", id), { recursive: true, force: true });
   await eSession.fromPartition(`persist:acct-${id}`).clearStorageData();
-  writeAccounts({ list: a.list.filter((x) => x.id !== id), active: null });
-  showChooser();
+  // removing another account from Settings keeps the open one open; only removing the open one goes back to the chooser
+  const wasOpen = a.active === id;
+  writeAccounts({ list: a.list.filter((x) => x.id !== id), active: wasOpen ? null : a.active });
+  if (wasOpen) showChooser();
 });
 ipcMain.handle("accounts:current", () => { const a = readAccounts(); return a.list.find((x) => x.id === a.active) ?? null; });
 

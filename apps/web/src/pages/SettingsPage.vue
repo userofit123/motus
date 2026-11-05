@@ -37,7 +37,8 @@ const sec = computed(() => String(route.params.section || (isPhone.value ? "" : 
 type Section = [key: string, name: string, icon: string, hint: string];
 const GROUPS = computed<[string, Section[]][]>(() => [
   ["You", [["account", "Account", "user", "Name, password, devices, sync"],
-    ...((globalThis as any).motusNative?.accounts ? [["accounts", "Accounts on this device", "layers", "Switch or add accounts"] as Section] : [])]],
+    // the apps keep several servers and on-device accounts; in a browser the server is the site, so this only names it
+    (globalThis as any).motusNative?.accounts ? ["accounts", "Servers & accounts", "server", "Switch, add or remove a server"] : ["accounts", "Server", "server", location.host]]],
   ["Training", [["workout", "Workout defaults", "dumbbell", "Rest times, timer, filling in sets"], ["activities", "Activity types", "walk", "Walk, run, ride and your own"], ["features", "Features", "sparkle", "Switch extras on or off"]]],
   ["App", [["units", "Units & formats", "scale", "kg or lb, dates, work week"], ["appearance", "Appearance", "palette", "Colours, style, layout"], ["notifications", "Notifications", "bell", "Planned workouts"]]],
   ["Your data", [["backup", "Backup & restore", "download", "A copy of everything"], ["data", "Export & import", "upload", "CSV, other apps"], ["log", "Activity log", "history", "Everything you changed"]]],

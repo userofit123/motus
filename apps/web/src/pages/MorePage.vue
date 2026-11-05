@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // The phone's "More" tab: you at the top, the pages that don't fit in the tab bar, quick logging, then the way into
 // Settings. Settings itself holds every option; this page only links to the few you reach for often.
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
 import { bodySheet, dailySheet, activitySheet, appearanceOpen } from "../core/ui";
 import { useSettings, useMe } from "../api/queries";
@@ -11,6 +11,10 @@ const s = useSettings();
 const me = useMe();
 const user = computed(() => me.data.value?.user);
 const initials = computed(() => (user.value?.displayName || user.value?.username || "?").split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join(""));
+// in the desktop and Android apps: which server or on-device account is open, one tap from switching (Settings → Servers & accounts)
+const nat = (globalThis as any).motusNative?.accounts;
+const where = ref<{ name: string; url?: string } | null>(null);
+nat?.current().then((a: { name: string; url?: string } | null) => { where.value = a; });
 const PAGES: [to: string, label: string, icon: string, hint: string][] = [
   ["/exercises", "Exercises", "dumbbell", "The library, and your own"], ["/body", "Body", "scale", "Weight, measurements, photos, about you"]];
 </script>
@@ -44,6 +48,7 @@ const PAGES: [to: string, label: string, icon: string, hint: string][] = [
     <div class="card flush">
       <!-- data-theme-open keeps the panel's outside-click from closing it again -->
       <div class="li click" data-theme-open @click="appearanceOpen = !appearanceOpen"><span class="bi sg"><Icon name="palette" :size="17" /></span><div class="grow"><div class="t">Appearance</div><div class="s">Colours, style, layout</div></div></div>
+      <div v-if="nat" class="li click" @click="router.push('/settings/accounts')"><span class="bi sg"><Icon name="server" :size="17" /></span><div class="grow"><div class="t">Servers &amp; accounts</div><div class="s">{{ where ? (where.url ? `${where.name} · ${where.url.replace(/^https:\/\//, "")}` : `${where.name} · on this device`) : "Switch, add or remove" }}</div></div><Icon name="right" :size="16" class="muted" /></div>
       <div class="li click" @click="router.push('/settings')"><span class="bi sg"><Icon name="settings" :size="17" /></span><div class="grow"><div class="t">Settings</div><div class="s">Workouts, units, features, your data</div></div><Icon name="right" :size="16" class="muted" /></div>
     </div>
   </div>

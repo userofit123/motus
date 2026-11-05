@@ -90,7 +90,7 @@ async function deleteAccount() {
     </div>
   </template>
 
-  <div v-if="localAccount === true" class="card"><div class="li"><div class="grow"><div class="t">Delete account</div><div class="s">This account is only on this device. Remove it under Accounts on this device.</div></div><button class="qb" @click="router.push('/settings/accounts')">Open</button></div></div>
+  <div v-if="localAccount === true" class="card"><div class="li"><div class="grow"><div class="t">Delete account</div><div class="s">This account is only on this device. Remove it under Servers & accounts.</div></div><button class="qb" @click="router.push('/settings/accounts')">Open</button></div></div>
   <div v-else-if="localAccount === false" class="card"><div class="li"><div class="grow"><div class="t ac-neg">Delete account</div><div class="s">Deletes everything you have in Motus</div></div><button class="qb danger" @click="deleteAccount">Delete</button></div></div>
 </template>
 
