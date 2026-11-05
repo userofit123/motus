@@ -1,8 +1,8 @@
 // What the Motus screens can ask of the desktop app: accounts, backups to a folder, and updates.
 import { contextBridge, ipcRenderer } from "electron";
 
-let onProgress: ((p: number) => void) | null = null;
-ipcRenderer.on("update:progress", (_e, p: number) => onProgress?.(p));
+let onProgress: ((p: number, bytes?: number) => void) | null = null;
+ipcRenderer.on("update:progress", (_e, p: number, bytes?: number) => onProgress?.(p, bytes));
 
 const api = {
   platform: "desktop",
@@ -23,7 +23,7 @@ const api = {
   update: {
     version: () => ipcRenderer.invoke("update:version"),
     check: () => ipcRenderer.invoke("update:check"),
-    download: (cb: (p: number) => void) => { onProgress = cb; return ipcRenderer.invoke("update:download"); },
+    download: (cb: (p: number, bytes?: number) => void) => { onProgress = cb; return ipcRenderer.invoke("update:download"); },
     install: () => ipcRenderer.invoke("update:install"),
   },
 };

@@ -45,9 +45,12 @@ export function installAndroidBridge() {
       version: async () => (await info)?.version ?? "",
       async check() { const l = await latestApk(); const cur = (await info)?.version ?? "0"; return { current: cur, latest: l.version, newer: newer(l.version, cur), notes: l.notes, url: l.html }; },
       // download the APK, check its SHA-256, then hand it to Android's installer (one tap to confirm, Android's rule)
-      async download(onProgress: (p: number) => void) {
+      async download(onProgress: (p: number, bytes?: number) => void) {
         const l = await latestApk();
-        const res = await P("MotusUpdater").download({ url: l.url, sha256: l.sha256 });
+        // p is the share done (0-1), or -1 when the size is unknown
+        const h = await P("MotusUpdater").addListener("progress", ({ loaded, total }: { loaded: number; total: number }) => onProgress(total > 0 ? loaded / total : -1, loaded));
+        let res;
+        try { res = await P("MotusUpdater").download({ url: l.url, sha256: l.sha256 }); } finally { h?.remove?.(); }
         onProgress(1);
         staged = res.path;
       },

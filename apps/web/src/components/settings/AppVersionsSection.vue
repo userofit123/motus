@@ -62,6 +62,7 @@ const mb = (n?: number) => (n ? ` · ${Math.max(1, Math.round(n / 1e6))} MB` : "
         <div v-else-if="isNewer && !platform.app" class="s">{{ webHow }}</div>
         <div v-else-if="platform.key === 'ios'" class="s">There is no iPhone or iPad app yet. Motus works in Safari: tap Share, then Add to Home Screen.</div>
         <div v-else-if="checkedAt" class="s">{{ checkedAt }}</div>
+        <div v-if="platform.app && updater.progress !== null" class="pbar" :style="{ marginTop: 'var(--lpy)' }"><i :style="{ width: Math.round(updater.progress * 100) + '%' }"></i></div>
         </template></div>
         <button v-if="platform.app && isNewer && !checking" class="btn s" @click="updater.install()">{{ updater.ready ? "Install" : "Download update" }}</button>
 </div>

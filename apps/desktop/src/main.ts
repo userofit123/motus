@@ -184,7 +184,7 @@ ipcMain.handle("backup:open", () => shell.openPath(backupDir()));
 // ----- updates from GitHub Releases -----
 autoUpdater.autoDownload = false;
 autoUpdater.autoInstallOnAppQuit = true;
-autoUpdater.on("download-progress", (p) => win?.webContents.send("update:progress", p.percent / 100));
+autoUpdater.on("download-progress", (p) => win?.webContents.send("update:progress", p.total > 0 ? p.percent / 100 : -1, p.transferred));
 ipcMain.handle("update:version", () => app.getVersion());
 ipcMain.handle("update:check", async () => { try { const r = await autoUpdater.checkForUpdates(); return r?.updateInfo?.version ?? null; } catch { return null; } });
 ipcMain.handle("update:download", async () => { await autoUpdater.checkForUpdates(); await autoUpdater.downloadUpdate(); return true; });

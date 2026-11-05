@@ -37,7 +37,18 @@ public class MotusUpdaterPlugin extends Plugin {
                 try (InputStream in = c.getInputStream(); FileOutputStream fo = new FileOutputStream(out)) {
                     byte[] buf = new byte[65536];
                     int n;
-                    while ((n = in.read(buf)) > 0) { fo.write(buf, 0, n); md.update(buf, 0, n); }
+                    long total = c.getContentLengthLong(), done = 0, last = 0;
+                    while ((n = in.read(buf)) > 0) {
+                        fo.write(buf, 0, n); md.update(buf, 0, n); done += n;
+                        // tell the page how far it is, at most four times a second
+                        long now = System.currentTimeMillis();
+                        if (now - last >= 250) {
+                            last = now;
+                            JSObject p = new JSObject();
+                            p.put("loaded", done); p.put("total", total);
+                            notifyListeners("progress", p);
+                        }
+                    }
                 }
                 StringBuilder hex = new StringBuilder();
                 for (byte b : md.digest()) hex.append(String.format("%02x", b));
