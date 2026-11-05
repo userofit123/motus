@@ -202,6 +202,11 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener {
     // the sound channel the web app makes for the rest alarm (workout/native.ts), so a change sounds like it always did
     private static final String CUE_CHANNEL = "rest";
 
+    // True while this process has the web app loaded (load() until handleOnDestroy()). Swiping the app away usually kills
+    // the process without handleOnDestroy, so its alarms then fire into a fresh process where this is false: nothing
+    // would answer the notification's buttons there, so the cue takes everything off instead of showing it.
+    private static volatile boolean live = false;
+
     private static Intent cueIntent(Context ctx) {
         return new Intent(ctx, TimerCue.class).setAction(CUE_ACTION);
     }
@@ -252,6 +257,12 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener {
     public static class TimerCue extends BroadcastReceiver {
         @Override
         public void onReceive(Context ctx, Intent intent) {
+            // the app is gone: leave nothing behind, like handleOnDestroy (it shows the timer again when opened mid-run)
+            if (!live) {
+                cancelCues(ctx);
+                NotificationManagerCompat.from(ctx).cancel(TIMER_ID);
+                return;
+            }
             boolean done = intent.getBooleanExtra("done", false);
             long endAt = intent.getLongExtra("endAt", -1L);
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -318,6 +329,7 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener {
     // starting intent. Kept until the web app listens, since it may not have loaded yet.
     @Override
     public void load() {
+        live = true;
         if (getActivity() != null) openFrom(getActivity().getIntent());
         // a button's tap: kept until the web app listens, like "open"
         receiver = new BroadcastReceiver() {
@@ -337,6 +349,7 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener {
     // they go too. The app shows them again when it opens with something still running.
     @Override
     protected void handleOnDestroy() {
+        live = false;
         if (receiver != null) {
             try { getContext().unregisterReceiver(receiver); } catch (IllegalArgumentException e) { /* not registered */ }
             receiver = null;

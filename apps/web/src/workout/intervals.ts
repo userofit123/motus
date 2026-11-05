@@ -198,5 +198,9 @@ onNoticeAction("iv-resume", resumeIntervals);
 onNoticeAction("iv-skip", () => skipInterval(1));
 // a timer left running from before a reload keeps the screen on again, and its notification shows again
 if (ivRunning.value && iv.pausedAt == null) keepAwake(true, "intervals");
+// Changes scheduled by an earlier run of the app (killed while hidden, or reloaded) are taken off at start: this copy
+// doesn't know of them (scheduledForHide starts false), so they would sound over the in-app cues, or bring back the
+// notification of a run since stopped. The next hide schedules afresh. Does nothing outside the Android app.
+cancelIntervalCues();
 // counted as shown at start, so one left behind by an app that was closed mid-run is taken off when nothing runs
 noticeShown = true; notice();
