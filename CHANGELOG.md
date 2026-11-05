@@ -2,6 +2,13 @@
 
 The top entry's version is the one the release workflow publishes. Add a new `## [x.y.z]` section to release.
 
+## [0.1.3] - 2026-11-05
+
+- The Android app's background now runs up behind the status bar and navigation bar, like Money Manager, in every look; pages, sheets and panels stay clear of the clock, the navigation bar and the keyboard.
+- Check for updates always shows that it is checking and how it ended (up to date with the time, a new version and how to get it, or a plain error), in every app, and no longer hangs on a slow connection.
+- The interval timer keeps one notification that changes with each round instead of adding a new one every round.
+- Blocks whose rows reach the edges, like those on the More page, have even space at the top and bottom too.
+
 ## [0.1.2] - 2026-11-04
 
 - Notifications in the Android app: a running workout, rest, activity or interval timer shows on the lock screen with Pause/Resume, Skip, +30s and Set done; the app asks once to turn notifications on, and Settings shows whether they are allowed.
