@@ -156,14 +156,15 @@ async function startNativeSteps() {
     nativeSteps = true; stepsLive.value = true; // the sensors only report once you take a step, so show 0 until then
     hasCounter = r.counter !== false;
     stepSubs = [await p.addListener("steps", (e: any) => onTotal(Number(e.total))), await p.addListener("step", () => onDetected())];
-    if (r.total >= 0) onTotal(Number(r.total));
+    // a reading from before this recording is no start for it; only resumed ones (stepLast set) continue from theirs
+    if (r.total >= 0 && recording.value?.stepLast != null) onTotal(Number(r.total));
   } catch { startMotion(false); }
 }
 
 // ---- steps: the motion sensor (browsers) ----
 // A step shows as a peak in how hard the phone is pushed (acceleration including gravity) above its slow average. Taps and
-// shakes are ignored by waiting for a second step in a walking rhythm before counting both, and again after a two-second
-// stop; waiting for more made the count lag well behind your first steps each time you set off.
+// shakes are ignored by waiting for a second peak within two seconds of the first before counting both, and again after
+// a two-second stop; waiting for more made the count lag well behind your first steps each time you set off.
 let motionOn = false, ema = 0, base = 0, armed = true, lastStep = 0, run = 0;
 let motionWait: ReturnType<typeof setTimeout> | null = null;
 function onMotion(e: DeviceMotionEvent) {
@@ -251,7 +252,7 @@ export async function finishRecording(): Promise<string> {
   const end = r.pauseAt ?? Date.now();
   // the server works these out from the route too, but can't know where the pauses were
   const rs = r.route.length > 1 ? recStats.value : null;
-  const res = await api.post("/activities", { type: r.type, startedAt: new Date(r.startedAt).toISOString(), endedAt: new Date(end).toISOString(), durationS: Math.round(recElapsedS.value), route: r.route, distanceM: rs?.distanceM, movingS: rs?.movingS, steps: recStepsCounted.value ? r.steps : null, source: "gps", clientId: `gps:${r.startedAt}` });
+  const res = await api.post("/activities", { type: r.type, startedAt: new Date(r.startedAt).toISOString(), endedAt: new Date(end).toISOString(), durationS: Math.round(recElapsedS.value), route: r.route, distanceM: rs?.distanceM, movingS: rs?.movingS, elevationM: rs?.elevationM, steps: recStepsCounted.value ? r.steps : null, source: "gps", clientId: `gps:${r.startedAt}` });
   recording.value = null; persist(); stopAll();
   invalidate(["activities", "stats", "goals", "home", "calendar"]);
   return res.id;

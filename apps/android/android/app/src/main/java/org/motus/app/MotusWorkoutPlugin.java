@@ -361,6 +361,9 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener {
         nm.cancel(TIMER_ID);
         nm.cancel(REC_ID);
         cancelCues(getContext()); // or they would show the timer again, with buttons nothing answers
+        SensorManager sm = (SensorManager) getContext().getSystemService(Context.SENSOR_SERVICE);
+        if (sm != null) sm.unregisterListener(this);
+        stepTotal = -1;
         super.handleOnDestroy();
     }
 
@@ -434,6 +437,7 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener {
     public void stopSteps(PluginCall call) {
         SensorManager sm = (SensorManager) getContext().getSystemService(Context.SENSOR_SERVICE);
         if (sm != null) sm.unregisterListener(this);
+        stepTotal = -1; // the next recording must not take this one's last reading as its start
         call.resolve();
     }
 

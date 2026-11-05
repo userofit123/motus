@@ -119,6 +119,9 @@ describe("activities", () => {
     // a point with no altitude in the middle doesn't count as 0 m and back up
     expect(routeStats(kept([100, null, 101, null, 100])).elevationM).toBe(0);
     expect(routeStats(kept([null, null, null])).elevationM).toBeNull();
+    // a climb made while paused (the point after the break is 20 m higher) isn't counted
+    expect(routeStats(kept([100, 101, 121, 122]), [2]).elevationM).toBe(0);
+    expect(routeStats(kept([100, 101, 121, 122])).elevationM).toBe(21);
     const { id } = await call("POST", "/activities", { type: "walk", startedAt: "2026-10-30T07:00:00Z", durationS: 60, route: at([null, null, null]), source: "gps" });
     const a = await call("GET", `/activities/${id}`);
     expect(a.elevationM).toBeNull();

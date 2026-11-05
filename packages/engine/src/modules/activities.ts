@@ -19,6 +19,7 @@ export const DEFAULT_TYPES: ActivityType[] = [
   { slug: "other", name: "Other", icon: "activity", hasDistance: false, hasGps: false },
 ];
 
+/** GPX and TCX: track points, times and altitude. */
 export function parseTrack(text: string): { name: string; type: string; route: number[][] } {
   const route: number[][] = [];
   const name = /<name>([^<]*)<\/name>/.exec(text)?.[1]?.trim() ?? "";

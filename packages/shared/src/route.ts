@@ -20,6 +20,7 @@ export function routeStats(route: number[][], breaks: number[] = []) {
   let low: number | null = null;
   for (let i = 0; i < route.length; i++) {
     const b = route[i]!, alt = b[3];
+    if (skip.has(i)) low = null; // what was climbed while paused doesn't count
     if (alt != null && Number.isFinite(alt)) {
       if (low == null || alt < low) low = alt;
       else if (alt - low >= 5) { climb += alt - low; low = alt; }
