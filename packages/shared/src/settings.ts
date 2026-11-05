@@ -45,10 +45,10 @@ export interface Settings {
   stepGoal: number;
   /** the work week (Sunday = 0); null: from the first day of the week, Sunday to Thursday or Monday to Friday */
   workdays: number[] | null;
-  /** sections: Home's blocks in the order shown, each shown or hidden (Customise home).
+  /** blocks: Home's blocks in the order shown, each shown or hidden (Edit home).
    *  hidden: Home suggestions you dismissed (key → when), hidden until your next workout.
-   *  goals: the goals shown as blocks at the top of Home, in order, each with or without its streak beside it */
-  home: { sections: HomeSection[]; hidden: Record<string, string>; goals: { id: string; streak: boolean }[] };
+   *  goals: the goals pinned to Home as their own blocks, in order, each with or without its streak */
+  home: { blocks: HomeBlock[]; hidden: Record<string, string>; goals: { id: string; streak: boolean }[] };
   /** the order of your goals on the Goals page (Reorder goals); goals not in it follow, newest first */
   goalsOrder: string[];
   features: Record<string, boolean>;
@@ -66,22 +66,21 @@ export interface Settings {
   intervals: IntervalPreset[];
 }
 
-export interface HomeSection { id: string; on: boolean }
-/** Every Home section, in the default order; `on` is whether a new account sees it. Ids added later are appended to a saved
- *  order, so a new section shows up on everyone's Home (or in Customise home, if it starts off). */
-export const HOME_SECTIONS: HomeSection[] = [
-  { id: "goalBlocks", on: true }, { id: "time", on: true }, { id: "condition", on: true },
-  { id: "program", on: true },
-  { id: "upnext", on: true }, { id: "suggest", on: true }, { id: "previous", on: true },
-  { id: "goals", on: true },
-  { id: "volume", on: false }, { id: "walking", on: false }, { id: "bodyweight", on: false }, { id: "daily", on: false },
-  { id: "reminders", on: false }, { id: "feed", on: false }, { id: "muscles", on: false }, { id: "achievements", on: false },
+export interface HomeBlock { id: string; on: boolean }
+/** Every Home block, in the default order; `on` is whether a new account sees it. Blocks tied to a feature, or that only
+ *  have something to say now and then (a workout in progress is part of Today; reminders, goals due soon, a program), stay
+ *  in this list and simply don't draw while there's nothing to show. Ids added later are appended to a saved order. */
+export const HOME_BLOCKS: HomeBlock[] = [
+  { id: "today", on: true }, { id: "streak", on: true }, { id: "week", on: true }, { id: "steps", on: true },
+  { id: "pinned", on: true }, { id: "dueSoon", on: true }, { id: "program", on: true },
+  { id: "muscles", on: true }, { id: "upnext", on: true }, { id: "previous", on: true }, { id: "goals", on: true },
+  { id: "suggest", on: true }, { id: "reminders", on: true },
+  { id: "bodyweight", on: false }, { id: "records", on: false }, { id: "feed", on: false }, { id: "daily", on: false }, { id: "achievements", on: false },
 ];
-/** Home's sections made safe (they sync from any device): unknown ids and repeats dropped, missing ones appended with their default.
- *  `legacyCards` is the older list of switched-on cards, read when no order was saved yet. */
-export function cleanHomeSections(saved: unknown, legacyCards?: unknown): HomeSection[] {
-  const known = new Map(HOME_SECTIONS.map((x) => [x.id, x.on]));
-  const out: HomeSection[] = [];
+/** Home's blocks made safe (they sync from any device): unknown ids and repeats dropped, missing ones appended with their default. */
+export function cleanHomeBlocks(saved: unknown): HomeBlock[] {
+  const known = new Map(HOME_BLOCKS.map((x) => [x.id, x.on]));
+  const out: HomeBlock[] = [];
   const seen = new Set<string>();
   if (Array.isArray(saved)) {
     for (const x of saved) {
@@ -92,9 +91,7 @@ export function cleanHomeSections(saved: unknown, legacyCards?: unknown): HomeSe
       out.push({ id, on: typeof item.on === "boolean" ? item.on : known.get(id)! });
     }
   }
-  // before sections had an order, the optional cards and Goals were switched on by being in this list
-  const cards = !Array.isArray(saved) && Array.isArray(legacyCards) ? new Set(legacyCards) : null;
-  for (const d of HOME_SECTIONS) if (!seen.has(d.id)) out.push({ id: d.id, on: cards && (d.id === "goals" || !d.on) ? cards.has(d.id) : d.on });
+  for (const d of HOME_BLOCKS) if (!seen.has(d.id)) out.push({ ...d });
   return out;
 }
 
@@ -128,7 +125,7 @@ export const DEFAULT_SETTINGS: Settings = {
   weeklyGoal: 3,
   stepGoal: 8000,
   workdays: null,
-  home: { sections: HOME_SECTIONS, hidden: {}, goals: [] },
+  home: { blocks: HOME_BLOCKS, hidden: {}, goals: [] },
   goalsOrder: [],
   features: FEATURE_DEFAULTS,
   notifications: { scheduled: true, goals: true, updates: true, inactivity: false },
@@ -161,10 +158,10 @@ export function withDefaults(saved: unknown): Settings {
   // synced from any device, so made safe here before a screen or the timer uses them
   out.intervals = cleanIntervalPresets(out.intervals);
   out.goalsOrder = cleanGoalsOrder(out.goalsOrder);
-  const { cards, ...home } = out.home as Settings["home"] & { cards?: unknown };
-  const savedHome = saved && typeof saved === "object" ? (saved as Record<string, unknown>).home : undefined;
-  const savedSections = savedHome && typeof savedHome === "object" ? (savedHome as Record<string, unknown>).sections : undefined;
-  out.home = { ...home, sections: cleanHomeSections(savedSections, cards) };
+  // the older Home's section list (and its list of cards before that) belonged to a different set of blocks: dropped, so
+  // everyone starts from the new layout
+  const { cards: _c, sections: _s, ...home } = out.home as Settings["home"] & { cards?: unknown; sections?: unknown };
+  out.home = { ...home, blocks: cleanHomeBlocks(home.blocks) };
   return out;
 }
 

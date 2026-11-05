@@ -209,3 +209,22 @@ describe("goals on the app's calendar", () => {
     expect(log).toMatchObject([{ kind: "day", at: "2026-10-08", value: 6000 }]);
   });
 });
+
+describe("Home's records and training days", () => {
+  it("lists the last 30 days' records only while the Records block is on, and the days with training", async () => {
+    const { call, log, exercise } = await user();
+    const ex = await exercise("Test home row", "weight_reps");
+    await log("2026-09-20T08:00:00Z", [{ exerciseId: ex, sets: [{ weightKg: 50, reps: 8 }] }]);
+    await log("2026-10-01T08:00:00Z", [{ exerciseId: ex, sets: [{ weightKg: 60, reps: 8 }] }]);
+    await call("POST", "/activities", { type: "walk", startedAt: "2026-10-03T18:00:00Z", durationS: 1200, distanceM: 2000 });
+    const off = await call("GET", "/home", undefined, { tz: "0" });
+    expect(off.records).toEqual([]);
+    expect(off.days).toEqual(expect.arrayContaining(["2026-09-20", "2026-10-01", "2026-10-03"]));
+    const blocks = (await call("GET", "/me")).settings.home.blocks.map((b: any) => (b.id === "records" ? { ...b, on: true } : b));
+    await call("PUT", "/settings", { home: { blocks } });
+    const on = await call("GET", "/home", undefined, { tz: "0" });
+    expect(on.records).toHaveLength(1);
+    expect(on.records[0]).toMatchObject({ exerciseId: ex, name: "Test home row", weightKg: 60, reps: 8 });
+    expect(on.records[0].kinds).toContain("weight");
+  });
+});

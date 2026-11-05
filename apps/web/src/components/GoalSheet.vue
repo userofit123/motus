@@ -71,8 +71,8 @@ const menu = computed(() => !g.value ? [] : [
 
       <div class="sh"><h2>On Home</h2></div>
       <div class="card flush">
-        <label class="tgl li"><div class="grow"><div class="t">Show at the top of Home</div></div><span class="tg"><input type="checkbox" :checked="onHome(s, g.id)" @change="toggleHomeGoal(s, g)" /></span></label>
-        <label v-if="periodic && onHome(s, g.id)" class="tgl li"><div class="grow"><div class="t">Show its streak</div><div class="s">A card beside it counting the {{ periodWord(g, 2) }} in a row</div></div><span class="tg"><input type="checkbox" :checked="streakOnHome(s, g.id)" @change="setHomeStreak(s, g.id, ($event.target as HTMLInputElement).checked)" /></span></label>
+        <label class="tgl li"><div class="grow"><div class="t">Pin to Home</div></div><span class="tg"><input type="checkbox" :checked="onHome(s, g.id)" @change="toggleHomeGoal(s, g)" /></span></label>
+        <label v-if="periodic && onHome(s, g.id)" class="tgl li"><div class="grow"><div class="t">Show its streak</div><div class="s">Its block on Home also counts the {{ periodWord(g, 2) }} in a row</div></div><span class="tg"><input type="checkbox" :checked="streakOnHome(s, g.id)" @change="setHomeStreak(s, g.id, ($event.target as HTMLInputElement).checked)" /></span></label>
       </div>
     </template>
     <div v-else class="empty">{{ q.isError.value ? "This goal is gone." : "Loading…" }}</div>

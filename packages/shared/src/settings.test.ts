@@ -1,27 +1,27 @@
 import { describe, expect, it } from "vitest";
-import { cleanHomeSections, cleanGoalsOrder, orderGoals, withDefaults, HOME_SECTIONS } from "./settings";
+import { cleanHomeBlocks, cleanGoalsOrder, orderGoals, withDefaults, HOME_BLOCKS } from "./settings";
 
 const ids = (x: { id: string }[]) => x.map((s) => s.id);
 
-describe("Home sections", () => {
+describe("Home blocks", () => {
   it("gives a new account the default order", () => {
-    expect(withDefaults({}).home.sections).toEqual(HOME_SECTIONS);
+    expect(withDefaults({}).home.blocks).toEqual(HOME_BLOCKS);
   });
   it("drops unknown ids and repeats, and appends the missing ones with their default", () => {
-    const out = cleanHomeSections([{ id: "previous", on: false }, { id: "nope", on: true }, { id: "volume", on: true }, { id: "previous", on: true }, "x", null]);
-    expect(out.slice(0, 2)).toEqual([{ id: "previous", on: false }, { id: "volume", on: true }]);
-    expect(ids(out)).toEqual(["previous", "volume", ...ids(HOME_SECTIONS).filter((id) => id !== "previous" && id !== "volume")]);
+    const out = cleanHomeBlocks([{ id: "previous", on: false }, { id: "nope", on: true }, { id: "feed", on: true }, { id: "previous", on: true }, "x", null]);
+    expect(out.slice(0, 2)).toEqual([{ id: "previous", on: false }, { id: "feed", on: true }]);
+    expect(ids(out)).toEqual(["previous", "feed", ...ids(HOME_BLOCKS).filter((id) => id !== "previous" && id !== "feed")]);
     expect(out.find((s) => s.id === "upnext")?.on).toBe(true);
-    expect(out.find((s) => s.id === "feed")?.on).toBe(false);
+    expect(out.find((s) => s.id === "records")?.on).toBe(false);
   });
   it("keeps the default on/off when a saved one isn't a boolean", () => {
-    expect(cleanHomeSections([{ id: "feed", on: "yes" }])[0]).toEqual({ id: "feed", on: false });
+    expect(cleanHomeBlocks([{ id: "feed", on: "yes" }])[0]).toEqual({ id: "feed", on: false });
   });
-  it("carries over the older list of switched-on cards", () => {
-    const s = withDefaults({ home: { cards: ["stats", "upnext", "feed"] } });
-    expect("cards" in s.home).toBe(false);
-    const on = (id: string) => s.home.sections.find((x) => x.id === id)?.on;
-    expect([on("feed"), on("goals"), on("volume"), on("upnext")]).toEqual([true, false, false, true]);
+  it("drops the older Home's sections and cards", () => {
+    const s = withDefaults({ home: { cards: ["feed"], sections: [{ id: "volume", on: true }], goals: [{ id: "g", streak: true }] } });
+    expect("cards" in s.home || "sections" in s.home).toBe(false);
+    expect(s.home.blocks).toEqual(HOME_BLOCKS);
+    expect(s.home.goals).toEqual([{ id: "g", streak: true }]);
   });
 });
 

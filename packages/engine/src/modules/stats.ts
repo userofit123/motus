@@ -8,7 +8,7 @@ import { goalsWithProgress, ensureStarterGoal } from "./goals";
 import { stepsByDay } from "./activities";
 import { achievementRoutes, currentStreak, dayIn, weekIn } from "./achievements";
 import { plannedOpen } from "./schedule";
-import { workoutSummaries } from "./workouts";
+import { workoutSummaries, loadWorkout } from "./workouts";
 import { routineSummaries } from "./routines";
 import { suggestions } from "./suggest";
 import { programState } from "./programs";
@@ -169,7 +169,25 @@ export function statsRoutes(r: Router) {
       ...(await workoutSummaries(ctx.q, "w.status = 'completed'", [], 8)).map((w) => ({ kind: "workout", ...w })),
       ...(await ctx.q.query("SELECT id, type, name, started_at, duration_s, distance_m FROM activities ORDER BY started_at DESC LIMIT 8")).rows.map((x: any) => ({ kind: "activity", ...camel<any>(x) })),
     ].sort((a: any, b: any) => b.startedAt.localeCompare(a.startedAt)).slice(0, 8);
+    // the days (in the app's calendar) with a finished workout or an activity: the week strip and the streak grid
+    const days = [...new Set([...rows.map((x) => dayIn(x.startedAt, tzMin)), ...acts.map((x: any) => dayIn(x.started_at, tzMin))])].sort();
+    // records set in the last 30 days, only while the Records block is on (each workout is compared with its history)
+    const records: any[] = [];
+    if (s.home.blocks.some((b) => b.id === "records" && b.on)) {
+      const monthAgo = new Date(now.getTime() - 30 * 86400000).toISOString();
+      for (const w of await workoutSummaries(ctx.q, "w.status = 'completed' AND w.started_at >= $1", [monthAgo], 6)) {
+        const full: any = await loadWorkout(ctx.q, w.id, today);
+        for (const e of full?.exercises ?? []) {
+          // the set that broke the most records stands for the exercise in that workout
+          const best = (e.sets as any[]).filter((x) => x.pr?.length).sort((a, b) => b.pr.length - a.pr.length)[0];
+          if (best) records.push({ workoutId: w.id, at: w.startedAt, exerciseId: e.exerciseId, name: e.exercise?.name ?? "", tracking: e.exercise?.tracking,
+            kinds: best.pr, weightKg: best.weightKg, reps: best.reps, durationS: best.durationS, distanceM: best.distanceM });
+        }
+        if (records.length >= 6) break;
+      }
+    }
     return {
+      days, records: records.slice(0, 6),
       weeks, thisWeek: weeks.at(-1), lastWeek: weeks.at(-2), streak: await currentStreak(ctx.q, s, now, tzMin), homeGoals,
       // calendar days, so last night's workout is "Yesterday" even when it was less than 24 hours ago
       last, daysSinceLast: last ? Math.round((new Date(today).getTime() - new Date(dayIn(last.startedAt, tzMin)).getTime()) / 86400000) : null,

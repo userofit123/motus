@@ -496,31 +496,24 @@ countdown and a "Return" button.
 
 ### 8.2 Home page (requirement 9)
 
-Laid out like the screenshot: stat cards with sparklines on top, then a few calm sections with
-"All →" links. Home answers four questions at a glance (how am I doing, what's next, what did I do
-last, how are my goals) and **nothing else by default**.
+A board of blocks (redesigned in M-50): four columns on a computer, two on the phone. Small blocks take a quarter of
+the row (half on the phone), wide ones half (all of it on the phone); small ones fill gaps, so any order lays out cleanly.
+Every block is a card with its own header row (icon, title, at most one link).
 
-**Default content:**
-1. **Title + date + one status line**: "Last workout: Chest Day · 2 days ago".
-2. **Four stat cards** (sparkline + ⓘ tooltip each), like the screenshot's top row:
-   - **This week**: workouts done / weekly goal.
-   - **Streak**: weeks in a row meeting your goal.
-   - **Time this week**: training + activities, vs. last week.
-   - **Condition**: a small muscle-map figure (sets per muscle, last 7 days) with a one-line summary
-     such as "Legs rested 9 days".
-3. **Resume workout**: only appears while one is in progress.
-4. **Up next**: today's and the next scheduled routine, with one Start button.
-5. **Previous workout**: one card (name, date, duration, volume, PRs) → workout detail.
-6. **Goals**: the top 3 active goals with progress bars → Goals page.
-7. **Start button**: desktop bottom-right FAB like the screenshot; phone centre tab.
+**Today** leads, in the theme's primary container: the one thing to do now (a workout in progress, else today's plan, else
+the program's next workout, else a suggestion, else "Start a workout"), with this week's days as a strip (trained, planned,
+today). A new account gets a way to begin instead.
 
-**Optional cards**, off by default and added via "Customise home" at the bottom of the page:
-volume this week, walking/steps, body weight trend, recent PRs, pending reminders, recent activity
-feed, weekly sets per muscle, achievements. Cards can be reordered and removed. Removing everything
-optional still leaves a complete Home.
+**Default blocks**, in order: Streak (weeks on the weekly target, five weeks of training days as a grid), This week
+(workouts, time, volume, distance against last week, eight-week bars), Steps (Steps feature), Pinned goals (one block per
+goal, optionally with its streak), Goals due soon, Your program (Programs feature), Muscles this week (the muscle-card
+pattern), Up next, Last workout, Goals, Suggested, Reminders. **Off by default**: Body weight, Records (last 30 days), Recent
+activity, Today's log (Sleep, water and mood feature), Achievements (Achievements feature).
 
-Phone version: the same content as one scrolling column; the four stat cards become a 2×2 grid. It is
-a separately designed layout, not a squashed desktop one.
+Blocks with nothing to say right now (no reminder, no goal due, no program, no suggestion) stay away until they have. **Edit
+home** (⋮ menu) turns the board into tiles at their real sizes with arrows to move and a switch to show or hide; the order
+is `settings.home.blocks`, synced like every setting. Pinned goals are chosen in the ⋮ menu's "Pinned goals" or on a goal's
+sheet ("Pin to Home").
 
 ### 8.3 Start workout (requirement 10)
 
