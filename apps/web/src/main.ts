@@ -19,6 +19,8 @@ takeUrlAction();
 startTheme();
 watchRouter(router);
 createApp(App).use(router).use(VueQueryPlugin, { queryClient }).mount("#app");
+// the desktop app asks for a page when its update notification is clicked (Android does this in native/android.ts)
+(globalThis as any).motusNative?.onOpen?.((path: string) => { if (typeof path === "string" && path.startsWith("/")) void router.push(path); });
 // every row of tabs gets its gliding highlight without any code in the pages
 startSegSlide();
 startTabSlide();

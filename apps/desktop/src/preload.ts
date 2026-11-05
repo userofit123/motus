@@ -3,6 +3,9 @@ import { contextBridge, ipcRenderer } from "electron";
 
 let onProgress: ((p: number, bytes?: number) => void) | null = null;
 ipcRenderer.on("update:progress", (_e, p: number, bytes?: number) => onProgress?.(p, bytes));
+// a page the app asks the screens to open (a click on the update notification)
+let onOpen: ((path: string) => void) | null = null;
+ipcRenderer.on("app:open", (_e, path: string) => onOpen?.(path));
 
 // Electron prefixes a failed ipcRenderer.invoke with "Error invoking remote method 'x': Error: ".
 // Strip it here so every page that shows the error gets just the message the main process wrote.
@@ -13,6 +16,7 @@ const accountCall = (channel: string, ...args: unknown[]): Promise<any> =>
 
 const api = {
   platform: "desktop",
+  onOpen: (cb: (path: string) => void) => { onOpen = cb; },
   accounts: {
     list: () => accountCall("accounts:list"),
     current: () => accountCall("accounts:current"),

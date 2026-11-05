@@ -50,7 +50,7 @@ export function installAndroidBridge() {
         // p is the share done (0-1), or -1 when the size is unknown
         const h = await P("MotusUpdater").addListener("progress", ({ loaded, total }: { loaded: number; total: number }) => onProgress(total > 0 ? loaded / total : -1, loaded));
         let res;
-        try { res = await P("MotusUpdater").download({ url: l.url, sha256: l.sha256 }); } finally { h?.remove?.(); }
+        try { res = await P("MotusUpdater").download({ url: l.url, sha256: l.sha256, version: l.version }); } finally { h?.remove?.(); }
         onProgress(1);
         staged = res.path;
       },
@@ -59,7 +59,7 @@ export function installAndroidBridge() {
   };
   // the hardware back button closes an open sheet, goes back in the app, and leaves it from the home page
   P("App")?.addListener?.("backButton", ({ canGoBack }: { canGoBack: boolean }) => { if (sheetIsOpen()) closeTopSheet(); else if (canGoBack && location.pathname !== "/") history.back(); else P("App").minimizeApp?.(); });
-  // a tap on an ongoing notification that names a page (the interval timer's) opens that page
+  // a tap on a notification that names a page (the interval timer's, the update download's) opens that page
   P("MotusWorkout")?.addListener?.("open", ({ path }: { path?: string }) => { if (typeof path === "string" && path.startsWith("/")) void router.push(path); });
   // the page runs behind clear status and navigation bars (MotusBarsPlugin), so its own background shows under the
   // clock and beside a side bar; it pads itself by the bars' sizes (--nst / --nsb / --nsl / --nsr, used by --st / --sb /

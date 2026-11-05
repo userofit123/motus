@@ -57,8 +57,8 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener {
     private static final String ACTION = "org.motus.app.NOTICE_ACTION";
     private static final String EXTRA_ACTION = "motusAction";
     private BroadcastReceiver receiver;
-    // the page a tap on a notification opens, handed to the web app as an "open" event
-    private static final String EXTRA_PATH = "motusPath";
+    // the page a tap on a notification opens, handed to the web app as an "open" event (also the updater's, MotusUpdaterPlugin)
+    static final String EXTRA_PATH = "motusPath";
 
     private void channel() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

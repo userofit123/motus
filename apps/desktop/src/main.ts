@@ -2,7 +2,7 @@
 //  - local: Motus's own server runs inside the app with PGlite, keeping everything on this computer;
 //  - server: the app's own screens and exercise photos, with the data on your Motus server (its API is proxied).
 // Accounts live side by side, each in its own browser partition (cookies, cache) and, for local ones, its own database.
-import { app, BrowserWindow, ipcMain, dialog, shell, session as eSession, Menu } from "electron";
+import { app, BrowserWindow, ipcMain, dialog, shell, session as eSession, Menu, Notification } from "electron";
 import { autoUpdater } from "electron-updater";
 import http from "node:http";
 import https from "node:https";
@@ -186,10 +186,30 @@ ipcMain.handle("backup:open", () => shell.openPath(backupDir()));
 // ----- updates from GitHub Releases -----
 autoUpdater.autoDownload = false;
 autoUpdater.autoInstallOnAppQuit = true;
-autoUpdater.on("download-progress", (p) => win?.webContents.send("update:progress", p.total > 0 ? p.percent / 100 : -1, p.transferred));
+// the download also shows on the taskbar / dock icon (a value above 1 is a moving bar, for an unknown size; -1 clears it)
+autoUpdater.on("download-progress", (p) => {
+  win?.setProgressBar(p.total > 0 ? p.percent / 100 : 2);
+  win?.webContents.send("update:progress", p.total > 0 ? p.percent / 100 : -1, p.transferred);
+});
+// held here: a notification that is garbage-collected loses its click
+let updateNotice: Notification | null = null;
+/** When it's done or failed, a system notification if Motus isn't in front (in front, the page already says so); a
+ *  click brings the window back on Settings, App & Versions, where Install is. */
+function updateDone(title: string, body: string) {
+  win?.setProgressBar(-1);
+  if (!Notification.isSupported() || win?.isFocused()) return;
+  updateNotice = new Notification({ title, body, icon: path.join(__dirname, "icon.png") });
+  updateNotice.on("click", () => { if (!win) return; if (win.isMinimized()) win.restore(); win.show(); win.focus(); win.webContents.send("app:open", "/settings/versions"); });
+  updateNotice.show();
+}
 ipcMain.handle("update:version", () => app.getVersion());
 ipcMain.handle("update:check", async () => { try { const r = await autoUpdater.checkForUpdates(); return r?.updateInfo?.version ?? null; } catch { return null; } });
-ipcMain.handle("update:download", async () => { await autoUpdater.checkForUpdates(); await autoUpdater.downloadUpdate(); return true; });
+ipcMain.handle("update:download", async () => {
+  try { await autoUpdater.checkForUpdates(); await autoUpdater.downloadUpdate(); }
+  catch (e) { updateDone("Update failed", "The download didn't finish. Click to try again."); throw e; }
+  updateDone("Update ready to install", "Click to open App & Versions, then Install");
+  return true;
+});
 ipcMain.handle("update:install", () => autoUpdater.quitAndInstall());
 
 app.setAppUserModelId("org.motus.app");
