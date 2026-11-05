@@ -2,7 +2,7 @@
 // Progress is worked out from the data each time, so editing a past workout moves the goal too.
 // Weeks, months and days follow the app's calendar (tz = its getTimezoneOffset(), as for /home and /achievements), not
 // the process's: the server runs in UTC and the copy on a device in the person's zone, and both must agree.
-import { e1rm, GROUPS, LIFTED_SQL, withDefaults, bodyMeasure, bodyUnit, bodyGoalDirection, goalDaysOf, orderGoals, type Goal, type GoalProgress, type Settings } from "@motus/shared";
+import { e1rm, GROUPS, LIFTED_SQL, withDefaults, bodyMeasure, bodyUnit, bodyGoalDirection, goalDaysOf, orderGoals, GOAL_METRICS, type Goal, type GoalProgress, type Settings } from "@motus/shared";
 import type { Router, Ctx } from "../router";
 import type { Sql } from "../db";
 import { camel, id, str, numOrNull, oneOf, dateStr, startOfDay, tzOf, visible } from "../util";
@@ -11,7 +11,7 @@ import { notFound, bad } from "../errors";
 import { getSettings } from "./settings";
 import { exerciseSessions } from "./library";
 import { currentStreak, dayIn, weekIn } from "./achievements";
-import { stepsByDay } from "./activities";
+import { stepsByDay, ensureTypes } from "./activities";
 
 const DAY = 86400000;
 
@@ -20,33 +20,8 @@ interface Window { from: string; to: string; fromDay: string; toDay: string }
 const daysIn = (v: unknown): string | null => v === "workdays" ? JSON.stringify("workdays")
   : Array.isArray(v) && v.length && v.length < 7 ? JSON.stringify([...new Set(v.map(Number).filter((d) => Number.isInteger(d) && d >= 0 && d <= 6))].sort()) : null;
 
-// hidden: still measured for goals made with it, no longer offered for new ones (sessions covers workouts and activity
-// counts; every weekly or monthly goal now keeps its own streak)
-export const METRICS: { scope: Goal["scope"]; metric: string; name: string; unit: string; periodic: boolean; comparator?: ">=" | "<="; hidden?: boolean }[] = [
-  { scope: "general", metric: "workouts", name: "Workouts", unit: "workouts", periodic: true, hidden: true },
-  { scope: "general", metric: "active_minutes", name: "Active minutes (workouts and activities)", unit: "min", periodic: true },
-  { scope: "general", metric: "streak_weeks", name: "Weeks in a row meeting your weekly goal", unit: "weeks", periodic: false, hidden: true },
-  { scope: "general", metric: "volume", name: "Total volume", unit: "kg", periodic: true },
-  { scope: "routine", metric: "routine_count", name: "Times done", unit: "times", periodic: true },
-  { scope: "routine", metric: "routine_duration", name: "Finish within", unit: "min", periodic: false, comparator: "<=" },
-  { scope: "routine", metric: "routine_volume", name: "Volume in one session", unit: "kg", periodic: false },
-  { scope: "exercise", metric: "max_weight", name: "Heaviest weight", unit: "kg", periodic: false },
-  { scope: "exercise", metric: "e1rm", name: "Estimated one-rep max", unit: "kg", periodic: false },
-  { scope: "exercise", metric: "max_reps", name: "Most reps in a set", unit: "reps", periodic: false },
-  { scope: "exercise", metric: "max_duration", name: "Longest hold", unit: "s", periodic: false },
-  { scope: "exercise", metric: "exercise_count", name: "Times done", unit: "times", periodic: true },
-  { scope: "muscle", metric: "muscle_sets", name: "Working sets", unit: "sets", periodic: true },
-  { scope: "muscle", metric: "muscle_sessions", name: "Sessions training it", unit: "times", periodic: true },
-  // sessions: scopeId null = workouts and every activity, "workout" = gym workouts, else one activity type
-  { scope: "activity", metric: "sessions", name: "Sessions", unit: "sessions", periodic: true },
-  { scope: "activity", metric: "activity_distance", name: "Distance", unit: "km", periodic: true },
-  { scope: "activity", metric: "activity_count", name: "Number of sessions", unit: "times", periodic: true, hidden: true },
-  { scope: "activity", metric: "activity_minutes", name: "Time", unit: "min", periodic: true },
-  { scope: "activity", metric: "steps_avg", name: "Average daily steps", unit: "steps", periodic: true },
-  // which way a body goal heads is chosen per goal (suggested by bodyGoalDirection), so neither sets a comparator
-  { scope: "body", metric: "body_weight", name: "Body weight", unit: "kg", periodic: false },
-  { scope: "body", metric: "body_metric", name: "Measurement", unit: "cm", periodic: false },
-];
+// what each goal can measure lives in shared, so the app can read a metric's unit before /goal-metrics has loaded
+export const METRICS = GOAL_METRICS;
 
 function windowOf(g: Goal, now: Date, s: Settings, tzMin: number, offset = 0): Window {
   const span = (a: string, b: string): Window => ({ from: startOfDay(a, tzMin).toISOString(), to: startOfDay(b, tzMin).toISOString(), fromDay: a, toDay: b });
@@ -308,13 +283,23 @@ async function goalFields(ctx: Ctx, b: Record<string, unknown>, prev?: Goal) {
   const target = has("target") ? numOrNull(b.target, 0, 1e9) : Number(prev!.target);
   if (target == null || target <= 0) throw bad("Set a target");
   const raw = has("scopeId") ? b.scopeId : prev!.scopeId;
-  const scopeId = raw && m.metric !== "body_weight" ? str(raw, 80) : null;
+  // general goals and daily steps point at nothing: a reference left from the kind it was before is dropped, not kept hidden
+  const scopeId = raw && m.metric !== "body_weight" && m.scope !== "general" && m.metric !== "steps_avg" ? str(raw, 80) : null;
   if (["routine", "exercise", "muscle"].includes(m.scope) && !scopeId) throw bad(`Pick the ${m.scope === "muscle" ? "muscle group" : m.scope}`);
   if (m.metric === "body_metric" && (!bodyMeasure(scopeId ?? "") || scopeId === "weight")) throw bad("Pick what to measure");
   if (!prev || scopeId !== prev.scopeId || m.scope !== prev.scope) {
     if (m.scope === "muscle" && !GROUPS.some((g) => g.id === scopeId)) throw bad("Pick the muscle group");
     if (m.scope === "routine") await visible(ctx.q, "routines", id(scopeId), "routine");
     if (m.scope === "exercise") await visible(ctx.q, "exercises", id(scopeId), "exercise");
+  }
+  // an activity goal counts everything (null), gym workouts ("workout", only as sessions) or one of this person's activity
+  // types; a change of measure counts too, as "workout" has no distance or time of its own
+  if (m.scope === "activity" && scopeId && (!prev || scopeId !== prev.scopeId || m.scope !== prev.scope || m.metric !== prev.metric)) {
+    if (scopeId === "workout") { if (m.metric !== "sessions") throw bad("Pick an activity"); }
+    else {
+      await ensureTypes(ctx);
+      if (!(await ctx.q.query("SELECT 1 FROM activity_types WHERE slug = $1", [scopeId])).rows.length) throw bad("Pick an activity");
+    }
   }
   // only a body goal's direction is the person's choice (someone may want a bigger or a smaller waist); the others are fixed by what they measure
   const kind = bodyKind({ metric: m.metric, scopeId });
@@ -376,8 +361,9 @@ export function goalRoutes(r: Router) {
     const prev = camel<Goal>(row);
     const v = await goalFields(ctx, b, prev);
     // a change to what is measured or the target reopens a goal it had marked achieved; it is re-checked on the next read.
-    // A target within rounding of the old one is no change: the form shows it in lb or miles and converts it back.
-    const was = Number(prev.target), retargeted = Math.abs(v.target - was) > 1e-3 * Math.max(Math.abs(was), 1e-9);
+    // A target within float error of the old one is no change (the form leaves out a target you didn't touch); a step as small
+    // as 0.1 lb is a real one.
+    const was = Number(prev.target), retargeted = Math.abs(v.target - was) > 1e-6 * Math.max(Math.abs(was), 1e-9);
     const moved = v.metric !== prev.metric || v.scopeId !== prev.scopeId || retargeted || v.comparator !== prev.comparator
       || v.period !== prev.period || v.days !== daysIn(prev.days);
     const status = b.status ? oneOf(b.status, ["active", "achieved", "archived"], "active") : moved && prev.status === "achieved" ? "active" : prev.status;

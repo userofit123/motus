@@ -12,3 +12,4 @@ export * from "./live";
 export * from "./intervals";
 export * from "./version";
 export * from "./route";
+export * from "./goals";

@@ -74,7 +74,8 @@ export async function stepsByDay(q: Sql, fromDay: string, toDay: string | null, 
   });
 }
 
-async function ensureTypes(ctx: Ctx) {
+/** A new person's activity types: the defaults, made the first time anything asks for them. */
+export async function ensureTypes(ctx: Ctx) {
   const n = Number((await ctx.q.query("SELECT count(*) n FROM activity_types")).rows[0].n);
   if (n) return;
   for (const t of DEFAULT_TYPES)

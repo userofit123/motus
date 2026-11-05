@@ -1,7 +1,7 @@
 // Every screen's data, filed under a topic (the first part of the key) so live updates know what to reload.
 import { computed, type Ref, unref, watch, type MaybeRef } from "vue";
 import { useQuery, useMutation, useInfiniteQuery, type QueryClient } from "@tanstack/vue-query";
-import { withDefaults, type Settings, type Exercise, type RoutineSummary, type Goal, type Me, type Program } from "@motus/shared";
+import { withDefaults, type Settings, type Exercise, type RoutineSummary, type Goal, type Me, type Program, type GoalMetric } from "@motus/shared";
 import { api, httpTransport } from "./client";
 import { sync } from "./replica";
 import { endedHere } from "./outbox";
@@ -31,7 +31,7 @@ export const useWorkouts = (params: MaybeRef<Record<string, unknown>> = {}) => u
 export const useHome = () => useQuery({ queryKey: ["home"], queryFn: () => api.get("/home", { tz: new Date().getTimezoneOffset() }) });
 export const useGoals = (all = false) => useQuery({ queryKey: ["goals", all], queryFn: () => api.get<Goal[]>("/goals", { all: all ? 1 : undefined, tz: new Date().getTimezoneOffset() }) });
 export const useGoalDetail = (id: MaybeRef<string>) => useQuery({ queryKey: computed(() => ["goals", "detail", unref(id)]), queryFn: () => api.get<any>(`/goals/${unref(id)}/detail`, { tz: new Date().getTimezoneOffset() }), enabled: computed(() => !!unref(id)) });
-export const useGoalMetrics = () => useQuery({ queryKey: ["static", "metrics"], queryFn: () => api.get("/goal-metrics"), staleTime: Infinity });
+export const useGoalMetrics = () => useQuery({ queryKey: ["static", "metrics"], queryFn: () => api.get<GoalMetric[]>("/goal-metrics"), staleTime: Infinity });
 export const useStats = (range: MaybeRef<{ from?: string; to?: string }>) => useQuery({ queryKey: computed(() => ["stats", unref(range)]), queryFn: () => api.get("/stats", { ...unref(range), tz: new Date().getTimezoneOffset() }) });
 export const useCalendar = (range: MaybeRef<{ from: string; to: string }>) => useQuery({ queryKey: computed(() => ["calendar", unref(range)]), queryFn: () => api.get("/calendar", { ...unref(range), tz: new Date().getTimezoneOffset() }) });
 export const useNotes = (type: MaybeRef<string>, id: MaybeRef<string>) => useQuery({ queryKey: computed(() => ["notes", unref(type), unref(id)]), queryFn: () => api.get("/notes", { targetType: unref(type), targetId: unref(id) }), enabled: computed(() => !!unref(id)) });

@@ -3,7 +3,7 @@
 // Active, achieved and archived; each with its progress, pace and trend.
 import { computed, nextTick, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { GROUPS, muscleName, toKg, toM, fromM, BODY_MEASURES, GOAL_DIRECTIONS, bodyMeasure, bodyGoalDirection, orderGoals, type Goal, workdaysOf } from "@motus/shared";
+import { GROUPS, muscleName, toKg, toM, fromM, BODY_MEASURES, GOAL_DIRECTIONS, bodyMeasure, bodyGoalDirection, orderGoals, GOAL_METRICS, type Goal, type GoalMetric, workdaysOf } from "@motus/shared";
 import { useGoals, useGoalMetrics, useRoutines, useExercises, useActivityTypes, useChange, useBody, useSettings, saveSettings, loaded } from "../api/queries";
 import { api } from "../api/client";
 import { invalidate } from "../api/live";
@@ -180,7 +180,9 @@ let prefill: { text: string; unit: string } | null = null;
 async function startEdit(g: Goal) {
   const kind = g.metric === "body_weight" ? "weight" : g.scopeId ?? "weight", paired = g.scope === "body" && !!bodyMeasure(kind)?.pair;
   // by the unit save converts with (the metric's, or the body measure's), not the one progress reports
-  const u = (g.scope === "body" ? bodyMeasure(kind)?.unit : (metrics.data.value ?? []).find((m: any) => m.metric === g.metric)?.unit) ?? "";
+  // (the shared list when the server's isn't in yet: an unknown unit would show kg as they are and save them as lb)
+  const metricUnit = (list: GoalMetric[] | undefined) => list?.find((m) => m.metric === g.metric)?.unit;
+  const u = (g.scope === "body" ? bodyMeasure(kind)?.unit : metricUnit(metrics.data.value) ?? metricUnit(GOAL_METRICS)) ?? "";
   // shown numbers have thousands separators ("1,250"), which a number field can't take
   const n = (x: string) => Number(x.replace(/,/g, ""));
   const target = u === "kg" ? n(fmt.value.w(g.target)) : u === "km" ? n(fmt.value.num(fromM(g.target * 1000, fmt.value.du), 2)) : u === "cm" ? n(fmt.value.len(g.target, 2)) : g.target;
@@ -199,7 +201,8 @@ async function startEdit(g: Goal) {
 const setStatus = useChange(async (id: string, status: string) => { await api.put(`/goals/${id}`, { status }); toast(status === "archived" ? "Goal archived" : "Goal made active"); }, ["goals", "home"]);
 async function del(g: Goal) { if (await confirm(`Delete "${g.title}"?`, { ok: "Delete", danger: true })) { await api.del(`/goals/${g.id}`); invalidate(["goals", "home"]); open.value = null; toast("Goal deleted"); } }
 // Home's ⋮ "Edit" on a goal lands here with ?edit=id
-watch([() => route.query.edit, () => goals.data.value], ([e]) => { const g = e && goals.data.value?.find((x) => x.id === e); if (g) { startEdit(g); router.replace({ query: {} }); } }, { immediate: true });
+// (once the metrics are in too, so the target is shown and saved in the right unit)
+watch([() => route.query.edit, () => goals.data.value, () => metrics.data.value], ([e]) => { const g = e && metrics.data.value && goals.data.value?.find((x) => x.id === e); if (g) { startEdit(g); router.replace({ query: {} }); } }, { immediate: true });
 // show the page once its data is in, all at once
 await loaded(goals, metrics, routines, exercises, types, body);
 </script>
