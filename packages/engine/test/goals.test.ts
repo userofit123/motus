@@ -171,4 +171,36 @@ describe("editing a goal", () => {
     await call("PUT", `/goals/${id}`, { title: "Lighter" });
     expect(await goal(id)).toMatchObject({ title: "Lighter", status: "achieved" });
   });
+
+  it("clears a deadline", async () => {
+    const { id } = await call("POST", "/goals", { metric: "workouts", target: 10, period: "once", deadline: "2099-01-01" });
+    expect((await goal(id)).deadline).toBe("2099-01-01");
+    await call("PUT", `/goals/${id}`, { deadline: null });
+    expect((await goal(id)).deadline ?? null).toBeNull();
+  });
+
+  it("checks the kept reference when the kind changes and scopeId is left out", async () => {
+    const r = (await call("POST", "/routines", { name: "Kind change" })).id;
+    const { id } = await call("POST", "/goals", { metric: "routine_count", scopeId: r, target: 2, period: "week" });
+    // a routine's id is no exercise
+    await expect(call("PUT", `/goals/${id}`, { metric: "max_weight" })).rejects.toMatchObject({ status: 400 });
+    const walk = (await call("POST", "/goals", { metric: "activity_distance", scopeId: "walk", target: 30, period: "month" })).id;
+    // "walk" is no muscle group
+    await expect(call("PUT", `/goals/${walk}`, { metric: "muscle_sets" })).rejects.toMatchObject({ status: 400 });
+    expect(await goal(id)).toMatchObject({ metric: "routine_count", scopeId: r });
+    expect(await goal(walk)).toMatchObject({ metric: "activity_distance", scopeId: "walk" });
+  });
+
+  it("keeps an achieved goal achieved when the target comes back within rounding", async () => {
+    await log("chest", 100);
+    const { id } = await call("POST", "/goals", { metric: "body_metric", scopeId: "chest", target: 100, comparator: ">=" });
+    expect((await goal(id)).status).toBe("achieved");
+    // read again: the read that marks it gives the app's clock, later ones the stored date
+    const before = await goal(id);
+    // 100 cm shown as 39.37 in and converted back: not reopened (a reopened one-off goal is achieved again on the next
+    // read, but with a new achieved date)
+    await new Promise((r) => setTimeout(r, 20));
+    await call("PUT", `/goals/${id}`, { target: 39.37 * 2.54, title: "Chest" });
+    expect(await goal(id)).toMatchObject({ title: "Chest", status: "achieved", achievedAt: before.achievedAt });
+  });
 });

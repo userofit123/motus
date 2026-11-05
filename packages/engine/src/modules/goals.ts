@@ -297,10 +297,11 @@ export async function goalsWithProgress(ctx: Ctx, tzMin: number, where = "status
 
 /**
  * What a goal measures, checked the same way for a new goal and an edit. On an edit (prev) each field the body leaves out
- * keeps its value, and only a changed routine or exercise is checked against what this person can see (an old goal whose
- * routine was deleted can still be renamed).
+ * keeps its value, and only a changed routine, exercise or muscle group is checked against what this person can see (an old
+ * goal whose routine was deleted can still be renamed). A change of kind counts too: a kept scopeId was made for the old
+ * kind (a routine's id is no exercise, "walk" no muscle group).
  */
-async function goalFields(ctx: Ctx, b: any, prev?: Goal) {
+async function goalFields(ctx: Ctx, b: Record<string, unknown>, prev?: Goal) {
   const has = (k: string) => !prev || k in b;
   const m = METRICS.find((x) => x.metric === (has("metric") ? b.metric : prev!.metric));
   if (!m) throw bad("Pick what to measure");
@@ -310,7 +311,7 @@ async function goalFields(ctx: Ctx, b: any, prev?: Goal) {
   const scopeId = raw && m.metric !== "body_weight" ? str(raw, 80) : null;
   if (["routine", "exercise", "muscle"].includes(m.scope) && !scopeId) throw bad(`Pick the ${m.scope === "muscle" ? "muscle group" : m.scope}`);
   if (m.metric === "body_metric" && (!bodyMeasure(scopeId ?? "") || scopeId === "weight")) throw bad("Pick what to measure");
-  if (!prev || scopeId !== prev.scopeId) {
+  if (!prev || scopeId !== prev.scopeId || m.scope !== prev.scope) {
     if (m.scope === "muscle" && !GROUPS.some((g) => g.id === scopeId)) throw bad("Pick the muscle group");
     if (m.scope === "routine") await visible(ctx.q, "routines", id(scopeId), "routine");
     if (m.scope === "exercise") await visible(ctx.q, "exercises", id(scopeId), "exercise");
@@ -319,7 +320,8 @@ async function goalFields(ctx: Ctx, b: any, prev?: Goal) {
   const kind = bodyKind({ metric: m.metric, scopeId });
   let comparator: ">=" | "<=" = m.comparator ?? ">=";
   if (m.scope === "body") {
-    if (b.comparator === ">=" || b.comparator === "<=") comparator = b.comparator;
+    const asked = b.comparator;
+    if (asked === ">=" || asked === "<=") comparator = asked;
     // the same body measure keeps the way it was heading
     else if (prev && prev.scope === "body" && bodyKind(prev) === kind) comparator = prev.comparator;
     else {
@@ -373,8 +375,10 @@ export function goalRoutes(r: Router) {
     if (!row) throw notFound("Goal not found");
     const prev = camel<Goal>(row);
     const v = await goalFields(ctx, b, prev);
-    // a change to what is measured or the target reopens a goal it had marked achieved; it is re-checked on the next read
-    const moved = v.metric !== prev.metric || v.scopeId !== prev.scopeId || v.target !== Number(prev.target) || v.comparator !== prev.comparator
+    // a change to what is measured or the target reopens a goal it had marked achieved; it is re-checked on the next read.
+    // A target within rounding of the old one is no change: the form shows it in lb or miles and converts it back.
+    const was = Number(prev.target), retargeted = Math.abs(v.target - was) > 1e-3 * Math.max(Math.abs(was), 1e-9);
+    const moved = v.metric !== prev.metric || v.scopeId !== prev.scopeId || retargeted || v.comparator !== prev.comparator
       || v.period !== prev.period || v.days !== daysIn(prev.days);
     const status = b.status ? oneOf(b.status, ["active", "achieved", "archived"], "active") : moved && prev.status === "achieved" ? "active" : prev.status;
     const achievedAt = status === "active" ? null : prev.achievedAt;

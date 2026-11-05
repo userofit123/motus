@@ -154,8 +154,10 @@ async function save() {
   if (m.unit === "km") target = toM(target, fmt.value.du) / 1000;
   const isBody = v.scope === "body", weight = bodyKind.value === "weight";
   if (isBody) target = toBase(Number(v.target));
-  const body = { metric: isBody ? (weight ? "body_weight" : "body_metric") : v.metric, scopeId: isBody ? (weight ? null : bodyKind.value) : v.scopeId,
+  const body: Record<string, unknown> = { metric: isBody ? (weight ? "body_weight" : "body_metric") : v.metric, scopeId: isBody ? (weight ? null : bodyKind.value) : v.scopeId,
     comparator: isBody ? dirShown.value : undefined, target, period: v.period, days: goalDays(v), deadline: v.deadline || null, title: v.title.trim() || autoTitle.value };
+  // an untouched target stays as stored: the shown one is rounded, and converting it back would move it (100 kg → 100.017)
+  if (editId.value && prefill && String(v.target) === prefill.text && (isBody ? bm.value.unit : m.unit) === prefill.unit) delete body.target;
   try {
     const gid = editId.value ?? (await api.post<{ id: string }>(`/goals?tz=${new Date().getTimezoneOffset()}`, body)).id;
     if (editId.value) await api.put(`/goals/${gid}`, body);
@@ -164,21 +166,25 @@ async function save() {
     // a one-off goal you have already reached moves straight to Achieved: say so instead of letting it vanish
     const g = await api.get<Goal>(`/goals/${gid}`);
     if (g.status === "achieved" && filter.value !== "achieved") { toast("Already reached: it's under Achieved"); filter.value = "achieved"; }
-    else if (g.status === "active" && filter.value === "achieved") { toast("Goal saved: it's under Active again"); filter.value = "active"; }
+    else if (!made && g.status === "active" && filter.value === "achieved") { toast("Goal saved: it's under Active again"); filter.value = "active"; }
     else toast(made ? "Goal created" : "Goal saved");
   } catch (e) { toastError(e); }
 }
 function closeForm() {
-  creating.value = false; editId.value = null; editMetric.value = null;
+  creating.value = false; editId.value = null; editMetric.value = null; prefill = null;
   f.value = blank(); router.replace({ query: {} });
 }
+// the target as an edit showed it, and the unit it was stored in, so save can tell whether it was changed
+let prefill: { text: string; unit: string } | null = null;
 // editing fills the new-goal form with the goal's values: the target in your units (it is kept in kg / km / cm)
 async function startEdit(g: Goal) {
-  const u = g.progress?.unit ?? "";
+  const kind = g.metric === "body_weight" ? "weight" : g.scopeId ?? "weight", paired = g.scope === "body" && !!bodyMeasure(kind)?.pair;
+  // by the unit save converts with (the metric's, or the body measure's), not the one progress reports
+  const u = (g.scope === "body" ? bodyMeasure(kind)?.unit : (metrics.data.value ?? []).find((m: any) => m.metric === g.metric)?.unit) ?? "";
   // shown numbers have thousands separators ("1,250"), which a number field can't take
   const n = (x: string) => Number(x.replace(/,/g, ""));
   const target = u === "kg" ? n(fmt.value.w(g.target)) : u === "km" ? n(fmt.value.num(fromM(g.target * 1000, fmt.value.du), 2)) : u === "cm" ? n(fmt.value.len(g.target, 2)) : g.target;
-  const kind = g.metric === "body_weight" ? "weight" : g.scopeId ?? "weight", paired = g.scope === "body" && !!bodyMeasure(kind)?.pair;
+  prefill = { text: String(target), unit: u };
   const when = g.period !== "day" ? g.period : g.days === "workdays" ? "workdays" : Array.isArray(g.days) && g.days.length ? "days" : "day";
   open.value = null; creating.value = false;
   filling = true;
