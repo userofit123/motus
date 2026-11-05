@@ -36,8 +36,10 @@ import org.json.JSONObject;
  * the timer's notification as it then is in place of the one shown, with a sound (TimerCue), so a run keeps one
  * notification however many rounds it has. Each can carry buttons (Pause, Skip, +30s…): a tap is sent to the web app as an "action"
  * event with the button's id, without opening the app, so it works from the lock screen.
- * Also the phone's step counter while a walk is recorded: the hardware counter keeps counting with the screen off,
- * and the recording reads the running total (steps since the phone started) and subtracts where it began.
+ * Also the phone's step sensors while a walk is recorded; both keep counting with the screen off. The step counter gives
+ * the running total (steps since the phone started), which the recording subtracts where it began; it holds back the
+ * first steps after standing still until it's sure you're walking. The step detector reports each step as it happens,
+ * so the count moves straight away, and the counter later fills in any the detector missed.
  */
 @CapacitorPlugin(name = "MotusWorkout", permissions = { @Permission(alias = "steps", strings = { "android.permission.ACTIVITY_RECOGNITION" }) })
 public class MotusWorkoutPlugin extends Plugin implements SensorEventListener {
@@ -380,14 +382,18 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener {
     // ---- steps ----
     private long stepTotal = -1;
 
-    private Sensor stepSensor() {
+    private Sensor sensor(int type) {
         SensorManager sm = (SensorManager) getContext().getSystemService(Context.SENSOR_SERVICE);
-        return sm == null ? null : sm.getDefaultSensor(Sensor.TYPE_STEP_COUNTER);
+        return sm == null ? null : sm.getDefaultSensor(type);
+    }
+
+    private boolean hasStepSensor() {
+        return sensor(Sensor.TYPE_STEP_COUNTER) != null || sensor(Sensor.TYPE_STEP_DETECTOR) != null;
     }
 
     @PluginMethod
     public void startSteps(PluginCall call) {
-        if (stepSensor() == null) { JSObject r = new JSObject(); r.put("available", false); call.resolve(r); return; }
+        if (!hasStepSensor()) { JSObject r = new JSObject(); r.put("available", false); call.resolve(r); return; }
         // Android 10+ asks for "physical activity" before the step counter reports anything
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && getPermissionState("steps") != PermissionState.GRANTED) {
             requestPermissionForAlias("steps", call, "stepsPermission");
@@ -405,9 +411,13 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener {
     private void listen(PluginCall call) {
         SensorManager sm = (SensorManager) getContext().getSystemService(Context.SENSOR_SERVICE);
         sm.unregisterListener(this);
-        sm.registerListener(this, stepSensor(), SensorManager.SENSOR_DELAY_NORMAL, 0);
+        // no batching (latency 0): each reading is sent as soon as the sensor has it, not held for a later batch
+        Sensor counter = sensor(Sensor.TYPE_STEP_COUNTER), detector = sensor(Sensor.TYPE_STEP_DETECTOR);
+        if (counter != null) sm.registerListener(this, counter, SensorManager.SENSOR_DELAY_FASTEST, 0);
+        if (detector != null) sm.registerListener(this, detector, SensorManager.SENSOR_DELAY_FASTEST, 0);
         JSObject r = new JSObject();
         r.put("available", true);
+        r.put("counter", counter != null);
         r.put("total", stepTotal);
         call.resolve(r);
     }
@@ -415,7 +425,7 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener {
     @PluginMethod
     public void getSteps(PluginCall call) {
         JSObject r = new JSObject();
-        r.put("available", stepSensor() != null);
+        r.put("available", hasStepSensor());
         r.put("total", stepTotal);
         call.resolve(r);
     }
@@ -429,6 +439,8 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener {
 
     @Override
     public void onSensorChanged(SensorEvent e) {
+        // one event per step, sent on its own so the web app counts it at once
+        if (e.sensor.getType() == Sensor.TYPE_STEP_DETECTOR) { notifyListeners("step", new JSObject()); return; }
         if (e.sensor.getType() != Sensor.TYPE_STEP_COUNTER) return;
         stepTotal = (long) e.values[0];
         JSObject r = new JSObject();

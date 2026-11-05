@@ -11,3 +11,4 @@ export * from "./templates";
 export * from "./live";
 export * from "./intervals";
 export * from "./version";
+export * from "./route";

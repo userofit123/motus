@@ -4,7 +4,8 @@ import { createEngine, type Engine } from "../src/index";
 import { pgliteDb } from "../src/adapters/pglite";
 import { uuidv7 } from "../src/ids";
 import { occurrences } from "../src/modules/schedule";
-import { parseTrack, routeStats } from "../src/modules/activities";
+import { routeStats } from "@motus/shared";
+import { parseTrack } from "../src/modules/activities";
 
 let eng: Engine, U: string;
 const call = async (method: string, path: string, body?: unknown, query?: Record<string, string>) => {
@@ -100,6 +101,14 @@ describe("activities", () => {
     // unset, as an older app's sync or backup leaves it
     await eng.db.admin.query("UPDATE activity_types SET has_steps = NULL WHERE user_id = $1 AND slug IN ('walk', 'cycle', $2)", [U, slug]);
     expect(await steps()).toMatchObject({ walk: true, cycle: false, [slug]: false });
+  });
+  it("leaves out the way covered while paused", () => {
+    // ~55 m apart each; the 4th point is where you went on after walking ~555 m while paused
+    const r = [[32, 34.8, 0], [32.0005, 34.8, 30], [32.001, 34.8, 60], [32.006, 34.8, 400], [32.0065, 34.8, 430]];
+    const all = routeStats(r), split = routeStats(r, [3]);
+    expect(Math.round(all.distanceM / 10)).toBe(72);
+    expect(Math.round(split.distanceM / 10)).toBe(17);
+    expect(split.movingS).toBe(90);
   });
   it("counts a real climb but not GPS wobble, and leaves an unknown climb unset", async () => {
     // as the app sends a route (null: no altitude), and as it's kept (a point without altitude has no 4th value)

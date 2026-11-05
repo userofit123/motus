@@ -3,7 +3,7 @@
 // (a walk to the gym, then the workout), and the bars at the bottom of the screen show each one.
 // Everything is saved on this device as it comes in, so a reload or closing the app never loses a walk.
 //
-// Steps: the Android app reads the phone's step counter, which keeps counting with the screen off. Browsers have no step
+// Steps: the Android app reads the phone's step detector and step counter, which keep counting with the screen off. Browsers have no step
 // counter, so there the steps are counted from the phone's motion sensor while Motus is open on screen (the same limit as
 // the route: a browser stops both when the screen goes off). A computer has no motion sensor, so the steps say so there.
 // Which types count steps is the type's own "on foot" setting (walk, run and hike, and any type you add as on foot).
@@ -13,7 +13,7 @@ import { api } from "../api/client";
 import { invalidate, queryClient } from "../api/live";
 import type { SettingsMe } from "../api/queries";
 import { keepAwake, showRecording, clearRecording, isNativeApp, onNoticeAction, askNotificationsOnce } from "./native";
-import { fromM } from "@motus/shared";
+import { fromM, haversine, routeStats } from "@motus/shared";
 
 export interface Rec {
   type: string; startedAt: number; route: number[][]; pausedMs: number; pauseAt: number | null;
@@ -21,6 +21,10 @@ export interface Rec {
   steps: number;
   /** the phone's step counter total at the last reading (steps since the phone started), to add only what's new */
   stepLast: number | null;
+  /** steps the step detector already added that the step counter hasn't reported yet, so they aren't added twice */
+  stepAhead: number;
+  /** indexes of route points that start again after a pause: the way walked while paused isn't counted */
+  breaks: number[];
 }
 const KEY = "motusRecording";
 const typeInfo = (slug: string) => (queryClient.getQueryData<any[]>(["activities", "types"]) ?? []).find((x) => x.slug === slug) as { name: string; hasGps: boolean; hasDistance: boolean; hasSteps?: boolean } | undefined;
@@ -35,7 +39,7 @@ function load(): Rec | null {
     r.steps = r.stepBase != null && r.stepNow != null ? Math.max(0, r.stepNow - r.stepBase - (r.stepPaused ?? 0)) : 0;
     r.stepLast = r.stepNow ?? null;
   }
-  return { type: r.type ?? "walk", startedAt: r.startedAt, route: r.route ?? [], pausedMs: r.pausedMs ?? 0, pauseAt: r.pauseAt ?? null, steps: r.steps, stepLast: r.stepLast ?? null };
+  return { type: r.type ?? "walk", startedAt: r.startedAt, route: r.route ?? [], pausedMs: r.pausedMs ?? 0, pauseAt: r.pauseAt ?? null, steps: r.steps, stepLast: r.stepLast ?? null, stepAhead: r.stepAhead ?? 0, breaks: r.breaks ?? [] };
 }
 
 export const recording = ref<Rec | null>(load());
@@ -51,9 +55,9 @@ export const stepsOnScreen = ref(false);
 /** why steps aren't counted here, shown in the steps block instead of a count that never moves */
 export const stepsError = ref("");
 
-const R = 6371000, rad = (d: number) => (d * Math.PI) / 180;
-const hav = (a: number[], b: number[]) => { const dLat = rad(b[0]! - a[0]!), dLon = rad(b[1]! - a[1]!); const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a[0]!)) * Math.cos(rad(b[0]!)) * Math.sin(dLon / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(h)); };
-export const recDistM = computed(() => (recording.value?.route ?? []).reduce((t, p, i, a) => (i ? t + hav(a[i - 1]!, p) : 0), 0));
+/** the route's distance, moving time and climb, worked out as the server does, without the way covered while paused */
+const recStats = computed(() => routeStats(recording.value?.route ?? [], recording.value?.breaks));
+export const recDistM = computed(() => recStats.value.distanceM);
 export const recElapsedS = computed(() => { const r = recording.value; return r ? Math.max(0, ((r.pauseAt ?? recNow.value) - r.startedAt - r.pausedMs) / 1000) : 0; });
 /** steps are worth saving: a step source ran, or steps were counted earlier in this recording */
 export const recStepsCounted = computed(() => !!recording.value && (stepsLive.value || recording.value.steps > 0));
@@ -79,7 +83,7 @@ function onPoint(lat: number, lon: number, time: number, alt: number | null | un
   if (acc > ROUGH_M) return;
   const pt = [lat, lon, Math.round(time / 1000), alt ?? undefined] as number[];
   const last = r.route.at(-1);
-  if (last && hav(last, pt) < 3) return; // standing still
+  if (last && haversine(last, pt) < 3) return; // standing still
   r.route.push(pt); persist();
 }
 async function startGps(name: string) {
@@ -110,15 +114,34 @@ function stopGps() {
   bgId = null; watchId = null; gpsError.value = "";
 }
 
-// ---- steps: the phone's step counter (Android app) ----
+// ---- steps: the phone's step detector and step counter (Android app) ----
+// The step counter is the accurate total, but it holds back the first ten or so steps after you've stood still until it
+// is sure you're walking, then reports them in one go, sometimes seconds later. The step detector reports each step
+// as it happens. So each detected step counts at once, and the counter's readings only add what the detector missed.
 const WP = () => (globalThis as any).Capacitor?.Plugins?.MotusWorkout;
-let stepSub: any = null, nativeSteps = false;
+let stepSubs: any[] = [], nativeSteps = false, hasCounter = true;
+/** how far the detector may run ahead of the counter: past that it is counting things the counter doesn't see as steps */
+const AHEAD_MAX = 30;
+function onDetected() {
+  const r = recording.value;
+  if (!r || r.pauseAt) return;
+  stepsLive.value = true;
+  if (hasCounter && r.stepAhead >= AHEAD_MAX) return;
+  r.steps++; if (hasCounter) r.stepAhead++;
+  persist(true);
+}
 function onTotal(total: number) {
   const r = recording.value;
   if (!r || !(total >= 0)) return;
   stepsLive.value = true;
-  // only what's new since the last reading; a smaller total means the phone restarted, so it becomes the new start
-  if (r.stepLast != null && total >= r.stepLast && !r.pauseAt) r.steps += total - r.stepLast;
+  // only what's new since the last reading; a smaller total means the phone restarted, so it becomes the new start.
+  // The first reading is only the start: steps detected before it stay counted.
+  if (r.stepLast == null || total < r.stepLast) r.stepAhead = 0;
+  else {
+    const n = total - r.stepLast, ahead = Math.min(n, r.stepAhead);
+    r.stepAhead -= ahead;
+    if (!r.pauseAt) r.steps += n - ahead;
+  }
   r.stepLast = total; persist(true);
 }
 async function startNativeSteps() {
@@ -130,15 +153,17 @@ async function startNativeSteps() {
     // a phone without a step counter still has a motion sensor; it counts while Motus is on screen
     if (!r?.available) { startMotion(false); return; }
     stepsError.value = "";
-    nativeSteps = true; stepsLive.value = true; // the counter only reports once you take a step, so show 0 until then
-    stepSub = await p.addListener("steps", (e: any) => onTotal(Number(e.total)));
+    nativeSteps = true; stepsLive.value = true; // the sensors only report once you take a step, so show 0 until then
+    hasCounter = r.counter !== false;
+    stepSubs = [await p.addListener("steps", (e: any) => onTotal(Number(e.total))), await p.addListener("step", () => onDetected())];
     if (r.total >= 0) onTotal(Number(r.total));
   } catch { startMotion(false); }
 }
 
 // ---- steps: the motion sensor (browsers) ----
 // A step shows as a peak in how hard the phone is pushed (acceleration including gravity) above its slow average. Taps and
-// shakes are ignored by waiting for four steps in a walking rhythm before counting them, and after a two-second stop.
+// shakes are ignored by waiting for a second step in a walking rhythm before counting both, and again after a two-second
+// stop; waiting for more made the count lag well behind your first steps each time you set off.
 let motionOn = false, ema = 0, base = 0, armed = true, lastStep = 0, run = 0;
 let motionWait: ReturnType<typeof setTimeout> | null = null;
 function onMotion(e: DeviceMotionEvent) {
@@ -155,7 +180,7 @@ function onMotion(e: DeviceMotionEvent) {
 function step(t: number) {
   if (t - lastStep > 2000) run = 0;
   lastStep = t; run++;
-  const n = run < 4 ? 0 : run === 4 ? 4 : 1;
+  const n = run < 2 ? 0 : run === 2 ? 2 : 1;
   const r = recording.value;
   if (n && r && !r.pauseAt) { r.steps += n; persist(true); }
 }
@@ -175,7 +200,8 @@ async function startMotion(fromTap: boolean) {
   motionWait = setTimeout(() => { motionWait = null; if (motionOn && !stepsLive.value) stepsError.value = NO_SENSOR; }, 5000);
 }
 function stopSteps() {
-  stepSub?.remove?.(); stepSub = null;
+  for (const s of stepSubs) s?.remove?.();
+  stepSubs = [];
   if (nativeSteps) WP()?.stopSteps?.().catch?.(() => {});
   nativeSteps = false;
   if (motionOn) removeEventListener("devicemotion", onMotion);
@@ -204,7 +230,7 @@ function stopAll() {
 
 export function startRecording(type: string) {
   previewLocation(false);
-  recording.value = { type, startedAt: Date.now(), route: [], pausedMs: 0, pauseAt: null, steps: 0, stepLast: null };
+  recording.value = { type, startedAt: Date.now(), route: [], pausedMs: 0, pauseAt: null, steps: 0, stepLast: null, stepAhead: 0, breaks: [] };
   persist(); startSensors(true);
   void askNotificationsOnce();
 }
@@ -214,7 +240,8 @@ export function togglePause() {
 // paused or going on; nothing when it already is (a second tap on a notification that hadn't caught up yet)
 function setPaused(on: boolean) {
   const r = recording.value; if (!r || !!r.pauseAt === on) return;
-  if (r.pauseAt) { r.pausedMs += Date.now() - r.pauseAt; r.pauseAt = null; } else r.pauseAt = Date.now();
+  // going on again: the next point starts a new stretch, so the way between where you paused and where you go on isn't counted
+  if (r.pauseAt) { r.pausedMs += Date.now() - r.pauseAt; r.pauseAt = null; if (r.route.length) r.breaks.push(r.route.length); } else r.pauseAt = Date.now();
   persist();
 }
 /** saves it as an activity and returns its id */
@@ -222,7 +249,9 @@ export async function finishRecording(): Promise<string> {
   const r = recording.value!;
   if (saveT) persist();
   const end = r.pauseAt ?? Date.now();
-  const res = await api.post("/activities", { type: r.type, startedAt: new Date(r.startedAt).toISOString(), endedAt: new Date(end).toISOString(), durationS: Math.round(recElapsedS.value), route: r.route, steps: recStepsCounted.value ? r.steps : null, source: "gps", clientId: `gps:${r.startedAt}` });
+  // the server works these out from the route too, but can't know where the pauses were
+  const rs = r.route.length > 1 ? recStats.value : null;
+  const res = await api.post("/activities", { type: r.type, startedAt: new Date(r.startedAt).toISOString(), endedAt: new Date(end).toISOString(), durationS: Math.round(recElapsedS.value), route: r.route, distanceM: rs?.distanceM, movingS: rs?.movingS, steps: recStepsCounted.value ? r.steps : null, source: "gps", clientId: `gps:${r.startedAt}` });
   recording.value = null; persist(); stopAll();
   invalidate(["activities", "stats", "goals", "home", "calendar"]);
   return res.id;
