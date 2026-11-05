@@ -5,7 +5,7 @@
 import { e1rm, GROUPS, LIFTED_SQL, withDefaults, bodyMeasure, bodyUnit, bodyGoalDirection, goalDaysOf, orderGoals, type Goal, type GoalProgress, type Settings } from "@motus/shared";
 import type { Router, Ctx } from "../router";
 import type { Sql } from "../db";
-import { camel, id, str, numOrNull, oneOf, dateStr, startOfDay, tzOf } from "../util";
+import { camel, id, str, numOrNull, oneOf, dateStr, startOfDay, tzOf, visible } from "../util";
 import { uuidv7 } from "../ids";
 import { notFound, bad } from "../errors";
 import { getSettings } from "./settings";
@@ -295,6 +295,44 @@ export async function goalsWithProgress(ctx: Ctx, tzMin: number, where = "status
   return orderGoals(rows, s.goalsOrder).sort((a, b) => Number(a.status === "achieved") - Number(b.status === "achieved"));
 }
 
+/**
+ * What a goal measures, checked the same way for a new goal and an edit. On an edit (prev) each field the body leaves out
+ * keeps its value, and only a changed routine or exercise is checked against what this person can see (an old goal whose
+ * routine was deleted can still be renamed).
+ */
+async function goalFields(ctx: Ctx, b: any, prev?: Goal) {
+  const has = (k: string) => !prev || k in b;
+  const m = METRICS.find((x) => x.metric === (has("metric") ? b.metric : prev!.metric));
+  if (!m) throw bad("Pick what to measure");
+  const target = has("target") ? numOrNull(b.target, 0, 1e9) : Number(prev!.target);
+  if (target == null || target <= 0) throw bad("Set a target");
+  const raw = has("scopeId") ? b.scopeId : prev!.scopeId;
+  const scopeId = raw && m.metric !== "body_weight" ? str(raw, 80) : null;
+  if (["routine", "exercise", "muscle"].includes(m.scope) && !scopeId) throw bad(`Pick the ${m.scope === "muscle" ? "muscle group" : m.scope}`);
+  if (m.metric === "body_metric" && (!bodyMeasure(scopeId ?? "") || scopeId === "weight")) throw bad("Pick what to measure");
+  if (!prev || scopeId !== prev.scopeId) {
+    if (m.scope === "muscle" && !GROUPS.some((g) => g.id === scopeId)) throw bad("Pick the muscle group");
+    if (m.scope === "routine") await visible(ctx.q, "routines", id(scopeId), "routine");
+    if (m.scope === "exercise") await visible(ctx.q, "exercises", id(scopeId), "exercise");
+  }
+  // only a body goal's direction is the person's choice (someone may want a bigger or a smaller waist); the others are fixed by what they measure
+  const kind = bodyKind({ metric: m.metric, scopeId });
+  let comparator: ">=" | "<=" = m.comparator ?? ">=";
+  if (m.scope === "body") {
+    if (b.comparator === ">=" || b.comparator === "<=") comparator = b.comparator;
+    // the same body measure keeps the way it was heading
+    else if (prev && prev.scope === "body" && bodyKind(prev) === kind) comparator = prev.comparator;
+    else {
+      // when the app doesn't say, a body goal heads from where you are now towards the target, else the measure's usual way
+      const now = (await ctx.q.query("SELECT value v FROM body_metrics WHERE kind = $1 ORDER BY measured_at DESC LIMIT 1", [kind])).rows[0];
+      comparator = bodyGoalDirection(kind, target, now ? Number(now.v) : null);
+    }
+  }
+  const period = m.periodic ? oneOf(has("period") ? b.period : prev!.period, ["once", "day", "week", "month"], "week") : "once";
+  const days = period === "day" ? daysIn(has("days") ? b.days : prev!.days) : null;
+  return { scope: m.scope, metric: m.metric, scopeId, target, comparator, period, days };
+}
+
 export function goalRoutes(r: Router) {
   r.get("/goal-metrics", async () => METRICS);
   r.get("/goals", async (ctx, _p, _b, qs) => goalsWithProgress(ctx, tzOf(qs), qs.all === "1" ? "true" : "status <> 'archived'"));
@@ -319,41 +357,33 @@ export function goalRoutes(r: Router) {
     return { goal: g, streak: current, best, periods, log: await goalLog(ctx.q, g, windowOf(g, now, s, tz), tz) };
   });
   r.post("/goals", async (ctx, _p, b, qs) => {
-    const m = METRICS.find((x) => x.metric === b.metric);
-    if (!m) throw bad("Pick what to measure");
-    const target = numOrNull(b.target, 0, 1e9);
-    if (target == null || target <= 0) throw bad("Set a target");
-    if (["routine", "exercise", "muscle"].includes(m.scope) && !b.scopeId) throw bad(`Pick the ${m.scope === "muscle" ? "muscle group" : m.scope}`);
-    if (m.metric === "body_metric" && (!bodyMeasure(b.scopeId) || b.scopeId === "weight")) throw bad("Pick what to measure");
-    // only a body goal's direction is the person's choice (someone may want a bigger or a smaller waist); the others are fixed by what they measure
-    let cmp: ">=" | "<=" = m.scope === "body" ? oneOf(b.comparator, [">=", "<="], ">=") : m.comparator ?? ">=";
-    // when the app doesn't say, a body goal heads from where you are now towards the target, else the measure's usual way
-    if (m.scope === "body" && b.comparator !== ">=" && b.comparator !== "<=") {
-      const kind = bodyKind({ metric: m.metric, scopeId: b.scopeId ?? null });
-      const now = (await ctx.q.query("SELECT value v FROM body_metrics WHERE kind = $1 ORDER BY measured_at DESC LIMIT 1", [kind])).rows[0];
-      cmp = bodyGoalDirection(kind, target, now ? Number(now.v) : null);
-    }
+    const v = await goalFields(ctx, b);
     const gid = uuidv7();
     await ctx.q.query(
       `INSERT INTO goals (id, user_id, title, scope, scope_id, metric, comparator, target, period, start_date, deadline, notes, days) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
-      [gid, ctx.userId, str(b.title, 120), m.scope, b.scopeId && m.metric !== "body_weight" ? str(b.scopeId, 80) : null, m.metric, cmp, target,
-        m.periodic ? oneOf(b.period, ["once", "day", "week", "month"], "week") : "once", dateStr(b.startDate) ?? dayIn(ctx.now(), tzOf(qs)), dateStr(b.deadline), str(b.notes, 2000),
-        m.periodic && b.period === "day" ? daysIn(b.days) : null]);
+      [gid, ctx.userId, str(b.title, 120), v.scope, v.scopeId, v.metric, v.comparator, v.target, v.period,
+        dateStr(b.startDate) ?? dayIn(ctx.now(), tzOf(qs)), dateStr(b.deadline), str(b.notes, 2000), v.days]);
     ctx.changed("goal");
-    return { id: gid, comparator: cmp };
+    return { id: gid, comparator: v.comparator };
   });
+  // every field the new-goal form sets can be changed later: progress is worked out from the logged data on each read,
+  // so nothing recorded goes stale when what the goal measures changes
   r.put("/goals/:id", async (ctx, p, b) => {
-    const { rows } = await ctx.q.query(
-      // a body goal's direction can be changed; turning it round reopens a goal it had marked achieved (it is re-checked on the next read)
-      `UPDATE goals SET title = coalesce($2, title), target = coalesce($3, target), deadline = CASE WHEN $8::boolean THEN $4 ELSE deadline END, notes = coalesce($6, notes),
-         period = coalesce($7, period), days = CASE WHEN $10::boolean THEN $11::jsonb ELSE days END, comparator = CASE WHEN scope = 'body' AND $9::text IS NOT NULL THEN $9 ELSE comparator END,
-         status = CASE WHEN $5::text IS NULL AND scope = 'body' AND $9::text IS NOT NULL AND $9 <> comparator AND status = 'achieved' THEN 'active' ELSE coalesce($5, status) END,
-         achieved_at = CASE WHEN $5 = 'active' OR ($5::text IS NULL AND scope = 'body' AND $9::text IS NOT NULL AND $9 <> comparator AND status = 'achieved') THEN NULL ELSE achieved_at END
-       WHERE id = $1 RETURNING id`,
-      [id(p.id), b.title != null ? str(b.title, 120) : null, numOrNull(b.target, 0, 1e9), dateStr(b.deadline), b.status ? oneOf(b.status, ["active", "achieved", "archived"], "active") : null,
-        b.notes != null ? str(b.notes, 2000) : null, b.period ? oneOf(b.period, ["once", "day", "week", "month"], "once") : null, "deadline" in b,
-        b.comparator === ">=" || b.comparator === "<=" ? b.comparator : null, "days" in b || (b.period != null && b.period !== "day"), b.period != null && b.period !== "day" ? null : daysIn(b.days)]);
-    if (!rows.length) throw notFound("Goal not found");
+    const row = (await ctx.q.query("SELECT * FROM goals WHERE id = $1", [id(p.id)])).rows[0];
+    if (!row) throw notFound("Goal not found");
+    const prev = camel<Goal>(row);
+    const v = await goalFields(ctx, b, prev);
+    // a change to what is measured or the target reopens a goal it had marked achieved; it is re-checked on the next read
+    const moved = v.metric !== prev.metric || v.scopeId !== prev.scopeId || v.target !== Number(prev.target) || v.comparator !== prev.comparator
+      || v.period !== prev.period || v.days !== daysIn(prev.days);
+    const status = b.status ? oneOf(b.status, ["active", "achieved", "archived"], "active") : moved && prev.status === "achieved" ? "active" : prev.status;
+    const achievedAt = status === "active" ? null : prev.achievedAt;
+    await ctx.q.query(
+      `UPDATE goals SET title = $2, scope = $3, scope_id = $4, metric = $5, comparator = $6, target = $7, period = $8, days = $9::jsonb, start_date = $10, deadline = $11, notes = $12,
+         status = $13, achieved_at = $14 WHERE id = $1`,
+      [prev.id, b.title != null ? str(b.title, 120) : prev.title, v.scope, v.scopeId, v.metric, v.comparator, v.target, v.period, v.days,
+        "startDate" in b ? dateStr(b.startDate) ?? prev.startDate : prev.startDate, "deadline" in b ? dateStr(b.deadline) : prev.deadline,
+        b.notes != null ? str(b.notes, 2000) : prev.notes, status, achievedAt]);
     ctx.changed("goal");
     return { ok: true };
   });

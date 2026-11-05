@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // Goals (requirements 7 and 8): general, per routine, per exercise, per muscle group, for activities and for the body.
 // Active, achieved and archived; each with its progress, pace and trend.
-import { computed, ref, watch } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { GROUPS, muscleName, toKg, toM, fromM, BODY_MEASURES, GOAL_DIRECTIONS, bodyMeasure, bodyGoalDirection, orderGoals, type Goal, workdaysOf } from "@motus/shared";
 import { useGoals, useGoalMetrics, useRoutines, useExercises, useActivityTypes, useChange, useBody, useSettings, saveSettings, loaded } from "../api/queries";
@@ -79,18 +79,23 @@ function moveGoal(id: string, dir: -1 | 1) {
   saveSettings({ goalsOrder: full }, { quiet: true });
 }
 
-// ----- new goal -----
+// ----- the goal form: a new goal, or an edit of one (editId) with the same fields filled in -----
 const creating = ref(route.query.new === "1");
+const editId = ref<string | null>(null);
+// a measure no longer offered for new goals stays pickable on the goal that has it
+const editMetric = ref<string | null>(null);
+// while an edit fills the form in, the watchers below that reset fields on a change of kind or measure keep still
+let filling = false;
 // the + menu's "New goal" while this page is already open
-watch(() => route.query.new, (v) => { if (v === "1") creating.value = true; });
+watch(() => route.query.new, (v) => { if (v === "1") { closeForm(); creating.value = true; } });
 const blank = () => ({ scope: "activity", metric: "sessions", scopeId: null, target: null, period: "week", when: "week", days: [] as number[], deadline: "", title: "", body: "weight", side: "l", dir: null as null | ">=" | "<=" });
 const f = ref<any>(blank());
 watch(() => f.value.scopeId, async (v) => { if (f.value.scope === "activity" && v === NEW_TYPE) f.value.scopeId = await newActivityType(); });
 const pickEx = ref(false);
-const scopeMetrics = computed(() => (metrics.data.value ?? []).filter((m: any) => m.scope === f.value.scope && !m.hidden));
+const scopeMetrics = computed(() => (metrics.data.value ?? []).filter((m: any) => m.scope === f.value.scope && (!m.hidden || m.metric === editMetric.value)));
 const metric = computed<any>(() => (metrics.data.value ?? []).find((m: any) => m.metric === f.value.metric));
-watch(() => f.value.scope, () => { f.value.metric = scopeMetrics.value[0]?.metric; f.value.scopeId = null; f.value.when = scopeMetrics.value[0]?.periodic ? "week" : "once"; });
-watch(() => f.value.metric, () => { f.value.when = metric.value?.periodic ? (f.value.when === "once" ? "week" : f.value.when) : "once"; });
+watch(() => f.value.scope, () => { if (filling) return; f.value.metric = scopeMetrics.value[0]?.metric; f.value.scopeId = null; f.value.when = scopeMetrics.value[0]?.periodic ? "week" : "once"; });
+watch(() => f.value.metric, () => { if (filling) return; f.value.when = metric.value?.periodic ? (f.value.when === "once" ? "week" : f.value.when) : "once"; });
 // how often: by the day (every day, workdays, chosen days), the week, the month, or once in total
 const WHEN = [{ value: "day", label: "Every day" }, { value: "workdays", label: "Workdays" }, { value: "days", label: "Chosen days" },
   { value: "week", label: "Every week" }, { value: "month", label: "Every month" }, { value: "once", label: "Once, in total" }];
@@ -116,7 +121,7 @@ const bodyLatest = computed(() => (body.data.value as any[] | undefined)?.find((
 const bodyDir = computed(() => bodyGoalDirection(bodyKind.value, f.value.target ? toBase(Number(f.value.target)) : NaN, bodyLatest.value ? Number(bodyLatest.value.value) : null));
 const dirShown = computed(() => f.value.dir ?? bodyDir.value);
 // a new measure starts from its own suggestion again
-watch(() => [f.value.body, f.value.side, f.value.scope], () => { f.value.dir = null; });
+watch(() => [f.value.body, f.value.side, f.value.scope], () => { if (!filling) f.value.dir = null; });
 /** a target the latest entry has already passed in the chosen direction: saving would mark it achieved at once */
 const passed = (dir: string, target: number, now: number | null) => now != null && target > 0 && (dir === ">=" ? now >= target : now <= target);
 const bodyPassed = computed(() => f.value.target ? passed(dirShown.value, toBase(Number(f.value.target)), bodyLatest.value ? Number(bodyLatest.value.value) : null) : false);
@@ -139,7 +144,7 @@ const autoTitle = computed(() => {
   if (m.metric === "sessions") return `${scopeName.value || "Sessions"}: ${f.value.target}${per || " in total"}`;
   return `${scopeName.value ? scopeName.value + ": " : ""}${m.comparator === "<=" ? "under " : ""}${f.value.target} ${unit.value} ${m.name.toLowerCase()}${per}`.replace(/\s+/g, " ");
 });
-async function create() {
+async function save() {
   const v = f.value, m = metric.value;
   if (!m || v.target == null || (v.target as any) === "" || Number(v.target) <= 0) return toast("Set a target", { kind: "err" });
   if (v.when === "days" && !v.days.length) return toast("Pick the days", { kind: "err" });
@@ -149,36 +154,44 @@ async function create() {
   if (m.unit === "km") target = toM(target, fmt.value.du) / 1000;
   const isBody = v.scope === "body", weight = bodyKind.value === "weight";
   if (isBody) target = toBase(Number(v.target));
+  const body = { metric: isBody ? (weight ? "body_weight" : "body_metric") : v.metric, scopeId: isBody ? (weight ? null : bodyKind.value) : v.scopeId,
+    comparator: isBody ? dirShown.value : undefined, target, period: v.period, days: goalDays(v), deadline: v.deadline || null, title: v.title.trim() || autoTitle.value };
   try {
-    const made = await api.post<{ id: string }>(`/goals?tz=${new Date().getTimezoneOffset()}`, { metric: isBody ? (weight ? "body_weight" : "body_metric") : v.metric, scopeId: isBody ? (weight ? null : bodyKind.value) : v.scopeId,
-      comparator: isBody ? dirShown.value : undefined, target, period: v.period, days: goalDays(v), deadline: v.deadline || null, title: v.title || autoTitle.value });
-    invalidate(["goals", "home"]); creating.value = false; router.replace({ query: {} });
+    const gid = editId.value ?? (await api.post<{ id: string }>(`/goals?tz=${new Date().getTimezoneOffset()}`, body)).id;
+    if (editId.value) await api.put(`/goals/${gid}`, body);
+    const made = !editId.value;
+    invalidate(["goals", "home"]); closeForm();
     // a one-off goal you have already reached moves straight to Achieved: say so instead of letting it vanish
-    const g = await api.get<Goal>(`/goals/${made.id}`);
-    if (g.status === "achieved") { toast("Already reached: it's under Achieved"); filter.value = "achieved"; } else toast("Goal created");
-    f.value = blank();
+    const g = await api.get<Goal>(`/goals/${gid}`);
+    if (g.status === "achieved" && filter.value !== "achieved") { toast("Already reached: it's under Achieved"); filter.value = "achieved"; }
+    else if (g.status === "active" && filter.value === "achieved") { toast("Goal saved: it's under Active again"); filter.value = "active"; }
+    else toast(made ? "Goal created" : "Goal saved");
   } catch (e) { toastError(e); }
 }
-// editing: the target is shown and typed in your units, and kept in kg / km / cm
-const editing = ref<null | { id: string; title: string; target: number; deadline: string; unit: string; kind: string; body: boolean; dir: ">=" | "<="; now: number | null }>(null);
-function startEdit(g: Goal) {
+function closeForm() {
+  creating.value = false; editId.value = null; editMetric.value = null;
+  f.value = blank(); router.replace({ query: {} });
+}
+// editing fills the new-goal form with the goal's values: the target in your units (it is kept in kg / km / cm)
+async function startEdit(g: Goal) {
   const u = g.progress?.unit ?? "";
   // shown numbers have thousands separators ("1,250"), which a number field can't take
   const n = (x: string) => Number(x.replace(/,/g, ""));
   const target = u === "kg" ? n(fmt.value.w(g.target)) : u === "km" ? n(fmt.value.num(fromM(g.target * 1000, fmt.value.du), 2)) : u === "cm" ? n(fmt.value.len(g.target, 2)) : g.target;
-  open.value = null;
-  editing.value = { id: g.id, title: g.title, target, deadline: g.deadline ?? "", unit: u === "kg" ? fmt.value.wu : u === "km" ? fmt.value.du : u === "cm" ? fmt.value.lu : u, kind: u,
-    body: g.scope === "body", dir: g.comparator, now: g.scope === "body" && g.progress?.current ? g.progress.current : null };
-}
-async function saveEdit() {
-  const e = editing.value!;
-  const target = e.kind === "kg" ? toKg(Number(e.target), fmt.value.wu) : e.kind === "km" ? toM(Number(e.target), fmt.value.du) / 1000 : e.kind === "cm" ? fmt.value.toCm(Number(e.target)) : Number(e.target);
-  try { await api.put(`/goals/${e.id}`, { title: e.title.trim(), target, deadline: e.deadline || null, ...(e.body ? { comparator: e.dir } : {}) }); invalidate(["goals", "home"]); editing.value = null; toast("Goal saved"); } catch (err) { toastError(err); }
+  const kind = g.metric === "body_weight" ? "weight" : g.scopeId ?? "weight", paired = g.scope === "body" && !!bodyMeasure(kind)?.pair;
+  const when = g.period !== "day" ? g.period : g.days === "workdays" ? "workdays" : Array.isArray(g.days) && g.days.length ? "days" : "day";
+  open.value = null; creating.value = false;
+  filling = true;
+  editMetric.value = g.metric; editId.value = g.id;
+  f.value = { scope: g.scope, metric: g.metric, scopeId: g.scope === "body" ? null : g.scopeId, target, period: g.period, when, days: Array.isArray(g.days) ? [...g.days] : [],
+    deadline: g.deadline ?? "", title: g.title, body: paired ? kind.slice(0, -2) : kind, side: paired ? kind.slice(-1) : "l", dir: g.scope === "body" ? g.comparator : null };
+  await nextTick();
+  filling = false;
+  // a name the app made follows the goal as it changes; one you typed stays
+  if (g.title === autoTitle.value) f.value.title = "";
 }
 const setStatus = useChange(async (id: string, status: string) => { await api.put(`/goals/${id}`, { status }); toast(status === "archived" ? "Goal archived" : "Goal made active"); }, ["goals", "home"]);
 async function del(g: Goal) { if (await confirm(`Delete "${g.title}"?`, { ok: "Delete", danger: true })) { await api.del(`/goals/${g.id}`); invalidate(["goals", "home"]); open.value = null; toast("Goal deleted"); } }
-const editNow = computed(() => { const e = editing.value; if (!e || e.now == null) return ""; return e.kind === "kg" ? `${fmt.value.w(e.now)} ${fmt.value.wu}` : e.kind === "cm" ? `${fmt.value.len(e.now)} ${fmt.value.lu}` : `${e.now}${e.kind === "%" ? "%" : ` ${e.kind}`}`; });
-const editPassed = computed(() => { const e = editing.value; if (!e?.body) return false; const t = e.kind === "kg" ? toKg(Number(e.target), fmt.value.wu) : e.kind === "cm" ? fmt.value.toCm(Number(e.target)) : Number(e.target); return passed(e.dir, t, e.now); });
 // Home's ⋮ "Edit" on a goal lands here with ?edit=id
 watch([() => route.query.edit, () => goals.data.value], ([e]) => { const g = e && goals.data.value?.find((x) => x.id === e); if (g) { startEdit(g); router.replace({ query: {} }); } }, { immediate: true });
 // show the page once its data is in, all at once
@@ -207,16 +220,7 @@ await loaded(goals, metrics, routines, exercises, types, body);
         </div>
       </TransitionGroup>
     </Sheet>
-    <Sheet v-if="editing" title="Edit goal" @close="editing = null">
-      <div class="fld"><label>Name</label><input v-model="editing.title" /></div>
-      <div v-if="editing.body" class="fld"><label>Direction</label><div class="seg block"><button v-for="d in GOAL_DIRECTIONS" :key="d.value" :class="{ on: editing.dir === d.value }" @click="editing.dir = d.value">{{ d.label }}</button></div></div>
-      <div class="frow"><div class="fld"><label>Target{{ editing.unit ? ` (${editing.unit})` : "" }}</label><input v-model.number="editing.target" type="number" inputmode="decimal" step="any" />
-          <div v-if="editing.body" class="tiny" style="margin-top:4px">{{ editNow ? `Now ${editNow}` : "Nothing logged yet" }}{{ editPassed ? " · already there" : "" }}</div></div>
-        <div class="fld"><label>Deadline (optional)</label><DatePicker v-model="editing.deadline" clearable placeholder="No deadline" title="Deadline" /></div></div>
-      <template #foot><button class="btn o" @click="editing = null">Cancel</button><button class="btn" :disabled="!editing.title.trim() || !(Number(editing.target) > 0)" @click="saveEdit">Save</button></template>
-    </Sheet>
-
-    <Sheet v-if="creating" title="New goal" @close="creating = false; router.replace({ query: {} })">
+    <Sheet v-if="creating || editId" :title="editId ? 'Edit goal' : 'New goal'" @close="closeForm">
       <div class="fld"><label>What is it about?</label><ChoiceTiles v-model="f.scope" :options="SCOPE_TILES" label="What is it about?" />
         <p v-if="SCOPE_HELP[f.scope]" class="tiny" style="margin-top:8px">{{ SCOPE_HELP[f.scope] }}</p></div>
       <div v-if="f.scope === 'routine'" class="fld"><label>Routine</label><AppSelect v-model="f.scopeId" :options="(routines.data.value ?? []).map((r) => ({ value: r.id, label: r.name }))" placeholder="Choose a routine" title="Routine" /></div>
@@ -236,7 +240,7 @@ await loaded(goals, metrics, routines, exercises, types, body);
       <p v-else-if="f.when === 'workdays' && f.scope !== 'body'" class="tiny hgap">{{ daysShort(workdaysOf(settings)) }}, your work week. <button class="lnk inl" @click="router.push('/settings/units')">Change it</button></p>
       <div class="frow"><div class="fld"><label>Deadline (optional)</label><DatePicker v-model="f.deadline" clearable placeholder="No deadline" title="Deadline" /></div></div>
       <div class="fld"><label>Name</label><input v-model="f.title" :placeholder="autoTitle || 'Name the goal'" /></div>
-      <template #foot><button class="btn o" @click="creating = false">Cancel</button><button class="btn" @click="create">Save goal</button></template>
+      <template #foot><button class="btn o" @click="closeForm">Cancel</button><button class="btn" @click="save">Save goal</button></template>
     </Sheet>
     <ExercisePicker v-if="pickEx" title="Goal for which exercise?" @close="pickEx = false" @pick="(ids) => { f.scopeId = ids[0]; pickEx = false; }" />
   </div>

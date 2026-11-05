@@ -112,3 +112,63 @@ describe("body measurement goals", () => {
     await expect(call("POST", "/goals", { metric: "body_metric", scopeId: "nose", target: 5 })).rejects.toMatchObject({ status: 400 });
   });
 });
+
+describe("editing a goal", () => {
+  it("changes what it measures, its target, how often and its days", async () => {
+    const { id } = await call("POST", "/goals", { metric: "sessions", scopeId: "workout", target: 3, period: "week", title: "Gym" });
+    await call("PUT", `/goals/${id}`, { metric: "activity_distance", scopeId: "walk", target: 30, period: "month", title: "Walking" });
+    let g = await goal(id);
+    expect(g).toMatchObject({ scope: "activity", metric: "activity_distance", scopeId: "walk", target: 30, period: "month", title: "Walking", comparator: ">=" });
+    await call("PUT", `/goals/${id}`, { metric: "steps_avg", scopeId: null, target: 8000, period: "day", days: [1, 3] });
+    g = await goal(id);
+    expect(g).toMatchObject({ metric: "steps_avg", scopeId: null, period: "day", days: [1, 3], title: "Walking" });
+    // a measure that isn't counted per week or month becomes one-off, and its days go
+    const r = (await call("POST", "/routines", { name: "Edit test day" })).id;
+    await call("PUT", `/goals/${id}`, { metric: "routine_duration", scopeId: r, target: 45, period: "week" });
+    g = await goal(id);
+    expect(g).toMatchObject({ scope: "routine", metric: "routine_duration", scopeId: r, period: "once", comparator: "<=" });
+    expect(g.days ?? null).toBeNull();
+  });
+
+  it("checks an edit like a new goal", async () => {
+    const { id } = await call("POST", "/goals", { metric: "workouts", target: 3, period: "week" });
+    await expect(call("PUT", `/goals/${id}`, { metric: "nonsense" })).rejects.toMatchObject({ status: 400 });
+    await expect(call("PUT", `/goals/${id}`, { target: 0 })).rejects.toMatchObject({ status: 400 });
+    await expect(call("PUT", `/goals/${id}`, { metric: "max_weight" })).rejects.toMatchObject({ status: 400 });
+    await expect(call("PUT", `/goals/${id}`, { metric: "muscle_sets", scopeId: "nose" })).rejects.toMatchObject({ status: 400 });
+    await expect(call("PUT", `/goals/${id}`, { metric: "routine_count", scopeId: uuidv7() })).rejects.toMatchObject({ status: 400 });
+    await expect(call("PUT", `/goals/${id}`, { metric: "body_metric", scopeId: "nose" })).rejects.toMatchObject({ status: 400 });
+    expect(await goal(id)).toMatchObject({ metric: "workouts", target: 3 });
+  });
+
+  it("can't reach someone else's goal or routine", async () => {
+    const other = uuidv7();
+    await eng.db.admin.query("INSERT INTO users (id, username) VALUES ($1, 'other')", [other]);
+    const as = (method: string, path: string, body?: unknown) => eng.handle({ method, path, body, userId: other });
+    const theirs = ((await as("POST", "/routines", { name: "Theirs" })).body as any).id;
+    const { id } = await call("POST", "/goals", { metric: "workouts", target: 3, period: "week" });
+    expect((await as("PUT", `/goals/${id}`, { target: 9 })).status).toBe(404);
+    await expect(call("PUT", `/goals/${id}`, { metric: "routine_count", scopeId: theirs })).rejects.toMatchObject({ status: 400 });
+    expect((await goal(id)).target).toBe(3);
+  });
+
+  it("reopens an achieved goal when what it measures changes, and moves a body goal to another measure", async () => {
+    await log("hips", 90);
+    const { id } = await call("POST", "/goals", { metric: "body_metric", scopeId: "hips", target: 95, comparator: "<=" });
+    expect((await goal(id)).status).toBe("achieved");
+    await call("PUT", `/goals/${id}`, { target: 85 });
+    let g = await goal(id);
+    expect(g.status).toBe("active");
+    expect(g.achievedAt).toBeNull();
+    // a new measure takes its own direction when none is given
+    await log("neck", 40);
+    await call("PUT", `/goals/${id}`, { scopeId: "neck", target: 38 });
+    g = await goal(id);
+    expect(g).toMatchObject({ metric: "body_metric", scopeId: "neck", comparator: "<=", target: 38, status: "active" });
+    // turned round, 40 is past 38: achieved again; a rename alone then keeps it achieved
+    await call("PUT", `/goals/${id}`, { comparator: ">=" });
+    expect((await goal(id)).status).toBe("achieved");
+    await call("PUT", `/goals/${id}`, { title: "Lighter" });
+    expect(await goal(id)).toMatchObject({ title: "Lighter", status: "achieved" });
+  });
+});
