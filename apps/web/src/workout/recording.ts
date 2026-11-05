@@ -3,7 +3,8 @@
 // (a walk to the gym, then the workout), and the bars at the bottom of the screen show each one.
 // Everything is saved on this device as it comes in, so a reload or closing the app never loses a walk.
 //
-// Steps: the Android app reads the phone's step detector and step counter, which keep counting with the screen off. Browsers have no step
+// Steps: the Android app counts with the phone's step detector and step counter, which keep counting with the screen off
+// (the recording's notification keeps the app going for them, as for the route: RecordingService). Browsers have no step
 // counter, so there the steps are counted from the phone's motion sensor while Motus is open on screen (the same limit as
 // the route: a browser stops both when the screen goes off). A computer has no motion sensor, so the steps say so there.
 // Which types count steps is the type's own "on foot" setting (walk, run and hike, and any type you add as on foot).
@@ -13,16 +14,15 @@ import { api } from "../api/client";
 import { invalidate, queryClient } from "../api/live";
 import type { SettingsMe } from "../api/queries";
 import { keepAwake, showRecording, clearRecording, isNativeApp, onNoticeAction, askNotificationsOnce } from "./native";
-import { fromM, haversine, routeStats } from "@motus/shared";
+import { fromM, routeStats, takesPoint, addStepReading, ROUTE_ROUGH_M, type StepReading } from "@motus/shared";
 
 export interface Rec {
   type: string; startedAt: number; route: number[][]; pausedMs: number; pauseAt: number | null;
   /** steps counted so far (not while paused) */
   steps: number;
-  /** the phone's step counter total at the last reading (steps since the phone started), to add only what's new */
-  stepLast: number | null;
-  /** steps the step detector already added that the step counter hasn't reported yet, so they aren't added twice */
-  stepAhead: number;
+  /** the Android app's step sensors: which run of them the last reading came from (they start again with the app) and
+   *  their count then, so a reading adds only what's new (addStepReading) */
+  stepSession: number | null; stepSeen: number;
   /** indexes of route points that start again after a pause: the way walked while paused isn't counted */
   breaks: number[];
 }
@@ -34,12 +34,9 @@ export const countsSteps = (slug: string) => typeInfo(slug)?.hasSteps ?? ["walk"
 function load(): Rec | null {
   const r = readJson<any>(KEY, null);
   if (!r || !r.startedAt) return null;
-  // a recording saved by the earlier version kept the counter's start instead of a running count
-  if (typeof r.steps !== "number") {
-    r.steps = r.stepBase != null && r.stepNow != null ? Math.max(0, r.stepNow - r.stepBase - (r.stepPaused ?? 0)) : 0;
-    r.stepLast = r.stepNow ?? null;
-  }
-  return { type: r.type ?? "walk", startedAt: r.startedAt, route: r.route ?? [], pausedMs: r.pausedMs ?? 0, pauseAt: r.pauseAt ?? null, steps: r.steps, stepLast: r.stepLast ?? null, stepAhead: r.stepAhead ?? 0, breaks: r.breaks ?? [] };
+  // a recording saved by an earlier version kept the phone's own step total; its steps so far stay, and counting goes on
+  // from the next reading
+  return { type: r.type ?? "walk", startedAt: r.startedAt, route: r.route ?? [], pausedMs: r.pausedMs ?? 0, pauseAt: r.pauseAt ?? null, steps: typeof r.steps === "number" ? r.steps : 0, stepSession: r.stepSession ?? null, stepSeen: r.stepSeen ?? 0, breaks: r.breaks ?? [] };
 }
 
 export const recording = ref<Rec | null>(load());
@@ -62,11 +59,12 @@ export const recElapsedS = computed(() => { const r = recording.value; return r 
 /** steps are worth saving: a step source ran, or steps were counted earlier in this recording */
 export const recStepsCounted = computed(() => !!recording.value && (stepsLive.value || recording.value.steps > 0));
 
-// Saving the whole route on every step reading would be wasteful; points are saved as they come, steps a moment later.
+// Saving the whole route on every step reading would be wasteful; points are saved as they come, steps within a few
+// seconds. A later step doesn't put that off again: while you walk on, steps come every second, so they'd never be saved.
 let saveT: ReturnType<typeof setTimeout> | null = null;
 function persist(soon = false) {
+  if (soon) { saveT ??= setTimeout(() => persist(), 3000); return; }
   if (saveT) { clearTimeout(saveT); saveT = null; }
-  if (soon) { saveT = setTimeout(() => persist(), 3000); return; }
   if (recording.value) writeJson(KEY, recording.value); else { try { localStorage.removeItem(KEY); } catch { /* not stored */ } }
 }
 
@@ -75,17 +73,15 @@ const BG = () => (globalThis as any).Capacitor?.Plugins?.BackgroundGeolocation;
 let watchId: number | null = null, bgId: string | null = null;
 /** the route comes from the Android app's location plugin, kept going with the screen off by the recording's notification */
 const bgOn = ref(false);
-const ROUGH_M = 50;
 function onPoint(lat: number, lon: number, time: number, alt: number | null | undefined, acc: number) {
   const r = recording.value;
   here.value = { lat, lon, acc };
-  // a rough fix would zig-zag the route and add distance you didn't go: say why nothing is drawn yet
-  gpsError.value = acc > ROUGH_M ? `Weak GPS signal (±${Math.round(acc)} m), waiting for a better one` : "";
-  if (!r || r.pauseAt) return;
-  if (acc > ROUGH_M) return;
+  // a rough fix would zig-zag the route and add distance you didn't go: say why nothing is drawn yet. Much rougher than
+  // any GPS is the phone's approximate location, which never gets better on its own.
+  gpsError.value = acc > 500 ? "Allow precise location for Motus to record the route" : acc > ROUTE_ROUGH_M ? `Weak GPS signal (±${Math.round(acc)} m), waiting for a better one` : "";
+  if (!r) return;
   const pt = [lat, lon, Math.round(time / 1000), alt ?? undefined] as number[];
-  const last = r.route.at(-1);
-  if (last && haversine(last, pt) < 3) return; // standing still
+  if (!takesPoint(r.route, pt, acc, !!r.pauseAt)) return;
   r.route.push(pt); persist();
 }
 async function startGps() {
@@ -119,50 +115,39 @@ function stopGps() {
 }
 
 // ---- steps: the phone's step detector and step counter (Android app) ----
-// The step counter is the accurate total, but it holds back the first ten or so steps after you've stood still until it
-// is sure you're walking, then reports them in one go, sometimes seconds later. The step detector reports each step
-// as it happens. So each detected step counts at once, and the counter's readings only add what the detector missed.
+// The app counts both itself (MotusWorkoutPlugin) and sends the counts so far with each step; the recording adds what
+// they grew by (addStepReading). So nothing is lost while this page is held up with the screen off, or reloaded.
 const WP = () => (globalThis as any).Capacitor?.Plugins?.MotusWorkout;
-let stepSubs: any[] = [], nativeSteps = false, hasCounter = true;
-/** how far the detector may run ahead of the counter: past that it is counting things the counter doesn't see as steps */
-const AHEAD_MAX = 30;
-function onDetected() {
+let stepSub: any = null;
+/** the Android app's step sensors count for this recording (and the recording's notification keeps them going) */
+const nativeSteps = ref(false);
+function onReading(e: any) {
   const r = recording.value;
-  if (!r || r.pauseAt) return;
-  stepsLive.value = true;
-  if (hasCounter && r.stepAhead >= AHEAD_MAX) return;
-  r.steps++; if (hasCounter) r.stepAhead++;
+  const x: StepReading = { session: Number(e?.session), counter: Number(e?.counter ?? -1), detector: Number(e?.detector ?? 0) };
+  if (!r || !Number.isFinite(x.session) || !Number.isFinite(x.counter) || !Number.isFinite(x.detector)) return;
+  const s = addStepReading({ steps: r.steps, session: r.stepSession, seen: r.stepSeen }, x, !!r.pauseAt);
+  r.steps = s.steps; r.stepSession = s.session; r.stepSeen = s.seen;
   persist(true);
 }
-function onTotal(total: number) {
-  const r = recording.value;
-  if (!r || !(total >= 0)) return;
-  stepsLive.value = true;
-  // only what's new since the last reading; a smaller total means the phone restarted, so it becomes the new start.
-  // The first reading is only the start: steps detected before it stay counted.
-  if (r.stepLast == null || total < r.stepLast) r.stepAhead = 0;
-  else {
-    const n = total - r.stepLast, ahead = Math.min(n, r.stepAhead);
-    r.stepAhead -= ahead;
-    if (!r.pauseAt) r.steps += n - ahead;
-  }
-  r.stepLast = total; persist(true);
-}
-async function startNativeSteps() {
-  const p = WP(); if (nativeSteps) return;
+async function startNativeSteps(fresh: boolean) {
+  const p = WP(); if (nativeSteps.value) return;
   try {
-    // asks for "Physical activity" the first time (Android 10+); without it, or without a step counter, no steps are shown
-    const r = await p.startSteps();
+    // asks for "Physical activity" the first time (Android 10+); without it, or without step sensors, no steps are shown
+    const r = await p.startSteps({ fresh });
     if (r?.denied) { stepsError.value = "Allow Physical activity for Motus in Android settings to count steps"; return; }
-    // a phone without a step counter still has a motion sensor; it counts while Motus is on screen
+    // a phone without step sensors still has a motion sensor; it counts while Motus is on screen
     if (!r?.available) { startMotion(false); return; }
+    if (!recording.value) { WP()?.stopSteps?.().catch?.(() => {}); return; } // ended while the permission was asked
     stepsError.value = "";
-    nativeSteps = true; stepsLive.value = true; // the sensors only report once you take a step, so show 0 until then
-    hasCounter = r.counter !== false;
-    stepSubs = [await p.addListener("steps", (e: any) => onTotal(Number(e.total))), await p.addListener("step", () => onDetected())];
-    // a reading from before this recording is no start for it; only resumed ones (stepLast set) continue from theirs
-    if (r.total >= 0 && recording.value?.stepLast != null) onTotal(Number(r.total));
+    nativeSteps.value = true; stepsLive.value = true; // the sensors only report once you take a step, so show 0 until then
+    stepSub = await p.addListener("steps", onReading);
+    onReading(r); // the steps taken since a reload, before this page listened again
   } catch { startMotion(false); }
+}
+/** back on screen: the counts as they are now, in case this page was held up while the screen was off */
+async function catchUpSteps() {
+  if (!nativeSteps.value) return;
+  try { onReading(await WP()?.getSteps?.()); } catch { /* the next step brings it */ }
 }
 
 // ---- steps: the motion sensor (browsers) ----
@@ -205,10 +190,9 @@ async function startMotion(fromTap: boolean) {
   motionWait = setTimeout(() => { motionWait = null; if (motionOn && !stepsLive.value) stepsError.value = NO_SENSOR; }, 5000);
 }
 function stopSteps() {
-  for (const s of stepSubs) s?.remove?.();
-  stepSubs = [];
-  if (nativeSteps) WP()?.stopSteps?.().catch?.(() => {});
-  nativeSteps = false;
+  stepSub?.remove?.(); stepSub = null;
+  if (nativeSteps.value) WP()?.stopSteps?.().catch?.(() => {});
+  nativeSteps.value = false;
   if (motionOn) removeEventListener("devicemotion", onMotion);
   if (motionWait) clearTimeout(motionWait);
   motionOn = false; motionWait = null; stepsLive.value = false; stepsOnScreen.value = false; stepsError.value = "";
@@ -217,12 +201,13 @@ function stopSteps() {
 // ---- running it ----
 let tick: ReturnType<typeof setInterval> | null = null;
 const typeName = (slug: string) => ((queryClient.getQueryData<any[]>(["activities", "types"]) ?? []).find((x) => x.slug === slug)?.name as string | undefined) ?? (slug[0]?.toUpperCase() + slug.slice(1));
-function startSensors(fromTap: boolean) {
+/** `fresh`: a new recording, so the step sensors count from zero; otherwise one left running picks up where it was */
+function startSensors(fromTap: boolean, fresh: boolean) {
   const r = recording.value; if (!r) return;
   recNow.value = Date.now();
   if (!tick) tick = setInterval(() => (recNow.value = Date.now()), 1000);
   // the motion sensor's permission (iPhone) has to be asked straight from the tap, so nothing is awaited before it
-  if (countsSteps(r.type)) { if (WP()?.startSteps) startNativeSteps(); else startMotion(fromTap); }
+  if (countsSteps(r.type)) { if (WP()?.startSteps) startNativeSteps(fresh); else startMotion(fromTap); }
   // a type without a route (yoga, a spin class, climbing) records time only, so location is never asked for
   if (typeInfo(r.type)?.hasGps !== false) startGps();
   keepAwake(true, "recording");
@@ -235,8 +220,8 @@ function stopAll() {
 
 export function startRecording(type: string) {
   previewLocation(false);
-  recording.value = { type, startedAt: Date.now(), route: [], pausedMs: 0, pauseAt: null, steps: 0, stepLast: null, stepAhead: 0, breaks: [] };
-  persist(); startSensors(true);
+  recording.value = { type, startedAt: Date.now(), route: [], pausedMs: 0, pauseAt: null, steps: 0, stepSession: null, stepSeen: 0, breaks: [] };
+  persist(); startSensors(true, true);
   void askNotificationsOnce();
 }
 export function togglePause() {
@@ -266,9 +251,9 @@ export function discardRecording() { recording.value = null; persist(); stopAll(
 export const recTypeName = () => typeName(recording.value?.type ?? "walk");
 
 // a recording left running (a reload, or the app was closed) picks up where it was
-if (recording.value) startSensors(false);
+if (recording.value) startSensors(false, false);
 // a browser lets go of "keep the screen on" whenever the page is hidden; take it again on coming back
-if (typeof document !== "undefined") document.addEventListener("visibilitychange", () => { if (recording.value && document.visibilityState === "visible") keepAwake(true, "recording"); });
+if (typeof document !== "undefined") document.addEventListener("visibilitychange", () => { if (recording.value && document.visibilityState === "visible") { keepAwake(true, "recording"); void catchUpSteps(); } });
 
 // The recording as a notification too (same setting as the workout's), also on the lock screen in the Android app: its
 // clock there (a browser's can't run one, so it says when it started), the distance in your units and the steps so far,
@@ -286,11 +271,12 @@ const settingsSeen = ref(0);
 queryClient.getQueryCache().subscribe((e) => { if (e.query.queryKey[0] === "settings" && e.query.queryKey[1] === "me") settingsSeen.value++; });
 const noticeOn = () => { void settingsSeen.value; return queryClient.getQueryData<SettingsMe>(["settings", "me"])?.settings?.workout?.sessionNotice !== false; };
 let recShown = !recording.value; // with nothing saved, one left behind by an app closed mid-recording is taken off below
-// While the Android app records a route it is shown even with the setting off: Android requires a notification to keep
-// the route going with the screen off, and this one is it.
-watch(() => JSON.stringify([recNotice.value, noticeOn(), bgOn.value]), () => {
+// While the Android app records a route or counts steps it is shown even with the setting off: Android requires a
+// notification to keep the route and the step sensors going with the screen off, and this one is it.
+const keepAlive = computed(() => bgOn.value || nativeSteps.value);
+watch(() => JSON.stringify([recNotice.value, noticeOn(), keepAlive.value]), () => {
   const n = recNotice.value;
-  if (!n || !(noticeOn() || bgOn.value)) { if (recShown) { void clearRecording(); recShown = false; } return; }
+  if (!n || !(noticeOn() || keepAlive.value)) { if (recShown) { void clearRecording(); recShown = false; } return; }
   recShown = true;
   const at = new Date(n.startedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
   const so = [n.dist > 0 ? `${n.dist.toFixed(1)} ${n.du}` : "", n.steps ? `${n.steps.toLocaleString()} steps` : ""].filter(Boolean).join(" · ");
@@ -299,7 +285,7 @@ watch(() => JSON.stringify([recNotice.value, noticeOn(), bgOn.value]), () => {
     body: isNativeApp() ? so || `Started ${at}` : [so, `Started ${at}. Keep Motus open on screen to record the route.`].filter(Boolean).join("\n"),
     since: n.paused ? null : n.since,
     actions: [n.paused ? { id: "rec-resume", title: "Resume" } : { id: "rec-pause", title: "Pause" }],
-    keepAlive: bgOn.value,
+    keepAlive: keepAlive.value,
   });
 }, { immediate: true });
 onNoticeAction("rec-pause", () => setPaused(true));

@@ -1,5 +1,6 @@
-// A recorded route of [lat, lon, unix s, altitude] points: its distance, moving time and climb. Shared so the recording
-// screen shows the same distance that is saved.
+// A recorded route of [lat, lon, unix s, altitude] points: which fixes go on it, its distance, moving time and climb,
+// and the walk's step count from the phone's step sensors. Shared so the recording screen shows the same distance that
+// is saved, and so this counting is tested.
 
 const R = 6371000;
 export function haversine(a: [number, number] | number[], b: [number, number] | number[]): number {
@@ -36,4 +37,32 @@ export function routeStats(route: number[][], breaks: number[] = []) {
   }
   // no altitude anywhere on the route: the climb is unknown, not 0 m
   return { distanceM: Math.round(dist), movingS: Math.round(moving), elevationM: !seen ? null : Math.round(climb) };
+}
+
+/** The weakest fix a route takes, in metres: a rougher one zig-zags the route and adds distance you didn't go. */
+export const ROUTE_ROUGH_M = 50;
+/** Whether a new fix goes on the route: not while paused, not a rough one, and not when you've stood still (under 3 m
+ *  from the last point, which would add GPS jitter as distance). */
+export function takesPoint(route: number[][], pt: number[], accuracyM: number, paused: boolean): boolean {
+  if (paused || !(accuracyM <= ROUTE_ROUGH_M)) return false;
+  const last = route.at(-1);
+  return !last || haversine(last, pt) >= 3;
+}
+
+/** One reading from the Android app's step sensors, all counted since `session` (when they started counting):
+ *  `counter` from the step counter (-1 before its first reading), `detector` from the step detector. */
+export interface StepReading { session: number; counter: number; detector: number }
+/** Where a recording's step count stands: `steps` so far, and the sensors' own count (`seen`) at the last reading of `session`. */
+export interface StepState { steps: number; session: number | null; seen: number }
+
+/** Adds a step reading to the recording's count. The step counter is the accurate one but holds back the first ten or
+ *  so steps each time you set off; the step detector reports each step at once but may miss some. Both are counts
+ *  since the sensors started, so the larger of the two is how far you've walked, and only its growth since the last
+ *  reading is added: a reading that comes late, twice or out of order adds nothing twice. While paused the readings
+ *  move `seen` on without counting. A new session (the app was restarted) counts from its own zero. */
+export function addStepReading(s: StepState, r: StepReading, paused: boolean): StepState {
+  const now = Math.max(r.counter, r.detector, 0);
+  const from = s.session === r.session ? s.seen : 0;
+  const grew = Math.max(0, now - from);
+  return { steps: s.steps + (paused ? 0 : grew), session: r.session, seen: Math.max(from, now) };
 }

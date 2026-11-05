@@ -29,8 +29,8 @@
         <!-- the interval timer's changes while the app is in the background (MotusWorkoutPlugin.TimerCue) -->
         <receiver android:name=".MotusWorkoutPlugin$TimerCue" android:exported="false" />
 
-        <!-- keeps a route recording with the screen off; its notification is the recording's own (RecordingService) -->
-        <service android:name=".RecordingService" android:exported="false" android:foregroundServiceType="location" />
+        <!-- keeps a walk's route and steps recording with the screen off; its notification is the recording's own (RecordingService) -->
+        <service android:name=".RecordingService" android:exported="false" android:foregroundServiceType="location|health" />
 
         <provider
             android:name="androidx.core.content.FileProvider"
@@ -56,6 +56,7 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_HEALTH" />
     <!-- the step counter while a walk is recorded -->
     <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
     <uses-feature android:name="android.hardware.sensor.stepcounter" android:required="false" />

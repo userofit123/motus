@@ -14,8 +14,9 @@ import androidx.core.app.ServiceCompat;
 import androidx.core.content.ContextCompat;
 
 /**
- * Keeps a route being recorded with the screen off: a foreground service of type location, which lets the app go on
- * getting the location plugin's fixes in the background. Android needs a notification for it, and that is the
+ * Keeps a walk being recorded with the screen off: a foreground service of type location (the location plugin's fixes)
+ * and health (the step sensors), which lets the app go on getting both in the background; without it Android stops
+ * both soon after the screen goes off. Android needs a notification for it, and that is the
  * recording's own (MotusWorkoutPlugin's REC_ID, with the clock, distance and Pause), so a walk shows one notification
  * rather than the location plugin's next to ours (that plugin is asked for no notification, so it never starts its own
  * foreground service).
@@ -38,9 +39,8 @@ public class RecordingService extends Service {
             try { NotificationManagerCompat.from(ctx).notify(REC_ID, n); } catch (SecurityException e) { /* notifications not allowed */ }
             return true;
         }
-        // Android 14 refuses a location service without the location permission; it's asked for when the route starts
-        if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED
-            && ContextCompat.checkSelfPermission(ctx, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) return false;
+        // Android 14 refuses the service without the permission for what it keeps going (asked for when the walk starts)
+        if (types(ctx) == 0) return false;
         try {
             ContextCompat.startForegroundService(ctx, new Intent(ctx, RecordingService.class));
             return true;
@@ -59,13 +59,28 @@ public class RecordingService extends Service {
         }
     }
 
+    private static boolean allowed(Context ctx, String permission) {
+        return ContextCompat.checkSelfPermission(ctx, permission) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    /** What the service keeps going, by what's allowed: the route (location) and the steps (health, Android 14+: without
+     *  it the step sensors send nothing once the screen is off). 0: nothing allowed yet, so it can't start. */
+    private static int types(Context ctx) {
+        int t = 0;
+        if (allowed(ctx, Manifest.permission.ACCESS_FINE_LOCATION) || allowed(ctx, Manifest.permission.ACCESS_COARSE_LOCATION)) t |= ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION;
+        // steps need "physical activity" from Android 10; before Android 14 a service's type isn't checked against permissions
+        boolean steps = Build.VERSION.SDK_INT < Build.VERSION_CODES.Q || allowed(ctx, Manifest.permission.ACTIVITY_RECOGNITION);
+        if (steps) t |= Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE ? ServiceInfo.FOREGROUND_SERVICE_TYPE_HEALTH : ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION;
+        return t;
+    }
+
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         Notification n = notice;
         // a service started this way must go to the foreground even when it was stopped in the meantime, or Android ends the app
         try {
             if (n != null) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) startForeground(REC_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION);
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) startForeground(REC_ID, n, types(this));
                 else startForeground(REC_ID, n);
                 running = this;
             }

@@ -4,7 +4,7 @@ import { createEngine, type Engine } from "../src/index";
 import { pgliteDb } from "../src/adapters/pglite";
 import { uuidv7 } from "../src/ids";
 import { occurrences } from "../src/modules/schedule";
-import { routeStats } from "@motus/shared";
+import { routeStats, addStepReading, takesPoint, type StepState } from "@motus/shared";
 import { parseTrack } from "../src/modules/activities";
 
 let eng: Engine, U: string;
@@ -101,6 +101,34 @@ describe("activities", () => {
     // unset, as an older app's sync or backup leaves it
     await eng.db.admin.query("UPDATE activity_types SET has_steps = NULL WHERE user_id = $1 AND slug IN ('walk', 'cycle', $2)", [U, slug]);
     expect(await steps()).toMatchObject({ walk: true, cycle: false, [slug]: false });
+  });
+  it("counts steps from the phone's two step sensors at once, without counting any twice", () => {
+    let s: StepState = { steps: 0, session: null, seen: 0 };
+    const read = (counter: number, detector: number, paused = false, session = 1) => (s = addStepReading(s, { session, counter, detector }, paused)).steps;
+    expect(read(-1, 0)).toBe(0); // just started
+    // the detector reports the first steps at once while the counter holds them back, then catches up
+    expect(read(-1, 3)).toBe(3);
+    expect(read(0, 3)).toBe(3);
+    expect(read(12, 12)).toBe(12);
+    // the same reading again, or one that comes late, adds nothing
+    expect(read(12, 12)).toBe(12);
+    expect(read(10, 11)).toBe(12);
+    // steps the detector missed come from the counter
+    expect(read(15, 13)).toBe(15);
+    // while paused nothing counts, and after it only what's new
+    expect(read(40, 38, true)).toBe(15);
+    expect(read(42, 41)).toBe(17);
+    // the app restarted mid-walk: its sensors count again from zero, and the walk goes on from what it had
+    expect(read(-1, 5, false, 2)).toBe(22);
+    expect(read(7, 7, false, 2)).toBe(24);
+  });
+  it("takes a GPS fix on the route only when it means ground covered", () => {
+    const route = [[32, 34.8, 0]];
+    expect(takesPoint(route, [32.0005, 34.8, 30], 8, false)).toBe(true); // ~55 m on
+    expect(takesPoint(route, [32.0005, 34.8, 30], 8, true)).toBe(false); // paused
+    expect(takesPoint(route, [32.0005, 34.8, 30], 120, false)).toBe(false); // rough fix
+    expect(takesPoint(route, [32.00001, 34.8, 30], 8, false)).toBe(false); // standing still (~1 m)
+    expect(takesPoint([], [32, 34.8, 0], 8, false)).toBe(true); // the first fix
   });
   it("leaves out the way covered while paused", () => {
     // ~55 m apart each; the 4th point is where you went on after walking ~555 m while paused

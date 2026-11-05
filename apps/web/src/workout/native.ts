@@ -126,7 +126,7 @@ export async function clearSession() {
 }
 // An activity being recorded (workout/recording.ts), as its own notification next to the workout's, since both can run
 // at once: the clock (Android), distance and steps so far, and Pause or Resume. `keepAlive` (the Android app records a
-// route): it is the notification of the location service that keeps the route going with the screen off, so there is
+// route or counts steps): it is the notification of the service that keeps them going with the screen off, so there is
 // one notification, not that service's beside this one.
 export async function showRecording(o: { title: string; body: string; since: number | null; actions: NoticeButton[]; keepAlive?: boolean }) {
   const p = plugin("MotusWorkout");

@@ -37,10 +37,9 @@ import org.json.JSONObject;
  * the timer's notification as it then is in place of the one shown, with a sound (TimerCue), so a run keeps one
  * notification however many rounds it has. Each can carry buttons (Pause, Skip, +30s…): a tap is sent to the web app as an "action"
  * event with the button's id, without opening the app, so it works from the lock screen.
- * Also the phone's step sensors while a walk is recorded; both keep counting with the screen off. The step counter gives
- * the running total (steps since the phone started), which the recording subtracts where it began; it holds back the
- * first steps after standing still until it's sure you're walking. The step detector reports each step as it happens,
- * so the count moves straight away, and the counter later fills in any the detector missed.
+ * Also the phone's step sensors while a walk is recorded; both keep counting with the screen off. The step counter is
+ * accurate but holds back the first steps after standing still until it's sure you're walking; the step detector reports
+ * each step as it happens. Both are counted here since the recording started, and the web app takes the larger.
  */
 @CapacitorPlugin(name = "MotusWorkout", permissions = { @Permission(alias = "steps", strings = { "android.permission.ACTIVITY_RECOGNITION" }) })
 public class MotusWorkoutPlugin extends Plugin implements SensorEventListener {
@@ -299,8 +298,8 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener {
     }
 
     /** An activity being recorded: its clock counting up from `since` (none while paused), the distance and steps so
-     *  far, and Pause or Resume; tapping it opens the recording. `keepAlive` (a route is recorded): it is the notification
-     *  of the location service that keeps the route going with the screen off (RecordingService), not one beside it. */
+     *  far, and Pause or Resume; tapping it opens the recording. `keepAlive` (a route or steps are recorded): it is the
+     *  notification of the service that keeps them going with the screen off (RecordingService), not one beside it. */
     @PluginMethod
     public void showRecording(PluginCall call) {
         channel();
@@ -399,9 +398,7 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener {
         nm.cancel(TIMER_ID);
         stopRecordingService();
         cancelCues(getContext()); // or they would show the timer again, with buttons nothing answers
-        SensorManager sm = (SensorManager) getContext().getSystemService(Context.SENSOR_SERVICE);
-        if (sm != null) sm.unregisterListener(this);
-        stepTotal = -1;
+        stopListening();
         super.handleOnDestroy();
     }
 
@@ -421,7 +418,13 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener {
     }
 
     // ---- steps ----
-    private long stepTotal = -1;
+    // Counted here, not in the web app: the sensors' events reach this side even while the web app is held up (screen
+    // off, or reloaded by Android), and the web app reads the counts as they are whenever it gets to them. Both are
+    // counts since `session` (when counting started), so a reading that comes late or twice changes nothing.
+    private boolean listening = false;
+    private long session = 0;
+    private long counterBase = -1, counterNow = -1;
+    private long detected = 0;
 
     private Sensor sensor(int type) {
         SensorManager sm = (SensorManager) getContext().getSystemService(Context.SENSOR_SERVICE);
@@ -432,10 +435,12 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener {
         return sensor(Sensor.TYPE_STEP_COUNTER) != null || sensor(Sensor.TYPE_STEP_DETECTOR) != null;
     }
 
+    /** Starts counting. `fresh` (a new recording): from zero. Otherwise (the web app reloaded mid-recording) it goes on
+     *  with the count it has, so the steps in between aren't lost. */
     @PluginMethod
     public void startSteps(PluginCall call) {
         if (!hasStepSensor()) { JSObject r = new JSObject(); r.put("available", false); call.resolve(r); return; }
-        // Android 10+ asks for "physical activity" before the step counter reports anything
+        // Android 10+ asks for "physical activity" before the step sensors report anything
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && getPermissionState("steps") != PermissionState.GRANTED) {
             requestPermissionForAlias("steps", call, "stepsPermission");
             return;
@@ -450,44 +455,62 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener {
     }
 
     private void listen(PluginCall call) {
-        SensorManager sm = (SensorManager) getContext().getSystemService(Context.SENSOR_SERVICE);
-        sm.unregisterListener(this);
-        // no batching (latency 0): each reading is sent as soon as the sensor has it, not held for a later batch
-        Sensor counter = sensor(Sensor.TYPE_STEP_COUNTER), detector = sensor(Sensor.TYPE_STEP_DETECTOR);
-        if (counter != null) sm.registerListener(this, counter, SensorManager.SENSOR_DELAY_FASTEST, 0);
-        if (detector != null) sm.registerListener(this, detector, SensorManager.SENSOR_DELAY_FASTEST, 0);
-        JSObject r = new JSObject();
+        if (call.getBoolean("fresh", false) || !listening) {
+            SensorManager sm = (SensorManager) getContext().getSystemService(Context.SENSOR_SERVICE);
+            sm.unregisterListener(this);
+            session = System.currentTimeMillis();
+            counterBase = -1; counterNow = -1; detected = 0;
+            // no batching (latency 0): each reading is sent as soon as the sensor has it, not held for a later batch
+            Sensor counter = sensor(Sensor.TYPE_STEP_COUNTER), detector = sensor(Sensor.TYPE_STEP_DETECTOR);
+            if (counter != null) sm.registerListener(this, counter, SensorManager.SENSOR_DELAY_FASTEST, 0);
+            if (detector != null) sm.registerListener(this, detector, SensorManager.SENSOR_DELAY_FASTEST, 0);
+            listening = true;
+        }
+        JSObject r = reading();
         r.put("available", true);
-        r.put("counter", counter != null);
-        r.put("total", stepTotal);
         call.resolve(r);
+    }
+
+    /** the counts so far: `counter` is -1 until the step counter's first reading, which is where it starts from */
+    private JSObject reading() {
+        JSObject r = new JSObject();
+        r.put("session", session);
+        r.put("counter", counterBase < 0 ? -1 : counterNow - counterBase);
+        r.put("detector", detected);
+        return r;
     }
 
     @PluginMethod
     public void getSteps(PluginCall call) {
-        JSObject r = new JSObject();
-        r.put("available", hasStepSensor());
-        r.put("total", stepTotal);
+        JSObject r = reading();
+        r.put("available", listening);
         call.resolve(r);
     }
 
     @PluginMethod
     public void stopSteps(PluginCall call) {
+        stopListening();
+        call.resolve();
+    }
+
+    private void stopListening() {
         SensorManager sm = (SensorManager) getContext().getSystemService(Context.SENSOR_SERVICE);
         if (sm != null) sm.unregisterListener(this);
-        stepTotal = -1; // the next recording must not take this one's last reading as its start
-        call.resolve();
+        listening = false;
     }
 
     @Override
     public void onSensorChanged(SensorEvent e) {
-        // one event per step, sent on its own so the web app counts it at once
-        if (e.sensor.getType() == Sensor.TYPE_STEP_DETECTOR) { notifyListeners("step", new JSObject()); return; }
-        if (e.sensor.getType() != Sensor.TYPE_STEP_COUNTER) return;
-        stepTotal = (long) e.values[0];
-        JSObject r = new JSObject();
-        r.put("total", stepTotal);
-        notifyListeners("steps", r);
+        int type = e.sensor.getType();
+        if (type == Sensor.TYPE_STEP_DETECTOR) detected += Math.max(1, Math.round(e.values[0]));
+        else if (type == Sensor.TYPE_STEP_COUNTER) {
+            long total = (long) e.values[0];
+            // the counter's total is since the phone started; smaller than before means it restarted: go on from here
+            if (counterBase < 0) counterBase = total;
+            else if (total < counterNow) counterBase = total - (counterNow - counterBase);
+            counterNow = total;
+        } else return;
+        notifyListeners("steps", reading());
     }
 
     @Override
