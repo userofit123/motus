@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // The ⋮ menu: where secondary actions live, so screens stay calm (PLAN.md §10.0).
 import { ref, nextTick, onBeforeUnmount } from "vue";
+import { lockScroll } from "../core/scrollLock";
 import Icon from "./Icon.vue";
 
 // checked: the one chosen among options (a set's type, a side), marked with a tick at the end so every item keeps its own icon
@@ -9,9 +10,12 @@ export interface MenuItem { label: string; hint?: string; icon?: string; run: ()
 // last thing in its row; otherwise its right edge lines up with the button's
 const props = defineProps<{ items: MenuItem[]; icon?: string; label?: string; align?: "start" | "end" }>();
 const open = ref(false), pos = ref({ top: 0, left: 0 }), btn = ref<HTMLElement | null>(null), el = ref<HTMLElement | null>(null);
+// the page stays still while the menu is open: the menu is fixed to the screen, so a scrolling page would leave it detached from its button
+let unlock = () => {};
 async function toggle() {
   open.value = !open.value;
-  if (!open.value) return;
+  if (!open.value) { unlock(); unlock = () => {}; return; }
+  unlock = lockScroll();
   const b = btn.value!.getBoundingClientRect();
   pos.value = { top: b.bottom + 6, left: b.right };
   await nextTick();
@@ -20,7 +24,7 @@ async function toggle() {
   setTimeout(() => addEventListener("click", away, true));
 }
 const away = (e: Event) => { if (!el.value?.contains(e.target as Node)) { e.stopPropagation(); close(); } };
-const close = () => { open.value = false; removeEventListener("click", away, true); };
+const close = () => { open.value = false; unlock(); unlock = () => {}; removeEventListener("click", away, true); };
 const pick = (i: MenuItem) => { close(); i.run(); };
 onBeforeUnmount(close);
 </script>

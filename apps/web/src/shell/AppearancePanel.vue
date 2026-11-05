@@ -6,6 +6,8 @@ import { theme, ATM, ST0, CP, AKEYS, BGS, FONTS, looks, lookFor, saveLooks, copy
 import { appearanceOpen } from "../core/ui";
 import { sheetOpened, sheetClosed } from "../core/sheets";
 import { isPhone } from "../core/device";
+import { lockScroll } from "../core/scrollLock";
+import { usePullDown } from "../core/pullDown";
 import { toast } from "../core/toast";
 import AppSelect from "../components/AppSelect.vue";
 import ColorPicker from "../components/ColorPicker.vue";
@@ -16,17 +18,25 @@ const k = computed<"L" | "D">(() => (isDark() ? "D" : "L"));
 const dark = computed(() => k.value === "D");
 const out = ref(false);
 // Back closes it like any sheet, instead of leaving the page behind it
-let backId = 0;
+let backId = 0, unlock = () => {};
 watch(appearanceOpen, (o) => {
-  if (o) backId = sheetOpened(() => (appearanceOpen.value = false));
-  else { if (backId) sheetClosed(backId); backId = 0; out.value = true; setTimeout(() => (out.value = false), 200); }
+  unlock();
+  if (o) { backId = sheetOpened(() => (appearanceOpen.value = false)); unlock = lockScroll(); }
+  else {
+    unlock = () => {};
+    if (backId) sheetClosed(backId); backId = 0;
+    if (pull.pulledAway) return; // it already slid away under the finger
+    out.value = true; setTimeout(() => (out.value = false), 200);
+  }
 });
 const close = () => { appearanceOpen.value = false; };
 const el = ref<HTMLElement | null>(null);
+// on the phone it is a bottom sheet: pull it down to close, like the others
+const pull = usePullDown(() => el.value, () => document.querySelector<HTMLElement>(".apscr"), () => appearanceOpen.value, close);
 const outside = (e: Event) => { if (appearanceOpen.value && el.value && !el.value.contains(e.target as Node) && !(e.target as HTMLElement).closest?.("#themeBtn,[data-theme-open]")) close(); };
 const esc = (e: KeyboardEvent) => { if (e.key === "Escape" && appearanceOpen.value) close(); };
 onMounted(() => { document.addEventListener("click", outside, true); addEventListener("keydown", esc); });
-onBeforeUnmount(() => { document.removeEventListener("click", outside, true); removeEventListener("keydown", esc); });
+onBeforeUnmount(() => { unlock(); document.removeEventListener("click", outside, true); removeEventListener("keydown", esc); });
 
 const BGL: Record<string, string> = { glow: "Glow", mesh: "Mesh", diagonal: "Diagonal", spot: "Spotlight", aurora: "Aurora", horizon: "Horizon", duo: "Two-tone", corners: "Corner glow", sweep: "Sweep", flat: "Flat" };
 const TEX: [string, string][] = [["none", "None"], ["dots", "Dots"], ["stripes", "Stripes"], ["grid", "Grid"], ["static", "Static"]];
