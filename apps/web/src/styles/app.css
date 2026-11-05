@@ -129,7 +129,7 @@ hr.sep { border: 0; border-top: 1px solid var(--ol); margin: 14px 0; }
 /* rows inside a padded card: the card's padding is the space at its top and bottom, so the first and last row drop
    their own --lpy there (down to the 4px they keep at the sides, which keeps the inset equal all round) and their
    least height shrinks by the same amount. Without this the card's padding and the row's padding added up, and blocks
-   looked taller at the top and bottom than at the sides. A flush card has no padding, so its rows keep theirs */
+   looked taller at the top and bottom than at the sides. Flush cards are handled above */
 .card:not(.flush, .aw-list) > :is(.li, .tgl):first-child,
 .card:not(.flush, .aw-list) > .list:first-child > .li:first-child { padding-top: 4px; min-height: calc(var(--lmh) - var(--lpy) + 4px); }
 .card:not(.flush, .aw-list) > :is(.li, .tgl):last-child,
