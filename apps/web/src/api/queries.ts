@@ -32,7 +32,7 @@ export const useHome = () => useQuery({ queryKey: ["home"], queryFn: () => api.g
 export const useGoals = (all = false) => useQuery({ queryKey: ["goals", all], queryFn: () => api.get<Goal[]>("/goals", { all: all ? 1 : undefined, tz: new Date().getTimezoneOffset() }) });
 export const useGoalDetail = (id: MaybeRef<string>) => useQuery({ queryKey: computed(() => ["goals", "detail", unref(id)]), queryFn: () => api.get<any>(`/goals/${unref(id)}/detail`, { tz: new Date().getTimezoneOffset() }), enabled: computed(() => !!unref(id)) });
 export const useGoalMetrics = () => useQuery({ queryKey: ["static", "metrics"], queryFn: () => api.get("/goal-metrics"), staleTime: Infinity });
-export const useStats = (range: MaybeRef<{ from?: string; to?: string }>) => useQuery({ queryKey: computed(() => ["stats", unref(range)]), queryFn: () => api.get("/stats", unref(range)) });
+export const useStats = (range: MaybeRef<{ from?: string; to?: string }>) => useQuery({ queryKey: computed(() => ["stats", unref(range)]), queryFn: () => api.get("/stats", { ...unref(range), tz: new Date().getTimezoneOffset() }) });
 export const useCalendar = (range: MaybeRef<{ from: string; to: string }>) => useQuery({ queryKey: computed(() => ["calendar", unref(range)]), queryFn: () => api.get("/calendar", unref(range)) });
 export const useNotes = (type: MaybeRef<string>, id: MaybeRef<string>) => useQuery({ queryKey: computed(() => ["notes", unref(type), unref(id)]), queryFn: () => api.get("/notes", { targetType: unref(type), targetId: unref(id) }), enabled: computed(() => !!unref(id)) });
 export const useReminders = (params: MaybeRef<Record<string, unknown>> = {}) => useQuery({ queryKey: computed(() => ["reminders", unref(params)]), queryFn: () => api.get("/reminders", unref(params)) });

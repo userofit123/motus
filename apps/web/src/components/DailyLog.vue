@@ -18,7 +18,7 @@ const s = useSettings();
 const stepGoal = useStepGoal();
 const fmt = useFmt();
 const from = localYmd(new Date(Date.now() - 8 * 86400000));
-const q = useQuery({ queryKey: ["activities", "daily", from], queryFn: () => api.get("/daily", { from }) });
+const q = useQuery({ queryKey: ["activities", "daily", from], queryFn: () => api.get("/daily", { from, tz: new Date().getTimezoneOffset() }) });
 const day = computed(() => props.day ?? localYmd(new Date()));
 const KINDS = computed(() => DAILY_KINDS.filter((k) => s.value.features[k.feature]));
 const val = (k: string, d = day.value) => { const v = (q.data.value ?? []).find((x: any) => x.kind === k && String(x.date).slice(0, 10) === d)?.value; return v == null ? null : Number(v); };

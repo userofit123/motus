@@ -1,9 +1,11 @@
 // Activities (walks, runs, rides…), body measurements and the daily log (steps, sleep, water, mood).
 import { haversine, routeStats, type ActivityType } from "@motus/shared";
 import type { Router, Ctx } from "../router";
+import type { Sql } from "../db";
 import { camel, id, str, intOrNull, numOrNull, bool, isoTime, dateStr } from "../util";
 import { uuidv7 } from "../ids";
 import { notFound, bad } from "../errors";
+import { tzOf } from "./goals";
 
 export const DEFAULT_TYPES: ActivityType[] = [
   { slug: "walk", name: "Walk", icon: "walk", hasDistance: true, hasGps: true, hasSteps: true },
@@ -48,6 +50,26 @@ export function parseTrack(text: string): { name: string; type: string; route: n
   const sport = /Sport="(\w+)"/.exec(text)?.[1]?.toLowerCase() ?? gpxType;
   const type = /run/.test(sport) ? "run" : /bik|cycl/.test(sport) ? "cycle" : /hik/.test(sport) ? "hike" : "walk";
   return { name, type, route };
+}
+
+/**
+ * Steps per calendar day (the app's calendar: tzMin as for goals), newest first: the daily log's count, or what the
+ * activities recorded that day add up to when that's more. Not the two added together: a count from the phone or typed in
+ * is normally the whole day's, walks included, so adding would count those steps twice; the larger is never short of either.
+ * toDay is exclusive; null runs to the end.
+ */
+export async function stepsByDay(q: Sql, fromDay: string, toDay: string | null, tzMin: number): Promise<{ date: string; kind: "steps"; value: number; source: string }[]> {
+  const at = (d: string) => new Date(new Date(d + "T00:00:00Z").getTime() + tzMin * 60000).toISOString();
+  const { rows } = await q.query(
+    `SELECT to_char(coalesce(l.date, a.date), 'YYYY-MM-DD') AS date, coalesce(l.value, 0) AS logged, coalesce(a.steps, 0) AS walked, l.source
+     FROM (SELECT date, value, source FROM daily_logs WHERE kind = 'steps' AND date >= $1::date AND ($2::date IS NULL OR date < $2::date)) l
+     FULL JOIN (SELECT (started_at AT TIME ZONE 'UTC' - $3::float8 * interval '1 minute')::date AS date, sum(steps) AS steps FROM activities
+       WHERE steps > 0 AND started_at >= $4::timestamptz AND ($5::timestamptz IS NULL OR started_at < $5::timestamptz) GROUP BY 1) a ON a.date = l.date
+     ORDER BY 1 DESC`, [fromDay, toDay, tzMin, at(fromDay), toDay ? at(toDay) : null]);
+  return rows.map((r: any) => {
+    const logged = Number(r.logged), walked = Number(r.walked);
+    return { date: r.date, kind: "steps", value: Math.max(logged, walked), source: walked > logged ? "activities" : r.source };
+  });
 }
 
 async function ensureTypes(ctx: Ctx) {
@@ -205,9 +227,11 @@ export function activityRoutes(r: Router) {
   });
 
   // daily log: steps, sleep (h), water (ml), mood (1-5)
+  // steps come with the day's recorded activities counted in (stepsByDay); tz: the app's calendar, as for goals
   r.get("/daily", async ({ q }, _p, _b, qs) => {
-    const { rows } = await q.query(`SELECT date, kind, value, source FROM daily_logs WHERE date >= $1::date ORDER BY date DESC`, [dateStr(qs.from) ?? "1970-01-01"]);
-    return rows;
+    const from = dateStr(qs.from) ?? "1970-01-01";
+    const { rows } = await q.query(`SELECT date, kind, value, source FROM daily_logs WHERE date >= $1::date AND kind <> 'steps' ORDER BY date DESC`, [from]);
+    return [...rows, ...(await stepsByDay(q, from, null, tzOf(qs)))].sort((a: any, b: any) => String(b.date).localeCompare(String(a.date)));
   });
   r.put("/daily", async (ctx, _p, b) => {
     const entries = Array.isArray(b.entries) ? b.entries : [b];

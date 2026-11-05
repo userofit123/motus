@@ -11,6 +11,7 @@ import { notFound, bad } from "../errors";
 import { getSettings } from "./settings";
 import { exerciseSessions } from "./library";
 import { currentStreak, dayIn, weekIn } from "./achievements";
+import { stepsByDay } from "./activities";
 
 const DAY = 86400000;
 /** The instant a calendar day (YYYY-MM-DD) starts for an app tzMin minutes behind UTC. */
@@ -118,8 +119,8 @@ async function valueFor(q: Sql, g: Goal, w: Window, s: Settings, now: Date, tzMi
     }
     case "activity_count": return one(`SELECT count(*) v FROM activities WHERE started_at >= $1 AND started_at < $2 AND ($3::text IS NULL OR type = $3)`, [...P, g.scopeId]);
     case "activity_minutes": return (await one(`SELECT coalesce(sum(duration_s),0) v FROM activities WHERE started_at >= $1 AND started_at < $2 AND ($3::text IS NULL OR type = $3)`, [...P, g.scopeId])) / 60;
-    // daily logs are kept by calendar day, so they take the window's days rather than its instants
-    case "steps_avg": return one(`SELECT coalesce(avg(value),0) v FROM daily_logs WHERE kind='steps' AND date >= $1::date AND date < $2::date`, [w.fromDay, w.toDay]);
+    // steps are kept by calendar day, so they take the window's days rather than its instants; days with none don't count
+    case "steps_avg": { const days = await stepsByDay(q, w.fromDay, w.toDay, tzMin); return days.length ? days.reduce((t, d) => t + d.value, 0) / days.length : 0; }
     case "body_weight": return one(`SELECT value v FROM body_metrics WHERE kind='weight' ORDER BY measured_at DESC LIMIT 1`, []);
     case "body_metric": return one(`SELECT value v FROM body_metrics WHERE kind=$1 ORDER BY measured_at DESC LIMIT 1`, [g.scopeId]);
   }
@@ -202,7 +203,7 @@ export async function streakOf(q: Sql, g: Goal, s: Settings, now: Date, tzMin: n
 }
 
 /** What went into a goal's current week, month or (for a one-off goal) everything since it started, newest first. */
-async function goalLog(q: Sql, g: Goal, w: Window): Promise<{ kind: string; id?: string; name: string; at: string; durationS?: number | null; distanceM?: number | null; value?: number | null }[]> {
+async function goalLog(q: Sql, g: Goal, w: Window, tzMin: number): Promise<{ kind: string; id?: string; name: string; at: string; durationS?: number | null; distanceM?: number | null; value?: number | null }[]> {
   const P = [w.from, w.to];
   const done = "w.status = 'completed' AND w.started_at >= $1 AND w.started_at < $2";
   const wk = async (extra = "", params: unknown[] = []) => (await q.query(
@@ -227,8 +228,7 @@ async function goalLog(q: Sql, g: Goal, w: Window): Promise<{ kind: string; id?:
       return (await exerciseSessions(q, g.scopeId!, 60)).filter((x) => x.startedAt >= w.from && x.startedAt < w.to).map((x) => ({
         kind: "workout", id: x.workoutId, name: x.workoutName, at: x.startedAt,
         value: g.metric === "e1rm" ? x.e1rm : g.metric === "max_weight" ? x.maxWeightKg : g.metric === "max_duration" ? x.durationS : g.metric === "max_reps" ? Math.max(0, ...x.sets.map((y: any) => y.reps ?? 0)) : null }));
-    case "steps_avg": return (await q.query("SELECT date, value FROM daily_logs WHERE kind = 'steps' AND date >= $1::date AND date < $2::date ORDER BY date DESC", [w.fromDay, w.toDay]))
-      .rows.map((r: any) => ({ kind: "day", name: "Steps", at: String(r.date).slice(0, 10), value: Number(r.value) }));
+    case "steps_avg": return (await stepsByDay(q, w.fromDay, w.toDay, tzMin)).map((r) => ({ kind: "day", name: "Steps", at: r.date, value: r.value }));
     case "body_weight": case "body_metric": return (await q.query("SELECT id, measured_at, value FROM body_metrics WHERE kind = $1 ORDER BY measured_at DESC LIMIT 30", [bodyKind(g)]))
       .rows.map((r: any) => ({ kind: "body", id: r.id, name: "", at: r.measured_at, value: Number(r.value) }));
   }
@@ -258,7 +258,8 @@ async function ensureStepGoal(q: Sql, userId: string) {
 
 /**
  * The old fixed weekly target (settings.weeklyGoal) became a goal, "Weekly target": gym workouts each week, first on Home
- * with its streak. Only someone who already used it gets it (a weekly number set, or workouts / activities logged); new
+ * with its streak. Only someone who already used it gets it (a weekly number set, or workouts / activities logged); someone
+ * with only activities logged gets it counting every session instead, as gym workouts alone would never fill it; new
  * people start with no goals. Decided once (goalsSeeded), so deleting it sticks and someone who starts logging later is
  * never handed it. Its id comes from the person's id, so the server and the copy on each device make the same goal.
  */
@@ -267,16 +268,15 @@ export async function ensureStarterGoal(q: Sql, userId: string) {
   const raw = (await q.query<{ data: any }>("SELECT data FROM user_settings WHERE user_id = $1", [userId])).rows[0]?.data ?? {};
   if (raw.goalsSeeded) return;
   const s = withDefaults(raw);
-  const used = raw.weeklyGoal != null
-    || (await q.query("SELECT 1 FROM workouts LIMIT 1")).rows.length > 0
-    || (await q.query("SELECT 1 FROM activities LIMIT 1")).rows.length > 0;
+  const gym = raw.weeklyGoal != null || (await q.query("SELECT 1 FROM workouts LIMIT 1")).rows.length > 0;
+  const used = gym || (await q.query("SELECT 1 FROM activities LIMIT 1")).rows.length > 0;
   if (!used) {
     await q.query(`INSERT INTO user_settings (user_id, data, updated_at) VALUES ($1, $2, now()) ON CONFLICT (user_id) DO UPDATE SET data = user_settings.data || $2, updated_at = now()`, [userId, JSON.stringify({ goalsSeeded: true })]);
     return;
   }
   const gid = (await q.query<{ id: string }>("SELECT md5($1::text || ':weekly-target')::uuid AS id", [userId])).rows[0]!.id;
   await q.query(`INSERT INTO goals (id, user_id, title, scope, scope_id, metric, comparator, target, period, start_date)
-    VALUES ($1, $2, 'Weekly target', 'activity', 'workout', 'sessions', '>=', $3, 'week', current_date) ON CONFLICT (id) DO NOTHING`, [gid, userId, Math.max(1, s.weeklyGoal)]);
+    VALUES ($1, $2, 'Weekly target', 'activity', $4, 'sessions', '>=', $3, 'week', current_date) ON CONFLICT (id) DO NOTHING`, [gid, userId, Math.max(1, s.weeklyGoal), gym ? "workout" : null]);
   const goals = s.home.goals.some((x) => x.id === gid) ? s.home.goals : [{ id: gid, streak: true }, ...s.home.goals];
   const next = { goalsSeeded: true, home: { ...(raw.home ?? {}), goals } };
   await q.query(`INSERT INTO user_settings (user_id, data, updated_at) VALUES ($1, $2, now()) ON CONFLICT (user_id) DO UPDATE SET data = user_settings.data || $2, updated_at = now()`, [userId, JSON.stringify(next)]);
@@ -320,7 +320,7 @@ export function goalRoutes(r: Router) {
       const value = Math.round((await valueFor(ctx.q, g, w, s, now, tz)) * 10) / 10;
       periods.push({ from: w.fromDay, value, met: value >= g.target });
     }
-    return { goal: g, streak: current, best, periods, log: await goalLog(ctx.q, g, windowOf(g, now, s, tz)) };
+    return { goal: g, streak: current, best, periods, log: await goalLog(ctx.q, g, windowOf(g, now, s, tz), tz) };
   });
   r.post("/goals", async (ctx, _p, b, qs) => {
     const m = METRICS.find((x) => x.metric === b.metric);

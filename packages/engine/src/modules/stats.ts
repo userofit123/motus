@@ -4,7 +4,8 @@ import type { Router, Ctx } from "../router";
 import type { Sql } from "../db";
 import { camel } from "../util";
 import { getSettings } from "./settings";
-import { goalsWithProgress, ensureStarterGoal } from "./goals";
+import { goalsWithProgress, ensureStarterGoal, tzOf } from "./goals";
+import { stepsByDay } from "./activities";
 import { achievementRoutes, currentStreak, dayIn, weekIn } from "./achievements";
 import { plannedBetween } from "./schedule";
 import { workoutSummaries } from "./workouts";
@@ -97,7 +98,10 @@ export function statsRoutes(r: Router) {
     const muscles: Record<string, number> = {};
     for (const w of workouts) for (const [m, n] of Object.entries(w.muscles as Record<string, number>)) muscles[m] = (muscles[m] ?? 0) + n;
     const body = (await ctx.q.query("SELECT kind, value, measured_at FROM body_metrics ORDER BY measured_at")).rows.map((x: any) => camel(x));
-    const daily = (await ctx.q.query("SELECT date, kind, value FROM daily_logs WHERE date >= $1::timestamptz::date ORDER BY date", [from === "1970-01-01" ? "2000-01-01" : from])).rows;
+    // steps with the recorded activities counted in, by the app's calendar (tz), as on Home and in goals
+    const fromDay = from === "1970-01-01" ? "2000-01-01" : dayIn(from, tzOf(qs));
+    const daily = [...(await ctx.q.query("SELECT date, kind, value FROM daily_logs WHERE date >= $1::date AND kind <> 'steps'", [fromDay])).rows,
+      ...(await stepsByDay(ctx.q, fromDay, null, tzOf(qs)))].sort((a: any, b: any) => String(a.date).localeCompare(String(b.date)));
     return { from, to, workouts, activities, exercises, routines: routineList, muscles, groups: GROUPS, weeklyRange: WEEKLY_SET_RANGE, body, daily };
   });
 

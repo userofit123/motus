@@ -41,6 +41,16 @@ describe("starting goals", () => {
     const goals = await as("GET", "/goals");
     expect(goals.map((g: any) => g.title)).toEqual(["Weekly target"]);
   });
+
+  it("gives someone with only activities logged a Weekly target that counts them", async () => {
+    const A = uuidv7();
+    await eng.db.admin.query("INSERT INTO users (id, username, display_name) VALUES ($1,'walker','Walker')", [A]);
+    const as = async (method: string, path: string, body?: unknown) => (await eng.handle({ method, path, body, query: { tz: "0" }, userId: A })).body as any;
+    await as("POST", "/activities", { type: "walk", startedAt: "2026-10-06T18:00:00Z", durationS: 1200 });
+    const [wt] = await as("GET", "/goals");
+    expect(wt).toMatchObject({ title: "Weekly target", metric: "sessions", scopeId: null });
+    expect(wt.progress.current).toBe(1);
+  });
 });
 
 describe("weekly goal", () => {
