@@ -4,17 +4,24 @@ import { contextBridge, ipcRenderer } from "electron";
 let onProgress: ((p: number, bytes?: number) => void) | null = null;
 ipcRenderer.on("update:progress", (_e, p: number, bytes?: number) => onProgress?.(p, bytes));
 
+// Electron prefixes a failed ipcRenderer.invoke with "Error invoking remote method 'x': Error: ".
+// Strip it here so every page that shows the error gets just the message the main process wrote.
+const accountCall = (channel: string, ...args: unknown[]): Promise<any> =>
+  ipcRenderer.invoke(channel, ...args).catch((e: Error) => {
+    throw new Error(String(e.message).replace(/^Error invoking remote method[^:]*: (Error: )?/, ""));
+  });
+
 const api = {
   platform: "desktop",
   accounts: {
-    list: () => ipcRenderer.invoke("accounts:list"),
-    current: () => ipcRenderer.invoke("accounts:current"),
-    addLocal: (name: string) => ipcRenderer.invoke("accounts:addLocal", name),
-    addServer: (url: string, name: string) => ipcRenderer.invoke("accounts:addServer", url, name),
-    open: (id: string) => ipcRenderer.invoke("accounts:open", id),
-    rename: (id: string, name: string) => ipcRenderer.invoke("accounts:rename", id, name),
-    remove: (id: string) => ipcRenderer.invoke("accounts:remove", id),
-    chooser: () => ipcRenderer.invoke("accounts:chooser"),
+    list: () => accountCall("accounts:list"),
+    current: () => accountCall("accounts:current"),
+    addLocal: (name: string) => accountCall("accounts:addLocal", name),
+    addServer: (url: string, name: string) => accountCall("accounts:addServer", url, name),
+    open: (id: string) => accountCall("accounts:open", id),
+    rename: (id: string, name: string) => accountCall("accounts:rename", id, name),
+    remove: (id: string) => accountCall("accounts:remove", id),
+    chooser: () => accountCall("accounts:chooser"),
   },
   saveBackup: (name: string, bytes: Uint8Array, keep: number) => ipcRenderer.invoke("backup:save", name, bytes, keep),
   backupFolder: () => ipcRenderer.invoke("backup:folder"),
