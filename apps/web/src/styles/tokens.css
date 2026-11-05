@@ -4,6 +4,8 @@
 :root {
   color-scheme: light;
   --acc: #4355b9;
+  /* the walked route on maps: always red, the map tiles stay light in both looks */
+  --route: #d32f2f;
   --accc: #dee0ff;
   --onc: #0b1550;
   --bg: #fbf8fd;

@@ -1,14 +1,16 @@
 <script setup lang="ts">
 // A route on a map (OpenStreetMap tiles). Follows the newest point while recording; `here` is where you are now,
 // with a ring for how sure the phone is of it, so the map shows you before the route begins.
-import { onMounted, onBeforeUnmount, ref, watch } from "vue";
+import { onMounted, onBeforeUnmount, ref, watch, nextTick } from "vue";
+import Icon from "./Icon.vue";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
 const props = defineProps<{ route: number[][]; follow?: boolean; here?: { lat: number; lon: number; acc: number } | null }>();
 const el = ref<HTMLElement | null>(null);
+const big = ref(false);
 let map: L.Map | null = null, line: L.Polyline | null = null, dot: L.CircleMarker | null = null, ring: L.Circle | null = null, centred = false;
-const color = () => getComputedStyle(document.documentElement).getPropertyValue("--acc").trim() || "#f8b396";
+const color = () => getComputedStyle(document.documentElement).getPropertyValue("--route").trim() || "#d32f2f";
 function draw() {
   if (!map) return;
   const pts = props.route.map((p) => [p[0], p[1]] as [number, number]);
@@ -38,9 +40,21 @@ onMounted(() => {
   line = L.polyline([], { color: color(), weight: 5, opacity: 0.95 }).addTo(map);
   draw();
 });
+// Enlarging changes the box, so the map re-measures and keeps the whole route (or you) in view
+async function toggle() {
+  big.value = !big.value;
+  await nextTick();
+  map?.invalidateSize();
+  draw();
+}
 watch(() => props.route.length, draw);
 watch(() => props.here, () => drawHere(!props.route.length));
 onBeforeUnmount(() => map?.remove());
 </script>
 
-<template><div ref="el" class="map" /></template>
+<template>
+  <div class="mapw" :class="{ big }">
+    <div ref="el" class="map" />
+    <button class="ib sm mapbig" :aria-label="big ? 'Shrink map' : 'Enlarge map'" @click="toggle"><Icon :name="big ? 'shrink' : 'expand'" :size="18" /></button>
+  </div>
+</template>
