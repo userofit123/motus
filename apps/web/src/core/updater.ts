@@ -9,11 +9,13 @@ export const updater = reactive({
   ready: false,
   // share downloaded (0-1) while a download runs; null when idle or when the size is unknown
   progress: null as number | null,
+  // a download is running: a second tap would start a second download of the same file
+  downloading: false,
   async install() {
-    const u = nat(); if (!u) return;
+    const u = nat(); if (!u || updater.downloading) return;
     try {
       if (!updater.ready) {
-        updater.status = "Downloading"; updater.progress = null;
+        updater.downloading = true; updater.status = "Downloading"; updater.progress = null;
         // p < 0 means the size is unknown: show the megabytes so far instead of a percentage
         await u.download((p: number, bytes?: number) => {
           updater.progress = p >= 0 ? p : null;
@@ -23,6 +25,7 @@ export const updater = reactive({
       }
       else await u.install();
     } catch (e) { updater.progress = null; updater.status = (e as Error).message; }
+    finally { updater.downloading = false; }
   },
 });
 nat()?.version?.().then((v: string) => (updater.appVersion = v)).catch?.(() => {});

@@ -9,7 +9,6 @@ import { session, isLocalAccount } from "../../core/session";
 import { updater } from "../../core/updater";
 import { useFmt } from "../../core/format";
 import { latestRelease, detectPlatform, downloads, newer, REPO, REPO_URL } from "../../core/releases";
-import AppSelect from "../AppSelect.vue";
 
 const s = useSettings();
 const router = useRouter();
@@ -64,7 +63,7 @@ const mb = (n?: number) => (n ? ` · ${Math.max(1, Math.round(n / 1e6))} MB` : "
         <div v-else-if="checkedAt" class="s">{{ checkedAt }}</div>
         <div v-if="platform.app && updater.progress !== null" class="pbar" :style="{ marginTop: 'var(--lpy)' }"><i :style="{ width: Math.round(updater.progress * 100) + '%' }"></i></div>
         </template></div>
-        <button v-if="platform.app && isNewer && !checking" class="btn s" @click="updater.install()">{{ updater.ready ? "Install" : "Download update" }}</button>
+        <button v-if="platform.app && isNewer && !checking" class="btn s" :disabled="updater.downloading" @click="updater.install()">{{ updater.ready ? "Install" : "Download update" }}</button>
 </div>
     </div>
     <div v-if="suggest === 'android'" class="card">
@@ -87,7 +86,6 @@ const mb = (n?: number) => (n ? ` · ${Math.max(1, Math.round(n / 1e6))} MB` : "
       <label class="tgl"><div class="grow"><div class="t">Check for updates automatically</div></div><span class="tg"><input type="checkbox" :checked="s.updates.autoCheck" @change="set({ autoCheck: ($event.target as HTMLInputElement).checked })" /></span></label>
       <label class="tgl"><div class="grow"><div class="t">Download updates automatically</div><div class="s">Then install with one tap (Android asks you to confirm every install)</div></div><span class="tg"><input type="checkbox" :checked="s.updates.autoDownload" @change="set({ autoDownload: ($event.target as HTMLInputElement).checked })" /></span></label>
       <label class="tgl"><div class="grow"><div class="t">Only on Wi-Fi</div></div><span class="tg"><input type="checkbox" :checked="s.updates.wifiOnly" @change="set({ wifiOnly: ($event.target as HTMLInputElement).checked })" /></span></label>
-      <div class="li"><div class="grow"><div class="t">Channel</div></div><AppSelect :model-value="s.updates.channel" :options="[{ value: 'stable', label: 'Stable' }, { value: 'beta', label: 'Beta' }]" title="Channel" style="width:auto" @update:model-value="(v) => set({ channel: v })" /></div>
     </div>
     <div class="card">
       <div class="li"><div class="grow"><div class="t">What's new</div><div class="s">Release notes for every version</div></div><button class="btn o s" @click="router.push('/settings/changelog')">Open</button></div>

@@ -54,7 +54,7 @@ export interface Settings {
   features: Record<string, boolean>;
   notifications: { scheduled: boolean; goals: boolean; updates: boolean; inactivity: boolean };
   backup: { on: boolean; every: "workout" | "daily" | "weekly"; at: string; keep: number; encrypt: boolean; media: boolean };
-  updates: { autoCheck: boolean; autoDownload: boolean; wifiOnly: boolean; channel: "stable" | "beta" };
+  updates: { autoCheck: boolean; autoDownload: boolean; wifiOnly: boolean };
   layout: "auto" | "desktop" | "phone";
   sound: string;
   profile: { heightCm: number | null; birthYear: number | null; sex: "" | "male" | "female" };
@@ -133,7 +133,7 @@ export const DEFAULT_SETTINGS: Settings = {
   features: FEATURE_DEFAULTS,
   notifications: { scheduled: true, goals: true, updates: true, inactivity: false },
   backup: { on: true, every: "daily", at: "03:00", keep: 14, encrypt: false, media: true },
-  updates: { autoCheck: true, autoDownload: true, wifiOnly: false, channel: "stable" },
+  updates: { autoCheck: true, autoDownload: true, wifiOnly: false },
   layout: "auto",
   sound: "chime",
   profile: { heightCm: null, birthYear: null, sex: "" },

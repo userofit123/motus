@@ -975,7 +975,7 @@ tappable through to its source.
 | **Activities** | Activity types, GPS accuracy/battery mode, map tile source |
 | **Backup & Restore** | §9.2 |
 | **Export & Import** | §9.3, §9.4 |
-| **Updates** | Current version, check now, auto-check (on), **auto-download** (on/off), install on restart, release notes, channel (stable/beta) |
+| **Updates** | Current version, check now, auto-check (on), **auto-download** (on/off), install on restart, release notes |
 | **Accounts** (apps) | Account list (local and server accounts), add a local account, connect to a server, switch, remove; "keep offline data on device" for server accounts |
 | **Privacy & security** | App lock (biometric/PIN, Android), clear local cache |
 | **Admin** (admins only) | Users, registration mode, exercise catalog sync (wger), server backups, storage |
