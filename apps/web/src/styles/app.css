@@ -227,6 +227,9 @@ html.phone .sht .sh_h::before { content: ""; position: absolute; left: 50%; top:
 html.phone .sht .sh_h { position: relative; padding-top: 22px; }
 html.phone .sht .sh_b { padding: 4px var(--cpx) calc(var(--cpy) + 3px); }
 html.phone .sht .sh_f { padding: 12px var(--cpx) calc(12px + var(--sb)); }
+/* the sheet runs to the screen's bottom edge, its background under the navigation bar; when it has no footer to lift,
+   its body ends that far up instead, so its last row stays clear of the bar (--sb: env() or the Android app's bar size) */
+html.phone .sht .sh_b:last-child { padding-bottom: calc(var(--cpy) + 3px + var(--sb)); }
 @keyframes up { from { transform: translateY(100%); } }
 
 /* ---------- forms ---------- */

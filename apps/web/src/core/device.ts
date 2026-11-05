@@ -21,3 +21,15 @@ export const native = {
   android: typeof (globalThis as any).Capacitor !== "undefined" && (globalThis as any).Capacitor?.getPlatform?.() === "android",
   desktop: typeof (globalThis as any).motusDesktop !== "undefined",
 };
+
+/** The safe-area insets in px as the page uses them (--st / --sb / --sl / --sr in tokens.css: env() or the Android
+ *  app's bar sizes), for popups placed by script, so they stop short of the clock and the navigation bar. */
+export function safeArea() {
+  const p = document.createElement("div");
+  p.style.cssText = "position:fixed;visibility:hidden;pointer-events:none;padding:var(--st) var(--sr) var(--sb) var(--sl)";
+  document.body.appendChild(p);
+  const s = getComputedStyle(p), n = (v: string) => parseFloat(v) || 0;
+  const r = { top: n(s.paddingTop), bottom: n(s.paddingBottom), left: n(s.paddingLeft), right: n(s.paddingRight) };
+  p.remove();
+  return r;
+}

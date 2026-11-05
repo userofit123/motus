@@ -3,7 +3,7 @@
 // on a computer (above it when there's no room below), a bottom sheet on the phone, where a small panel is hard to hit.
 // On a computer the field keeps the focus (the pickers read the keys there), so a press in the panel must not take it.
 import { onBeforeUnmount, onMounted, ref } from "vue";
-import { isPhone } from "../core/device";
+import { isPhone, safeArea } from "../core/device";
 import Sheet from "./Sheet.vue";
 
 const props = defineProps<{ anchor: HTMLElement | null; title: string }>();
@@ -17,13 +17,14 @@ function place() {
   if (!a || !m) return;
   const b = a.getBoundingClientRect();
   m.style.minWidth = b.width + "px"; m.style.maxHeight = "";
-  const h = m.offsetHeight, w = m.offsetWidth, below = innerHeight - b.bottom - 14, above = b.top - 14;
+  // a tablet's home bar or a notch is no room for the panel (safeArea: the page's own insets)
+  const sa = safeArea(), h = m.offsetHeight, w = m.offsetWidth, below = innerHeight - sa.bottom - b.bottom - 14, above = b.top - sa.top - 14;
   up.value = h > below && above > below;
   const mh = Math.min(h, up.value ? above : below);
   m.style.maxHeight = mh + "px";
   m.style.top = (up.value ? b.top - 6 - mh : b.bottom + 6) + "px";
   const x = getComputedStyle(a).direction === "rtl" ? b.right - w : b.left;
-  m.style.left = Math.max(8, Math.min(x, innerWidth - w - 8)) + "px";
+  m.style.left = Math.max(sa.left + 8, Math.min(x, innerWidth - sa.right - w - 8)) + "px";
 }
 const away = (e: Event) => {
   const t = e.target as HTMLElement;
