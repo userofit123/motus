@@ -205,6 +205,10 @@
   overflow: hidden;
 }
 
+.clp.settled > .clpi {
+  overflow: visible;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .clp {
     transition: none;
