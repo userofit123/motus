@@ -254,9 +254,10 @@ await loaded(me);
 <style scoped>
 /* the computer's section list: small group names over plain rows, the open one filled */
 .snav { position: sticky; top: calc(24px + var(--st)); padding: calc(var(--cpy) / 2); display: flex; flex-direction: column; gap: 1px; }
-.sng { font-size: var(--fs-xs); font-weight: 700; letter-spacing: .6px; text-transform: uppercase; color: var(--tx2); padding: 12px 12px 4px; }
-.sng:first-child { padding-top: 4px; }
-.sni { display: flex; align-items: center; gap: 12px; padding: 8px 12px; border: 0; background: none; border-radius: var(--r-sm); color: var(--tx); font: inherit; font-size: 14px; text-align: start; cursor: pointer; }
+/* the group names and rows share one side inset, and the first group name sits that far below the top too, so the
+   list's space is even all round (a 4px top here left it closer to the top than to the sides) */
+.sng { font-size: var(--fs-xs); font-weight: 700; letter-spacing: .6px; text-transform: uppercase; color: var(--tx2); padding: calc(var(--cpx) - 4px) calc(var(--cpx) - 4px) 4px; }
+.sni { display: flex; align-items: center; gap: 12px; padding: calc(var(--lpy) - 2px) calc(var(--cpx) - 4px); border: 0; background: none; border-radius: var(--r-sm); color: var(--tx); font: inherit; font-size: 14px; text-align: start; cursor: pointer; }
 .sni:hover { background: var(--s2); }
 .sni.on { background: var(--accc); color: var(--onc); font-weight: 600; }
 .sni .ico { color: var(--tx2); }

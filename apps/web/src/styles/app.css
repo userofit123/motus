@@ -120,6 +120,12 @@ hr.sep { border: 0; border-top: 1px solid var(--ol); margin: 14px 0; }
 .card.flush { padding: 0; overflow: hidden; }
 .card.flush .li { padding-inline: var(--cpx); border-bottom: 0; position: relative; }
 .card.flush .li:not(:last-child)::after { content: ""; position: absolute; inset-inline: var(--cpx); bottom: 0; height: 1px; background: var(--ol); }
+/* a flush card has no padding, so its first and last row are its top and bottom space: they take the card's --cpy
+   there in place of their own --lpy, the same as the --cpx they already have at the sides (least height grows by the
+   same amount). With only --lpy the rows sat closer to the card's top and bottom than to its sides */
+.card.flush > .li:first-child, .card.flush > .list:first-child > .li:first-child { padding-top: var(--cpy); min-height: calc(var(--lmh) - var(--lpy) + var(--cpy)); }
+.card.flush > .li:last-child, .card.flush > .list:last-child > .li:last-child { padding-bottom: var(--cpy); min-height: calc(var(--lmh) - var(--lpy) + var(--cpy)); }
+.card.flush > .li:only-child, .card.flush > .list:only-child > .li:only-child { min-height: calc(var(--lmh) - 2 * var(--lpy) + 2 * var(--cpy)); }
 /* rows inside a padded card: the card's padding is the space at its top and bottom, so the first and last row drop
    their own --lpy there (down to the 4px they keep at the sides, which keeps the inset equal all round) and their
    least height shrinks by the same amount. Without this the card's padding and the row's padding added up, and blocks
