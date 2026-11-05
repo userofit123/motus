@@ -1,8 +1,8 @@
 <script setup lang="ts">
 // Choosing exercises: search (names and aliases), filter by muscle and equipment, recently used first; one or many.
 import { computed, ref, onMounted, onBeforeUnmount } from "vue";
-import { GROUPS, EQUIPMENT } from "@motus/shared";
-import { useExercises, useSettings } from "../api/queries";
+import { GROUPS, EQUIPMENT, type Exercise } from "@motus/shared";
+import { useExercises, useExercise, useSettings } from "../api/queries";
 import { mediaUrl } from "../api/client";
 import Sheet from "./Sheet.vue";
 import Icon from "./Icon.vue";
@@ -12,7 +12,7 @@ import FilterPanel from "./FilterPanel.vue";
 import FilterRow from "./FilterRow.vue";
 import ExerciseView from "./ExerciseView.vue";
 
-const props = defineProps<{ title?: string; multi?: boolean; exclude?: string[]; suggest?: any[] }>();
+const props = defineProps<{ title?: string; multi?: boolean; exclude?: string[]; suggest?: Exercise[] }>();
 const emit = defineEmits<{ close: []; pick: [ids: string[]] }>();
 const all = useExercises();
 const settings = useSettings();
@@ -49,24 +49,28 @@ function tap(id: string) {
 }
 // The info button opens a preview that steps through exactly the list on screen (its search, filters and order),
 // taken when it opens so that starring an exercise there doesn't reshuffle what's next; pick or untick from there too.
-const shown = computed<any[]>(() => (showSuggest.value ? props.suggest! : list.value));
-const pv = ref<{ items: { id: string; name: string }[]; i: number } | null>(null);
-const pvCur = computed(() => (pv.value ? pv.value.items[pv.value.i]! : null));
+const shown = computed<Exercise[]>(() => (showSuggest.value ? props.suggest! : list.value));
+const pv = ref<{ ids: string[]; i: number } | null>(null);
+const pvId = computed(() => (pv.value ? pv.value.ids[pv.value.i]! : ""));
+// the live name, so renaming it from the preview's ⋮ Edit shows at once
+const pvEx = useExercise(pvId);
+const pvName = computed(() => pvEx.data.value?.name ?? (all.data.value ?? []).find((e) => e.id === pvId.value)?.name ?? "");
+const pvSheet = ref<InstanceType<typeof Sheet> | null>(null);
 const dir = ref("nx");
 function preview(id: string) {
-  const items = shown.value.map((e) => ({ id: e.id, name: e.name }));
-  pv.value = { items, i: Math.max(0, items.findIndex((e) => e.id === id)) };
+  const ids = shown.value.map((e) => e.id);
+  pv.value = { ids, i: Math.max(0, ids.indexOf(id)) };
 }
 function step(d: number) {
   const p = pv.value, i = p ? p.i + d : -1;
-  if (!p || i < 0 || i >= p.items.length) return;
+  if (!p || i < 0 || i >= p.ids.length) return;
   dir.value = d > 0 ? "nx" : "pv"; p.i = i;
 }
 function choose(id: string) { if (props.multi) tap(id); else { pv.value = null; emit("pick", [id]); } }
 // a computer: the arrow keys; the phone: a sideways swipe on the preview (not on its tabs, chips or charts, which
 // scroll or react to touch themselves, nor the screen edges, which belong to the phone's own Back gesture)
 const key = (e: KeyboardEvent) => {
-  if (!pv.value || (e.key !== "ArrowLeft" && e.key !== "ArrowRight") || (e.target as HTMLElement).closest("input,textarea,select,[contenteditable]")) return;
+  if (!pv.value || !pvSheet.value?.onTop() || (e.key !== "ArrowLeft" && e.key !== "ArrowRight") || (e.target as HTMLElement).closest("input,textarea,select,[contenteditable]")) return;
   e.preventDefault(); step(e.key === "ArrowRight" ? 1 : -1);
 };
 onMounted(() => addEventListener("keydown", key));
@@ -78,7 +82,7 @@ function ts(e: TouchEvent) {
     && !(e.target as HTMLElement).closest("input, textarea, select, .hscroll, .chips, .seg, .tabs, .chart, .mnu, [data-noswipe]");
 }
 function te(e: TouchEvent) {
-  if (!ok) return;
+  if (!ok || !pvSheet.value?.onTop()) return;
   const t = e.changedTouches[0]!, dx = t.clientX - x0, dy = t.clientY - y0;
   if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.3 && Date.now() - t0 < 900) step(dx < 0 ? 1 : -1); // a natural thumb swipe drifts a little
 }
@@ -111,19 +115,19 @@ function te(e: TouchEvent) {
       <div class="grow" />
       <button v-if="multi" class="btn" :disabled="!picked.length" @click="emit('pick', picked)">Add {{ picked.length || "" }}</button>
     </template>
-    <Sheet v-if="pvCur" :title="pvCur.name" size="wide" @close="pv = null">
+    <Sheet v-if="pv" ref="pvSheet" :title="pvName" size="wide" @close="pv = null">
       <div class="pvx" @touchstart.passive="ts" @touchend.passive="te">
-        <Transition :name="dir" mode="out-in"><ExerciseView :key="pvCur.id" :id="pvCur.id" in-sheet /></Transition>
+        <Transition :name="dir" mode="out-in"><ExerciseView :key="pvId" :id="pvId" in-sheet /></Transition>
       </div>
       <template #foot>
-        <template v-if="pv!.items.length > 1">
+        <template v-if="pv!.ids.length > 1">
           <button class="ib sm plain" aria-label="Previous exercise" :disabled="pv!.i === 0" @click="step(-1)"><Icon name="left" :size="18" /></button>
-          <span class="tiny pvn">{{ pv!.i + 1 }} of {{ pv!.items.length }}</span>
-          <button class="ib sm plain" aria-label="Next exercise" :disabled="pv!.i === pv!.items.length - 1" @click="step(1)"><Icon name="right" :size="18" /></button>
+          <span class="tiny pvn">{{ pv!.i + 1 }} of {{ pv!.ids.length }}</span>
+          <button class="ib sm plain" aria-label="Next exercise" :disabled="pv!.i === pv!.ids.length - 1" @click="step(1)"><Icon name="right" :size="18" /></button>
         </template>
         <div class="grow" />
-        <button v-if="multi" class="btn" :class="{ tonal: picked.includes(pvCur.id) }" @click="choose(pvCur.id)"><Icon v-if="picked.includes(pvCur.id)" name="check" :size="16" />{{ picked.includes(pvCur.id) ? "Selected" : "Select" }}</button>
-        <button v-else class="btn" @click="choose(pvCur.id)">Choose</button>
+        <button v-if="multi" class="btn" :class="{ tonal: picked.includes(pvId) }" @click="choose(pvId)"><Icon v-if="picked.includes(pvId)" name="check" :size="16" />{{ picked.includes(pvId) ? "Selected" : "Select" }}</button>
+        <button v-else class="btn" @click="choose(pvId)">Choose</button>
       </template>
     </Sheet>
     <ExerciseEditor v-if="creating" :name="q" @close="creating = false" @saved="(id) => (multi ? picked.push(id) : emit('pick', [id]))" />
@@ -134,5 +138,5 @@ function te(e: TouchEvent) {
 <style scoped>
 /* the whole preview takes the swipe, even below short content */
 .pvx { min-height: 100%; overflow-x: hidden; }
-.pvn { align-self: center; min-width: 56px; text-align: center; font-variant-numeric: tabular-nums; }
+.pvn { align-self: center; min-width: 6ch; text-align: center; font-variant-numeric: tabular-nums; }
 </style>

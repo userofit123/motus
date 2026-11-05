@@ -14,6 +14,7 @@ const root = ref<HTMLElement | null>(null), sheet = ref<HTMLElement | null>(null
 // with sheets stacked (an exercise's preview over the picker) Esc closes only the one on top
 const onTop = () => [...document.querySelectorAll(".scr:not(.leaving)")].at(-1) === root.value;
 const key = (e: KeyboardEvent) => { if (e.key === "Escape" && !props.noClose && onTop()) { e.stopPropagation(); emit("close"); } };
+defineExpose({ onTop });
 let backId = 0, unlock = () => {};
 onMounted(() => {
   addEventListener("keydown", key); unlock = lockScroll();
