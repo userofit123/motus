@@ -365,7 +365,7 @@ html.phone { --tabh: 64px; }
 .card .banner, .sh_b .banner { margin-bottom: var(--hg); }
 :is(.stack, .col, .grid) > .banner { margin-bottom: 0; }
 .aw-desk { display: grid; grid-template-columns: 280px minmax(0, 1fr) 300px; gap: var(--spg); align-items: start; }
-.aw-desk .side { position: sticky; top: 24px; }
+.aw-desk .side { position: sticky; top: calc(24px + var(--st)); }
 .aw-list .li { cursor: pointer; padding: var(--lpy); border-radius: var(--r-sm); border: 0; }
 .aw-list .li.cur { background: var(--accc); color: var(--onc); }
 .aw-list .li.cur .s:not(.btn) { color: color-mix(in srgb, var(--onc) 75%, transparent); }

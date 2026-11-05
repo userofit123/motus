@@ -253,7 +253,7 @@ await loaded(me);
 
 <style scoped>
 /* the computer's section list: small group names over plain rows, the open one filled */
-.snav { position: sticky; top: 24px; padding: calc(var(--cpy) / 2); display: flex; flex-direction: column; gap: 1px; }
+.snav { position: sticky; top: calc(24px + var(--st)); padding: calc(var(--cpy) / 2); display: flex; flex-direction: column; gap: 1px; }
 .sng { font-size: var(--fs-xs); font-weight: 700; letter-spacing: .6px; text-transform: uppercase; color: var(--tx2); padding: 12px 12px 4px; }
 .sng:first-child { padding-top: 4px; }
 .sni { display: flex; align-items: center; gap: 12px; padding: 8px 12px; border: 0; background: none; border-radius: var(--r-sm); color: var(--tx); font: inherit; font-size: 14px; text-align: start; cursor: pointer; }

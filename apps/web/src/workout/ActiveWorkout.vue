@@ -167,7 +167,7 @@ const menu = computed(() => [
         </TransitionGroup>
         <button class="qb acc" style="margin-top:6px" @click="adding = true"><Icon name="plus" :size="16" />Add exercise</button>
       </div>
-      <div class="stack" style="position:sticky;top:24px">
+      <div class="stack" style="position:sticky;top:calc(24px + var(--st))">
         <Peek />
         <div class="card"><Transition name="sw" mode="out-in"><ExerciseCard v-if="w.exercises[W.state.cur]" :key="w.exercises[W.state.cur]!.id" :e="w.exercises[W.state.cur]!" :index="W.state.cur" /></Transition></div>
         <ActionBar :paused="paused" @finish="finishing = true" @pause="togglePause" />
@@ -228,6 +228,6 @@ const menu = computed(() => [
 .aw-notes { display: flex; flex-direction: column; gap: var(--spg); margin-top: var(--spg); }
 .stack > .aw-notes { margin-top: 0; }
 /* phone: the controls are a sheet fixed to the bottom edge, its own shadow lifting it off the page */
-.aw-dock { position: fixed; z-index: 50; left: 0; right: 0; bottom: 0; }
+.aw-dock { position: fixed; z-index: 50; left: 0; right: 0; bottom: 0; padding-inline: var(--sl) var(--sr); }
 .aw-dock :deep(.abar) { border-radius: var(--r-sheet) var(--r-sheet) 0 0; border-bottom: 0; padding-bottom: calc(14px + var(--sb, 0px)); box-shadow: 0 -10px 30px -18px rgb(0 0 0 / .45); }
 </style>

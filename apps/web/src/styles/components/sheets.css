@@ -81,8 +81,8 @@
 
 .pop {
   position: fixed;
-  left: 98px; /* fixed side */
-  bottom: 16px;
+  left: calc(98px + var(--sl)); /* fixed side */
+  bottom: calc(16px + var(--sb));
   width: 310px;
   background: var(--bg);
   border: 1px solid var(--ol);
@@ -177,7 +177,7 @@
 
 html.he .pop {
   left: auto; /* fixed side */
-  right: 98px; /* fixed side */
+  right: calc(98px + var(--sr)); /* fixed side */
 }
 
 html.he .brow .ba,
@@ -248,7 +248,7 @@ html.he .row > div[style*="text-align:end"] {
 
 /* the Appearance panel keeps one height whichever tab is open, so switching tabs does not resize it (a resize redraws everything behind it) */
 #pop {
-  height: min(700px, calc(100vh - 32px));
+  height: min(700px, calc(100vh - 32px - var(--st) - var(--sb)));
 }
 
 /* sheets: Material bottom sheet */
