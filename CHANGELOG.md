@@ -2,6 +2,14 @@
 
 The top entry's version is the one the release workflow publishes. Add a new `## [x.y.z]` section to release.
 
+## [0.1.4] - 2026-11-05
+
+- Steps start counting within a step or two instead of after about twenty, in the Android app and the web app; distance, moving time, climb and steps covered while paused no longer count, and a new walk starts its steps from zero.
+- Servers & accounts is easy to find (More tab and Settings): every saved server and on-device account in one list, with switch, add, rename and remove.
+- Downloading an app update shows how far it is, as a percentage with a bar, and can't start twice.
+- The update Channel choice, which never did anything, is gone.
+- A raised routine card in an open folder is no longer cut off at the top.
+
 ## [0.1.3] - 2026-11-05
 
 - The Android app's background now runs up behind the status bar and navigation bar, like Money Manager, in every look; pages, sheets and panels stay clear of the clock, the navigation bar and the keyboard.
