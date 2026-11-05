@@ -10,8 +10,10 @@ import Icon from "./Icon.vue";
 // noHistory: no Back step of its own (see core/leave.ts)
 const props = defineProps<{ title?: string; size?: "wide" | "full"; noClose?: boolean; noHistory?: boolean }>();
 const emit = defineEmits<{ close: [] }>();
-const key = (e: KeyboardEvent) => { if (e.key === "Escape" && !props.noClose) { e.stopPropagation(); emit("close"); } };
 const root = ref<HTMLElement | null>(null), sheet = ref<HTMLElement | null>(null);
+// with sheets stacked (an exercise's preview over the picker) Esc closes only the one on top
+const onTop = () => [...document.querySelectorAll(".scr:not(.leaving)")].at(-1) === root.value;
+const key = (e: KeyboardEvent) => { if (e.key === "Escape" && !props.noClose && onTop()) { e.stopPropagation(); emit("close"); } };
 let backId = 0, unlock = () => {};
 onMounted(() => {
   addEventListener("keydown", key); unlock = lockScroll();
