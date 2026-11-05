@@ -188,18 +188,15 @@ export async function askNotificationPermission() {
     else if ("Notification" in window && Notification.permission === "default") await Notification.requestPermission();
   } catch { /* the in-app timer still works */ }
 }
-// The interval timer's phase changes as notifications, scheduled only while the app is in the background (a locked phone
-// pauses the app's own beeps); ids 7100+ so they never touch the rest timer's. Android app only: a browser can't schedule.
+// The interval timer's coming changes, for while the app is in the background (a locked phone pauses the app's own
+// beeps): each, at its time, puts the timer's notification (showIntervalNotice) as it then is in place of the one shown,
+// with the rest alarm's sound, so a run keeps one notification however many rounds it has. The Android app schedules
+// them (alarms that come with the phone asleep); a browser can't schedule. Each call replaces those scheduled before.
 // At most INTERVAL_CUE_MAX at a time; the caller passes only the next ones (see workout/intervals.ts).
+export interface IntervalCue { at: number; title: string; body: string; endAt: number | null; actions: NoticeButton[]; done?: boolean }
 export const INTERVAL_CUE_MAX = 60;
-const INTERVAL_IDS = Array.from({ length: INTERVAL_CUE_MAX }, (_, i) => ({ id: 7100 + i }));
-export async function scheduleIntervalCues(cues: { at: number; title: string; body: string }[]) {
-  const ln = plugin("LocalNotifications");
-  if (!ln) return;
-  try {
-    await ln.cancel({ notifications: INTERVAL_IDS });
-    if (cues.length) await ln.schedule({ notifications: cues.slice(0, INTERVAL_CUE_MAX).map((c, i) => ({ id: 7100 + i, title: c.title, body: c.body, schedule: { at: new Date(c.at), allowWhileIdle: true }, channelId: "rest", smallIcon: "ic_stat_motus" })) });
-  } catch { /* the in-app timer still runs */ }
+export function scheduleIntervalCues(cues: IntervalCue[]) {
+  plugin("MotusWorkout")?.scheduleTimer?.({ cues: cues.slice(0, INTERVAL_CUE_MAX) }).catch?.(() => {});
 }
 export const cancelIntervalCues = () => scheduleIntervalCues([]);
 // The running interval timer as its own ongoing notification (beside the workout's, since both can run at once), also on

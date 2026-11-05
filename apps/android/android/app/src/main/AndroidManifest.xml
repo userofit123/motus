@@ -26,6 +26,9 @@
 
         </activity>
 
+        <!-- the interval timer's changes while the app is in the background (MotusWorkoutPlugin.TimerCue) -->
+        <receiver android:name=".MotusWorkoutPlugin$TimerCue" android:exported="false" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

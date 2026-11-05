@@ -1,5 +1,6 @@
 package org.motus.app;
 
+import android.app.AlarmManager;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
@@ -24,14 +25,16 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
-import java.util.List;
+import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
 
 /**
  * The rest timer in the notification shade and on the lock screen: a live countdown while a rest runs.
  * The interval timer the same way, as its own notification, so it can sit beside a running workout's, and an activity
- * being recorded as one more. Each can carry buttons (Pause, Skip, +30s…): a tap is sent to the web app as an "action"
+ * being recorded as one more. The interval timer's coming changes are alarms that, with the app in the background, put
+ * the timer's notification as it then is in place of the one shown, with a sound (TimerCue), so a run keeps one
+ * notification however many rounds it has. Each can carry buttons (Pause, Skip, +30s…): a tap is sent to the web app as an "action"
  * event with the button's id, without opening the app, so it works from the lock screen.
  * Also the phone's step counter while a walk is recorded: the hardware counter keeps counting with the screen off,
  * and the recording reads the running total (steps since the phone started) and subtracts where it began.
@@ -69,18 +72,29 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener {
     /** The buttons the web app passes as `actions` ([{ id, title }], at most three, Android's limit). `base` keeps each
      *  notification's request codes apart, so one's buttons never take another's ids. */
     private void addActions(NotificationCompat.Builder b, PluginCall call, int base) {
-        JSArray list = call.getArray("actions");
+        addActions(getContext(), b, call.getArray("actions"), base);
+    }
+
+    private static void addActions(Context ctx, NotificationCompat.Builder b, JSONArray list, int base) {
         if (list == null) return;
         try {
-            List<Object> items = list.toList();
-            for (int i = 0; i < items.size() && i < 3; i++) {
-                if (!(items.get(i) instanceof JSONObject)) continue;
-                JSONObject a = (JSONObject) items.get(i);
-                Intent tap = new Intent(ACTION).setPackage(getContext().getPackageName()).putExtra(EXTRA_ACTION, a.getString("id"));
-                PendingIntent pi = PendingIntent.getBroadcast(getContext(), base + i, tap, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+            for (int i = 0; i < list.length() && i < 3; i++) {
+                JSONObject a = list.optJSONObject(i);
+                if (a == null) continue;
+                Intent tap = new Intent(ACTION).setPackage(ctx.getPackageName()).putExtra(EXTRA_ACTION, a.getString("id"));
+                PendingIntent pi = PendingIntent.getBroadcast(ctx, base + i, tap, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
                 b.addAction(0, a.getString("title"), pi);
             }
         } catch (JSONException e) { /* shown without buttons */ }
+    }
+
+    // a tap on the timer's notification opens the timer; its own request code, so this intent's extra never ends up on
+    // the workout notification's
+    private static PendingIntent openTimer(Context ctx) {
+        Intent open = new Intent(ctx, MainActivity.class);
+        open.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        open.putExtra(EXTRA_PATH, "/timer");
+        return PendingIntent.getActivity(ctx, 1, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
     }
 
     @PluginMethod
@@ -155,11 +169,7 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener {
     public void showTimer(PluginCall call) {
         channel();
         Long endAt = call.getLong("endAt");
-        Intent open = new Intent(getContext(), MainActivity.class);
-        open.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
-        open.putExtra(EXTRA_PATH, "/timer");
-        // its own request code, so this intent's extra never ends up on the workout notification's
-        PendingIntent pi = PendingIntent.getActivity(getContext(), 1, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+        PendingIntent pi = openTimer(getContext());
         String body = call.getString("body", "");
         NotificationCompat.Builder b = new NotificationCompat.Builder(getContext(), CHANNEL)
             .setSmallIcon(R.drawable.ic_stat_motus)
@@ -182,6 +192,93 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener {
     public void clearTimer(PluginCall call) {
         NotificationManagerCompat.from(getContext()).cancel(TIMER_ID);
         call.resolve();
+    }
+
+    // ---- the interval timer's coming changes ----
+    // At most CUE_MAX alarms at a time (the web app passes only the next ones); request codes CUE_BASE+ keep them apart.
+    private static final int CUE_MAX = 60;
+    private static final int CUE_BASE = 100;
+    private static final String CUE_ACTION = "org.motus.app.TIMER_CUE";
+    // the sound channel the web app makes for the rest alarm (workout/native.ts), so a change sounds like it always did
+    private static final String CUE_CHANNEL = "rest";
+
+    private static Intent cueIntent(Context ctx) {
+        return new Intent(ctx, TimerCue.class).setAction(CUE_ACTION);
+    }
+
+    private static void cancelCues(Context ctx) {
+        AlarmManager am = (AlarmManager) ctx.getSystemService(Context.ALARM_SERVICE);
+        for (int i = 0; i < CUE_MAX; i++) {
+            PendingIntent pi = PendingIntent.getBroadcast(ctx, CUE_BASE + i, cueIntent(ctx), PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_NO_CREATE);
+            if (pi == null) continue;
+            if (am != null) am.cancel(pi);
+            pi.cancel();
+        }
+    }
+
+    /** The timer's coming changes (`cues`: [{ at, title, body, endAt, actions, done }]), in place of any scheduled before;
+     *  none takes them all off. Each, at its time, shows the timer's notification as it then is (TimerCue). */
+    @PluginMethod
+    public void scheduleTimer(PluginCall call) {
+        Context ctx = getContext();
+        cancelCues(ctx);
+        JSArray cues = call.getArray("cues");
+        AlarmManager am = (AlarmManager) ctx.getSystemService(Context.ALARM_SERVICE);
+        if (cues == null || am == null) { call.resolve(); return; }
+        // without the exact-alarm permission (Android 12+ can take it away) the change may come a little late, never not at all
+        boolean exact = Build.VERSION.SDK_INT < Build.VERSION_CODES.S || am.canScheduleExactAlarms();
+        for (int i = 0; i < cues.length() && i < CUE_MAX; i++) {
+            JSONObject c = cues.optJSONObject(i);
+            if (c == null) continue;
+            JSONArray actions = c.optJSONArray("actions");
+            Intent it = cueIntent(ctx)
+                .putExtra("title", c.optString("title", "Interval timer"))
+                .putExtra("body", c.optString("body", ""))
+                .putExtra("endAt", c.isNull("endAt") ? -1L : c.optLong("endAt", -1L))
+                .putExtra("done", c.optBoolean("done", false))
+                .putExtra("actions", actions == null ? "[]" : actions.toString());
+            PendingIntent pi = PendingIntent.getBroadcast(ctx, CUE_BASE + i, it, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+            long at = c.optLong("at", System.currentTimeMillis());
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) am.setExact(AlarmManager.RTC_WAKEUP, at, pi);
+            else if (exact) am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi);
+            else am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi);
+        }
+        call.resolve();
+    }
+
+    /** One of the timer's changes, come while the app is in the background: the timer's own notification (TIMER_ID),
+     *  updated in place, on the sound channel and without "alert once", so this update sounds while the app's quiet
+     *  updates (showTimer) don't. The last one ("done") is no longer ongoing and goes when tapped. */
+    public static class TimerCue extends BroadcastReceiver {
+        @Override
+        public void onReceive(Context ctx, Intent intent) {
+            boolean done = intent.getBooleanExtra("done", false);
+            long endAt = intent.getLongExtra("endAt", -1L);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                NotificationManager nm = (NotificationManager) ctx.getSystemService(Context.NOTIFICATION_SERVICE);
+                // made by the web app; only if it is somehow missing, the same one here
+                if (nm != null && nm.getNotificationChannel(CUE_CHANNEL) == null) {
+                    NotificationChannel ch = new NotificationChannel(CUE_CHANNEL, "Rest timer", NotificationManager.IMPORTANCE_HIGH);
+                    ch.enableVibration(true);
+                    nm.createNotificationChannel(ch);
+                }
+            }
+            NotificationCompat.Builder b = new NotificationCompat.Builder(ctx, CUE_CHANNEL)
+                .setSmallIcon(R.drawable.ic_stat_motus)
+                .setContentTitle(intent.getStringExtra("title"))
+                .setContentText(intent.getStringExtra("body"))
+                .setOngoing(!done)
+                .setAutoCancel(done)
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setDefaults(NotificationCompat.DEFAULT_ALL) // the sound and vibration before Android 8, which has no channels
+                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                .setCategory(NotificationCompat.CATEGORY_STOPWATCH)
+                .setContentIntent(openTimer(ctx));
+            if (endAt > 0) b.setWhen(endAt).setUsesChronometer(true).setChronometerCountDown(true).setShowWhen(true);
+            else b.setShowWhen(false);
+            try { addActions(ctx, b, new JSONArray(intent.getStringExtra("actions")), 30); } catch (JSONException | NullPointerException e) { /* shown without buttons */ }
+            try { NotificationManagerCompat.from(ctx).notify(TIMER_ID, b.build()); } catch (SecurityException e) { /* notifications not allowed */ }
+        }
     }
 
     /** An activity being recorded: its clock counting up from `since` (none while paused), the distance and steps so
@@ -248,6 +345,7 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener {
         nm.cancel(ID);
         nm.cancel(TIMER_ID);
         nm.cancel(REC_ID);
+        cancelCues(getContext()); // or they would show the timer again, with buttons nothing answers
         super.handleOnDestroy();
     }
 

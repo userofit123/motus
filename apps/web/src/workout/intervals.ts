@@ -5,7 +5,7 @@ import { computed, reactive } from "vue";
 import { intervalPhases, intervalAt, intervalTotalS, cleanInterval, INTERVAL_DEFAULT, type IntervalConfig, type IntervalKind, type IntervalSound } from "@motus/shared";
 import { readJson, writeJson } from "../core/prefs";
 import { now, tone, SOFT, savedCues, vibrate, type Overtone } from "./runtime";
-import { keepAwake, scheduleIntervalCues, cancelIntervalCues, showIntervalNotice, clearIntervalNotice, onNoticeAction, INTERVAL_CUE_MAX } from "./native";
+import { keepAwake, scheduleIntervalCues, cancelIntervalCues, showIntervalNotice, clearIntervalNotice, onNoticeAction, INTERVAL_CUE_MAX, type IntervalCue } from "./native";
 
 interface IntervalRun {
   cfg: Required<IntervalConfig>; // sounds filled in
@@ -82,6 +82,7 @@ export function pauseIntervals() {
 export function resumeIntervals() {
   if (iv.startedAt == null || iv.pausedAt == null) return;
   iv.startedAt += Date.now() - iv.pausedAt; iv.pausedAt = null; save(); keepAwake(true, "intervals");
+  if (hidden()) planCues(); // from the lock screen: its changes come as notifications again
 }
 export function stopIntervals() {
   iv.startedAt = null; iv.pausedAt = null; save(); keepAwake(false, "intervals"); cancelIntervalCues(); scheduledForHide = false;
@@ -95,9 +96,11 @@ export function skipInterval(dir: 1 | -1) {
   const to = Math.max(0, Math.min(ph.length, dir > 0 ? index + 1 : justBegun ? index - 1 : index));
   const startMs = ph.slice(0, to).reduce((a, p) => a + p.durS * 1000, 0);
   // "Next" on the last part ends the run just as running out of time does (also when paused: it is over, not paused)
-  if (to >= ph.length) { iv.startedAt = Date.now() - startMs; iv.pausedAt = null; finish(true); return; }
+  // (its changes still scheduled for the background are taken off first: they'd show a run that is over)
+  if (to >= ph.length) { cancelIntervalCues(); scheduledForHide = false; iv.startedAt = Date.now() - startMs; iv.pausedAt = null; finish(true); return; }
   // setting lastIndex here is intentional: a jump you tapped plays no sound
   iv.startedAt = (iv.pausedAt ?? Date.now()) - startMs; lastIndex = to; lastSecond = -1; save();
+  if (hidden()) planCues(); // from the lock screen: the changes scheduled before are now at the wrong times
 }
 
 // Cues at each change: the sound chosen for that part (by default two high beeps to work, one low beep to rest, three
@@ -110,7 +113,8 @@ const FRESH_MS = 1000;
 // True while the app is hidden and its coming changes sit in the notification shade: the notification is then the
 // cue, so the in-app beep would only double it.
 let scheduledForHide = false;
-const inAppCues = () => !(scheduledForHide && document.hidden);
+const hidden = () => typeof document !== "undefined" && document.hidden;
+const inAppCues = () => !(scheduledForHide && hidden());
 function finish(cue: boolean) {
   lastIndex = ivPhases.value.length; lastSecond = -1;
   if (cue && inAppCues()) { const c = savedCues(); if (c.sound) playIntervalSound(iv.cfg.sounds.done); if (c.vibrate) vibrate([400, 150, 400, 150, 400]); }
@@ -140,44 +144,52 @@ setInterval(() => {
   if (index < ph.length && s <= 3 && s >= 1 && s !== lastSecond && ph[index]!.durS > 5) { lastSecond = s; if (inAppCues() && savedCues().sound) playTick(s === 1); }
 }, 200);
 
-// In the background the app's own beeps may stop (a locked phone), so the coming changes go to the notification
-// shade instead; back on screen they are taken off again and the in-app cues carry on. Only the next
-// INTERVAL_CUE_MAX changes are scheduled: a run left in the background past those goes on silently until the app is
-// opened again (every return cancels and the next hide schedules afresh).
-function phaseTitle(i: number) {
-  const ph = ivPhases.value, p = ph[i];
-  if (!p) return { title: "Interval timer done", body: iv.name || "All rounds finished" };
-  const sets = iv.cfg.sets > 1 ? ` · Set ${p.set} of ${iv.cfg.sets}` : "";
-  return { title: PHASE_NAME[p.kind], body: `Round ${p.round} of ${iv.cfg.rounds}${sets}` };
+// In the background the app's own beeps may stop (a locked phone), so the coming changes are scheduled to come as the
+// timer's notification instead (one notification, updated in place at each change, with a sound); back on screen they
+// are taken off again and the in-app cues carry on. Only the next INTERVAL_CUE_MAX changes are scheduled: a run left in
+// the background past those goes on silently until the app is opened again (every return cancels and the next hide
+// schedules afresh).
+function planCues() {
+  if (!ivRunning.value || iv.pausedAt != null) return;
+  const ph = ivPhases.value, out: IntervalCue[] = [];
+  let at = iv.startedAt!;
+  for (let i = 0; i <= ph.length && out.length < INTERVAL_CUE_MAX; i++) {
+    const end = i < ph.length ? at + ph[i]!.durS * 1000 : at;
+    if (i > 0 && at > Date.now()) out.push(i < ph.length ? { at, ...noticeFor(i, end, false) } : { at, title: "Interval timer done", body: iv.name || "All rounds finished", endAt: null, actions: [], done: true });
+    at = end;
+  }
+  scheduleIntervalCues(out); scheduledForHide = out.length > 0;
 }
 if (typeof document !== "undefined") document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") {
     // Checked before the running guard: a run that finished while hidden is no longer running, but its scheduled
-    // notifications (the "done" one) still have to be cleared on return.
-    if (scheduledForHide) { cancelIntervalCues(); scheduledForHide = false; }
+    // changes (the "done" one) still have to be taken off on return, and the notification shown as it now is (or
+    // taken off, once done).
+    if (scheduledForHide) { cancelIntervalCues(); scheduledForHide = false; notice(); }
     if (ivRunning.value && iv.pausedAt == null) keepAwake(true, "intervals");
     return;
   }
-  if (!ivRunning.value || iv.pausedAt != null) return;
-  const ph = ivPhases.value, out: { at: number; title: string; body: string }[] = [];
-  let at = iv.startedAt!;
-  for (let i = 0; i <= ph.length && out.length < INTERVAL_CUE_MAX; i++) {
-    if (i > 0 && at > Date.now()) out.push({ at, ...phaseTitle(i) });
-    if (i < ph.length) at += ph[i]!.durS * 1000;
-  }
-  scheduleIntervalCues(out); scheduledForHide = out.length > 0;
+  planCues();
 });
 // The ongoing notification: the preset's name, the part and round, a countdown to the end of the part (Android app), and
 // Pause or Resume and Skip. Shown again at each change of part, pause or skip, and taken off once the run stops or is done.
 let noticeShown = false;
+function noticeFor(i: number, endAt: number | null, paused: boolean) {
+  const p = ivPhases.value[i]!, sets = iv.cfg.sets > 1 ? ` · Set ${p.set} of ${iv.cfg.sets}` : "";
+  return { title: iv.name || "Interval timer", body: `${paused ? "Paused · " : ""}${PHASE_NAME[p.kind]} · Round ${p.round} of ${iv.cfg.rounds}${sets}`, endAt,
+    actions: [paused ? { id: "iv-resume", title: "Resume" } : { id: "iv-pause", title: "Pause" }, { id: "iv-skip", title: "Skip" }] as IntervalCue["actions"] };
+}
 function notice() {
   // worked out from the clock now, not the shared `now` (up to a tick behind, which would be wrong just after a skip)
   const paused = iv.pausedAt != null, ph = ivPhases.value;
-  const { index, leftMs } = intervalAt(ph, iv.startedAt == null ? 0 : (iv.pausedAt ?? Date.now()) - iv.startedAt), p = ph[index];
-  if (iv.startedAt == null || !p) { if (noticeShown) { clearIntervalNotice(); noticeShown = false; } return; }
-  const sets = iv.cfg.sets > 1 ? ` · Set ${p.set} of ${iv.cfg.sets}` : "";
-  showIntervalNotice({ title: iv.name || "Interval timer", body: `${paused ? "Paused · " : ""}${PHASE_NAME[p.kind]} · Round ${p.round} of ${iv.cfg.rounds}${sets}`, endAt: paused ? null : Date.now() + leftMs,
-    actions: [paused ? { id: "iv-resume", title: "Resume" } : { id: "iv-pause", title: "Pause" }, { id: "iv-skip", title: "Skip" }] });
+  const { index, leftMs } = intervalAt(ph, iv.startedAt == null ? 0 : (iv.pausedAt ?? Date.now()) - iv.startedAt);
+  if (iv.startedAt == null || !ph[index]) {
+    // done while hidden: the scheduled "done" change is (or is about to be) the notification, left standing until return
+    if (iv.startedAt != null && scheduledForHide && hidden()) return;
+    if (noticeShown) { clearIntervalNotice(); noticeShown = false; }
+    return;
+  }
+  showIntervalNotice(noticeFor(index, paused ? null : Date.now() + leftMs, paused));
   noticeShown = true;
 }
 // each does nothing when already so (pauseIntervals and resumeIntervals check)
