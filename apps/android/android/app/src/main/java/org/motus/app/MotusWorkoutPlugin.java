@@ -55,6 +55,9 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener {
     private static volatile Notification recNotice;
     // the recording's notification as last shown (with or without the service), put back when it's swiped away
     private static volatile Notification recShown;
+    // Held around "read recShown, then post" (RecordingSwiped, main thread) and "clear recShown, then cancel"
+    // (stopRecordingService, plugin thread), so a re-post can never land after the cancel and linger after the walk.
+    private static final Object REC_LOCK = new Object();
     // a button's tap, as a broadcast only this app can send and receive
     private static final String ACTION = "org.motus.app.NOTICE_ACTION";
     private static final String EXTRA_ACTION = "motusAction";
@@ -344,23 +347,28 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener {
     }
 
     private void stopRecordingService() {
-        recNotice = null;
-        recShown = null;
-        RecordingService.stop(getContext(), false);
-        NotificationManagerCompat.from(getContext()).cancel(REC_ID);
+        synchronized (REC_LOCK) {
+            recNotice = null;
+            recShown = null;
+            RecordingService.stop(getContext(), false);
+            NotificationManagerCompat.from(getContext()).cancel(REC_ID);
+        }
     }
 
-    /** The recording's notification swiped away. Android 14+ lets ongoing notifications, even a foreground service's, be
-     *  swiped away (not on the lock screen, not with "Clear all"); the service and the recording go on regardless, but
+    /** The recording's notification swiped away. Since Android 13 a foreground service's notification can be swiped
+     *  away, and Android 14 extended that to other ongoing notifications (here: a non-GPS recording with no service)
+     *  (not on the lock screen, not with "Clear all"); the service and the recording go on regardless, but
      *  without it there'd be no way back to the walk or its Pause from the shade, so it is put straight back. Not once the
      *  recording has ended (recShown cleared; the app's own cancel doesn't come here anyway) or the app is gone. */
     public static class RecordingSwiped extends BroadcastReceiver {
         @Override
         public void onReceive(Context ctx, Intent intent) {
-            Notification n = recShown;
-            if (!live || n == null) return;
-            // with the service running, the same id is its notification again (posting it doesn't start anything)
-            try { NotificationManagerCompat.from(ctx).notify(REC_ID, n); } catch (SecurityException e) { /* notifications not allowed */ }
+            synchronized (REC_LOCK) {
+                Notification n = recShown;
+                if (!live || n == null) return;
+                // with the service running, the same id is its notification again (posting it doesn't start anything)
+                try { NotificationManagerCompat.from(ctx).notify(REC_ID, n); } catch (SecurityException e) { /* notifications not allowed */ }
+            }
         }
     }
 
