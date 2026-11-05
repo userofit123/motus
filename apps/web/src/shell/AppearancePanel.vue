@@ -21,7 +21,7 @@ const out = ref(false);
 let backId = 0, unlock = () => {};
 watch(appearanceOpen, (o) => {
   unlock();
-  if (o) { backId = sheetOpened(() => (appearanceOpen.value = false)); unlock = lockScroll(); }
+  if (o) { backId = sheetOpened(() => (appearanceOpen.value = false)); if (isPhone.value) unlock = lockScroll(); } // phone only: a bottom sheet with a scrim; on a computer the lock would shift fixed elements by the scrollbar width
   else {
     unlock = () => {};
     if (backId) sheetClosed(backId); backId = 0;
