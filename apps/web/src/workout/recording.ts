@@ -73,6 +73,8 @@ function persist(soon = false) {
 // ---- route ----
 const BG = () => (globalThis as any).Capacitor?.Plugins?.BackgroundGeolocation;
 let watchId: number | null = null, bgId: string | null = null;
+/** the route comes from the Android app's location plugin, kept going with the screen off by the recording's notification */
+const bgOn = ref(false);
 const ROUGH_M = 50;
 function onPoint(lat: number, lon: number, time: number, alt: number | null | undefined, acc: number) {
   const r = recording.value;
@@ -86,13 +88,15 @@ function onPoint(lat: number, lon: number, time: number, alt: number | null | un
   if (last && haversine(last, pt) < 3) return; // standing still
   r.route.push(pt); persist();
 }
-async function startGps(name: string) {
+async function startGps() {
   if (watchId != null || bgId) return;
   if (BG()) {
     try {
-      // in the Android app a foreground service keeps recording with the screen off; it shows its own notification
-      bgId = await BG().addWatcher({ backgroundTitle: "Recording your " + name.toLowerCase(), backgroundMessage: "Motus is tracking your route", requestPermissions: true, stale: false, distanceFilter: 3 },
+      // No backgroundMessage, so the plugin shows no notification of its own: in the Android app the recording's
+      // notification is the one of the foreground service that keeps the route going with the screen off (keepAlive below).
+      bgId = await BG().addWatcher({ requestPermissions: true, stale: false, distanceFilter: 3 },
         (loc: any, err: any) => { if (err) { gpsError.value = err.code === "NOT_AUTHORIZED" ? "Allow location to record the route" : "Looking for GPS…"; return; } if (loc) onPoint(loc.latitude, loc.longitude, loc.time ?? Date.now(), loc.altitude, loc.accuracy ?? 0); });
+      bgOn.value = true;
       return;
     } catch { /* fall back to the browser's location */ }
   }
@@ -111,7 +115,7 @@ export function previewLocation(on: boolean) {
 function stopGps() {
   if (bgId) BG()?.removeWatcher({ id: bgId }).catch?.(() => {});
   if (watchId != null) navigator.geolocation.clearWatch(watchId);
-  bgId = null; watchId = null; gpsError.value = "";
+  bgId = null; watchId = null; bgOn.value = false; gpsError.value = "";
 }
 
 // ---- steps: the phone's step detector and step counter (Android app) ----
@@ -220,7 +224,7 @@ function startSensors(fromTap: boolean) {
   // the motion sensor's permission (iPhone) has to be asked straight from the tap, so nothing is awaited before it
   if (countsSteps(r.type)) { if (WP()?.startSteps) startNativeSteps(); else startMotion(fromTap); }
   // a type without a route (yoga, a spin class, climbing) records time only, so location is never asked for
-  if (typeInfo(r.type)?.hasGps !== false) startGps(typeName(r.type));
+  if (typeInfo(r.type)?.hasGps !== false) startGps();
   keepAwake(true, "recording");
 }
 function stopAll() {
@@ -282,9 +286,11 @@ const settingsSeen = ref(0);
 queryClient.getQueryCache().subscribe((e) => { if (e.query.queryKey[0] === "settings" && e.query.queryKey[1] === "me") settingsSeen.value++; });
 const noticeOn = () => { void settingsSeen.value; return queryClient.getQueryData<SettingsMe>(["settings", "me"])?.settings?.workout?.sessionNotice !== false; };
 let recShown = !recording.value; // with nothing saved, one left behind by an app closed mid-recording is taken off below
-watch(() => JSON.stringify([recNotice.value, noticeOn()]), () => {
+// While the Android app records a route it is shown even with the setting off: Android requires a notification to keep
+// the route going with the screen off, and this one is it.
+watch(() => JSON.stringify([recNotice.value, noticeOn(), bgOn.value]), () => {
   const n = recNotice.value;
-  if (!n || !noticeOn()) { if (recShown) { void clearRecording(); recShown = false; } return; }
+  if (!n || !(noticeOn() || bgOn.value)) { if (recShown) { void clearRecording(); recShown = false; } return; }
   recShown = true;
   const at = new Date(n.startedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
   const so = [n.dist > 0 ? `${n.dist.toFixed(1)} ${n.du}` : "", n.steps ? `${n.steps.toLocaleString()} steps` : ""].filter(Boolean).join(" · ");
@@ -293,6 +299,7 @@ watch(() => JSON.stringify([recNotice.value, noticeOn()]), () => {
     body: isNativeApp() ? so || `Started ${at}` : [so, `Started ${at}. Keep Motus open on screen to record the route.`].filter(Boolean).join("\n"),
     since: n.paused ? null : n.since,
     actions: [n.paused ? { id: "rec-resume", title: "Resume" } : { id: "rec-pause", title: "Pause" }],
+    keepAlive: bgOn.value,
   });
 }, { immediate: true });
 onNoticeAction("rec-pause", () => setPaused(true));

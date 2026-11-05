@@ -1,6 +1,7 @@
 package org.motus.app;
 
 import android.app.AlarmManager;
+import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
@@ -32,7 +33,7 @@ import org.json.JSONObject;
 /**
  * The rest timer in the notification shade and on the lock screen: a live countdown while a rest runs.
  * The interval timer the same way, as its own notification, so it can sit beside a running workout's, and an activity
- * being recorded as one more. The interval timer's coming changes are alarms that, with the app in the background, put
+ * being recorded as one more (with a route, the notification of the location service that keeps it going: RecordingService). The interval timer's coming changes are alarms that, with the app in the background, put
  * the timer's notification as it then is in place of the one shown, with a sound (TimerCue), so a run keeps one
  * notification however many rounds it has. Each can carry buttons (Pause, Skip, +30s…): a tap is sent to the web app as an "action"
  * event with the button's id, without opening the app, so it works from the lock screen.
@@ -49,7 +50,10 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener {
     private static final String OLD_CHANNEL = "workout";
     private static final int ID = 7002;
     private static final int TIMER_ID = 7003;
-    private static final int REC_ID = 7004;
+    private static final int REC_ID = RecordingService.REC_ID;
+    // the recording's notification while a route is recorded, so the location service can be started again if it
+    // couldn't be when asked (location not yet allowed, the permission question still on screen)
+    private static volatile Notification recNotice;
     // a button's tap, as a broadcast only this app can send and receive
     private static final String ACTION = "org.motus.app.NOTICE_ACTION";
     private static final String EXTRA_ACTION = "motusAction";
@@ -295,7 +299,8 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener {
     }
 
     /** An activity being recorded: its clock counting up from `since` (none while paused), the distance and steps so
-     *  far, and Pause or Resume; tapping it opens the recording. */
+     *  far, and Pause or Resume; tapping it opens the recording. `keepAlive` (a route is recorded): it is the notification
+     *  of the location service that keeps the route going with the screen off (RecordingService), not one beside it. */
     @PluginMethod
     public void showRecording(PluginCall call) {
         channel();
@@ -317,14 +322,47 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener {
         if (since != null) b.setWhen(since).setUsesChronometer(true).setShowWhen(true);
         else b.setShowWhen(false);
         addActions(b, call, 40);
-        try { NotificationManagerCompat.from(getContext()).notify(REC_ID, b.build()); } catch (SecurityException e) { /* notifications not allowed */ }
+        Notification n = b.build();
+        if (call.getBoolean("keepAlive", false)) {
+            recNotice = n;
+            if (RecordingService.start(getContext(), n)) { call.resolve(); return; }
+        } else if (recNotice != null) {
+            recNotice = null;
+            RecordingService.stop(getContext(), true);
+        }
+        try { NotificationManagerCompat.from(getContext()).notify(REC_ID, n); } catch (SecurityException e) { /* notifications not allowed */ }
         call.resolve();
     }
 
     @PluginMethod
     public void clearRecording(PluginCall call) {
-        NotificationManagerCompat.from(getContext()).cancel(REC_ID);
+        stopRecordingService();
         call.resolve();
+    }
+
+    private void stopRecordingService() {
+        recNotice = null;
+        RecordingService.stop(getContext(), false);
+        NotificationManagerCompat.from(getContext()).cancel(REC_ID);
+    }
+
+    // The location service couldn't start when the route did (the permission question was on screen): on coming back to
+    // the app, and on leaving it (still allowed then), it's started now, so the route goes on with the screen off.
+    private void keepRecording() {
+        Notification n = recNotice;
+        if (n != null && !RecordingService.isRunning()) RecordingService.start(getContext(), n);
+    }
+
+    @Override
+    protected void handleOnResume() {
+        super.handleOnResume();
+        keepRecording();
+    }
+
+    @Override
+    protected void handleOnPause() {
+        keepRecording();
+        super.handleOnPause();
     }
 
     // A tap on the timer's notification: with the app open it arrives here; with the app started by the tap it is on the
@@ -359,7 +397,7 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener {
         NotificationManagerCompat nm = NotificationManagerCompat.from(getContext());
         nm.cancel(ID);
         nm.cancel(TIMER_ID);
-        nm.cancel(REC_ID);
+        stopRecordingService();
         cancelCues(getContext()); // or they would show the timer again, with buttons nothing answers
         SensorManager sm = (SensorManager) getContext().getSystemService(Context.SENSOR_SERVICE);
         if (sm != null) sm.unregisterListener(this);

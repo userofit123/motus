@@ -125,10 +125,10 @@ export async function clearSession() {
   await closeWebNotice("motus-session");
 }
 // An activity being recorded (workout/recording.ts), as its own notification next to the workout's, since both can run
-// at once: the clock (Android), distance and steps so far, and Pause or Resume. In the Android app the location service
-// that keeps recording with the screen off shows one more of its own while the app is in the background (Android
-// requires it); this one is the one with the numbers and the button.
-export async function showRecording(o: { title: string; body: string; since: number | null; actions: NoticeButton[] }) {
+// at once: the clock (Android), distance and steps so far, and Pause or Resume. `keepAlive` (the Android app records a
+// route): it is the notification of the location service that keeps the route going with the screen off, so there is
+// one notification, not that service's beside this one.
+export async function showRecording(o: { title: string; body: string; since: number | null; actions: NoticeButton[]; keepAlive?: boolean }) {
   const p = plugin("MotusWorkout");
   if (p?.showRecording) { p.showRecording(o).catch?.(() => {}); return; }
   await webNotice(o.title, { body: o.body, tag: "motus-recording", url: "/activities/record", buttons: o.actions, since: o.since });
