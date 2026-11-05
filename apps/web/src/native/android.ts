@@ -63,7 +63,8 @@ export function installAndroidBridge() {
       async forget() { staged = null; await P("MotusUpdater")?.discard?.().catch(() => {}); },
       async install() { if (staged) await P("MotusUpdater").install({ path: staged }); },
       // mobile data or another metered connection: "Only on Wi-Fi" downloads wait
-      async metered(): Promise<boolean> { return !!(await P("MotusUpdater")?.metered?.().catch(() => null))?.metered; },
+      // Android can always tell
+      async metered(): Promise<{ metered: boolean; known: boolean }> { return { metered: !!(await P("MotusUpdater")?.metered?.().catch(() => null))?.metered, known: true }; },
       // an update downloaded before the app was last closed, still ready to install: its version, or null
       async staged(): Promise<string | null> {
         const r = await P("MotusUpdater")?.staged?.().catch(() => null);

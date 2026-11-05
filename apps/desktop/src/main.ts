@@ -217,19 +217,23 @@ ipcMain.handle("update:download", async () => {
 ipcMain.handle("update:install", () => autoUpdater.quitAndInstall());
 // whether the connection is metered, for Only on Wi-Fi: Windows knows it as the network's cost (a connection set as
 // metered, or mobile data), Linux through NetworkManager's own Metered (set or guessed, e.g. a phone's hotspot);
-// macOS can't be asked without native code, so there, like when the answer can't be had, it counts as not metered
-ipcMain.handle("update:metered", () => new Promise<boolean>((done) => {
-  const ask = (cmd: string, args: string[], metered: (out: string) => boolean) =>
-    execFile(cmd, args, { timeout: 8000, windowsHide: true }, (err, out) => done(!err && metered(String(out))));
+// macOS can't be asked without native code. `known` says whether the answer means anything, so the app hides the
+// switch where it could never do anything (macOS, Linux without NetworkManager/gdbus)
+ipcMain.handle("update:metered", () => new Promise<{ metered: boolean; known: boolean }>((done) => {
+  const ask = (cmd: string, args: string[], known: RegExp, metered: RegExp) =>
+    execFile(cmd, args, { timeout: 8000, windowsHide: true }, (err, out) => {
+      const s = String(out);
+      done({ metered: !err && metered.test(s), known: !err && known.test(s) });
+    });
   if (process.platform === "win32") ask("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command",
     "[void][Windows.Networking.Connectivity.NetworkInformation,Windows.Networking.Connectivity,ContentType=WindowsRuntime]; " +
     "$p = [Windows.Networking.Connectivity.NetworkInformation]::GetInternetConnectionProfile(); if ($p) { $p.GetConnectionCost().NetworkCostType }"],
-    (out) => /Fixed|Variable/.test(out));
+    /Unrestricted|Fixed|Variable/, /Fixed|Variable/);
   // NMMetered: 1 yes, 3 guessed yes (0 unknown, 2 no, 4 guessed no)
   else if (process.platform === "linux") ask("gdbus", ["call", "--system", "--dest", "org.freedesktop.NetworkManager", "--object-path", "/org/freedesktop/NetworkManager",
     "--method", "org.freedesktop.DBus.Properties.Get", "org.freedesktop.NetworkManager", "Metered"],
-    (out) => /uint32 [13]\b/.test(out));
-  else done(false);
+    /uint32 [1-4]\b/, /uint32 [13]\b/);
+  else done({ metered: false, known: false });
 }));
 
 app.setAppUserModelId("org.motus.app");

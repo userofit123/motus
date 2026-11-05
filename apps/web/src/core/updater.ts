@@ -18,6 +18,9 @@ export const updater = reactive({
   progress: null as number | null,
   // a download is running: a second tap would start a second download of the same file
   downloading: false,
+  // whether this device can tell a metered connection (Android always; a computer only where the system can be asked):
+  // Only on Wi-Fi shows only then, as elsewhere it would do nothing
+  canTellMetered: false,
   async install() {
     const u = nat(); if (!u || updater.downloading) return;
     try {
@@ -53,6 +56,7 @@ export function startUpdater(): Promise<unknown> {
   if (!u) return Promise.resolve();
   return (started ??= Promise.all([
     u.version?.().then((v: string) => (updater.appVersion = v)).catch?.(() => {}),
+    u.metered?.().then((m: { known?: boolean }) => (updater.canTellMetered = !!m?.known)).catch?.(() => {}),
     u.staged?.().then((v: string | null) => {
       if (v && !updater.ready && !updater.downloading) { updater.ready = true; updater.stagedVersion = v; updater.status = `Ready to install ${v}`; }
     }).catch?.(() => {}),
@@ -68,6 +72,9 @@ const CHECK_EVERY = 6 * 3600_000;
 // how often to look whether a check is due or a waiting download can start (a phone back on Wi-Fi)
 const TICK = 15 * 60_000;
 let lastCheck = 0;
+// after a failed check or download, nothing is tried again before this much time has passed (GitHub's rate limits)
+const RETRY_GAP = 15 * 60_000;
+let lastFail = 0;
 // the newer version the last automatic check found and that isn't downloaded yet
 let pending = "";
 let busy = false;
@@ -84,22 +91,23 @@ export function useAutoUpdate() {
     busy = true;
     try {
       await startUpdater();
-      if (Date.now() - lastCheck >= CHECK_EVERY) {
+      if (Date.now() - lastCheck >= CHECK_EVERY && Date.now() - lastFail >= RETRY_GAP) {
         // the same answer App & Versions shows (its "Checked at" follows); a check that failed (offline) is tried
         // again at the next look, not 6 hours later
         const r = await qc.fetchQuery({ queryKey: ["static", "release"], queryFn: latestRelease, staleTime: 0 }).catch(() => null);
         const v = r?.latest ?? "";
-        if (!v) return;
+        if (!v) { lastFail = Date.now(); return; }
         lastCheck = Date.now();
         updater.latest = v;
-        pending = v && updater.appVersion && newer(v, updater.appVersion) && !(updater.ready && updater.stagedVersion === v) ? v : "";
+        pending = updater.appVersion && newer(v, updater.appVersion) && !(updater.ready && updater.stagedVersion === v) ? v : "";
       }
-      if (!pending || !u.autoDownload || updater.downloading) return;
-      if (u.wifiOnly && (await nat()?.metered?.().catch(() => false))) return;
+      if (!pending || !u.autoDownload || updater.downloading || Date.now() - lastFail < RETRY_GAP) return;
+      if (u.wifiOnly && (await nat()?.metered?.().catch(() => null))?.metered) return;
       // a ready download of an older release gives way to the newer one
       if (updater.ready && updater.stagedVersion !== pending) updater.forget();
-      pending = "";
+      // pending stays until the file is really downloaded, so a failed download is tried again (after the gap)
       if (!updater.ready) await updater.install();
+      if (updater.ready) pending = ""; else lastFail = Date.now();
     } finally { busy = false; }
   };
   const run = () => { void tick(); };
