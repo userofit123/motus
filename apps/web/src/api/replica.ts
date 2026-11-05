@@ -12,9 +12,15 @@ export const sync = reactive({ on: false, online: true, syncing: false, waiting:
 // what only the server can do: signing in, the admin pages, files, and sync itself
 const SERVER_ONLY = /^\/(auth|admin|media|upload|share|version|update-check|events|sync)(\/|\?|$)/;
 const PAGE_WAIT = 30_000;
+// A failed sync isn't shown as Offline at once: coming back to the app after another one, the phone often hasn't got
+// its connection back yet (or a request cut off while the app was in the background fails as it wakes up), and a
+// moment later all is well. Only failures that go on this long, retried every RETRY_WAIT, count as offline.
+const OFFLINE_GRACE = 5_000, RETRY_WAIT = 1_500;
 
 let eng: any = null, R: any = null, db: any = null, userId = "", name = "";
 let running = false, again = false, timer: ReturnType<typeof setTimeout> | null = null;
+// when the current run of failures began (0 = the last sync worked), and when the app was last brought back
+let failingSince = 0, shownAt = 0;
 // what signing out has to undo, so the next person signing in on this tab starts clean
 let releaseLock = () => {}, stopEvents: AbortController | null = null, tick: ReturnType<typeof setInterval> | null = null;
 
@@ -111,8 +117,9 @@ export async function startReplica(user: { id: string }): Promise<boolean> {
   stopEvents = new AbortController();
   const { signal } = stopEvents;
   addEventListener("online", () => schedule(0), { signal });
-  addEventListener("offline", () => { sync.online = false; }, { signal });
-  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") schedule(0); }, { signal });
+  addEventListener("offline", () => unreachable(), { signal });
+  // whatever failed while the app was in the background (the phone cuts its network) says nothing about now
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") { failingSince = 0; shownAt = Date.now(); schedule(0); } }, { signal });
   tick = setInterval(() => schedule(0), PAGE_WAIT);
   sync.waiting = await R.waitingCount(db);
   noteUnsent(sync.waiting);
@@ -130,6 +137,7 @@ export function schedule(ms = 400) {
 async function run() {
   if (running) { again = true; return; }
   running = true; sync.syncing = true;
+  const started = Date.now();
   let changed = false, failed = 0;
   try {
     const meta = await R.replicaMeta(db);
@@ -154,9 +162,10 @@ async function run() {
     }
     // a row that arrived before the row it belongs to (they came in different pages)
     if (retry.length) await R.applyRemote(db, userId, retry);
+    failingSince = 0;
     Object.assign(sync, { online: true, error: failed ? `${failed} change${failed === 1 ? "" : "s"} from this device didn't fit the server's data` : "", lastAt: Date.now() });
   } catch (e) {
-    if (e instanceof ApiError && e.status === 0) sync.online = false;
+    if (e instanceof ApiError && e.status === 0) unreachable(started);
     else sync.error = (e as Error).message;
   } finally {
     sync.waiting = await R.waitingCount(db).catch(() => sync.waiting);
@@ -165,6 +174,18 @@ async function run() {
     if (changed) invalidate(["*"]);
     if (again) { again = false; schedule(0); }
   }
+}
+
+/** The server didn't answer (or the device says it has no network): Offline once that has lasted OFFLINE_GRACE. */
+function unreachable(since = Date.now()) {
+  // in the background the pill isn't seen, and the failure may only be the phone holding back the network
+  if (document.visibilityState !== "visible" || !sync.online) return;
+  const now = Date.now();
+  // from when the failed try began (a server that never answers has already had 20 s), but not from before the app
+  // came back: a request sent before going away that fails on the way back counts only from now
+  if (!failingSince) failingSince = Math.max(since, shownAt);
+  if (now - failingSince >= OFFLINE_GRACE) sync.online = false;
+  else schedule(RETRY_WAIT);
 }
 
 /** Signing out: the copy on this device goes too (another person may use it next). */
@@ -179,7 +200,7 @@ export async function eraseReplica() {
   if (tick) clearInterval(tick); tick = null;
   if (timer) clearTimeout(timer); timer = null;
   await db?.close().catch(() => {});
-  db = null; eng = null; userId = ""; Object.assign(sync, { waiting: 0, error: "", syncing: false });
+  db = null; eng = null; userId = ""; failingSince = 0; Object.assign(sync, { waiting: 0, error: "", syncing: false });
   releaseLock(); releaseLock = () => {};
   await dropDatabase(`/pglite/${name}`);
   writeStr(UNSENT(), "0");
