@@ -2,9 +2,17 @@
 
 The top entry's version is the one the release workflow publishes. Add a new `## [x.y.z]` section to release.
 
-## [0.1.5] - 2026-11-05
+## [0.1.6] - 2026-11-06
 
-- 
+- Home is rebuilt from scratch: a Today card with this week's days leads a board of blocks (streak, this week, steps, pinned goals, goals due soon, program, muscles this week, up next, last workout, records, body weight and more) that you can reorder and show or hide from ⋮ > Edit home, saved to your account.
+- Steps and distance keep counting with the screen off in the Android app, and reloading mid-walk no longer loses or restarts the step count.
+- Swiping away a recording's notification puts it straight back, so a walk always keeps its notification and Pause button.
+- Downloading an app update shows a notification with its progress on Android (and progress on the taskbar on a computer); tapping it opens App & Versions, and a finished download stays ready to install after the app is closed.
+- The update switches work: automatic checks, automatic downloads and Only on Wi-Fi. A downloaded update on a computer now installs only when you tap Install, not when you quit.
+- Edit goal opens the same full form as New goal, filled in, and every option can be changed.
+- An exercise's preview in the picker has a Select button and swipes (or arrows) through the exercises the list is showing.
+- Popups on the phone keep their last rows above Android's navigation bar, and ⋮ menus near the bottom open upward.
+- On an enlarged map the button's arrows point inward.
 
 ## [0.1.5] - 2026-11-05
 
