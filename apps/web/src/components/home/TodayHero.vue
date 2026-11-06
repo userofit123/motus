@@ -113,9 +113,9 @@ const doneCount = computed(() => week.value.filter((d) => d.done).length);
   .today { grid-template-columns: minmax(0, 1fr) auto; }
   .tweek { grid-column: 1 / -1; justify-content: space-between; }
 }
-:global(html.phone) .today { grid-template-columns: minmax(0, 1fr) auto; }
-:global(html.phone) .tweek { grid-column: 1 / -1; justify-content: space-between; }
-:global(html.phone) .tt { font-size: calc(var(--fs-lg) * 1.375); }
-:global(html.phone) .wd { width: auto; flex: 1; }
-:global(html.phone) .wn { width: min(34px, 100%); aspect-ratio: 1; height: auto; }
+html.phone .today { grid-template-columns: minmax(0, 1fr) auto; }
+html.phone .tweek { grid-column: 1 / -1; justify-content: space-between; }
+html.phone .tt { font-size: calc(var(--fs-lg) * 1.375); }
+html.phone .wd { width: auto; flex: 1; }
+html.phone .wn { width: min(34px, 100%); aspect-ratio: 1; height: auto; }
 </style>

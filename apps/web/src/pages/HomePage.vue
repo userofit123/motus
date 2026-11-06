@@ -467,8 +467,8 @@ await loaded(home, ach);
 /* pinned goals are one block in the order but each goal is its own tile in the grid */
 .pins { display: contents; }
 @media (max-width: 760px) { .hgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .sz-m { grid-column: 1 / -1; } }
-:global(html.phone) .hgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-:global(html.phone) .hgrid .sz-m { grid-column: 1 / -1; }
+html.phone .hgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+html.phone .hgrid .sz-m { grid-column: 1 / -1; }
 
 /* a block: its header row (icon, title, its one link), then its content spaced by the header gap */
 .hb { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
@@ -481,7 +481,7 @@ await loaded(home, ach);
 .big { font-size: var(--fs-val); font-weight: 650; letter-spacing: -.8px; line-height: 1.1; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .big small { font-size: var(--fs); font-weight: 500; margin-inline-start: 5px; color: var(--tx2); letter-spacing: 0; }
 .hero .big small, .hero .tiny { color: color-mix(in srgb, var(--onc) 75%, transparent); }
-:global(html.phone) .sz-s .big { font-size: clamp(22px, 7vw, var(--fs-val)); }
+html.phone .sz-s .big { font-size: clamp(22px, 7vw, var(--fs-val)); }
 
 /* streak grid: five rows of a week */
 .sgrid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; margin-top: auto; padding-top: var(--hg); }
@@ -514,7 +514,7 @@ await loaded(home, ach);
 .gdots i.on { background: var(--acc); }
 .hero .gdots i.on { background: var(--onc); }
 /* on the phone a goal with its streak keeps its two halves, stacked */
-:global(html.phone) .gtile.sz-m { flex-direction: row; }
+html.phone .gtile.sz-m { flex-direction: row; }
 
 /* goal rows: title and state, the bar, the numbers */
 .glist { display: flex; flex-direction: column; gap: var(--hg); }
