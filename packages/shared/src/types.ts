@@ -395,7 +395,7 @@ export type GoalDays = null | "workdays" | number[];
 /** Home (/home): what's planned for a day in the coming week. */
 export interface HomePlan { scheduleId: string; date: string; routineId: string | null; activityType: string | null; name: string; color: string | null; timeOfDay: string | null }
 /** Home: a program you follow, where you are in it (absent while Programs is switched off). */
-export interface HomeProgram extends ProgramState { id: string; name: string; weeks: number; deloadPct: number; startDate: string; calendarWeek: number }
+export interface HomeProgram extends Omit<ProgramState, "next"> { next: ProgramSlot; id: string; name: string; weeks: number; deloadPct: number; startDate: string; calendarWeek: number }
 /** Home: a routine or muscle worth doing next. */
 export interface HomeSuggestion { key: string; kind: "program" | "order" | "missed" | "rested" | "oldest"; title: string; reason: string; routineId: string | null; color: string | null; muscle?: string }
 /** Home: a record from the last 30 days; the set that broke the most records stands for its exercise in that workout. */
@@ -413,4 +413,24 @@ export interface HomeToday {
   upNext: HomePlan[];
   programs: HomeProgram[];
   suggest: HomeSuggestion[];
+}
+/** Home: a week's totals (the last eight, oldest first). */
+export interface HomeWeek { start: string; workouts: number; volumeKg: number; timeS: number; walkM: number }
+/** Home: a muscle group and how long since it was trained (null: never). */
+export interface HomeGroup { id: string; name: string; lastAt: string | null; days: number | null }
+/** Home: one line of recent activity, a workout summary or an activity. */
+export type HomeFeedItem = ({ kind: "workout" } & WorkoutSummary) | { kind: "activity"; id: string; type: string; name: string | null; startedAt: string; durationS: number; distanceM: number | null };
+/** Home (/home): everything the blocks read. */
+export interface HomeData extends HomeToday {
+  records: HomeRecord[];
+  streak: number;
+  weeks: HomeWeek[]; thisWeek: HomeWeek; lastWeek: HomeWeek;
+  homeGoals: (Goal & { showStreak: boolean })[];
+  goals: Goal[];
+  reminders: { id: string; body: string; targetType: string; targetId: string; targetName: string | null }[];
+  bodyweight: { value: number; at: string }[];
+  feed: HomeFeedItem[];
+  muscles7: Record<string, number>; main7: string[]; helpers7: string[];
+  groupDays: HomeGroup[];
+  totalWorkouts: number; routineCount: number; activityCount: number;
 }

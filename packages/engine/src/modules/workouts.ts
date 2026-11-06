@@ -87,7 +87,9 @@ export async function recentRecords(q: Sql, since: string, limit = 6): Promise<H
      FROM workout_sets s JOIN workout_exercises we ON we.id = s.workout_exercise_id JOIN workouts w ON w.id = we.workout_id JOIN exercises e ON e.id = we.exercise_id
      WHERE s.done AND w.status = 'completed' AND we.exercise_id IN (
        SELECT x.exercise_id FROM workout_exercises x JOIN workouts y ON y.id = x.workout_id WHERE y.status = 'completed' AND y.started_at >= $1)
-     ORDER BY w.started_at, we.position, s.position`, [since]);
+       AND we.id IN (SELECT id FROM (SELECT we2.id, row_number() OVER (PARTITION BY we2.exercise_id ORDER BY w2.started_at DESC, w2.id DESC) AS rn
+         FROM workout_exercises we2 JOIN workouts w2 ON w2.id = we2.workout_id WHERE w2.status = 'completed') z WHERE z.rn <= 500)
+     ORDER BY w.started_at, w.id, we.position, s.position`, [since]);
   // per exercise, its sessions (one per workout exercise) in time order
   const byEx = new Map<string, { weId: string; workoutId: string; at: string; tracking: Tracking; sets: RecSet[] }[]>();
   for (const r of rows) {

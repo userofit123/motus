@@ -1,7 +1,7 @@
 // Every screen's data, filed under a topic (the first part of the key) so live updates know what to reload.
 import { computed, type Ref, unref, watch, type MaybeRef } from "vue";
 import { useQuery, useMutation, useInfiniteQuery, type QueryClient } from "@tanstack/vue-query";
-import { withDefaults, type Settings, type Exercise, type RoutineSummary, type Goal, type Me, type Program, type GoalMetric } from "@motus/shared";
+import { withDefaults, type Settings, type Exercise, type RoutineSummary, type Goal, type Me, type Program, type GoalMetric, type HomeData } from "@motus/shared";
 import { api, httpTransport } from "./client";
 import { sync } from "./replica";
 import { endedHere } from "./outbox";
@@ -28,7 +28,7 @@ export const usePreview = (id: MaybeRef<string>) => useQuery({ queryKey: compute
 export const useActive = (client?: QueryClient) => useQuery({ queryKey: ["workouts", "active"], queryFn: () => api.get<any>("/workouts/active").then((w) => (w && endedHere(w.id) ? null : w)), staleTime: 5_000 }, client);
 export const useWorkout = (id: MaybeRef<string>) => useQuery({ queryKey: computed(() => ["workouts", unref(id)]), queryFn: () => api.get(`/workouts/${unref(id)}`), enabled: computed(() => !!unref(id)) });
 export const useWorkouts = (params: MaybeRef<Record<string, unknown>> = {}) => useQuery({ queryKey: computed(() => ["workouts", "list", unref(params)]), queryFn: () => api.get("/workouts", unref(params)) });
-export const useHome = () => useQuery({ queryKey: ["home"], queryFn: () => api.get("/home", { tz: new Date().getTimezoneOffset() }) });
+export const useHome = () => useQuery({ queryKey: ["home"], queryFn: () => api.get<HomeData>("/home", { tz: new Date().getTimezoneOffset() }) });
 export const useGoals = (all = false) => useQuery({ queryKey: ["goals", all], queryFn: () => api.get<Goal[]>("/goals", { all: all ? 1 : undefined, tz: new Date().getTimezoneOffset() }) });
 export const useGoalDetail = (id: MaybeRef<string>) => useQuery({ queryKey: computed(() => ["goals", "detail", unref(id)]), queryFn: () => api.get<any>(`/goals/${unref(id)}/detail`, { tz: new Date().getTimezoneOffset() }), enabled: computed(() => !!unref(id)) });
 export const useGoalMetrics = () => useQuery({ queryKey: ["static", "metrics"], queryFn: () => api.get<GoalMetric[]>("/goal-metrics"), staleTime: Infinity });

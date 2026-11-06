@@ -5,7 +5,7 @@
 import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
 import { useQuery } from "@tanstack/vue-query";
-import { num, fromM, orderGoals, HOME_BLOCKS, type Goal } from "@motus/shared";
+import { num, fromM, orderGoals, HOME_BLOCKS, type Goal, type HomePlan, type HomeRecord, type HomeGroup, type HomeWeek } from "@motus/shared";
 import { useHome, useSettings, saveSettings, useAchievements, useGoals, loaded } from "../api/queries";
 import { api } from "../api/client";
 import { invalidate, queryClient } from "../api/live";
@@ -31,7 +31,7 @@ const router = useRouter();
 const home = useHome();
 const s = useSettings();
 const fmt = useFmt();
-const h = computed<any>(() => home.data.value);
+const h = computed(() => home.data.value);
 const today = localYmd(new Date());
 // nothing made or done yet: Today says how to begin and the summing-up blocks wait
 const fresh = computed(() => !!h.value && !h.value.routineCount && !h.value.totalWorkouts && !h.value.activityCount && !(s.value.features.programs && h.value.programs?.length));
@@ -69,7 +69,7 @@ const FIXED = new Set(["today"]);
 // ---- data the blocks read (all from /home, except steps, goals and achievements, which have their own queries)
 const tw = computed(() => h.value?.thisWeek ?? { workouts: 0, timeS: 0, volumeKg: 0, walkM: 0 });
 const lw = computed(() => h.value?.lastWeek ?? { workouts: 0, timeS: 0, volumeKg: 0, walkM: 0 });
-const weeks = computed<any[]>(() => h.value?.weeks ?? []);
+const weeks = computed<HomeWeek[]>(() => h.value?.weeks ?? []);
 const weekMax = computed(() => Math.max(1, ...weeks.value.map((w) => w.workouts)));
 const walked = computed(() => weeks.value.some((w) => w.walkM > 0));
 
@@ -100,14 +100,14 @@ const goalIcon = (g: Goal) => ({ activity: g.scopeId === "workout" ? "dumbbell" 
 const pct = (g: Goal) => Math.max(0, Math.min(100, g.progress?.pct ?? 0));
 
 // muscles: groups worked in the last 7 days, and the ones resting longest
-const groups = computed<any[]>(() => h.value?.groupDays ?? []);
+const groups = computed<HomeGroup[]>(() => h.value?.groupDays ?? []);
 const worked = computed(() => groups.value.filter((g) => g.days != null && g.days < 7).length);
 const resting = computed(() => [...groups.value].filter((g) => g.days == null || g.days >= 4).sort((a, b) => (b.days ?? 1e9) - (a.days ?? 1e9)).slice(0, 3));
 
 // up next: the coming days; today's first plan is already in Today
-const upNext = computed<any[]>(() => { const l = h.value?.upNext ?? []; const first = l.findIndex((p: any) => p.date === today); return l.filter((_: any, i: number) => i !== first); });
+const upNext = computed<HomePlan[]>(() => { const l = h.value?.upNext ?? []; const first = l.findIndex((p) => p.date === today); return l.filter((_, i) => i !== first); });
 const dayName = (d: string) => { const tm = localYmd(new Date(Date.now() + 86400000)); return d === today ? "Today" : d === tm ? "Tomorrow" : fmt.value.date(d, { weekday: "long" }); };
-const start = (p: any) => router.push(`/routines/${p.routineId}/start${p.scheduleId ? `?schedule=${p.scheduleId}&date=${p.date}` : ""}`);
+const start = (p: HomePlan) => router.push(`/routines/${p.routineId}/start${p.scheduleId ? `?schedule=${p.scheduleId}&date=${p.date}` : ""}`);
 const planOpen = ref<any>(null);
 
 // body weight: the latest and the change over the last 30 days
@@ -122,7 +122,7 @@ const bwChange = computed(() => {
 
 // records
 const KIND: Record<string, string> = { weight: "Heaviest", e1rm: "Best 1RM", volume: "Most volume", reps: "Most reps", duration: "Longest", distance: "Farthest" };
-const recordText = (r: any) => r.distanceM ? fmt.value.dist(r.distanceM, 1) : r.durationS && !r.reps ? fmt.value.dur(r.durationS, true)
+const recordText = (r: HomeRecord) => r.distanceM ? fmt.value.dist(r.distanceM, 1) : r.durationS && !r.reps ? fmt.value.dur(r.durationS, true)
   : r.weightKg ? `${fmt.value.w(r.weightKg)} ${fmt.value.wu} × ${r.reps ?? 0}` : `${r.reps ?? 0} reps`;
 
 // achievements: the latest reached and the closest still to come
@@ -142,7 +142,7 @@ const reminderPlace = (r: any) => r.targetType === "routine" ? `/routines/${r.ta
 
 // whether a switched-on block has something to show now
 const shows = (id: string): boolean => {
-  const x = h.value;
+  const x = h.value!; // only asked once Home has loaded
   switch (id) {
     case "streak": case "week": case "upnext": return !fresh.value;
     case "pinned": return pinnedGoals.value.length > 0;
@@ -333,17 +333,18 @@ await loaded(home, ach);
             <button class="lnk" @click="planOpen = { rule: 'once' }"><Icon name="plus" :size="14" />Plan</button><button class="lnk" @click="router.push('/history')">Calendar</button></div>
           <div v-if="!upNext.length" class="tiny">Nothing else planned this week. Plan a routine for certain days and it shows here and in the calendar.</div>
           <div v-else class="list">
-            <div v-for="p in upNext" :key="p.scheduleId + p.date" class="li click" v-bind="link(() => (p.routineId ? start(p) : (activitySheet = { type: p.activityType })))">
-              <MuscleFig sm :routine="p.routineId" />
+            <div v-for="p in upNext" :key="p.scheduleId + p.date" class="li click">
+              <button class="cover" :aria-label="`Open ${p.name}`" @click="p.routineId ? start(p) : (activitySheet = { type: p.activityType ?? undefined })" />
+              <MuscleFig sm :routine="p.routineId ?? undefined" />
               <div class="grow"><div class="t">{{ p.name }}</div><div class="s">{{ dayName(p.date) }}{{ p.timeOfDay ? " · " + p.timeOfDay : "" }}</div></div>
-              <button v-if="p.routineId" class="btn s o" @click.stop="start(p)">Start</button>
-              <button v-else class="btn s o" @click.stop="activitySheet = { type: p.activityType }">Log</button>
+              <button v-if="p.routineId" class="btn s o over" @click="start(p)">Start</button>
+              <button v-else class="btn s o over" @click="activitySheet = { type: p.activityType ?? undefined }">Log</button>
             </div>
           </div>
         </div>
 
         <!-- last workout -->
-        <div v-else-if="id === 'previous'" class="card hb sz-m click has-cover">
+        <div v-else-if="id === 'previous' && h.last" class="card hb sz-m click has-cover">
           <button class="cover" :aria-label="`Open ${h.last.name}`" @click="go(`/workouts/${h.last.id}`)" />
           <div class="ch"><span class="bi"><Icon name="dumbbell" :size="15" /></span><span class="t grow ellipsis">{{ h.last.name }}</span>
             <span class="tiny">{{ h.daysSinceLast === 0 ? "Today" : h.daysSinceLast === 1 ? "Yesterday" : `${h.daysSinceLast} days ago` }}</span></div>
@@ -373,11 +374,12 @@ await loaded(home, ach);
         <div v-else-if="id === 'suggest'" class="card hb sz-m">
           <div class="ch"><span class="bi"><Icon name="sparkle" :size="15" /></span><span class="t grow">Suggested</span></div>
           <TransitionGroup name="mv" tag="div" class="list">
-            <div v-for="x in h.suggest" :key="x.kind + (x.routineId ?? x.muscle)" class="li click" v-bind="link(x.routineId ? `/routines/${x.routineId}` : `/exercises?muscle=${encodeURIComponent(x.muscle)}`)">
-              <MuscleFig sm :routine="x.routineId" :muscles="x.routineId || !x.muscle ? undefined : [x.muscle]" />
+            <div v-for="x in h.suggest" :key="x.kind + (x.routineId ?? x.muscle)" class="li click">
+              <button class="cover" :aria-label="`Open ${x.title}`" @click="go(x.routineId ? `/routines/${x.routineId}` : `/exercises?muscle=${encodeURIComponent(x.muscle ?? '')}`)" />
+              <MuscleFig sm :routine="x.routineId ?? undefined" :muscles="x.routineId || !x.muscle ? undefined : [x.muscle]" />
               <div class="grow"><div class="t">{{ x.title }}</div><div class="s">{{ x.reason }}</div></div>
-              <button v-if="x.routineId" class="ib sm" aria-label="Plan" title="Plan" @click.stop="planOpen = { rule: 'once', routineId: x.routineId }"><Icon name="calendar" :size="18" /></button>
-              <button class="ib sm plain" aria-label="Not now" title="Not now: hide until your next workout" @click.stop="hideSuggestion(x.key)"><Icon name="close" :size="16" /></button>
+              <button v-if="x.routineId" class="ib sm over" aria-label="Plan" title="Plan" @click="planOpen = { rule: 'once', routineId: x.routineId }"><Icon name="calendar" :size="18" /></button>
+              <button class="ib sm plain over" aria-label="Not now" title="Not now: hide until your next workout" @click="hideSuggestion(x.key)"><Icon name="close" :size="16" /></button>
             </div>
           </TransitionGroup>
         </div>
@@ -400,7 +402,7 @@ await loaded(home, ach);
         <div v-else-if="id === 'records'" class="card hb sz-m">
           <div class="ch"><span class="bi"><Icon name="trophy" :size="15" /></span><span class="t grow">Records</span><span class="tiny">Last 30 days</span></div>
           <div class="list">
-            <div v-for="r in h.records" :key="r.workoutId + r.exerciseId" class="li click" v-bind="link(`/exercises/${r.exerciseId}`)">
+            <div v-for="(r, i) in h.records" :key="`${r.workoutId}-${r.exerciseId}-${r.kinds.join()}-${i}`" class="li click" v-bind="link(`/exercises/${r.exerciseId}`)">
               <div class="grow"><div class="t">{{ r.name }}</div><div class="s">{{ r.kinds.map((k: string) => KIND[k] ?? k).join(", ") }} · {{ fmt.date(r.at, { day: "numeric", month: "short" }) }}</div></div>
               <b class="rv">{{ recordText(r) }}</b>
             </div>
@@ -410,7 +412,7 @@ await loaded(home, ach);
         <div v-else-if="id === 'feed'" class="card hb sz-m">
           <div class="ch"><span class="bi"><Icon name="history" :size="15" /></span><span class="t grow">Recent activity</span><button class="lnk" @click="router.push('/history?view=list')">All</button></div>
           <div class="list"><div v-for="x in h.feed.slice(0, 5)" :key="x.id" class="li click" v-bind="link(x.kind === 'workout' ? `/workouts/${x.id}` : `/activities/${x.id}`)">
-            <Icon :name="x.kind === 'workout' ? 'dumbbell' : x.type === 'walk' ? 'walk' : 'activity'" :size="18" class="muted" /><div class="grow"><div class="t">{{ x.name || x.type }}</div><div class="s">{{ fmt.date(x.startedAt, { weekday: "short", day: "numeric", month: "short" }) }}</div></div>
+            <Icon :name="x.kind === 'workout' ? 'dumbbell' : x.type === 'walk' ? 'walk' : 'activity'" :size="18" class="muted" /><div class="grow"><div class="t">{{ x.kind === "workout" ? x.name : x.name || x.type }}</div><div class="s">{{ fmt.date(x.startedAt, { weekday: "short", day: "numeric", month: "short" }) }}</div></div>
             <span class="tiny">{{ x.kind === "workout" ? fmt.dur(x.durationS, true) : x.distanceM ? fmt.dist(x.distanceM, 1) : fmt.dur(x.durationS, true) }}</span></div></div>
         </div>
 
