@@ -2,6 +2,10 @@
 
 The top entry's version is the one the release workflow publishes. Add a new `## [x.y.z]` section to release.
 
+## [0.1.7] - 2026-11-06
+
+- On the phone, every page fills the screen again; in 0.1.6 pages were squeezed into a thin strip on the left.
+
 ## [0.1.6] - 2026-11-06
 
 - Home is rebuilt from scratch: a Today card with this week's days leads a board of blocks (streak, this week, steps, pinned goals, goals due soon, program, muscles this week, up next, last workout, records, body weight and more) that you can reorder and show or hide from ⋮ > Edit home, saved to your account.
