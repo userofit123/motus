@@ -226,5 +226,15 @@ describe("Home's records and training days", () => {
     expect(on.records).toHaveLength(1);
     expect(on.records[0]).toMatchObject({ exerciseId: ex, name: "Test home row", weightKg: 60, reps: 8 });
     expect(on.records[0].kinds).toContain("weight");
+    // a first time is not a record; a later better session is, newest first, and warm-ups don't count
+    const ex2 = await exercise("Test home curl", "weight_reps");
+    await log("2026-10-02T08:00:00Z", [{ exerciseId: ex2, sets: [{ weightKg: 10, reps: 10 }] }]);
+    expect((await call("GET", "/home", undefined, { tz: "0" })).records).toHaveLength(1);
+    await log("2026-10-04T08:00:00Z", [{ exerciseId: ex2, sets: [{ kind: "warmup", weightKg: 30, reps: 5 }, { weightKg: 10, reps: 12 }] }]);
+    const two = (await call("GET", "/home", undefined, { tz: "0" })).records;
+    expect(two.map((r: any) => r.name)).toEqual(["Test home curl", "Test home row"]);
+    expect(two[0]).toMatchObject({ weightKg: 10, reps: 12 });
+    expect(two[0].kinds).toEqual(expect.arrayContaining(["reps", "volume"]));
+    expect(two[0].kinds).not.toContain("weight");
   });
 });

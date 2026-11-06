@@ -40,6 +40,15 @@ describe("programs", () => {
     expect(p.state.next.routineId).toBe(b);
     expect(p.state.done).toBe(1);
   });
+
+  it("stays off Home while Programs is switched off", async () => {
+    expect((await call("GET", "/home", undefined, { tz: "0" })).programs.length).toBeGreaterThan(0);
+    await call("PUT", "/settings", { features: { programs: false } });
+    const home = await call("GET", "/home", undefined, { tz: "0" });
+    expect(home.programs).toEqual([]);
+    expect(home.suggest.filter((x: any) => x.kind === "program")).toEqual([]);
+    await call("PUT", "/settings", { features: { programs: true } });
+  });
   it("shows a program in full: the plan with what was done, where you are against the calendar, and totals", async () => {
     const day = (n: number) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
     const a = (await call("POST", "/routines", { template: "push" })).id, b = (await call("POST", "/routines", { template: "pull" })).id;

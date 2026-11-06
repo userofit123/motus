@@ -1,6 +1,6 @@
 // Workouts: starting one (from a routine or empty), logging sets, skipping, reordering and replacing exercises,
 // finishing, logging a past workout, editing and duplicating, and the full detail with records and improvements.
-import { e1rm, ymd, liftedKg, LIFTED_SQL, type Workout, type WorkoutSummary } from "@motus/shared";
+import { e1rm, ymd, liftedKg, LIFTED_SQL, type Tracking, type HomeRecord, type Workout, type WorkoutSummary } from "@motus/shared";
 import type { Router, Ctx } from "../router";
 import type { Sql } from "../db";
 import { camel, id, optId, str, intOrNull, numOrNull, bool, oneOf, isoTime, secondsBetween, visible } from "../util";
@@ -27,46 +27,93 @@ export async function workoutSummaries(q: Sql, where: string, params: unknown[],
   return rows.map((r: any) => ({ ...camel<WorkoutSummary>(r), exerciseCount: Number(r.exercise_count), setCount: Number(r.set_count), volumeKg: Number(r.volume_kg), prCount: 0 }));
 }
 
+/** A set as the record check reads it. */
+interface RecSet { id: string; kind: string; done?: boolean; weightKg: number | string | null; reps: number | null; durationS: number | null; distanceM: number | string | null }
+
+/** The records each of `sets` breaks against `prev` (the exercise's earlier working sets), in order, so a set also
+ * counts the ones before it and a record is flagged once, not on every set that matches it. Kinds: weight, e1rm,
+ * volume, reps, duration, distance. `prev` grows with the sets checked. */
+function flagRecords(tracking: string | undefined, prev: RecSet[], sets: RecSet[], out: Map<string, string[]>) {
+  // assisted exercises log the help taken off as weight: less help is the better lift, and help isn't weight lifted
+  const assisted = tracking === "assisted";
+  const wt = (s: RecSet) => Number(s.weightKg) || 0;
+  const best = (f: (s: RecSet) => number) => Math.max(0, ...prev.map(f));
+  for (const s of sets) {
+    if (!s.done || s.kind === "warmup") continue;
+    const f: string[] = [];
+    const kg = wt(s), reps = s.reps ?? 0;
+    if (assisted) {
+      const helped = prev.filter((p) => p.weightKg != null && (p.reps ?? 0) > 0);
+      if (s.weightKg != null && reps > 0 && helped.length && kg < Math.min(...helped.map(wt))) f.push("weight");
+    } else {
+      if (kg > 0 && kg > best(wt)) f.push("weight");
+      if ((e1rm(kg, reps) ?? 0) > best((p) => e1rm(wt(p), p.reps) ?? 0) + 0.01) f.push("e1rm");
+      const v = liftedKg(kg, reps, tracking);
+      if (v > 0 && v > best((p) => liftedKg(wt(p), p.reps, tracking))) f.push("volume");
+    }
+    // most reps at this weight or more (assisted: this much help or less). A set without weight (push-ups, reps only)
+    // is weighed against every set, so it is simply the most reps
+    if (reps > 0 && !f.includes("weight")) {
+      const most = Math.max(0, ...prev.filter((p) => (assisted ? wt(p) <= kg : wt(p) >= kg)).map((p) => p.reps ?? 0));
+      if (reps > most) f.push("reps");
+    }
+    if ((s.durationS ?? 0) > best((p) => p.durationS ?? 0)) f.push("duration");
+    if ((Number(s.distanceM) || 0) > best((p) => Number(p.distanceM) || 0)) f.push("distance");
+    if (f.length) out.set(s.id, f);
+    prev.push(s);
+  }
+}
+
 /** Records set in this workout: each done set compared with the best of every earlier session of that exercise and the
- * sets before it in this one (so a record is flagged once, not on every set that matches it). Kinds: weight, e1rm, volume,
- * reps, duration, distance. */
+ * sets before it in this one. */
 async function recordsIn(q: Sql, w: any, exercises: any[]): Promise<Map<string, string[]>> {
   const out = new Map<string, string[]>();
   for (const we of exercises) {
     const before = (await exerciseSessions(q, we.exerciseId, 500)).filter((s) => s.startedAt < w.startedAt && s.workoutId !== w.id);
     if (!before.length) continue; // the first time is not a record
-    const tracking = we.exercise?.tracking;
-    // assisted exercises log the help taken off as weight: less help is the better lift, and help isn't weight lifted
-    const assisted = tracking === "assisted";
-    const prev: any[] = before.flatMap((s) => s.sets).filter((s: any) => s.kind !== "warmup");
-    const wt = (s: any) => Number(s.weightKg) || 0;
-    const best = (f: (s: any) => number) => Math.max(0, ...prev.map(f));
-    for (const s of we.sets) {
-      if (!s.done || s.kind === "warmup") continue;
-      const f: string[] = [];
-      const kg = wt(s), reps = s.reps ?? 0;
-      if (assisted) {
-        const helped = prev.filter((p) => p.weightKg != null && (p.reps ?? 0) > 0);
-        if (s.weightKg != null && reps > 0 && helped.length && kg < Math.min(...helped.map(wt))) f.push("weight");
-      } else {
-        if (kg > 0 && kg > best(wt)) f.push("weight");
-        if ((e1rm(kg, reps) ?? 0) > best((p) => e1rm(wt(p), p.reps) ?? 0) + 0.01) f.push("e1rm");
-        const v = liftedKg(kg, reps, tracking);
-        if (v > 0 && v > best((p) => liftedKg(p.weightKg, p.reps, tracking))) f.push("volume");
-      }
-      // most reps at this weight or more (assisted: this much help or less). A set without weight (push-ups, reps only)
-      // is weighed against every set, so it is simply the most reps
-      if (reps > 0 && !f.includes("weight")) {
-        const most = Math.max(0, ...prev.filter((p) => (assisted ? wt(p) <= kg : wt(p) >= kg)).map((p) => p.reps ?? 0));
-        if (reps > most) f.push("reps");
-      }
-      if ((s.durationS ?? 0) > best((p) => p.durationS ?? 0)) f.push("duration");
-      if ((Number(s.distanceM) || 0) > best((p) => Number(p.distanceM) || 0)) f.push("distance");
-      if (f.length) out.set(s.id, f);
-      prev.push(s);
-    }
+    const prev: RecSet[] = before.flatMap((s) => s.sets).filter((s: RecSet) => s.kind !== "warmup");
+    flagRecords(we.exercise?.tracking, prev, we.sets, out);
   }
   return out;
+}
+
+/** Records set since `since`, newest workout first, at most `limit`. Two queries whatever the history: every done set of
+ * the exercises done since then (their whole history, as a record is against all of it), then their names; the same
+ * check as a workout's own records, worked out in memory. */
+export async function recentRecords(q: Sql, since: string, limit = 6): Promise<HomeRecord[]> {
+  const { rows } = await q.query<{ id: string; kind: string; weight_kg: string | null; reps: number | null; duration_s: number | null; distance_m: string | null;
+    we_id: string; exercise_id: string; tracking: Tracking; workout_id: string; started_at: string | Date }>(
+    `SELECT s.id, s.kind, s.weight_kg, s.reps, s.duration_s, s.distance_m, we.id AS we_id, we.exercise_id, e.tracking, w.id AS workout_id, w.started_at
+     FROM workout_sets s JOIN workout_exercises we ON we.id = s.workout_exercise_id JOIN workouts w ON w.id = we.workout_id JOIN exercises e ON e.id = we.exercise_id
+     WHERE s.done AND w.status = 'completed' AND we.exercise_id IN (
+       SELECT x.exercise_id FROM workout_exercises x JOIN workouts y ON y.id = x.workout_id WHERE y.status = 'completed' AND y.started_at >= $1)
+     ORDER BY w.started_at, we.position, s.position`, [since]);
+  // per exercise, its sessions (one per workout exercise) in time order
+  const byEx = new Map<string, { weId: string; workoutId: string; at: string; tracking: Tracking; sets: RecSet[] }[]>();
+  for (const r of rows) {
+    const at = new Date(r.started_at).toISOString();
+    const list = byEx.get(r.exercise_id) ?? byEx.set(r.exercise_id, []).get(r.exercise_id)!;
+    let sess = list.at(-1);
+    if (sess?.weId !== r.we_id) list.push(sess = { weId: r.we_id, workoutId: r.workout_id, at, tracking: r.tracking, sets: [] });
+    sess.sets.push({ id: r.id, kind: r.kind, done: true, weightKg: r.weight_kg == null ? null : Number(r.weight_kg), reps: r.reps, durationS: r.duration_s, distanceM: r.distance_m == null ? null : Number(r.distance_m) });
+  }
+  const found: Omit<HomeRecord, "name">[] = [];
+  for (const [exerciseId, list] of byEx) {
+    list.forEach((sess, i) => {
+      if (sess.at < since) return;
+      // as in a workout: earlier sessions of other workouts, and the first time is not a record
+      const prev = list.slice(0, i).filter((p) => p.at < sess.at && p.workoutId !== sess.workoutId).flatMap((p) => p.sets).filter((s) => s.kind !== "warmup");
+      if (!prev.length) return;
+      const flags = new Map<string, string[]>();
+      flagRecords(sess.tracking, prev, sess.sets, flags);
+      const top = sess.sets.filter((s) => flags.has(s.id)).sort((a, b) => flags.get(b.id)!.length - flags.get(a.id)!.length)[0];
+      if (top) found.push({ workoutId: sess.workoutId, at: sess.at, exerciseId, tracking: sess.tracking, kinds: flags.get(top.id)!,
+        weightKg: top.weightKg == null ? null : Number(top.weightKg), reps: top.reps, durationS: top.durationS, distanceM: top.distanceM == null ? null : Number(top.distanceM) });
+    });
+  }
+  const out = found.sort((a, b) => b.at.localeCompare(a.at)).slice(0, limit);
+  const names = await getExercises(q, [...new Set(out.map((x) => x.exerciseId))]);
+  return out.map((x) => ({ ...x, name: names.get(x.exerciseId)?.name ?? "" }));
 }
 
 export async function loadWorkout(q: Sql, workoutId: string, today: string): Promise<Workout | null> {

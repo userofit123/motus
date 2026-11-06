@@ -34,7 +34,7 @@ const fmt = useFmt();
 const h = computed<any>(() => home.data.value);
 const today = localYmd(new Date());
 // nothing made or done yet: Today says how to begin and the summing-up blocks wait
-const fresh = computed(() => !!h.value && !h.value.routineCount && !h.value.totalWorkouts && !h.value.activityCount && !h.value.programs?.length);
+const fresh = computed(() => !!h.value && !h.value.routineCount && !h.value.totalWorkouts && !h.value.activityCount && !(s.value.features.programs && h.value.programs?.length));
 
 // ---- the blocks: name and what it shows (Edit home), icon, and size: s a quarter of the row (half on the phone), m half (all of it on the phone), l the whole row
 type Size = "s" | "m" | "l";
@@ -63,6 +63,8 @@ const FEATURE: Record<string, string> = { steps: "steps", program: "programs", d
 const available = (id: string) => !!META[id] && (!FEATURE[id] || !!s.value.features[FEATURE[id]!]);
 const listed = computed(() => s.value.home.blocks.filter((x) => available(x.id)));
 const isOn = (id: string) => listed.value.some((x) => x.id === id && x.on);
+// Today is always shown, so Edit home gives it no switch
+const FIXED = new Set(["today"]);
 
 // ---- data the blocks read (all from /home, except steps, goals and achievements, which have their own queries)
 const tw = computed(() => h.value?.thisWeek ?? { workouts: 0, timeS: 0, volumeKg: 0, walkM: 0 });
@@ -154,7 +156,7 @@ const shows = (id: string): boolean => {
     default: return true;
   }
 };
-const blocks = computed(() => (h.value ? listed.value.filter((x) => x.on && shows(x.id)).map((x) => x.id) : []));
+const blocks = computed(() => (h.value ? listed.value.filter((x) => (x.on || FIXED.has(x.id)) && shows(x.id)).map((x) => x.id) : []));
 
 // every block opens where its numbers come from: a click, or Enter on a block reached with Tab
 const go = (to: string | (() => void)) => (typeof to === "string" ? router.push(to) : to());
@@ -215,13 +217,14 @@ await loaded(home, ach);
 
     <!-- Edit home: every block there is, in order, at its own size so the layout reads as it will -->
     <TransitionGroup v-if="editing" name="mv" tag="div" class="hgrid">
-      <div v-for="(x, i) in listed" :key="x.id" class="card etile" :class="[META[x.id]!.size === 's' ? 'sz-s' : META[x.id]!.size === 'l' ? 'sz-l' : 'sz-m', { off: !x.on }]">
+      <div v-for="(x, i) in listed" :key="x.id" class="card etile" :class="[META[x.id]!.size === 's' ? 'sz-s' : META[x.id]!.size === 'l' ? 'sz-l' : 'sz-m', { off: !x.on && !FIXED.has(x.id) }]">
         <div class="ch">
           <span class="bi"><Icon :name="META[x.id]!.icon" :size="15" /></span>
-          <label class="t grow ellipsis" :for="`hb-${x.id}`">{{ META[x.id]!.name }}</label>
+          <span v-if="FIXED.has(x.id)" class="t grow ellipsis">{{ META[x.id]!.name }}</span>
+          <label v-else class="t grow ellipsis" :for="`hb-${x.id}`">{{ META[x.id]!.name }}</label>
           <button class="ib sm plain" :class="{ end: i === 0 }" :aria-disabled="i === 0" :aria-label="`Move ${META[x.id]!.name} earlier`" :title="`Move ${META[x.id]!.name} earlier`" @click="move(x.id, -1)"><Icon name="up" :size="18" /></button>
           <button class="ib sm plain" :class="{ end: i === listed.length - 1 }" :aria-disabled="i === listed.length - 1" :aria-label="`Move ${META[x.id]!.name} later`" :title="`Move ${META[x.id]!.name} later`" @click="move(x.id, 1)"><Icon name="down" :size="18" /></button>
-          <span class="tg"><input :id="`hb-${x.id}`" type="checkbox" :checked="x.on" @change="setOn(x.id, ($event.target as HTMLInputElement).checked)" /></span>
+          <span v-if="!FIXED.has(x.id)" class="tg"><input :id="`hb-${x.id}`" type="checkbox" :checked="x.on" @change="setOn(x.id, ($event.target as HTMLInputElement).checked)" /></span>
         </div>
         <div class="tiny">{{ META[x.id]!.desc }}</div>
         <button v-if="x.id === 'pinned'" class="lnk inl epin" @click="pinOpen = true">{{ picked.length ? `${picked.length} pinned, change` : "Pin goals" }}</button>
@@ -299,22 +302,23 @@ await loaded(home, ach);
 
         <!-- the program you're following: where you are and the workout it says to do next -->
         <template v-else-if="id === 'program'">
-          <div v-for="p in h.programs" :key="p.id" class="card hb sz-m click prog" :class="{ dl: p.next?.deload }" v-bind="link(`/programs/${p.id}`)">
+          <div v-for="p in h.programs" :key="p.id" class="card hb sz-m click prog has-cover" :class="{ dl: p.next?.deload }">
+            <button class="cover" :aria-label="`Open ${p.name}`" @click="go(`/programs/${p.id}`)" />
             <div class="ch"><span class="bi"><Icon name="routines" :size="15" /></span><span class="t grow ellipsis">{{ p.name }}</span><span class="tiny">{{ p.done }} of {{ p.total }}</span></div>
             <div class="pbar"><i :style="{ width: (p.done / p.total) * 100 + '%' }" /></div>
             <div class="row"><MuscleFig sm :routine="p.next.routineId" />
               <div class="grow" style="min-width:0"><div class="tiny">{{ p.calendarWeek === 0 ? `Starts ${fmt.date(p.startDate, { weekday: "long", day: "numeric", month: "short" })}` : `Next, week ${p.next.week} of ${p.weeks}` }}</div>
                 <div class="ellipsis"><b>{{ p.next.name }}</b><span v-if="p.next.deload" class="mchip">Deload -{{ p.deloadPct }}%</span></div></div>
-              <button class="btn s o keep" @click.stop="router.push(`/routines/${p.next.routineId}/start?program=${p.id}${p.next.deload ? `&deload=${p.deloadPct}` : ''}`)">Start</button></div>
+              <button class="btn s o keep over" @click="router.push(`/routines/${p.next.routineId}/start?program=${p.id}${p.next.deload ? `&deload=${p.deloadPct}` : ''}`)">Start</button></div>
             <div v-if="p.calendarWeek > p.next.week" class="tiny wn">{{ p.calendarWeek - p.next.week }} week{{ p.calendarWeek - p.next.week > 1 ? "s" : "" }} behind the calendar. Carry on from here; nothing is skipped.</div>
           </div>
         </template>
 
         <!-- muscles: the figure on the left as on every muscle card, the groups on the right -->
         <div v-else-if="id === 'muscles'" class="card wbody sz-m click" v-bind="link('/stats?tab=muscles')">
-          <BodyMap class="rbody" :values="h.muscles7" />
+          <BodyMap class="rbody" :values="{}" :highlight="h.main7" :secondary="h.helpers7" />
           <div class="grow mside">
-            <div class="ch"><span class="t grow">Muscles this week</span></div>
+            <div class="ch"><span class="bi"><Icon name="activity" :size="15" /></span><span class="t grow">Muscles this week</span></div>
             <div class="big">{{ worked }}<small>of {{ groups.length }} groups</small></div>
             <div class="tiny">worked in the last 7 days</div>
             <div v-if="resting.length" class="mrest">
@@ -339,7 +343,8 @@ await loaded(home, ach);
         </div>
 
         <!-- last workout -->
-        <div v-else-if="id === 'previous'" class="card hb sz-m click" v-bind="link(`/workouts/${h.last.id}`)">
+        <div v-else-if="id === 'previous'" class="card hb sz-m click has-cover">
+          <button class="cover" :aria-label="`Open ${h.last.name}`" @click="go(`/workouts/${h.last.id}`)" />
           <div class="ch"><span class="bi"><Icon name="dumbbell" :size="15" /></span><span class="t grow ellipsis">{{ h.last.name }}</span>
             <span class="tiny">{{ h.daysSinceLast === 0 ? "Today" : h.daysSinceLast === 1 ? "Yesterday" : `${h.daysSinceLast} days ago` }}</span></div>
           <div class="wstats">
@@ -348,7 +353,7 @@ await loaded(home, ach);
             <div><div class="wv">{{ h.last.setCount }}</div><div class="tiny">sets</div></div>
             <div><div class="wv">{{ fmt.vol(h.last.volumeKg) }}</div><div class="tiny">volume</div></div>
           </div>
-          <button class="lnk inl hall" @click.stop="router.push('/history?view=list')">All workouts</button>
+          <button class="lnk inl hall over" @click="router.push('/history?view=list')">All workouts</button>
         </div>
 
         <!-- the first active goals -->
@@ -383,9 +388,10 @@ await loaded(home, ach);
         </div>
 
         <!-- body weight: the latest, the change over 30 days and the trend -->
-        <div v-else-if="id === 'bodyweight'" class="card hb stat sz-s click" v-bind="link('/body')">
+        <div v-else-if="id === 'bodyweight'" class="card hb stat sz-s click has-cover">
+          <button class="cover" aria-label="Open body weight" @click="go('/body')" />
           <div class="ch"><span class="bi"><Icon name="scale" :size="15" /></span><span class="t grow">Weight</span>
-            <button class="ib sm plain" aria-label="Log weight" title="Log weight" @click.stop="bodySheet = true"><Icon name="plus" :size="16" /></button></div>
+            <button class="ib sm plain over" aria-label="Log weight" title="Log weight" @click="bodySheet = true"><Icon name="plus" :size="16" /></button></div>
           <div class="big">{{ bw[0] ? fmt.w(bw[0].value) : "-" }}<small>{{ fmt.wu }}</small></div>
           <div class="tiny">{{ bwChange ?? (bw[0] ? ago(bw[0].at) : "Not logged yet") }}</div>
           <Sparkline v-if="bwTrend.length > 1" :values="bwTrend" />
@@ -471,7 +477,7 @@ await loaded(home, ach);
 .ch .lnk + .lnk { margin-inline-start: var(--hg); }
 .hero .ch .bi { background: color-mix(in srgb, var(--onc) 14%, transparent); color: var(--onc); }
 .big { font-size: var(--fs-val); font-weight: 650; letter-spacing: -.8px; line-height: 1.1; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.big small { font-size: 14px; font-weight: 500; margin-inline-start: 5px; color: var(--tx2); letter-spacing: 0; }
+.big small { font-size: var(--fs); font-weight: 500; margin-inline-start: 5px; color: var(--tx2); letter-spacing: 0; }
 .hero .big small, .hero .tiny { color: color-mix(in srgb, var(--onc) 75%, transparent); }
 :global(html.phone) .sz-s .big { font-size: clamp(22px, 7vw, var(--fs-val)); }
 
@@ -484,7 +490,7 @@ await loaded(home, ach);
 
 /* this week: the numbers side by side, last week's under each, and the eight-week bars along the bottom */
 .wstats { display: grid; grid-template-columns: repeat(auto-fit, minmax(72px, 1fr)); gap: var(--hg); }
-.wv { font-size: 20px; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wv { font-size: calc(var(--fs-lg) * 1.25); font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .wl { font-size: var(--fs-sm); color: var(--tx2); font-variant-numeric: tabular-nums; margin-top: 2px; }
 .wbars { display: flex; align-items: flex-end; gap: 6px; height: 34px; margin-top: auto; padding-top: var(--hg); box-sizing: content-box; }
 .wbars i { flex: 1; border-radius: 4px 4px 2px 2px; background: color-mix(in srgb, var(--acc) 28%, transparent); }
@@ -518,6 +524,12 @@ await loaded(home, ach);
 
 /* muscles: the figure fills the card's height on the left */
 .mside { display: flex; flex-direction: column; gap: 4px; }
+/* a card that opens somewhere and also holds its own button: the card's link is a transparent button over the whole
+   card, and the inner button sits above it, so the two are siblings rather than one inside the other */
+.has-cover { position: relative; }
+.cover { position: absolute; inset: 0; z-index: 0; margin: 0; padding: 0; border: 0; background: none; border-radius: inherit; cursor: pointer; }
+.cover:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
+.has-cover .over { position: relative; z-index: 1; }
 .mrest { display: flex; flex-direction: column; gap: 2px; margin-top: auto; padding-top: var(--hg); }
 .mrest .row { gap: 6px; }
 .mn { color: var(--tx); }

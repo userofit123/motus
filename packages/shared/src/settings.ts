@@ -88,7 +88,8 @@ export function cleanHomeBlocks(saved: unknown): HomeBlock[] {
       const id = item.id;
       if (typeof id !== "string" || !known.has(id) || seen.has(id)) continue;
       seen.add(id);
-      out.push({ id, on: typeof item.on === "boolean" ? item.on : known.get(id)! });
+      // Today is always shown: it has no switch in Edit home
+      out.push({ id, on: id === "today" || (typeof item.on === "boolean" ? item.on : known.get(id)!) });
     }
   }
   for (const d of HOME_BLOCKS) if (!seen.has(d.id)) out.push({ ...d });

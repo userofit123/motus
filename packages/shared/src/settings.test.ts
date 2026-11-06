@@ -16,6 +16,8 @@ describe("Home blocks", () => {
   });
   it("keeps the default on/off when a saved one isn't a boolean", () => {
     expect(cleanHomeBlocks([{ id: "feed", on: "yes" }])[0]).toEqual({ id: "feed", on: false });
+    // Today can't be switched off, even from a saved order that says so
+    expect(cleanHomeBlocks([{ id: "today", on: false }])[0]).toEqual({ id: "today", on: true });
   });
   it("drops the older Home's sections and cards", () => {
     const s = withDefaults({ home: { cards: ["feed"], sections: [{ id: "volume", on: true }], goals: [{ id: "g", streak: true }] } });

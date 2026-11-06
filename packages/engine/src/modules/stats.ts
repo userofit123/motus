@@ -8,7 +8,7 @@ import { goalsWithProgress, ensureStarterGoal } from "./goals";
 import { stepsByDay } from "./activities";
 import { achievementRoutes, currentStreak, dayIn, weekIn } from "./achievements";
 import { plannedOpen } from "./schedule";
-import { workoutSummaries, loadWorkout } from "./workouts";
+import { workoutSummaries, recentRecords } from "./workouts";
 import { routineSummaries } from "./routines";
 import { suggestions } from "./suggest";
 import { programState } from "./programs";
@@ -31,12 +31,12 @@ async function workoutRows(q: Sql, from: string, to: string) {
      JOIN workout_sets s ON s.workout_exercise_id = we.id AND s.done AND s.kind <> 'warmup'
      WHERE w.status = 'completed' AND w.started_at >= $1 AND w.started_at < $2 GROUP BY we.workout_id, e.id`, [from, to])).rows;
   return rows.map((r: any) => {
-    const muscles: Record<string, number> = {};
+    const muscles: Record<string, number> = {}, primary = new Set<string>(), secondary = new Set<string>();
     for (const m of musc.filter((x: any) => x.workout_id === r.id)) {
-      for (const p of m.primary_muscles) muscles[p] = (muscles[p] ?? 0) + Number(m.n);
-      for (const p of m.secondary_muscles) muscles[p] = (muscles[p] ?? 0) + Number(m.n) * 0.5;
+      for (const p of m.primary_muscles) { muscles[p] = (muscles[p] ?? 0) + Number(m.n); primary.add(p); }
+      for (const p of m.secondary_muscles) { muscles[p] = (muscles[p] ?? 0) + Number(m.n) * 0.5; secondary.add(p); }
     }
-    return { ...camel<any>(r), durationS: Number(r.duration_s), volumeKg: Number(r.volume_kg), sets: Number(r.sets), reps: Number(r.reps), skipped: Number(r.skipped), exercises: Number(r.exercises), muscles };
+    return { ...camel<any>(r), primary: [...primary], secondary: [...secondary], durationS: Number(r.duration_s), volumeKg: Number(r.volume_kg), sets: Number(r.sets), reps: Number(r.reps), skipped: Number(r.skipped), exercises: Number(r.exercises), muscles };
   });
 }
 
@@ -133,6 +133,9 @@ export function statsRoutes(r: Router) {
     const recent = rows.filter((x) => new Date(x.startedAt) >= weekAgo);
     const muscles7: Record<string, number> = {};
     for (const w of recent) for (const [m, n] of Object.entries(w.muscles as Record<string, number>)) muscles7[m] = (muscles7[m] ?? 0) + n;
+    // for the muscle figure: worked as a main muscle this week, and worked only as a helper
+    const main7 = [...new Set(recent.flatMap((w) => w.primary))];
+    const helpers7 = [...new Set(recent.flatMap((w) => w.secondary))].filter((m) => !main7.includes(m));
     const lastByGroup = (await ctx.q.query(
       `SELECT unnest(e.primary_muscles) AS m, max(w.started_at) AS at FROM workout_exercises we JOIN workouts w ON w.id = we.workout_id JOIN exercises e ON e.id = we.exercise_id
        WHERE w.status = 'completed' AND we.status <> 'skipped' GROUP BY 1`)).rows;
@@ -147,8 +150,10 @@ export function statsRoutes(r: Router) {
     // the same rule as the calendar: a plan done (by its routine, its activity type, or started from it) drops out
     const upNext = (await plannedOpen(ctx.q, today, end, tzMin)).slice(0, 5);
     // the programs you're following get their own card on Home, so their next workout isn't also a suggestion
+    // with Programs switched off they are absent from Home, Today and suggestions included
+    const programsOn = !!s.features.programs;
     const programs = [];
-    for (const p of (await ctx.q.query("SELECT * FROM programs WHERE active ORDER BY created_at DESC")).rows) {
+    for (const p of programsOn ? (await ctx.q.query("SELECT * FROM programs WHERE active ORDER BY created_at DESC")).rows : []) {
       const st = await programState(ctx.q, p);
       if (!st.total || st.finished) continue;
       const start = String(p.start_date).slice(0, 10);
@@ -156,7 +161,7 @@ export function statsRoutes(r: Router) {
       programs.push({ id: p.id, name: p.name, weeks: (p.weeks ?? []).length, deloadPct: p.deload_pct, startDate: start, calendarWeek, ...st });
     }
     const routines = await routineSummaries(ctx.q, ctx.userId);
-    const suggest = (await suggestions(ctx.q, routines, now, s.home.hidden)).filter((x) => x.kind !== "program" || !programs.length);
+    const suggest = (await suggestions(ctx.q, routines, now, s.home.hidden)).filter((x) => x.kind !== "program" || (programsOn && !programs.length));
     const allGoals = await goalsWithProgress(ctx, tzMin);
     const goals = allGoals.filter((g) => g.status === "active").slice(0, 3);
     // the goals picked for the top of Home, in the order picked, each saying whether its streak shows beside it
@@ -171,27 +176,15 @@ export function statsRoutes(r: Router) {
     ].sort((a: any, b: any) => b.startedAt.localeCompare(a.startedAt)).slice(0, 8);
     // the days (in the app's calendar) with a finished workout or an activity: the week strip and the streak grid
     const days = [...new Set([...rows.map((x) => dayIn(x.startedAt, tzMin)), ...acts.map((x: any) => dayIn(x.started_at, tzMin))])].sort();
-    // records set in the last 30 days, only while the Records block is on (each workout is compared with its history)
-    const records: any[] = [];
-    if (s.home.blocks.some((b) => b.id === "records" && b.on)) {
-      const monthAgo = new Date(now.getTime() - 30 * 86400000).toISOString();
-      for (const w of await workoutSummaries(ctx.q, "w.status = 'completed' AND w.started_at >= $1", [monthAgo], 6)) {
-        const full: any = await loadWorkout(ctx.q, w.id, today);
-        for (const e of full?.exercises ?? []) {
-          // the set that broke the most records stands for the exercise in that workout
-          const best = (e.sets as any[]).filter((x) => x.pr?.length).sort((a, b) => b.pr.length - a.pr.length)[0];
-          if (best) records.push({ workoutId: w.id, at: w.startedAt, exerciseId: e.exerciseId, name: e.exercise?.name ?? "", tracking: e.exercise?.tracking,
-            kinds: best.pr, weightKg: best.weightKg, reps: best.reps, durationS: best.durationS, distanceM: best.distanceM });
-        }
-        if (records.length >= 6) break;
-      }
-    }
+    // records set in the last 30 days, only while the Records block is on (a bounded number of queries: it reruns on most changes)
+    const records = s.home.blocks.some((b) => b.id === "records" && b.on)
+      ? await recentRecords(ctx.q, new Date(now.getTime() - 30 * 86400000).toISOString(), 6) : [];
     return {
-      days, records: records.slice(0, 6),
+      days, records,
       weeks, thisWeek: weeks.at(-1), lastWeek: weeks.at(-2), streak: await currentStreak(ctx.q, s, now, tzMin), homeGoals,
       // calendar days, so last night's workout is "Yesterday" even when it was less than 24 hours ago
       last, daysSinceLast: last ? Math.round((new Date(today).getTime() - new Date(dayIn(last.startedAt, tzMin)).getTime()) / 86400000) : null,
-      active: active ? camel(active) : null, programs, upNext, suggest, goals, reminders, bodyweight: bw, feed, muscles7, groupDays,
+      active: active ? camel(active) : null, programs, upNext, suggest, goals, reminders, bodyweight: bw, feed, muscles7, main7, helpers7, groupDays,
       totalWorkouts: Number((await ctx.q.query("SELECT count(*) n FROM workouts WHERE status = 'completed'")).rows[0].n),
       // with no routines and nothing done yet, Home opens with a way to begin
       routineCount: routines.length,

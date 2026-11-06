@@ -391,3 +391,26 @@ export interface LiveEvent {
 }
 
 export type GoalDays = null | "workdays" | number[];
+
+/** Home (/home): what's planned for a day in the coming week. */
+export interface HomePlan { scheduleId: string; date: string; routineId: string | null; activityType: string | null; name: string; color: string | null; timeOfDay: string | null }
+/** Home: a program you follow, where you are in it (absent while Programs is switched off). */
+export interface HomeProgram extends ProgramState { id: string; name: string; weeks: number; deloadPct: number; startDate: string; calendarWeek: number }
+/** Home: a routine or muscle worth doing next. */
+export interface HomeSuggestion { key: string; kind: "program" | "order" | "missed" | "rested" | "oldest"; title: string; reason: string; routineId: string | null; color: string | null; muscle?: string }
+/** Home: a record from the last 30 days; the set that broke the most records stands for its exercise in that workout. */
+export interface HomeRecord {
+  workoutId: string; at: string; exerciseId: string; name: string; tracking: Tracking | undefined; kinds: string[];
+  weightKg: number | null; reps: number | null; durationS: number | null; distanceM: number | null;
+}
+/** Home's summary: the parts the Today block reads. */
+export interface HomeToday {
+  active: { id: string; name: string; startedAt: string } | null;
+  last: WorkoutSummary | null;
+  daysSinceLast: number | null;
+  /** the days (app calendar) with a finished workout or an activity */
+  days: string[];
+  upNext: HomePlan[];
+  programs: HomeProgram[];
+  suggest: HomeSuggestion[];
+}
