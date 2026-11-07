@@ -1,22 +1,18 @@
 <script lang="ts">
 // outlives the page: see "where you were" below
-const kept: { v: { month: number; sel: string | null; open: string | null } | null } = { v: null };
+const kept: { v: { month: number; sel: string | null } | null } = { v: null };
 </script>
 
 <script setup lang="ts">
-// History (requirement 1): a month calendar of workouts, activities and planned days (click a day or an entry to open it),
-// or a list. On the phone: a compact month with dots and the chosen day's sessions below.
+// History (requirement 1): a month calendar of workouts, activities and planned days (click a day to list its sessions below, or an entry to open it),
+// or a list. On the phone: a compact month with dots; both show the chosen day's sessions below.
 import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useCalendar, useSettings, useWorkouts, useActivities, loaded } from "../api/queries";
-import { api } from "../api/client";
-import { invalidate } from "../api/live";
 import { useFmt, localYmd } from "../core/format";
 import { isPhone } from "../core/device";
 import { activitySheet } from "../core/ui";
-import { toast } from "../core/toast";
 import Icon from "../components/Icon.vue";
-import Sheet from "../components/Sheet.vue";
 import ScheduleEditor from "../components/ScheduleEditor.vue";
 
 const route = useRoute(), router = useRouter();
@@ -24,9 +20,8 @@ const s = useSettings();
 const fmt = useFmt();
 const view = ref<"calendar" | "list">(route.query.view === "list" ? "list" : "calendar");
 watch(view, (v) => router.replace({ query: v === "list" ? { view: "list" } : {} }));
-// where you were (month, chosen day, the open day on a computer), so coming Back from something you opened from here
-// lands on the same day; kept for this visit of the app only
-const back = !!history.state?.forward;
+// where you were (month, chosen day), so coming Back from something you opened from here lands on the same day;
+// kept for this visit of the app only
 const memo = kept.v;
 const month = ref(memo ? new Date(memo.month) : new Date(new Date().getFullYear(), new Date().getMonth(), 1));
 const first = computed(() => s.value.firstDay);
@@ -55,16 +50,12 @@ const byDay = computed(() => {
 const DOW = computed(() => Array.from({ length: 7 }, (_, i) => ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][(i + first.value) % 7]));
 const calDir = ref("nx");
 const shift = (n: number) => { calDir.value = n > 0 ? "nx" : "pv"; month.value = new Date(month.value.getFullYear(), month.value.getMonth() + n, 1); };
-const sel = ref<string | null>(memo?.sel ?? (isPhone.value ? today : null));
-const dayOpen = ref<string | null>(back ? memo?.open ?? null : null);
-watch([month, sel, dayOpen], () => { kept.v = { month: month.value.getTime(), sel: sel.value, open: dayOpen.value }; }, { flush: "sync" });
-// from the day window: remember it was open, so Back from the session reopens it
-function openFromDay(x: any) { const d = dayOpen.value; dayOpen.value = null; kept.v!.open = d; open(x); }
+const sel = ref<string | null>(memo?.sel ?? today);
+watch([month, sel], () => { kept.v = { month: month.value.getTime(), sel: sel.value }; }, { flush: "sync" });
 // on the phone a sideways swipe on the month changes the month (elsewhere on the page it changes tab)
 let sx = 0, sy = 0;
 const calStart = (e: TouchEvent) => { sx = e.touches[0]!.clientX; sy = e.touches[0]!.clientY; };
 const calEnd = (e: TouchEvent) => { const dx = e.changedTouches[0]!.clientX - sx, dy = e.changedTouches[0]!.clientY - sy; if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.3) shift(dx < 0 ? 1 : -1); };
-function openDay(d: string) { if (isPhone.value) sel.value = d; else dayOpen.value = d; }
 function open(x: any) { if (x.kind === "workout") router.push(x.status === "in_progress" ? "/workout" : `/workouts/${x.id}`); else if (x.kind === "activity") router.push(`/activities/${x.id}`); else if (x.routineId) router.push(`/routines/${x.routineId}/start?schedule=${x.scheduleId}&date=${x.date}`); else activitySheet.value = { type: x.activityType }; }
 const icon = (x: any) => (x.kind === "activity" ? (["walk", "run", "cycle", "hike", "swim", "yoga"].includes(x.type) ? x.type : "activity") : x.kind === "planned" ? "calendar" : "dumbbell");
 const label = (x: any) => x.name || (x.type ? x.type[0].toUpperCase() + x.type.slice(1) : "Workout");
@@ -81,7 +72,6 @@ const summary = computed(() => {
   if (!m.days) return "Nothing yet this month";
   return [n(m.workouts, "workout"), m.activities ? n(m.activities, "activity", "activities") : "", fmt.value.dur(m.timeS, true)].filter(Boolean).join(" · ");
 });
-async function skipPlanned(x: any) { await api.post(`/schedules/${x.scheduleId}/exception`, { date: x.date }); invalidate(["calendar", "home"]); toast("Planned workout skipped"); }
 // list view
 const listWorkouts = useWorkouts(computed(() => ({ limit: 300 })));
 const listActs = useActivities(computed(() => ({ limit: 300 })));
@@ -115,7 +105,7 @@ await loaded(cal, listWorkouts, listActs);
       <Transition :name="calDir" mode="out-in">
       <div :key="month.getTime()" class="cal" @touchstart.passive="calStart" @touchend.passive="calEnd">
         <div v-for="d in DOW" :key="d" class="dh">{{ isPhone ? d![0] : d }}</div>
-        <div v-for="d in grid" :key="d.getTime()" class="d" :class="{ out: d.getMonth() !== month.getMonth(), today: localYmd(d) === today, sel: sel === localYmd(d) }" @click="openDay(localYmd(d))">
+        <div v-for="d in grid" :key="d.getTime()" class="d" :class="{ out: d.getMonth() !== month.getMonth(), today: localYmd(d) === today, sel: sel === localYmd(d) }" @click="sel = localYmd(d)">
           <span class="n">{{ d.getDate() }}</span>
           <template v-if="!isPhone">
             <div v-for="x in (byDay.get(localYmd(d)) ?? []).slice(0, 3)" :key="x.id ?? x.scheduleId" class="ent" :class="{ plan: x.kind === 'planned', missed: x.missed }" :style="{ '--ec': x.color ?? (x.kind === 'activity' ? 'var(--c3)' : 'var(--acc)') }" @click.stop="open(x)">
@@ -127,7 +117,7 @@ await loaded(cal, listWorkouts, listActs);
         </div>
       </div>
       </Transition>
-      <div v-if="isPhone && sel" class="spt">
+      <div v-if="sel" class="spt">
         <div class="sh first"><h2>{{ fmt.date(sel, { weekday: "long", day: "numeric", month: "long" }) }}</h2><button v-if="sel >= today" class="lnk" @click="planDay = sel"><Icon name="plus" :size="14" />Plan</button></div>
         <div class="card">
           <div v-if="!(byDay.get(sel) ?? []).length" class="tiny">{{ sel >= today ? "Nothing planned. Use Plan to put a routine on this day." : "Nothing on this day." }}</div>
@@ -150,19 +140,6 @@ await loaded(cal, listWorkouts, listActs);
     </div>
     </Transition>
 
-    <Sheet v-if="dayOpen" :title="fmt.date(dayOpen, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })" @close="dayOpen = null">
-      <div v-if="!(byDay.get(dayOpen) ?? []).length" class="tiny hgap">Nothing on this day.</div>
-      <div class="list"><div v-for="x in byDay.get(dayOpen) ?? []" :key="x.id ?? x.scheduleId" class="li">
-        <Icon :name="icon(x)" :size="18" :style="{ color: x.color ?? 'var(--acc)' }" />
-        <div class="grow click" @click="openFromDay(x)"><div class="t">{{ label(x) }}</div><div class="s">{{ x.kind === "planned" ? (x.missed ? "Missed" : "Planned" + (x.timeOfDay ? " at " + x.timeOfDay : "")) : `${fmt.time(x.startedAt)} · ${fmt.dur(x.durationS, true)}` }}</div></div>
-        <button v-if="x.kind === 'planned' && !x.missed" class="qb" @click="skipPlanned(x)">Skip</button>
-      </div></div>
-      <template #foot>
-        <button v-if="dayOpen >= today" class="btn o" @click="planDay = dayOpen; dayOpen = null">Plan a workout</button>
-        <button v-if="dayOpen <= today" class="btn o" @click="router.push(`/log?date=${dayOpen}`); dayOpen = null">Log a workout</button>
-        <button v-if="dayOpen <= today" class="btn o" @click="activitySheet = {}; dayOpen = null">Log an activity</button>
-      </template>
-    </Sheet>
     <ScheduleEditor v-if="planDay" :schedule="{ rule: 'once', startDate: planDay }" @close="planDay = null" />
   </div>
 </template>
