@@ -71,9 +71,11 @@ const doneCount = computed(() => week.value.filter((d) => d.done).length);
   <div v-else class="card hero today" :class="{ live: !!h.active }">
     <div class="tmain">
       <div class="tl"><span v-if="h.active" class="pulse" aria-hidden="true" />{{ hero.label }}</div>
-      <div class="tt">{{ hero.title }}</div>
+      <div class="thead">
+        <div class="tt">{{ hero.title }}</div>
+        <button class="btn s" @click="hero.act.run()"><Icon :name="hero.act.icon" :size="14" />{{ hero.act.label }}</button>
+      </div>
       <div v-if="hero.sub" class="ts">{{ hero.sub }}</div>
-      <div class="tacts"><button class="btn" @click="hero.act.run()"><Icon :name="hero.act.icon" :size="16" />{{ hero.act.label }}</button></div>
     </div>
     <MuscleFig v-if="hero.routine" class="tfig" :routine="hero.routine" />
     <div class="tweek" role="list" :aria-label="`This week: ${doneCount} of 7 days trained`">
@@ -93,6 +95,9 @@ const doneCount = computed(() => week.value.filter((d) => d.done).length);
 .tl { font-size: var(--fs-sm); font-weight: 600; display: flex; align-items: center; gap: 8px; color: color-mix(in srgb, var(--onc) 78%, transparent); }
 .tt { font-size: calc(var(--fs-lg) * 1.625); font-weight: 650; letter-spacing: -.5px; line-height: 1.15; overflow-wrap: anywhere; }
 .ts { font-size: var(--fs-sm); color: color-mix(in srgb, var(--onc) 75%, transparent); }
+/* the one action sits on the title's row, small, instead of a large button under it */
+.thead { display: flex; align-items: center; justify-content: space-between; gap: var(--cpx); }
+.thead .btn { flex: none; }
 .tacts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: var(--hg); }
 .tfig { flex: none; }
 /* a workout in progress: a calm pulse beside its label is the one moving thing on Home */
