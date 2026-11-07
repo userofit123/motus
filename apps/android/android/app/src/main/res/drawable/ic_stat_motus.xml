@@ -1,5 +1,6 @@
+<!-- Status bar / notification icon: the app's dumbbell as a white silhouette (Android uses only its alpha). Same shapes as apps/web/public/icon.svg. -->
 <vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="24dp" android:height="24dp" android:viewportWidth="24" android:viewportHeight="24">
-  <path android:fillColor="#00000000" android:strokeColor="#FFFFFFFF" android:strokeWidth="2.4" android:strokeLineCap="round" android:strokeLineJoin="round"
-    android:pathData="M3.5,16.5 L8.5,11.5 L12.5,15 L18.5,8.5" />
-  <path android:fillColor="#FFFFFFFF" android:pathData="M18.5,8.5m-2.4,0a2.4,2.4 0,1 1,4.8 0a2.4,2.4 0,1 1,-4.8 0" />
+  <group android:translateX="12" android:translateY="12" android:rotation="-45" android:scaleX="0.056" android:scaleY="0.056">
+    <path android:fillColor="#FFFFFFFF" android:pathData="M-165,-19h330a19,19 0,0 1,19,19v0a19,19 0,0 1,-19,19h-330a19,19 0,0 1,-19,-19v-0a19,19 0,0 1,19,-19zM-110,-108h20a18,18 0,0 1,18,18v180a18,18 0,0 1,-18,18h-20a18,18 0,0 1,-18,-18v-180a18,18 0,0 1,18,-18zM90,-108h20a18,18 0,0 1,18,18v180a18,18 0,0 1,-18,18h-20a18,18 0,0 1,-18,-18v-180a18,18 0,0 1,18,-18zM-154,-74h18a16,16 0,0 1,16,16v116a16,16 0,0 1,-16,16h-18a16,16 0,0 1,-16,-16v-116a16,16 0,0 1,16,-16zM136,-74h18a16,16 0,0 1,16,16v116a16,16 0,0 1,-16,16h-18a16,16 0,0 1,-16,-16v-116a16,16 0,0 1,16,-16z" />
+  </group>
 </vector>

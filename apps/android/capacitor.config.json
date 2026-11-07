@@ -6,6 +6,6 @@
   "server": { "androidScheme": "https" },
   "plugins": {
     "CapacitorHttp": { "enabled": true },
-    "LocalNotifications": { "smallIcon": "ic_stat_motus", "iconColor": "#f8b396" }
+    "LocalNotifications": { "smallIcon": "ic_stat_motus", "iconColor": "#0f78c0" }
   }
 }

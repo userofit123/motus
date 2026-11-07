@@ -32,7 +32,7 @@ watch(() => route.query.start, (v) => { if (v) { startOpen.value = true; router.
 
 <template>
   <AccountChooser v-if="needAccount" />
-  <div v-else-if="!session.ready" id="splash"><i style="color:var(--on)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 16.5 8.5 11.5l4 3.5 6-6.5" /><circle cx="18.5" cy="8.5" r="2.4" fill="currentColor" stroke="none" /></svg></i></div>
+  <div v-else-if="!session.ready" id="splash"><img src="/icon.svg" alt="" /></div>
   <AuthScreen v-else-if="!session.user" />
   <template v-else>
     <PhoneShell v-if="isPhone" />

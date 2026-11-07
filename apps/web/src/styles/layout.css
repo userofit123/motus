@@ -93,14 +93,9 @@ html.vt-r::view-transition-new(root) {
   width: 44px;
   height: 44px;
   border-radius: 15px;
-  background: linear-gradient(135deg, var(--acc), var(--acc2));
-  color: var(--on);
   display: grid;
   place-items: center;
-  font-weight: 700;
-  font-size: 20px;
   margin-bottom: 8px;
-  box-shadow: 0 6px 20px -6px var(--acc);
   flex: none;
 }
 

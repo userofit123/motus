@@ -12,7 +12,7 @@
   html { background: radial-gradient(70% 58% at 8% -8%, color-mix(in srgb, var(--acc) 20%, transparent), transparent), radial-gradient(58% 58% at 100% 0, color-mix(in srgb, var(--acc2) 16%, transparent), transparent), var(--bg); min-height: 100%; }
   body { font: 14px/1.5 Inter, "Segoe UI", Roboto, system-ui, sans-serif; color: var(--tx); min-height: 100vh; display: grid; place-items: center; padding: 24px; }
   .card { width: min(440px, 100%); background: var(--s1); border: 1px solid var(--ol); border-radius: 22px; padding: 28px; }
-  .logo { width: 48px; height: 48px; border-radius: 16px; background: linear-gradient(135deg, var(--acc), var(--acc2)); display: grid; place-items: center; color: var(--on); }
+  .logo img { display: block; width: 48px; height: 48px; border-radius: 16px; }
   h1 { font-size: 26px; font-weight: 600; letter-spacing: -.5px; margin: 14px 0 4px; }
   p { color: var(--tx2); margin-bottom: 18px; }
   .opt { display: flex; gap: 14px; align-items: center; width: 100%; padding: 14px; border-radius: 16px; border: 1px solid var(--ol); background: var(--s1); color: var(--tx); text-align: left; cursor: pointer; margin-bottom: 8px; font: inherit; }
@@ -31,7 +31,7 @@
 </head>
 <body>
   <div class="card">
-    <div class="logo"><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 16.5 8.5 11.5l4 3.5 6-6.5" /><circle cx="18.5" cy="8.5" r="2.4" fill="currentColor" stroke="none" /></svg></div>
+    <div class="logo"><img src="icon.png" width="48" height="48" alt="" /></div>
     <div id="home">
       <h1>Motus</h1>
       <p id="sub">Choose how to use Motus. You can add the other kind later.</p>
