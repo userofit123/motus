@@ -28,6 +28,8 @@ hr.sep { border: 0; border-top: 1px solid var(--ol); margin: 14px 0; }
    setting in Appearance moves them all; a heading, a filter row or a toolbar sits --hg above what it belongs to */
 .stack { display: flex; flex-direction: column; gap: var(--spg); }
 .spt { margin-top: var(--spg); }
+/* the chosen day's list is keyed by the day, so each day fades in moving up (fi) instead of swapping size abruptly */
+@media (prefers-reduced-motion: no-preference) { .spt.dayfade { animation: fi .22s var(--ease); } }
 .spb { margin-bottom: var(--spg); }
 .hgap { margin-bottom: var(--hg); }
 

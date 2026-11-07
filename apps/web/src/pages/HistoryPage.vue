@@ -123,7 +123,7 @@ await loaded(cal, listWorkouts, listActs);
         </div>
       </div>
       </Transition>
-      <div v-if="sel" class="spt">
+      <div v-if="sel" :key="sel" class="spt dayfade">
         <div class="sh first"><h2>{{ fmt.date(sel, { weekday: "long", day: "numeric", month: "long" }) }}</h2><div class="grow" /><span v-if="sel <= today" @click.stop><Menu label="Log on this day" align="start" :items="[{ label: 'Log a workout', icon: 'dumbbell', run: () => router.push(`/log?date=${sel}`) }, { label: 'Log an activity', icon: 'activity', run: () => (activitySheet = {}) }]" /></span><button v-if="sel >= today" class="lnk" @click="planDay = sel"><Icon name="plus" :size="14" />Plan</button></div>
         <div class="card">
           <div v-if="!(byDay.get(sel) ?? []).length" class="tiny">{{ sel >= today ? "Nothing planned. Use Plan to put a routine on this day." : "Nothing on this day." }}</div>
