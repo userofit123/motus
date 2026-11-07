@@ -75,7 +75,8 @@ export function addStepReading(s: StepState, r: StepReading, paused: boolean): S
  *  phone's own step counter, nothing counts until STEP_RUN peaks have come in a walking rhythm (each 0.3-2 s after the
  *  last, none much quicker or slower than the one before); then those count at once and each step after it as it
  *  comes. So a wobble, a tap or picking the phone up never adds steps: they are too weak, or too few, or out of rhythm.
- *  Once counting, one step out of rhythm doesn't stop it; two in a row do. */
+ *  Once counting, one step out of rhythm doesn't stop it; two in a row do. A late one (a step too soft to see before
+ *  it) counts only once the next step comes back in the old rhythm, so a bump after you've stopped adds nothing. */
 export const STEP_MIN_PUSH = 1; // m/s²: walking with the phone in a hand or pocket is well above it, a wobble below
 export const STEP_RUN = 6;
 export class MotionSteps {
@@ -86,6 +87,8 @@ export class MotionSteps {
   private run = 0; private walking = false;
   /** a step out of rhythm was let through; the next must be in it again */
   private odd = false;
+  /** steps of a late one held back until the walk goes on in its rhythm; dropped if it doesn't */
+  private held = 0;
   push(push: number, t: number): number {
     if (this.t < 0) { this.t = t; this.fast = this.slow = push; return 0; }
     const dt = Math.min(0.2, Math.max(0.001, (t - this.t) / 1000));
@@ -93,7 +96,8 @@ export class MotionSteps {
     this.fast += (push - this.fast) * (dt / (0.05 + dt)); // takes off sensor noise, keeps the 1-3 steps a second
     this.slow += (push - this.slow) * (dt / (1.5 + dt)); // gravity and how the phone is held
     const d = this.fast - this.slow;
-    if (t - this.last > 2000) { this.run = 0; this.walking = false; this.size = 0; this.odd = false; } // stopped: the next walk starts over
+    // stopped: the next walk starts over, and a late step held back was a bump after it, not a step
+    if (t - this.last > 2000) { this.run = 0; this.walking = false; this.size = 0; this.odd = false; this.held = 0; }
     if (!this.armed) {
       this.peak = Math.max(this.peak, d);
       // back below the average: the step is over, and its height sets the bar for the next ones (a strong walk's
@@ -112,15 +116,20 @@ export class MotionSteps {
       // goes on in its rhythm. Two in a row and it starts over, so it never lets wobbles through.
       this.odd = true;
       if (gap < this.gap) return 0; // a bump between two steps: not one, and the next step is timed from the last
+      // late: held back until the next step comes in the old rhythm (this.gap stays), so a bump after you've stopped
+      // (taking the phone out, a tap) never counts. About two steps' time (where a missed step would put it): this step
+      // and one too soft to see before it; sooner or later than that, a hesitation: this step only.
       this.last = t;
-      return 2; // late (at least 1.7 steps' time): this step, and one too soft to see before it
+      this.held = gap >= this.gap * 1.8 && gap <= this.gap * 2.25 ? 2 : 1;
+      return 0;
     }
+    if (!steady) this.held = 0; // a second odd step: the late one wasn't part of the walk
     this.last = t;
     this.gap = gap;
     this.odd = false;
     if (!steady) { this.run = 1; this.walking = false; return 0; }
     this.run++;
-    if (this.walking) return 1;
+    if (this.walking) { const n = 1 + this.held; this.held = 0; return n; }
     if (this.run < STEP_RUN) return 0;
     this.walking = true;
     return this.run;

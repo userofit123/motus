@@ -173,6 +173,13 @@ describe("activities", () => {
     // a confirmed walk with one step too soft to see, or one bump between two steps: it keeps its count
     expect(bumps(steps.filter((_, i) => i !== 15))).toBe(30);
     expect(bumps([...steps.slice(0, 16), steps[15]! + 275, ...steps.slice(16)])).toBe(30);
+    // stopping after a confirmed walk, then one bump about two steps' time later (taking the phone out, a tap): nothing
+    expect(bumps([...steps, steps[29]! + 1000])).toBe(30);
+    expect(bumps([...steps, steps[29]! + 1900])).toBe(30);
+    // a hesitation (sooner or later than a missed step would be), then walking on: each step once
+    const went = (pause: number) => [...steps.slice(0, 16), ...steps.slice(16).map((x) => x - 550 + pause)];
+    expect(bumps(went(950))).toBe(30);
+    expect(bumps(went(1500))).toBe(30);
     // two odd ones in a row start it over, and it never counts more steps than were taken
     expect(bumps(steps.filter((_, i) => i !== 15 && i !== 17))).toBeLessThanOrEqual(30);
     expect(bumps(steps.flatMap((x, i) => (i % 2 ? [x, x + 275] : [x])))).toBeLessThanOrEqual(30);

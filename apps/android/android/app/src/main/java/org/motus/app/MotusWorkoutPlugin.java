@@ -386,11 +386,17 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener2 {
     protected void handleOnResume() {
         super.handleOnResume();
         keepRecording();
+        // the Record screen is still open: listen again (the counter reports its total on registering)
+        if (previewWanted && !previewing) previewing = counterSensor() != null && stepsAllowed() && register();
     }
 
     @Override
     protected void handleOnPause() {
         keepRecording();
+        // in the background the preview is no use (no walk can start from there): it stops listening, the walk's
+        // listener (if any) goes on; the walk's count is saved now, as Android may close the app from here
+        if (previewing) { previewing = false; unregisterIfIdle(); }
+        if (listening) saveSteps();
         super.handleOnPause();
     }
 
@@ -460,18 +466,29 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener2 {
     private long session = 0;
     /** the counter's total (since the phone started) when counting started, and its latest; -1 before its first report */
     private long counterBase = -1, counterNow = -1;
-    /** The Record screen is open, before the walk starts: the counter is listened to already, so its total is known
-     *  before the first step (many phones report it only once you're walking, with the first ten or so steps already in
-     *  it, which would otherwise be taken as the start and lost). */
-    private boolean previewing = false, registered = false;
+    /** The Record screen is open, before the walk starts: the counter is listened to already, and as it reports its
+     *  total on registering, that total is known before the walk's first step. Registering only at Start would leave the
+     *  start to the first report after it, which on many phones comes only once you're walking, with the first ten or
+     *  so steps already in it, so they would be taken as the start and lost. `previewWanted`: the Record screen asked
+     *  for it, so it listens again when the app comes back from the background. */
+    private boolean previewing = false, previewWanted = false, registered = false;
     /** the counter's latest total while it's listened to (preview or walk), -1 when not known: the start of a new walk */
     private long lastTotal = -1;
     /** Kept on the phone, so that when Android closes the whole app mid-walk the reopened app goes on from the same start
      *  and the steps taken while it was closed still count (the counter kept counting). Cleared when the walk ends. */
     private static final String STEP_PREFS = "motus.steps";
     private final Handler main = new Handler(Looper.getMainLooper());
-    /** getLastSteps calls waiting for the counter to hand over the steps it hasn't reported yet */
+    /** getLastSteps calls waiting for the counter to hand over the steps it hasn't reported yet, oldest first, each with
+     *  its own two-second limit */
     private final List<PluginCall> flushing = new ArrayList<>();
+    private final List<Runnable> flushLimits = new ArrayList<>();
+    /** Saving the walk's count on every report would write to storage with every bunch of steps; at most this often (ms)
+     *  or every SAVE_STEPS steps instead, and always at the start, on going to the background and when the app closes. A
+     *  count a little behind on reopening only means the next report brings those steps. */
+    private static final long SAVE_MS = 5000, SAVE_STEPS = 50;
+    private long savedAt = 0, savedNow = -1;
+    /** flushes asked for by calls that were answered by their limit instead: their completion answers nobody */
+    private int staleFlushes = 0;
 
     private Sensor counterSensor() {
         SensorManager sm = (SensorManager) getContext().getSystemService(Context.SENSOR_SERVICE);
@@ -486,7 +503,8 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener2 {
     }
 
     /** Listens to the counter (once, for both the preview and the walk). No extra batching on top of the phone's own
-     *  (latency 0): each report as soon as it has one. The counter reports its total when first listened to on most phones. */
+     *  (latency 0): each report as soon as it has one. The counter reports its total on registering (what the preview
+     *  relies on), then again with each bunch of steps. */
     private boolean register() {
         if (registered) return true;
         SensorManager sm = (SensorManager) getContext().getSystemService(Context.SENSOR_SERVICE);
@@ -510,6 +528,7 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener2 {
     public void previewSteps(PluginCall call) {
         boolean on = call.getBoolean("on", false);
         main.post(() -> {
+            previewWanted = on;
             previewing = on && counterSensor() != null && stepsAllowed() && register();
             unregisterIfIdle();
         });
@@ -561,6 +580,7 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener2 {
     }
 
     private void saveSteps() {
+        savedAt = System.currentTimeMillis(); savedNow = counterNow;
         getContext().getSharedPreferences(STEP_PREFS, Context.MODE_PRIVATE).edit()
             .putLong("session", session).putLong("base", counterBase).putLong("now", counterNow).apply();
     }
@@ -587,26 +607,40 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener2 {
     public void getLastSteps(PluginCall call) {
         main.post(() -> {
             SensorManager sm = (SensorManager) getContext().getSystemService(Context.SENSOR_SERVICE);
+            if (!listening || sm == null || !sm.flush(this)) { answer(call); return; }
+            // its own limit: an earlier call's can't answer this one before its flush is done
+            Runnable limit = () -> { int i = flushing.indexOf(call); if (i >= 0) { flushing.remove(i); flushLimits.remove(i); staleFlushes++; answer(call); } };
             flushing.add(call);
-            if (!listening || sm == null || !sm.flush(this)) { endFlush(); return; }
-            main.postDelayed(this::endFlush, 2000);
+            flushLimits.add(limit);
+            main.postDelayed(limit, 2000);
         });
     }
 
+    /** a flush is done: answers the oldest call waiting (flushes finish in the order asked) */
     @Override
     public void onFlushCompleted(Sensor sensor) {
-        main.post(this::endFlush);
+        main.post(() -> {
+            if (staleFlushes > 0) { staleFlushes--; return; }
+            if (flushing.isEmpty()) return;
+            main.removeCallbacks(flushLimits.remove(0));
+            answer(flushing.remove(0));
+        });
     }
 
+    /** answers every call still waiting (counting stopped), each once */
     private void endFlush() {
-        if (flushing.isEmpty()) return;
         List<PluginCall> calls = new ArrayList<>(flushing);
+        for (Runnable r : flushLimits) main.removeCallbacks(r);
         flushing.clear();
-        for (PluginCall c : calls) {
-            JSObject r = reading();
-            r.put("available", listening);
-            c.resolve(r);
-        }
+        flushLimits.clear();
+        staleFlushes = 0; // no longer listening: no flush to wait for
+        for (PluginCall c : calls) answer(c);
+    }
+
+    private void answer(PluginCall c) {
+        JSObject r = reading();
+        r.put("available", listening);
+        c.resolve(r);
     }
 
     /** the walk ended: the count is no longer needed, here or kept on the phone */
@@ -623,7 +657,8 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener2 {
 
     /** the app is closing: stops listening, but keeps the walk's count on the phone for when it opens again */
     private void stopListening() {
-        listening = false; previewing = false;
+        if (listening) saveSteps();
+        listening = false; previewing = false; previewWanted = false;
         unregisterIfIdle();
         endFlush();
     }
@@ -638,7 +673,7 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener2 {
         if (counterBase < 0) counterBase = total;
         else if (total < counterNow) counterBase = total - (counterNow - counterBase);
         counterNow = total;
-        saveSteps();
+        if (savedNow < 0 || total - savedNow >= SAVE_STEPS || total < savedNow || System.currentTimeMillis() - savedAt >= SAVE_MS) saveSteps();
         notifyListeners("steps", reading());
     }
 
