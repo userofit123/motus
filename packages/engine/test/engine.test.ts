@@ -154,11 +154,12 @@ describe("engine", () => {
   it("exports and imports", async () => {
     const data = await call(A, "GET", "/export");
     expect(data.tables.workouts.length).toBe(2);
-    const res = await call(B, "POST", "/import", { data, mode: "merge" });
-    expect(res.workouts).toBe(0); // same ids already exist (in A's rows), so a merge skips them
+    // A's ids are taken on this server, so another account gets copies under new ids; A's own rows stay as they are
     const C = uuidv7();
     await eng.db.admin.query("INSERT INTO users (id, username) VALUES ($1,'c')", [C]);
-    // a fresh person restoring with replace gets new copies only when ids are free; A still owns these ids
+    const res = await call(C, "POST", "/import", { data, mode: "merge" });
+    expect(res.workouts).toBe(2);
+    expect((await call(C, "GET", "/workouts")).length).toBe(data.tables.workouts.filter((w: any) => w.status === "completed").length);
     const after = await call(A, "GET", "/workouts");
     expect(after.length).toBe(2);
   });

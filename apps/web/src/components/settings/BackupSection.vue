@@ -39,7 +39,8 @@ async function restore(ev: Event) {
     const pv = await api.post("/import/preview", { data });
     const mode = await choose(`Restore backup from ${`${fmt.value.date(pv.exportedAt)} ${fmt.value.time(pv.exportedAt)}`}?`, [
       { label: "Merge: add what's missing, keep everything you have", value: "merge" },
-      { label: "Replace: make Motus exactly like the backup", value: "replace" },
+      // a file with only some parts (Export & import) can't stand in for everything
+      ...(pv.whole ? [{ label: "Replace: make Motus exactly like the backup", value: "replace" }] : []),
     ], `${pv.counts.workouts ?? 0} workouts, ${pv.counts.routines ?? 0} routines, ${pv.counts.activities ?? 0} activities, ${pv.counts.goals ?? 0} goals.`);
     if (!mode) return;
     if (mode === "replace") {
