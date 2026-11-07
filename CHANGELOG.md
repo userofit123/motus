@@ -2,6 +2,18 @@
 
 The top entry's version is the one the release workflow publishes. Add a new `## [x.y.z]` section to release.
 
+## [0.1.8] - 2026-11-07
+
+- Steps count from the first step and rise one at a time: in the Android app Motus also counts from the motion sensor while it is on screen (needed on phones whose step sensors hold steps back), and in the browser gentle steps are no longer missed.
+- Routines with their folders, programs, workouts and everything else can be exported as one Motus file, choosing which parts, and imported into another account; importing into another account on the same server used to add nothing.
+- On the computer, clicking a calendar day shows its list under the calendar like on the phone; the chosen day is marked, the list fades in, and a planned workout can be skipped and a past day logged from its ⋮ menus.
+- Enlarging or shrinking an activity's map glides to its new size.
+- Home: the Today block has a header and its Log it or Start button sits small beside the plan's name; Muscles this week shows even before your first workout; This week labels last week's numbers; the streak and steps blocks say which goal they need; Today's log links to "Other days"; Edit home's switches lose a stray line.
+- On the computer, Settings sits at the bottom of the sidebar under Appearance and the account.
+- Servers & accounts is reached from Settings only, no longer from the More tab.
+- The local dev server reports the version it really runs after a version bump.
+- Motus is licensed under PolyForm Noncommercial 1.0.0: free to use, change and share, not to make money from.
+
 ## [0.1.7] - 2026-11-06
 
 - On the phone, every page fills the screen again; in 0.1.6 pages were squeezed into a thin strip on the left.
