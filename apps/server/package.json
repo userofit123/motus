@@ -4,7 +4,7 @@
   "license": "PolyForm-Noncommercial-1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "nodemon --legacy-watch --watch src --watch ../../packages/engine/src --watch ../../packages/shared/src --ext ts,json --exec tsx src/index.ts",
+    "dev": "nodemon --legacy-watch --watch src --watch ../../packages/engine/src --watch ../../packages/shared/src --watch ../../package.json --ext ts,json --exec tsx src/index.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },

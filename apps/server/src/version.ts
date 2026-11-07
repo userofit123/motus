@@ -1,4 +1,6 @@
 // The running version (from the root package.json, set by scripts/bump.mjs) and the check for a newer release on GitHub.
+// It is read once at start, so the dev server's watcher also watches the root package.json: otherwise a version bump
+// with no code change left it reporting the old version, and the app said a release was available that it already ran.
 import fs from "node:fs";
 import path from "node:path";
 import { newer } from "@motus/shared";
