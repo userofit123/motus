@@ -85,6 +85,8 @@ const stepGoal = useStepGoal();
 const stepsQ = useQuery({ queryKey: ["activities", "daily", today], queryFn: () => api.get<any[]>("/daily", { from: today, tz: new Date().getTimezoneOffset() }), enabled: computed(() => isOn("steps")) });
 const steps = computed(() => Number((stepsQ.data.value ?? []).find((x: any) => x.kind === "steps" && String(x.date).slice(0, 10) === today)?.value ?? 0));
 const stepTarget = computed(() => stepGoal.value?.target ?? null);
+// the streak follows a weekly sessions/workouts goal; without one it can't count, so the block says where to make it
+const hasWeeklyGoal = computed(() => (allGoals.data.value ?? []).some((g) => g.status === "active" && g.period === "week" && (g.metric === "sessions" || g.metric === "workouts")));
 
 // goals: pinned ones (settings.home.goals, in that order), the first active ones, and active ones ending soon
 const allGoals = useGoals();
@@ -239,7 +241,7 @@ await loaded(home, ach);
         <div v-else-if="id === 'streak'" class="card hb sz-s click" v-bind="link('/goals')">
           <div class="ch"><span class="bi"><Icon name="flame" :size="15" /></span><span class="t grow">Streak</span></div>
           <div class="big">{{ h.streak }}<small>{{ h.streak === 1 ? "week" : "weeks" }}</small></div>
-          <div class="tiny">{{ h.streak ? "in a row on your weekly target" : "Reach your weekly target to start one" }}</div>
+          <div class="tiny">{{ h.streak ? "in a row on your weekly target" : hasWeeklyGoal ? "Reach your weekly target to start one" : "Add a weekly goal in Goals to count weeks" }}</div>
           <div class="sgrid" :aria-label="`${daysTrained} training days in the last 5 weeks`" role="img"><i v-for="d in grid" :key="d.ymd" :class="{ on: d.on, fu: d.future, now: d.ymd === today }" /></div>
         </div>
 
@@ -261,7 +263,7 @@ await loaded(home, ach);
         <div v-else-if="id === 'steps'" class="card hb sz-s click" v-bind="link(() => (dailySheet = true))">
           <div class="ch"><span class="bi"><Icon name="steps" :size="15" /></span><span class="t grow">Steps</span></div>
           <div class="row stp">
-            <div class="grow"><div class="big">{{ fmt.num(steps, 0) }}</div><div class="tiny">{{ stepTarget ? `of ${fmt.num(stepTarget, 0)} today` : "today" }}</div></div>
+            <div class="grow"><div class="big">{{ fmt.num(steps, 0) }}</div><div class="tiny">{{ stepTarget ? `of ${fmt.num(stepTarget, 0)} today` : "today - add a daily steps goal in Goals" }}</div></div>
             <Ring v-if="stepTarget" :pct="Math.min(100, (steps / stepTarget) * 100)" :size="46" :color="steps >= stepTarget ? 'var(--pos)' : undefined" />
           </div>
         </div>
@@ -420,7 +422,7 @@ await loaded(home, ach);
         </div>
 
         <div v-else-if="id === 'daily'" class="card hb sz-m">
-          <div class="ch"><span class="bi"><Icon name="moon" :size="15" /></span><span class="t grow">Today's log</span><button class="lnk" @click="dailySheet = true">Past days</button></div>
+          <div class="ch"><span class="bi"><Icon name="moon" :size="15" /></span><span class="t grow">Today's log</span><button class="lnk" @click="dailySheet = true">Other days</button></div>
           <DailyLog />
         </div>
 
