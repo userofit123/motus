@@ -411,7 +411,8 @@ html.phone { --tabh: 64px; }
 .cal .ent .ico { width: 12px; height: 12px; }
 html.phone .cal { gap: 2px; }
 html.phone .cal .d { min-height: 46px; padding: 4px 2px; align-items: center; background: none; border-color: transparent; }
-html.phone .cal .d.sel { background: var(--s2); }
+.cal .d.sel { background: var(--s2); border-color: var(--acc); }
+html.phone .cal .d.sel { border-color: transparent; }
 html.phone .cal .dots { display: flex; gap: 3px; justify-content: center; flex-wrap: wrap; }
 html.phone .cal .dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--ec, var(--acc)); }
 html.phone .cal .dots i.plan { background: none; border: 1px solid var(--ec, var(--acc)); }
