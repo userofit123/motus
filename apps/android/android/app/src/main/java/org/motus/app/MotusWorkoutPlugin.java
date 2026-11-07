@@ -39,7 +39,8 @@ import org.json.JSONObject;
  * event with the button's id, without opening the app, so it works from the lock screen.
  * Also the phone's step sensors while a walk is recorded; both keep counting with the screen off. The step counter is
  * accurate but holds back the first steps after standing still until it's sure you're walking; the step detector reports
- * each step as it happens. Both are counted here since the recording started, and the web app takes the larger.
+ * each step as it happens. Both are counted here since the recording started; the web app shows the counter plus the
+ * detector's steps since the counter last reported (addStepReading).
  */
 @CapacitorPlugin(name = "MotusWorkout", permissions = { @Permission(alias = "steps", strings = { "android.permission.ACTIVITY_RECOGNITION" }) })
 public class MotusWorkoutPlugin extends Plugin implements SensorEventListener {
@@ -451,7 +452,8 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener {
     private boolean listening = false;
     private long session = 0;
     private long counterBase = -1, counterNow = -1;
-    private long detected = 0;
+    /** the detector's count, and what it was when the counter last reported (the web app adds the steps since then) */
+    private long detected = 0, detectedAtCounter = 0;
 
     private Sensor sensor(int type) {
         SensorManager sm = (SensorManager) getContext().getSystemService(Context.SENSOR_SERVICE);
@@ -486,7 +488,7 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener {
             SensorManager sm = (SensorManager) getContext().getSystemService(Context.SENSOR_SERVICE);
             sm.unregisterListener(this);
             session = System.currentTimeMillis();
-            counterBase = -1; counterNow = -1; detected = 0;
+            counterBase = -1; counterNow = -1; detected = 0; detectedAtCounter = 0;
             // no batching (latency 0): each reading is sent as soon as the sensor has it, not held for a later batch
             Sensor counter = sensor(Sensor.TYPE_STEP_COUNTER), detector = sensor(Sensor.TYPE_STEP_DETECTOR);
             if (counter != null) sm.registerListener(this, counter, SensorManager.SENSOR_DELAY_FASTEST, 0);
@@ -498,12 +500,13 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener {
         call.resolve(r);
     }
 
-    /** the counts so far: `counter` is -1 until the step counter's first reading, which is where it starts from */
+    /** the counts so far: `counter` is -1 until the step counter's first reading; `atCounter` is the detector's count at its latest */
     private JSObject reading() {
         JSObject r = new JSObject();
         r.put("session", session);
         r.put("counter", counterBase < 0 ? -1 : counterNow - counterBase);
         r.put("detector", detected);
+        r.put("atCounter", detectedAtCounter);
         return r;
     }
 
@@ -532,10 +535,13 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener {
         if (type == Sensor.TYPE_STEP_DETECTOR) detected += Math.max(1, Math.round(e.values[0]));
         else if (type == Sensor.TYPE_STEP_COUNTER) {
             long total = (long) e.values[0];
-            // the counter's total is since the phone started; smaller than before means it restarted: go on from here
-            if (counterBase < 0) counterBase = total;
+            // The counter's total is since the phone started. Its first report often comes only once it's sure you're
+            // walking, with the steps it held back already in it; the detector has counted those, so the counter starts
+            // level with the detector instead of losing them. Smaller than before means it restarted: go on from here.
+            if (counterBase < 0) counterBase = total - detected;
             else if (total < counterNow) counterBase = total - (counterNow - counterBase);
             counterNow = total;
+            detectedAtCounter = detected;
         } else return;
         notifyListeners("steps", reading());
     }

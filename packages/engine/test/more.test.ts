@@ -4,7 +4,7 @@ import { createEngine, type Engine } from "../src/index";
 import { pgliteDb } from "../src/adapters/pglite";
 import { uuidv7 } from "../src/ids";
 import { occurrences } from "../src/modules/schedule";
-import { routeStats, addStepReading, takesPoint, type StepState } from "@motus/shared";
+import { routeStats, addStepReading, takesPoint, MotionSteps, type StepState } from "@motus/shared";
 import { parseTrack } from "../src/modules/activities";
 
 let eng: Engine, U: string;
@@ -131,16 +131,54 @@ describe("activities", () => {
     expect(read(-1, 5, false, 2)).toBe(22);
     expect(read(7, 7, false, 2)).toBe(24);
   });
-  it("doesn't let a step detector that runs far ahead of the step counter inflate the steps", () => {
+  it("an older app's readings: the detector may lead the counter by a few steps only", () => {
     let s: StepState = { steps: 0, session: null, seen: 0 };
     const read = (counter: number, detector: number) => (s = addStepReading(s, { session: 1, counter, detector }, false)).steps;
     expect(read(100, 100)).toBe(100);
-    // handling the phone or a bus ride: the detector fires, the counter doesn't follow
-    expect(read(105, 400)).toBe(135); // only 30 ahead of the counter is believed
-    expect(read(110, 900)).toBe(140);
-    // the count never goes back, and the counter takes over once it passes the capped lead
-    expect(read(120, 120)).toBe(140); // below what was already counted: nothing added
+    expect(read(105, 400)).toBe(145);
     expect(read(200, 200)).toBe(200);
+  });
+  it("counts each detector step at once on top of the counter's last report, which corrects it", () => {
+    let s: StepState = { steps: 0, session: null, seen: 0 };
+    const read = (counter: number, detector: number, atCounter: number) => (s = addStepReading(s, { session: 1, counter, detector, atCounter }, false)).steps;
+    // the counter's first report came at once (standing), then it holds back while the detector counts each step
+    expect(read(0, 0, 0)).toBe(0);
+    for (let i = 1; i <= 12; i++) expect(read(0, i, 0)).toBe(i);
+    // the counter lets go of the 12 it held back: no jump, nothing twice
+    expect(read(12, 12, 12)).toBe(12);
+    // a counter that reports in bunches: the detector fills in between, one by one
+    for (let i = 13; i <= 50; i++) expect(read(12 + Math.floor((i - 12) / 10) * 10, i, 12 + Math.floor((i - 12) / 10) * 10)).toBe(i);
+    // a detector that missed steps: the counter's report brings them in
+    expect(read(60, 55, 55)).toBe(60);
+    // handling the phone or a bus ride: the detector fires, the counter doesn't follow
+    expect(read(60, 500, 55)).toBe(100); // only 40 on top of the counter is believed
+    // the count never goes back; it moves on once the counter passes it
+    expect(read(70, 510, 510)).toBe(100);
+    expect(read(110, 520, 520)).toBe(110);
+  });
+  it("counts steps from the motion sensor one by one from the first, and ignores a tap", () => {
+    // 50 steps, a phone held in front of you: the push rises ~1.5 m/s² above gravity at each step, 1.8 steps a second
+    const walk = (amp: number, steps: number) => {
+      const m = new MotionSteps(); let n = 0, firstAt = -1; const seen: number[] = [];
+      for (let t = 0; t <= (steps / 1.8) * 1000 + 3000; t += 16) {
+        const walking = t < (steps / 1.8) * 1000;
+        const push = 9.81 + (walking ? amp * Math.sin(2 * Math.PI * 1.8 * t / 1000) : 0) + Math.sin(t * 7.3) * 0.08;
+        const d = m.push(push, t);
+        if (d) { n += d; seen.push(n); if (firstAt < 0) firstAt = t; }
+      }
+      return { n, firstAt, seen };
+    };
+    for (const amp of [1.5, 4]) {
+      const w = walk(amp, 50);
+      expect(Math.abs(w.n - 50)).toBeLessThanOrEqual(1);
+      expect(w.firstAt).toBeLessThan(600); // within the first step
+      expect(w.seen.every((x, i) => x === i + 1)).toBe(true); // one at a time
+    }
+    // standing still: nothing; one bump (picking the phone up): counted, then taken back
+    expect(walk(0, 0).n).toBe(0);
+    const m = new MotionSteps(); let n = 0;
+    for (let t = 0; t < 5000; t += 16) n += m.push(9.81 + (t > 1000 && t < 1200 ? 3 : 0), t);
+    expect(n).toBe(0);
   });
   it("takes a GPS fix on the route only when it means ground covered", () => {
     const route = [[32, 34.8, 0]];

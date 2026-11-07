@@ -14,7 +14,7 @@ import { api } from "../api/client";
 import { invalidate, queryClient } from "../api/live";
 import type { SettingsMe } from "../api/queries";
 import { keepAwake, showRecording, clearRecording, isNativeApp, onNoticeAction, askNotificationsOnce } from "./native";
-import { fromM, routeStats, takesPoint, addStepReading, ROUTE_ROUGH_M, type StepReading } from "@motus/shared";
+import { fromM, routeStats, takesPoint, addStepReading, MotionSteps, ROUTE_ROUGH_M, type StepReading } from "@motus/shared";
 
 export interface Rec {
   type: string; startedAt: number; route: number[][]; pausedMs: number; pauseAt: number | null;
@@ -123,11 +123,11 @@ let stepSub: { remove: () => Promise<void> | void } | null = null;
 /** the Android app's step sensors count for this recording (and the recording's notification keeps them going) */
 const nativeSteps = ref(false);
 /** what the Android plugin sends: counts since `session`, the counter -1 before its first reading */
-interface NativeReading { session?: number; counter?: number; detector?: number }
+interface NativeReading { session?: number; counter?: number; detector?: number; atCounter?: number }
 function onReading(e: NativeReading | null | undefined) {
   const r = recording.value;
-  const x: StepReading = { session: Number(e?.session), counter: Number(e?.counter ?? -1), detector: Number(e?.detector ?? 0) };
-  if (!r || !Number.isFinite(x.session) || !Number.isFinite(x.counter) || !Number.isFinite(x.detector)) return;
+  const x: StepReading = { session: Number(e?.session), counter: Number(e?.counter ?? -1), detector: Number(e?.detector ?? 0), atCounter: e?.atCounter == null ? undefined : Number(e.atCounter) };
+  if (!r || !Number.isFinite(x.session) || !Number.isFinite(x.counter) || !Number.isFinite(x.detector) || (x.atCounter != null && !Number.isFinite(x.atCounter))) return;
   const s = addStepReading({ steps: r.steps, session: r.stepSession, seen: r.stepSeen }, x, !!r.pauseAt);
   r.steps = s.steps; r.stepSession = s.session; r.stepSeen = s.seen;
   persist(true);
@@ -154,28 +154,20 @@ async function catchUpSteps() {
 }
 
 // ---- steps: the motion sensor (browsers) ----
-// A step shows as a peak in how hard the phone is pushed (acceleration including gravity) above its slow average. Taps and
-// shakes are ignored by waiting for a second peak within two seconds of the first before counting both, and again after
-// a two-second stop; waiting for more made the count lag well behind your first steps each time you set off.
-let motionOn = false, ema = 0, base = 0, armed = true, lastStep = 0, run = 0;
+// Each step counts as you take it (MotionSteps); one the detector takes back (a tap, no second step) is taken off again,
+// unless it came while paused and so was never counted.
+let motionOn = false, motion = new MotionSteps(), loneCounted = false;
 let motionWait: ReturnType<typeof setTimeout> | null = null;
 function onMotion(e: DeviceMotionEvent) {
   const a = e.accelerationIncludingGravity;
   if (!a || a.x == null || a.y == null || a.z == null) return;
-  const m = Math.hypot(a.x, a.y, a.z);
-  if (!base) { base = ema = m; }
   if (!stepsLive.value) { stepsLive.value = true; stepsError.value = ""; }
-  ema += (m - ema) * 0.3; // smooths sensor noise
-  base += (m - base) * 0.02; // gravity plus how the phone is held
-  const d = ema - base, t = e.timeStamp || performance.now();
-  if (armed && d > 1.2 && t - lastStep > 280) { armed = false; step(t); } else if (!armed && d < 0.3) armed = true;
-}
-function step(t: number) {
-  if (t - lastStep > 2000) run = 0;
-  lastStep = t; run++;
-  const n = run < 2 ? 0 : run === 2 ? 2 : 1;
+  const n = motion.push(Math.hypot(a.x, a.y, a.z), e.timeStamp || performance.now());
   const r = recording.value;
-  if (n && r && !r.pauseAt) { r.steps += n; persist(true); }
+  if (!n || !r) return;
+  if (n < 0) { if (loneCounted) { r.steps = Math.max(0, r.steps - 1); persist(true); } loneCounted = false; }
+  if (n > 0 && !r.pauseAt) { r.steps += n; persist(true); }
+  if (n > 0) loneCounted = !r.pauseAt;
 }
 const NO_SENSOR = "This device has no motion sensor, so steps aren't counted";
 async function startMotion(fromTap: boolean) {
@@ -187,7 +179,7 @@ async function startMotion(fromTap: boolean) {
     if (!fromTap) { stepsError.value = "Steps stopped when Motus was reopened"; return; }
     try { if ((await ask()) !== "granted") { stepsError.value = "Allow Motion & Orientation access to count steps"; return; } } catch { stepsError.value = NO_SENSOR; return; }
   }
-  motionOn = true; stepsOnScreen.value = true; base = 0; run = 0;
+  motionOn = true; stepsOnScreen.value = true; motion = new MotionSteps(); loneCounted = false;
   addEventListener("devicemotion", onMotion);
   // a computer has the browser feature but no sensor behind it: nothing ever arrives, so say so
   motionWait = setTimeout(() => { motionWait = null; if (motionOn && !stepsLive.value) stepsError.value = NO_SENSOR; }, 5000);

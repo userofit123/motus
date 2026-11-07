@@ -50,23 +50,64 @@ export function takesPoint(route: number[][], pt: number[], accuracyM: number, p
 }
 
 /** One reading from the Android app's step sensors, all counted since `session` (when they started counting):
- *  `counter` from the step counter (-1 before its first reading), `detector` from the step detector. */
-export interface StepReading { session: number; counter: number; detector: number }
+ *  `counter` from the step counter (-1 before its first reading), `detector` from the step detector, and `atCounter`
+ *  the detector's count when the counter last reported (older Android apps leave it out). */
+export interface StepReading { session: number; counter: number; detector: number; atCounter?: number }
 /** Where a recording's step count stands: `steps` so far, and the sensors' own count (`seen`) at the last reading of `session`. */
 export interface StepState { steps: number; session: number | null; seen: number }
 
-/** How many steps the detector may run ahead of the counter (which holds back its first steps) before it's taken for false positives. */
-export const STEP_DETECTOR_LEAD = 30;
+/** How many detector steps may be added on top of the counter's last report before they're taken for false positives
+ *  (handling the phone, a bus ride): more than the counter ever holds back while it makes sure you're walking. */
+export const STEP_DETECTOR_LEAD = 40;
 
-/** Adds a step reading to the recording's count. The step counter is the accurate one but holds back the first ten or
- *  so steps each time you set off; the step detector reports each step at once but may miss some. Both are counts
- *  since the sensors started, so the larger of the two is how far you've walked, and only its growth since the last
- *  reading is added: a reading that comes late, twice or out of order adds nothing twice. While paused the readings
- *  move `seen` on without counting. A new session (the app was restarted) counts from its own zero. */
+/** Adds a step reading to the recording's count. The step counter is the accurate one but reports late (it holds back
+ *  the first ten or so steps each time you set off, and some phones send it in bunches); the step detector reports each
+ *  step at once. So the count is the counter's, plus the detector's steps since the counter last reported: it rises
+ *  one step at a time, and each counter report corrects it, so neither drifts. Only its growth since the last reading
+ *  is added: a reading that comes late, twice or out of order adds nothing twice, and when the counter corrects it
+ *  down nothing is added until you've walked past it again. While paused the readings move `seen` on without
+ *  counting. A new session (the app was restarted) counts from its own zero. */
 export function addStepReading(s: StepState, r: StepReading, paused: boolean): StepState {
-  // the detector can fire on handling the phone or a bus ride, so once the counter has reported it may only lead by a few steps
-  const now = r.counter >= 0 ? Math.max(r.counter, Math.min(r.detector, r.counter + STEP_DETECTOR_LEAD)) : Math.max(r.detector, 0);
+  const now = r.counter < 0 ? Math.max(r.detector, 0)
+    : r.atCounter == null ? Math.max(r.counter, Math.min(r.detector, r.counter + STEP_DETECTOR_LEAD)) // an older app's reading
+    : r.counter + Math.min(Math.max(0, r.detector - r.atCounter), STEP_DETECTOR_LEAD);
   const from = s.session === r.session ? s.seen : 0;
   const grew = Math.max(0, now - from);
   return { steps: s.steps + (paused ? 0 : grew), session: r.session, seen: Math.max(from, now) };
+}
+
+/** Counts steps from the phone's motion sensor (browsers have no step sensors). Feed it how hard the phone is pushed
+ *  (acceleration including gravity, m/s²) with each reading's time in ms; it says how many steps that reading adds.
+ *  A step is a rise of the smoothed push above its slow average (gravity plus how the phone is held). How high it has
+ *  to rise follows how hard your recent steps were, so a phone held in front of you counts as well as one in a pocket,
+ *  and the bumps between steps don't count. Each step counts at once, so the count rises one by one from the first;
+ *  a step that no second one follows within two seconds (a tap, picking the phone up) is taken back (-1). */
+export class MotionSteps {
+  private t = -1; private fast = 0; private slow = 0;
+  private armed = true; private peak = 0; private size = 0;
+  private last = -Infinity; private runLen = 0;
+  push(push: number, t: number): number {
+    if (this.t < 0) { this.t = t; this.fast = this.slow = push; return 0; }
+    const dt = Math.min(0.2, Math.max(0.001, (t - this.t) / 1000));
+    this.t = t;
+    this.fast += (push - this.fast) * (dt / (0.04 + dt)); // smooths sensor noise, keeps the ~2 a second of walking
+    this.slow += (push - this.slow) * (dt / (1 + dt)); // gravity and how the phone is held
+    const d = this.fast - this.slow;
+    let n = 0;
+    // a lone step whose second never came
+    if (this.runLen === 1 && t - this.last > 2000) { this.runLen = 0; n = -1; }
+    if (t - this.last > 2000) this.size = 0; // standing still: the next walk may be gentler than the last
+    if (this.armed && d > Math.max(0.3, this.size * 0.4) && t - this.last > 250) {
+      this.armed = false; this.peak = d;
+      this.runLen = t - this.last > 2000 ? 1 : this.runLen + 1;
+      this.last = t;
+      return n + 1;
+    }
+    if (!this.armed) {
+      this.peak = Math.max(this.peak, d);
+      // back below the average: the step is over, and its height sets the bar for the next ones
+      if (d < 0) { this.armed = true; this.size = this.size ? this.size * 0.6 + this.peak * 0.4 : this.peak; }
+    }
+    return n;
+  }
 }
