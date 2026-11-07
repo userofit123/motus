@@ -20,7 +20,7 @@ const PART_LABELS = [
   { id: "routines", t: "Routines and folders", s: "With any custom exercises they use" },
   { id: "programs", t: "Programs", s: "Their routines come along" },
   { id: "workouts", t: "Workouts", s: "Finished workouts with their sets and notes" },
-  { id: "other", t: "Everything else", s: "Notes on exercises and routines, reminders, goals, activities, body, settings" },
+  { id: "other", t: "Everything else", s: "Notes on exercises and activities, reminders, goals, body, settings" },
 ];
 // with Programs switched off its choice is hidden, and any programs simply go along with the routines
 const partList = () => PART_LABELS.filter((p) => parts.value![p.id === "programs" && !s.value.features.programs ? "routines" : p.id]).map((p) => p.id);

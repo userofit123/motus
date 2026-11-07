@@ -102,18 +102,34 @@ describe("moving routines, programs and workouts to another account", () => {
     const other = await call(A, "GET", "/export", undefined, { parts: "other" });
     expect(other.parts).toEqual(["other"]);
     expect(other.tables.workouts).toBeUndefined();
-    // workout notes go with workouts; the rest with everything else
-    expect(other.tables.notes.map((n: any) => n.body).sort()).toEqual(["Knees out", "Short rests"]);
+    // workout notes go with workouts, routine notes with routines; the rest with everything else
+    expect(other.tables.notes.map((n: any) => n.body)).toEqual(["Knees out"]);
+    expect((await call(A, "GET", "/export", undefined, { parts: "routines" })).tables.notes.map((n: any) => n.body)).toEqual(["Short rests"]);
 
     const D = uuidv7();
     await eng.db.admin.query("INSERT INTO users (id, username) VALUES ($1,'d')", [D]);
     const res = await call(D, "POST", "/import", { data: other, mode: "merge" });
     expect(res.reminders).toBe(1);
-    expect(res.notes).toBe(1); // the routine note is left out: that routine isn't in the file
+    expect(res.notes).toBe(1);
     const { rows } = await eng.db.admin.query("SELECT target_id, created_workout_id, last_shown_workout_id FROM reminders WHERE user_id = $1", [D]);
     expect(rows[0]).toMatchObject({ created_workout_id: null, last_shown_workout_id: null });
     expect((rows[0] as any).target_id).toBe((await call(D, "GET", "/exercises")).find((e: any) => e.name === "Barbell Squat").id);
     const notes = (await eng.db.admin.query("SELECT body FROM notes WHERE user_id = $1", [D])).rows;
     expect(notes.map((n: any) => n.body)).toEqual(["Knees out"]);
+  });
+
+  it("keeps a goal on a built-in exercise when its id differs on the other server", async () => {
+    const squat = (await call(A, "GET", "/exercises")).find((e: any) => e.name === "Barbell Squat").id;
+    await eng.db.admin.query("INSERT INTO goals (id, user_id, title, scope, scope_id, metric, target) VALUES ($1,$2,'Squat more','exercise',$3,'max_weight',100)", [uuidv7(), A, squat]);
+    const other = await call(A, "GET", "/export", undefined, { parts: "other" });
+    expect(other.catalogRefs[squat]).toBeTruthy();
+    // pretend the file comes from a server where the squat has another id
+    const alien = uuidv7();
+    const moved = JSON.parse(JSON.stringify(other).split(squat).join(alien));
+    const E = uuidv7();
+    await eng.db.admin.query("INSERT INTO users (id, username) VALUES ($1,'e')", [E]);
+    expect((await call(E, "POST", "/import", { data: moved, mode: "merge" })).goals).toBe(1);
+    const { rows } = await eng.db.admin.query("SELECT scope_id FROM goals WHERE user_id = $1", [E]);
+    expect((rows[0] as any).scope_id).toBe((await call(E, "GET", "/exercises")).find((e: any) => e.name === "Barbell Squat").id);
   });
 });

@@ -19,11 +19,11 @@ type Table = (typeof TABLES)[number];
 export const PARTS = ["routines", "programs", "workouts", "other"] as const;
 export type Part = (typeof PARTS)[number];
 const PART_TABLES: Record<Exclude<Part, "other">, Table[]> = {
-  routines: ["folders", "routines", "routine_exercises", "routine_sets", "routine_versions"],
+  routines: ["folders", "routines", "routine_exercises", "routine_sets", "routine_versions", "notes"],
   programs: ["programs"],
   workouts: ["workouts", "workout_exercises", "workout_sets", "notes"],
 };
-// notes are split: the ones written in a workout go with workouts, the rest (on exercises, routines, activities) with "other"
+// notes are split: the ones written in a workout go with workouts, those on routines with routines, the rest (on exercises, activities) with "other"
 const OTHER: Table[] = [...TABLES.filter((t) => t !== "exercises" && !Object.values(PART_TABLES).flat().includes(t)), "notes"];
 // without "other", workouts means finished ones and the notes written in them
 const DONE = "SELECT id FROM workouts WHERE status = 'completed'";
@@ -34,7 +34,16 @@ const PART_WHERE: Partial<Record<Table, string>> = {
   workout_sets: `WHERE workout_exercise_id IN (SELECT id FROM workout_exercises WHERE workout_id IN (${DONE}))`,
   notes: `WHERE workout_id IN (${DONE})`,
 };
-const OTHER_NOTES = "WHERE workout_id IS NULL AND target_type NOT IN ('workout', 'workout_exercise')";
+const ROUTINE_NOTE = "target_type IN ('routine', 'routine_exercise')";
+const WORKOUT_NOTE = "target_type IN ('workout', 'workout_exercise')";
+// the part of the notes a selection of parts takes
+function notesWhere(parts: Part[]): string {
+  const w: string[] = [];
+  if (parts.includes("routines")) w.push(ROUTINE_NOTE);
+  if (parts.includes("workouts")) w.push(parts.includes("other") ? `workout_id IS NOT NULL OR ${WORKOUT_NOTE}` : `workout_id IN (${DONE})`);
+  if (parts.includes("other")) w.push(`(workout_id IS NULL AND target_type NOT IN ('routine', 'routine_exercise', 'workout', 'workout_exercise'))`);
+  return `WHERE ${w.join(" OR ")}`;
+}
 const OWNER_COL: Record<string, string> = { exercises: "owner_id" };
 // columns that point at another row: an imported row may only point at rows this account can see
 const REFS: Record<string, Table> = {
@@ -70,7 +79,7 @@ export async function exportAll(q: Sql, userId: string, partsAsked?: unknown) {
   for (const t of TABLES) {
     if (!take.has(t)) continue;
     const where = t === "exercises" ? PART_WHERE[t]!
-      : t === "notes" ? (parts.includes("other") && parts.includes("workouts") ? "" : parts.includes("other") ? OTHER_NOTES : PART_WHERE.notes!)
+      : t === "notes" ? (whole ? "" : notesWhere(parts))
       : parts.includes("other") || whole ? "" : (PART_WHERE[t] ?? "");
     tables[t] = (await q.query(`SELECT * FROM ${t} ${where}`)).rows.map((r: any) => { const o = { ...r }; delete o.user_id; delete o.owner_id; return o; });
   }
@@ -79,6 +88,7 @@ export async function exportAll(q: Sql, userId: string, partsAsked?: unknown) {
   for (const n of tables.notes ?? []) if (n.target_type === "exercise") used.add(n.target_id);
   for (const m of tables.reminders ?? []) if (m.target_type === "exercise") used.add(m.target_id);
   for (const p of tables.exercise_prefs ?? []) used.add(p.exercise_id);
+  for (const g of tables.goals ?? []) if (g.scope === "exercise" && g.scope_id) used.add(g.scope_id);
   const refs = (await q.query("SELECT id, source, source_id FROM exercises WHERE owner_id IS NULL AND id = ANY($1::uuid[])", [[...used]])).rows;
   const settings = parts.includes("other") ? ((await q.query("SELECT data FROM user_settings")).rows[0]?.data ?? {}) : undefined;
   const user = (await q.query("SELECT username, display_name, email FROM users WHERE id = $1", [userId])).rows[0];
@@ -141,6 +151,8 @@ export async function importAll(ctx: Ctx, data: any, mode: "replace" | "merge") 
       if (t === "routines") row.based_on_id = null;
       row[OWNER_COL[t] ?? "user_id"] = ctx.userId;
       if (t === "exercises") row.source = "custom";
+      // a note or reminder limited to one routine means nothing without it: left out rather than made unlimited
+      if (row.scope_routine_id != null && !(await canSee("routines", row.scope_routine_id))) continue;
       for (const [c, table] of Object.entries(REFS)) if (row[c] != null && !(await canSee(table, row[c]))) row[c] = null;
       const target = targetOf(t, row);
       if (target && !(await canSee(...target))) continue;
