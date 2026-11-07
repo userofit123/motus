@@ -93,10 +93,27 @@ html.vt-r::view-transition-new(root) {
   width: 44px;
   height: 44px;
   border-radius: 15px;
+  /* the app icon's look, from the theme's accent: light-to-accent diagonal, very dark glyph, light plate highlights */
+  --lgc: var(--acc);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--lgc) 38%, white), var(--lgc));
+  box-shadow: 0 6px 16px -8px color-mix(in srgb, var(--lgc) 70%, black);
   display: grid;
   place-items: center;
   margin-bottom: 8px;
   flex: none;
+}
+
+.logo svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  fill: color-mix(in srgb, var(--lgc) 16%, black);
+  filter: drop-shadow(0 2px 2px color-mix(in srgb, var(--lgc) 25%, transparent));
+}
+
+.logo svg .hl {
+  fill: color-mix(in srgb, var(--lgc) 15%, white);
+  opacity: .6;
 }
 
 .nb {

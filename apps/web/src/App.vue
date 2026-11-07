@@ -13,6 +13,7 @@ import Overlays from "./shell/Overlays.vue";
 import Toasts from "./components/Toasts.vue";
 import AskHost from "./components/AskHost.vue";
 import AccountChooser from "./shell/AccountChooser.vue";
+import Logo from "./shell/Logo.vue";
 import { isAndroid, installAndroidBridge } from "./native/android";
 import { connect } from "./native/accounts";
 import { ref } from "vue";
@@ -32,7 +33,7 @@ watch(() => route.query.start, (v) => { if (v) { startOpen.value = true; router.
 
 <template>
   <AccountChooser v-if="needAccount" />
-  <div v-else-if="!session.ready" id="splash"><img src="/icon.svg" alt="" /></div>
+  <div v-else-if="!session.ready" id="splash"><Logo /></div>
   <AuthScreen v-else-if="!session.user" />
   <template v-else>
     <PhoneShell v-if="isPhone" />
