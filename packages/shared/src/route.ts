@@ -50,19 +50,20 @@ export function takesPoint(route: number[][], pt: number[], accuracyM: number, p
 }
 
 /** One reading from the Android app's step sensors, all counted since `session` (when they started counting):
- *  `counter` from the step counter (-1 before its first reading), `detector` from the step detector, and `atCounter`
- *  the detector's count when the counter last reported (older Android apps leave it out). */
+ *  `counter` from the step counter (-1 before its first reading), `detector` the quick count (from the step detector,
+ *  or the motion sensor where that is late or missing), and `atCounter` the quick count when the counter last reported
+ *  (older Android apps leave it out). */
 export interface StepReading { session: number; counter: number; detector: number; atCounter?: number }
 /** Where a recording's step count stands: `steps` so far, and the sensors' own count (`seen`) at the last reading of `session`. */
 export interface StepState { steps: number; session: number | null; seen: number }
 
-/** How many detector steps may be added on top of the counter's last report before they're taken for false positives
+/** How many quick steps may be added on top of the counter's last report before they're taken for false positives
  *  (handling the phone, a bus ride): more than the counter ever holds back while it makes sure you're walking. */
 export const STEP_DETECTOR_LEAD = 40;
 
 /** Adds a step reading to the recording's count. The step counter is the accurate one but reports late (it holds back
- *  the first ten or so steps each time you set off, and some phones send it in bunches); the step detector reports each
- *  step at once. So the count is the counter's, plus the detector's steps since the counter last reported: it rises
+ *  the first ten or so steps each time you set off, and some phones send it in bunches); the quick count has each step
+ *  at once. So the count is the counter's, plus the quick steps since the counter last reported: it rises
  *  one step at a time, and each counter report corrects it, so neither drifts. Only its growth since the last reading
  *  is added: a reading that comes late, twice or out of order adds nothing twice, and when the counter corrects it
  *  down nothing is added until you've walked past it again. While paused the readings move `seen` on without

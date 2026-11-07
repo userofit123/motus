@@ -3,8 +3,9 @@
 // (a walk to the gym, then the workout), and the bars at the bottom of the screen show each one.
 // Everything is saved on this device as it comes in, so a reload or closing the app never loses a walk.
 //
-// Steps: the Android app counts with the phone's step detector and step counter, which keep counting with the screen off
-// (the recording's notification keeps the app going for them, as for the route: RecordingService). Browsers have no step
+// Steps: the Android app counts with the phone's step counter, which keeps counting with the screen off (the recording's
+// notification keeps the app going for it, as for the route: RecordingService), and fills in the steps it hasn't reported
+// yet from the step detector or the motion sensor, so the count keeps up as you walk (MotusWorkoutPlugin). Browsers have no step
 // counter, so there the steps are counted from the phone's motion sensor while Motus is open on screen (the same limit as
 // the route: a browser stops both when the screen goes off). A computer has no motion sensor, so the steps say so there.
 // Which types count steps is the type's own "on foot" setting (walk, run and hike, and any type you add as on foot).

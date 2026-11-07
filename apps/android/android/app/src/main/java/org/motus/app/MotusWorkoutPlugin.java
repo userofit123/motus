@@ -37,10 +37,12 @@ import org.json.JSONObject;
  * the timer's notification as it then is in place of the one shown, with a sound (TimerCue), so a run keeps one
  * notification however many rounds it has. Each can carry buttons (Pause, Skip, +30s…): a tap is sent to the web app as an "action"
  * event with the button's id, without opening the app, so it works from the lock screen.
- * Also the phone's step sensors while a walk is recorded; both keep counting with the screen off. The step counter is
- * accurate but holds back the first steps after standing still until it's sure you're walking; the step detector reports
- * each step as it happens. Both are counted here since the recording started; the web app shows the counter plus the
- * detector's steps since the counter last reported (addStepReading).
+ * Also the phone's step sensors while a walk is recorded. The step counter is accurate and keeps counting with the screen
+ * off, but reports late: it holds back the first ten or so steps until it's sure you're walking, and many phones then
+ * send it in bunches several seconds apart. The quick steps fill that gap, each as it is taken: the step detector's, or
+ * on phones whose detector is missing or as late as the counter, the motion sensor's while Motus is on screen. All are
+ * counted here since the recording started; the web app shows the counter plus the quick steps since the counter last
+ * reported (addStepReading).
  */
 @CapacitorPlugin(name = "MotusWorkout", permissions = { @Permission(alias = "steps", strings = { "android.permission.ACTIVITY_RECOGNITION" }) })
 public class MotusWorkoutPlugin extends Plugin implements SensorEventListener {
@@ -384,11 +386,13 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener {
     protected void handleOnResume() {
         super.handleOnResume();
         keepRecording();
+        listenMotion(true);
     }
 
     @Override
     protected void handleOnPause() {
         keepRecording();
+        listenMotion(false);
         super.handleOnPause();
     }
 
@@ -452,12 +456,23 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener {
     private boolean listening = false;
     private long session = 0;
     private long counterBase = -1, counterNow = -1;
-    /** the detector's count, and what it was when the counter last reported (the web app adds the steps since then) */
-    private long detected = 0, detectedAtCounter = 0;
+    /** the step detector's and the motion sensor's counts, each as it was when the counter last reported, and the quick
+     *  count then (quick()) */
+    private long detected = 0, moved = 0, detectedAtCounter = 0, movedAtCounter = 0, quickAtCounter = 0;
+
+    /** The quick count: the counter's last report plus the steps taken since, by whichever quick source saw more of them.
+     *  The detector is the better judge where it reports each step, but some phones hold it back like the counter (or
+     *  have none); the motion sensor then keeps the count moving one step at a time. */
+    private long quick() {
+        return quickAtCounter + Math.max(0, Math.max(detected - detectedAtCounter, moved - movedAtCounter));
+    }
 
     private Sensor sensor(int type) {
         SensorManager sm = (SensorManager) getContext().getSystemService(Context.SENSOR_SERVICE);
-        return sm == null ? null : sm.getDefaultSensor(type);
+        if (sm == null) return null;
+        Sensor s = sm.getDefaultSensor(type);
+        // some phones only have the wake-up kind of step sensor, which the plain lookup doesn't return
+        return s != null ? s : sm.getDefaultSensor(type, true);
     }
 
     private boolean hasStepSensor() {
@@ -488,13 +503,16 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener {
             SensorManager sm = (SensorManager) getContext().getSystemService(Context.SENSOR_SERVICE);
             sm.unregisterListener(this);
             session = System.currentTimeMillis();
-            counterBase = -1; counterNow = -1; detected = 0; detectedAtCounter = 0;
+            counterBase = -1; counterNow = -1;
+            detected = 0; moved = 0; detectedAtCounter = 0; movedAtCounter = 0; quickAtCounter = 0;
             // no batching (latency 0): each reading is sent as soon as the sensor has it, not held for a later batch
             Sensor counter = sensor(Sensor.TYPE_STEP_COUNTER), detector = sensor(Sensor.TYPE_STEP_DETECTOR);
             if (counter != null) sm.registerListener(this, counter, SensorManager.SENSOR_DELAY_FASTEST, 0);
             if (detector != null) sm.registerListener(this, detector, SensorManager.SENSOR_DELAY_FASTEST, 0);
             listening = true;
+            motionOn = false;
         }
+        listenMotion(true); // asked from the app on screen
         JSObject r = reading();
         r.put("available", true);
         call.resolve(r);
@@ -505,8 +523,8 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener {
         JSObject r = new JSObject();
         r.put("session", session);
         r.put("counter", counterBase < 0 ? -1 : counterNow - counterBase);
-        r.put("detector", detected);
-        r.put("atCounter", detectedAtCounter);
+        r.put("detector", quick());
+        r.put("atCounter", quickAtCounter);
         return r;
     }
 
@@ -527,21 +545,75 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener {
         SensorManager sm = (SensorManager) getContext().getSystemService(Context.SENSOR_SERVICE);
         if (sm != null) sm.unregisterListener(this);
         listening = false;
+        motionOn = false;
+    }
+
+    // ---- quick steps from the motion sensor ----
+    // Only while Motus is on screen: that's when the count is watched, and with the screen off the counter's late reports
+    // are soon enough (and the phone may stop the motion sensor anyway). A port of MotionSteps (packages/shared/src/
+    // route.ts), which is tested there; keep the two alike.
+    private boolean motionOn = false;
+    private long mT = -1, mLast = Long.MIN_VALUE / 4;
+    private double mFast = 0, mSlow = 0, mPeak = 0, mSize = 0;
+    private boolean mArmed = true;
+    private int mRun = 0;
+
+    private void listenMotion(boolean on) {
+        SensorManager sm = (SensorManager) getContext().getSystemService(Context.SENSOR_SERVICE);
+        Sensor acc = sm == null ? null : sm.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
+        if (acc == null || on == motionOn || (on && !listening)) return;
+        if (on) {
+            mT = -1; mLast = Long.MIN_VALUE / 4; mArmed = true; mRun = 0; mSize = 0; // a fresh start, as after standing still
+            motionOn = sm.registerListener(this, acc, SensorManager.SENSOR_DELAY_GAME, 0);
+        } else {
+            sm.unregisterListener(this, acc);
+            motionOn = false;
+        }
+    }
+
+    /** How many steps one accelerometer reading adds (`push`: how hard the phone is pushed, m/s²; `t` in ms): 1 for a
+     *  step, -1 to take back a lone one that no second step followed (a tap, picking the phone up). See MotionSteps. */
+    private int motionStep(double push, long t) {
+        if (mT < 0) { mT = t; mFast = mSlow = push; return 0; }
+        double dt = Math.min(0.2, Math.max(0.001, (t - mT) / 1000.0));
+        mT = t;
+        mFast += (push - mFast) * (dt / (0.04 + dt));
+        mSlow += (push - mSlow) * (dt / (1 + dt));
+        double d = mFast - mSlow;
+        int n = 0;
+        if (mRun == 1 && t - mLast > 2000) { mRun = 0; n = -1; }
+        if (t - mLast > 2000) mSize = 0;
+        if (mArmed && d > Math.max(0.3, mSize * 0.4) && t - mLast > 250) {
+            mArmed = false; mPeak = d;
+            mRun = t - mLast > 2000 ? 1 : mRun + 1;
+            mLast = t;
+            return n + 1;
+        }
+        if (!mArmed) {
+            mPeak = Math.max(mPeak, d);
+            if (d < 0) { mArmed = true; mSize = mSize > 0 ? mSize * 0.6 + mPeak * 0.4 : mPeak; }
+        }
+        return n;
     }
 
     @Override
     public void onSensorChanged(SensorEvent e) {
         int type = e.sensor.getType();
-        if (type == Sensor.TYPE_STEP_DETECTOR) detected += Math.max(1, Math.round(e.values[0]));
+        if (type == Sensor.TYPE_ACCELEROMETER) {
+            int n = motionStep(Math.sqrt(e.values[0] * e.values[0] + e.values[1] * e.values[1] + e.values[2] * e.values[2]), e.timestamp / 1000000L);
+            if (n == 0) return;
+            moved += n;
+        } else if (type == Sensor.TYPE_STEP_DETECTOR) detected += Math.max(1, Math.round(e.values[0]));
         else if (type == Sensor.TYPE_STEP_COUNTER) {
             long total = (long) e.values[0];
             // The counter's total is since the phone started. Its first report often comes only once it's sure you're
-            // walking, with the steps it held back already in it; the detector has counted those, so the counter starts
-            // level with the detector instead of losing them. Smaller than before means it restarted: go on from here.
-            if (counterBase < 0) counterBase = total - detected;
+            // walking, with the steps it held back already in it; the quick count has those, so the counter starts level
+            // with it instead of losing them. Smaller than before means it restarted: go on from here.
+            long q = quick();
+            if (counterBase < 0) counterBase = total - q;
             else if (total < counterNow) counterBase = total - (counterNow - counterBase);
             counterNow = total;
-            detectedAtCounter = detected;
+            quickAtCounter = q; detectedAtCounter = detected; movedAtCounter = moved;
         } else return;
         notifyListeners("steps", reading());
     }
