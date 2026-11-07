@@ -1,6 +1,7 @@
 {
   "name": "@motus/android",
   "private": true,
+  "license": "PolyForm-Noncommercial-1.0.0",
   "scripts": {
     "sync": "node prepare-web.mjs && cap sync android"
   },

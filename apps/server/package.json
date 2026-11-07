@@ -1,6 +1,7 @@
 {
   "name": "@motus/server",
   "private": true,
+  "license": "PolyForm-Noncommercial-1.0.0",
   "type": "module",
   "scripts": {
     "dev": "nodemon --legacy-watch --watch src --watch ../../packages/engine/src --watch ../../packages/shared/src --ext ts,json --exec tsx src/index.ts",

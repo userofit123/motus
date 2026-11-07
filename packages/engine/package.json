@@ -1,6 +1,7 @@
 {
   "name": "@motus/engine",
   "private": true,
+  "license": "PolyForm-Noncommercial-1.0.0",
   "type": "module",
   "main": "src/index.ts",
   "exports": { ".": "./src/index.ts", "./pg": "./src/adapters/pg.ts", "./pglite": "./src/adapters/pglite.ts" },

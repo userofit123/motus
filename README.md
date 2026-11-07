@@ -14,3 +14,7 @@ goals and stats. Runs fully on your device, or syncs an account with your own se
 - Desktop and Android apps: [docs/apps.md](docs/apps.md)
 
 Development: [docs/development.md](docs/development.md) (live dev environment at https://motus.local).
+
+## License
+
+Motus is free to use, change and share for non-commercial purposes. Commercial use is not allowed. See [LICENSE](LICENSE) (PolyForm Noncommercial 1.0.0).

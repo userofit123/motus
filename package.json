@@ -1,6 +1,7 @@
 {
   "name": "motus",
   "private": true,
+  "license": "PolyForm-Noncommercial-1.0.0",
   "packageManager": "pnpm@9.15.0",
   "scripts": {
     "dev:server": "pnpm --filter @motus/server dev",

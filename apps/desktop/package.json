@@ -6,6 +6,7 @@
   "author": "Motus",
   "homepage": "https://github.com/userofit123/motus",
   "private": true,
+  "license": "PolyForm-Noncommercial-1.0.0",
   "main": "dist/main.cjs",
   "scripts": {
     "build": "node build.mjs",
