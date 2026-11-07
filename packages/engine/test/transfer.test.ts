@@ -88,4 +88,32 @@ describe("moving routines, programs and workouts to another account", () => {
     const { rows } = await eng.db.admin.query("SELECT routine_id FROM workouts WHERE name = 'Forged'");
     expect((rows[0] as any).routine_id).toBe(null);
   });
+
+  it("brings notes and reminders in an \"Everything else\" file without links to the first account's rows", async () => {
+    const squat = (await call(A, "GET", "/exercises")).find((e: any) => e.name === "Barbell Squat").id;
+    const routine = (await call(A, "GET", "/routines"))[0].id;
+    const [workout] = await call(A, "GET", "/workouts");
+    await eng.db.admin.query(
+      `INSERT INTO reminders (id, user_id, target_type, target_id, body, created_workout_id, last_shown_workout_id) VALUES ($1,$2,'exercise',$3,'Go deeper',$4,$4)`,
+      [uuidv7(), A, squat, workout.id]);
+    await eng.db.admin.query(
+      `INSERT INTO notes (id, user_id, target_type, target_id, body) VALUES ($1,$2,'exercise',$3,'Knees out'), ($4,$2,'routine',$5,'Short rests'), ($6,$2,'workout',$7,'Felt strong')`,
+      [uuidv7(), A, squat, uuidv7(), routine, uuidv7(), workout.id]);
+    const other = await call(A, "GET", "/export", undefined, { parts: "other" });
+    expect(other.parts).toEqual(["other"]);
+    expect(other.tables.workouts).toBeUndefined();
+    // workout notes go with workouts; the rest with everything else
+    expect(other.tables.notes.map((n: any) => n.body).sort()).toEqual(["Knees out", "Short rests"]);
+
+    const D = uuidv7();
+    await eng.db.admin.query("INSERT INTO users (id, username) VALUES ($1,'d')", [D]);
+    const res = await call(D, "POST", "/import", { data: other, mode: "merge" });
+    expect(res.reminders).toBe(1);
+    expect(res.notes).toBe(1); // the routine note is left out: that routine isn't in the file
+    const { rows } = await eng.db.admin.query("SELECT target_id, created_workout_id, last_shown_workout_id FROM reminders WHERE user_id = $1", [D]);
+    expect(rows[0]).toMatchObject({ created_workout_id: null, last_shown_workout_id: null });
+    expect((rows[0] as any).target_id).toBe((await call(D, "GET", "/exercises")).find((e: any) => e.name === "Barbell Squat").id);
+    const notes = (await eng.db.admin.query("SELECT body FROM notes WHERE user_id = $1", [D])).rows;
+    expect(notes.map((n: any) => n.body)).toEqual(["Knees out"]);
+  });
 });

@@ -20,7 +20,7 @@ const PART_LABELS = [
   { id: "routines", t: "Routines and folders", s: "With any custom exercises they use" },
   { id: "programs", t: "Programs", s: "Their routines come along" },
   { id: "workouts", t: "Workouts", s: "Finished workouts with their sets and notes" },
-  { id: "other", t: "Everything else", s: "Notes, reminders, goals, activities, body, settings" },
+  { id: "other", t: "Everything else", s: "Notes on exercises and routines, reminders, goals, activities, body, settings" },
 ];
 // with Programs switched off its choice is hidden, and any programs simply go along with the routines
 const partList = () => PART_LABELS.filter((p) => parts.value![p.id === "programs" && !s.value.features.programs ? "routines" : p.id]).map((p) => p.id);
@@ -33,7 +33,15 @@ async function exportJson() {
     parts.value = null;
   } catch (e) { toastError(e); }
 }
-const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
+const plural = (n: number, one: string, many = one + "s") => `${n} ${n === 1 ? one : many}`;
+// what a Motus file holds (or what an import added), from its row counts per table
+const COUNTED: [string, string, string?][] = [
+  ["routines", "routine"], ["programs", "program"], ["exercises", "custom exercise"], ["workouts", "workout"], ["notes", "note"], ["reminders", "reminder"], ["goals", "goal"],
+  ["activities", "activity", "activities"], ["body_metrics", "body measurement"], ["daily_logs", "day log"],
+];
+const summary = (c: Record<string, number>) => COUNTED.filter(([k]) => c[k]).map(([k, one, many]) => plural(c[k]!, one, many)).join(", ");
+// a file with only settings or exercise preferences in it still has something to add
+const anyRows = (c: Record<string, number>) => Object.values(c).some((n) => n > 0);
 async function exportCsv(what: string) { const r = await api.get("/export/csv", { what }); download(new Blob([r.text], { type: "text/csv" }), r.filename); }
 async function importJson(ev: Event) {
   const f = (ev.target as HTMLInputElement).files?.[0]; (ev.target as HTMLInputElement).value = ""; if (!f) return;
@@ -42,14 +50,14 @@ async function importJson(ev: Event) {
     if (data.motusRoutine) { await importRoutine(data); return; }
     const pv = await api.post("/import/preview", { data });
     const c = pv.counts;
-    const what = [c.routines && plural(c.routines, "routine"), c.programs && plural(c.programs, "program"), c.workouts && plural(c.workouts, "workout")].filter(Boolean).join(", ") || "Nothing to add";
+    const what = summary(c) || (anyRows(c) || pv.settings ? "Settings and other details" : "Nothing to add");
     // a file with only some parts can only be added; replacing would empty everything it doesn't hold
     const mode = pv.whole
       ? await choose("Import this Motus file?", [{ label: "Merge: add what's missing", value: "merge" }, { label: "Replace everything", value: "replace" }], `${what}.`)
       : (await confirm("Import this Motus file?", { text: `${what}. Added to what you have; things already here aren't added twice.`, ok: "Import" })) && "merge";
     if (!mode) return;
     const r = await api.post("/import", { data, mode }); invalidate(["*"]);
-    const added = [r.routines && plural(r.routines, "routine"), r.programs && plural(r.programs, "program"), r.workouts && plural(r.workouts, "workout")].filter(Boolean).join(", ");
+    const added = summary(r);
     toast(added ? `Imported ${added}` : "Imported");
   } catch (e) { toastError(e); }
 }

@@ -8,10 +8,10 @@ import { bad } from "../errors";
 import { oneOf, visible } from "../util";
 
 export const EXPORT_FORMAT = 1;
-// in the order they are restored (a table only points at tables above it; programs list their routines)
+// in the order they are restored (a table only points at tables above it; programs list their routines; notes can be on activities)
 const TABLES = [
   "exercises", "exercise_prefs", "folders", "routines", "routine_exercises", "routine_sets", "routine_versions", "programs", "schedules", "schedule_exceptions",
-  "workouts", "workout_exercises", "workout_sets", "notes", "reminders", "goals", "activity_types", "activities", "body_metrics", "daily_logs",
+  "workouts", "workout_exercises", "workout_sets", "activity_types", "activities", "notes", "reminders", "goals", "body_metrics", "daily_logs",
 ] as const;
 type Table = (typeof TABLES)[number];
 // A Motus file holds all of these or some of them, e.g. only routines to copy into another account.
@@ -23,7 +23,8 @@ const PART_TABLES: Record<Exclude<Part, "other">, Table[]> = {
   programs: ["programs"],
   workouts: ["workouts", "workout_exercises", "workout_sets", "notes"],
 };
-const OTHER = TABLES.filter((t) => t !== "exercises" && !Object.values(PART_TABLES).flat().includes(t));
+// notes are split: the ones written in a workout go with workouts, the rest (on exercises, routines, activities) with "other"
+const OTHER: Table[] = [...TABLES.filter((t) => t !== "exercises" && !Object.values(PART_TABLES).flat().includes(t)), "notes"];
 // without "other", workouts means finished ones and the notes written in them
 const DONE = "SELECT id FROM workouts WHERE status = 'completed'";
 const PART_WHERE: Partial<Record<Table, string>> = {
@@ -33,12 +34,25 @@ const PART_WHERE: Partial<Record<Table, string>> = {
   workout_sets: `WHERE workout_exercise_id IN (SELECT id FROM workout_exercises WHERE workout_id IN (${DONE}))`,
   notes: `WHERE workout_id IN (${DONE})`,
 };
+const OTHER_NOTES = "WHERE workout_id IS NULL AND target_type NOT IN ('workout', 'workout_exercise')";
 const OWNER_COL: Record<string, string> = { exercises: "owner_id" };
 // columns that point at another row: an imported row may only point at rows this account can see
 const REFS: Record<string, Table> = {
   folder_id: "folders", routine_id: "routines", routine_exercise_id: "routine_exercises", workout_id: "workouts", workout_exercise_id: "workout_exercises",
-  schedule_id: "schedules", program_id: "programs", exercise_id: "exercises",
+  schedule_id: "schedules", program_id: "programs", exercise_id: "exercises", created_workout_id: "workouts",
+  scope_routine_id: "routines", last_shown_workout_id: "workouts",
 };
+// what a note, reminder or goal is about: an id without a foreign key, so it is checked here; a row about something
+// this account can't see is left out
+const TARGETS: Record<string, Table> = {
+  exercise: "exercises", routine: "routines", routine_exercise: "routine_exercises", workout: "workouts", workout_exercise: "workout_exercises", activity: "activities",
+};
+const targetOf = (t: Table, row: Record<string, unknown>): [Table, unknown] | null => {
+  if (t === "notes" || t === "reminders") return [TARGETS[String(row.target_type)] ?? "exercises", row.target_id];
+  if (t === "goals" && (row.scope === "routine" || row.scope === "exercise")) return [TARGETS[row.scope]!, row.scope_id];
+  return null;
+};
+type IdRow = { id: string };
 
 /** The parts asked for ("routines,workouts" or a list); none means all. Programs are made of routines, so they bring them along. */
 export function readParts(v: unknown): Part[] {
@@ -55,7 +69,9 @@ export async function exportAll(q: Sql, userId: string, partsAsked?: unknown) {
   const tables: Record<string, any[]> = {};
   for (const t of TABLES) {
     if (!take.has(t)) continue;
-    const where = t === "exercises" || (!parts.includes("other") && !whole) ? (PART_WHERE[t] ?? "") : "";
+    const where = t === "exercises" ? PART_WHERE[t]!
+      : t === "notes" ? (parts.includes("other") && parts.includes("workouts") ? "" : parts.includes("other") ? OTHER_NOTES : PART_WHERE.notes!)
+      : parts.includes("other") || whole ? "" : (PART_WHERE[t] ?? "");
     tables[t] = (await q.query(`SELECT * FROM ${t} ${where}`)).rows.map((r: any) => { const o = { ...r }; delete o.user_id; delete o.owner_id; return o; });
   }
   // catalog exercises are referred to by their catalog id, since the same exercise has a different row id on another server
@@ -126,12 +142,14 @@ export async function importAll(ctx: Ctx, data: any, mode: "replace" | "merge") 
       row[OWNER_COL[t] ?? "user_id"] = ctx.userId;
       if (t === "exercises") row.source = "custom";
       for (const [c, table] of Object.entries(REFS)) if (row[c] != null && !(await canSee(table, row[c]))) row[c] = null;
+      const target = targetOf(t, row);
+      if (target && !(await canSee(...target))) continue;
       const oldId = typeof raw.id === "string" ? raw.id : null;
       if (oldId) {
         if (await canSee(t, row.id)) continue; // already here: a re-import, or a restore into the same account
         if (t === "exercises") {
           // the same exercise made by hand in this account: use it rather than making a second one
-          const same = (await q.query("SELECT id FROM exercises WHERE lower(name) = lower($1) AND NOT archived ORDER BY owner_id IS NULL LIMIT 1", [String(row.name ?? "")])).rows[0] as any;
+          const same = (await q.query<IdRow>("SELECT id FROM exercises WHERE lower(name) = lower($1) AND NOT archived ORDER BY owner_id IS NULL LIMIT 1", [String(row.name ?? "")])).rows[0];
           if (same) { map.set(oldId, same.id); seen.add(same.id); continue; }
         }
       }
@@ -139,7 +157,7 @@ export async function importAll(ctx: Ctx, data: any, mode: "replace" | "merge") 
       if (!added && oldId && isUuid(oldId)) {
         // another account on this server has this id (a copy into a second account): a new id, the same one each time,
         // so importing the file again finds it and adds nothing twice
-        const nid = (await q.query("SELECT md5($1 || ':' || $2)::uuid AS id", [ctx.userId, oldId])).rows[0] as any;
+        const nid = (await q.query<IdRow>("SELECT md5($1 || ':' || $2)::uuid AS id", [ctx.userId, oldId])).rows[0]!;
         map.set(oldId, nid.id); row.id = nid.id;
         if (await canSee(t, nid.id)) continue;
         added = await insert(row);
@@ -291,7 +309,7 @@ export function dataRoutes(r: Router) {
     if (!d || d.app !== "motus") throw bad("This is not a Motus export");
     const counts = Object.fromEntries(Object.entries(d.tables ?? {}).map(([k, v]) => [k, Array.isArray(v) ? v.length : 0]));
     const dates = (d.tables?.workouts ?? []).map((w: any) => w.started_at).sort();
-    return { exportedAt: d.exportedAt, format: d.format, parts: readParts(d.parts), whole: readParts(d.parts).length === PARTS.length, counts, from: dates[0] ?? null, to: dates.at(-1) ?? null };
+    return { exportedAt: d.exportedAt, format: d.format, parts: readParts(d.parts), whole: readParts(d.parts).length === PARTS.length, counts, settings: !!d.settings, from: dates[0] ?? null, to: dates.at(-1) ?? null };
   });
 
   r.get("/export/csv", async ({ q }, _p, _b, qs) => {
