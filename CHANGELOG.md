@@ -7,7 +7,6 @@ The top entry's version is the one the release workflow publishes. Add a new `##
 - New app icon: a dumbbell on an ocean-blue gradient, on the phone's home screen, the installed web app, the browser tab, the desktop app and the Android splash screen.
 - Notifications show a dumbbell in the status bar instead of the graph.
 - The logo inside the app is the same dumbbell in the theme and accent colours you choose.
-- In the Android app, steps count from the first one while Motus is on screen, also on phones whose step sensors hold steps back, and the count no longer stalls between the phone's step reports.
 
 ## [0.1.8] - 2026-11-07
 
