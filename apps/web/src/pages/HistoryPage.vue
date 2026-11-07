@@ -106,7 +106,7 @@ await loaded(cal, listWorkouts, listActs);
         <button class="ib sm plain" aria-label="Next month" @click="shift(1)"><Icon name="right" :size="18" /></button>
         <div class="grow" />
         <button v-if="localYmd(month).slice(0, 7) !== today.slice(0, 7)" class="fchip acc" @click="month = new Date(new Date().getFullYear(), new Date().getMonth(), 1); sel = today">Today</button>
-        <button v-if="!isPhone && sel !== today" class="qb acc" @click="planDay = today"><Icon name="plus" :size="16" />Plan a workout</button>
+        <button v-if="!isPhone && (!sel || sel < today)" class="qb acc" @click="planDay = today"><Icon name="plus" :size="16" />Plan a workout</button>
       </div>
       <Transition :name="calDir" mode="out-in">
       <div :key="month.getTime()" class="cal" @touchstart.passive="calStart" @touchend.passive="calEnd">
