@@ -15,7 +15,7 @@ import androidx.core.content.ContextCompat;
 
 /**
  * Keeps a walk being recorded with the screen off: a foreground service of type location (the location plugin's fixes)
- * and health (the step sensors), which lets the app go on getting both in the background; without it Android stops
+ * and health (the step counter), which lets the app go on getting both in the background; without it Android stops
  * both soon after the screen goes off. Android needs a notification for it, and that is the
  * recording's own (MotusWorkoutPlugin's REC_ID, with the clock, distance and Pause), so a walk shows one notification
  * rather than the location plugin's next to ours (that plugin is asked for no notification, so it never starts its own

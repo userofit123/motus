@@ -4,7 +4,7 @@ import { createEngine, type Engine } from "../src/index";
 import { pgliteDb } from "../src/adapters/pglite";
 import { uuidv7 } from "../src/ids";
 import { occurrences } from "../src/modules/schedule";
-import { routeStats, addStepReading, takesPoint, MotionSteps, type StepState } from "@motus/shared";
+import { routeStats, addStepReading, takesPoint, MotionSteps, STEP_RUN, type StepState } from "@motus/shared";
 import { parseTrack } from "../src/modules/activities";
 
 let eng: Engine, U: string;
@@ -111,87 +111,55 @@ describe("activities", () => {
     await eng.db.admin.query("UPDATE activity_types SET has_steps = NULL WHERE user_id = $1 AND slug IN ('walk', 'cycle', $2)", [U, slug]);
     expect(await steps()).toMatchObject({ walk: true, cycle: false, [slug]: false });
   });
-  it("counts steps from the phone's two step sensors at once, without counting any twice", () => {
+  it("counts the phone's step counter's steps since the walk started, without counting any twice", () => {
     let s: StepState = { steps: 0, session: null, seen: 0 };
-    const read = (counter: number, detector: number, paused = false, session = 1) => (s = addStepReading(s, { session, counter, detector }, paused)).steps;
-    expect(read(-1, 0)).toBe(0); // just started
-    // the detector reports the first steps at once while the counter holds them back, then catches up
-    expect(read(-1, 3)).toBe(3);
-    expect(read(0, 3)).toBe(3);
-    expect(read(12, 12)).toBe(12);
+    const read = (counter: number, paused = false, session = 1) => (s = addStepReading(s, { session, counter }, paused)).steps;
+    expect(read(-1)).toBe(0); // just started, no report yet
+    expect(read(0)).toBe(0);
+    // the counter holds back the first steps until it's sure you're walking, then reports them all at once, and later
+    // ones in bunches
+    expect(read(12)).toBe(12);
+    expect(read(30)).toBe(30);
     // the same reading again, or one that comes late, adds nothing
-    expect(read(12, 12)).toBe(12);
-    expect(read(10, 11)).toBe(12);
-    // steps the detector missed come from the counter
-    expect(read(15, 13)).toBe(15);
+    expect(read(30)).toBe(30);
+    expect(read(25)).toBe(30);
     // while paused nothing counts, and after it only what's new
-    expect(read(40, 38, true)).toBe(15);
-    expect(read(42, 41)).toBe(17);
-    // the app restarted mid-walk: its sensors count again from zero, and the walk goes on from what it had
-    expect(read(-1, 5, false, 2)).toBe(22);
-    expect(read(7, 7, false, 2)).toBe(24);
+    expect(read(40, true)).toBe(30);
+    expect(read(42)).toBe(32);
+    // the app restarted mid-walk: its counter counts again from zero, and the walk goes on from what it had
+    expect(read(-1, false, 2)).toBe(32);
+    expect(read(7, false, 2)).toBe(39);
   });
-  it("an older app's readings: the detector may lead the counter by a few steps only", () => {
-    let s: StepState = { steps: 0, session: null, seen: 0 };
-    const read = (counter: number, detector: number) => (s = addStepReading(s, { session: 1, counter, detector }, false)).steps;
-    expect(read(100, 100)).toBe(100);
-    expect(read(105, 400)).toBe(145);
-    expect(read(200, 200)).toBe(200);
-  });
-  it("counts each detector step at once on top of the counter's last report, which corrects it", () => {
-    let s: StepState = { steps: 0, session: null, seen: 0 };
-    const read = (counter: number, detector: number, atCounter: number) => (s = addStepReading(s, { session: 1, counter, detector, atCounter }, false)).steps;
-    // the counter's first report came at once (standing), then it holds back while the detector counts each step
-    expect(read(0, 0, 0)).toBe(0);
-    for (let i = 1; i <= 12; i++) expect(read(0, i, 0)).toBe(i);
-    // the counter lets go of the 12 it held back: no jump, nothing twice
-    expect(read(12, 12, 12)).toBe(12);
-    // a counter that reports in bunches: the detector fills in between, one by one
-    for (let i = 13; i <= 50; i++) expect(read(12 + Math.floor((i - 12) / 10) * 10, i, 12 + Math.floor((i - 12) / 10) * 10)).toBe(i);
-    // a detector that missed steps: the counter's report brings them in
-    expect(read(60, 55, 55)).toBe(60);
-    // handling the phone or a bus ride: the detector fires, the counter doesn't follow
-    expect(read(60, 500, 55)).toBe(100); // only 40 on top of the counter is believed
-    // the count never goes back; it moves on once the counter passes it
-    expect(read(70, 510, 510)).toBe(100);
-    expect(read(110, 520, 520)).toBe(110);
-  });
-  it("a counter that reports once early, then stays silent for a long while, doesn't hold the count up", () => {
-    let s: StepState = { steps: 0, session: null, seen: 0 };
-    const read = (counter: number, detector: number, atCounter: number, sinceCounter: number) =>
-      (s = addStepReading(s, { session: 1, counter, detector, atCounter, sinceCounter }, false)).steps;
-    // the counter's first report at 10 steps (the quick count starts again from it), then 60 steps at 2 a second without one
-    expect(read(10, 10, 10, 0)).toBe(10);
-    for (let i = 1; i <= 60; i++) expect(read(10, 10 + i, 10, i * 500)).toBe(10 + i);
-    // the counter reports at last: no jump, and it goes on from there
-    expect(read(70, 70, 70, 0)).toBe(70);
-    expect(read(70, 71, 70, 500)).toBe(71);
-    // quick steps far faster than anyone walks (shaking the phone) aren't all believed
-    expect(read(70, 400, 70, 10_000)).toBe(70 + 40 + 30);
-  });
-  it("counts steps from the motion sensor one by one from the first, and ignores a tap", () => {
-    // 50 steps, a phone held in front of you: the push rises ~1.5 m/s² above gravity at each step, 1.8 steps a second
-    const walk = (amp: number, steps: number) => {
-      const m = new MotionSteps(); let n = 0, firstAt = -1; const seen: number[] = [];
-      for (let t = 0; t <= (steps / 1.8) * 1000 + 3000; t += 16) {
-        const walking = t < (steps / 1.8) * 1000;
-        const push = 9.81 + (walking ? amp * Math.sin(2 * Math.PI * 1.8 * t / 1000) : 0) + Math.sin(t * 7.3) * 0.08;
+  it("estimates steps from the motion sensor once you walk in a rhythm, and ignores wobbles, taps and shakes", () => {
+    // `amp`: how far the push rises above gravity at each step (m/s²), `hz` steps a second, then 3 s standing still
+    const walk = (amp: number, steps: number, hz = 1.8) => {
+      const m = new MotionSteps(); let n = 0, firstAt = -1;
+      for (let t = 0; t <= (steps / hz) * 1000 + 3000; t += 16) {
+        const walking = t < (steps / hz) * 1000;
+        const push = 9.81 + (walking ? amp * Math.sin(2 * Math.PI * hz * t / 1000) : 0) + Math.sin(t * 7.3) * 0.08;
         const d = m.push(push, t);
-        if (d) { n += d; seen.push(n); if (firstAt < 0) firstAt = t; }
+        if (d) { n += d; if (firstAt < 0) firstAt = t; }
       }
-      return { n, firstAt, seen };
+      return { n, firstAt };
     };
-    for (const amp of [1.5, 4]) {
-      const w = walk(amp, 50);
+    // a phone held in front of you, in a pocket, and a run
+    for (const [amp, hz] of [[1.5, 1.8], [4, 1.8], [6, 2.8]] as const) {
+      const w = walk(amp, 50, hz);
       expect(Math.abs(w.n - 50)).toBeLessThanOrEqual(1);
-      expect(w.firstAt).toBeLessThan(600); // within the first step
-      expect(w.seen.every((x, i) => x === i + 1)).toBe(true); // one at a time
+      expect(w.firstAt).toBeLessThan((STEP_RUN / hz) * 1000); // the first steps come in by the sixth
     }
-    // standing still: nothing; one bump (picking the phone up): counted, then taken back
+    // standing still, a slight wobble in a walking rhythm, a few shakes: nothing
     expect(walk(0, 0).n).toBe(0);
+    expect(walk(0.5, 50).n).toBe(0);
+    expect(walk(4, STEP_RUN - 1).n).toBe(0);
+    // one bump (picking the phone up): nothing
     const m = new MotionSteps(); let n = 0;
     for (let t = 0; t < 5000; t += 16) n += m.push(9.81 + (t > 1000 && t < 1200 ? 3 : 0), t);
     expect(n).toBe(0);
+    // bumps at random moments (fiddling with the phone): out of rhythm, so nothing
+    const r = new MotionSteps(); let k = 0; const at = [0, 400, 1500, 1850, 3300, 3700, 5200, 5500, 6900, 7400];
+    for (let t = 0; t < 10000; t += 16) k += r.push(9.81 + (at.some((x) => t >= 1000 + x && t < 1000 + x + 120) ? 3 : 0), t);
+    expect(k).toBe(0);
   });
   it("takes a GPS fix on the route only when it means ground covered", () => {
     const route = [[32, 34.8, 0]];

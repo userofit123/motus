@@ -1,5 +1,5 @@
 // A recorded route of [lat, lon, unix s, altitude] points: which fixes go on it, its distance, moving time and climb,
-// and the walk's step count from the phone's step sensors. Shared so the recording screen shows the same distance that
+// and the walk's step count (from the phone's step counter, or estimated from its motion sensor in a browser). Shared so the recording screen shows the same distance that
 // is saved, and so this counting is tested.
 
 const R = 6371000;
@@ -49,69 +49,67 @@ export function takesPoint(route: number[][], pt: number[], accuracyM: number, p
   return !last || haversine(last, pt) >= 3;
 }
 
-/** One reading from the Android app's step sensors, all counted since `session` (when they started counting):
- *  `counter` from the step counter (-1 before its first reading), `detector` the quick count (from the step detector,
- *  or the motion sensor where that is late or missing), and `atCounter` the quick count when the counter last reported
- *  (older Android apps leave it out), and `sinceCounter` how long ago that report was (ms; left out by older apps). */
-export interface StepReading { session: number; counter: number; detector: number; atCounter?: number; sinceCounter?: number }
-/** Where a recording's step count stands: `steps` so far, and the sensors' own count (`seen`) at the last reading of `session`. */
+/** One reading from the Android app's step counter (the phone's own pedometer, Sensor.TYPE_STEP_COUNTER): the steps
+ *  it has counted since `session` (when it started counting for this app), -1 before its first report. */
+export interface StepReading { session: number; counter: number }
+/** Where a recording's step count stands: `steps` so far, and the counter's count (`seen`) at the last reading of `session`. */
 export interface StepState { steps: number; session: number | null; seen: number }
 
-/** How many quick steps may be added on top of the counter's last report before they're taken for false positives
- *  (handling the phone, a bus ride): more than the counter ever holds back while it makes sure you're walking. */
-export const STEP_DETECTOR_LEAD = 40;
-/** ...plus this many a second while the counter stays silent: a fast run's cadence, so a counter that waits long between
- *  reports never holds the count up, while quick steps coming faster than anyone walks still aren't believed. */
-export const STEP_LEAD_PER_S = 3;
-
-/** Adds a step reading to the recording's count. The step counter is the accurate one but reports late (it holds back
- *  the first ten or so steps each time you set off, and some phones send it in bunches); the quick count has each step
- *  at once. So the count is the counter's, plus the quick steps since the counter last reported: it rises
- *  one step at a time, and each counter report corrects it, so neither drifts. Only its growth since the last reading
- *  is added: a reading that comes late, twice or out of order adds nothing twice, and when the counter corrects it
- *  down nothing is added until you've walked past it again. While paused the readings move `seen` on without
- *  counting. A new session (the app was restarted) counts from its own zero. */
+/** Adds a step reading to the recording's count. The step counter is the phone's own pedometer, the one Android's
+ *  docs recommend for counting steps: it only counts once it's sure you're walking (so shaking or tapping the phone
+ *  adds nothing), and reports in bunches up to ten seconds apart, each with every step since the last, so nothing is
+ *  lost. Only its growth since the last reading is added: a reading that comes late or twice adds nothing twice. While
+ *  paused the readings move `seen` on without counting. A new session (the app was restarted) counts from its own zero. */
 export function addStepReading(s: StepState, r: StepReading, paused: boolean): StepState {
-  const now = r.counter < 0 ? Math.max(r.detector, 0)
-    : r.atCounter == null ? Math.max(r.counter, Math.min(r.detector, r.counter + STEP_DETECTOR_LEAD)) // an older app's reading
-    : r.counter + Math.min(Math.max(0, r.detector - r.atCounter), STEP_DETECTOR_LEAD + Math.floor(Math.max(0, r.sinceCounter ?? 0) / 1000 * STEP_LEAD_PER_S));
+  const now = Math.max(0, r.counter);
   const from = s.session === r.session ? s.seen : 0;
   const grew = Math.max(0, now - from);
   return { steps: s.steps + (paused ? 0 : grew), session: r.session, seen: Math.max(from, now) };
 }
 
-/** Counts steps from the phone's motion sensor (browsers have no step sensors). Feed it how hard the phone is pushed
- *  (acceleration including gravity, m/s²) with each reading's time in ms; it says how many steps that reading adds.
- *  A step is a rise of the smoothed push above its slow average (gravity plus how the phone is held). How high it has
- *  to rise follows how hard your recent steps were, so a phone held in front of you counts as well as one in a pocket,
- *  and the bumps between steps don't count. Each step counts at once, so the count rises one by one from the first;
- *  a step that no second one follows within two seconds (a tap, picking the phone up) is taken back (-1). */
+/** Estimates steps from the motion sensor, for browsers, which have no step counter. Feed it how hard the phone is
+ *  pushed (acceleration including gravity, m/s²) with each reading's time in ms; it says how many steps that reading
+ *  adds. Done the way pedometers do it: the push is smoothed, its slow average (gravity plus how the phone is held) is
+ *  taken off, and a step is a peak at least STEP_MIN_PUSH above that average, then a fall back below it. Like the
+ *  phone's own step counter, nothing counts until STEP_RUN peaks have come in a walking rhythm (each 0.3-2 s after the
+ *  last, none much quicker or slower than the one before); then those count at once and each step after it as it
+ *  comes. So a wobble, a tap or picking the phone up never adds steps: they are too weak, or too few, or out of rhythm. */
+export const STEP_MIN_PUSH = 1; // m/s²: walking with the phone in a hand or pocket is well above it, a wobble below
+export const STEP_RUN = 6;
 export class MotionSteps {
   private t = -1; private fast = 0; private slow = 0;
   private armed = true; private peak = 0; private size = 0;
-  private last = -Infinity; private runLen = 0;
+  private last = -Infinity; private gap = 0;
+  /** peaks so far in the current rhythm, and whether it was confirmed as walking (its steps are being counted) */
+  private run = 0; private walking = false;
   push(push: number, t: number): number {
     if (this.t < 0) { this.t = t; this.fast = this.slow = push; return 0; }
     const dt = Math.min(0.2, Math.max(0.001, (t - this.t) / 1000));
     this.t = t;
-    this.fast += (push - this.fast) * (dt / (0.04 + dt)); // smooths sensor noise, keeps the ~2 a second of walking
-    this.slow += (push - this.slow) * (dt / (1 + dt)); // gravity and how the phone is held
+    this.fast += (push - this.fast) * (dt / (0.05 + dt)); // takes off sensor noise, keeps the 1-3 steps a second
+    this.slow += (push - this.slow) * (dt / (1.5 + dt)); // gravity and how the phone is held
     const d = this.fast - this.slow;
-    let n = 0;
-    // a lone step whose second never came
-    if (this.runLen === 1 && t - this.last > 2000) { this.runLen = 0; n = -1; }
-    if (t - this.last > 2000) this.size = 0; // standing still: the next walk may be gentler than the last
-    if (this.armed && d > Math.max(0.3, this.size * 0.4) && t - this.last > 250) {
-      this.armed = false; this.peak = d;
-      this.runLen = t - this.last > 2000 ? 1 : this.runLen + 1;
-      this.last = t;
-      return n + 1;
-    }
+    if (t - this.last > 2000) { this.run = 0; this.walking = false; this.size = 0; } // stopped: the next walk starts over
     if (!this.armed) {
       this.peak = Math.max(this.peak, d);
-      // back below the average: the step is over, and its height sets the bar for the next ones
-      if (d < 0) { this.armed = true; this.size = this.size ? this.size * 0.6 + this.peak * 0.4 : this.peak; }
+      // back below the average: the step is over, and its height sets the bar for the next ones (a strong walk's
+      // in-between bumps then don't count)
+      if (d < 0) { this.armed = true; this.size = this.size ? this.size * 0.7 + this.peak * 0.3 : this.peak; }
+      return 0;
     }
-    return n;
+    if (d < Math.max(STEP_MIN_PUSH, this.size * 0.5)) return 0;
+    this.armed = false; this.peak = d;
+    const gap = t - this.last;
+    if (gap < 300) return 0; // a second bump within one step
+    this.last = t;
+    // in rhythm: about as long after the last step as that one was after the one before it
+    const steady = this.run > 0 && gap <= 2000 && (this.run < 2 || (gap > this.gap * 0.6 && gap < this.gap / 0.6));
+    this.gap = gap;
+    if (!steady) { this.run = 1; this.walking = false; return 0; }
+    this.run++;
+    if (this.walking) return 1;
+    if (this.run < STEP_RUN) return 0;
+    this.walking = true;
+    return this.run;
   }
 }

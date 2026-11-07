@@ -30,7 +30,7 @@ const gps = computed(() => t.value?.hasGps !== false);
 // on foot (walk, run, hike, or a type added as on foot): the steps block is always there, and says why when it can't count
 const onFoot = computed(() => (t.value ? !!t.value.hasSteps : countsSteps(slug.value)));
 const stepsCounting = computed(() => !!rec.value && (stepsLive.value || rec.value.steps > 0));
-const stepsNote = computed(() => (rec.value && stepsError.value) || ((rec.value ? stepsOnScreen.value : !isNativeApp()) ? "Counted while Motus is on screen" : ""));
+const stepsNote = computed(() => (rec.value && stepsError.value) || ((rec.value ? stepsOnScreen.value : !isNativeApp()) ? "Estimated from motion while Motus is on screen" : ""));
 // before you start, the map finds you (only for types with a route)
 watch([gps, () => !!rec.value], ([g, r]) => previewLocation(g && !r), { immediate: true });
 onBeforeUnmount(() => previewLocation(false));
