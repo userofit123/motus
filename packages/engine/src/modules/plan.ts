@@ -64,7 +64,7 @@ export async function pendingReminders(q: Sql, opts: { routineId?: string | null
     r.trigger === "date" ? (r.triggerDate ?? "") <= opts.today : r.trigger === "after_n" ? r.seenN + 1 >= (r.triggerN ?? 1) : true);
 }
 
-export async function pinnedNotes(q: Sql, targets: { type: string; id: string }[]): Promise<Note[]> {
+async function pinnedNotes(q: Sql, targets: { type: string; id: string }[]): Promise<Note[]> {
   if (!targets.length) return [];
   const { rows } = await q.query(
     `SELECT n.*, w.name AS workout_name FROM notes n LEFT JOIN workouts w ON w.id = n.workout_id

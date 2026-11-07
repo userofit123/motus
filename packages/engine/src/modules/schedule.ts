@@ -31,14 +31,14 @@ export function occurrences(s: Schedule, exceptions: { date: string; kind: strin
   return [...out].sort();
 }
 
-export async function scheduleList(q: Sql): Promise<(Schedule & { exceptions: any[] })[]> {
+async function scheduleList(q: Sql): Promise<(Schedule & { exceptions: any[] })[]> {
   const { rows } = await q.query(`SELECT s.*, coalesce(r.name, initcap(s.activity_type)) AS name, r.color FROM schedules s LEFT JOIN routines r ON r.id = s.routine_id
     WHERE s.routine_id IS NULL OR r.deleted_at IS NULL ORDER BY s.created_at`);
   const ex = (await q.query("SELECT schedule_id, date, kind, moved_to FROM schedule_exceptions")).rows;
   return rows.map((r: any) => ({ ...camel<Schedule>(r), color: r.color, exceptions: ex.filter((e: any) => e.schedule_id === r.id).map((e: any) => ({ date: e.date, kind: e.kind, movedTo: e.moved_to })) }));
 }
 
-export async function plannedBetween(q: Sql, from: string, to: string) {
+async function plannedBetween(q: Sql, from: string, to: string) {
   const list = await scheduleList(q);
   // soonest first (Home's "Up next" keeps the first few); on one day timed plans in time order, then those with no time
   return list.flatMap((s) => occurrences(s, s.exceptions, from, to).map((date) => ({
@@ -53,7 +53,7 @@ type DoneA = { type: string; startedAt: string };
 /** Whether a planned day is already done, so the calendar and Home show what was done instead of the plan as well.
  * A workout started from that very plan counts on the planned day even when done on another; otherwise a workout of
  * the planned routine, or an activity of the planned type, on that day in the app's time zone. */
-export function planDone(p: Planned, workouts: DoneW[], activities: DoneA[], tzMin: number): boolean {
+function planDone(p: Planned, workouts: DoneW[], activities: DoneA[], tzMin: number): boolean {
   if (workouts.some((w) => w.scheduleId === p.scheduleId && w.scheduledDate === p.date)) return true;
   // routineId and activityType are each null on the other kind of plan: never let null match null (a free workout isn't a walk)
   if (p.routineId) return workouts.some((w) => w.routineId === p.routineId && dayIn(w.startedAt, tzMin) === p.date);

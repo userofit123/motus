@@ -1,6 +1,6 @@
 // Numbers, units and dates as the person likes them (Settings → Units & formats).
 import { computed } from "vue";
-import { fromKg, toKg, fromM, fromCm, toCm, num, clock, duration as dur, type Settings } from "@motus/shared";
+import { fromKg, toKg, fromM, fromCm, toCm, num, clock, duration as dur, ymd, type Settings } from "@motus/shared";
 import { useSettings } from "../api/queries";
 
 export function useFmt() {
@@ -48,7 +48,8 @@ export function ago(iso: string | null | undefined): string {
   if (days < 730) return `${Math.round(days / 30)} months ago`;
   return `${Math.round(days / 365)} years ago`;
 }
-export const localYmd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+/** A date as YYYY-MM-DD on this device's calendar (the shared ymd, under the name the screens use). */
+export const localYmd = ymd;
 
 /** "62.5 / 80 kg" in your units: goals keep weights in kg and distances in km.
  *  Body goals read "now → target" ("87.5 → 85 cm"), which says where you are and where you're heading either way, without a value judgement. */

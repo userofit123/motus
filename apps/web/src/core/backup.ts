@@ -21,7 +21,7 @@ async function key(password: string, salt: Uint8Array) {
   return crypto.subtle.deriveKey({ name: "PBKDF2", salt, iterations: 310000, hash: "SHA-256" }, base, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
 }
 
-export async function makeBackup(password?: string): Promise<Blob> {
+async function makeBackup(password?: string): Promise<Blob> {
   const data = await api.get("/export");
   const body = await gzip(enc.encode(JSON.stringify(data)));
   if (!password) return new Blob([new Uint8Array([...MAGIC, 1, 0]), body], { type: "application/octet-stream" });
@@ -45,7 +45,7 @@ export async function readBackup(file: Blob, askPassword: () => Promise<string |
   return JSON.parse(dec.decode(await gunzip(body)));
 }
 
-export const backupName = (d = new Date()) => `motus-backup-${d.toISOString().slice(0, 16).replace(/[T:]/g, "-")}.motusbackup`;
+const backupName = (d = new Date()) => `motus-backup-${d.toISOString().slice(0, 16).replace(/[T:]/g, "-")}.motusbackup`;
 export function download(blob: Blob, name: string) {
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob); a.download = name; a.click();
@@ -99,7 +99,7 @@ export async function backupNow(o: { password?: string; keep?: number; interacti
 }
 
 /** True when an automatic backup is due under the person's settings. */
-export function backupDue(cfg: { on: boolean; every: "workout" | "daily" | "weekly" }, afterWorkout = false): boolean {
+function backupDue(cfg: { on: boolean; every: "workout" | "daily" | "weekly" }, afterWorkout = false): boolean {
   if (!cfg.on) return false;
   const last = backupLog().lastAt ? new Date(backupLog().lastAt!).getTime() : 0;
   if (cfg.every === "workout") return afterWorkout || Date.now() - last > 7 * 86400000;

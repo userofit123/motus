@@ -3,11 +3,7 @@
 // Weeks follow the app's calendar (tz = its getTimezoneOffset()), not the server's, so the server and the copy on a
 // device agree.
 import { ACHIEVEMENTS, achievementName, achievementTarget, e1rm, LIFTED_SQL, type Settings } from "@motus/shared";
-import type { Router } from "../router";
 import type { Sql } from "../db";
-import { getSettings } from "./settings";
-// goals.ts imports this module too; ensureStarterGoal is only called at request time, so the cycle is harmless
-import { ensureStarterGoal } from "./goals";
 
 const DAY = 86400000;
 /** The calendar day an instant falls on, for an app whose clock is tzMin minutes behind UTC. */
@@ -156,11 +152,4 @@ export async function achievements(q: Sql, s: Settings, tzMin: number) {
     });
     return { id: d.id, title: d.title, desc: d.desc, unit: d.unit, value, steps };
   }).filter((a, i) => !ACHIEVEMENTS[i]!.untilStarted || a.value > 0);
-}
-
-export function achievementRoutes(r: Router) {
-  r.get("/achievements", async (ctx, _p, _b, qs) => {
-    await ensureStarterGoal(ctx.q, ctx.userId); // before reading settings: the streak follows the weekly goal it makes
-    return achievements(ctx.q, await getSettings(ctx.q, ctx.userId), Number(qs.tz) || 0);
-  });
 }

@@ -7,7 +7,7 @@ import { uuidv7 } from "./ids";
 
 const ONE_SIDE = /\b(one[- ]arm|single[- ]arm|one[- ]leg|single[- ]leg|one[- ]handed|alternating)\b/i;
 
-export function trackingOf(e: RawExercise): Tracking {
+function trackingOf(e: RawExercise): Tracking {
   if (e.category === "stretching") return "duration";
   if (e.category === "cardio") return /walk|run|jog|bike|bicycl|row|elliptical|stair|step/i.test(e.name) ? "distance_duration" : "duration";
   if (e.force === "static" && !/hold|carry|walk/i.test(e.name)) return "duration";

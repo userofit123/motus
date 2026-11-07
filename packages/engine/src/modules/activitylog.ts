@@ -5,8 +5,8 @@
 import type { Router } from "../router";
 import { intOrNull, str } from "../util";
 
-export type LogKind = "workout" | "routine" | "exercise" | "goal" | "body" | "note" | "reminder" | "schedule" | "folder" | "program" | "activity" | "activity_type" | "settings" | "daily";
-export interface LogEntry {
+type LogKind = "workout" | "routine" | "exercise" | "goal" | "body" | "note" | "reminder" | "schedule" | "folder" | "program" | "activity" | "activity_type" | "settings" | "daily";
+interface LogEntry {
   kind: LogKind; action: "created" | "changed" | "deleted" | "started" | "finished" | "logged" | "achieved" | "done";
   text: string; detail: string; name: string | null; at: string; from: string; changes: number;
   /** where to open it, while it still exists */

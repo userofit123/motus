@@ -12,7 +12,7 @@ const TRACKING: Tracking[] = ["weight_reps", "bodyweight_reps", "assisted", "rep
 const EX_COLS = `e.id, e.owner_id, e.source, e.name, e.aliases, e.category, e.equipment, e.mechanic, e.force, e.level, e.tracking, e.unilateral,
   e.primary_muscles, e.secondary_muscles, e.instructions, e.images, e.video_url, e.license, e.author, e.archived`;
 
-export const exerciseFromRow = (r: any): Exercise => {
+const exerciseFromRow = (r: any): Exercise => {
   const e = camel<Exercise>(r);
   e.favourite = !!r.favourite;
   e.hidden = !!r.hidden;
@@ -60,7 +60,7 @@ export async function exerciseSessions(q: Sql, exerciseId: string, limit = 200, 
 }
 
 /** Records from a list of sessions (oldest to newest), with the date each was set. */
-export function recordsOf(sessions: Awaited<ReturnType<typeof exerciseSessions>>) {
+function recordsOf(sessions: Awaited<ReturnType<typeof exerciseSessions>>) {
   const best: Record<string, { value: number; at: string; workoutId: string; detail?: string }> = {};
   const repMax: Record<number, { weightKg: number; at: string }> = {};
   const put = (k: string, v: number | null | undefined, s: any, detail?: string) => { if (v && (!best[k] || v > best[k]!.value)) best[k] = { value: v, at: s.startedAt, workoutId: s.workoutId, detail }; };

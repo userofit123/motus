@@ -6,7 +6,7 @@ import { camel, id, str, intOrNull, numOrNull, bool, isoTime, dateStr, startOfDa
 import { uuidv7 } from "../ids";
 import { notFound, bad } from "../errors";
 
-export const DEFAULT_TYPES: ActivityType[] = [
+const DEFAULT_TYPES: ActivityType[] = [
   { slug: "walk", name: "Walk", icon: "walk", hasDistance: true, hasGps: true, hasSteps: true },
   { slug: "run", name: "Run", icon: "run", hasDistance: true, hasGps: true, hasSteps: true },
   { slug: "hike", name: "Hike", icon: "hike", hasDistance: true, hasGps: true, hasSteps: true },
@@ -83,7 +83,7 @@ export async function ensureTypes(ctx: Ctx) {
       [uuidv7(), ctx.userId, t.slug, t.name, t.icon, t.hasDistance, t.hasGps, !!t.hasSteps]);
 }
 
-export async function saveActivity(ctx: Ctx, b: any, aid = uuidv7(), isNew = true) {
+async function saveActivity(ctx: Ctx, b: any, aid = uuidv7(), isNew = true) {
   const route = Array.isArray(b.route) ? b.route.slice(0, 50000).filter((p: any) => Array.isArray(p) && p.length >= 2)
     // a point without an altitude (often from a browser) comes as null: kept as "no altitude", not 0 m, or the climb jumps
     .map((p: any[]) => (p[3] == null ? p.slice(0, 3) : p.slice(0, 4)).map(Number)) : null;

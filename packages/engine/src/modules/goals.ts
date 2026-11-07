@@ -21,7 +21,7 @@ const daysIn = (v: unknown): string | null => v === "workdays" ? JSON.stringify(
   : Array.isArray(v) && v.length && v.length < 7 ? JSON.stringify([...new Set(v.map(Number).filter((d) => Number.isInteger(d) && d >= 0 && d <= 6))].sort()) : null;
 
 // what each goal can measure lives in shared, so the app can read a metric's unit before /goal-metrics has loaded
-export const METRICS = GOAL_METRICS;
+const METRICS = GOAL_METRICS;
 
 function windowOf(g: Goal, now: Date, s: Settings, tzMin: number, offset = 0): Window {
   const span = (a: string, b: string): Window => ({ from: startOfDay(a, tzMin).toISOString(), to: startOfDay(b, tzMin).toISOString(), fromDay: a, toDay: b });
@@ -101,7 +101,7 @@ async function valueFor(q: Sql, g: Goal, w: Window, s: Settings, now: Date, tzMi
 /** The body_metrics kind a body goal follows. */
 const bodyKind = (g: Pick<Goal, "metric" | "scopeId">) => (g.metric === "body_weight" ? "weight" : g.scopeId ?? "");
 
-export async function progressOf(q: Sql, g: Goal, s: Settings, now: Date, tzMin = 0): Promise<GoalProgress> {
+async function progressOf(q: Sql, g: Goal, s: Settings, now: Date, tzMin = 0): Promise<GoalProgress> {
   const current = Math.round((await valueFor(q, g, windowOf(g, now, s, tzMin), s, now, tzMin)) * 100) / 100;
   const lower = g.comparator === "<=";
   const clamp = (x: number) => Math.max(0, Math.min(1, x));
@@ -156,7 +156,7 @@ const metIn = async (q: Sql, g: Goal, s: Settings, now: Date, tzMin: number, off
  * Weeks (or months) in a row reaching a weekly or monthly goal. The current one counts once it's reached; until then the
  * run ending last week still stands. best: the longest run there has been, back to the first thing logged.
  */
-export async function streakOf(q: Sql, g: Goal, s: Settings, now: Date, tzMin: number, nowDone?: boolean, withBest = false): Promise<{ current: number; best: number }> {
+async function streakOf(q: Sql, g: Goal, s: Settings, now: Date, tzMin: number, nowDone?: boolean, withBest = false): Promise<{ current: number; best: number }> {
   if (g.period === "once") return { current: 0, best: 0 };
   let current = (nowDone ?? (await metIn(q, g, s, now, tzMin, 0))) ? 1 : 0;
   let i = 1;

@@ -118,7 +118,7 @@ export async function recentRecords(q: Sql, since: string, limit = 6): Promise<H
   return out.map((x) => ({ ...x, name: names.get(x.exerciseId)?.name ?? "" }));
 }
 
-export async function loadWorkout(q: Sql, workoutId: string, today: string): Promise<Workout | null> {
+async function loadWorkout(q: Sql, workoutId: string, today: string): Promise<Workout | null> {
   const w = (await q.query("SELECT * FROM workouts WHERE id = $1", [workoutId])).rows[0];
   if (!w) return null;
   const wes = (await q.query("SELECT * FROM workout_exercises WHERE workout_id = $1 ORDER BY position", [workoutId])).rows;

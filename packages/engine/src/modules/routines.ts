@@ -52,7 +52,7 @@ function restByKind(v: unknown): string | null {
 }
 
 /** Writes a routine's exercises and sets, keeping the ids of exercises that stay (workouts point at them). */
-export async function writeRoutineBody(ctx: Ctx, routineId: string, exercises: any[]) {
+async function writeRoutineBody(ctx: Ctx, routineId: string, exercises: any[]) {
   if (!Array.isArray(exercises)) throw bad("Expected a list of exercises");
   if (exercises.length > 100) throw bad("Too many exercises");
   const keep: string[] = [];
@@ -90,7 +90,7 @@ async function snapshot(ctx: Ctx, routineId: string) {
     "DELETE FROM routine_versions WHERE routine_id = $1 AND id NOT IN (SELECT id FROM routine_versions WHERE routine_id = $1 ORDER BY created_at DESC LIMIT 30)", [routineId]);
 }
 
-export async function createRoutine(ctx: Ctx, b: any): Promise<string> {
+async function createRoutine(ctx: Ctx, b: any): Promise<string> {
   const rid = uuidv7();
   const name = str(b.name, 120).trim() || "New routine";
   await visible(ctx.q, "folders", optId(b.folderId), "folder");
@@ -104,7 +104,7 @@ export async function createRoutine(ctx: Ctx, b: any): Promise<string> {
 }
 
 /** A workout's structure as a routine body (for "Save as routine" and "Update routine from this workout"). */
-export async function bodyFromWorkout(q: Sql, workoutId: string) {
+async function bodyFromWorkout(q: Sql, workoutId: string) {
   const exs = (await q.query("SELECT * FROM workout_exercises WHERE workout_id = $1 AND status <> 'skipped' ORDER BY position", [workoutId])).rows;
   const sets = exs.length ? (await q.query("SELECT * FROM workout_sets WHERE workout_exercise_id = ANY($1::uuid[]) ORDER BY position", [exs.map((e: any) => e.id)])).rows : [];
   return exs.map((e: any) => ({

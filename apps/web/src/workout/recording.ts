@@ -41,7 +41,7 @@ function load(): Rec | null {
 
 export const recording = ref<Rec | null>(load());
 /** a clock tick while recording, so every screen showing the time moves together */
-export const recNow = ref(Date.now());
+const recNow = ref(Date.now());
 export const gpsError = ref("");
 /** where you are now (the newest fix, rough ones too) and how sure the phone is of it, in metres; shown on the map */
 export const here = ref<{ lat: number; lon: number; acc: number } | null>(null);
@@ -57,7 +57,7 @@ const recStats = computed(() => routeStats(recording.value?.route ?? [], recordi
 export const recDistM = computed(() => recStats.value.distanceM);
 export const recElapsedS = computed(() => { const r = recording.value; return r ? Math.max(0, ((r.pauseAt ?? recNow.value) - r.startedAt - r.pausedMs) / 1000) : 0; });
 /** steps are worth saving: a step source ran, or steps were counted earlier in this recording */
-export const recStepsCounted = computed(() => !!recording.value && (stepsLive.value || recording.value.steps > 0));
+const recStepsCounted = computed(() => !!recording.value && (stepsLive.value || recording.value.steps > 0));
 
 // Saving the whole route on every step reading would be wasteful; points are saved as they come, steps within a few
 // seconds. A later step doesn't put that off again: while you walk on, steps come every second, so they'd never be saved.

@@ -10,7 +10,7 @@ import { readRows, allRows, applyChanges, latestPerRow, keyOf, overrule, DELETES
 const PAGE = 5000;
 
 /** Changes when the server's copy of the shared catalog changes (a new version of the app adds exercises). */
-export async function catalogStamp(q: Sql) {
+async function catalogStamp(q: Sql) {
   return String((await q.query("SELECT count(*) || ':' || coalesce(max(updated_at)::text, '') AS s FROM exercises WHERE owner_id IS NULL")).rows[0].s);
 }
 

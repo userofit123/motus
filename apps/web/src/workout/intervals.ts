@@ -51,7 +51,7 @@ export function playIntervalSound(sound: IntervalSound) {
   else if (sound === "wake") { tone(G5, { dur: 1.6, vol: 0.24, partials: SOFT, attack: 0.6 }); tone(C6, { delay: 0.35, dur: 1.4, vol: 0.16, partials: SOFT, attack: 0.6 }); } // fades in, no edge
 }
 /** The countdown in the last three seconds of a part: short soft blips, the last one higher so you know "now". */
-export function playTick(last: boolean) {
+function playTick(last: boolean) {
   tone(last ? E6 : E5, { dur: last ? 0.18 : 0.09, vol: last ? 0.22 : 0.16, partials: SOFT });
 }
 

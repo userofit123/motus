@@ -7,7 +7,7 @@ import { goBack } from "../core/leave";
 import { computed, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { usesWeight, usesReps, muscleName, type WorkoutExercise, type WorkoutSet } from "@motus/shared";
-import { useWorkout as useWorkoutQuery, useSettings, loaded } from "../api/queries";
+import { useWorkoutQuery, useSettings, loaded } from "../api/queries";
 import { api, mediaUrl } from "../api/client";
 import { invalidate } from "../api/live";
 import { useFmt, localYmd } from "../core/format";

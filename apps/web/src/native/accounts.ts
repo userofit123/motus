@@ -60,7 +60,7 @@ export async function addLocal(name: string) {
   location.reload();
 }
 /** "motus.home", "192.168.1.5:8080" or "https://Motus.Example.com/x/" → "https://motus.home" (https unless told otherwise). */
-export function serverAddress(input: string) {
+function serverAddress(input: string) {
   const s = input.trim();
   try { const u = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(s) ? s : `https://${s}`); if (/^https?:$/.test(u.protocol) && u.hostname) return u.origin; } catch { /* not an address */ }
   throw new Error("That doesn't look like an address");

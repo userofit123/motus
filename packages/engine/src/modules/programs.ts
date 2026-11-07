@@ -34,7 +34,7 @@ export async function programState(q: Sql, p: any) {
 }
 
 /** One program in full: the plan week by week with what was done, where you are against the calendar, and totals. */
-export async function programDetail(q: Sql, p: any, today: string) {
+async function programDetail(q: Sql, p: any, today: string) {
   const { slots, hit, extra, i } = await walk(q, p);
   const start = String(p.start_date).slice(0, 10);
   const calendarWeek = today < start ? 0 : Math.floor((Date.parse(today) - Date.parse(start)) / (7 * DAY)) + 1;

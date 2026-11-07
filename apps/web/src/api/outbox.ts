@@ -28,7 +28,7 @@ export async function send<T = unknown>(method: Item["method"], path: string, bo
     throw e;
   }
 }
-export async function flush() {
+async function flush() {
   if (flushing || !waiting.value.length) return;
   flushing = true;
   try {

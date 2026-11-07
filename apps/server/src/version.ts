@@ -15,7 +15,7 @@ function readVersion(): string {
 export const VERSION = process.env.MOTUS_VERSION ?? readVersion();
 /** Raised when the API changes in a way older apps cannot follow; apps compare it with the level they were built for. */
 export const API_LEVEL = 1;
-export const REPO = process.env.MOTUS_REPO ?? "userofit123/motus";
+const REPO = process.env.MOTUS_REPO ?? "userofit123/motus";
 
 type GhAsset = { name: string; browser_download_url: string; size?: number };
 let cache: { at: number; value: unknown } | null = null;

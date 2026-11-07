@@ -1,6 +1,6 @@
 // The running workout, as one shared object: a local copy that every change updates at once (so typing and ticking never
 // wait for the network), with each change sent to the server (or kept for later when offline).
-import { computed, effectScope, nextTick, reactive, ref, watch } from "vue";
+import { computed, effectScope, nextTick, reactive, watch } from "vue";
 import { restAfterSet, restDefaultsOf, dropWeightKg, toKg, type Workout, type WorkoutExercise, type WorkoutSet, type WorkoutPrefs } from "@motus/shared";
 import { useActive, useSettings } from "../api/queries";
 import { send, endedHere, markEnded } from "../api/outbox";
@@ -295,9 +295,6 @@ export function replacingWorkout(): () => void {
     if (state.w?.id === old) state.w = null;
   };
 }
-
-export const curExercise = computed(() => state.w?.exercises[state.active] ?? null);
-export const isEmptyWorkout = ref(false);
 
 /**
  * The workout is over (finished or cancelled): every screen drops it now, not when the next reload comes back, so no

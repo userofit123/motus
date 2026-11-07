@@ -8,7 +8,6 @@ export function camel<T = any>(row: Record<string, unknown>): T {
   for (const k of Object.keys(row)) o[k.replace(/_([a-z0-9])/g, (_, c: string) => c.toUpperCase())] = row[k];
   return o as T;
 }
-export const camels = <T = any>(rows: Record<string, unknown>[]) => rows.map((r) => camel<T>(r));
 
 export function id(v: unknown, what = "id"): string {
   if (!isUuid(v)) throw bad(`Invalid ${what}`);

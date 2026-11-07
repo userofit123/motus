@@ -6,7 +6,7 @@ import { camel, tzOf } from "../util";
 import { getSettings } from "./settings";
 import { goalsWithProgress, ensureStarterGoal } from "./goals";
 import { stepsByDay } from "./activities";
-import { achievementRoutes, currentStreak, dayIn, weekIn } from "./achievements";
+import { achievements, currentStreak, dayIn, weekIn } from "./achievements";
 import { plannedOpen } from "./schedule";
 import { workoutSummaries, recentRecords } from "./workouts";
 import { routineSummaries } from "./routines";
@@ -192,5 +192,9 @@ export function statsRoutes(r: Router) {
     };
   });
 
-  achievementRoutes(r);
+  // registered here, not in achievements.ts: that would need goals.ts, which already imports achievements.ts
+  r.get("/achievements", async (ctx, _p, _b, qs) => {
+    await ensureStarterGoal(ctx.q, ctx.userId); // before reading settings: the streak follows the weekly goal it makes
+    return achievements(ctx.q, await getSettings(ctx.q, ctx.userId), Number(qs.tz) || 0);
+  });
 }

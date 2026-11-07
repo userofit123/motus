@@ -1,13 +1,12 @@
 // Everything in and out: the full backup/export (JSON), restore (replace or merge), CSV export in Strong's layout,
 // and imports from Strong, Hevy and FitNotes CSV files.
-import { SOURCE } from "@motus/exercise-data/meta";
 import type { Router, Ctx } from "../router";
 import type { Sql } from "../db";
 import { uuidv7, isUuid } from "../ids";
 import { bad } from "../errors";
 import { oneOf, visible } from "../util";
 
-export const EXPORT_FORMAT = 1;
+const EXPORT_FORMAT = 1;
 // in the order they are restored (a table only points at tables above it; programs list their routines; notes can be on activities)
 const TABLES = [
   "exercises", "exercise_prefs", "folders", "routines", "routine_exercises", "routine_sets", "routine_versions", "programs", "schedules", "schedule_exceptions",
@@ -16,8 +15,8 @@ const TABLES = [
 type Table = (typeof TABLES)[number];
 // A Motus file holds all of these or some of them, e.g. only routines to copy into another account.
 // Custom exercises always come along, since routines and workouts point at them.
-export const PARTS = ["routines", "programs", "workouts", "other"] as const;
-export type Part = (typeof PARTS)[number];
+const PARTS = ["routines", "programs", "workouts", "other"] as const;
+type Part = (typeof PARTS)[number];
 const PART_TABLES: Record<Exclude<Part, "other">, Table[]> = {
   routines: ["folders", "routines", "routine_exercises", "routine_sets", "routine_versions", "notes"],
   programs: ["programs"],
@@ -64,7 +63,7 @@ const targetOf = (t: Table, row: Record<string, unknown>): [Table, unknown] | nu
 type IdRow = { id: string };
 
 /** The parts asked for ("routines,workouts" or a list); none means all. Programs are made of routines, so they bring them along. */
-export function readParts(v: unknown): Part[] {
+function readParts(v: unknown): Part[] {
   const asked = (Array.isArray(v) ? v : typeof v === "string" ? v.split(",") : []).map(String);
   const set = new Set(PARTS.filter((p) => asked.includes(p)));
   if (set.has("programs")) set.add("routines");
@@ -185,7 +184,7 @@ export async function importAll(ctx: Ctx, data: any, mode: "replace" | "merge") 
 
 // ----- CSV -----
 
-export function parseCsv(text: string): string[][] {
+function parseCsv(text: string): string[][] {
   const t = text.replace(/^﻿/, "");
   const firstLine = t.split(/\r?\n/, 1)[0] ?? "";
   const delim = (firstLine.match(/\t/g)?.length ?? 0) > (firstLine.match(/,/g)?.length ?? 0) ? "\t" : (firstLine.match(/;/g)?.length ?? 0) > (firstLine.match(/,/g)?.length ?? 0) ? ";" : ",";
@@ -235,7 +234,7 @@ function parseDur(v: string | undefined): number | null {
 }
 
 /** Recognises Strong, Hevy and FitNotes exports by their headers. */
-export function readWorkoutCsv(text: string): { format: string; sets: ImportedSet[] } {
+function readWorkoutCsv(text: string): { format: string; sets: ImportedSet[] } {
   const rows = parseCsv(text);
   if (rows.length < 2) throw bad("The file is empty");
   const head = rows[0]!.map((h) => h.trim().toLowerCase());
@@ -399,5 +398,3 @@ export function dataRoutes(r: Router) {
     return { format, workouts: created };
   });
 }
-
-export { SOURCE };

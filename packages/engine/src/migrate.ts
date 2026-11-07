@@ -11,7 +11,7 @@ import m008 from "./migrations/008_activity_steps";
 import m009 from "./migrations/009_activity_steps_nullable";
 import m010 from "./migrations/010_weekly_target_scope";
 
-export const MIGRATIONS: [string, string][] = [
+const MIGRATIONS: [string, string][] = [
   ["001_init", m001],
   ["002_isolation", m002],
   ["003_programs", m003],

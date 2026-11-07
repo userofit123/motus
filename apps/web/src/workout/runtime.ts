@@ -116,7 +116,7 @@ function audio() {
 /** [frequency ratio, loudness, how long it rings as a share of the note] */
 export type Overtone = readonly [number, number, number];
 /** A struck bell: slightly out-of-tune overtones that die away faster than the note itself. */
-export const BELL: Overtone[] = [[1, 1, 1], [2, 0.32, 0.6], [2.76, 0.16, 0.4], [5.4, 0.05, 0.2]];
+const BELL: Overtone[] = [[1, 1, 1], [2, 0.32, 0.6], [2.76, 0.16, 0.4], [5.4, 0.05, 0.2]];
 /** Round and soft: the note with a little warmth on top. */
 export const SOFT: Overtone[] = [[1, 1, 1], [2, 0.18, 0.5]];
 /** One note starting `delay` seconds from now that rings for `dur` seconds; `attack` is how long it takes to reach full
@@ -139,7 +139,7 @@ export function tone(freq: number, { delay = 0, dur = 0.5, vol = 0.3, partials =
 export function beep(times = 1, freq = 880) {
   for (let i = 0; i < times; i++) tone(freq, { delay: i * 0.2, dur: 0.45 });
 }
-export function speak(text: string) {
+function speak(text: string) {
   try { const u = new SpeechSynthesisUtterance(text); u.rate = 1.05; speechSynthesis.cancel(); speechSynthesis.speak(u); } catch { /* no voice */ }
 }
 /** Elapsed seconds of a workout, without its paused time */

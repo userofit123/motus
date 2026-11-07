@@ -1,0 +1,12 @@
+// Fallow (codebase analyzer): what it cannot see on its own. Run: fallow  (or fallow dead-code / dupes / health)
+{
+  "$schema": "https://fallow.tools/schema.json",
+  // loaded by path, not imported: Electron's preload (built to preload.cjs), the service worker (/sw.js)
+  "entry": ["apps/desktop/src/preload.ts", "apps/web/public/sw.js"],
+  // run by hand or by dev-setup.sh: release bump, dev file-watcher nudge
+  "supportEntry": ["scripts/*.mjs"],
+  // native Capacitor plugins: `cap sync android` builds them into the app; the web code reaches them through Capacitor
+  "ignoreDependencies": ["@capacitor/*", "@capacitor-community/*"],
+  // the router loads pages on demand, so a page that imports something using the router is not a load-time cycle
+  "circularDependencies": { "ignoreLazyImports": true }
+}
