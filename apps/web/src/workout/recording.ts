@@ -16,7 +16,7 @@ import { api } from "../api/client";
 import { invalidate, queryClient } from "../api/live";
 import type { SettingsMe } from "../api/queries";
 import { keepAwake, showRecording, clearRecording, isNativeApp, onNoticeAction, askNotificationsOnce } from "./native";
-import { fromM, routeStats, takesPoint, addStepReading, MotionSteps, ROUTE_ROUGH_M, type StepReading } from "@motus/shared";
+import { fromM, routeStats, takesPoint, addStepReading, stepsPaused, MotionSteps, ROUTE_ROUGH_M, type StepReading } from "@motus/shared";
 
 export interface Rec {
   type: string; startedAt: number; route: number[][]; pausedMs: number; pauseAt: number | null;
@@ -132,8 +132,9 @@ function onReading(e: NativeReading | null | undefined, counting = false, skip =
   const r = recording.value;
   const x: StepReading = { session: Number(e?.session), counter: Number(e?.counter ?? -1) };
   if (!r || !Number.isFinite(x.session) || !Number.isFinite(x.counter)) return;
-  // reports while Pause's reading is on its way count (taken before it), unless a Resume's is still on its way before it
-  const paused = skip || ((!!r.pauseAt || !!resuming) && !counting && !(settling && !resuming));
+  // reports while Pause's reading is on its way count (taken before it), and while Resume's is they don't; with both on
+  // their way, the one asked first decides (the other waits for it)
+  const paused = skip || (!counting && stepsPaused(!!r.pauseAt, settling ? settleNo : null, resuming ? resumeNo : null));
   const s = addStepReading({ steps: r.steps, session: r.stepSession, seen: r.stepSeen }, x, paused);
   r.steps = s.steps; r.stepSession = s.session; r.stepSeen = s.seen;
   persist(true);
@@ -163,9 +164,12 @@ function lastSteps(): Promise<NativeReading | null> {
 /** The steps held back, asked for on Pause and Finish: they were taken before it, so they count, as do reports that
  *  come in meanwhile. */
 let settling: Promise<void> | null = null;
+/** the order Pause's and Resume's readings were asked in, so the older one on its way decides (stepsPaused) */
+let asked = 0, settleNo = 0, resumeNo = 0;
 function settleSteps(): Promise<void> {
   if (!nativeSteps.value) return Promise.resolve();
   if (settling) return settling;
+  settleNo = ++asked;
   // after a Resume's reading still on its way, so the steps of that pause stay out
   settling = (resuming ?? Promise.resolve()).then(lastSteps).then((x) => onReading(x, true)).finally(() => { settling = null; });
   return settling;
@@ -177,6 +181,7 @@ function resumeSteps(): Promise<void> {
   if (!nativeSteps.value) return Promise.resolve();
   // after Pause's own reading, which counts the steps from before it
   const after = settling ?? Promise.resolve();
+  resumeNo = ++asked;
   const me: Promise<void> = (resuming = after.then(lastSteps).then((x) => onReading(x, false, true)).finally(() => { if (resuming === me) resuming = null; }));
   return me;
 }

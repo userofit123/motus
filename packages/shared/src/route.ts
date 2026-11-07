@@ -68,6 +68,16 @@ export function addStepReading(s: StepState, r: StepReading, paused: boolean): S
   return { steps: s.steps + (paused ? 0 : grew), session: r.session, seen: Math.max(from, now) };
 }
 
+/** Whether a live step report counts as taken while paused. Pause and Resume each ask the counter for the steps it
+ *  still holds back (`settle` and `resume`: when each was asked, null when none is on its way), and each waits for the
+ *  one asked before it. Until the older one's answer is in, reports belong to its side: before Pause they count, before
+ *  Resume (taken while paused) they don't. With neither on its way, it is whether the recording is paused now. */
+export function stepsPaused(pausedNow: boolean, settle: number | null, resume: number | null): boolean {
+  if (settle != null && (resume == null || settle < resume)) return false;
+  if (resume != null) return true;
+  return pausedNow;
+}
+
 /** Estimates steps from the motion sensor, for browsers, which have no step counter. Feed it how hard the phone is
  *  pushed (acceleration including gravity, m/s²) with each reading's time in ms; it says how many steps that reading
  *  adds. Done the way pedometers do it: the push is smoothed, its slow average (gravity plus how the phone is held) is

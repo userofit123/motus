@@ -4,7 +4,7 @@ import { createEngine, type Engine } from "../src/index";
 import { pgliteDb } from "../src/adapters/pglite";
 import { uuidv7 } from "../src/ids";
 import { occurrences } from "../src/modules/schedule";
-import { routeStats, addStepReading, takesPoint, MotionSteps, STEP_RUN, type StepState } from "@motus/shared";
+import { routeStats, addStepReading, stepsPaused, takesPoint, MotionSteps, STEP_RUN, type StepState } from "@motus/shared";
 import { parseTrack } from "../src/modules/activities";
 
 let eng: Engine, U: string;
@@ -110,6 +110,18 @@ describe("activities", () => {
     // unset, as an older app's sync or backup leaves it
     await eng.db.admin.query("UPDATE activity_types SET has_steps = NULL WHERE user_id = $1 AND slug IN ('walk', 'cycle', $2)", [U, slug]);
     expect(await steps()).toMatchObject({ walk: true, cycle: false, [slug]: false });
+  });
+  it("counts steps reported while Pause's or Resume's reading is on its way on the side of the one asked first", () => {
+    // nothing on its way: as the recording is now
+    expect(stepsPaused(false, null, null)).toBe(false);
+    expect(stepsPaused(true, null, null)).toBe(true);
+    // only Pause's: taken before it, so they count; only Resume's: taken while paused, so they don't
+    expect(stepsPaused(true, 1, null)).toBe(false);
+    expect(stepsPaused(false, null, 1)).toBe(true);
+    // Pause, then a quick Resume: until Pause's reading is in, reports are from before the pause and count
+    expect(stepsPaused(false, 1, 2)).toBe(false);
+    // Resume, then a quick Pause: until Resume's reading is in, reports are from the pause just ended and don't
+    expect(stepsPaused(true, 2, 1)).toBe(true);
   });
   it("counts the phone's step counter's steps since the walk started, without counting any twice", () => {
     let s: StepState = { steps: 0, session: null, seen: 0 };
