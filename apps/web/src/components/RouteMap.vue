@@ -52,17 +52,26 @@ function fit() {
   w.style.setProperty("--mbr", `${h.right - right}px`);
 }
 function refit() { if (big.value) { fit(); map?.invalidateSize(); } }
+// The box animates (CSS), so the map re-measures every frame while it grows - no grey tiles - and re-fits the route once it has settled.
+// With reduced motion there is no animation, so it just re-fits straight away.
+let raf = 0;
 async function toggle() {
   big.value = !big.value;
   if (big.value) fit();
   await nextTick();
-  map?.invalidateSize();
-  draw();
+  cancelAnimationFrame(raf);
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) { map?.invalidateSize(); draw(); return; }
+  const t0 = performance.now();
+  const step = (t: number) => {
+    map?.invalidateSize({ pan: false });
+    if (t - t0 < 340) raf = requestAnimationFrame(step); else { map?.invalidateSize(); draw(); }
+  };
+  raf = requestAnimationFrame(step);
 }
 watch(() => props.route.length, draw);
 watch(() => props.here, () => drawHere(!props.route.length));
 onMounted(() => window.addEventListener("resize", refit));
-onBeforeUnmount(() => { window.removeEventListener("resize", refit); map?.remove(); });
+onBeforeUnmount(() => { window.removeEventListener("resize", refit); cancelAnimationFrame(raf); map?.remove(); });
 </script>
 
 <template>

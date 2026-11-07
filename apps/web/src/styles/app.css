@@ -478,7 +478,12 @@ html.phone .cal .dots i.plan { background: none; border: 1px solid var(--ec, var
 
 .map { height: 320px; border-radius: var(--r); overflow: hidden; background: var(--s2); }
 html.phone .map { height: 240px; }
-.mapw { position: relative; }
+.mapw { position: relative; margin-inline: 0; }
+/* enlarging and shrinking glide: the box's height, side margins and corners all ease together (RouteMap keeps the map's size in step) */
+@media (prefers-reduced-motion: no-preference) {
+  .mapw { transition: margin-inline .3s var(--ease); }
+  .map { transition: height .3s var(--ease), border-radius .3s var(--ease); }
+}
 .mapbig { position: absolute; top: 10px; right: 10px; z-index: 500; background: var(--s1); }
 /* enlarged: edge to edge - on the computer from the rail to the window's edge (RouteMap measures --mbl/--mbr, since the page is capped and centred), 16px past the phone's padding, about a screen tall, square corners; it stays in the page flow so everything below moves down */
 .mapw.big { margin-inline: var(--mbl, -32px) var(--mbr, -32px); }
