@@ -14,9 +14,11 @@ import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
 import android.os.Build;
+import android.os.SystemClock;
 import androidx.core.app.NotificationCompat;
 import androidx.core.app.NotificationManagerCompat;
 import androidx.core.content.ContextCompat;
+import androidx.lifecycle.Lifecycle;
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PermissionState;
@@ -385,12 +387,14 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener {
     @Override
     protected void handleOnResume() {
         super.handleOnResume();
+        resumed = true;
         keepRecording();
         listenMotion(true);
     }
 
     @Override
     protected void handleOnPause() {
+        resumed = false;
         keepRecording();
         listenMotion(false);
         super.handleOnPause();
@@ -456,8 +460,12 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener {
     private boolean listening = false;
     private long session = 0;
     private long counterBase = -1, counterNow = -1;
+    /** when the counter last reported (elapsedRealtime, ms): the web app believes more quick steps on top of it the
+     *  longer it has been silent (addStepReading) */
+    private long counterAt = 0;
     /** the step detector's and the motion sensor's counts, each as it was when the counter last reported, and the quick
-     *  count then (quick()) */
+     *  count then (quick()): the counter's own count, so the quick count never runs ahead of it by more than the steps
+     *  since, and an older web app (which takes the quick count up to 40 past the counter) doesn't count any twice */
     private long detected = 0, moved = 0, detectedAtCounter = 0, movedAtCounter = 0, quickAtCounter = 0;
 
     /** The quick count: the counter's last report plus the steps taken since, by whichever quick source saw more of them.
@@ -503,7 +511,7 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener {
             SensorManager sm = (SensorManager) getContext().getSystemService(Context.SENSOR_SERVICE);
             sm.unregisterListener(this);
             session = System.currentTimeMillis();
-            counterBase = -1; counterNow = -1;
+            counterBase = -1; counterNow = -1; counterAt = 0;
             detected = 0; moved = 0; detectedAtCounter = 0; movedAtCounter = 0; quickAtCounter = 0;
             // no batching (latency 0): each reading is sent as soon as the sensor has it, not held for a later batch
             Sensor counter = sensor(Sensor.TYPE_STEP_COUNTER), detector = sensor(Sensor.TYPE_STEP_DETECTOR);
@@ -512,19 +520,21 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener {
             listening = true;
             motionOn = false;
         }
-        listenMotion(true); // asked from the app on screen
+        listenMotion(true); // only if Motus is on screen (listenMotion checks): a reload in the background starts here too
         JSObject r = reading();
         r.put("available", true);
         call.resolve(r);
     }
 
-    /** the counts so far: `counter` is -1 until the step counter's first reading; `atCounter` is the detector's count at its latest */
+    /** the counts so far: `counter` is -1 until the step counter's first reading; `detector` is the quick count,
+     *  `atCounter` the quick count at the counter's latest reading, and `sinceCounter` how long ago that was (ms) */
     private JSObject reading() {
         JSObject r = new JSObject();
         r.put("session", session);
         r.put("counter", counterBase < 0 ? -1 : counterNow - counterBase);
         r.put("detector", quick());
         r.put("atCounter", quickAtCounter);
+        r.put("sinceCounter", counterBase < 0 ? 0 : Math.max(0, SystemClock.elapsedRealtime() - counterAt));
         return r;
     }
 
@@ -553,6 +563,15 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener {
     // are soon enough (and the phone may stop the motion sensor anyway). A port of MotionSteps (packages/shared/src/
     // route.ts), which is tested there; keep the two alike.
     private boolean motionOn = false;
+    /** Motus is on screen: null until the first resume or pause, then the activity's own state is asked (startSteps
+     *  can come from a reload or a permission answer while the app is in the background) */
+    private Boolean resumed = null;
+
+    private boolean onScreen() {
+        if (resumed != null) return resumed;
+        try { return getActivity().getLifecycle().getCurrentState().isAtLeast(Lifecycle.State.RESUMED); }
+        catch (Exception e) { return false; }
+    }
     private long mT = -1, mLast = Long.MIN_VALUE / 4;
     private double mFast = 0, mSlow = 0, mPeak = 0, mSize = 0;
     private boolean mArmed = true;
@@ -561,7 +580,7 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener {
     private void listenMotion(boolean on) {
         SensorManager sm = (SensorManager) getContext().getSystemService(Context.SENSOR_SERVICE);
         Sensor acc = sm == null ? null : sm.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
-        if (acc == null || on == motionOn || (on && !listening)) return;
+        if (acc == null || on == motionOn || (on && (!listening || !onScreen()))) return;
         if (on) {
             mT = -1; mLast = Long.MIN_VALUE / 4; mArmed = true; mRun = 0; mSize = 0; // a fresh start, as after standing still
             motionOn = sm.registerListener(this, acc, SensorManager.SENSOR_DELAY_GAME, 0);
@@ -609,11 +628,13 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener {
             // The counter's total is since the phone started. Its first report often comes only once it's sure you're
             // walking, with the steps it held back already in it; the quick count has those, so the counter starts level
             // with it instead of losing them. Smaller than before means it restarted: go on from here.
-            long q = quick();
-            if (counterBase < 0) counterBase = total - q;
+            if (counterBase < 0) counterBase = total - quick();
             else if (total < counterNow) counterBase = total - (counterNow - counterBase);
             counterNow = total;
-            quickAtCounter = q; detectedAtCounter = detected; movedAtCounter = moved;
+            counterAt = SystemClock.elapsedRealtime();
+            // the quick count starts again from the counter's: the web app shows the counter plus the quick steps since,
+            // which this leaves as they were (none yet)
+            quickAtCounter = counterNow - counterBase; detectedAtCounter = detected; movedAtCounter = moved;
         } else return;
         notifyListeners("steps", reading());
     }

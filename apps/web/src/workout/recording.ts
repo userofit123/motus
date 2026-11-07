@@ -115,7 +115,7 @@ function stopGps() {
   bgId = null; watchId = null; bgOn.value = false; gpsError.value = "";
 }
 
-// ---- steps: the phone's step detector and step counter (Android app) ----
+// ---- steps: the phone's step counter plus its quick steps (step detector or motion sensor; Android app) ----
 // The app counts both itself (MotusWorkoutPlugin) and sends the counts so far with each step; the recording adds what
 // they grew by (addStepReading). So nothing is lost while this page is held up with the screen off, or reloaded.
 const WP = () => (globalThis as any).Capacitor?.Plugins?.MotusWorkout;
@@ -124,11 +124,11 @@ let stepSub: { remove: () => Promise<void> | void } | null = null;
 /** the Android app's step sensors count for this recording (and the recording's notification keeps them going) */
 const nativeSteps = ref(false);
 /** what the Android plugin sends: counts since `session`, the counter -1 before its first reading */
-interface NativeReading { session?: number; counter?: number; detector?: number; atCounter?: number }
+interface NativeReading { session?: number; counter?: number; detector?: number; atCounter?: number; sinceCounter?: number }
 function onReading(e: NativeReading | null | undefined) {
   const r = recording.value;
-  const x: StepReading = { session: Number(e?.session), counter: Number(e?.counter ?? -1), detector: Number(e?.detector ?? 0), atCounter: e?.atCounter == null ? undefined : Number(e.atCounter) };
-  if (!r || !Number.isFinite(x.session) || !Number.isFinite(x.counter) || !Number.isFinite(x.detector) || (x.atCounter != null && !Number.isFinite(x.atCounter))) return;
+  const x: StepReading = { session: Number(e?.session), counter: Number(e?.counter ?? -1), detector: Number(e?.detector ?? 0), atCounter: e?.atCounter == null ? undefined : Number(e.atCounter), sinceCounter: e?.sinceCounter == null ? undefined : Number(e.sinceCounter) };
+  if (!r || !Number.isFinite(x.session) || !Number.isFinite(x.counter) || !Number.isFinite(x.detector) || (x.atCounter != null && !Number.isFinite(x.atCounter)) || (x.sinceCounter != null && !Number.isFinite(x.sinceCounter))) return;
   const s = addStepReading({ steps: r.steps, session: r.stepSession, seen: r.stepSeen }, x, !!r.pauseAt);
   r.steps = s.steps; r.stepSession = s.session; r.stepSeen = s.seen;
   persist(true);

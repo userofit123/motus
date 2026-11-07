@@ -156,6 +156,19 @@ describe("activities", () => {
     expect(read(70, 510, 510)).toBe(100);
     expect(read(110, 520, 520)).toBe(110);
   });
+  it("a counter that reports once early, then stays silent for a long while, doesn't hold the count up", () => {
+    let s: StepState = { steps: 0, session: null, seen: 0 };
+    const read = (counter: number, detector: number, atCounter: number, sinceCounter: number) =>
+      (s = addStepReading(s, { session: 1, counter, detector, atCounter, sinceCounter }, false)).steps;
+    // the counter's first report at 10 steps (the quick count starts again from it), then 60 steps at 2 a second without one
+    expect(read(10, 10, 10, 0)).toBe(10);
+    for (let i = 1; i <= 60; i++) expect(read(10, 10 + i, 10, i * 500)).toBe(10 + i);
+    // the counter reports at last: no jump, and it goes on from there
+    expect(read(70, 70, 70, 0)).toBe(70);
+    expect(read(70, 71, 70, 500)).toBe(71);
+    // quick steps far faster than anyone walks (shaking the phone) aren't all believed
+    expect(read(70, 400, 70, 10_000)).toBe(70 + 40 + 30);
+  });
   it("counts steps from the motion sensor one by one from the first, and ignores a tap", () => {
     // 50 steps, a phone held in front of you: the push rises ~1.5 m/s² above gravity at each step, 1.8 steps a second
     const walk = (amp: number, steps: number) => {
