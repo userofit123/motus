@@ -24,6 +24,8 @@ const route = useRoute(), router = useRouter();
 const cur = computed(() => section(route.name as string));
 const me = useMe();
 const initial = computed(() => (me.data.value?.user.displayName || session.user?.username || "?").slice(0, 1).toUpperCase());
+// Settings sits at the very bottom of the rail, under Appearance and the account, not among the pages
+const settings = NAV.find((p) => p.name === "settings")!, top = NAV.filter((p) => p !== settings);
 const nav = ref<HTMLElement | null>(null), pill = ref<HTMLElement | null>(null);
 
 // the highlight glides from the previous page to the open one, stretching on the way (Money Manager's AppNav)
@@ -74,13 +76,14 @@ const arrived = (el: Element) => el.classList?.add("in");
     <nav ref="nav" aria-label="Menu">
       <i ref="pill" class="nbi" style="transform-origin:0 0" />
       <Logo shuffle />
-      <button v-for="p in NAV" :key="p.name" type="button" class="nb" :class="{ on: cur === p.name }" :aria-current="cur === p.name ? 'page' : undefined" @click="router.push(p.to)">
+      <button v-for="p in top" :key="p.name" type="button" class="nb" :class="{ on: cur === p.name }" :aria-current="cur === p.name ? 'page' : undefined" @click="router.push(p.to)">
         <span class="ic"><Icon :name="p.icon" :size="22" /></span>{{ p.label }}
       </button>
       <div class="navb">
         <UpdateButton />
-        <Menu :items="acctMenu" icon="user" label="Account" />
         <button id="themeBtn" type="button" class="nb" @click.stop="appearanceOpen = !appearanceOpen"><span class="ic"><Icon name="palette" :size="22" /></span>Appearance</button>
+        <Menu :items="acctMenu" icon="user" label="Account" />
+        <button type="button" class="nb" :class="{ on: cur === 'settings' }" :aria-current="cur === 'settings' ? 'page' : undefined" @click="router.push(settings.to)"><span class="ic"><Icon :name="settings.icon" :size="22" /></span>{{ settings.label }}</button>
       </div>
     </nav>
     <main :class="{ withbar: bars > 0, withbar2: bars > 1, withbar3: bars > 2 }"><MiniBar v-if="route.name === 'workout'" strip /><router-view v-slot="{ Component, route: r }"><Suspense><Transition name="page" mode="out-in" appear @after-enter="arrived"><component :is="Component" :key="pageKey(r)" /></Transition></Suspense></router-view></main>
