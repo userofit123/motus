@@ -1,6 +1,7 @@
 // A recorded route of [lat, lon, unix s, altitude] points: which fixes go on it, its distance, moving time and climb,
-// and the walk's step count (from the phone's step counter, or estimated from its motion sensor in a browser). Shared so the recording screen shows the same distance that
-// is saved, and so this counting is tested.
+// and the walk's step count (from the phone's step counter, or, in a browser or on a phone without one, estimated from
+// its motion sensor). Shared so the recording screen shows the same distance that is saved, and so this counting is
+// tested.
 
 const R = 6371000;
 export function haversine(a: [number, number] | number[], b: [number, number] | number[]): number {
@@ -73,7 +74,8 @@ export function addStepReading(s: StepState, r: StepReading, paused: boolean): S
  *  taken off, and a step is a peak at least STEP_MIN_PUSH above that average, then a fall back below it. Like the
  *  phone's own step counter, nothing counts until STEP_RUN peaks have come in a walking rhythm (each 0.3-2 s after the
  *  last, none much quicker or slower than the one before); then those count at once and each step after it as it
- *  comes. So a wobble, a tap or picking the phone up never adds steps: they are too weak, or too few, or out of rhythm. */
+ *  comes. So a wobble, a tap or picking the phone up never adds steps: they are too weak, or too few, or out of rhythm.
+ *  Once counting, one step out of rhythm doesn't stop it; two in a row do. */
 export const STEP_MIN_PUSH = 1; // m/s²: walking with the phone in a hand or pocket is well above it, a wobble below
 export const STEP_RUN = 6;
 export class MotionSteps {
@@ -82,6 +84,8 @@ export class MotionSteps {
   private last = -Infinity; private gap = 0;
   /** peaks so far in the current rhythm, and whether it was confirmed as walking (its steps are being counted) */
   private run = 0; private walking = false;
+  /** a step out of rhythm was let through; the next must be in it again */
+  private odd = false;
   push(push: number, t: number): number {
     if (this.t < 0) { this.t = t; this.fast = this.slow = push; return 0; }
     const dt = Math.min(0.2, Math.max(0.001, (t - this.t) / 1000));
@@ -89,7 +93,7 @@ export class MotionSteps {
     this.fast += (push - this.fast) * (dt / (0.05 + dt)); // takes off sensor noise, keeps the 1-3 steps a second
     this.slow += (push - this.slow) * (dt / (1.5 + dt)); // gravity and how the phone is held
     const d = this.fast - this.slow;
-    if (t - this.last > 2000) { this.run = 0; this.walking = false; this.size = 0; } // stopped: the next walk starts over
+    if (t - this.last > 2000) { this.run = 0; this.walking = false; this.size = 0; this.odd = false; } // stopped: the next walk starts over
     if (!this.armed) {
       this.peak = Math.max(this.peak, d);
       // back below the average: the step is over, and its height sets the bar for the next ones (a strong walk's
@@ -101,10 +105,19 @@ export class MotionSteps {
     this.armed = false; this.peak = d;
     const gap = t - this.last;
     if (gap < 300) return 0; // a second bump within one step
-    this.last = t;
     // in rhythm: about as long after the last step as that one was after the one before it
     const steady = this.run > 0 && gap <= 2000 && (this.run < 2 || (gap > this.gap * 0.6 && gap < this.gap / 0.6));
+    if (!steady && this.walking && !this.odd && gap <= 2000) {
+      // one odd step in a walk already counting (a stumble, a bump between steps, a step too soft to see): the walk
+      // goes on in its rhythm. Two in a row and it starts over, so it never lets wobbles through.
+      this.odd = true;
+      if (gap < this.gap) return 0; // a bump between two steps: not one, and the next step is timed from the last
+      this.last = t;
+      return 2; // late (at least 1.7 steps' time): this step, and one too soft to see before it
+    }
+    this.last = t;
     this.gap = gap;
+    this.odd = false;
     if (!steady) { this.run = 1; this.walking = false; return 0; }
     this.run++;
     if (this.walking) return 1;

@@ -129,6 +129,18 @@ describe("activities", () => {
     // the app restarted mid-walk: its counter counts again from zero, and the walk goes on from what it had
     expect(read(-1, false, 2)).toBe(32);
     expect(read(7, false, 2)).toBe(39);
+    // the counter's first report already has the steps it held back: all of them count (the Android app takes the
+    // start from before the walk, so they are in the count since the start)
+    s = { steps: 0, session: null, seen: 0 };
+    expect(read(-1, false, 3)).toBe(0);
+    expect(read(11, false, 3)).toBe(11);
+    // a pause pressed, then the steps from before it reported late: they count (Pause asks for them, not paused)
+    expect(read(15, false, 3)).toBe(15);
+    expect(read(20, true, 3)).toBe(15);
+    // a count that went down (the Android app keeps it going over a phone restart, so this only guards against it)
+    // adds nothing, and only steps past it count after
+    expect(read(18, false, 3)).toBe(15);
+    expect(read(22, false, 3)).toBe(17);
   });
   it("estimates steps from the motion sensor once you walk in a rhythm, and ignores wobbles, taps and shakes", () => {
     // `amp`: how far the push rises above gravity at each step (m/s²), `hz` steps a second, then 3 s standing still
@@ -148,6 +160,22 @@ describe("activities", () => {
       expect(Math.abs(w.n - 50)).toBeLessThanOrEqual(1);
       expect(w.firstAt).toBeLessThan((STEP_RUN / hz) * 1000); // the first steps come in by the sixth
     }
+    // a gentle walk, just above the limit
+    expect(Math.abs(walk(1.3, 50).n - 50)).toBeLessThanOrEqual(1);
+    // steps as bumps at the given times (ms), each ~0.2 s long
+    const bumps = (at: number[], amp = 3) => {
+      const m = new MotionSteps(); let n = 0;
+      for (let t = 0; t < at[at.length - 1]! + 3000; t += 16) n += m.push(9.81 + (at.some((x) => t >= x && t < x + 200) ? amp * Math.sin(Math.PI * (t - at.find((x) => t >= x && t < x + 200)!) / 200) : 0), t);
+      return n;
+    };
+    const steps = Array.from({ length: 30 }, (_, i) => 1000 + i * 550);
+    expect(bumps(steps)).toBe(30);
+    // a confirmed walk with one step too soft to see, or one bump between two steps: it keeps its count
+    expect(bumps(steps.filter((_, i) => i !== 15))).toBe(30);
+    expect(bumps([...steps.slice(0, 16), steps[15]! + 275, ...steps.slice(16)])).toBe(30);
+    // two odd ones in a row start it over, and it never counts more steps than were taken
+    expect(bumps(steps.filter((_, i) => i !== 15 && i !== 17))).toBeLessThanOrEqual(30);
+    expect(bumps(steps.flatMap((x, i) => (i % 2 ? [x, x + 275] : [x])))).toBeLessThanOrEqual(30);
     // standing still, a slight wobble in a walking rhythm, a few shakes: nothing
     expect(walk(0, 0).n).toBe(0);
     expect(walk(0.5, 50).n).toBe(0);

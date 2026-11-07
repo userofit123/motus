@@ -11,7 +11,7 @@ import { useFmt } from "../core/format";
 import { confirm } from "../core/ask";
 import { toast, toastError } from "../core/toast";
 import { isNativeApp } from "../workout/native";
-import { recording as rec, recDistM, recElapsedS, stepsLive, stepsOnScreen, stepsError, countsSteps, gpsError, here, previewLocation, startRecording, togglePause, finishRecording, discardRecording } from "../workout/recording";
+import { recording as rec, recDistM, recElapsedS, stepsLive, stepsOnScreen, stepsError, countsSteps, gpsError, here, previewLocation, previewSteps, startRecording, togglePause, finishRecording, discardRecording } from "../workout/recording";
 import { clock } from "@motus/shared";
 import Icon from "../components/Icon.vue";
 import RouteMap from "../components/RouteMap.vue";
@@ -34,6 +34,9 @@ const stepsNote = computed(() => (rec.value && stepsError.value) || ((rec.value 
 // before you start, the map finds you (only for types with a route)
 watch([gps, () => !!rec.value], ([g, r]) => previewLocation(g && !r), { immediate: true });
 onBeforeUnmount(() => previewLocation(false));
+// and the step counter for a type on foot (see previewSteps)
+watch([() => onFoot.value, () => !!rec.value], ([f, r]) => previewSteps(f && !r), { immediate: true });
+onBeforeUnmount(() => previewSteps(false));
 // every type you have, the same list as logging one and goals; the last tile adds a new type and picks it
 const NEW = "__new";
 const tiles = computed(() => [...(types.data.value ?? []).map((x: any) => ({ value: x.slug, label: x.name, icon: x.icon })), { value: NEW, label: "New type", icon: "plus" }]);

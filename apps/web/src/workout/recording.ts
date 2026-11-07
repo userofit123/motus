@@ -126,11 +126,12 @@ let stepSub: { remove: () => Promise<void> | void } | null = null;
 const nativeSteps = ref(false);
 /** what the Android plugin sends: the count since `session`, -1 before the counter's first report */
 interface NativeReading { session?: number; counter?: number }
-function onReading(e: NativeReading | null | undefined) {
+/** `counting`: the reading has steps from before the pause, so they count even though it is paused now */
+function onReading(e: NativeReading | null | undefined, counting = false) {
   const r = recording.value;
   const x: StepReading = { session: Number(e?.session), counter: Number(e?.counter ?? -1) };
   if (!r || !Number.isFinite(x.session) || !Number.isFinite(x.counter)) return;
-  const s = addStepReading({ steps: r.steps, session: r.stepSession, seen: r.stepSeen }, x, !!r.pauseAt);
+  const s = addStepReading({ steps: r.steps, session: r.stepSession, seen: r.stepSeen }, x, !!r.pauseAt && !counting && !settling);
   r.steps = s.steps; r.stepSession = s.session; r.stepSeen = s.seen;
   persist(true);
 }
@@ -148,6 +149,24 @@ async function startNativeSteps(fresh: boolean) {
     stepSub = await p.addListener("steps", onReading);
     onReading(r); // the steps taken since a reload, before this page listened again
   } catch { startMotion(false); }
+}
+/** The steps the counter still holds back (it reports up to ten seconds late), asked for on Pause and Finish: they
+ *  were taken before it, so they count, as do reports that come in meanwhile. At most three seconds. */
+let settling: Promise<void> | null = null;
+function settleSteps(): Promise<void> {
+  if (!nativeSteps.value) return Promise.resolve();
+  if (settling) return settling;
+  const p = WP();
+  const last = p?.getLastSteps ? p.getLastSteps() : p?.getSteps?.(); // an older Android app has no getLastSteps
+  settling = Promise.race([Promise.resolve(last), new Promise((ok) => setTimeout(ok, 3000, null))])
+    .then((x) => onReading(x as NativeReading | null, true), () => {})
+    .finally(() => { settling = null; });
+  return settling;
+}
+/** The Record screen is open, before you start: the Android app listens to the step counter already, so the walk's
+ *  first steps count even on phones whose counter reports them only once you're walking (MotusWorkoutPlugin). */
+export function previewSteps(on: boolean) {
+  try { WP()?.previewSteps?.({ on })?.catch?.(() => {}); } catch { /* no step counter here */ }
 }
 /** back on screen: the counts as they are now, in case this page was held up while the screen was off */
 async function catchUpSteps() {
@@ -226,12 +245,14 @@ export function togglePause() {
 function setPaused(on: boolean) {
   const r = recording.value; if (!r || !!r.pauseAt === on) return;
   // going on again: the next point starts a new stretch, so the way between where you paused and where you go on isn't counted
-  if (r.pauseAt) { r.pausedMs += Date.now() - r.pauseAt; r.pauseAt = null; if (r.route.length) r.breaks.push(r.route.length); } else r.pauseAt = Date.now();
+  if (r.pauseAt) { r.pausedMs += Date.now() - r.pauseAt; r.pauseAt = null; if (r.route.length) r.breaks.push(r.route.length); } else { r.pauseAt = Date.now(); void settleSteps(); }
   persist();
 }
 /** saves it as an activity and returns its id */
 export async function finishRecording(): Promise<string> {
   const r = recording.value!;
+  // the last steps before Finish (or before a Pause just pressed); none taken while paused
+  if (!r.pauseAt || settling) await settleSteps();
   if (saveT) persist();
   const end = r.pauseAt ?? Date.now();
   // the server works these out from the route too, but can't know where the pauses were

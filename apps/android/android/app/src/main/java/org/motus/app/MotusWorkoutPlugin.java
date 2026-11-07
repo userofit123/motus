@@ -9,11 +9,14 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
+import android.content.SharedPreferences;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
-import android.hardware.SensorEventListener;
+import android.hardware.SensorEventListener2;
 import android.hardware.SensorManager;
 import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
 import androidx.core.app.NotificationCompat;
 import androidx.core.app.NotificationManagerCompat;
 import androidx.core.content.ContextCompat;
@@ -29,6 +32,8 @@ import com.getcapacitor.annotation.PermissionCallback;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * The rest timer in the notification shade and on the lock screen: a live countdown while a rest runs.
@@ -40,7 +45,7 @@ import org.json.JSONObject;
  * Also the phone's step counter while a walk is recorded (see "steps" below).
  */
 @CapacitorPlugin(name = "MotusWorkout", permissions = { @Permission(alias = "steps", strings = { "android.permission.ACTIVITY_RECOGNITION" }) })
-public class MotusWorkoutPlugin extends Plugin implements SensorEventListener {
+public class MotusWorkoutPlugin extends Plugin implements SensorEventListener2 {
     // Default importance (without sound or vibration) rather than low: phones hide "silent" notifications from the lock
     // screen. A channel's importance can't be raised once made, hence a new channel in place of the old "workout" one.
     private static final String CHANNEL = "running";
@@ -455,6 +460,18 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener {
     private long session = 0;
     /** the counter's total (since the phone started) when counting started, and its latest; -1 before its first report */
     private long counterBase = -1, counterNow = -1;
+    /** The Record screen is open, before the walk starts: the counter is listened to already, so its total is known
+     *  before the first step (many phones report it only once you're walking, with the first ten or so steps already in
+     *  it, which would otherwise be taken as the start and lost). */
+    private boolean previewing = false, registered = false;
+    /** the counter's latest total while it's listened to (preview or walk), -1 when not known: the start of a new walk */
+    private long lastTotal = -1;
+    /** Kept on the phone, so that when Android closes the whole app mid-walk the reopened app goes on from the same start
+     *  and the steps taken while it was closed still count (the counter kept counting). Cleared when the walk ends. */
+    private static final String STEP_PREFS = "motus.steps";
+    private final Handler main = new Handler(Looper.getMainLooper());
+    /** getLastSteps calls waiting for the counter to hand over the steps it hasn't reported yet */
+    private final List<PluginCall> flushing = new ArrayList<>();
 
     private Sensor counterSensor() {
         SensorManager sm = (SensorManager) getContext().getSystemService(Context.SENSOR_SERVICE);
@@ -464,39 +481,88 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener {
         return s != null ? s : sm.getDefaultSensor(Sensor.TYPE_STEP_COUNTER, true);
     }
 
-    /** Starts counting. `fresh` (a new recording): from zero. Otherwise (the web app reloaded mid-recording) it goes on
-     *  with the count it has, so the steps in between aren't lost. Without a step counter `available` is false and the
-     *  web app estimates steps from the motion sensor instead. */
+    private boolean stepsAllowed() {
+        return Build.VERSION.SDK_INT < Build.VERSION_CODES.Q || getPermissionState("steps") == PermissionState.GRANTED;
+    }
+
+    /** Listens to the counter (once, for both the preview and the walk). No extra batching on top of the phone's own
+     *  (latency 0): each report as soon as it has one. The counter reports its total when first listened to on most phones. */
+    private boolean register() {
+        if (registered) return true;
+        SensorManager sm = (SensorManager) getContext().getSystemService(Context.SENSOR_SERVICE);
+        Sensor c = counterSensor();
+        registered = sm != null && c != null && sm.registerListener(this, c, SensorManager.SENSOR_DELAY_NORMAL, 0);
+        return registered;
+    }
+
+    /** stops listening when neither the preview nor a walk needs it; the last total is then no longer current */
+    private void unregisterIfIdle() {
+        if (listening || previewing || !registered) return;
+        SensorManager sm = (SensorManager) getContext().getSystemService(Context.SENSOR_SERVICE);
+        if (sm != null) sm.unregisterListener(this);
+        registered = false;
+        lastTotal = -1;
+    }
+
+    /** The Record screen opened (`on`) or closed: listens to the counter before the walk starts (see `previewing`). Never
+     *  asks for the permission; without it the walk's start asks, and the counter starts from its first report then. */
+    @PluginMethod
+    public void previewSteps(PluginCall call) {
+        boolean on = call.getBoolean("on", false);
+        main.post(() -> {
+            previewing = on && counterSensor() != null && stepsAllowed() && register();
+            unregisterIfIdle();
+        });
+        call.resolve();
+    }
+
+    /** Starts counting. `fresh` (a new recording): from zero. Otherwise (the web app reloaded mid-recording, or Android
+     *  closed the whole app and it reopened) it goes on with the count it has, so the steps in between aren't lost.
+     *  Without a step counter `available` is false and the web app estimates steps from the motion sensor instead. */
     @PluginMethod
     public void startSteps(PluginCall call) {
         if (counterSensor() == null) { JSObject r = new JSObject(); r.put("available", false); call.resolve(r); return; }
         // Android 10+ asks for "physical activity" before the step counter reports anything
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && getPermissionState("steps") != PermissionState.GRANTED) {
+        if (!stepsAllowed()) {
             requestPermissionForAlias("steps", call, "stepsPermission");
             return;
         }
-        listen(call);
+        main.post(() -> listen(call));
     }
 
     @PermissionCallback
     private void stepsPermission(PluginCall call) {
-        if (getPermissionState("steps") == PermissionState.GRANTED) listen(call);
+        if (getPermissionState("steps") == PermissionState.GRANTED) main.post(() -> listen(call));
         else { JSObject r = new JSObject(); r.put("available", false); r.put("denied", true); call.resolve(r); }
     }
 
+    // on the main thread, where the counter's reports arrive too
     private void listen(PluginCall call) {
-        if (call.getBoolean("fresh", false) || !listening) {
-            SensorManager sm = (SensorManager) getContext().getSystemService(Context.SENSOR_SERVICE);
-            sm.unregisterListener(this);
-            session = System.currentTimeMillis();
-            counterBase = -1; counterNow = -1;
-            // The counter reports its total as soon as it's listened to (Android requires that of such sensors), which
-            // becomes the start. No extra batching on top of the phone's own (latency 0): each report as soon as it has one.
-            listening = sm.registerListener(this, counterSensor(), SensorManager.SENSOR_DELAY_NORMAL, 0);
+        boolean fresh = call.getBoolean("fresh", false);
+        if (fresh || !listening) {
+            SharedPreferences sp = getContext().getSharedPreferences(STEP_PREFS, Context.MODE_PRIVATE);
+            if (!fresh && sp.getLong("session", 0) > 0) {
+                // the app was closed mid-walk: the same count, from the same start; the counter's next report has every
+                // step since (a counter lower than before means the phone restarted, handled where reports arrive)
+                session = sp.getLong("session", 0);
+                counterBase = sp.getLong("base", -1);
+                counterNow = sp.getLong("now", -1);
+            } else {
+                session = System.currentTimeMillis();
+                // the total from the preview, so the walk's first steps count even when the counter holds them back
+                counterBase = lastTotal; counterNow = lastTotal;
+            }
+            listening = register();
+            if (listening) saveSteps(); else unregisterIfIdle();
         }
         JSObject r = reading();
         r.put("available", listening);
         call.resolve(r);
+    }
+
+    private void saveSteps() {
+        getContext().getSharedPreferences(STEP_PREFS, Context.MODE_PRIVATE).edit()
+            .putLong("session", session).putLong("base", counterBase).putLong("now", counterNow).apply();
     }
 
     /** the count so far: `counter` is -1 until the step counter's first report */
@@ -514,26 +580,65 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener {
         call.resolve(r);
     }
 
+    /** The count with the steps the counter is still holding back (it reports up to ten seconds late): asks it to hand
+     *  them over now (flush) and answers once it has, or after two seconds at most. For Pause and Finish, so the last
+     *  steps before them count. */
+    @PluginMethod
+    public void getLastSteps(PluginCall call) {
+        main.post(() -> {
+            SensorManager sm = (SensorManager) getContext().getSystemService(Context.SENSOR_SERVICE);
+            flushing.add(call);
+            if (!listening || sm == null || !sm.flush(this)) { endFlush(); return; }
+            main.postDelayed(this::endFlush, 2000);
+        });
+    }
+
+    @Override
+    public void onFlushCompleted(Sensor sensor) {
+        main.post(this::endFlush);
+    }
+
+    private void endFlush() {
+        if (flushing.isEmpty()) return;
+        List<PluginCall> calls = new ArrayList<>(flushing);
+        flushing.clear();
+        for (PluginCall c : calls) {
+            JSObject r = reading();
+            r.put("available", listening);
+            c.resolve(r);
+        }
+    }
+
+    /** the walk ended: the count is no longer needed, here or kept on the phone */
     @PluginMethod
     public void stopSteps(PluginCall call) {
-        stopListening();
+        main.post(() -> {
+            listening = false;
+            unregisterIfIdle();
+            getContext().getSharedPreferences(STEP_PREFS, Context.MODE_PRIVATE).edit().clear().apply();
+            endFlush();
+        });
         call.resolve();
     }
 
+    /** the app is closing: stops listening, but keeps the walk's count on the phone for when it opens again */
     private void stopListening() {
-        SensorManager sm = (SensorManager) getContext().getSystemService(Context.SENSOR_SERVICE);
-        if (sm != null) sm.unregisterListener(this);
-        listening = false;
+        listening = false; previewing = false;
+        unregisterIfIdle();
+        endFlush();
     }
 
     @Override
     public void onSensorChanged(SensorEvent e) {
         if (e.sensor.getType() != Sensor.TYPE_STEP_COUNTER) return;
         long total = (long) e.values[0];
+        lastTotal = total;
+        if (!listening) return; // the preview: only the start of the walk to come
         // Smaller than before means the counter restarted (the phone did): go on from here with the count so far.
         if (counterBase < 0) counterBase = total;
         else if (total < counterNow) counterBase = total - (counterNow - counterBase);
         counterNow = total;
+        saveSteps();
         notifyListeners("steps", reading());
     }
 
