@@ -58,6 +58,7 @@ const doneCount = computed(() => week.value.filter((d) => d.done).length);
 <template>
   <div v-if="fresh" class="card hero today">
     <div class="tmain">
+      <div class="ch"><span class="bi"><Icon name="play" :size="15" /></span><span class="t grow">Today</span></div>
       <div class="tl">Welcome to Motus</div>
       <div class="tt">Let's get you started</div>
       <div class="ts">Make a routine with the exercises you do, pick a ready-made one, or start a workout and add exercises as you go.</div>
@@ -70,6 +71,7 @@ const doneCount = computed(() => week.value.filter((d) => d.done).length);
   </div>
   <div v-else class="card hero today" :class="{ live: !!h.active }">
     <div class="tmain">
+      <div class="ch"><span class="bi"><Icon name="play" :size="15" /></span><span class="t grow">Today</span></div>
       <div class="tl"><span v-if="h.active" class="pulse" aria-hidden="true" />{{ hero.label }}</div>
       <div class="thead">
         <div class="tt">{{ hero.title }}</div>
@@ -92,6 +94,9 @@ const doneCount = computed(() => week.value.filter((d) => d.done).length);
 /* the hero: the theme's primary container. Text on the left, the routine's muscles beside it, the week along the side */
 .today { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; column-gap: calc(var(--cpx) * 1.5); row-gap: var(--hg); }
 .tmain { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+/* the block header every Home block has, in the hero's own colours */
+.today .ch { margin-bottom: 0; }
+.today .ch .bi { width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center; flex: none; background: color-mix(in srgb, var(--onc) 14%, transparent); color: var(--onc); }
 .tl { font-size: var(--fs-sm); font-weight: 600; display: flex; align-items: center; gap: 8px; color: color-mix(in srgb, var(--onc) 78%, transparent); }
 .tt { font-size: calc(var(--fs-lg) * 1.625); font-weight: 650; letter-spacing: -.5px; line-height: 1.15; overflow-wrap: anywhere; }
 .ts { font-size: var(--fs-sm); color: color-mix(in srgb, var(--onc) 75%, transparent); }
