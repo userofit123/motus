@@ -148,7 +148,7 @@ const shows = (id: string): boolean => {
     case "pinned": return pinnedGoals.value.length > 0;
     case "dueSoon": return dueSoon.value.length > 0;
     case "program": return !!x.programs?.length;
-    case "muscles": case "previous": return !!x.last;
+    case "previous": return !!x.last;
     case "suggest": return !fresh.value && !!x.suggest?.length;
     case "reminders": return !!x.reminders?.length;
     case "records": return !!x.records?.length;
@@ -245,12 +245,12 @@ await loaded(home, ach);
 
         <!-- this week against last week, and workouts per week over eight weeks -->
         <div v-else-if="id === 'week'" class="card hb sz-m click" v-bind="link('/stats')">
-          <div class="ch"><span class="bi"><Icon name="stats" :size="15" /></span><span class="t grow">This week</span><span class="tiny">Last week</span></div>
+          <div class="ch"><span class="bi"><Icon name="stats" :size="15" /></span><span class="t grow">This week</span></div>
           <div class="wstats">
-            <div><div class="wv">{{ tw.workouts }}</div><div class="tiny">{{ tw.workouts === 1 ? "workout" : "workouts" }}</div><div class="wl">{{ lw.workouts }}</div></div>
-            <div><div class="wv">{{ fmt.dur(tw.timeS, true) }}</div><div class="tiny">time</div><div class="wl">{{ fmt.dur(lw.timeS, true) }}</div></div>
-            <div><div class="wv">{{ fmt.vol(tw.volumeKg) }}</div><div class="tiny">volume</div><div class="wl">{{ fmt.vol(lw.volumeKg) }}</div></div>
-            <div v-if="walked"><div class="wv">{{ fmt.dist(tw.walkM, 1) }}</div><div class="tiny">walked</div><div class="wl">{{ fmt.dist(lw.walkM, 1) }}</div></div>
+            <div><div class="wv">{{ tw.workouts }}</div><div class="tiny">{{ tw.workouts === 1 ? "workout" : "workouts" }}</div><div class="wl">last week {{ lw.workouts }}</div></div>
+            <div><div class="wv">{{ fmt.dur(tw.timeS, true) }}</div><div class="tiny">time</div><div class="wl">last week {{ fmt.dur(lw.timeS, true) }}</div></div>
+            <div><div class="wv">{{ fmt.vol(tw.volumeKg) }}</div><div class="tiny">volume</div><div class="wl">last week {{ fmt.vol(lw.volumeKg) }}</div></div>
+            <div v-if="walked"><div class="wv">{{ fmt.dist(tw.walkM, 1) }}</div><div class="tiny">walked</div><div class="wl">last week {{ fmt.dist(lw.walkM, 1) }}</div></div>
           </div>
           <div class="wbars" role="img" :aria-label="`Workouts per week, last 8 weeks: ${weeks.map((w) => w.workouts).join(', ')}`">
             <i v-for="(w, k) in weeks" :key="w.start" :class="{ cur: k === weeks.length - 1 }" :style="{ height: Math.max(4, (w.workouts / weekMax) * 100) + '%' }" />
@@ -319,8 +319,11 @@ await loaded(home, ach);
           <BodyMap class="rbody" :values="{}" :highlight="h.main7" :secondary="h.helpers7" />
           <div class="grow mside">
             <div class="ch"><span class="bi"><Icon name="activity" :size="15" /></span><span class="t grow">Muscles this week</span></div>
-            <div class="big">{{ worked }}<small>of {{ groups.length }} groups</small></div>
-            <div class="tiny">worked in the last 7 days</div>
+            <template v-if="worked">
+              <div class="big">{{ worked }}<small>of {{ groups.length }} groups</small></div>
+              <div class="tiny">worked in the last 7 days</div>
+            </template>
+            <div v-else class="tiny">No workouts this week</div>
             <div v-if="resting.length" class="mrest">
               <div v-for="g in resting" :key="g.id" class="row tiny"><span class="mn">{{ g.name }}</span><span class="sep">·</span><span>{{ g.days == null ? "not yet" : `${g.days} days` }}</span></div>
             </div>
