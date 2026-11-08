@@ -1,6 +1,6 @@
 // Routines (saved plans) and their folders: list, open, create (from scratch, from another routine, from a workout,
 // from a template), edit, duplicate, version history, and the pre-start preview.
-import { TEMPLATES, applyStructure, cleanProgression, planNext, estimate, usualDuration, restAfterSet, restDefaultsOf, ymd, LIFTED_SQL, type RoutineSummary } from "@motus/shared";
+import { TEMPLATES, applyStructure, cleanProgression, planNext, estimate, usualDuration, restAfterSet, restDefaultsOf, ymd, LIFTED_SQL, type RoutineItemLike, type RoutineSummary, type RoutineSnapshot, type RoutineSnapshotExercise, type RoutineVersionRow, type RoutineTrendPoint, type SetKind, type Tracking } from "@motus/shared";
 import { SOURCE } from "@motus/exercise-data/meta";
 import type { Router, Ctx } from "../router";
 import type { Sql } from "../db";
@@ -14,6 +14,8 @@ import { DURATION_SQL, loadWorkout } from "./workouts";
 // a list of short strings from a request (change keys), anything else dropped
 
 const KINDS = ["warmup", "normal", "drop", "failure"] as const;
+const VERSIONS_PAGE = 50;
+const arrSql = (x: string) => `CASE WHEN jsonb_typeof(${x}) = 'array' THEN ${x} ELSE '[]'::jsonb END`;
 
 /** The routine `r`'s last few finished workouts, newest first, each how long it took without its pauses (seconds).
  *  A few more than the 3 that get averaged, so a given-up session doesn't leave too few. */
@@ -62,7 +64,8 @@ function restByKind(v: unknown): string | null {
 }
 
 /** Writes a routine's exercises and sets, keeping the ids of exercises that stay (workouts point at them). `missed`
- * (workouts in a row with missed reps) is only written by finishing (`withMissed`); an edit keeps each one's count. */
+ * (workouts in a row with missed reps) is only written by finishing (`withMissed`); an edit keeps each one's count,
+ * unless it changed the exercise's Progression (a count from under another mode means nothing). */
 async function writeRoutineBody(ctx: Ctx, routineId: string, exercises: any[], withMissed = false) {
   if (!Array.isArray(exercises)) throw bad("Expected a list of exercises");
   if (exercises.length > 100) throw bad("Too many exercises");
@@ -80,7 +83,7 @@ async function writeRoutineBody(ctx: Ctx, routineId: string, exercises: any[], w
       `INSERT INTO routine_exercises (id, user_id, routine_id, exercise_id, position, superset, rest_s, rest_after_s, rep_rest_s, fixed, progression, note, rest_by_kind, missed)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,coalesce($14::int, 0))
        ON CONFLICT (id) DO UPDATE SET exercise_id=$4, position=$5, superset=$6, rest_s=$7, rest_after_s=$8, rep_rest_s=$9, fixed=$10, progression=$11, note=$12, rest_by_kind=$13,
-         missed=coalesce($14::int, routine_exercises.missed)
+         missed=coalesce($14::int, CASE WHEN routine_exercises.progression IS DISTINCT FROM $11::jsonb THEN 0 ELSE routine_exercises.missed END)
        WHERE routine_exercises.routine_id = $3`, vals);
     await ctx.q.query("DELETE FROM routine_sets WHERE routine_exercise_id = $1", [reId]);
     const sets = Array.isArray(e.sets) ? e.sets.slice(0, 50) : [];
@@ -95,19 +98,49 @@ async function writeRoutineBody(ctx: Ctx, routineId: string, exercises: any[], w
   await ctx.q.query("DELETE FROM routine_exercises WHERE routine_id = $1 AND NOT (id = ANY($2::uuid[]))", [routineId, keep]);
 }
 
-/** The routine as it is now, kept in its History (every version, none dropped): after an edit, or after a workout
- * changed it (with that workout). A routine from before History kept versions this way has its current one kept
- * first (`keepCurrent`, called before changing it), so the first change doesn't lose where it was. */
+type Loose = Record<string, unknown> | null | undefined;
+const nOrNull = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
+/** A version as History keeps it (RoutineSnapshot): from the routine as loadRoutine gives it, or from a stored version of
+ * either shape (slim, or the whole routine as versions were kept before 016_history_now), so both read the same. */
+function slimRoutine(r: Loose): RoutineSnapshot {
+  const exs = Array.isArray(r?.exercises) ? (r.exercises as Loose[]) : [];
+  return {
+    name: String(r?.name ?? ""), description: String(r?.description ?? ""),
+    exercises: exs.map((e): RoutineSnapshotExercise => {
+      const x = (e?.exercise ?? {}) as Record<string, unknown>;
+      const sets = Array.isArray(e?.sets) ? (e.sets as Loose[]) : [];
+      return {
+        id: typeof e?.id === "string" ? e.id : null, exerciseId: String(e?.exerciseId ?? ""), name: String(e?.name ?? x.name ?? ""),
+        primary: (e?.primary ?? x.primaryMuscles ?? []) as string[], secondary: (e?.secondary ?? x.secondaryMuscles ?? []) as string[],
+        tracking: (e?.tracking ?? x.tracking ?? "weight_reps") as Tracking, superset: typeof e?.superset === "string" ? e.superset : null,
+        restS: nOrNull(e?.restS), restAfterS: nOrNull(e?.restAfterS), repRestS: nOrNull(e?.repRestS),
+        restByKind: e?.restByKind && typeof e.restByKind === "object" ? (e.restByKind as Record<string, number>) : null,
+        fixed: e?.fixed === true || e?.prefill === "target", progression: cleanProgression(e?.progression), note: String(e?.note ?? ""),
+        sets: sets.map((t) => ({ kind: (t?.kind ?? "normal") as SetKind, reps: nOrNull(t?.reps), repsMax: nOrNull(t?.repsMax), weightKg: nOrNull(t?.weightKg),
+          durationS: nOrNull(t?.durationS), distanceM: nOrNull(t?.distanceM), rpe: nOrNull(t?.rpe), restS: nOrNull(t?.restS) })),
+      };
+    }),
+  };
+}
+// the same version whatever order its keys were stored in (jsonb sorts them)
+const canon = (v: unknown): string => Array.isArray(v) ? `[${v.map(canon).join(",")}]`
+  : v && typeof v === "object" ? `{${Object.keys(v).sort().map((k) => `${JSON.stringify(k)}:${canon((v as Record<string, unknown>)[k])}`).join(",")}}` : JSON.stringify(v ?? null);
+const sameVersion = (a: RoutineSnapshot, b: RoutineSnapshot) => canon(a) === canon(b);
+
+const NEWEST = "SELECT id, snapshot FROM routine_versions WHERE routine_id = $1 ORDER BY created_at DESC, id DESC LIMIT 1";
+/** The routine as it is now, kept in its History (every version, none dropped), unless the newest version already is
+ * it: after an edit, or after a workout changed it (with that workout). So the newest version is always the routine as
+ * it is now. `keepCurrent` (before a change) keeps the current one first when something else changed the routine since
+ * (a sync from a device), so a change never loses where it was. */
 async function snapshot(ctx: Ctx, routineId: string, reason: "edit" | "workout" = "edit", workoutId: string | null = null) {
   const r = await loadRoutine(ctx.q, routineId);
   if (!r) return;
-  for (const e of r.exercises) delete e.missed;
+  const now = slimRoutine(r), newest = (await ctx.q.query(NEWEST, [routineId])).rows[0];
+  if (newest && sameVersion(slimRoutine(newest.snapshot), now)) return;
   await ctx.q.query("INSERT INTO routine_versions (id, user_id, routine_id, snapshot, reason, workout_id, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)",
-    [uuidv7(), ctx.userId, routineId, JSON.stringify(r), reason, workoutId, ctx.now().toISOString()]);
+    [uuidv7(), ctx.userId, routineId, JSON.stringify(now), reason, workoutId, ctx.now().toISOString()]);
 }
-async function keepCurrent(ctx: Ctx, routineId: string) {
-  if (!(await ctx.q.query("SELECT 1 FROM routine_versions WHERE routine_id = $1 LIMIT 1", [routineId])).rows.length) await snapshot(ctx, routineId);
-}
+const keepCurrent = (ctx: Ctx, routineId: string) => snapshot(ctx, routineId);
 
 async function createRoutine(ctx: Ctx, b: any): Promise<string> {
   const rid = uuidv7();
@@ -141,18 +174,23 @@ async function bodyFromWorkout(q: Sql, workoutId: string) {
  * Finish screen lists them). An exercise added to the routine becomes the workout exercise's own routine exercise, so
  * the change isn't listed (or saved) again. A change shows in the routine's History, with the workout. True when the
  * routine's numbers or structure changed. */
-export async function updateRoutineFromWorkout(ctx: Ctx, routineId: string, workoutId: string, accept: string[], numbers?: { declined: string[] }): Promise<boolean> {
+export async function updateRoutineFromWorkout(ctx: Ctx, routineId: string, workoutId: string, accept: string[], numbers?: { declined: string[] | null }): Promise<boolean> {
   const routine = await loadRoutine(ctx.q, routineId);
   const w = await loadWorkout(ctx.q, workoutId, ymd(ctx.now()));
   if (!routine || !w) return false;
   const shaped = applyStructure(routine, w, accept);
-  let body: any[] = shaped ?? routine.exercises;
+  type Item = RoutineItemLike & Record<string, unknown>;
+  let body = (shaped ?? routine.exercises) as Item[];
   let changed = !!shaped, missedMoved = false;
   if (numbers) {
     const s = await getSettings(ctx.q, ctx.userId);
     const stepKg = s.units.weight === "lb" ? s.increments.lb * 0.45359237 : s.increments.kg;
-    const next = planNext(body, w, { ...s.progression, stepKg }, numbers.declined);
-    missedMoved = next.exercises.some((e: any, i) => (e.missed ?? 0) !== (body[i].missed ?? 0));
+    const d = { ...s.progression, stepKg };
+    // an older app sends no `declined` (it never showed the switches): every "Suggest" change counts as switched off,
+    // so only Automatic ones apply
+    const declined = numbers.declined ?? planNext(body, w, d).changes.filter((c) => c.mode === "suggest").map((c) => c.routineExerciseId);
+    const next = planNext(body, w, d, declined);
+    missedMoved = next.exercises.some((e, i) => (e.missed ?? 0) !== (body[i]!.missed ?? 0));
     changed ||= next.numbersChanged;
     body = next.exercises;
   }
@@ -293,33 +331,47 @@ export function routineRoutes(r: Router) {
     return { ok: true };
   });
 
-  // History: every version, newest first, each with why it was made (an edit, or a workout and its name) and each
-  // exercise's heaviest working weight then (for the weight trend), without the whole snapshot
-  r.get("/routines/:id/versions", async ({ q }, p) => {
+  // History: a page of versions, newest first, each with why it was made (an edit, or a workout and its name), never
+  // the snapshots themselves; `current` marks the routine as it is now. The first page also brings the weight trend:
+  // each exercise's heaviest working weight in every version, worked out in SQL so no snapshot leaves the database.
+  r.get("/routines/:id/versions", async ({ q }, p, _b, qs) => {
+    const rid = id(p.id), offset = intOrNull(Number(qs.offset ?? 0), 0, 1e6) ?? 0;
     const rows = (await q.query(
-      `SELECT v.id, v.created_at, v.reason, v.workout_id, w.name AS workout_name, v.snapshot->>'name' AS name, v.snapshot->'exercises' AS exercises
-       FROM routine_versions v LEFT JOIN workouts w ON w.id = v.workout_id WHERE v.routine_id = $1 ORDER BY v.created_at DESC, v.id DESC`, [id(p.id)])).rows;
-    return rows.map((x: any) => {
-      const exs: any[] = Array.isArray(x.exercises) ? x.exercises : [];
-      const top = exs.map((e) => {
-        const ws = (Array.isArray(e.sets) ? e.sets : []).filter((s: any) => s.kind !== "warmup" && s.kind !== "drop" && typeof s.weightKg === "number").map((s: any) => s.weightKg as number);
-        return { exerciseId: e.exerciseId as string, name: (e.exercise?.name ?? "") as string, kg: ws.length ? Math.max(...ws) : null };
-      });
-      return { id: x.id, createdAt: x.created_at, reason: x.reason, workoutId: x.workout_id, workoutName: x.workout_name, name: x.name, exercises: exs.length, top };
-    });
+      `SELECT v.id, v.created_at, v.reason, v.workout_id, w.name AS workout_name, coalesce(v.snapshot->>'name', '') AS name,
+         CASE WHEN jsonb_typeof(v.snapshot->'exercises') = 'array' THEN jsonb_array_length(v.snapshot->'exercises') ELSE 0 END AS exercises
+       FROM routine_versions v LEFT JOIN workouts w ON w.id = v.workout_id WHERE v.routine_id = $1 ORDER BY v.created_at DESC, v.id DESC LIMIT $2 OFFSET $3`,
+      [rid, VERSIONS_PAGE + 1, offset])).rows;
+    const items: RoutineVersionRow[] = rows.slice(0, VERSIONS_PAGE).map((x: Record<string, unknown>) => ({
+      id: String(x.id), createdAt: String(x.created_at instanceof Date ? x.created_at.toISOString() : x.created_at), reason: x.reason === "workout" ? "workout" : "edit",
+      workoutId: (x.workout_id as string | null) ?? null, workoutName: (x.workout_name as string | null) ?? null, name: String(x.name), exercises: Number(x.exercises), current: false }));
+    if (offset > 0) return { items, more: rows.length > VERSIONS_PAGE };
+    // "Current" only when the newest version really is the routine now (something may have changed it since)
+    const [routine, newest] = [await loadRoutine(q, rid), (await q.query(NEWEST, [rid])).rows[0]];
+    if (routine && newest && items[0] && sameVersion(slimRoutine(newest.snapshot), slimRoutine(routine))) items[0].current = true;
+    const ex = arrSql("v.snapshot->'exercises'"), sets = arrSql("e->'sets'");
+    const trend: RoutineTrendPoint[] = (await q.query(
+      `SELECT * FROM (SELECT v.id AS version_id, v.created_at AS at, v.reason, w.name AS workout_name, e->>'exerciseId' AS exercise_id, coalesce(e->>'name', e->'exercise'->>'name', '') AS name,
+          (SELECT max((s->>'weightKg')::float8) FROM jsonb_array_elements(${sets}) s
+            WHERE coalesce(s->>'kind', 'normal') NOT IN ('warmup', 'drop') AND jsonb_typeof(s->'weightKg') = 'number') AS kg
+        FROM routine_versions v LEFT JOIN workouts w ON w.id = v.workout_id CROSS JOIN LATERAL jsonb_array_elements(${ex}) e WHERE v.routine_id = $1) t
+       WHERE kg IS NOT NULL AND exercise_id IS NOT NULL ORDER BY at, version_id`, [rid])).rows.map((x: Record<string, unknown>) => ({
+      versionId: String(x.version_id), at: String(x.at instanceof Date ? x.at.toISOString() : x.at),
+      reason: x.reason === "workout" ? "workout" : "edit", workoutName: (x.workout_name as string | null) ?? null, exerciseId: String(x.exercise_id), name: String(x.name), kg: Number(x.kg) }));
+    return { items, more: rows.length > VERSIONS_PAGE, trend };
   });
   r.get("/routines/:id/versions/:vid", async ({ q }, p) => {
     const v = (await q.query("SELECT snapshot FROM routine_versions WHERE id = $1 AND routine_id = $2", [id(p.vid), id(p.id)])).rows[0];
     if (!v) throw notFound("Version not found");
-    return v.snapshot;
+    return slimRoutine(v.snapshot);
   });
+  // a version of either shape: its exercises are rebuilt from their exerciseId (writeRoutineBody checks each still exists)
   r.post("/routines/:id/versions/:vid/restore", async (ctx, p) => {
     const rid = id(p.id);
     const v = (await ctx.q.query("SELECT snapshot FROM routine_versions WHERE id = $1 AND routine_id = $2", [id(p.vid), rid])).rows[0];
     if (!v) throw notFound("Version not found");
     await keepCurrent(ctx, rid);
-    const s = v.snapshot;
-    await ctx.q.query("UPDATE routines SET name = $2, description = $3, updated_at = now() WHERE id = $1", [rid, s.name, s.description ?? ""]);
+    const s = slimRoutine(v.snapshot);
+    await ctx.q.query("UPDATE routines SET name = $2, description = $3, updated_at = now() WHERE id = $1", [rid, s.name || "Routine", s.description]);
     await writeRoutineBody(ctx, rid, s.exercises);
     await snapshot(ctx, rid);
     ctx.changed("routine");

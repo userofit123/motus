@@ -221,7 +221,7 @@ describe("updating a routine from a workout", () => {
     const plank = (await call(C, "GET", `/workouts/${w.id}`)).exercises[2].id;
     const rb = (await call(C, "GET", `/routines/${r.id}`)).exercises[1].id;
     // the skipped deadlift is listed too, but only what's switched on is saved: here the added plank
-    await call(C, "POST", `/workouts/${w.id}/finish`, { routineChanges: [`added:${plank}`] });
+    await call(C, "POST", `/workouts/${w.id}/finish`, { routineChanges: [`added:${plank}`], declined: [] });
     const after = await call(C, "GET", `/routines/${r.id}`);
     expect(after.exercises.map((e: any) => e.exerciseId)).toEqual([a, b, c]);
     // today's 105 × 5 in every set: the routine takes it, then Progression (Suggest by default, kept) a step up
@@ -284,8 +284,8 @@ describe("updating a routine from a workout", () => {
     await call(C, "POST", `/workouts/${w2.id}/finish`, { saveLayout: true });
     const after = await call(C, "GET", `/routines/${r.id}`);
     expect(after.exercises.map((e: any) => e.exerciseId)).toEqual([c, b]);
-    // the swap saved takes today's 30 × 12, then Progression a step up (every set reached its 12 reps)
-    expect(after.exercises[0].sets.map((s: any) => [s.weightKg, s.reps])).toEqual([[32.5, 12]]);
+    // the swap saved takes today's 30 × 12; the step up is a Suggest one, which an older app (no `declined`) never asked
+    expect(after.exercises[0].sets.map((s: any) => [s.weightKg, s.reps])).toEqual([[30, 12]]);
     expect(after.exercises[1].sets.map((s: any) => s.weightKg)).toEqual([140, 140]);
   });
 });
@@ -339,15 +339,25 @@ describe("the routine's numbers and Progression", () => {
     expect(after[2].missed).toBe(1);
     const next = await call(C, "POST", "/workouts/start", { routineId: r.id, force: true });
     expect(next.exercises[0].sets.map((s: any) => s.weightKg)).toEqual([20, 62.5, 62.5]);
-    const hist = await call(C, "GET", `/routines/${r.id}/versions`);
-    expect(hist.map((v: any) => v.reason)).toEqual(["workout", "edit"]);
+    const page = await call(C, "GET", `/routines/${r.id}/versions`);
+    const hist = page.items;
+    expect(hist.map((v: any) => [v.reason, v.current])).toEqual([["workout", true], ["edit", false]]);
     expect(hist[0]).toMatchObject({ workoutId: w.id, workoutName: "Prog" });
-    expect(hist[0].top[0].kg).toBe(62.5);
+    expect(page.more).toBe(false);
+    expect(page.trend.filter((t: any) => t.versionId === hist[0].id)[0].kg).toBe(62.5);
     const old = await call(C, "GET", `/routines/${r.id}/versions/${hist[1].id}`);
     expect(old.exercises[0].sets[1].weightKg).toBe(60);
+    // slim: the exercise's name and muscles, never the whole exercise
+    expect(old.exercises[0]).not.toHaveProperty("exercise");
+    expect(typeof old.exercises[0].name).toBe("string");
     await call(C, "POST", `/routines/${r.id}/versions/${hist[1].id}/restore`);
     expect((await call(C, "GET", `/routines/${r.id}`)).exercises[0].sets[1].weightKg).toBe(60);
-    expect((await call(C, "GET", `/routines/${r.id}/versions`)).length).toBe(3);
+    const again = (await call(C, "GET", `/routines/${r.id}/versions`)).items;
+    expect(again.length).toBe(3);
+    expect(again[0].current).toBe(true);
+    // a save that changes nothing adds no version
+    await call(C, "PUT", `/routines/${r.id}`, { name: (await call(C, "GET", `/routines/${r.id}`)).name });
+    expect((await call(C, "GET", `/routines/${r.id}/versions`)).items.length).toBe(3);
   });
 
   it("makes no more-weight reminders, and an older app's moreWeight is left out", async () => {
@@ -360,9 +370,14 @@ describe("the routine's numbers and Progression", () => {
     for (const s of w.exercises[0].sets) await call(C, "PUT", `/workout-sets/${s.id}`, { weightKg: 20, reps: 12, done: true });
     await call(C, "POST", `/workouts/${w.id}/finish`, { moreWeight: [{ exerciseId: ex[0].id, weightKg: 22.5, reps: 8 }] });
     expect((await eng.db.admin.query("SELECT 1 FROM reminders WHERE created_workout_id = $1", [w.id])).rows.length).toBe(0);
-    // Settings' default is Suggest, kept (nothing switched off): next time at one step more, reps at the bottom
+    // Settings' default is Suggest, and an older app sends no `declined` (it never showed the switch): not applied
     const next = await call(C, "POST", "/workouts/start", { routineId: r.id });
-    expect(next.exercises[0].sets.map((s: any) => [s.weightKg, s.reps])).toEqual([[22.5, 8], [22.5, 8]]);
+    expect(next.exercises[0].sets.map((s: any) => [s.weightKg, s.reps])).toEqual([[20, 8], [20, 8]]);
+    // the same with the switch left on (declined: []): next time one step more, reps at the bottom
+    for (const s of next.exercises[0].sets) await call(C, "PUT", `/workout-sets/${s.id}`, { weightKg: 20, reps: 12, done: true });
+    await call(C, "POST", `/workouts/${next.id}/finish`, { declined: [] });
+    const third = await call(C, "POST", "/workouts/start", { routineId: r.id });
+    expect(third.exercises[0].sets.map((s: any) => [s.weightKg, s.reps])).toEqual([[22.5, 8], [22.5, 8]]);
   });
 
   it("keeps the rep target and range on a set added during the workout", async () => {

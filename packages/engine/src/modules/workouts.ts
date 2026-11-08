@@ -602,7 +602,7 @@ export function workoutRoutes(r: Router) {
     // own switch, and `routineChanges` names those switched on. All in this one transaction with the finish. Older apps
     // sent `saveLayout` for "save what's listed", which then listed neither skipped exercises nor their own
     // updateRoutine (sent on every finish with "Always", so ignored): saveLayout saves today's list without the skipped
-    // ones. Their `moreWeight` is left: Progression decides now.
+    // ones. Their `moreWeight` is left: Progression decides now, and without `declined` only Automatic changes apply.
     if (w.routine_id) {
       const { updateRoutineFromWorkout } = await import("./routines");
       let accept = strList(b?.routineChanges);
@@ -610,7 +610,7 @@ export function workoutRoutes(r: Router) {
         const [routine, done] = [await loadRoutine(ctx.q, w.routine_id), await loadWorkout(ctx.q, wid, ymd(ctx.now()))];
         if (routine && done) accept = structureChanges(routine, done).filter((c) => c.kind !== "skipped").map((c) => c.key);
       }
-      await updateRoutineFromWorkout(ctx, w.routine_id, wid, accept, { declined: strList(b?.declined) });
+      await updateRoutineFromWorkout(ctx, w.routine_id, wid, accept, { declined: Array.isArray(b?.declined) ? strList(b.declined) : null });
     }
     ctx.changed("workout");
     return { ok: true };

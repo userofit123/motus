@@ -171,6 +171,13 @@ async function finish() {
 .fin-next { color: var(--tx2); white-space: nowrap; }
 .fin-row { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
 .fin-row .t { min-width: 0; }
+/* narrow phones: "next time …" on a line of its own, so the name never shrinks to nothing (the dot goes with it) */
+@media (max-width: 420px) {
+  .fin-row { flex-direction: column; align-items: flex-start; gap: 0; }
+  .fin-row .t { max-width: 100%; }
+  .fin-row .sep { display: none; }
+  .fin-next { white-space: normal; }
+}
 .fin-diff { flex: none; }
 .fin-diff.pos { color: var(--pos); }
 .fin-diff.neg { color: var(--neg); }

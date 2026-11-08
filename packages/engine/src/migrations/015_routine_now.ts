@@ -2,7 +2,9 @@
 // - "Always start with these numbers" becomes "Keep these numbers fixed" (fixed); "Start from what you did last time"
 //   and its scope are gone, so prefill and prefill_scope go too.
 // - progression holds the exercise's own Progression ({mode, stepKg, lowerAfter}, each null = follow Settings); an old
-//   rule becomes its own Automatic with its step and its misses before lowering.
+//   rule becomes its own Automatic with its step and its misses before lowering, but only for someone whose "Progression
+//   rules" feature was on (its default); with it off the rule never ran, so it follows Settings (Off for them, see
+//   withDefaults).
 // - missed counts workouts in a row with missed reps, for "Lower the weight after".
 // - routine_versions keep every version, each saying why it was made (an edit, or a workout and which); RLS is already
 //   on the table (002_isolation).
@@ -14,7 +16,9 @@ UPDATE routine_exercises SET progression = jsonb_build_object(
     'mode', 'auto',
     'stepKg', CASE WHEN jsonb_typeof(progression->'incrementKg') = 'number' AND (progression->>'incrementKg')::numeric > 0 THEN (progression->'incrementKg') ELSE 'null'::jsonb END,
     'lowerAfter', CASE WHEN jsonb_typeof(progression->'deloadAfter') = 'number' THEN to_jsonb(least(10, greatest(0, round((progression->>'deloadAfter')::numeric)))::int) ELSE 'null'::jsonb END)
-  WHERE progression IS NOT NULL AND jsonb_typeof(progression) = 'object' AND progression ? 'kind';
+  WHERE progression IS NOT NULL AND jsonb_typeof(progression) = 'object' AND progression ? 'kind'
+    AND coalesce((SELECT CASE WHEN jsonb_typeof(us.data->'features'->'progression') = 'boolean' THEN (us.data->'features'->>'progression')::boolean END
+                  FROM user_settings us WHERE us.user_id = routine_exercises.user_id), true);
 UPDATE routine_exercises SET progression = NULL WHERE progression IS NOT NULL AND (jsonb_typeof(progression) <> 'object' OR NOT progression ? 'mode');
 ALTER TABLE routine_exercises DROP COLUMN IF EXISTS prefill;
 ALTER TABLE routine_exercises DROP COLUMN IF EXISTS prefill_scope;

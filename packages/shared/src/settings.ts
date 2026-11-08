@@ -171,6 +171,9 @@ export function withDefaults(saved: unknown): Settings {
   const { updateRoutine: _u, prefillFromLast: _pl, prefillScope: _ps, ...workout } = out.workout as WorkoutPrefs & { updateRoutine?: unknown; prefillFromLast?: unknown; prefillScope?: unknown };
   out.workout = workout;
   // the "Progression rules" feature switch went with them: Progression is always there, its mode Off when unwanted
+  // (someone who had it switched off and never chose a mode gets Off, so nothing starts moving their weights)
+  const savedMode = (saved as { progression?: { mode?: unknown } } | null)?.progression?.mode;
+  if (out.features.progression === false && savedMode === undefined) out.progression.mode = "off";
   delete out.features.progression;
   const pm = out.progression.mode;
   out.progression = { mode: pm === "auto" || pm === "off" ? pm : "suggest", lowerAfter: Number.isInteger(out.progression.lowerAfter) ? Math.min(10, Math.max(0, out.progression.lowerAfter)) : 3 };

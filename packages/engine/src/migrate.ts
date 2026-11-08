@@ -15,6 +15,7 @@ import m012 from "./migrations/012_schedule_monthly";
 import m013 from "./migrations/013_set_rep_range";
 import m014 from "./migrations/014_reminder_body_plain";
 import m015 from "./migrations/015_routine_now";
+import m016 from "./migrations/016_history_now";
 
 const MIGRATIONS: [string, string][] = [
   ["001_init", m001],
@@ -32,19 +33,22 @@ const MIGRATIONS: [string, string][] = [
   ["013_set_rep_range", m013],
   ["014_reminder_body_plain", m014],
   ["015_routine_now", m015],
+  ["016_history_now", m016],
 ];
 
-export async function migrate(db: Db): Promise<string[]> {
+/** `until`: stop after that one (tests run a migration against rows written in the shape before it). */
+export async function migrate(db: Db, until?: string): Promise<string[]> {
   await db.admin.query("CREATE TABLE IF NOT EXISTS schema_migrations (name text PRIMARY KEY, at timestamptz NOT NULL DEFAULT now())");
   const done = new Set((await db.admin.query<{ name: string }>("SELECT name FROM schema_migrations")).rows.map((r) => r.name));
   const ran: string[] = [];
   for (const [name, sql] of MIGRATIONS) {
-    if (done.has(name)) continue;
+    if (done.has(name)) { if (name === until) break; continue; }
     await db.tx(async (q) => {
       await q.exec(sql);
       await q.query("INSERT INTO schema_migrations (name) VALUES ($1)", [name]);
     });
     ran.push(name);
+    if (name === until) break;
   }
   return ran;
 }

@@ -53,6 +53,14 @@ describe("planNext", () => {
     expect(planNext([slot({ missed: 9 })], miss, { ...D, lowerAfter: 0 }).changes).toEqual([]);
     expect(planNext([slot({ missed: 5 })], done([range(9), range(9)]), D).exercises[0]).toMatchObject({ missed: 0 });
   });
+  it("starts the missed count again when a lower is declined, and counts nothing while Progression is Off", () => {
+    const miss = done([range(7), range(8)]);
+    const r = planNext([slot({ missed: 2 })], miss, D, ["re1"]);
+    expect(r.changes[0]).toMatchObject({ mode: "suggest", direction: "down" });
+    expect(r.exercises[0]).toMatchObject({ missed: 0, sets: [{ weightKg: 10 }, { weightKg: 20 }, { weightKg: 20 }] });
+    expect(planNext([slot({ missed: 2 })], miss, { ...D, mode: "off" }).exercises[0]).toMatchObject({ missed: 0 });
+    expect(planNext([slot({ missed: 2, progression: { mode: "off", stepKg: null, lowerAfter: null } })], miss, D).exercises[0]).toMatchObject({ missed: 0 });
+  });
   it("leaves fixed, skipped and swapped-away exercises alone", () => {
     const today = done([range(12, 30), range(12, 30)]);
     expect(planNext([slot({ fixed: true })], today, D).numbersChanged).toBe(false);
@@ -175,5 +183,9 @@ describe("the old routine settings", () => {
     expect("progression" in s.features).toBe(false);
     expect(s.progression).toEqual({ mode: "suggest", lowerAfter: 3 });
     expect(withDefaults({ progression: { mode: "nope", lowerAfter: 40 } }).progression).toEqual({ mode: "suggest", lowerAfter: 10 });
+  });
+  it("give Off to someone who had the old Progression feature switched off, unless they chose a mode since", () => {
+    expect(withDefaults({ features: { progression: false } }).progression.mode).toBe("off");
+    expect(withDefaults({ features: { progression: false }, progression: { mode: "auto" } }).progression.mode).toBe("auto");
   });
 });

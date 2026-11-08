@@ -5,9 +5,9 @@
 // exercises (folding cards, dragged to reorder) and an overview. Drafts are kept on this device.
 // At /workout/plan the same editor plans a one-off workout ("Empty workout" in the + sheet): its one button starts it,
 // and it is saved as a routine too only when asked.
-import { computed, nextTick, ref, watch } from "vue";
+import { computed, nextTick, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { usesWeight, usesReps, usesDuration, usesDistance, musclesWorked, estimate, restAfterSet, dropWeightKg, restDefaultsOf, duration, muscleName, toM, fromM, muscleSets } from "@motus/shared";
+import { usesWeight, usesReps, usesDuration, usesDistance, musclesWorked, estimate, restAfterSet, dropWeightKg, restDefaultsOf, duration, muscleName, toM, fromM, muscleSets, type Progression } from "@motus/shared";
 import { useRoutine, useRoutines, useFolders, useExercises, useSettings, useTemplates, loaded } from "../api/queries";
 import { api, mediaUrl } from "../api/client";
 import { invalidate } from "../api/live";
@@ -213,8 +213,17 @@ function restDefault(t: RestTarget) {
   if (t.kind === "set") return "No custom rest";
   return w.restByKindS?.[t.kind] != null ? `Default (${c(w.restByKindS[t.kind]!)})` : `Same as normal sets (${c(workRest(e))})`;
 }
-// the top of a rep range is hidden on phones to save room, unless the exercise uses one
-const showRange = (e: any) => !isPhone.value || e.sets.some((x: any) => x.repsMax != null);
+// the top of a rep range is hidden on phones to save room, unless the exercise uses one or its ⋮ "Rep range" is on
+const rangeOn = reactive(new WeakSet<object>());
+const showRange = (e: any) => !isPhone.value || rangeOn.has(e) || e.sets.some((x: any) => x.repsMax != null);
+// phones offer it in the exercise's ⋮ menu, where it opens the "Up to" column
+const rangeItem = (e: any) => isPhone.value && usesReps(tr(e));
+// off again: the range goes, each set keeps its bottom as its reps
+function toggleRange(e: any) {
+  if (!showRange(e)) { rangeOn.add(e); return; }
+  rangeOn.delete(e);
+  if (e.sets.some((x: any) => x.repsMax != null)) { for (const x of e.sets) x.repsMax = null; touch(); }
+}
 const cols = (e: any) => {
   const t = tr(e);
   const n = [usesWeight(t), usesReps(t), usesReps(t) && showRange(e), usesDuration(t), usesDistance(t), s.value.features.rpe].filter(Boolean).length;
@@ -232,7 +241,7 @@ function fromScratch() { starter.value = false; picking.value = {}; }
 
 // Progression for one exercise (its ⋮ menu → Progression): each field null uses your default (Settings → Workout →
 // Progression), so changing the default there moves every exercise without its own
-const progFor = ref<any>(null);
+const progFor = ref<{ exerciseId: string; progression?: Progression | null } | null>(null);
 const defStepKg = (e: any) => exOf(e)?.incrementKg || W_INC.value;
 const W_INC = computed(() => (s.value.units.weight === "lb" ? fmt.value.toKg(s.value.increments.lb) : s.value.increments.kg));
 const ownProg = (e: any) => !!e.progression && (e.progression.mode != null || e.progression.stepKg != null || e.progression.lowerAfter != null);
@@ -306,8 +315,9 @@ const exMenu = (e: any, i: number) => [
   { label: "Move down", icon: "down", run: () => move(i, 1), hidden: i === r.value.exercises.length - 1 },
   { label: "Superset with next", hint: "Do one set of each in turn, resting after the pair", icon: "link", run: () => superset(i), hidden: !s.value.features.supersets || i === r.value.exercises.length - 1 || inSupersetWithNext(i) },
   { label: "Remove from superset", icon: "link", run: () => unsuperset(i), hidden: !e.superset },
-  { label: "Progression", hint: ownProg(e) ? modeLabel(e.progression.mode ?? s.value.progression.mode) : "Uses your default", sep: true, icon: "arrowUp", hidden: e.fixed || !progUsable(e), run: () => (progFor.value = e) },
-  { label: "Keep these numbers fixed", hint: "The numbers don't update after workouts and progression is off", sep: !progUsable(e) || e.fixed, icon: "lock", checked: !!e.fixed, run: () => { e.fixed = !e.fixed; touch(); } },
+  { label: "Rep range", hint: "A bottom and a top, e.g. 8-12", sep: true, icon: "layers", checked: showRange(e), hidden: !rangeItem(e), run: () => toggleRange(e) },
+  { label: "Progression", hint: ownProg(e) ? modeLabel(e.progression.mode ?? s.value.progression.mode) : "Uses your default", sep: !rangeItem(e), icon: "arrowUp", hidden: e.fixed || !progUsable(e), run: () => (progFor.value = e) },
+  { label: "Keep these numbers fixed", hint: "The numbers don't update after workouts and Progression is off", sep: !rangeItem(e) && (!progUsable(e) || e.fixed), icon: "lock", checked: !!e.fixed, run: () => { e.fixed = !e.fixed; touch(); } },
   { label: "Remove from routine", icon: "trash", danger: true, sep: true, run: () => removeEx(i) },
 ];
 const setMenu = (e: any, j: number) => e.sets[j].kind === "drop" ? [
@@ -510,7 +520,6 @@ await loaded(src, all, folders, routines, templates);
 .body { max-width: 860px; }
 .starter, .plan-opt { margin-bottom: var(--spg); }
 .pl-k { margin-bottom: 2px; }
-.prog > summary { cursor: pointer; margin-bottom: 0; }
 .exchips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 2px; }
 .pg-intro { margin: 0 0 var(--hg); }
 .pg-rows { margin-top: var(--hg); }

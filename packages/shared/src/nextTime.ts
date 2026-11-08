@@ -71,7 +71,7 @@ const deciding = (k: string) => k !== "warmup" && k !== "drop";
  * last keep theirs), then its Progression: a step up when every working set reached the top of its rep range (reps
  * back to the bottom), a step down after `lowerAfter` workouts in a row with missed reps. A rep range stays as set (the
  * reps move inside it); a single rep target takes today's reps when they reached it, and keeps its target when missed
- * (so misses count). "Keep these numbers fixed" exercises and skipped ones keep everything. `declined`: routine
+ * (so misses count; not while Progression is Off, and a declined "lower" starts the count again). "Keep these numbers fixed" exercises and skipped ones keep everything. `declined`: routine
  * exercise ids whose "suggest" change was switched off (their numbers still follow today). Pure, for both the Finish
  * screen and the engine. `missed` is each exercise's run of workouts with missed reps, carried to the next finish. */
 export function planNext<R extends RoutineItemLike>(exercises: R[], w: { exercises: WorkoutExercise[] }, d: ProgressionDefaults, declined: Iterable<string> = []): { exercises: R[]; changes: NextChange[]; numbersChanged: boolean } {
@@ -93,17 +93,18 @@ export function planNext<R extends RoutineItemLike>(exercises: R[], w: { exercis
       const reps = rs.repsMax != null || t.reps == null || (rs.reps != null && t.reps < rs.reps) ? rs.reps : t.reps;
       return { ...rs, weightKg: num(t.weightKg, rs.weightKg), reps, durationS: num(t.durationS, rs.durationS), distanceM: num(t.distanceM, rs.distanceM) };
     });
-    let missed = re.missed ?? 0;
+    // Off counts nothing, so switching Progression back on never lowers the weight for misses from while it was off
+    const p = progressionOf(re.progression, d, e.exercise?.incrementKg);
+    let missed = p.mode === "off" ? 0 : re.missed ?? 0;
     const tr = e.exercise?.tracking ?? "weight_reps";
     const dec = sets.map((rs, i) => ({ rs, t: pairs[i], i })).filter((x) => deciding(x.rs.kind));
     const assisted = tr === "assisted";
     const can = usesWeight(tr) && usesReps(tr) && dec.length > 0 && dec.every((x) => x.rs.reps != null && x.t && x.t.reps != null && x.t.weightKg != null && (assisted || x.t.weightKg > 0));
     if (can) {
-      const p = progressionOf(re.progression, d, e.exercise?.incrementKg);
       const top = (s: RoutineSetLike) => s.repsMax ?? s.reps!;
       const allTop = dec.every((x) => x.t!.reps! >= top(x.rs));
       const missedNow = dec.some((x) => x.t!.reps! < x.rs.reps!);
-      missed = missedNow ? missed + 1 : 0;
+      missed = missedNow && p.mode !== "off" ? missed + 1 : 0;
       let direction: "up" | "down" | null = null;
       if (p.mode !== "off" && p.stepKg > 0) {
         if (allTop) direction = "up";
@@ -131,7 +132,10 @@ export function planNext<R extends RoutineItemLike>(exercises: R[], w: { exercis
           reason: direction === "up" ? `Every set reached ${Math.max(...dec.map((x) => top(x.rs)))} reps`
             : p.lowerAfter === 1 ? "Missed reps last workout" : `Missed reps ${p.lowerAfter} workouts in a row`,
         });
-        if (mode === "auto" || !off.has(re.id!)) { next = moved; missed = 0; }
+        // applied, or a "lower" switched off on Finish: either way the run of misses starts again from 0, so a declined
+        // lower isn't asked again at the very next miss
+        if (mode === "auto" || !off.has(re.id!)) next = moved;
+        missed = 0;
       }
     }
     if (JSON.stringify(next) !== JSON.stringify(sets)) numbersChanged = true;

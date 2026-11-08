@@ -453,3 +453,17 @@ export interface HomeData extends HomeToday {
   groupDays: HomeGroup[];
   totalWorkouts: number; routineCount: number; activityCount: number;
 }
+
+/** One version in a routine's History, kept slim: only what the History view shows and Restore needs (the exercise
+ * itself is looked up again by `exerciseId` on restore). */
+export interface RoutineSnapshotSet { kind: SetKind; reps: number | null; repsMax: number | null; weightKg: number | null; durationS: number | null; distanceM: number | null; rpe: number | null; restS: number | null }
+export interface RoutineSnapshotExercise {
+  id: string | null; exerciseId: string; name: string; primary: string[]; secondary: string[]; tracking: Tracking;
+  superset: string | null; restS: number | null; restAfterS: number | null; repRestS: number | null; restByKind: Record<string, number> | null;
+  fixed: boolean; progression: Progression | null; note: string; sets: RoutineSnapshotSet[];
+}
+export interface RoutineSnapshot { name: string; description: string; exercises: RoutineSnapshotExercise[] }
+/** A row of a routine's History list; `current` when it is the routine as it is now. */
+export interface RoutineVersionRow { id: string; createdAt: string; reason: "edit" | "workout"; workoutId: string | null; workoutName: string | null; name: string; exercises: number; current: boolean }
+/** One point of History's weight trend: an exercise's heaviest working weight in one version. */
+export interface RoutineTrendPoint { versionId: string; at: string; reason: "edit" | "workout"; workoutName: string | null; exerciseId: string; name: string; kg: number }

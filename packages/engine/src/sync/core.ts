@@ -1,5 +1,6 @@
 // Reading and writing synced rows, the same way on the server and on a device.
 // Rows travel as JSON made by to_jsonb and are written back with jsonb_populate_record, so every column type round-trips.
+import { cleanProgression } from "@motus/shared";
 import type { Sql } from "../db";
 import { SYNCED, SYNCED_BY_NAME } from "./tables";
 
@@ -94,7 +95,13 @@ export async function applyChanges(q: Sql, userId: string, changes: Change[], op
       if (c.op === "upsert") {
         const all = await columns(q, c.tbl);
         // a row always belongs to whoever is writing it, whatever the JSON says
-        const row = { ...c.row, ...(c.tbl === "exercises" ? { owner_id: userId } : all.includes("user_id") ? { user_id: userId } : {}) };
+        const row: Record<string, unknown> = { ...c.row, ...(c.tbl === "exercises" ? { owner_id: userId } : all.includes("user_id") ? { user_id: userId } : {}) };
+        // a routine exercise from a device on an app from before 015_routine_now: its Progression made safe (an old rule
+        // becomes its own Automatic), and "Always start with these numbers" (prefill 'target') becomes fixed
+        if (c.tbl === "routine_exercises") {
+          if ("progression" in row) row.progression = cleanProgression(row.progression);
+          if ("prefill" in row && !("fixed" in row)) row.fixed = row.prefill === "target";
+        }
         // only the columns the JSON has: a device on an older app doesn't know newer columns, so a new row takes their
         // default and an existing row keeps its value, instead of both becoming NULL
         const has = all.filter((x) => x in row);
