@@ -4,6 +4,7 @@
 import { computed } from "vue";
 import { useFmt } from "../core/format";
 import Icon from "./Icon.vue";
+import { reminderText } from "../core/reminderText";
 
 const props = defineProps<{ reminder: any; when?: boolean; where?: string | null; actions?: { label: string; run: () => void; primary?: boolean }[] }>();
 const fmt = useFmt();
@@ -15,8 +16,6 @@ const whenText = computed(() => {
 const actionText = computed(() => {
   const a = r.value.action;
   if (!a) return null;
-  // "Ready for more weight" from the Finish screen: the exact numbers, kept in kg and shown in the person's unit
-  if (a.setWeightKg != null) return `${fmt.value.wu_(a.setWeightKg)}${a.setReps != null ? ` × ${a.setReps}` : ""}`;
   return [a.weightKg ? `${a.weightKg > 0 ? "+" : "−"}${fmt.value.wu_(Math.abs(a.weightKg))}` : null, a.reps ? `${a.reps > 0 ? "+" : "−"}${Math.abs(a.reps)} reps` : null, a.restS ? `rest ${fmt.value.clock(a.restS)}` : null].filter(Boolean).join(", ") || null;
 });
 const meta = computed(() => [props.where, props.when ? whenText.value : null, actionText.value].filter(Boolean) as string[]);
@@ -26,7 +25,7 @@ const meta = computed(() => [props.where, props.when ? whenText.value : null, ac
   <div class="ritem">
     <Icon name="bell" :size="18" class="ic" />
     <div class="b">
-      <div class="tx">{{ r.body }}</div>
+      <div class="tx">{{ reminderText(r, fmt) }}</div>
       <div v-if="meta.length" class="m"><template v-for="(x, i) in meta" :key="i"><span v-if="i" class="sep">·</span><span>{{ x }}</span></template></div>
       <div v-if="actions?.length" class="acts">
         <button v-for="a in actions" :key="a.label" type="button" class="qb" :class="{ acc: a.primary }" @click="a.run()">{{ a.label }}</button>

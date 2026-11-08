@@ -13,6 +13,7 @@ import { confirm } from "../core/ask";
 import { toast } from "../core/toast";
 import { onHome, streakOnHome, toggleHomeGoal, setHomeStreak, periodWord, periodNow, periodLabel, useStepGoal } from "../core/goals";
 import { useFmt, ago, goalLabel, localYmd, tomorrowYmd } from "../core/format";
+import { reminderText } from "../core/reminderText";
 import { startOpen, bodySheet, dailySheet, activitySheet } from "../core/ui";
 import { isPhone } from "../core/device";
 import Icon from "../components/Icon.vue";
@@ -391,7 +392,7 @@ await loaded(home, ach);
 
         <div v-else-if="id === 'reminders'" class="card hb sz-m">
           <div class="ch"><span class="bi"><Icon name="bell" :size="15" /></span><span class="t grow">Reminders</span></div>
-          <div class="list"><div v-for="r in h.reminders" :key="r.id" class="li click" v-bind="link(reminderPlace(r))"><div class="grow"><div class="t">{{ r.body }}</div><div class="s">{{ r.targetName }}</div></div><Icon name="right" :size="16" class="muted" /></div></div>
+          <div class="list"><div v-for="r in h.reminders" :key="r.id" class="li click" v-bind="link(reminderPlace(r))"><div class="grow"><div class="t">{{ reminderText(r, fmt) }}</div><div class="s">{{ r.targetName }}</div></div><Icon name="right" :size="16" class="muted" /></div></div>
         </div>
 
         <!-- body weight: the latest, the change over 30 days and the trend -->

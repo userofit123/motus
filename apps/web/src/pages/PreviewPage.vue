@@ -10,6 +10,7 @@ import { usePreview, useSettings, loaded } from "../api/queries";
 import { api, ApiError, mediaUrl } from "../api/client";
 import { invalidate } from "../api/live";
 import { useFmt, ago } from "../core/format";
+import { reminderText } from "../core/reminderText";
 import { exerciseSheet, noteSheet } from "../core/ui";
 import { choose } from "../core/ask";
 import { toastError } from "../core/toast";
@@ -115,7 +116,7 @@ await loaded(pv);
             <template v-else>
               <div class="s ellipsis" :class="{ acc: e.sets.some((x: any) => x.adjusted) }">{{ plan(e) }}</div>
               <div class="s ellipsis">{{ e.sets[0]?.restS ? `Rest ${fmt.clock(e.sets[0].restS)} · ` : "" }}{{ e.last ? `last time ${e.last.sets.filter((x: any) => x.kind !== "warmup").map((x: any) => setText(e, x)).join(", ")}` : "first time" }}</div>
-              <div v-if="e.reminders.length" class="s acc ellipsis"><Icon name="bell" :size="12" style="display:inline;vertical-align:-1px" /> {{ e.reminders[0].body }}</div>
+              <div v-if="e.reminders.length" class="s acc ellipsis"><Icon name="bell" :size="12" style="display:inline;vertical-align:-1px" /> {{ reminderText(e.reminders[0], fmt) }}</div>
               <div v-if="e.suggestion" class="s acc">{{ e.suggestion }}</div>
             </template>
           </div>
