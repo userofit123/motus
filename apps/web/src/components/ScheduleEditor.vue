@@ -119,5 +119,7 @@ async function save() {
 .or { display: flex; align-items: center; gap: 10px; margin: calc(var(--hg) * -.4) 0 var(--hg); font-size: var(--fs-xs); font-weight: 700; letter-spacing: .7px; text-transform: uppercase; color: var(--tx2); }
 .or::before, .or::after { content: ""; flex: 1; height: 1px; background: var(--ol); }
 /* the summary ends the sheet: the body's own bottom padding is the gap, not a banner's usual space below */
-.sum { margin-bottom: 0; }
+.sum { margin-bottom: 0; align-items: center; }
+/* a banner tops its icon for wrapped text; this one is usually a single line, so the icon sits on the text's centre */
+.sum > :deep(.ico) { margin-top: 0; flex: none; }
 </style>
