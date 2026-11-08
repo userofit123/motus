@@ -2,6 +2,13 @@
 
 The top entry's version is the one the release workflow publishes. Add a new `## [x.y.z]` section to release.
 
+## [0.1.11] - 2026-11-08
+
+- Download works everywhere: exports, backups, CSVs, and exporting a workout, a route or a routine save a file and say where it went. On the phone the file goes to Downloads; the desktop app asks where to save it; a failed save shows an error instead of nothing.
+- You can always delete your own account. Alone on the server, it goes back to first-run setup; if the last admin leaves, the longest-standing person left becomes admin.
+- A password can no longer be the same as the username, and the create-account form says which box is your name and which you sign in with.
+- Backup passwords are hidden while you type them.
+
 ## [0.1.10] - 2026-11-08
 
 - Steps on Android come only from the phone's own step counter, so wobbling or tapping the phone no longer adds steps; in the browser the count is a labelled estimate that ignores wobbles.
