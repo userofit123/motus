@@ -222,7 +222,8 @@ export function useWorkout() {
     const w = state.w!;
     const curId = w.exercises[state.cur]?.id, actId = w.exercises[state.active]?.id;
     w.exercises.sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
-    state.cur = Math.max(0, w.exercises.findIndex((x) => x.id === curId));
+    // on the Summary tab (past the last exercise) it stays there
+    if (curId) state.cur = Math.max(0, w.exercises.findIndex((x) => x.id === curId));
     state.active = Math.max(0, w.exercises.findIndex((x) => x.id === actId));
     await call("post", `/workouts/${w.id}/reorder`, { ids });
   }
@@ -237,8 +238,9 @@ export function useWorkout() {
   async function removeExercise(e: WorkoutExercise) {
     const i = state.w!.exercises.indexOf(e);
     const actId = state.w!.exercises[state.active]?.id;
+    const onSummary = state.cur >= state.w!.exercises.length;
     state.w!.exercises.splice(i, 1);
-    state.cur = Math.max(0, Math.min(state.cur, state.w!.exercises.length - 1));
+    state.cur = onSummary ? state.w!.exercises.length : Math.max(0, Math.min(state.cur, state.w!.exercises.length - 1));
     const a = state.w!.exercises.findIndex((x) => x.id === actId);
     state.active = a >= 0 ? a : Math.max(0, state.w!.exercises.findIndex((x) => x.status === "pending"));
     await call("del", `/workout-exercises/${e.id}`, undefined, true);

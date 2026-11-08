@@ -6,7 +6,7 @@ import { startWorkout } from "../workout/start";
 import { goBack } from "../core/leave";
 import { computed, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { usesWeight, usesReps, muscleName, type WorkoutExercise, type WorkoutSet } from "@motus/shared";
+import { usesWeight, usesReps, muscleName } from "@motus/shared";
 import { useWorkoutQuery, useSettings, loaded } from "../api/queries";
 import { api, mediaUrl } from "../api/client";
 import { invalidate } from "../api/live";
@@ -35,7 +35,6 @@ const doneLine = computed(() => { const t = rep.value?.totals; if (!t) return ""
   return [fmt.value.dur(t.durationS, true), `${t.workingSets} set${t.workingSets === 1 ? "" : "s"}`, t.volumeKg ? fmt.value.vol(t.volumeKg) : "", t.records ? `${t.records} new record${t.records === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · "); });
 const editing = ref(false), adding = ref(false);
 const verdict = (weId: string) => rep.value?.perExercise.find((p: any) => p.workoutExerciseId === weId);
-const setText = (e: WorkoutExercise, x: WorkoutSet) => [x.weightKg != null && usesWeight(e.exercise.tracking) ? `${fmt.value.w(x.weightKg)} ${fmt.value.wu}` : "", x.reps != null && usesReps(e.exercise.tracking) ? `× ${x.reps}` : "", x.durationS ? fmt.value.clock(x.durationS) : "", x.distanceM ? fmt.value.dist(x.distanceM) : ""].filter(Boolean).join(" ");
 const delta = (a: number | null | undefined, b: number | null | undefined) => (a == null || b == null || !b ? null : a - b);
 
 async function save(path: string, body: unknown, method: "put" | "del" | "post" = "put") {
@@ -150,7 +149,7 @@ await loaded(q);
               <tr v-for="(x, j) in e.sets" :key="x.id">
                 <td><span class="sk" :class="{ w: x.kind === 'warmup', d: x.kind === 'drop', f: x.kind === 'failure' }">{{ x.kind === "warmup" ? "W" : x.kind === "drop" ? "D" : x.kind === "failure" ? "F" : e.sets.slice(0, j + 1).filter((y: any) => y.kind !== "warmup").length }}</span></td>
                 <template v-if="!editing">
-                  <td style="text-align:start;font-weight:500">{{ setText(e, x) }}<span v-if="x.rpe" class="tiny"> @ {{ x.rpe }}</span></td>
+                  <td style="text-align:start;font-weight:500">{{ fmt.set(x, e.exercise?.tracking) }}<span v-if="x.rpe" class="tiny"> @ {{ x.rpe }}</span></td>
                   <td class="tiny" style="text-align:end;white-space:nowrap" :title="x.restPlannedS != null ? `Planned rest ${fmt.clock(x.restPlannedS)}` : undefined">{{ x.restActualS != null ? `Rest ${fmt.clock(x.restActualS)}` : "" }}</td>
                   <td style="text-align:end"><span v-for="p in x.pr" :key="p" class="pr" style="margin-inline-start:4px">{{ p === "e1rm" ? "1RM PR" : p === "weight" ? (e.exercise?.tracking === "assisted" ? "Least help" : "Heaviest") : p === "reps" ? "Rep PR" : p === "volume" ? "Volume PR" : "PR" }}</span></td>
                 </template>

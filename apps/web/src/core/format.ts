@@ -1,6 +1,6 @@
 // Numbers, units and dates as the person likes them (Settings → Units & formats).
 import { computed } from "vue";
-import { fromKg, toKg, fromM, fromCm, toCm, num, clock, duration as dur, ymd, type Settings } from "@motus/shared";
+import { fromKg, toKg, fromM, fromCm, toCm, num, clock, duration as dur, ymd, usesWeight, usesReps, type Settings, type Tracking } from "@motus/shared";
 import { useSettings } from "../api/queries";
 
 export function useFmt() {
@@ -27,6 +27,12 @@ export function makeFmt(s: Settings) {
     distNum: (m: number) => fromM(m, du),
     pace: (s: number, m: number) => { if (!m || !s) return ""; const per = s / fromM(m, du); return `${clock(per)} /${du}`; },
     clock, dur,
+    /** one set as done: "80 kg × 8", "12 reps", "1:30", "2.5 km" (what the exercise tracks) */
+    set: (x: { weightKg: number | null; reps: number | null; durationS: number | null; distanceM: number | null }, t: Tracking | null | undefined) => {
+      const w = x.weightKg != null && !!t && usesWeight(t) ? `${num(fromKg(x.weightKg, wu), 1)} ${wu}` : "";
+      const r = x.reps != null && !!t && usesReps(t) ? (w ? `× ${x.reps}` : `${x.reps} rep${x.reps === 1 ? "" : "s"}`) : "";
+      return [w, r, x.durationS ? clock(x.durationS) : "", x.distanceM ? `${num(fromM(x.distanceM, du), 2)} ${du}` : ""].filter(Boolean).join(" ");
+    },
     date: (iso: string | null | undefined, o: Intl.DateTimeFormatOptions = { day: "numeric", month: "short" }) => (iso ? new Date(iso.length === 10 ? iso + "T12:00:00" : iso).toLocaleDateString(locale, o) : ""),
     dateLong: (iso: string | null | undefined) => (iso ? new Date(iso.length === 10 ? iso + "T12:00:00" : iso).toLocaleDateString(locale, { weekday: "long", day: "numeric", month: "long", year: "numeric" }) : ""),
     time: (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleTimeString(locale, { hour: "numeric", minute: "2-digit", hour12 }) : ""),

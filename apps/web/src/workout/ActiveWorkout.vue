@@ -4,7 +4,7 @@
 // and the action bar (rest included) in the middle, what comes next and the totals on the right.
 import { computed, nextTick, onMounted, onBeforeUnmount, ref, watch } from "vue";
 import { useRouter } from "vue-router";
-import { clock, muscleName } from "@motus/shared";
+import { clock, muscleName, workoutSoFar } from "@motus/shared";
 import { useWorkout, endWorkout } from "./useWorkout";
 import { elapsed, finishRest } from "./runtime";
 import { keepAwake } from "./native";
@@ -23,6 +23,7 @@ import ExerciseCard from "./ExerciseCard.vue";
 import ActionBar from "./ActionBar.vue";
 import Peek from "./PeekBanner.vue";
 import FinishSheet from "./FinishSheet.vue";
+import WorkoutSoFar from "./WorkoutSoFar.vue";
 import ExercisePicker from "../components/ExercisePicker.vue";
 import WorkoutSettings from "../components/WorkoutSettings.vue";
 
@@ -49,9 +50,10 @@ onBeforeUnmount(() => { keepAwake(false); removeEventListener("keydown", key); }
 // answer is still "none" until the new workout arrives
 watch(() => W.active.isFetched.value && !W.active.isFetching.value && !W.active.data.value && !W.state.pending, (gone) => { if (gone) router.replace("/"); });
 
-const done = computed(() => w.value?.exercises.flatMap((e) => e.sets).filter((s) => s.done).length ?? 0);
-const total = computed(() => w.value?.exercises.filter((e) => e.status !== "skipped").flatMap((e) => e.sets).length ?? 0);
-const volume = computed(() => w.value?.exercises.flatMap((e) => e.sets).filter((s) => s.done && s.kind !== "warmup").reduce((a, s) => a + (s.weightKg ?? 0) * (s.reps ?? 0), 0) ?? 0);
+const soFar = computed(() => workoutSoFar(w.value ?? { exercises: [] }));
+const done = computed(() => soFar.value.setsDone), total = computed(() => soFar.value.setsPlanned);
+// the Summary tab comes after the last exercise: cur one past the end
+const onSummary = computed(() => !!w.value && W.state.cur >= w.value.exercises.length);
 const remainingS = computed(() => {
   // a rough "time left": undone sets × (their own time + their rest)
   let t = 0;
@@ -90,7 +92,7 @@ const te = (e: TouchEvent) => {
   const dx = e.changedTouches[0]!.clientX - x0, dy = e.changedTouches[0]!.clientY - y0;
   if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.3 && Date.now() - t0 < 900) { (document.activeElement as HTMLElement)?.blur?.(); go(W.state.cur + (dx < 0 ? 1 : -1)); }
 };
-const go = (i: number) => { if (w.value && i >= 0 && i < w.value.exercises.length) W.state.cur = i; };
+const go = (i: number) => { if (w.value && i >= 0 && i <= w.value.exercises.length) W.state.cur = i; };
 
 async function discard() {
   if (!(await confirm("Cancel this workout?", { text: "It ends now and nothing from it is saved: no sets, no history.", ok: "Cancel workout", danger: true }))) return;
@@ -141,12 +143,13 @@ const menu = computed(() => [
         <button v-for="(e, i) in w.exercises" :key="e.id" role="tab" :aria-selected="i === W.state.cur" :class="[statusOf(e), { cur: i === W.state.cur, act: i === W.state.active }]" :title="i === W.state.active ? 'Doing now' : undefined" @click="go(i)">
           <Icon v-if="statusOf(e) === 'done'" name="check" :size="13" class="ok" /><span class="ellipsis">{{ e.exercise?.name }}</span>
         </button>
+        <button role="tab" :aria-selected="onSummary" :class="{ cur: onSummary }" @click="go(w.exercises.length)"><Icon name="stats" :size="13" /><span>Summary</span></button>
         <button class="add" aria-label="Add exercise" @click="adding = true"><Icon name="plus" :size="16" /></button>
       </div>
       <Peek />
       <!-- the exercise and its sets sit on the page itself, no card around them -->
       <div class="aw-flat">
-        <Transition :name="exDir" mode="out-in"><ExerciseCard v-if="w.exercises[W.state.cur]" :key="w.exercises[W.state.cur]!.id" :e="w.exercises[W.state.cur]!" :index="W.state.cur" /></Transition>
+        <Transition :name="exDir" mode="out-in"><WorkoutSoFar v-if="onSummary" key="summary" :w="w" @open="go" /><ExerciseCard v-else-if="w.exercises[W.state.cur]" :key="w.exercises[W.state.cur]!.id" :e="w.exercises[W.state.cur]!" :index="W.state.cur" /></Transition>
       </div>
       <!-- the routine's pinned notes: under the exercise, not pushing it down (its reminders stay at the top) -->
       <div v-if="workoutNotes.length" class="aw-notes">
@@ -165,11 +168,15 @@ const menu = computed(() => [
           <span v-if="i === W.state.cur" class="col" style="gap:0" @click.stop><button class="ib sm plain" style="width:26px;height:22px" aria-label="Move up" @click="move(i, -1)"><Icon name="up" :size="14" /></button><button class="ib sm plain" style="width:26px;height:22px" aria-label="Move down" @click="move(i, 1)"><Icon name="down" :size="14" /></button></span>
         </div>
         </TransitionGroup>
+        <div class="li" :class="{ cur: onSummary }" @click="go(w.exercises.length)">
+          <span class="stt"><Icon name="stats" :size="13" /></span>
+          <div class="grow"><div class="t">Summary</div><div class="s">{{ soFar.exercisesDone }} of {{ soFar.exercisesTotal }} exercises done</div></div>
+        </div>
         <button class="qb acc" style="margin-top:6px" @click="adding = true"><Icon name="plus" :size="16" />Add exercise</button>
       </div>
       <div class="stack" style="position:sticky;top:calc(24px + var(--st))">
         <Peek />
-        <div class="card"><Transition name="sw" mode="out-in"><ExerciseCard v-if="w.exercises[W.state.cur]" :key="w.exercises[W.state.cur]!.id" :e="w.exercises[W.state.cur]!" :index="W.state.cur" /></Transition></div>
+        <div class="card"><Transition name="sw" mode="out-in"><WorkoutSoFar v-if="onSummary" key="summary" :w="w" @open="go" /><ExerciseCard v-else-if="w.exercises[W.state.cur]" :key="w.exercises[W.state.cur]!.id" :e="w.exercises[W.state.cur]!" :index="W.state.cur" /></Transition></div>
         <ActionBar :paused="paused" @finish="finishing = true" @pause="togglePause" />
         <div v-if="workoutNotes.length" class="aw-notes">
           <NoteItem v-for="n in workoutNotes" :key="n.id" :note="n" />
@@ -183,7 +190,7 @@ const menu = computed(() => [
         </div>
         <div class="card">
           <div class="grid g2" style="gap:10px">
-            <div><div class="lbl">Volume</div><div style="font-weight:600;font-size:18px">{{ fmt.vol(volume) }}</div></div>
+            <div><div class="lbl">Volume</div><div style="font-weight:600;font-size:18px">{{ fmt.vol(soFar.volumeKg) }}</div></div>
             <div><div class="lbl">Time left</div><div style="font-weight:600;font-size:18px">about {{ Math.round(remainingS / 60) }}m</div></div>
           </div>
           <div class="chips" style="margin-top:10px"><span v-for="m in [...new Set(w.exercises.filter((e) => e.sets.some((s) => s.done)).flatMap((e) => e.exercise.primaryMuscles))]" :key="m" class="mchip">{{ muscleName(m) }}</span></div>

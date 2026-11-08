@@ -54,7 +54,7 @@ const usualHour = computed(() => {
   return h == null ? "" : fmt.value.time(new Date(2000, 0, 1, h).toISOString());
 });
 const best1rm = computed(() => hist.data.value?.records?.e1rm?.value ?? null);
-const setText = (s: any) => [s.weightKg != null && usesWeight(tracking.value) ? fmt.value.w(s.weightKg) + " " + fmt.value.wu : "", s.reps != null && usesReps(tracking.value) ? (s.weightKg != null && usesWeight(tracking.value) ? "× " : "") + s.reps : "", s.durationS ? fmt.value.clock(s.durationS) : "", s.distanceM ? fmt.value.dist(s.distanceM) : ""].filter(Boolean).join(" ");
+const setText = (s: any) => fmt.value.set(s, tracking.value);
 const REC: Record<string, string> = { maxWeight: "Heaviest weight", e1rm: "Best estimated 1RM", maxReps: "Most reps in a set", setVolume: "Best set (weight × reps)", sessionVolume: "Most volume in a session", maxDuration: "Longest", maxDistance: "Farthest" };
 const recVal = (k: string, v: number) => (["maxWeight", "e1rm", "setVolume", "sessionVolume"].includes(k) ? fmt.value.wu_(v) : k === "maxDuration" ? fmt.value.clock(v) : k === "maxDistance" ? fmt.value.dist(v) : String(v));
 const fav = useChange(async (v: boolean) => { await api.put(`/exercises/${props.id}/prefs`, { ...(e.value?.prefs ?? {}), favourite: v }); savedToast(v ? "Added to favourites" : "Removed from favourites"); }, ["exercises"]);

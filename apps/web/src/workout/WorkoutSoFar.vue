@@ -1,0 +1,53 @@
+<script setup lang="ts">
+// The workout so far: time, exercises and sets done against planned, volume, records and rep targets, and a line per
+// exercise with its best set. The last tab of the running workout; the numbers come from workoutSoFar (shared), so the
+// Finish screen can show the same.
+import { computed } from "vue";
+import { workoutSoFar, type Workout } from "@motus/shared";
+import { useFmt } from "../core/format";
+import { elapsed } from "./runtime";
+import Icon from "../components/Icon.vue";
+
+const props = defineProps<{ w: Workout; durationS?: number }>();
+const emit = defineEmits<{ open: [index: number] }>();
+const fmt = useFmt();
+const r = computed(() => workoutSoFar(props.w));
+const secs = computed(() => props.durationS ?? elapsed(props.w));
+const extras = computed(() => [
+  r.value.records ? `${r.value.records} new record${r.value.records === 1 ? "" : "s"}` : "",
+  r.value.targets ? `${r.value.targetsHit} of ${r.value.targets} rep targets hit` : "",
+].filter(Boolean));
+const line = (i: number) => {
+  const p = r.value.perExercise[i]!, e = props.w.exercises[i]!;
+  if (p.status === "skipped") return `Skipped${e.skipReason ? " · " + e.skipReason : ""}`;
+  return [`${p.setsDone} of ${p.setsPlanned} sets`, p.best ? `best ${fmt.value.set(p.best, e.exercise?.tracking)}` : ""].filter(Boolean).join(" · ");
+};
+</script>
+
+<template>
+  <div class="aw-ex">
+    <div class="exh"><div class="grow"><h3 class="wsf-h">Summary so far</h3><div v-if="extras.length" class="tiny wsf-x"><template v-for="(x, i) in extras" :key="x"><span v-if="i" class="sep">·</span><span>{{ x }}</span></template></div></div></div>
+    <div class="grid g2 keep wsf-t">
+      <div><div class="lbl">Time</div><div class="wsf-v">{{ fmt.clock(secs) }}</div></div>
+      <div><div class="lbl">Volume</div><div class="wsf-v">{{ fmt.vol(r.volumeKg) }}</div></div>
+      <div><div class="lbl">Exercises</div><div class="wsf-v">{{ r.exercisesDone }} <small>of {{ r.exercisesTotal }}</small></div></div>
+      <div><div class="lbl">Sets</div><div class="wsf-v">{{ r.setsDone }} <small>of {{ r.setsPlanned }}</small></div></div>
+    </div>
+    <div class="list">
+      <div v-for="(p, i) in r.perExercise" :key="p.id" class="li click" :class="{ skip: p.status === 'skipped' }" @click="emit('open', i)">
+        <div class="grow" style="min-width:0"><div class="t ellipsis">{{ p.name }}</div><div class="s">{{ line(i) }}</div></div>
+        <span v-if="p.records" class="pr">{{ p.records > 1 ? `${p.records} PRs` : "PR" }}</span>
+        <Icon v-if="p.status === 'done' || p.status === 'partial'" name="check" :size="16" class="pos" />
+      </div>
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.wsf-h { cursor: default; }
+.wsf-x { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 3px; }
+.wsf-t { margin-bottom: var(--spg); }
+.wsf-v { font-weight: 600; font-size: 18px; font-variant-numeric: tabular-nums; }
+.wsf-v small { font-size: 13px; font-weight: 500; color: var(--tx2); }
+.li.skip .t { text-decoration: line-through; opacity: .6; }
+</style>

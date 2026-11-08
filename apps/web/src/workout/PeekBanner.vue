@@ -8,7 +8,7 @@ const W = useWorkout();
 </script>
 
 <template>
-  <div v-if="W.state.w && W.state.cur !== W.state.active && W.state.w.exercises[W.state.active]" class="aw-peek">
+  <div v-if="W.state.w && W.state.cur !== W.state.active && W.state.cur < W.state.w.exercises.length && W.state.w.exercises[W.state.active]" class="aw-peek">
     <Icon name="info" :size="16" />
     <div class="grow" style="min-width:0"><b>{{ W.state.cur > W.state.active ? "Previewing an upcoming exercise" : "Looking back at an earlier exercise" }}</b><span class="ellipsis">You're doing {{ W.state.w!.exercises[W.state.active]!.exercise.name }}</span></div>
     <button class="qb" @click="W.state.active = W.state.cur">Do this now</button>
