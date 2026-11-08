@@ -44,7 +44,7 @@ async function save() {
     <p class="tiny hint">The routines to do each week, in order. Motus counts your workouts in this order, so a missed day never throws the plan off.</p>
     <div v-for="(w, i) in e.weeks" :key="i" class="card tight wk">
       <div class="row hgap"><b class="grow">Week {{ i + 1 }}</b><label class="row tiny" style="gap:6px"><span class="tg"><input v-model="w.deload" type="checkbox" /></span>Deload</label>
-        <Menu :items="[{ label: 'Duplicate this week', icon: 'copy', run: () => duplicateWeek(i) }, { label: 'Remove this week', icon: 'trash', danger: true, hidden: e.weeks.length < 2, run: () => e.weeks.splice(i, 1) }]" /></div>
+        <Menu :items="[{ label: 'Duplicate this week', icon: 'copy', run: () => duplicateWeek(i) }, { label: 'Remove this week', icon: 'trash', danger: true, sep: true, hidden: e.weeks.length < 2, run: () => e.weeks.splice(i, 1) }]" /></div>
       <!-- the week's workouts in order, each removable; routines are added from a dropdown under them -->
       <div v-if="w.days.length" class="pdays">
         <div v-for="(d, j) in w.days" :key="j" class="pday"><span class="pdn">{{ j + 1 }}</span><span class="grow ellipsis">{{ nameOf(d) }}</span><button type="button" class="ib sm plain" :aria-label="`Remove ${nameOf(d)}`" @click="w.days.splice(j, 1)"><Icon name="close" :size="14" /></button></div>

@@ -36,7 +36,7 @@ await loaded(q);
   <div v-if="a" class="page">
     <button class="back" @click="goBack(router, '/history')"><Icon name="left" :size="16" /><span>Back</span></button>
     <div class="ph"><div><h1 style="text-transform:capitalize">{{ a.name || a.type }}</h1><div class="sub">{{ fmt.dateLong(a.startedAt) }} · {{ fmt.time(a.startedAt) }}{{ a.source === "import" ? " · imported" : a.source === "gps" ? " · recorded" : "" }}</div></div>
-      <div class="acts"><Menu :items="[{ label: 'Rename', icon: 'edit', run: () => edit('name') }, { label: 'Notes', icon: 'note', run: () => edit('notes') }, { label: 'Export GPX', icon: 'download', run: gpx, hidden: !a.route?.length }, { label: 'Delete', icon: 'trash', danger: true, sep: true, run: del }]" /></div></div>
+      <div class="acts"><Menu :items="[{ label: 'Rename', icon: 'edit', run: () => edit('name') }, { label: 'Notes', icon: 'note', run: () => edit('notes') }, { label: 'Export GPX', icon: 'download', sep: true, run: gpx, hidden: !a.route?.length }, { label: 'Delete', icon: 'trash', danger: true, sep: true, run: del }]" /></div></div>
     <RouteMap v-if="a.route?.length" :route="a.route" />
     <div class="grid g4 spt">
       <div class="card stat hero"><div class="lbl">Time</div><div class="val">{{ fmt.clock(a.durationS) }}</div><div class="sub">{{ a.movingS ? `${fmt.clock(a.movingS)} moving` : "" }}</div></div>

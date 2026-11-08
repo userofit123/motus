@@ -108,12 +108,13 @@ async function discard() {
 async function rename() { const n = await prompt("Workout name", { value: w.value!.name }); if (n) W.patchWorkout({ name: n }); }
 const move = (i: number, d: number) => { const ids = w.value!.exercises.map((e) => e.id); const j = i + d; if (j < 0 || j >= ids.length) return; [ids[i], ids[j]] = [ids[j]!, ids[i]!]; W.reorder(ids); };
 const togglePause = () => W.togglePause();
+// in groups: its exercises, notes and reminders, its settings, then Cancel on its own
 const menu = computed(() => [
   { label: "Add exercise", icon: "plus", run: () => (adding.value = true) },
   { label: "Reorder exercises", icon: "routines", run: () => (listOpen.value = true), hidden: !isPhone.value },
-  { label: "Workout note", icon: "note", run: () => (noteSheet.value = { targets: [{ type: "workout", id: w.value!.id, label: "This workout" }, ...(w.value!.routineId ? [{ type: "routine", id: w.value!.routineId, label: "The routine" }] : [])], workoutId: w.value!.id }) },
+  { label: "Workout note", sep: true, icon: "note", run: () => (noteSheet.value = { targets: [{ type: "workout", id: w.value!.id, label: "This workout" }, ...(w.value!.routineId ? [{ type: "routine", id: w.value!.routineId, label: "The routine" }] : [])], workoutId: w.value!.id }) },
   { label: "Remind me next time (routine)", icon: "bell", run: () => (reminderSheet.value = { targetType: "routine", targetId: w.value!.routineId!, label: w.value!.name, workoutId: w.value!.id }), hidden: !w.value?.routineId },
-  { label: "Workout settings", icon: "settings", run: () => (settingsOpen.value = true) },
+  { label: "Workout settings", sep: true, icon: "settings", run: () => (settingsOpen.value = true) },
   { label: "Rename", icon: "edit", run: rename },
   { label: "Cancel workout", hint: "End it without saving anything", icon: "trash", danger: true, sep: true, run: discard },
 ]);

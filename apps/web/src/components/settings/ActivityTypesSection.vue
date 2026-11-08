@@ -30,7 +30,7 @@ const setTracks = (t: any, v: string) => { const x = TRACKS.find((y) => y.value 
     <div v-for="t in types.data.value ?? []" :key="t.slug" class="li">
       <Icon :name="t.icon" :size="18" class="muted" /><div class="grow"><div class="t">{{ t.name }}</div></div>
       <AppSelect class="at-tr" :model-value="tracksOf(t)" :options="TRACKS.map(({ value, label }) => ({ value, label }))" :title="`What ${t.name} tracks`" @update:model-value="(v) => setTracks(t, String(v))" />
-      <Menu :items="[{ label: 'Rename', icon: 'edit', run: () => rename(t) }, { label: 'Remove', icon: 'trash', danger: true, run: () => remove(t) }]" />
+      <Menu :items="[{ label: 'Rename', icon: 'edit', run: () => rename(t) }, { label: 'Remove', icon: 'trash', danger: true, sep: true, run: () => remove(t) }]" />
     </div>
   </div>
 </template>

@@ -193,7 +193,7 @@ await loaded(me);
           <div class="card">
             <p class="tiny" style="margin:0 0 6px">Offered as quick tags when you write a note. Notes you already tagged keep their tags.</p>
             <div v-for="(t, i) in s.noteTags" :key="t" class="li"><span class="grow">{{ t }}</span>
-              <Menu :label="`${t} options`" :items="[{ label: 'Rename', icon: 'edit', run: () => renameNoteTag(i) }, { label: 'Move up', icon: 'up', hidden: i === 0, run: () => moveNoteTag(i, -1) }, { label: 'Move down', icon: 'down', hidden: i === s.noteTags.length - 1, run: () => moveNoteTag(i, 1) }, { label: 'Remove', icon: 'trash', danger: true, run: () => removeNoteTag(i) }]" /></div>
+              <Menu :label="`${t} options`" :items="[{ label: 'Rename', icon: 'edit', run: () => renameNoteTag(i) }, { label: 'Move up', icon: 'up', sep: true, hidden: i === 0, run: () => moveNoteTag(i, -1) }, { label: 'Move down', icon: 'down', hidden: i === s.noteTags.length - 1, run: () => moveNoteTag(i, 1) }, { label: 'Remove', icon: 'trash', danger: true, sep: true, run: () => removeNoteTag(i) }]" /></div>
             <div v-if="!s.noteTags.length" class="li"><span class="grow tiny">No tags. Add your own, or bring back the starting ones.</span><button class="qb acc" @click="setTags([...NOTE_TAGS_DEFAULT], 'Starting tags restored')">Restore</button></div>
           </div>
           <template v-if="s.features.gyms">

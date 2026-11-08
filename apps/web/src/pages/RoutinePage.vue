@@ -18,6 +18,7 @@ import ReminderItem from "../components/ReminderItem.vue";
 import LineChart from "../components/LineChart.vue";
 import BodyMap from "../components/BodyMap.vue";
 import { useRoutineMenu } from "../core/routineMenu";
+import { useNoteMenu } from "../core/noteMenu";
 
 const route = useRoute(), router = useRouter();
 const id = computed(() => String(route.params.id));
@@ -50,7 +51,7 @@ const exItems = (e: any) => [
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const schedLine = (s: any) => ((s.rule === "interval" && s.intervalDays === 1) || (s.rule === "weekly" && s.days.length === 7) ? "Every day" : s.rule === "weekly" ? s.days.map((d: number) => DAYS[d]).join(", ") : s.rule === "interval" ? `Every ${s.intervalDays} days` : fmt.value.date(s.startDate)) + (s.timeOfDay ? ` at ${s.timeOfDay}` : "");
 const delSched = useChange(async (sid: string) => { await api.del(`/schedules/${sid}`); toast("Schedule removed"); }, ["schedules", "calendar", "home"]);
-const delNote = useChange(async (nid: string) => { await api.del(`/notes/${nid}`); toast("Note deleted"); }, ["notes"]);
+const noteMenu = useNoteMenu();
 const remSet = useChange(async (mid: string, status: string) => { await api.put(`/reminders/${mid}`, { status }); toast(status === "done" ? "Reminder done" : "Reminder dismissed"); }, ["reminders", "routines"]);
 // a note on one of the routine's exercises says which; notes on the routine itself need no label
 const noteWhere = (n: any) => (n.targetType === "routine_exercise" ? routine.value?.exercises.find((e: any) => e.id === n.targetId)?.exercise?.name ?? null : null);
@@ -95,7 +96,7 @@ await loaded(r, summaries, notes, rems, schedules, history);
           <div class="row hgap"><b class="grow">Schedule</b><button class="qb acc" style="padding:4px 6px" @click="scheduleSheet = { routineId: id }"><Icon name="plus" :size="16" /></button></div>
           <div v-if="!mySchedules.length" class="tiny">Not scheduled. Add days to see it in Up next and the calendar, with a reminder.</div>
           <div v-for="s in mySchedules" :key="s.id" class="li" style="min-height:0;padding:calc(var(--lpy) - 2px) 0"><Icon name="calendar" :size="16" class="muted" /><span class="grow">{{ schedLine(s) }}</span>
-            <Menu :items="[{ label: 'Edit', icon: 'edit', run: () => (scheduleSheet = s) }, { label: 'Remove', icon: 'trash', danger: true, run: () => delSched.run(s.id) }]" /></div>
+            <Menu :items="[{ label: 'Edit', icon: 'edit', run: () => (scheduleSheet = s) }, { label: 'Remove', icon: 'trash', danger: true, sep: true, run: () => delSched.run(s.id) }]" /></div>
         </div>
       </div>
     </div>
@@ -117,7 +118,7 @@ await loaded(r, summaries, notes, rems, schedules, history);
       <div v-if="!notes.data.value?.length" class="empty"><b>No notes yet</b>Write how it went, or what to change next time.</div>
       <div v-if="notes.data.value?.length" class="list">
         <NoteItem v-for="n in notes.data.value" :key="n.id" :note="n" flat date :where="noteWhere(n)"
-          :menu="[{ label: 'Edit', icon: 'edit', run: () => (noteSheet = { targets: [{ type: n.targetType, id: n.targetId, label: routine.name }], edit: n }) }, { label: 'Delete', icon: 'trash', danger: true, run: () => delNote.run(n.id) }]" />
+          :menu="noteMenu(n, noteWhere(n) ?? routine.name)" />
       </div>
     </div>
 

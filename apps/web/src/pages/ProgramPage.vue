@@ -8,15 +8,13 @@ import { useQuery } from "@tanstack/vue-query";
 import type { ProgramDetail } from "@motus/shared";
 import { api } from "../api/client";
 import { invalidate } from "../api/live";
-import { useFmt, localYmd } from "../core/format";
-import { confirm } from "../core/ask";
+import { useFmt } from "../core/format";
 import { toast, toastError } from "../core/toast";
 import Icon from "../components/Icon.vue";
 import MuscleFig from "../components/MuscleFig.vue";
 import Menu from "../components/Menu.vue";
-import Sheet from "../components/Sheet.vue";
-import DatePicker from "../components/DatePicker.vue";
 import ProgramEditor from "../components/ProgramEditor.vue";
+import { useProgramMenu } from "../core/programMenu";
 
 const route = useRoute(), router = useRouter();
 const id = computed(() => String(route.params.id));
@@ -26,7 +24,6 @@ const q = useQuery({ queryKey: computed(() => ["routines", "program", id.value])
 const p = computed(() => q.data.value);
 const next = computed(() => p.value?.state.next ?? null);
 const editing = ref(false);
-const moving = ref<string | null>(null); // the start date being chosen
 /** weeks behind the calendar (only while following it) */
 const behind = computed(() => (p.value?.status === "active" && next.value ? Math.max(0, p.value.calendarWeek - next.value.week) : 0));
 const sub = computed(() => {
@@ -39,30 +36,16 @@ const sub = computed(() => {
 
 const put = async (body: Record<string, unknown>, msg: string) => { try { await api.put(`/programs/${id.value}`, body); invalidate(["routines", "home"]); toast(msg); } catch (e) { toastError(e); } };
 const start = () => router.push(`/routines/${next.value!.routineId}/start?program=${id.value}${next.value!.deload ? `&deload=${p.value!.deloadPct}` : ""}`);
-async function restart() {
-  if (await confirm("Start again from week 1?", { text: "From today. Workouts done before stay in your history but no longer count towards this program.", ok: "Start again" }))
-    await put({ startDate: localYmd(new Date()), active: true }, "Program starts again from week 1");
-}
-async function del() {
-  if (!(await confirm(`Delete ${p.value!.name}?`, { text: "Its routines and workouts stay.", ok: "Delete", danger: true }))) return;
-  await api.del(`/programs/${id.value}`); invalidate(["routines", "home"]); toast("Program deleted"); router.push("/routines");
-}
 // the one primary button: what makes sense now
 const primary = computed(() => {
   const x = p.value!;
   if (!x.state.total) return { label: "Add routines", icon: "edit", run: () => (editing.value = true) };
-  if (x.status === "finished") return { label: "Start again", icon: "refresh", run: restart };
+  if (x.status === "finished") return { label: "Start again", icon: "refresh", run: () => pm.restart(p.value!) };
   if (x.status === "paused") return { label: "Resume", icon: "play", run: () => put({ active: true }, "Program resumed") };
   return { label: "Start", icon: "play", run: start };
 });
-const menu = computed(() => [
-  { label: "Edit", icon: "edit", run: () => (editing.value = true) },
-  { label: "Pause", icon: "pause", hidden: p.value?.status !== "active", run: () => put({ active: false }, "Program paused") },
-  { label: "Resume", icon: "play", hidden: p.value?.status !== "paused" || !p.value.state.total, run: () => put({ active: true }, "Program resumed") },
-  { label: "Start again from week 1", icon: "refresh", hidden: !p.value?.state.done && p.value?.calendarWeek === 1, run: restart },
-  { label: "Change start date", icon: "calendar", run: () => (moving.value = p.value!.startDate) },
-  { label: "Delete", icon: "trash", danger: true, sep: true, run: del },
-]);
+const pm = useProgramMenu();
+const menu = computed(() => pm.items(p.value!, { edit: () => (editing.value = true), page: true }));
 const hasDeload = computed(() => p.value?.plan.some((w) => w.deload));
 const dayLine = (d: ProgramDetail["plan"][number]["days"][number]) =>
   d.status === "done" ? `${fmt.value.date(d.workout!.startedAt, { weekday: "short", day: "numeric", month: "short" })} · ${fmt.value.dur(d.workout!.durationS, true)} · ${fmt.value.vol(d.workout!.volumeKg)}`
@@ -137,11 +120,6 @@ await loaded(q);
     </div>
 
     <ProgramEditor v-if="editing" :program="p" @close="editing = false" />
-    <Sheet v-if="moving" title="Change start date" @close="moving = null">
-      <p class="tiny hgap">Workouts count towards the program from this date, in its order. Earlier ones stay in your history.</p>
-      <div class="fld"><label>Starts</label><DatePicker v-model="moving" title="Starts" /></div>
-      <template #foot><button class="btn o" @click="moving = null">Cancel</button><button class="btn" @click="put({ startDate: moving }, 'Start date changed').then(() => (moving = null))">Save</button></template>
-    </Sheet>
   </div>
   <div v-else-if="q.isError.value" class="page"><div class="card empty"><b>Program not found</b><button class="btn tonal" @click="router.push('/routines')">Back to routines</button></div></div>
 </template>

@@ -94,13 +94,14 @@ async function addWarmups() {
   await api.post(`/workout-exercises/${props.e.id}/sets`, { atStart: true, sets: ws.map((x) => ({ kind: "warmup", weightKg: x.weightKg, reps: x.reps, restPlannedS: 60 })) });
   invalidate(["workouts"]);
 }
+// in groups: what it is and reminders, doing it or not, its rests and tools, then Remove on its own
 const menu = computed(() => [
   { label: "About this exercise", icon: "info", run: () => (exerciseSheet.value = props.e.exerciseId) },
-  { label: "Skip", icon: "skip", run: skip, hidden: props.e.status === "skipped" },
-  { label: "Bring it back", icon: "refresh", run: () => W.setStatus(props.e, props.e.sets.every((s) => s.done) && props.e.sets.length ? "done" : "pending"), hidden: props.e.status !== "skipped" },
-  { label: "Replace", icon: "swap", run: openReplace },
   { label: "Remind me next time", icon: "bell", run: () => (reminderSheet.value = { targetType: "exercise", targetId: props.e.exerciseId, label: props.e.exercise.name, scopeRoutineId: props.e.routineExerciseId ? W.state.w?.routineId : null, routineName: W.state.w?.name, workoutId: W.state.w?.id }) },
-  { label: "Rest between sets", icon: "timer", run: () => (restEdit.value = "between") },
+  { label: "Skip", sep: true, icon: "skip", run: skip, hidden: props.e.status === "skipped" },
+  { label: "Bring it back", icon: "refresh", run: () => W.setStatus(props.e, props.e.sets.every((s) => s.done) && props.e.sets.length ? "done" : "pending"), hidden: props.e.status !== "skipped" },
+  { label: "Swap for another exercise", icon: "swap", run: openReplace },
+  { label: "Rest between sets", sep: true, icon: "timer", run: () => (restEdit.value = "between") },
   { label: "Rest after this exercise", icon: "timer", run: () => (restEdit.value = "after") },
   { label: "Add warm-up sets", icon: "flame", run: addWarmups, hidden: !feat.value.warmupCalc || !showW.value },
   { label: "Plate calculator", icon: "layers", run: () => (plates.value = props.e.sets.find((s) => !s.done)?.weightKg ?? props.e.sets[0]?.weightKg ?? 60), hidden: !feat.value.plates || !showW.value },
@@ -112,8 +113,8 @@ const setMenu = (s: WorkoutSet) => [
   ...(feat.value.setTypes && s.kind !== "drop" ? SET_KINDS.map(([k, l, ic]) => ({ label: l, icon: ic, checked: s.kind === k, run: () => W.editSet(s, { kind: k }) })) : []),
   ...(feat.value.setTypes && s.kind !== "warmup" ? [{ label: s.kind === "drop" || props.e.sets[props.e.sets.indexOf(s) + 1]?.kind === "drop" ? "Add another drop" : "Add a drop set", hint: "Straight after this set: lower the weight and keep going", icon: "arrowDown", sep: s.kind !== "drop", run: () => W.addDrop(props.e, s) }] : []),
   ...(s.prev ? [{ label: "Copy last time", icon: "copy", run: () => copyPrev(s) }] : []),
-  ...(sided.value ? [{ label: "Left side", icon: "left", checked: s.side === "L", run: () => W.editSet(s, { side: s.side === "L" ? null : "L" }) }, { label: "Right side", icon: "right", checked: s.side === "R", run: () => W.editSet(s, { side: s.side === "R" ? null : "R" }) }] : []),
-  { label: "Remove set", icon: "trash", danger: true, sep: feat.value.setTypes, run: () => W.removeSet(props.e, s) },
+  ...(sided.value ? [{ label: "Left side", icon: "left", sep: true, checked: s.side === "L", run: () => W.editSet(s, { side: s.side === "L" ? null : "L" }) }, { label: "Right side", icon: "right", checked: s.side === "R", run: () => W.editSet(s, { side: s.side === "R" ? null : "R" }) }] : []),
+  { label: "Remove set", icon: "trash", danger: true, sep: true, run: () => W.removeSet(props.e, s) },
 ];
 const isCur = computed(() => W.state.cur === props.index);
 // the set to do now, marked in the table (the same one the action bar shows)

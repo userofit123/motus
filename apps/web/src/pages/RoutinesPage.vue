@@ -78,7 +78,7 @@ await loaded(routines, folders, ...(settings.value.features.programs ? [programs
       <div class="acts">
         <template v-if="onPrograms"><button class="btn keep" @click="programsRef?.create()"><Icon name="plus" :size="18" />New program</button></template>
         <template v-else>
-          <Menu :items="[{ label: 'New folder', icon: 'folder', run: newFolder }, { label: 'From a template', icon: 'layers', run: () => (fromTemplate = true) }, { label: showArchived ? 'Hide archived' : 'Show archived', icon: 'archive', run: () => (showArchived = !showArchived) }]" />
+          <Menu :items="[{ label: 'New folder', icon: 'folder', run: newFolder }, { label: 'From a template', icon: 'layers', run: () => (fromTemplate = true) }, { label: showArchived ? 'Hide archived' : 'Show archived', icon: 'archive', sep: true, run: () => (showArchived = !showArchived) }]" />
           <button class="btn keep" @click="router.push('/routines/new/edit')"><Icon name="plus" :size="18" />New routine</button>
         </template>
       </div>
@@ -102,7 +102,7 @@ await loaded(routines, folders, ...(settings.value.features.programs ? [programs
           <h2>{{ g.name }}</h2><span class="sep" aria-hidden="true">·</span><span class="fn">{{ g.items.length }}</span>
           <Icon name="down" :size="16" class="fc" :class="{ shut: isFolded(g) }" />
         </button>
-        <Menu v-if="g.id && g.id !== 'pinned'" :items="[{ label: 'Rename', icon: 'edit', run: () => renameFolder(g as any) }, { label: 'Delete folder', icon: 'trash', danger: true, run: () => delFolder(g as any) }]" /></div>
+        <Menu v-if="g.id && g.id !== 'pinned'" :items="[{ label: 'Rename', icon: 'edit', run: () => renameFolder(g as any) }, { label: 'Delete folder', icon: 'trash', danger: true, sep: true, run: () => delFolder(g as any) }]" /></div>
       <Collapse :open="!isFolded(g) || !!q">
       <div v-if="!g.items.length" class="tiny hgap">Empty. Move a routine here from its ⋮ menu.</div>
       <div class="grid gauto rgrid">

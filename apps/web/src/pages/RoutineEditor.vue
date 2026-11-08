@@ -299,17 +299,16 @@ async function startFrom(kind: "template" | "copy", v: string) {
   else { const x = await api.post("/routines", { template: v }); invalidate(["routines"]); router.replace(`/routines/${x.id}/edit`); }
   starter.value = false;
 }
+// in groups: what it is, where it sits in the routine, which numbers it starts with, then Remove on its own
 const exMenu = (e: any, i: number) => [
   { label: "About this exercise", icon: "info", run: () => (exerciseSheet.value = e.exerciseId) },
-  { label: "Swap for another exercise", hint: "Keeps these sets, rests and notes", icon: "swap", run: () => (picking.value = { replace: i }) },
+  { label: "Swap for another exercise", hint: "Keeps these sets, rests and notes", sep: true, icon: "swap", run: () => (picking.value = { replace: i }) },
   { label: "Move up", icon: "up", run: () => move(i, -1), hidden: i === 0 },
   { label: "Move down", icon: "down", run: () => move(i, 1), hidden: i === r.value.exercises.length - 1 },
   { label: "Superset with next", hint: "Do one set of each in turn, resting after the pair", icon: "link", run: () => superset(i), hidden: !s.value.features.supersets || i === r.value.exercises.length - 1 || inSupersetWithNext(i) },
   { label: "Remove from superset", icon: "link", run: () => unsuperset(i), hidden: !e.superset },
-  e.prefill === "target"
-    ? { label: "Start with last time's numbers", hint: "Instead of the numbers set here", icon: "refresh", run: () => { e.prefill = "last"; touch(); } }
-    : { label: "Always start with these numbers", hint: "Instead of what you did last time", icon: "refresh", run: () => { e.prefill = "target"; touch(); } },
-  { label: "Remove", icon: "trash", danger: true, sep: true, run: () => removeEx(i) },
+  e.prefill === "target" ? { label: "Start with last time's numbers", hint: "Instead of the numbers set here", sep: true, icon: "refresh", run: () => { e.prefill = "last"; touch(); } } : { label: "Always start with these numbers", hint: "Instead of what you did last time", sep: true, icon: "refresh", run: () => { e.prefill = "target"; touch(); } },
+  { label: "Remove from routine", icon: "trash", danger: true, sep: true, run: () => removeEx(i) },
 ];
 const setMenu = (e: any, j: number) => e.sets[j].kind === "drop" ? [
   { label: "Add another drop", hint: "Lower the weight again and keep going", icon: "arrowDown", run: () => addDrop(e, j) },
@@ -317,8 +316,8 @@ const setMenu = (e: any, j: number) => e.sets[j].kind === "drop" ? [
 ] : [
   ...(s.value.features.setTypes ? SET_KINDS.map(([k, l, ic]) => ({ label: l, icon: ic, checked: e.sets[j].kind === k, run: () => { e.sets[j].kind = k; touch(); } })) : []),
   ...(s.value.features.setTypes && e.sets[j].kind !== "warmup" ? [{ label: dropsAfter(e, j) ? "Add another drop" : "Add a drop set", hint: "Straight after this set: lower the weight and keep going", icon: "arrowDown", sep: true, run: () => addDrop(e, j) }] : []),
-  { label: e.sets[j].restS != null ? "Change the rest after this set" : "Custom rest after this set", icon: "timer", run: () => (restFor.value = { ex: r.value.exercises.indexOf(e), set: j, kind: "set" }), sep: s.value.features.setTypes },
-  { label: "Remove set", icon: "trash", danger: true, run: () => removeSet(e, j) },
+  { label: e.sets[j].restS != null ? "Change the rest after this set" : "Custom rest after this set", icon: "timer", run: () => (restFor.value = { ex: r.value.exercises.indexOf(e), set: j, kind: "set" }), sep: true },
+  { label: "Remove set", icon: "trash", danger: true, sep: true, run: () => removeSet(e, j) },
 ];
 const tr = (e: any) => exById.value.get(e.exerciseId)?.tracking ?? e.exercise?.tracking ?? "weight_reps";
 // show the page once its data is in, all at once

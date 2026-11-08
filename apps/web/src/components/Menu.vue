@@ -1,10 +1,12 @@
 <script setup lang="ts">
 // The ⋮ menu: where secondary actions live, so screens stay calm (PLAN.md §10.0).
-import { ref, nextTick, onBeforeUnmount } from "vue";
+import { ref, computed, nextTick, onBeforeUnmount } from "vue";
 import { lockScroll } from "../core/scrollLock";
 import { isPhone, safeArea } from "../core/device";
 import Icon from "./Icon.vue";
 
+// sep: this item starts a new group, drawn with a line above it. The line follows the group rather than the item, so it stays when
+// the group's first item is hidden and never shows first, last or twice.
 // checked: the one chosen among options (a set's type, a side), marked with a tick at the end so every item keeps its own icon
 export interface MenuItem { label: string; hint?: string; icon?: string; run: () => void; danger?: boolean; sep?: boolean; hidden?: boolean; checked?: boolean }
 // align "start": the menu opens from the button's left edge (as far as the screen allows), for a button that isn't the
@@ -14,6 +16,12 @@ const open = ref(false), pos = ref({ top: 0, left: 0 }), btn = ref<HTMLElement |
 // on the phone the menu is a bottom sheet over a scrim, so the page stays still behind it; on a computer it is a small popover with
 // no scrim, and locking would shift fixed elements (the add button, minibars) by the scrollbar width on every open
 let unlock = () => {};
+const shown = computed(() => {
+  const out: { i: MenuItem; line: boolean }[] = [];
+  let group = false;
+  for (const i of props.items) { group ||= !!i.sep; if (i.hidden) continue; out.push({ i, line: group && out.length > 0 }); group = false; }
+  return out;
+});
 async function toggle() {
   open.value = !open.value;
   if (!open.value) { unlock(); unlock = () => {}; return; }
@@ -37,8 +45,8 @@ onBeforeUnmount(close);
   <button ref="btn" class="ib sm plain" :aria-label="label ?? 'More'" @click.stop="toggle"><Icon :name="icon ?? 'more'" /></button>
   <Teleport to="body">
     <div v-if="open" ref="el" class="mnu" :style="{ top: pos.top + 'px', left: pos.left + 'px' }" role="menu">
-      <template v-for="(i, k) in props.items.filter((x) => !x.hidden)" :key="k">
-        <hr v-if="i.sep" />
+      <template v-for="({ i, line }, k) in shown" :key="k">
+        <hr v-if="line" />
         <button :class="{ danger: i.danger, on: i.checked }" :role="i.checked != null ? 'menuitemradio' : 'menuitem'" :aria-checked="i.checked ?? undefined" @click="pick(i)"><Icon v-if="i.icon" :name="i.icon" :size="18" /><span v-if="i.hint" class="mh"><span>{{ i.label }}</span><small>{{ i.hint }}</small></span><span v-else class="ml">{{ i.label }}</span><Icon v-if="i.checked" name="check" :size="16" class="mck" /></button>
       </template>
     </div>

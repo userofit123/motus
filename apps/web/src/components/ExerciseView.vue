@@ -10,11 +10,12 @@ import { api, mediaUrl } from "../api/client";
 import { useFmt, ago, type SetFigures } from "../core/format";
 import { noteSheet, reminderSheet, exerciseSheet } from "../core/ui";
 import { confirm } from "../core/ask";
+import { useNoteMenu } from "../core/noteMenu";
 import { toast, savedToast } from "../core/toast";
 import Icon from "./Icon.vue";
 import BodyMap from "./BodyMap.vue";
 import LineChart from "./LineChart.vue";
-import Menu from "./Menu.vue";
+import Menu, { type MenuItem } from "./Menu.vue";
 import NoteItem from "./NoteItem.vue";
 import ReminderItem from "./ReminderItem.vue";
 import ExerciseEditor from "./ExerciseEditor.vue";
@@ -58,9 +59,8 @@ const setText = (s: SetFigures) => fmt.value.set(s, tracking.value);
 const REC: Record<string, string> = { maxWeight: "Heaviest weight", e1rm: "Best estimated 1RM", maxReps: "Most reps in a set", setVolume: "Best set (weight × reps)", sessionVolume: "Most volume in a session", maxDuration: "Longest", maxDistance: "Farthest" };
 const recVal = (k: string, v: number) => (["maxWeight", "e1rm", "setVolume", "sessionVolume"].includes(k) ? fmt.value.wu_(v) : k === "maxDuration" ? fmt.value.clock(v) : k === "maxDistance" ? fmt.value.dist(v) : String(v));
 const fav = useChange(async (v: boolean) => { await api.put(`/exercises/${props.id}/prefs`, { ...(e.value?.prefs ?? {}), favourite: v }); savedToast(v ? "Added to favourites" : "Removed from favourites"); }, ["exercises"]);
-const delNote = useChange(async (id: string) => { await api.del(`/notes/${id}`); toast("Note deleted"); }, ["notes"]);
 const remDone = useChange(async (id: string, status: string) => { await api.put(`/reminders/${id}`, { status }); toast(status === "done" ? "Reminder done" : "Reminder dismissed"); }, ["reminders"]);
-const pinNote = useChange(async (n: any) => { await api.put(`/notes/${n.id}`, { pinned: !n.pinned }); toast(n.pinned ? "Note kept on record only" : "Note shows in every workout"); }, ["notes"]);
+const noteMenu = useNoteMenu();
 const own = computed(() => !!e.value?.ownerId);
 // strength standards (optional feature): needs a body weight
 const bodyQ = useBody("weight");
@@ -76,11 +76,12 @@ async function del() {
   router.push("/exercises");
 }
 function openWorkout(id: string) { exerciseSheet.value = null; router.push(`/workouts/${id}`); }
-const menu = computed(() => [
-  { label: e.value?.favourite ? "Remove from favourites" : "Add to favourites", icon: "star", run: () => fav.run(!e.value?.favourite) },
-  { label: "Remind me next time", icon: "bell", run: () => (reminderSheet.value = { targetType: "exercise", targetId: props.id, label: e.value.name }) },
+// in groups: notes and reminders, favourites, changing it, then Delete on its own
+const menu = computed<MenuItem[]>(() => [
   { label: "Add a note", icon: "note", run: () => (noteSheet.value = { targets: [{ type: "exercise", id: props.id, label: e.value.name }] }) },
-  { label: "Edit", icon: "edit", run: () => (editing.value = true), hidden: !own.value },
+  { label: "Remind me next time", icon: "bell", run: () => (reminderSheet.value = { targetType: "exercise", targetId: props.id, label: e.value.name }) },
+  { label: e.value?.favourite ? "Remove from favourites" : "Add to favourites", icon: "star", sep: true, run: () => fav.run(!e.value?.favourite) },
+  { label: "Edit", icon: "edit", sep: true, run: () => (editing.value = true), hidden: !own.value },
   { label: "Make my own copy", icon: "copy", run: async () => { const r = await api.post("/exercises", { ...e.value, name: e.value.name + " (mine)" }); invalidate(["exercises"]); toast("Copy created"); exerciseSheet.value = null; router.push(`/exercises/${r.id}`); }, hidden: own.value },
   { label: "Open as a page", icon: "right", run: () => { exerciseSheet.value = null; router.push(`/exercises/${props.id}`); }, hidden: !props.inSheet },
   { label: "Delete", icon: "trash", danger: true, run: del, hidden: !own.value, sep: true },
@@ -195,7 +196,7 @@ const menu = computed(() => [
       </div>
       <div v-if="notes.data.value?.length">
         <NoteItem v-for="n in notes.data.value" :key="n.id" :note="n" flat date
-          :menu="[{ label: n.pinned ? 'Stop showing in workouts' : 'Show in every workout', icon: 'pin', hidden: n.targetType !== 'exercise' && n.targetType !== 'routine_exercise', run: () => pinNote.run(n) }, { label: 'Edit', icon: 'edit', run: () => (noteSheet = { targets: [{ type: n.targetType, id: n.targetId, label: e.name }], edit: n }) }, { label: 'Delete', icon: 'trash', danger: true, run: () => delNote.run(n.id) }]" />
+          :menu="noteMenu(n, e.name)" />
       </div>
     </div>
     </Transition>

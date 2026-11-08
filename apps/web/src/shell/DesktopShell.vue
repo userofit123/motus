@@ -58,7 +58,7 @@ const acctMenu = computed(() => [
   // Body has no place in the rail's main pages, so it is reached from here (on the phone, from More)
   { label: "Body", icon: "scale", run: () => router.push("/body") },
   { label: "About you", icon: "user", run: () => router.push("/body?tab=details") },
-  { label: "Sign out", icon: "logout", run: async () => { await signOut(); } },
+  { label: "Sign out", icon: "logout", sep: true, run: async () => { await signOut(); } },
 ]);
 const active = useActive();
 // the running workout, set up once at start, so its notification's buttons work on any page, also after a reload

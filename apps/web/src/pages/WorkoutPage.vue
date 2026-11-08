@@ -87,16 +87,17 @@ async function addExercises(ids: string[]) {
   for (const ex of ids) await api.post(`/workouts/${id.value}/exercises`, { exerciseId: ex, sets: [{ kind: "normal", done: true }] });
   invalidate(["*"]); if (ids.length) toast(ids.length === 1 ? "Exercise added" : "Exercises added");
 }
+// in groups: doing it again, changing it, its routine, sending it elsewhere, then Delete on its own
 const menu = computed(() => [
-  { label: editing.value ? "Done editing" : "Edit", icon: "edit", run: () => (editing.value = !editing.value) },
-  { label: "Rename", icon: "edit", run: rename },
-  { label: "Change times", icon: "clock", run: editTimes },
   { label: "Repeat now", icon: "play", run: repeat },
   { label: "Duplicate to another day", icon: "copy", run: duplicate },
-  { label: "Save as a routine", icon: "routines", run: saveAsRoutine },
-  { label: "Update the routine from this", icon: "refresh", run: updateRoutine, hidden: !w.value?.routineId },
+  { label: editing.value ? "Done editing" : "Edit", sep: true, icon: "edit", run: () => (editing.value = !editing.value) },
+  { label: "Rename", icon: "edit", run: rename },
+  { label: "Change times", icon: "clock", run: editTimes },
   { label: "Add a note", icon: "note", run: () => (noteSheet.value = { targets: [{ type: "workout", id: id.value, label: "This workout" }], workoutId: id.value }) },
-  { label: "Share as an image", icon: "share", run: () => shareWorkoutImage(w.value, fmt.value), hidden: !s.value.features.shareImage },
+  { label: "Save as a routine", sep: true, icon: "routines", run: saveAsRoutine },
+  { label: "Update the routine from this", icon: "refresh", run: updateRoutine, hidden: !w.value?.routineId },
+  { label: "Share as an image", sep: true, icon: "share", run: () => shareWorkoutImage(w.value, fmt.value), hidden: !s.value.features.shareImage },
   { label: "Copy for an AI assistant", icon: "copy", run: copyText, hidden: !s.value.features.mcp },
   { label: "Export (JSON)", icon: "download", run: exportJson },
   { label: "Delete", icon: "trash", danger: true, sep: true, run: del },
@@ -142,7 +143,7 @@ await loaded(q);
               <div class="tiny">{{ e.status === "skipped" ? `Skipped${e.skipReason ? " · " + e.skipReason : ""}` : verdict(e.id)?.verdict === "better" ? "Better than last time" : verdict(e.id)?.verdict === "worse" ? "Below last time" : verdict(e.id)?.verdict === "first" ? "First time" : "Same as last time" }}</div></div>
             <span v-if="verdict(e.id)?.verdict === 'better'" class="pos"><Icon name="arrowUp" :size="18" /></span>
             <span v-else-if="verdict(e.id)?.verdict === 'worse'" class="neg"><Icon name="arrowDown" :size="18" /></span>
-            <Menu v-if="editing" :items="[{ label: 'Add a set', icon: 'plus', run: () => save(`/workout-exercises/${e.id}/sets`, { kind: 'normal', done: true }, 'post').then((ok) => ok && savedToast('Set added')) }, { label: e.status === 'skipped' ? 'Mark as done' : 'Mark as skipped', icon: 'skip', run: () => { const st = e.status === 'skipped' ? 'done' : 'skipped'; save(`/workout-exercises/${e.id}`, { status: st }).then((ok) => ok && savedToast(st === 'done' ? 'Marked as done' : 'Marked as skipped')); } }, { label: 'Remove', icon: 'trash', danger: true, run: () => save(`/workout-exercises/${e.id}`, undefined, 'del').then((ok) => ok && savedToast('Exercise removed')) }]" />
+            <Menu v-if="editing" :items="[{ label: 'Add a set', icon: 'plus', run: () => save(`/workout-exercises/${e.id}/sets`, { kind: 'normal', done: true }, 'post').then((ok) => ok && savedToast('Set added')) }, { label: e.status === 'skipped' ? 'Mark as done' : 'Mark as skipped', icon: 'skip', run: () => { const st = e.status === 'skipped' ? 'done' : 'skipped'; save(`/workout-exercises/${e.id}`, { status: st }).then((ok) => ok && savedToast(st === 'done' ? 'Marked as done' : 'Marked as skipped')); } }, { label: 'Remove from workout', icon: 'trash', danger: true, sep: true, run: () => save(`/workout-exercises/${e.id}`, undefined, 'del').then((ok) => ok && savedToast('Exercise removed')) }]" />
           </div>
           <table v-if="e.sets.length" class="sets">
             <tbody>

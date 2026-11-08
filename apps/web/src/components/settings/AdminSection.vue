@@ -35,7 +35,7 @@ const fmt = useFmt();
       <div class="grow"><div class="t">{{ u.displayName || u.username }} <span class="tiny">@{{ u.username }}</span><span v-if="u.role === 'admin'" class="mchip" style="margin-inline-start:6px">admin</span><span v-if="u.disabled" class="mchip" style="margin-inline-start:6px">disabled</span></div>
         <div class="s">Joined {{ fmt.date(u.createdAt) }}{{ u.lastSeenAt ? ` · last seen ${fmt.date(u.lastSeenAt)}` : "" }}</div></div>
       <Menu v-if="u.id !== session.user?.id" :items="[{ label: 'Reset password', icon: 'key', run: () => reset(u) }, { label: u.role === 'admin' ? 'Remove admin' : 'Make admin', icon: 'user', run: () => run(() => api.put(`/admin/users/${u.id}`, { role: u.role === 'admin' ? 'user' : 'admin' }), u.role === 'admin' ? 'No longer an admin' : 'Made admin') },
-        { label: u.disabled ? 'Enable' : 'Disable', icon: 'lock', run: () => run(() => api.put(`/admin/users/${u.id}`, { disabled: !u.disabled }), u.disabled ? 'Account enabled' : 'Account disabled') }, { label: 'Remove', icon: 'trash', danger: true, sep: true, run: () => remove(u) }]" />
+        { label: u.disabled ? 'Enable' : 'Disable', icon: 'lock', sep: true, run: () => run(() => api.put(`/admin/users/${u.id}`, { disabled: !u.disabled }), u.disabled ? 'Account enabled' : 'Account disabled') }, { label: 'Remove', icon: 'trash', danger: true, sep: true, run: () => remove(u) }]" />
     </div></div>
     <p class="tiny">Admins manage accounts but never see anyone's workouts or data.</p>
     <div class="sh"><h2>Sign-ups</h2></div>

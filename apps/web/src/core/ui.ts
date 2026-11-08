@@ -18,3 +18,5 @@ export const dailySheet = ref(false);
 export const scheduleSheet = ref<null | { id?: string; routineId?: string | null; activityType?: string | null; rule?: string; [key: string]: unknown }>(null);
 /** The earlier versions of a routine (its id) */
 export const versionsSheet = ref<string | null>(null);
+/** Changing a program's start date, from its ⋮ menu on the Programs list or its own page */
+export const programStartSheet = ref<null | { id: string; startDate: string }>(null);
