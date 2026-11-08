@@ -2,6 +2,13 @@
 
 The top entry's version is the one the release workflow publishes. Add a new `## [x.y.z]` section to release.
 
+## [0.1.10] - 2026-11-08
+
+- Steps on Android come only from the phone's own step counter, so wobbling or tapping the phone no longer adds steps; in the browser the count is a labelled estimate that ignores wobbles.
+- Steps at the start of a walk, just before Pause or Finish, and while Android had closed the app are no longer lost.
+- Steps from the last seconds of a pause don't count after Resume, and steps taken just before Pause still count when you tap Resume straight away.
+- The GitHub page has screenshots, a feature overview and every way to install Motus.
+
 ## [0.1.9] - 2026-11-07
 
 - New app icon: a dumbbell on an ocean-blue gradient, on the phone's home screen, the installed web app, the browser tab, the desktop app and the Android splash screen.
