@@ -6,7 +6,7 @@ import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest }
 import cookie from "@fastify/cookie";
 import fstatic from "@fastify/static";
 import { createEngine, uuidv7, withUser, type Db, type Engine } from "@motus/engine";
-import { hashPassword, checkPassword, createSession, deviceLabel, userForToken, tooManyTries, recordFail, validUsername, validPassword, newInviteCode, COOKIE, SESSION_DAYS, type SessionUser } from "./auth";
+import { hashPassword, checkPassword, createSession, deviceLabel, userForToken, tooManyTries, recordFail, validUsername, passwordProblem, newInviteCode, COOKIE, SESSION_DAYS, type SessionUser } from "./auth";
 import { VERSION, API_LEVEL, checkForUpdate } from "./version";
 
 export interface Options { db: Db; dataDir: string; webDir?: string; imagesDir?: string; logger?: boolean; host?: string }
@@ -56,7 +56,7 @@ export async function buildApp(o: Options): Promise<{ app: FastifyInstance; engi
     const b = req.body as any;
     if (Number((await db.admin.query("SELECT count(*) n FROM users")).rows[0].n) > 0) return reply.code(409).send({ error: "Already set up" });
     if (!validUsername(b?.username)) return reply.code(400).send({ error: "Use 2-40 letters, numbers, dots, dashes or underscores for the username" });
-    if (!validPassword(b?.password)) return reply.code(400).send({ error: "Use at least 8 characters for the password" });
+    const bad = passwordProblem(b?.password, b?.username); if (bad) return reply.code(400).send({ error: bad });
     const id = uuidv7();
     await db.admin.query("INSERT INTO users (id, username, password_hash, role, display_name) VALUES ($1,$2,$3,'admin',$4)", [id, b.username.toLowerCase(), await hashPassword(b.password), String(b.displayName ?? b.username).slice(0, 80)]);
     const token = await createSession(db, id, deviceLabel(b.deviceName, req.headers["user-agent"]), String(b.platform ?? "web"));
@@ -80,7 +80,7 @@ export async function buildApp(o: Options): Promise<{ app: FastifyInstance; engi
     const mode = await meta("registration", "invite");
     if (mode === "closed") return reply.code(403).send({ error: "Ask the admin to create your account" });
     if (!validUsername(b?.username)) return reply.code(400).send({ error: "Use 2-40 letters, numbers, dots, dashes or underscores for the username" });
-    if (!validPassword(b?.password)) return reply.code(400).send({ error: "Use at least 8 characters for the password" });
+    const bad = passwordProblem(b?.password, b?.username); if (bad) return reply.code(400).send({ error: bad });
     if (mode === "invite") {
       const inv = (await db.admin.query("SELECT code FROM invites WHERE code = $1 AND used_by IS NULL AND expires_at > now()", [String(b.invite ?? "")])).rows[0];
       if (!inv) return reply.code(403).send({ error: "That invite code is not valid" });
@@ -129,7 +129,7 @@ export async function buildApp(o: Options): Promise<{ app: FastifyInstance; engi
     const b = req.body as any;
     const u = (await db.admin.query("SELECT password_hash FROM users WHERE id = $1", [req.user!.id])).rows[0];
     if (!(await recheck(req, reply, b?.current, u.password_hash))) return;
-    if (!validPassword(b?.next)) return reply.code(400).send({ error: "Use at least 8 characters" });
+    const bad = passwordProblem(b?.next, req.user!.username); if (bad) return reply.code(400).send({ error: bad });
     await db.admin.query("UPDATE users SET password_hash = $2 WHERE id = $1", [req.user!.id, await hashPassword(b.next)]);
     await db.admin.query("DELETE FROM sessions WHERE user_id = $1 AND id <> $2", [req.user!.id, req.user!.sessionId]);
     return { ok: true };
@@ -196,7 +196,7 @@ export async function buildApp(o: Options): Promise<{ app: FastifyInstance; engi
     if (!needAdmin(req, reply)) return;
     const b = req.body as any;
     if (!validUsername(b?.username)) return reply.code(400).send({ error: "Invalid username" });
-    if (!validPassword(b?.password)) return reply.code(400).send({ error: "Use at least 8 characters for the password" });
+    const bad = passwordProblem(b?.password, b?.username); if (bad) return reply.code(400).send({ error: bad });
     if ((await db.admin.query("SELECT 1 FROM users WHERE username = $1", [b.username.toLowerCase()])).rows.length) return reply.code(409).send({ error: "That username is taken" });
     const id = uuidv7();
     await db.admin.query("INSERT INTO users (id, username, password_hash, role, display_name) VALUES ($1,$2,$3,$4,$5)",
@@ -207,7 +207,11 @@ export async function buildApp(o: Options): Promise<{ app: FastifyInstance; engi
     if (!needAdmin(req, reply)) return;
     const b = req.body as any, id = (req.params as any).id;
     if (id === req.user!.id && (b.role === "user" || b.disabled)) return reply.code(400).send({ error: "You can't remove your own admin access" });
-    if (b.password) { if (!validPassword(b.password)) return reply.code(400).send({ error: "Use at least 8 characters" }); await db.admin.query("UPDATE users SET password_hash = $2 WHERE id = $1", [id, await hashPassword(b.password)]); await db.admin.query("DELETE FROM sessions WHERE user_id = $1", [id]); }
+    if (b.password) {
+      const who = (await db.admin.query("SELECT username FROM users WHERE id = $1", [id])).rows[0];
+      const bad = passwordProblem(b.password, who?.username); if (bad) return reply.code(400).send({ error: bad });
+      await db.admin.query("UPDATE users SET password_hash = $2 WHERE id = $1", [id, await hashPassword(b.password)]); await db.admin.query("DELETE FROM sessions WHERE user_id = $1", [id]);
+    }
     if (b.role) await db.admin.query("UPDATE users SET role = $2 WHERE id = $1", [id, b.role === "admin" ? "admin" : "user"]);
     if (typeof b.disabled === "boolean") { await db.admin.query("UPDATE users SET disabled_at = CASE WHEN $2 THEN now() ELSE NULL END WHERE id = $1", [id, b.disabled]); if (b.disabled) await db.admin.query("DELETE FROM sessions WHERE user_id = $1", [id]); }
     return { ok: true };

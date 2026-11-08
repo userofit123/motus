@@ -74,5 +74,11 @@ export function recordFail(keys: string[]) {
 }
 
 export const validUsername = (u: unknown): u is string => typeof u === "string" && /^[a-zA-Z0-9._-]{2,40}$/.test(u);
-export const validPassword = (p: unknown): p is string => typeof p === "string" && p.length >= 8 && p.length <= 200;
+// What's wrong with a password being chosen, or null when it's fine. A password the same as the username is refused:
+// the username is shown on screen (Settings → Account, the admin's list), so it would put the password on display.
+export function passwordProblem(p: unknown, username: unknown): string | null {
+  if (typeof p !== "string" || p.length < 8 || p.length > 200) return "Use at least 8 characters for the password";
+  if (typeof username === "string" && p.trim().toLowerCase() === username.trim().toLowerCase()) return "The password can't be the same as the username";
+  return null;
+}
 export const newInviteCode = () => crypto.randomBytes(9).toString("base64url");

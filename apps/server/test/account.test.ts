@@ -66,3 +66,20 @@ describe("signing out the other devices", () => {
     expect(await signedIn(h)).toBe(true);
   });
 });
+
+describe("a password the same as the username", () => {
+  it("is refused when an account is made or its password reset", async () => {
+    // a session made directly: the earlier wrong passwords here have put this address on the sign-in wait
+    const id = uuidv7();
+    await db.admin.query("INSERT INTO users (id, username, password_hash, role) VALUES ($1,$2,$3,'admin')", [id, "dee", await hashPassword(PW)]);
+    const h = { authorization: `Bearer ${await createSession(db, id, "Browser", "web")}` };
+    const made = await app.inject({ method: "POST", url: "/api/admin/users", headers: h, payload: { username: "qwerty123", password: "Qwerty123" } });
+    expect(made.statusCode).toBe(400);
+    expect(made.json().error).toBe("The password can't be the same as the username");
+    const ok = await app.inject({ method: "POST", url: "/api/admin/users", headers: h, payload: { username: "robinhood", password: PW } });
+    expect(ok.statusCode).toBe(200);
+    const reset = await app.inject({ method: "PUT", url: `/api/admin/users/${ok.json().id}`, headers: h, payload: { password: "RobinHood" } });
+    expect(reset.statusCode).toBe(400);
+    expect(reset.json().error).toBe("The password can't be the same as the username");
+  });
+});
