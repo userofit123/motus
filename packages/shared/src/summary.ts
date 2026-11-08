@@ -76,3 +76,71 @@ export function workoutSoFar(w: { exercises: WorkoutExercise[] }): WorkoutSoFar 
     perExercise: per,
   };
 }
+
+export type Trend = "up" | "same" | "down";
+
+/** How a finished workout went, in parts that can each be said in plain words: against its plan (sets, rep and weight
+ * targets) and against last time (each exercise's best set, and volume). */
+export interface WorkoutScore {
+  plan: {
+    setsDone: number; setsPlanned: number; skipped: number;
+    repTargets: number; repTargetsHit: number;
+    weightTargets: number; weightTargetsHit: number;
+    /** all: every planned set done and every target reached; most: at least 80% of the sets; part: less */
+    verdict: "all" | "most" | "part";
+  };
+  /** null when no exercise was done before (nothing to compare with) */
+  last: {
+    /** exercises done today that were also done last time */
+    compared: number; improved: number; dropped: number;
+    volumeKg: number; lastVolumeKg: number;
+    /** volume change in whole percent, over the compared exercises only (null when last time had no volume) */
+    volumePct: number | null;
+    verdict: "better" | "same" | "worse";
+  } | null;
+  /** per exercise, by workout exercise id: up / same / down on last time (absent: skipped, not done or new) */
+  vsLast: Record<string, Trend>;
+}
+
+const EPS = 0.01;
+const trend = (now: number, before: number): Trend => now > before + EPS ? "up" : now < before - EPS ? "down" : "same";
+
+/** "Last time" is each set's `prev`: the same set in the exercise's last session (in this routine when there is one).
+ * An exercise is up when its best set beats last time's best (or ties it with more volume), down the other way round.
+ * The workout is better when more exercises went up than down; a tie is settled by volume (2% either way). */
+export function workoutScore(w: { exercises: WorkoutExercise[] }): WorkoutScore {
+  const so = workoutSoFar(w);
+  let weightTargets = 0, weightTargetsHit = 0, compared = 0, improved = 0, dropped = 0, vol = 0, lastVol = 0;
+  const vsLast: Record<string, Trend> = {};
+  for (const [i, e] of w.exercises.entries()) {
+    if (e.status === "skipped") continue;
+    const t = e.exercise?.tracking ?? "weight_reps", work = e.sets.filter(working);
+    if (usesWeight(t)) for (const s of work) if (s.targetWeightKg != null && s.targetWeightKg > 0) {
+      weightTargets++;
+      if (t === "assisted" ? (s.weightKg ?? Infinity) <= s.targetWeightKg + EPS : (s.weightKg ?? 0) >= s.targetWeightKg - EPS) weightTargetsHit++;
+    }
+    const before: WorkoutSet[] = e.sets.filter((s) => s.kind !== "warmup" && s.prev).map((s) => ({ ...s, ...s.prev!, done: true }));
+    const best = bestSet(e.sets, t), lastBest = bestSet(before, t);
+    if (!best || !lastBest) continue;
+    const v = so.perExercise[i]!.volumeKg, lv = before.reduce((a, s) => a + setVolume(s, t), 0);
+    const b = trend(score(best, t), score(lastBest, t)), d = b === "same" ? trend(v, lv) : b;
+    vsLast[e.id] = d;
+    compared++; vol += v; lastVol += lv;
+    if (d === "up") improved++; else if (d === "down") dropped++;
+  }
+  const volumePct = lastVol > 0 ? Math.round(((vol - lastVol) / lastVol) * 100) : null;
+  const skipped = w.exercises.filter((e) => e.status === "skipped").length;
+  const allDone = so.setsDone >= so.setsPlanned && !skipped && so.targetsHit === so.targets && weightTargetsHit === weightTargets;
+  return {
+    plan: {
+      setsDone: so.setsDone, setsPlanned: so.setsPlanned, skipped,
+      repTargets: so.targets, repTargetsHit: so.targetsHit, weightTargets, weightTargetsHit,
+      verdict: allDone ? "all" : so.setsDone >= so.setsPlanned * 0.8 ? "most" : "part",
+    },
+    last: !compared ? null : {
+      compared, improved, dropped, volumeKg: vol, lastVolumeKg: lastVol, volumePct,
+      verdict: improved > dropped ? "better" : dropped > improved ? "worse" : (volumePct ?? 0) >= 2 ? "better" : (volumePct ?? 0) <= -2 ? "worse" : "same",
+    },
+    vsLast,
+  };
+}

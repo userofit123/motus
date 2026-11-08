@@ -199,7 +199,7 @@ const menu = computed(() => [
       </div>
     </div>
 
-    <FinishSheet v-if="finishing" @close="finishing = false" @cancel="finishing = false; discard()" />
+    <FinishSheet v-if="finishing" @close="finishing = false" @cancel="finishing = false; discard()" @open="(i) => { finishing = false; go(i); }" />
     <ExercisePicker v-if="adding" multi :exclude="w.exercises.map((e) => e.exerciseId)" @close="adding = false" @pick="(ids) => { adding = false; W.addExercises(ids); }" />
     <Sheet v-if="settingsOpen" title="Workout settings" @close="settingsOpen = false"><WorkoutSettings v-model="overrides" /></Sheet>
     <Sheet v-if="listOpen" title="Exercises" @close="listOpen = false">
