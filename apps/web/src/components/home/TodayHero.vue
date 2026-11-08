@@ -32,8 +32,6 @@ const picked = computed(() => plansOn(sel.value));
 const kindIcon = (p: HomePlan) => (p.routineId ? "dumbbell" : activityIcon(p.activityType));
 const kindName = (p: HomePlan) => (p.routineId ? "Routine" : p.activityType ? p.activityType[0]!.toUpperCase() + p.activityType.slice(1) : "Activity");
 const planSub = (p: HomePlan) => [p.timeOfDay ?? "Any time", kindName(p)].join(" · ");
-const since = computed(() => { const d = props.h.daysSinceLast; return d == null ? "" : d === 0 ? "today" : d === 1 ? "yesterday" : `${d} days ago`; });
-const lastLine = computed(() => (props.h.last ? `Last workout: ${props.h.last.name} · ${since.value}` : ""));
 const trainedToday = computed(() => (props.h.days ?? []).includes(today));
 const n = (k: number, one: string, many = one + "s") => `${k} ${k === 1 ? one : many}`;
 
@@ -46,17 +44,17 @@ const hero = computed<Hero | null>(() => {
   // two or more plans: the list below says it all
   if (todays.value.length > 1) return null;
   const plan = todays.value[0];
-  if (plan) return { label: plan.timeOfDay ? `Planned for today at ${plan.timeOfDay}` : "Planned for today", title: plan.name, sub: lastLine.value, routine: plan.routineId ?? null,
+  if (plan) return { label: plan.timeOfDay ? `Planned for today at ${plan.timeOfDay}` : "Planned for today", title: plan.name, sub: "", routine: plan.routineId ?? null,
     act: plan.routineId ? { label: "Start", icon: "play", run: () => start(plan) } : { label: "Log it", icon: "plus", run: () => open(plan) } };
   // a program only while Programs is switched on (Settings → Features)
   const prog = s.value.features.programs ? (h.programs ?? []).find((p) => p.calendarWeek > 0 && p.next) : undefined;
   const next = prog?.next;
-  if (prog && next) return { label: `${prog.name}, week ${next.week} of ${prog.weeks}`, title: next.name, sub: lastLine.value, routine: next.routineId,
+  if (prog && next) return { label: `${prog.name}, week ${next.week} of ${prog.weeks}`, title: next.name, sub: "", routine: next.routineId,
     act: { label: "Start", icon: "play", run: () => router.push(`/routines/${next.routineId}/start?program=${prog.id}${next.deload ? `&deload=${prog.deloadPct}` : ""}`) } };
   const sug = trainedToday.value ? null : (h.suggest ?? []).find((x) => x.routineId);
   if (sug) return { label: "Suggested for today", title: sug.title, sub: sug.reason, routine: sug.routineId,
     act: { label: "Start", icon: "play", run: () => router.push(`/routines/${sug.routineId!}/start`) } };
-  return { label: "Nothing planned today", title: trainedToday.value ? "Done for today" : "Your call today", sub: lastLine.value, routine: null,
+  return { label: "Nothing planned today", title: trainedToday.value ? "Done for today" : "Your call today", sub: "", routine: null,
     act: { label: trainedToday.value ? "Another workout" : "Start a workout", icon: "play", run: () => (startOpen.value = true) } };
 });
 // today's plans as rows: all of them when there are several, or beside a workout in progress (the one plan otherwise is the title)
@@ -86,61 +84,40 @@ const doneCount = computed(() => week.value.filter((d) => d.done).length);
 
 <template>
   <div v-if="fresh" class="card hero today">
-    <div class="tmain">
-      <div class="ch"><span class="bi"><Icon name="play" :size="15" /></span><span class="t grow">Today</span></div>
-      <div class="tsec">
-        <div class="tl">Welcome to Motus</div>
-        <div class="tt">Let's get you started</div>
-        <div class="ts">Make a routine with the exercises you do, pick a ready-made one, or start a workout and add exercises as you go.</div>
-      </div>
-      <div class="tacts">
-        <button class="btn" @click="router.push('/routines/new/edit')"><Icon name="plus" :size="16" />Create a routine</button>
-        <button class="btn tonal" @click="router.push('/routines?template=1')">Use a template</button>
-        <button class="btn tonal" @click="startOpen = true"><Icon name="play" :size="16" />Start a workout</button>
-      </div>
+    <div class="ch"><span class="bi"><Icon name="play" :size="15" /></span><span class="t grow">Today</span></div>
+    <div class="tsec">
+      <div class="tl">Welcome to Motus</div>
+      <div class="tt">Let's get you started</div>
+      <div class="ts">Make a routine with the exercises you do, pick a ready-made one, or start a workout and add exercises as you go.</div>
+    </div>
+    <div class="tacts">
+      <button class="btn" @click="router.push('/routines/new/edit')"><Icon name="plus" :size="16" />Create a routine</button>
+      <button class="btn tonal" @click="router.push('/routines?template=1')">Use a template</button>
+      <button class="btn tonal" @click="startOpen = true"><Icon name="play" :size="16" />Start a workout</button>
     </div>
   </div>
   <div v-else class="card hero today" :class="{ live: !!h.active && sel === today }">
-    <div class="tmain" aria-live="polite">
-      <div class="ch"><span class="bi"><Icon name="play" :size="15" /></span><span class="t grow">{{ sel === today ? "Today" : dayLabel }}</span>
-        <button v-if="sel !== today" class="tlnk" @click="openDay">Open in calendar<Icon name="right" :size="14" /></button></div>
+    <div class="ch"><span class="bi"><Icon name="play" :size="15" /></span><span class="t grow">{{ sel === today ? "Today" : dayLabel }}</span>
+      <button v-if="sel !== today" class="tlnk" @click="openDay">Open in calendar<Icon name="right" :size="14" /></button></div>
 
+    <!-- the top row: the title (or what the list below is) beside the figure and the week -->
+    <div class="tmain tsec" aria-live="polite">
       <template v-if="sel === today">
-        <div v-if="hero" class="tsec">
+        <template v-if="hero">
           <div class="tl"><span v-if="h.active" class="pulse" aria-hidden="true" />{{ hero.label }}</div>
           <div class="thead">
             <div class="tt">{{ hero.title }}</div>
             <button class="btn s" @click="hero.act.run()"><Icon :name="hero.act.icon" :size="14" />{{ hero.act.label }}</button>
           </div>
           <div v-if="hero.sub" class="ts">{{ hero.sub }}</div>
-        </div>
-        <div v-if="rows.length" class="tsec">
-          <div class="tl">{{ h.active ? "Also planned for today" : `${n(rows.length, "plan")} for today` }}</div>
-          <div class="plist" role="list">
-            <div v-for="(p, i) in rows" :key="p.scheduleId" role="listitem" class="prow">
-              <span class="pk"><Icon :name="kindIcon(p)" :size="16" /></span>
-              <div class="pt"><div class="pn">{{ p.name }}</div><div class="ps">{{ planSub(p) }}</div></div>
-              <button class="btn s" :class="{ tonal: !primary(i) }" :aria-label="`${p.routineId ? 'Start' : 'Log it'} ${p.name}`" @click="open(p)">
-                <Icon :name="p.routineId ? 'play' : 'plus'" :size="14" />{{ p.routineId ? "Start" : "Log it" }}</button>
-            </div>
-          </div>
-          <div v-if="!hero && lastLine" class="ts">{{ lastLine }}</div>
-        </div>
-      </template>
-
-      <div v-else class="tsec">
-        <template v-if="sel > today">
-          <div class="tl">{{ picked.length ? n(picked.length, "plan") : "Nothing planned" }}</div>
-          <div v-if="picked.length" class="plist" role="list">
-            <div v-for="p in picked" :key="p.scheduleId" role="listitem" class="prow">
-              <span class="pk"><Icon :name="kindIcon(p)" :size="16" /></span>
-              <div class="pt"><div class="pn">{{ p.name }}</div><div class="ps">{{ planSub(p) }}</div></div>
-            </div>
-          </div>
-          <div v-else class="ts">Plan a routine or an activity for this day in the calendar.</div>
         </template>
-        <div v-else class="ts">{{ pastNote }}</div>
-      </div>
+        <div v-else class="tl">{{ n(rows.length, "plan") }} for today</div>
+      </template>
+      <template v-else-if="sel > today">
+        <div class="tl">{{ picked.length ? n(picked.length, "plan") : "Nothing planned" }}</div>
+        <div v-if="!picked.length" class="ts">Plan a routine or an activity for this day in the calendar.</div>
+      </template>
+      <div v-else class="ts">{{ pastNote }}</div>
     </div>
     <MuscleFig v-if="sel === today && hero?.routine" class="tfig" :routine="hero.routine" />
     <div class="tweek" role="group" :aria-label="`This week: ${doneCount} of 7 days trained`">
@@ -150,16 +127,39 @@ const doneCount = computed(() => week.value.filter((d) => d.done).length);
         <span class="wn">{{ d.done ? "" : d.n }}<Icon v-if="d.done" name="check" :size="14" /></span>
       </button>
     </div>
+
+    <!-- the day's plans as equal rows across the whole block -->
+    <div v-if="sel === today && rows.length" class="tlist tsec" aria-live="polite">
+      <div v-if="hero" class="tl">Also planned for today</div>
+      <div class="plist" role="list">
+        <div v-for="(p, i) in rows" :key="p.scheduleId" role="listitem" class="prow">
+          <span class="pk"><Icon :name="kindIcon(p)" :size="16" /></span>
+          <div class="pt"><div class="pn">{{ p.name }}</div><div class="ps">{{ planSub(p) }}</div></div>
+          <button class="btn s" :class="{ tonal: !primary(i) }" :aria-label="`${p.routineId ? 'Start' : 'Log it'} ${p.name}`" @click="open(p)">
+            <Icon :name="p.routineId ? 'play' : 'plus'" :size="14" />{{ p.routineId ? "Start" : "Log it" }}</button>
+        </div>
+      </div>
+    </div>
+    <div v-else-if="sel > today && picked.length" class="tlist plist" role="list" aria-live="polite">
+      <div v-for="p in picked" :key="p.scheduleId" role="listitem" class="prow">
+        <span class="pk"><Icon :name="kindIcon(p)" :size="16" /></span>
+        <div class="pt"><div class="pn">{{ p.name }}</div><div class="ps">{{ planSub(p) }}</div></div>
+      </div>
+    </div>
   </div>
 </template>
 
 <style scoped>
-/* the hero: the theme's primary container. Text on the left, the routine's muscles beside it, the week along the side */
-.today { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; column-gap: calc(var(--cpx) * 1.5); row-gap: var(--spg); }
-/* sections (the title, the list of plans) get room between them; lines inside a section sit closer */
-.tmain { min-width: 0; display: flex; flex-direction: column; gap: var(--hg); }
+/* the hero: the theme's primary container. The header and the plans span the whole block; between them the title, the
+   routine's muscles and the week share a row. No column gap: the figure may be absent, and an empty column's gaps would
+   leave a hole, so the figure and the week bring their own space on their left */
+.today { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; row-gap: var(--hg); }
+.today > * { grid-column: 1 / -1; }
+.today > .tmain { grid-column: 1; }
+.today > .tfig { grid-column: 2; margin-left: calc(var(--cpx) * 1.5); }
+.today > .tweek { grid-column: 3; margin-left: calc(var(--cpx) * 1.5); }
+/* lines inside a section sit closer than the sections do */
 .tsec { min-width: 0; display: flex; flex-direction: column; gap: var(--tdy); }
-.tsec + .tsec { margin-top: calc(var(--hg) / 2); }
 /* the block header every Home block has, in the hero's own colours */
 .today .ch { margin-bottom: 0; }
 .today .ch .bi { width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center; flex: none; background: color-mix(in srgb, var(--onc) 14%, transparent); color: var(--onc); }
@@ -173,9 +173,9 @@ const doneCount = computed(() => week.value.filter((d) => d.done).length);
 .thead { display: flex; align-items: center; justify-content: space-between; gap: var(--cpx); }
 .thead .btn { flex: none; }
 .tacts { display: flex; flex-wrap: wrap; gap: 8px; }
-.tfig { flex: none; }
 /* a day's plans: equal rows, each a soft tile with its kind, name, time and its own action */
-.plist { display: flex; flex-direction: column; gap: var(--tdy); margin-top: var(--tdy); }
+.plist { display: flex; flex-direction: column; gap: var(--tdy); }
+.tl + .plist { margin-top: var(--tdy); }
 .prow { display: flex; align-items: center; gap: var(--cpx); min-height: var(--lmh); padding: var(--lpy) var(--cpx); border-radius: var(--r-md); background: color-mix(in srgb, var(--onc) 8%, transparent); }
 .pk { width: 32px; height: 32px; flex: none; border-radius: var(--r-sm); display: grid; place-items: center; background: color-mix(in srgb, var(--onc) 12%, transparent); color: var(--onc); }
 .pt { flex: 1; min-width: 0; }
@@ -203,13 +203,13 @@ const doneCount = computed(() => week.value.filter((d) => d.done).length);
 .wd.sel .wl { color: var(--onc); }
 .wd.sel:not(.done) .wn { background: var(--onc); color: var(--accc); }
 .wd.sel.done .wn { box-shadow: 0 0 0 2px var(--accc), 0 0 0 4px var(--onc); }
-/* narrower screens: text and figure on top, the week across the bottom */
+/* narrower screens: text and figure on top, then the plans, the week across the bottom */
 @media (max-width: 900px) {
   .today { grid-template-columns: minmax(0, 1fr) auto; }
-  .tweek { grid-column: 1 / -1; justify-content: space-between; }
+  .today > .tweek { grid-column: 1 / -1; order: 1; margin-left: 0; justify-content: space-between; }
 }
 html.phone .today { grid-template-columns: minmax(0, 1fr) auto; }
-html.phone .tweek { grid-column: 1 / -1; justify-content: space-between; }
+html.phone .today > .tweek { grid-column: 1 / -1; order: 1; margin-left: 0; justify-content: space-between; }
 html.phone .tt { font-size: calc(var(--fs-lg) * 1.375); }
 html.phone .wd { width: auto; flex: 1; }
 html.phone .wn { width: min(34px, 100%); aspect-ratio: 1; height: auto; }
