@@ -126,9 +126,9 @@ const setBody = (s: WorkoutExercise["sets"][number]): SetBody => ({ kind: s.kind
 /** The routine's exercises after saving the changes whose keys are in `accept` (the rest stay as the routine has them).
  * Structure only: exercises the routine already had keep their own settings, weights and reps (a set added copies the
  * exercise's last one); only an exercise added or swapped in takes today's ticked numbers, as the routine has none
- * for it (one swapped in keeps the routine's set count unless its fewer/more row is on too). An added exercise carries
- * `fromWorkoutExerciseId` so the saver can point the workout exercise at the routine exercise it became. Returns null
- * when nothing asked for applies. */
+ * for it (one swapped in keeps the routine's sets, warm-ups as they are, unless its fewer/more row is on too). An
+ * added exercise carries `fromWorkoutExerciseId` so the saver can point the workout exercise at the routine exercise
+ * it became. Returns null when nothing asked for applies. */
 export function applyStructure<R extends RoutineShape["exercises"][number]>(routine: { exercises: R[] }, w: SessionShape, accept: Iterable<string>): (R | Record<string, unknown>)[] | null {
   const ok = new Set(accept);
   const keys = new Set(structureChanges(routine, w).map((c) => c.key).filter((k) => ok.has(k)));
@@ -144,9 +144,17 @@ export function applyStructure<R extends RoutineShape["exercises"][number]>(rout
     const done = e.sets.filter((s) => s.done);
     const sets = r.sets as Record<string, unknown>[];
     if (keys.has(`swapped:${id}`)) {
-      const n = keys.has(`fewer:${id}`) || keys.has(`more:${id}`) ? done.length : sets.length;
-      // past today's last ticked set: its numbers again, as the kind of set the routine has there
-      return { ...r, exerciseId: e.exerciseId, sets: Array.from({ length: n }, (_, i) => (done[i] ? setBody(done[i]) : { ...setBody(done.at(-1)!), kind: (sets[i]?.kind as string) ?? "normal" })) };
+      // the slot keeps its id, so its progression rule, rests, note and pinned notes now go with the exercise swapped in
+      if (keys.has(`fewer:${id}`) || keys.has(`more:${id}`)) return { ...r, exerciseId: e.exerciseId, sets: done.map(setBody) };
+      // the routine's sets matched by kind: its warm-ups stay as they are, each working set takes today's working
+      // numbers in turn (past today's last one, that one again); with no working set ticked the routine's own stay
+      const work = done.filter((s) => s.kind !== "warmup");
+      let k = 0;
+      return { ...r, exerciseId: e.exerciseId, sets: sets.map((rs) => {
+        if (rs.kind === "warmup") return rs;
+        const t = work[k++] ?? work.at(-1);
+        return t ? { ...setBody(t), kind: (rs.kind as string) ?? "normal" } : rs;
+      }) };
     }
     if (keys.has(`fewer:${id}`)) return { ...r, sets: sets.slice(0, done.length) };
     if (keys.has(`more:${id}`)) return { ...r, sets: [...sets, ...done.slice(sets.length).map((s) => ({ ...(sets.at(-1) ?? {}), kind: s.kind }))] };

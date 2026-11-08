@@ -87,10 +87,25 @@ function matchPrev(kinds: SetKind[], lastSets: any[]) {
  * "Start from what you did last time", "Last time's numbers come from" and the rest), only known keys of the right
  * type. Used by the start and its preview alike, so the preview shows the numbers the workout will start with. */
 export function withWorkoutOverrides(settings: Settings, raw: unknown): Settings {
-  const own = Object.fromEntries(Object.entries(raw && typeof raw === "object" ? raw : {})
-    .filter(([k, v]) => k in settings.workout && typeof v === typeof (settings.workout as any)[k]));
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return settings;
+  const base = settings.workout as unknown as Record<string, unknown>;
+  const rest = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 3600;
+  const own: Record<string, unknown> = {};
+  // each key checked on its own (it comes from the query string): anything not of the saved setting's kind is dropped
+  for (const [k, v] of Object.entries(raw)) {
+    if (!Object.hasOwn(base, k)) continue;
+    if (k === "prefillScope") { if (v === "any" || v === "routine") own[k] = v; }
+    else if (k === "restByKindS") {
+      if (!v || typeof v !== "object" || Array.isArray(v) || Object.getPrototypeOf(v) !== Object.prototype) continue;
+      own[k] = Object.fromEntries(Object.entries(v).filter(([kind, n]) => REST_KINDS.includes(kind) && rest(n)));
+    }
+    else if (typeof base[k] === "boolean") { if (typeof v === "boolean") own[k] = v; }
+    else if (typeof base[k] === "number") { if (rest(v)) own[k] = v; }
+  }
   return { ...settings, workout: { ...settings.workout, ...own } };
 }
+// the kinds of set that can have their own rest (as a routine exercise's restByKind)
+const REST_KINDS: string[] = ["warmup", "drop", "failure"];
 
 export async function buildPlan(q: Sql, routine: any, settings: Settings, today: string): Promise<{ exercises: PlannedExercise[]; reminders: Reminder[]; notes: Note[]; estimate: ReturnType<typeof estimate> }> {
   const exIds = routine.exercises.map((e: any) => e.exerciseId);

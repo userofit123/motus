@@ -137,8 +137,8 @@ export async function updateRoutineFromWorkout(ctx: Ctx, routineId: string, work
   const body = applyStructure(routine, w, accept);
   if (!body) return false;
   const links: [string, string][] = [];
-  const items = body.map((x: any) => {
-    if (!x.fromWorkoutExerciseId) return x;
+  const items = body.map((x) => {
+    if (!("fromWorkoutExerciseId" in x) || typeof x.fromWorkoutExerciseId !== "string") return x;
     const { fromWorkoutExerciseId, ...rest } = x, reId = uuidv7();
     links.push([fromWorkoutExerciseId, reId]);
     return { ...rest, id: reId };

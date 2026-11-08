@@ -103,6 +103,14 @@ describe("applyStructure", () => {
     expect(structureChanges(routine, w3).filter((c) => c.kind === "fewer" || c.kind === "more").map((c) => c.text))
       .toEqual(["B (today: Y): 2 sets instead of 1", "A (today: X): 1 of 2 sets done"]);
   });
+  it("matches a swapped-in exercise's sets by kind: the routine's warm-ups stay, working sets take today's working numbers", () => {
+    const r4 = { exercises: [{ id: "ra", exerciseId: "A", exercise: { name: "A" }, sets: [
+      { kind: "warmup", weightKg: 20, reps: 10 }, { kind: "normal", weightKg: 100, reps: 5 }, { kind: "normal", weightKg: 100, reps: 5 }] }] };
+    // today: X with a warm-up and one working set ticked
+    const w5 = { exercises: [ex({ name: "X", exerciseId: "X", routineExerciseId: "ra", sets: [set({ kind: "warmup", weightKg: 10, reps: 12 }), set({ weightKg: 40, reps: 8 })] })] };
+    const out = applyStructure(r4, w5, ["swapped:ra"])!;
+    expect(out.map((e: any) => [e.exerciseId, e.sets.map((s: any) => [s.kind, s.weightKg, s.reps])])).toEqual([["X", [["warmup", 20, 10], ["normal", 40, 8], ["normal", 40, 8]]]]);
+  });
   it("keeps exercises not done today in their routine place when following today's order", () => {
     const r3 = { exercises: ["a", "b", "c", "d"].map((k) => ({ id: `r${k}`, exerciseId: k.toUpperCase(), exercise: { name: k.toUpperCase() }, sets: [{ kind: "normal" }] })) };
     // today: B skipped but listed first, then D, A, C done

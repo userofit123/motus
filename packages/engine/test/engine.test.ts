@@ -4,6 +4,7 @@ import { describe, it, expect, beforeAll } from "vitest";
 import { createEngine, type Engine } from "../src/index";
 import { pgliteDb } from "../src/adapters/pglite";
 import { uuidv7 } from "../src/ids";
+import { structureChanges } from "@motus/shared";
 
 let eng: Engine;
 let A: string, B: string;
@@ -247,7 +248,6 @@ describe("updating a routine from a workout", () => {
     await call(C, "POST", `/routines/${r.id}/from-workout`, { workoutId: w.id, changes: [`fewer:${rid}`] });
     // one set ticked today: the routine keeps one, at its own 50, not today's 55
     expect((await call(C, "GET", `/routines/${r.id}`)).exercises[0].sets.map((s: any) => s.weightKg)).toEqual([50]);
- 
     // the start preview follows this workout's own "Start from what you did last time", as the start will
     expect((await call(C, "GET", `/routines/${r.id}/preview`)).exercises[0].sets[0].weightKg).toBe(55);
     expect((await call(C, "GET", `/routines/${r.id}/preview`, undefined, { settings: JSON.stringify({ prefillFromLast: false }) })).exercises[0].sets[0].weightKg).toBe(50);
@@ -261,11 +261,19 @@ describe("updating a routine from a workout", () => {
     const r = await call(C, "POST", "/routines", { name: "Swap", exercises: [
       { exerciseId: a, sets: [{ kind: "normal", reps: 10, weightKg: 100 }] },
       { exerciseId: b, sets: [{ kind: "normal", reps: 5, weightKg: 140 }, { kind: "normal", reps: 5, weightKg: 140 }] }] });
+    const ra = (await call(C, "GET", `/routines/${r.id}`)).exercises[0].id;
+    // a note pinned to A in this routine: about A, so not shown on the exercise swapped in for it
+    await call(C, "POST", "/notes", { targetType: "routine_exercise", targetId: ra, body: "Elbows in", pinned: true });
     const w = await call(C, "POST", "/workouts/start", { routineId: r.id });
+    expect(w.exercises[0].notes.map((n: any) => n.body)).toEqual(["Elbows in"]);
     // A swapped for C, done at 30 × 12; B left with nothing ticked (not marked skipped); D added with nothing ticked
     await call(C, "PUT", `/workout-exercises/${w.exercises[0].id}`, { exerciseId: c });
     await call(C, "PUT", `/workout-sets/${w.exercises[0].sets[0].id}`, { weightKg: 30, reps: 12, done: true });
     await call(C, "POST", `/workouts/${w.id}/exercises`, { exerciseId: d, sets: [{ kind: "normal", reps: 3, weightKg: 9 }] });
+    // the swap keeps A's place in the routine, so it is one "Swapped" row, not "Removed: A" and "Added: C"
+    const live = await call(C, "GET", `/workouts/${w.id}`);
+    expect([live.exercises[0].routineExerciseId, live.exercises[0].swapped, live.exercises[0].notes]).toEqual([ra, true, []]);
+    expect(structureChanges(await call(C, "GET", `/routines/${r.id}`), live).map((c) => c.kind)).toEqual(["swapped", "skipped"]);
     await call(C, "POST", `/workouts/${w.id}/finish`, { updateRoutine: true });
     expect((await call(C, "GET", `/routines/${r.id}`)).exercises.map((e: any) => e.exerciseId)).toEqual([a, b]);
     // the same again, now asked for with an older app's saveLayout: what's listed, skipped exercises aside
@@ -314,8 +322,8 @@ describe("next time's progression rules", () => {
     const r = await call(C, "POST", "/routines", { name: "SwapRule", exercises: [
       { exerciseId: ex[0].id, progression: { kind: "linear", incrementKg: 2.5 }, sets: [{ kind: "normal", reps: 5, weightKg: 60 }] }] });
     const w = await call(C, "POST", "/workouts/start", { routineId: r.id });
-    // swapped keeping its place in the routine (as structureChanges' "Swapped" rows are)
-    await eng.db.admin.query("UPDATE workout_exercises SET exercise_id = $2 WHERE id = $1", [w.exercises[0].id, ex[1].id]);
+    // swapped during the workout: it keeps its place in the routine
+    await call(C, "PUT", `/workout-exercises/${w.exercises[0].id}`, { exerciseId: ex[1].id });
     await call(C, "PUT", `/workout-sets/${w.exercises[0].sets[0].id}`, { weightKg: 40, reps: 5, done: true });
     expect(await call(C, "GET", `/workouts/${w.id}/next-rules`)).toEqual([]);
     const rid = (await call(C, "GET", `/routines/${r.id}`)).exercises[0].id;

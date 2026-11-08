@@ -164,7 +164,7 @@ const nowId = computed(() => (W.state.active === props.index ? visibleSets.value
       <button v-if="sided" class="qb" title="Add a left and a right set" @click="addPair"><Icon name="plus" :size="16" />Left + right</button>
       <button v-if="e.repRestS" class="qb" :class="{ acc: repTimer }" @click="toggleRepTimer"><Icon name="timer" :size="16" />{{ repTimer ? "Stop rep timer" : `Rep timer ${e.repRestS}s` }}</button>
       <div class="grow" />
-      <button class="qb" @click="noteSheet = { targets: [{ type: 'exercise', id: e.exerciseId, label: `${e.exercise.name}, every time` }, ...(e.routineExerciseId ? [{ type: 'routine_exercise', id: e.routineExerciseId, label: `${e.exercise.name} in ${W.state.w?.name ?? 'this routine'}` }] : []), ...(W.state.w?.routineId ? [{ type: 'routine', id: W.state.w.routineId, label: `The whole routine` }] : []), { type: 'workout_exercise', id: e.id, label: 'Just today' }], workoutId: W.state.w?.id }"><Icon name="note" :size="16" />Note</button>
+      <button class="qb" @click="noteSheet = { targets: [{ type: 'exercise', id: e.exerciseId, label: `${e.exercise.name}, every time` }, ...(e.routineExerciseId && !e.swapped ? [{ type: 'routine_exercise', id: e.routineExerciseId, label: `${e.exercise.name} in ${W.state.w?.name ?? 'this routine'}` }] : []), ...(W.state.w?.routineId ? [{ type: 'routine', id: W.state.w.routineId, label: `The whole routine` }] : []), { type: 'workout_exercise', id: e.id, label: 'Just today' }], workoutId: W.state.w?.id }"><Icon name="note" :size="16" />Note</button>
     </div>
     <!-- notes for this exercise: under it, where you look after a set -->
     <div v-if="prefs.showReminders && isCur && e.notes?.some((x) => x.pinned || x.workoutId === W.state.w?.id)" class="exnotes">

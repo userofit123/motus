@@ -1,6 +1,6 @@
 // Workouts: starting one (from a routine or empty), logging sets, skipping, reordering and replacing exercises,
 // finishing, logging a past workout, editing and duplicating, and the full detail with records and improvements.
-import { e1rm, ymd, liftedKg, LIFTED_SQL, applyStructure, routineProgression, structureChanges, type NextRule, type Tracking, type WorkoutExercise, type HomeRecord, type Workout, type WorkoutSummary } from "@motus/shared";
+import { e1rm, ymd, liftedKg, LIFTED_SQL, applyStructure, routineProgression, structureChanges, type NextRule, type Tracking, type RoutineExercise, type ExerciseStatus, type SetKind, type WorkoutExercise, type HomeRecord, type Workout, type WorkoutSummary } from "@motus/shared";
 import type { Router, Ctx } from "../router";
 import type { Sql } from "../db";
 import { camel, id, optId, str, strList, intOrNull, numOrNull, bool, oneOf, isoTime, secondsBetween, visible } from "../util";
@@ -126,6 +126,11 @@ export async function loadWorkout(q: Sql, workoutId: string, today: string): Pro
   const exs = await getExercises(q, wes.map((e: any) => e.exercise_id));
   const workout = camel<any>(w);
   delete workout.userId;
+  // the exercise each routine slot holds: a slot holding another one was swapped during this workout (it keeps the
+  // slot, so Finish can offer "Swapped"), and what is written for the slot belongs to the exercise it holds
+  const reIds = wes.map((e: any) => e.routine_exercise_id).filter(Boolean);
+  const slotEx = new Map<string, string>(reIds.length ? (await q.query("SELECT id, exercise_id FROM routine_exercises WHERE id = ANY($1::uuid[])", [reIds])).rows
+    .map((r: { id: string; exercise_id: string }) => [r.id, r.exercise_id]) : []);
   // "Previous": the same set in the last completed session of that exercise before this workout
   const prevByEx = new Map<string, any[]>();
   for (const e of wes) {
@@ -137,6 +142,7 @@ export async function loadWorkout(q: Sql, workoutId: string, today: string): Pro
   workout.exercises = wes.map((e: any) => {
     const x = camel<any>(e);
     delete x.userId; delete x.workoutId;
+    x.swapped = !!e.routine_exercise_id && slotEx.has(e.routine_exercise_id) && slotEx.get(e.routine_exercise_id) !== e.exercise_id;
     x.exercise = exs.get(e.exercise_id);
     const prev = prevByEx.get(e.exercise_id) ?? [];
     const warm = prev.filter((s) => s.kind === "warmup"), work = prev.filter((s) => s.kind !== "warmup");
@@ -167,7 +173,7 @@ export async function loadWorkout(q: Sql, workoutId: string, today: string): Pro
   workout.routineNotes = noteRows.filter((n: any) => n.targetType === "routine" || n.targetType === "workout");
   for (const e of workout.exercises) {
     e.reminders = rem.filter((r) => r.targetType === "exercise" && r.targetId === e.exerciseId);
-    e.notes = noteRows.filter((n: any) => (n.targetType === "exercise" && n.targetId === e.exerciseId) || (n.targetType === "routine_exercise" && n.targetId === e.routineExerciseId) || (n.targetType === "workout_exercise" && n.targetId === e.id));
+    e.notes = noteRows.filter((n: any) => (n.targetType === "exercise" && n.targetId === e.exerciseId) || (n.targetType === "routine_exercise" && n.targetId === e.routineExerciseId && !e.swapped) || (n.targetType === "workout_exercise" && n.targetId === e.id));
   }
   return workout as Workout;
 }
@@ -445,9 +451,11 @@ export function workoutRoutes(r: Router) {
     if ("endedAt" in b) put("ended_at", b.endedAt ? isoTime(b.endedAt) : null);
     if ("exerciseId" in b) {
       await visible(ctx.q, "exercises", id(b.exerciseId, "exercise"), "exercise");
-      // replace the exercise: keep the set structure, take last time's numbers for the new exercise
+      // replace the exercise: keep the set structure, take last time's numbers for the new exercise (its own history,
+      // never the slot's). It keeps its routine slot, so Finish lists it as "Swapped" (not removed + added); while the
+      // slot still holds the old exercise, the slot's pinned notes aren't shown on the new one (loadWorkout), and a progression
+      // rule applies to the new one only once the swap is saved (next-rules)
       put("exercise_id", id(b.exerciseId, "exercise"));
-      put("routine_exercise_id", null);
       const last = (await exerciseSessions(ctx.q, b.exerciseId, 1))[0];
       const cur = (await ctx.q.query("SELECT id, kind FROM workout_sets WHERE workout_exercise_id = $1 AND NOT done ORDER BY position", [weId])).rows;
       const lw = last?.sets.filter((s: any) => s.kind !== "warmup") ?? [];
@@ -566,29 +574,31 @@ export function workoutRoutes(r: Router) {
     if (!w) throw notFound("Workout not found");
     if (!w.routine_id || !(await getSettings(ctx.q, ctx.userId)).features.progression) return [];
     const routine = await loadRoutine(ctx.q, w.routine_id);
-    if (!routine?.exercises.some((e: any) => e.progression)) return [];
+    const reList: RoutineExercise[] = routine?.exercises ?? [];
+    if (!routine || !reList.some((e) => e.progression)) return [];
     // the session as structureChanges/applyStructure read it, light: its exercises, then all its ticked sets in one query
-    const exs = (await ctx.q.query(
+    const exs = (await ctx.q.query<{ id: string; exercise_id: string; routine_exercise_id: string | null; status: ExerciseStatus; name: string }>(
       `SELECT we.id, we.exercise_id, we.routine_exercise_id, we.status, e.name FROM workout_exercises we JOIN exercises e ON e.id = we.exercise_id
        WHERE we.workout_id = $1 ORDER BY we.position`, [wid])).rows;
-    const ticked = (await ctx.q.query(
+    const ticked = (await ctx.q.query<{ workout_exercise_id: string; kind: SetKind; weight_kg: string | number | null; reps: number | null; duration_s: number | null; distance_m: string | number | null }>(
       `SELECT s.workout_exercise_id, s.kind, s.weight_kg, s.reps, s.duration_s, s.distance_m FROM workout_sets s JOIN workout_exercises we ON we.id = s.workout_exercise_id
        WHERE we.workout_id = $1 AND s.done ORDER BY s.position`, [wid])).rows;
-    const done = { exercises: exs.map((e: any) => ({
+    const done = { exercises: exs.map((e) => ({
       id: e.id, exerciseId: e.exercise_id, routineExerciseId: e.routine_exercise_id, status: e.status, exercise: { name: e.name },
-      sets: ticked.filter((s: any) => s.workout_exercise_id === e.id).map((s: any) => ({ kind: s.kind, weightKg: s.weight_kg == null ? null : Number(s.weight_kg), reps: s.reps, durationS: s.duration_s, distanceM: s.distance_m == null ? null : Number(s.distance_m), done: true })),
+      sets: ticked.filter((s) => s.workout_exercise_id === e.id).map((s) => ({ kind: s.kind, weightKg: s.weight_kg == null ? null : Number(s.weight_kg), reps: s.reps, durationS: s.duration_s, distanceM: s.distance_m == null ? null : Number(s.distance_m), done: true })),
     })) as unknown as WorkoutExercise[] };
     const accept = strList(typeof qs.changes === "string" && qs.changes ? qs.changes.split(",") : []);
-    const after = (accept.length && applyStructure(routine, done, accept)) || routine.exercises;
-    const res = new Map<string, any>(after.filter((e: any) => e.id && e.progression).map((e: any) => [e.id, e]));
+    // an exercise added by a change has no id (nor a rule) yet, so only the routine's own come through
+    const after = ((accept.length && applyStructure({ exercises: reList }, done, accept)) || reList) as RoutineExercise[];
+    const res = new Map<string, RoutineExercise>(after.filter((e) => e.id && e.progression).map((e) => [e.id!, e]));
     const wes = done.exercises.filter((we) => {
       const re = we.routineExerciseId ? res.get(we.routineExerciseId) : null;
       return re && re.exerciseId === we.exerciseId && we.status !== "skipped" && we.sets.some((s) => s.done);
     });
     if (!wes.length) return [];
     // each exercise's last 5 sessions in this routine before today, in one query
-    const hist = new Map<string, { sets: { kind: any; weightKg: number | null; reps: number | null }[] }[]>();
-    const rows = (await ctx.q.query(
+    const hist = new Map<string, { sets: { kind: SetKind; weightKg: number | null; reps: number | null }[] }[]>();
+    const rows = (await ctx.q.query<{ exercise_id: string; sets: { kind: SetKind; weightKg: string | number | null; reps: number | null }[] }>(
       `SELECT exercise_id, sets FROM (
          SELECT we.exercise_id, w.started_at, row_number() OVER (PARTITION BY we.exercise_id ORDER BY w.started_at DESC) AS n,
            coalesce(json_agg(json_build_object('kind', s.kind, 'weightKg', s.weight_kg, 'reps', s.reps) ORDER BY s.position) FILTER (WHERE s.id IS NOT NULL AND s.done), '[]') AS sets
@@ -598,14 +608,14 @@ export function workoutRoutes(r: Router) {
        WHERE n <= 5 ORDER BY started_at DESC`, [[...new Set(wes.map((we) => we.exerciseId))], w.routine_id, wid])).rows;
     for (const r of rows) {
       const list = hist.get(r.exercise_id) ?? [];
-      list.push({ sets: (r.sets as any[]).map((s) => ({ kind: s.kind, weightKg: s.weightKg == null ? null : Number(s.weightKg), reps: s.reps })) });
+      list.push({ sets: r.sets.map((s) => ({ kind: s.kind, weightKg: s.weightKg == null ? null : Number(s.weightKg), reps: s.reps })) });
       hist.set(r.exercise_id, list);
     }
     const out: NextRule[] = [];
     for (const we of wes) {
-      const re = res.get(we.routineExerciseId!);
+      const re = res.get(we.routineExerciseId!)!; // kept above only with a rule
       const sets = we.sets.filter((s) => s.done).map((s) => ({ kind: s.kind, weightKg: s.weightKg, reps: s.reps }));
-      const r = routineProgression(re.progression, re.sets, [{ sets }, ...(hist.get(we.exerciseId) ?? [])]);
+      const r = routineProgression(re.progression!, re.sets, [{ sets }, ...(hist.get(we.exerciseId) ?? [])]);
       if (r && r.action !== "hold" && r.weightKg != null) out.push({ workoutExerciseId: we.id, exerciseId: we.exerciseId, name: we.exercise?.name ?? "", action: r.action, weightKg: r.weightKg, reps: r.reps, reason: r.reason });
     }
     return out;

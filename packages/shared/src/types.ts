@@ -195,6 +195,8 @@ export interface WorkoutExercise {
   exerciseId: string;
   exercise: Exercise;
   routineExerciseId: string | null;
+  /** swapped during this workout: it keeps the routine slot (routineExerciseId) while the slot holds another exercise */
+  swapped?: boolean;
   position: number;
   status: ExerciseStatus;
   skipReason: string | null;

@@ -4,7 +4,7 @@
 // weight change in one list: progression rules' own, and a step up where the top of the rep range was reached, each of
 // those can be switched off) and how this session differed from the routine (listed, each saved only when switched
 // on). Then how it felt, notes, body weight.
-import { computed, ref, watch } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { readyForMore, structureChanges, workoutScore, workoutSoFar, type MoreWeight, type NextRule, type Routine, type StructureChange, type WorkoutExercise } from "@motus/shared";
 import { useWorkout, endWorkout, finishDraft } from "./useWorkout";
@@ -63,13 +63,19 @@ const routineEx = computed(() => new Map(((routine.data.value as Routine | undef
 // stays empty: the rules still apply, they just aren't listed
 const rules = ref<NextRule[]>([]);
 const ruleKeys = computed(() => d.routineChanges.filter((k) => /^(swapped|more|fewer):/.test(k)).sort().join(","));
-let asked = 0;
+let asked = 0, wait: ReturnType<typeof setTimeout> | undefined;
 if (W.settings.value.features.progression && w.value.routineId) {
-  watch(ruleKeys, (keys) => {
+  const ask = (keys: string) => {
     const n = ++asked;
     void settle().then(() => api.get(`/workouts/${w.value.id}/next-rules`, keys ? { changes: keys } : undefined))
       .then((r) => { if (n === asked) rules.value = r as NextRule[]; }).catch(() => {});
+  };
+  // at once on opening; after that once the switches rest for a moment, not on every flick
+  watch(ruleKeys, (keys, old) => {
+    clearTimeout(wait);
+    if (old === undefined) ask(keys); else wait = setTimeout(() => ask(keys), 300);
   }, { immediate: true });
+  onBeforeUnmount(() => clearTimeout(wait));
 }
 const ruled = computed(() => new Set(rules.value.map((r) => r.workoutExerciseId)));
 const names = (xs: string[]) => (xs.length > 3 ? `${xs.length} exercises` : xs.length > 1 ? `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}` : xs[0] ?? "");
