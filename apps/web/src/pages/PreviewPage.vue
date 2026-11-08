@@ -118,7 +118,6 @@ await loaded(pv);
               <div class="s ellipsis" :class="{ acc: e.sets.some((x: any) => x.adjusted) }">{{ plan(e) }}</div>
               <div class="s ellipsis">{{ e.sets[0]?.restS ? `Rest ${fmt.clock(e.sets[0].restS)} · ` : "" }}{{ e.last ? `last time ${e.last.sets.filter((x: any) => x.kind !== "warmup").map((x: any) => setText(e, x)).join(", ")}` : "first time" }}</div>
               <div v-if="e.reminders.length" class="s acc ellipsis"><Icon name="bell" :size="12" style="display:inline;vertical-align:-1px" /> {{ reminderText(e.reminders[0], fmt) }}</div>
-              <div v-if="e.suggestion" class="s acc">{{ e.suggestion }}</div>
             </template>
           </div>
           <Menu :items="[
@@ -136,7 +135,7 @@ await loaded(pv);
         </div>
       </div>
     </div>
-    <Sheet v-if="showSettings" title="Workout settings" @close="showSettings = false"><WorkoutSettings v-model="overrides" at-start /></Sheet>
+    <Sheet v-if="showSettings" title="Workout settings" @close="showSettings = false"><WorkoutSettings v-model="overrides" /></Sheet>
   </div>
   <div v-else class="page"><div class="empty">Loading…</div></div>
 </template>

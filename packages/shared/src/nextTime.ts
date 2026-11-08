@@ -1,25 +1,11 @@
-// What a finished workout means for next time, kept as two separate things (PLAN.md §8.7):
-// - numbers: the weight to move up to where the top of the rep range was reached in every set (accepted on the
-//   Finish screen, it becomes a reminder that sets next time's weight and reps);
+// What a finished workout means for its routine (PLAN.md §8.7), kept as two separate things:
+// - numbers: the routine always shows where you are now. After a finish each routine exercise done takes today's
+//   working numbers, then Progression decides whether its weight goes up (or down after missed workouts): planNext,
+//   used by the Finish screen to list it and by the engine to save it, so the two can't disagree;
 // - structure: how this session differed from the routine (exercises added, removed, swapped, moved, sets added or
-//   left out), which only changes the routine when asked on the Finish screen.
-import type { WorkoutExercise, WorkoutSet } from "./types";
+//   left out), which only changes the routine when asked on the Finish screen (structureChanges, applyStructure).
+import type { Progression, ProgressionMode, WorkoutExercise } from "./types";
 import { usesReps, usesWeight } from "./training";
-
-export interface MoreWeight {
-  workoutExerciseId: string;
-  exerciseId: string;
-  name: string;
-  /** the heaviest working weight today and the reps at the top of the range */
-  fromKg: number;
-  topReps: number;
-  /** next time: one weight step up, reps back at the bottom of the range */
-  toKg: number;
-  reps: number;
-}
-
-// drop sets are lighter on purpose and warm-ups don't count: neither decides progression (as in nextProgression)
-const deciding = (s: WorkoutSet) => s.kind !== "warmup" && s.kind !== "drop";
 
 /** One weight step up from `fromKg`, on the step's grid (multiples of the step), so an odd weight lands on a real one. */
 export function stepUp(fromKg: number, stepKg: number): number {
@@ -27,42 +13,131 @@ export function stepUp(fromKg: number, stepKg: number): number {
   if (to <= fromKg) to += stepKg;
   return Math.round(to * 100) / 100;
 }
-
-/** Exercises ready for more weight: every working set done, with weight, each reaching the top of its rep range
- * (the range's top when it has one, else the rep target). Next time: one step more (snapped to the step's grid), reps
- * back to the range's bottom. `stepKg` is one step for all, or per exercise (null leaves that exercise out).
- * Assisted exercises are left out (their weight is help taken off, so "more" is the wrong way). */
-export function readyForMore(w: { exercises: WorkoutExercise[] }, stepKg: number | ((e: WorkoutExercise) => number | null)): MoreWeight[] {
-  const out: MoreWeight[] = [];
-  for (const e of w.exercises) {
-    const t = e.exercise?.tracking ?? "weight_reps";
-    if (e.status === "skipped" || t === "assisted" || !usesWeight(t) || !usesReps(t)) continue;
-    const step = typeof stepKg === "function" ? stepKg(e) : stepKg;
-    if (step == null || !(step > 0)) continue;
-    const work = e.sets.filter(deciding);
-    if (!work.length || !work.every((s) => s.done && s.targetReps != null && (s.weightKg ?? 0) > 0)) continue;
-    const top = (s: WorkoutSet) => s.targetRepsMax ?? s.targetReps!;
-    if (!work.every((s) => (s.reps ?? 0) >= top(s))) continue;
-    const fromKg = Math.max(...work.map((s) => s.weightKg!));
-    out.push({
-      workoutExerciseId: e.id, exerciseId: e.exerciseId, name: e.exercise?.name ?? "",
-      fromKg, topReps: Math.max(...work.map(top)), toKg: stepUp(fromKg, step), reps: Math.min(...work.map((s) => s.targetReps!)),
-    });
-  }
-  return out;
+/** One weight step down from `fromKg`, on the step's grid, never below 0. */
+export function stepDown(fromKg: number, stepKg: number): number {
+  let to = Math.round((fromKg - stepKg) / stepKg) * stepKg;
+  if (to >= fromKg) to -= stepKg;
+  return Math.max(0, Math.round(to * 100) / 100);
 }
 
-/** A progression rule that changes next time's weight (from GET /workouts/:id/next-rules, shown on the Finish
- * screen beside the suggestions): "add" a step or "deload", to `weightKg` × `reps`. */
-export interface NextRule {
-  workoutExerciseId: string;
+/** A routine exercise's own Progression, made safe: each field null follows Settings. A rule from before (kind,
+ * incrementKg, deloadAfter) becomes its own "Automatic" with that step and that many misses before lowering. */
+export function cleanProgression(v: unknown): Progression | null {
+  if (!v || typeof v !== "object") return null;
+  const o = v as Record<string, unknown>;
+  const num = (x: unknown, lo: number, hi: number) => (typeof x === "number" && Number.isFinite(x) && x >= lo && x <= hi ? x : null);
+  const old = "kind" in o && !("mode" in o);
+  const mode = old ? "auto" : o.mode === "suggest" || o.mode === "auto" || o.mode === "off" ? o.mode : null;
+  const stepKg = num(old ? o.incrementKg : o.stepKg, 0.01, 100);
+  const lowerAfter = num(old ? o.deloadAfter : o.lowerAfter, 0, 10);
+  const p = { mode, stepKg, lowerAfter: lowerAfter == null ? null : Math.round(lowerAfter) } as Progression;
+  return p.mode == null && p.stepKg == null && p.lowerAfter == null ? null : p;
+}
+
+/** Settings' Progression: the mode, the weight step (kg) and missed workouts in a row before lowering (0: never). */
+export interface ProgressionDefaults { mode: ProgressionMode; stepKg: number; lowerAfter: number }
+/** What a routine exercise's own Progression comes to with Settings filling in what it leaves open. The step: its
+ * own, else the exercise's own increment, else Settings'. */
+export function progressionOf(p: unknown, d: ProgressionDefaults, exerciseStepKg?: number | null): ProgressionDefaults {
+  const own = cleanProgression(p);
+  return { mode: own?.mode ?? d.mode, stepKg: own?.stepKg ?? (exerciseStepKg || d.stepKg), lowerAfter: own?.lowerAfter ?? d.lowerAfter };
+}
+
+/** A weight change next time, as the Finish screen lists it: up a step (every working set reached the top of its rep
+ * range) or down a step (missed reps `lowerAfter` workouts in a row). "suggest" asks with a switch, "auto" just does. */
+export interface NextChange {
+  routineExerciseId: string;
   exerciseId: string;
   name: string;
-  action: "add" | "deload";
-  weightKg: number;
+  mode: "suggest" | "auto";
+  direction: "up" | "down";
+  /** the heaviest working weight before and after (for assisted exercises: the help taken off) */
+  fromKg: number;
+  toKg: number;
+  /** next time's reps on that set */
   reps: number | null;
-  /** why the rule moves the weight, e.g. "Missed reps 3 times in a row" */
+  /** why, in plain words: "Every set reached 10 reps", "Missed reps 3 workouts in a row" */
   reason: string;
+}
+
+type RoutineSetLike = { kind: string; reps: number | null; repsMax?: number | null; weightKg: number | null; durationS?: number | null; distanceM?: number | null };
+export type RoutineItemLike = { id?: string | null; exerciseId: string; fixed?: boolean; progression?: unknown; missed?: number; sets: unknown[] };
+
+// drop sets are lighter on purpose and warm-ups don't count: neither decides progression
+const deciding = (k: string) => k !== "warmup" && k !== "drop";
+
+/** The routine's exercises after a finished session: each one done (not skipped, something ticked, the same exercise
+ * as its slot) takes today's working numbers, set by set in order (warm-ups never change, routine sets past today's
+ * last keep theirs), then its Progression: a step up when every working set reached the top of its rep range (reps
+ * back to the bottom), a step down after `lowerAfter` workouts in a row with missed reps. A rep range stays as set (the
+ * reps move inside it); a single rep target takes today's reps when they reached it, and keeps its target when missed
+ * (so misses count). "Keep these numbers fixed" exercises and skipped ones keep everything. `declined`: routine
+ * exercise ids whose "suggest" change was switched off (their numbers still follow today). Pure, for both the Finish
+ * screen and the engine. `missed` is each exercise's run of workouts with missed reps, carried to the next finish. */
+export function planNext<R extends RoutineItemLike>(exercises: R[], w: { exercises: WorkoutExercise[] }, d: ProgressionDefaults, declined: Iterable<string> = []): { exercises: R[]; changes: NextChange[]; numbersChanged: boolean } {
+  const off = new Set(declined);
+  const changes: NextChange[] = [];
+  let numbersChanged = false;
+  const out = exercises.map((re): R => {
+    const e = re.id ? w.exercises.find((x) => x.routineExerciseId === re.id && x.exerciseId === re.exerciseId && x.status !== "skipped" && x.sets.some((s) => s.done)) : undefined;
+    if (!e || re.fixed) return re;
+    const sets = re.sets as RoutineSetLike[];
+    const work = e.sets.filter((s) => s.done && s.kind !== "warmup");
+    // each routine set with the set done in its place (null: warm-up, or past today's last)
+    let k = 0;
+    const pairs = sets.map((rs) => (rs.kind === "warmup" ? null : work[k++] ?? null));
+    const num = (t: number | null | undefined, r: number | null | undefined) => (t ?? r ?? null);
+    let next: RoutineSetLike[] = sets.map((rs, i) => {
+      const t = pairs[i];
+      if (!t) return rs;
+      const reps = rs.repsMax != null || t.reps == null || (rs.reps != null && t.reps < rs.reps) ? rs.reps : t.reps;
+      return { ...rs, weightKg: num(t.weightKg, rs.weightKg), reps, durationS: num(t.durationS, rs.durationS), distanceM: num(t.distanceM, rs.distanceM) };
+    });
+    let missed = re.missed ?? 0;
+    const tr = e.exercise?.tracking ?? "weight_reps";
+    const dec = sets.map((rs, i) => ({ rs, t: pairs[i], i })).filter((x) => deciding(x.rs.kind));
+    const assisted = tr === "assisted";
+    const can = usesWeight(tr) && usesReps(tr) && dec.length > 0 && dec.every((x) => x.rs.reps != null && x.t && x.t.reps != null && x.t.weightKg != null && (assisted || x.t.weightKg > 0));
+    if (can) {
+      const p = progressionOf(re.progression, d, e.exercise?.incrementKg);
+      const top = (s: RoutineSetLike) => s.repsMax ?? s.reps!;
+      const allTop = dec.every((x) => x.t!.reps! >= top(x.rs));
+      const missedNow = dec.some((x) => x.t!.reps! < x.rs.reps!);
+      missed = missedNow ? missed + 1 : 0;
+      let direction: "up" | "down" | null = null;
+      if (p.mode !== "off" && p.stepKg > 0) {
+        if (allTop) direction = "up";
+        else if (missedNow && p.lowerAfter > 0 && missed >= p.lowerAfter) direction = "down";
+      }
+      if (direction) {
+        // assisted: going up means less help
+        const move = (kg: number) => ((direction === "up") !== assisted ? stepUp(kg, p.stepKg) : stepDown(kg, p.stepKg));
+        let shift = 0;
+        const moved = next.map((s, i) => {
+          if (s.kind === "warmup" || s.weightKg == null) return s;
+          // a drop set moves with the set it drops from
+          if (s.kind === "drop") return shift ? { ...s, weightKg: Math.max(0, Math.round((s.weightKg + shift) * 100) / 100) } : s;
+          const to = move(s.weightKg);
+          shift = to - s.weightKg;
+          // up: reps back to the bottom of the range (or the target); down: the target stays
+          return { ...s, weightKg: to, reps: sets[i]!.reps };
+        });
+        const heaviest = (xs: RoutineSetLike[]) => Math.max(...xs.filter((s) => deciding(s.kind) && s.weightKg != null).map((s) => s.weightKg!));
+        const mode = p.mode === "auto" ? "auto" : "suggest";
+        const firstDec = dec[0]!.rs;
+        changes.push({
+          routineExerciseId: re.id!, exerciseId: re.exerciseId, name: e.exercise?.name ?? "", mode, direction,
+          fromKg: heaviest(next), toKg: heaviest(moved), reps: firstDec.reps,
+          reason: direction === "up" ? `Every set reached ${Math.max(...dec.map((x) => top(x.rs)))} reps`
+            : p.lowerAfter === 1 ? "Missed reps last workout" : `Missed reps ${p.lowerAfter} workouts in a row`,
+        });
+        if (mode === "auto" || !off.has(re.id!)) { next = moved; missed = 0; }
+      }
+    }
+    if (JSON.stringify(next) !== JSON.stringify(sets)) numbersChanged = true;
+    return { ...re, sets: next, missed };
+  });
+  return { exercises: out, changes, numbersChanged };
 }
 
 /** One way a session differed from its routine, as the Finish screen and a finished workout's "Update the routine
@@ -87,8 +162,7 @@ const routineOf = (routine: RoutineShape, w: SessionShape) => {
   return { slot: (e: WorkoutExercise) => (e.routineExerciseId ? byId.get(e.routineExerciseId) : undefined) };
 };
 
-/** Every way this session differed from the routine, numbers aside (they carry over through "Start from what you did
- * last time"). Changed in this session: exercises added, removed, swapped, moved, sets added. Not done: exercises
+/** Every way this session differed from the routine, numbers aside (planNext carries them over). Changed in this session: exercises added, removed, swapped, moved, sets added. Not done: exercises
  * skipped or with nothing ticked, fewer sets ticked than the routine has. Nothing here changes the routine by itself:
  * each is saved only when asked (applyStructure, used by the engine for both places that save). */
 export function structureChanges(routine: RoutineShape, w: SessionShape): StructureChange[] {
@@ -144,7 +218,7 @@ export function applyStructure<R extends RoutineShape["exercises"][number]>(rout
     const done = e.sets.filter((s) => s.done);
     const sets = r.sets as Record<string, unknown>[];
     if (keys.has(`swapped:${id}`)) {
-      // the slot keeps its id, so its progression rule, rests, note and pinned notes now go with the exercise swapped in
+      // the slot keeps its id, so its Progression, rests, note and pinned notes now go with the exercise swapped in
       if (keys.has(`fewer:${id}`) || keys.has(`more:${id}`)) return { ...r, exerciseId: e.exerciseId, sets: done.map(setBody) };
       // the routine's sets matched by kind: its warm-ups stay as they are, each working set takes today's working
       // numbers in turn (past today's last one, that one again); with no working set ticked the routine's own stay

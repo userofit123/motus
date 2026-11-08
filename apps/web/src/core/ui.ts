@@ -19,7 +19,7 @@ export const bodySheet = ref<boolean | string>(false);
 export const dailySheet = ref(false);
 /** The schedule editor, opened from anywhere (a routine's ⋮ menu); an existing schedule to edit it, or just the routine to plan */
 export const scheduleSheet = ref<null | { id?: string; routineId?: string | null; activityType?: string | null; rule?: string; [key: string]: unknown }>(null);
-/** The earlier versions of a routine (its id) */
-export const versionsSheet = ref<string | null>(null);
+/** A routine's History (its id) */
+export const historySheet = ref<string | null>(null);
 /** Changing a program's start date, from its ⋮ menu on the Programs list or its own page */
 export const programStartSheet = ref<null | { id: string; startDate: string }>(null);

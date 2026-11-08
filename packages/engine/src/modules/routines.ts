@@ -1,6 +1,6 @@
 // Routines (saved plans) and their folders: list, open, create (from scratch, from another routine, from a workout,
 // from a template), edit, duplicate, version history, and the pre-start preview.
-import { TEMPLATES, applyStructure, estimate, usualDuration, restAfterSet, restDefaultsOf, ymd, LIFTED_SQL, type RoutineSummary } from "@motus/shared";
+import { TEMPLATES, applyStructure, cleanProgression, planNext, estimate, usualDuration, restAfterSet, restDefaultsOf, ymd, LIFTED_SQL, type RoutineSummary } from "@motus/shared";
 import { SOURCE } from "@motus/exercise-data/meta";
 import type { Router, Ctx } from "../router";
 import type { Sql } from "../db";
@@ -61,8 +61,9 @@ function restByKind(v: unknown): string | null {
   return Object.keys(out).length ? JSON.stringify(out) : null;
 }
 
-/** Writes a routine's exercises and sets, keeping the ids of exercises that stay (workouts point at them). */
-async function writeRoutineBody(ctx: Ctx, routineId: string, exercises: any[]) {
+/** Writes a routine's exercises and sets, keeping the ids of exercises that stay (workouts point at them). `missed`
+ * (workouts in a row with missed reps) is only written by finishing (`withMissed`); an edit keeps each one's count. */
+async function writeRoutineBody(ctx: Ctx, routineId: string, exercises: any[], withMissed = false) {
   if (!Array.isArray(exercises)) throw bad("Expected a list of exercises");
   if (exercises.length > 100) throw bad("Too many exercises");
   const keep: string[] = [];
@@ -70,13 +71,16 @@ async function writeRoutineBody(ctx: Ctx, routineId: string, exercises: any[]) {
     const reId = e.id && typeof e.id === "string" && /^[0-9a-f-]{36}$/.test(e.id) ? e.id : uuidv7();
     keep.push(reId);
     await visible(ctx.q, "exercises", id(e.exerciseId, "exercise"), "exercise");
+    const prog = cleanProgression(e.progression);
+    // a version saved before "Keep these numbers fixed" said prefill "target" for it
     const vals = [reId, ctx.userId, routineId, id(e.exerciseId, "exercise"), pos, e.superset ? str(e.superset, 20) : null, intOrNull(e.restS, 0, 3600),
-      intOrNull(e.restAfterS, 0, 3600), intOrNull(e.repRestS, 0, 600), oneOf(e.prefill, ["last", "target"], "last"), oneOf(e.prefillScope, ["any", "routine"], "any"),
-      e.progression && typeof e.progression === "object" ? JSON.stringify(e.progression) : null, str(e.note, 2000), restByKind(e.restByKind)];
+      intOrNull(e.restAfterS, 0, 3600), intOrNull(e.repRestS, 0, 600), bool(e.fixed) || e.prefill === "target",
+      prog ? JSON.stringify(prog) : null, str(e.note, 2000), restByKind(e.restByKind), withMissed ? intOrNull(e.missed, 0, 1000) ?? 0 : null];
     await ctx.q.query(
-      `INSERT INTO routine_exercises (id, user_id, routine_id, exercise_id, position, superset, rest_s, rest_after_s, rep_rest_s, prefill, prefill_scope, progression, note, rest_by_kind)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
-       ON CONFLICT (id) DO UPDATE SET exercise_id=$4, position=$5, superset=$6, rest_s=$7, rest_after_s=$8, rep_rest_s=$9, prefill=$10, prefill_scope=$11, progression=$12, note=$13, rest_by_kind=$14
+      `INSERT INTO routine_exercises (id, user_id, routine_id, exercise_id, position, superset, rest_s, rest_after_s, rep_rest_s, fixed, progression, note, rest_by_kind, missed)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,coalesce($14::int, 0))
+       ON CONFLICT (id) DO UPDATE SET exercise_id=$4, position=$5, superset=$6, rest_s=$7, rest_after_s=$8, rep_rest_s=$9, fixed=$10, progression=$11, note=$12, rest_by_kind=$13,
+         missed=coalesce($14::int, routine_exercises.missed)
        WHERE routine_exercises.routine_id = $3`, vals);
     await ctx.q.query("DELETE FROM routine_sets WHERE routine_exercise_id = $1", [reId]);
     const sets = Array.isArray(e.sets) ? e.sets.slice(0, 50) : [];
@@ -91,13 +95,18 @@ async function writeRoutineBody(ctx: Ctx, routineId: string, exercises: any[]) {
   await ctx.q.query("DELETE FROM routine_exercises WHERE routine_id = $1 AND NOT (id = ANY($2::uuid[]))", [routineId, keep]);
 }
 
-async function snapshot(ctx: Ctx, routineId: string) {
+/** The routine as it is now, kept in its History (every version, none dropped): after an edit, or after a workout
+ * changed it (with that workout). A routine from before History kept versions this way has its current one kept
+ * first (`keepCurrent`, called before changing it), so the first change doesn't lose where it was. */
+async function snapshot(ctx: Ctx, routineId: string, reason: "edit" | "workout" = "edit", workoutId: string | null = null) {
   const r = await loadRoutine(ctx.q, routineId);
   if (!r) return;
-  await ctx.q.query("INSERT INTO routine_versions (id, user_id, routine_id, snapshot) VALUES ($1,$2,$3,$4)", [uuidv7(), ctx.userId, routineId, JSON.stringify(r)]);
-  // keep the last 30 versions
-  await ctx.q.query(
-    "DELETE FROM routine_versions WHERE routine_id = $1 AND id NOT IN (SELECT id FROM routine_versions WHERE routine_id = $1 ORDER BY created_at DESC LIMIT 30)", [routineId]);
+  for (const e of r.exercises) delete e.missed;
+  await ctx.q.query("INSERT INTO routine_versions (id, user_id, routine_id, snapshot, reason, workout_id, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)",
+    [uuidv7(), ctx.userId, routineId, JSON.stringify(r), reason, workoutId, ctx.now().toISOString()]);
+}
+async function keepCurrent(ctx: Ctx, routineId: string) {
+  if (!(await ctx.q.query("SELECT 1 FROM routine_versions WHERE routine_id = $1 LIMIT 1", [routineId])).rows.length) await snapshot(ctx, routineId);
 }
 
 async function createRoutine(ctx: Ctx, b: any): Promise<string> {
@@ -110,6 +119,7 @@ async function createRoutine(ctx: Ctx, b: any): Promise<string> {
     `INSERT INTO routines (id, user_id, folder_id, name, description, color, based_on_id, position, pinned, settings) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
     [rid, ctx.userId, optId(b.folderId), name, str(b.description, 2000), b.color ? str(b.color, 20) : null, optId(b.basedOnId), pos, bool(b.pinned), JSON.stringify(b.settings ?? {})]);
   await writeRoutineBody(ctx, rid, b.exercises ?? []);
+  await snapshot(ctx, rid);
   return rid;
 }
 
@@ -124,18 +134,29 @@ async function bodyFromWorkout(q: Sql, workoutId: string) {
   }));
 }
 
-/** Save a session's structure to its routine, only the changes asked for (their keys from structureChanges): the
- * Finish screen's "Routine changes" and a finished workout's ⋮ "Update the routine from this", the same list and the
- * same save in both places. What each change does, and that today's numbers never go in, is applyStructure's
- * (@motus/shared), which the screens list from too. The routine as it was is kept in its history. An exercise added
- * to the routine becomes the workout exercise's own routine exercise, so the change isn't listed (or saved) again.
- * True when the routine changed. */
-export async function updateRoutineFromWorkout(ctx: Ctx, routineId: string, workoutId: string, accept: string[]): Promise<boolean> {
+/** What a finished session changes in its routine. Structure: only the changes asked for (their keys from
+ * structureChanges), the Finish screen's "Routine changes" and a finished workout's ⋮ "Update the routine from this",
+ * the same list and the same save in both places (applyStructure). Numbers (`numbers`, finishing only): each exercise
+ * done takes today's numbers, then its Progression, the "Suggest" ones switched off on Finish left out (planNext, as the
+ * Finish screen lists them). An exercise added to the routine becomes the workout exercise's own routine exercise, so
+ * the change isn't listed (or saved) again. A change shows in the routine's History, with the workout. True when the
+ * routine's numbers or structure changed. */
+export async function updateRoutineFromWorkout(ctx: Ctx, routineId: string, workoutId: string, accept: string[], numbers?: { declined: string[] }): Promise<boolean> {
   const routine = await loadRoutine(ctx.q, routineId);
   const w = await loadWorkout(ctx.q, workoutId, ymd(ctx.now()));
   if (!routine || !w) return false;
-  const body = applyStructure(routine, w, accept);
-  if (!body) return false;
+  const shaped = applyStructure(routine, w, accept);
+  let body: any[] = shaped ?? routine.exercises;
+  let changed = !!shaped, missedMoved = false;
+  if (numbers) {
+    const s = await getSettings(ctx.q, ctx.userId);
+    const stepKg = s.units.weight === "lb" ? s.increments.lb * 0.45359237 : s.increments.kg;
+    const next = planNext(body, w, { ...s.progression, stepKg }, numbers.declined);
+    missedMoved = next.exercises.some((e: any, i) => (e.missed ?? 0) !== (body[i].missed ?? 0));
+    changed ||= next.numbersChanged;
+    body = next.exercises;
+  }
+  if (!changed && !missedMoved) return false;
   const links: [string, string][] = [];
   const items = body.map((x) => {
     if (!("fromWorkoutExerciseId" in x) || typeof x.fromWorkoutExerciseId !== "string") return x;
@@ -143,11 +164,16 @@ export async function updateRoutineFromWorkout(ctx: Ctx, routineId: string, work
     links.push([fromWorkoutExerciseId, reId]);
     return { ...rest, id: reId };
   });
-  await snapshot(ctx, routineId);
-  await writeRoutineBody(ctx, routineId, items);
+  if (changed) await keepCurrent(ctx, routineId);
+  await writeRoutineBody(ctx, routineId, items, !!numbers);
+  if (changed) {
+    await ctx.q.query("UPDATE routines SET updated_at = $2 WHERE id = $1", [routineId, ctx.now().toISOString()]);
+    await snapshot(ctx, routineId, "workout", workoutId);
+  }
   for (const [weId, reId] of links) await ctx.q.query("UPDATE workout_exercises SET routine_exercise_id = $2 WHERE id = $1 AND workout_id = $3", [weId, reId, workoutId]);
   if (links.length) ctx.changed("workout");
-  return true;
+  ctx.changed("routine");
+  return changed;
 }
 
 export function routineRoutes(r: Router) {
@@ -206,7 +232,9 @@ export function routineRoutes(r: Router) {
     const rid = id(p.id);
     const cur = (await ctx.q.query("SELECT id FROM routines WHERE id = $1 AND deleted_at IS NULL", [rid])).rows[0];
     if (!cur) throw notFound("Routine not found");
-    if (b.exercises) await snapshot(ctx, rid);
+    // History keeps the routine as each edit leaves it (its name and exercises; not where it's filed or pinned)
+    const edit = !!b.exercises || "name" in b || "description" in b;
+    if (edit) await keepCurrent(ctx, rid);
     const sets: string[] = [], vals: unknown[] = [rid];
     const put = (col: string, v: unknown) => { vals.push(v); sets.push(`${col} = $${vals.length}`); };
     if ("name" in b) put("name", str(b.name, 120).trim() || "Routine");
@@ -220,6 +248,7 @@ export function routineRoutes(r: Router) {
     put("updated_at", ctx.now().toISOString());
     await ctx.q.query(`UPDATE routines SET ${sets.join(", ")} WHERE id = $1`, vals);
     if (b.exercises) await writeRoutineBody(ctx, rid, b.exercises);
+    if (edit) await snapshot(ctx, rid);
     ctx.changed("routine");
     return { ok: true };
   });
@@ -264,15 +293,35 @@ export function routineRoutes(r: Router) {
     return { ok: true };
   });
 
-  r.get("/routines/:id/versions", async ({ q }, p) =>
-    (await q.query("SELECT id, created_at, snapshot->>'name' AS name, jsonb_array_length(snapshot->'exercises') AS exercises FROM routine_versions WHERE routine_id = $1 ORDER BY created_at DESC", [id(p.id)])).rows.map((x: any) => camel(x)));
-  r.post("/routines/:id/versions/:vid/restore", async (ctx, p) => {
-    const v = (await ctx.q.query("SELECT snapshot FROM routine_versions WHERE id = $1 AND routine_id = $2", [id(p.vid), id(p.id)])).rows[0];
+  // History: every version, newest first, each with why it was made (an edit, or a workout and its name) and each
+  // exercise's heaviest working weight then (for the weight trend), without the whole snapshot
+  r.get("/routines/:id/versions", async ({ q }, p) => {
+    const rows = (await q.query(
+      `SELECT v.id, v.created_at, v.reason, v.workout_id, w.name AS workout_name, v.snapshot->>'name' AS name, v.snapshot->'exercises' AS exercises
+       FROM routine_versions v LEFT JOIN workouts w ON w.id = v.workout_id WHERE v.routine_id = $1 ORDER BY v.created_at DESC, v.id DESC`, [id(p.id)])).rows;
+    return rows.map((x: any) => {
+      const exs: any[] = Array.isArray(x.exercises) ? x.exercises : [];
+      const top = exs.map((e) => {
+        const ws = (Array.isArray(e.sets) ? e.sets : []).filter((s: any) => s.kind !== "warmup" && s.kind !== "drop" && typeof s.weightKg === "number").map((s: any) => s.weightKg as number);
+        return { exerciseId: e.exerciseId as string, name: (e.exercise?.name ?? "") as string, kg: ws.length ? Math.max(...ws) : null };
+      });
+      return { id: x.id, createdAt: x.created_at, reason: x.reason, workoutId: x.workout_id, workoutName: x.workout_name, name: x.name, exercises: exs.length, top };
+    });
+  });
+  r.get("/routines/:id/versions/:vid", async ({ q }, p) => {
+    const v = (await q.query("SELECT snapshot FROM routine_versions WHERE id = $1 AND routine_id = $2", [id(p.vid), id(p.id)])).rows[0];
     if (!v) throw notFound("Version not found");
-    await snapshot(ctx, p.id!);
+    return v.snapshot;
+  });
+  r.post("/routines/:id/versions/:vid/restore", async (ctx, p) => {
+    const rid = id(p.id);
+    const v = (await ctx.q.query("SELECT snapshot FROM routine_versions WHERE id = $1 AND routine_id = $2", [id(p.vid), rid])).rows[0];
+    if (!v) throw notFound("Version not found");
+    await keepCurrent(ctx, rid);
     const s = v.snapshot;
-    await ctx.q.query("UPDATE routines SET name = $2, description = $3, updated_at = now() WHERE id = $1", [p.id, s.name, s.description ?? ""]);
-    await writeRoutineBody(ctx, p.id!, s.exercises);
+    await ctx.q.query("UPDATE routines SET name = $2, description = $3, updated_at = now() WHERE id = $1", [rid, s.name, s.description ?? ""]);
+    await writeRoutineBody(ctx, rid, s.exercises);
+    await snapshot(ctx, rid);
     ctx.changed("routine");
     return { ok: true };
   });

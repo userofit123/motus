@@ -1,6 +1,5 @@
 // The workout switches in one place, in the groups, order and words both screens show them: Settings → Workout
-// defaults (the saved defaults) and the Workout settings popup (this workout only). The popup leaves out what can't
-// change once a workout is under way (how sets are filled in), so it shows those only before starting.
+// defaults (the saved defaults) and the Workout settings popup (this workout only).
 import type { Settings, WorkoutPrefs } from "@motus/shared";
 
 export interface PrefRow {
@@ -11,15 +10,11 @@ export interface PrefRow {
   options?: { value: string; label: string }[];
   /** shown only while this feature is on (Settings → Features) */
   feature?: string;
-  /** decided when the workout starts: no use changing it during one */
-  atStart?: boolean;
 }
 export interface PrefGroup { id: "fill" | "timer" | "during"; title: string; rows: PrefRow[] }
 
 export const WORKOUT_PREF_GROUPS: PrefGroup[] = [
-  { id: "fill", title: "Filling in sets", rows: [
-    { key: "prefillFromLast", label: "Start from what you did last time", hint: "Weights and reps fill in from last time. Off: the routine's own numbers", atStart: true },
-    { key: "prefillScope", label: "Last time's numbers come from", hint: "", atStart: true, options: [{ value: "any", label: "Any routine" }, { value: "routine", label: "The same routine" }] },
+  { id: "fill", title: "Sets", rows: [
     { key: "showPrevious", label: "Show last time's numbers", hint: "Beside each set" },
     { key: "showWarmups", label: "Show warm-up sets", hint: "", feature: "setTypes" },
   ] },
@@ -42,8 +37,7 @@ export const WORKOUT_PREF_GROUPS: PrefGroup[] = [
   ] },
 ];
 
-/** The groups as one screen shows them: rows for features that are off left out, and (`during`) the ones decided at
- * the start left out once a workout is under way. Empty groups are dropped. */
-export function prefGroups(s: Settings, during = false): PrefGroup[] {
-  return WORKOUT_PREF_GROUPS.map((g) => ({ ...g, rows: g.rows.filter((r) => (!r.feature || s.features[r.feature]) && !(during && r.atStart)) })).filter((g) => g.rows.length);
+/** The groups as one screen shows them: rows for features that are off left out. Empty groups are dropped. */
+export function prefGroups(s: Settings): PrefGroup[] {
+  return WORKOUT_PREF_GROUPS.map((g) => ({ ...g, rows: g.rows.filter((r) => !r.feature || s.features[r.feature]) })).filter((g) => g.rows.length);
 }

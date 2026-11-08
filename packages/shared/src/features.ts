@@ -15,7 +15,6 @@ export const FEATURES: FeatureDef[] = [
   { id: "adaptiveRest", group: "Logging", name: "Longer rest after a missed set", desc: "Adds 30s to the rest when a set falls short of its target.", on: true },
   { id: "notifLogging", group: "Logging", name: "Log from the notification", desc: "Tick the next set from the lock-screen timer (Android).", on: true },
   // Training
-  { id: "progression", group: "Training", name: "Progression rules", desc: "Let a routine suggest the next weight: add weight when you hit your reps, lower it after repeated misses.", on: true },
   { id: "programs", group: "Training", name: "Programs", desc: "Multi-week plans made of routines, with deload weeks.", on: true },
   { id: "gyms", group: "Training", name: "Gym profiles", desc: "Equipment per gym.", on: false },
   { id: "intervalTimer", group: "Training", name: "Interval timer", desc: "Work and rest in rounds for HIIT, Tabata or circuits, with a beep at each change. Started from the + menu.", on: false },

@@ -6,7 +6,7 @@ import { useSettings } from "../api/queries";
 import { confirm, prompt, choose } from "./ask";
 import { toast, toastError } from "./toast";
 import { saveFile } from "./saveFile";
-import { noteSheet, reminderSheet, scheduleSheet, versionsSheet } from "./ui";
+import { noteSheet, reminderSheet, scheduleSheet, historySheet } from "./ui";
 import type { Folder, Routine } from "@motus/shared";
 import type { MenuItem } from "../components/Menu.vue";
 
@@ -44,7 +44,7 @@ export function useRoutineMenu() {
     { label: r.pinned ? "Unpin" : "Pin to top", sep: true, icon: "pin", run: () => set(r, { pinned: !r.pinned }, r.pinned ? "Routine unpinned" : "Routine pinned to top") },
     { label: "Move to folder", icon: "folder", run: () => moveTo(r) },
     { label: r.archived ? "Restore from archive" : "Archive", icon: "archive", run: () => set(r, { archived: !r.archived }, r.archived ? "Routine restored" : "Routine archived") },
-    { label: "Earlier versions", sep: true, icon: "history", run: () => (versionsSheet.value = r.id) },
+    { label: "History", sep: true, icon: "history", run: () => (historySheet.value = r.id) },
     { label: "Send a copy to…", icon: "share", hidden: !settings.value.features.sharing, run: async () => { const u = await prompt("Send a copy to", { placeholder: "Their username on this server" }); if (u) { try { await api.post("/share/routine", { routineId: r.id, username: u }); toast(`Sent to ${u}`); } catch (e) { toastError(e); } } } },
     { label: "Export", icon: "download", run: async () => { try { const full = await api.get<Routine>(`/routines/${r.id}`); await saveFile(new Blob([JSON.stringify({ motusRoutine: 1, ...full }, null, 2)], { type: "application/json" }), `${r.name}.motusroutine`); } catch (e) { toastError(e); } } },
     { label: "Delete", icon: "trash", danger: true, sep: true, run: () => del(r, page) },

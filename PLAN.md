@@ -395,7 +395,8 @@ switching units never corrupts data (a simplefitnessapp bug).
 - `routine_folders(id, user_id, name, position, color)`
 - `routines(id, user_id, folder_id, name, description, color, icon, based_on_routine_id, position, pinned, archived, est_duration_s cached, last_performed_at cached, times_performed cached, settings jsonb)`
   - `settings`: overrides of workout defaults (§8.4.3)
-- `routine_exercises(id, routine_id, exercise_id, position, superset_group, rest_between_sets_s, rest_after_exercise_s, rest_between_reps_s, prefill_mode ['last'|'target'], notes_pinned_text, warmup_enabled)`
+- `routine_exercises(id, routine_id, exercise_id, position, superset_group, rest_between_sets_s, rest_after_exercise_s, rest_between_reps_s, fixed bool, progression jsonb {mode, stepKg, lowerAfter} (each null = your default), missed int, notes_pinned_text, warmup_enabled)`
+- `routine_versions(id, routine_id, snapshot jsonb, reason ['edit'|'workout'], workout_id NULL, created_at)`: every version, none dropped (History, §8.7)
 - `routine_sets(id, routine_exercise_id, position, set_type ['warmup'|'normal'|'drop'|'failure'], target_reps, target_reps_max, target_weight_kg, target_duration_s, target_distance_m, target_rpe, rest_after_s NULL)`
   - `rest_after_s` is a per-set override
 
@@ -669,34 +670,61 @@ set-level override  >  routine exercise (between sets / after exercise / between
   workout is active.
 - Desktop/web: a system notification, plus the countdown in the window/tab title ("1:12 · Bench").
 
-### 8.7 Remembering previous values (goal 5)
+### 8.7 The routine's numbers, Progression and History (goal 5)
 
-This is the heart of the tracker.
+This is the heart of the tracker. One simple model (M-74):
 
-**Pre-fill rule** for each exercise × set position when a workout starts or an exercise is added:
+**1. The routine always shows where you are now.** A routine has one set of numbers: the current ones.
+- A workout from a routine starts with the routine's numbers. A workout without a routine (an empty
+  workout, an exercise added on the spot) fills in from that exercise's last session. There is no setting
+  for either.
+- After each finished workout, every routine exercise that was done (not skipped, something ticked, the
+  same exercise as its slot) takes today's working numbers: working sets are matched in order (warm-ups
+  never change; routine sets past today's last keep theirs). Weight, duration and distance become what you
+  did. A rep range ("8-12") stays as set, the reps move inside it; a single rep target takes today's reps
+  when they reached it and keeps its target when missed (so misses count). Skipped exercises keep everything.
+- "Keep these numbers fixed" (per exercise, ⋮ menu; hint "The numbers don't update after workouts and
+  progression is off"): workouts never change its numbers.
+- Structure (exercises, sets, order) changes only through the Finish screen's "Routine changes" switches
+  and a finished workout's ⋮ "Update the routine from this" (structure only there).
+- "Show last time's numbers" keeps the Previous column beside each set.
+- Pending reminder actions apply on top at the start ("increase weight 2.5 kg"). Older "Ready for more
+  weight" reminders still show and apply; none are made any more.
 
-1. Find the **most recent completed workout by date** (not by insert order, another simplefitnessapp
-   bug) that contains this exercise.
-   - Preference order: same routine → any routine → none.
-   - A routine-exercise setting chooses between "same routine only" and "anywhere".
-2. Set *n* is pre-filled from that session's set *n* of the same set type. Warm-ups map to warm-ups,
-   working sets to working sets. If today has more sets than last time, the extra ones copy the last
-   working set.
-3. If there is no history, use the routine targets. If there are no targets, leave it empty.
-4. A routine-exercise toggle switches to **"targets"** pre-fill, e.g. when you follow a fixed plan.
-5. Pending **reminder actions** apply on top. For example, "increase weight 2.5 kg" adjusts the
-   pre-filled weight, and that weight is highlighted with a ↑ badge.
+**2. Progression decides whether the weight goes up or down next time.**
+- Modes: **Suggest** ("Asks you after a workout before changing the weight"), **Automatic** ("Changes the
+  weight without asking"), **Off** ("The weight only changes when you edit it").
+- Settings → Workout → Progression: the mode (default Suggest), **Weight step** (how much the weight goes up
+  or down) and **Lower the weight after** (Never / 1 missed workout / N missed workouts in a row, default 3).
+  A missed workout: not every working set reached its target reps.
+- Per routine exercise (⋮ → Progression, a small sheet): each field "Your default (…)" (hint "From Settings →
+  Workout → Progression") or its own. Only an exercise with its own setting shows a chip ("Progression:
+  Automatic"); the rest use your default, so changing it in Settings moves them all. The step: its own, else
+  the exercise's own increment, else Settings'.
+- Going up: every working set (warm-ups and drop sets don't decide) reached the top of its rep range (or its
+  target when there is no range): next time one step up, snapped to the step's grid, reps back to the bottom.
+  Going down: N workouts in a row with missed reps: one step down. Assisted exercises move the help the
+  other way. Exercises without weight or reps (bodyweight, timed, distance) only take today's numbers.
+- One pure function, `planNext` (@motus/shared), lists it on the Finish screen and saves it in the engine at
+  the finish, so the two can't disagree. Old "Progression rules" became each exercise's own Automatic.
+
+**3. Finish: "Next time".** One plain line, "The routine now has today's numbers", then every routine exercise
+done today: "Bench Press · next time 62.5 kg × 8" with a chip for the difference from today ("+2.5 kg",
+"Same as today", "-2.5 kg"; "Fixed numbers" for fixed ones) and the reason under a change ("Every set reached
+10 reps", "Missed reps 3 workouts in a row"). Suggest rows have a switch (on by default; off keeps today's
+numbers), Automatic rows say "Automatic". Finish sends the switched-off ones (`declined`); the engine applies
+the numbers, Progression and the switched-on routine changes in the finish's own transaction.
+
+**4. History keeps every past version.** Each change saves the routine as it now is: after a workout that
+changed it ("After workout · Push Day · 8 Nov", with the workout) and after an edit or a restore ("Edited · 8
+Nov"); none are dropped. The routine's ⋮ "History" lists them, newest first, with each exercise's weight over
+time; tapping one shows the routine as it was then, read-only, with "Restore this version".
 
 **Display:**
 - The "Previous" column shows exactly what you did last time for that set (e.g. "80×8"). Tapping it
   copies the value.
-- Pre-filled values look slightly dimmed until confirmed or edited, so you can see what is real
-  versus suggested.
 - Beat last time, and you get an inline "+2.5 kg" / "+1 rep" chip. Set a record, and you get a PR
   badge (if PR detection is accepted).
-
-**At finish:** "Update routine with today's values?" offers three choices: update targets, keep
-targets, or ask every time (setting).
 
 ### 8.8 Skip exercise (requirement 12)
 
@@ -773,8 +801,8 @@ come from schedules (§6.5) and are configured in Settings → Notifications.
   better/same/worse), muscle map.
 - Inputs: workout rating (1–5), how it felt, notes, body weight (optional), and editing the name,
   start and end times.
-- Prompts: update routine values? (§8.7), reminders presets (§8.10), save as a new routine (for
-  empty workouts).
+- Next time (§8.7): the routine's numbers after today and Progression, then Routine changes (structure
+  switches), reminders presets (§8.10), save as a new routine (for empty workouts).
 - Then it opens the **Workout detail**.
 
 ### 8.12 Workout detail (requirement 2)
@@ -837,8 +865,8 @@ switches between **Calendar** (default) and **List** (a chronological, searchabl
 - Search and sort (name, last done, most done, created).
 - Card actions: **Start**, **Preview**, **Edit**, **Duplicate**, **New routine based on this**,
   move to folder, pin, archive, export/share, delete.
-- Routine page (click a card): overview, exercises with targets and rests, notes, reminders, history
-  of performed workouts (list + charts of duration and volume over time), schedule.
+- Routine page (click a card): overview, exercises with the routine's numbers and rests, notes, reminders,
+  Workouts (performed workouts, list + charts of duration and volume over time), schedule; ⋮ History (§8.7).
 
 ### 8.15 Routine editor (requirements 5 and 6)
 
@@ -858,14 +886,14 @@ switches between **Calendar** (default) and **List** (a chronological, searchabl
     timed/cardio exercises, and optional RPE
   - rest between sets, rest after exercise, rest between reps
   - per-set rest overrides
-  - pre-fill mode
+  - Keep these numbers fixed, and its own Progression (⋮ menu, §8.7)
   - pinned note
   - superset grouping
 - Drag to reorder (with an explicit `position` column, never re-insert hacks).
 - Live summary bar: exercises, sets, est. duration, muscle map.
 - Routine-level workout settings defaults (§8.4.3).
 - Schedule (e.g. "Sun & Wed at 18:00", with a reminder).
-- **Autosave** draft; **Undo/redo**; version history is a later suggestion.
+- **Autosave** draft; **Undo/redo**; every saved version is kept in the routine's History (§8.7).
 
 ### 8.16 Exercise view (requirement 17)
 
@@ -1064,7 +1092,7 @@ change:
      reminders, goals, history, stats, exercise library, walks, backups, PR detection.
    - **On by default for a new account:** set types menu, supersets, plate calculator, warm-up
      calculator, unilateral logging, longer rest after a missed set, logging from the notification,
-     progression rules, programs, body measurements, steps, sleep/water/mood, achievements, monthly
+     programs, body measurements, steps, sleep/water/mood, achievements, monthly
      report and year in review, strength standards.
    - **Off by default (switch on as wanted):** RPE/RIR, voice cues, gym profiles, sharing routines,
      quick text entry, progress photos, share images, Health Connect, Strava, Wear OS, API tokens,
@@ -1321,7 +1349,8 @@ Research items (IDs from §18) are placed in the phase they belong to.
 | 2026-11-01 | Repository `userofit123/motus` created (private until the first release, §12.0) |
 | 2026-11-01 | **All research suggestions accepted** (§18); optional ones stay off until switched on (§10.0) |
 | 2026-11-01 | Overriding design rule: extremely clean, no clutter (§10.0) |
-| 2026-11-03 | The everyday optional features (set types, supersets, plates, warm-ups, sides, progression, programs, body, steps, daily log, achievements, reports, standards…) start **on** for new accounts; the rest stay off (§10.0) |
+| 2026-11-03 | The everyday optional features (set types, supersets, plates, warm-ups, sides, programs, body, steps, daily log, achievements, reports, standards…) start **on** for new accounts; the rest stay off (§10.0) |
+| 2026-11-09 | One model for next time's numbers (M-74, §8.7): the routine always has the current numbers (today's after each finish), Progression (Suggest / Automatic / Off) moves the weight, History keeps every version. "Start from what you did last time", its scope, the "Progression rules" feature and more-weight reminders are gone |
 
 Still open, not blocking: server port/domain for your deployment (default `127.0.0.1:8790`).
 
@@ -1384,7 +1413,7 @@ until switched on in Settings → Features (§10.0), and absent from the UI unti
 | S14 | Quick text entry ("3x8 80") | Keypad sheet text field | Optional | 3 |
 | S15 | Voice cues | Workout settings sheet | Optional | 3 |
 | S16 | Wear OS app | Separate app module | Optional | 11 |
-| P1 | Progression rules (linear, double, auto-deload) | Routine editor per exercise; shown as the suggested weight | Optional | 6 |
+| P1 | Progression (Suggest / Automatic / Off, step up, lower after missed workouts) | Settings → Workout; routine editor ⋮ per exercise; Finish "Next time" | Core | 6 |
 | P2 | Multi-week programs with deload weeks | Routines page, "Programs" section | Optional | 10 |
 | P3 | Starter routine templates | "New routine" → "From template" | Core | 2 |
 | P4 | Training-max % programming | Program editor | Optional | 10 |

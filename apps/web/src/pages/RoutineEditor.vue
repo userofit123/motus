@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // Creating and editing a routine (requirements 5, 6, 11): exercises, sets with targets, rest between sets (per kind of
-// set, and per set), after each exercise, supersets, how numbers are pre-filled, and progression rules. Two tabs: the
+// set, and per set), after each exercise, supersets, "Keep these numbers fixed", and each exercise's own Progression
+// (its ⋮ menu; only one with its own setting shows a chip, the rest use your default). Two tabs: the
 // exercises (folding cards, dragged to reorder) and an overview. Drafts are kept on this device.
 // At /workout/plan the same editor plans a one-off workout ("Empty workout" in the + sheet): its one button starts it,
 // and it is saved as a routine too only when asked.
@@ -30,6 +31,8 @@ import BodyMap from "../components/BodyMap.vue";
 import MuscleFig from "../components/MuscleFig.vue";
 import TemplateList from "../components/TemplateList.vue";
 import RadioList from "../components/RadioList.vue";
+import Sheet from "../components/Sheet.vue";
+import { PROGRESSION_MODES, LOWER_AFTER, MISSED_HINT, modeLabel, lowerAfterLabel } from "../core/progression";
 
 const route = useRoute(), router = useRouter();
 const planMode = computed(() => route.name === "workout-plan");
@@ -99,7 +102,7 @@ function addExercises(ids: string[]) {
   } else for (const eid of ids) {
     const ex = exById.value.get(eid);
     const timed = usesDuration(ex?.tracking ?? "weight_reps") && !usesReps(ex?.tracking ?? "weight_reps");
-    const e = keyed({ exerciseId: eid, exercise: ex, superset: null, restS: null, restAfterS: null, restByKind: null, repRestS: null, prefill: "last", prefillScope: "any", progression: null, note: "",
+    const e = keyed({ exerciseId: eid, exercise: ex, superset: null, restS: null, restAfterS: null, restByKind: null, repRestS: null, fixed: false, progression: null, note: "",
       sets: [0, 1, 2].map(() => ({ kind: "normal", reps: timed ? null : 8, repsMax: null, weightKg: null, durationS: timed ? 30 : null, distanceM: null, rpe: null, restS: null })) });
     r.value.exercises.push(e);
     open.value.add(e._k);
@@ -210,8 +213,8 @@ function restDefault(t: RestTarget) {
   if (t.kind === "set") return "No custom rest";
   return w.restByKindS?.[t.kind] != null ? `Default (${c(w.restByKindS[t.kind]!)})` : `Same as normal sets (${c(workRest(e))})`;
 }
-// the top of a rep range is hidden on phones to save room, unless the progression rule needs it
-const showRange = (e: any) => e.progression?.kind === "double" || !isPhone.value;
+// the top of a rep range is hidden on phones to save room, unless the exercise uses one
+const showRange = (e: any) => !isPhone.value || e.sets.some((x: any) => x.repsMax != null);
 const cols = (e: any) => {
   const t = tr(e);
   const n = [usesWeight(t), usesReps(t), usesReps(t) && showRange(e), usesDuration(t), usesDistance(t), s.value.features.rpe].filter(Boolean).length;
@@ -227,26 +230,22 @@ async function pickFolder(v: string) {
 }
 function fromScratch() { starter.value = false; picking.value = {}; }
 
-// progression: what each rule does, in plain words
-const PROG = [
-  { value: "", label: "Off", hint: "The weight stays as you enter it, or as you lifted last time." },
-  { value: "linear", label: "Add weight when every set is done", hint: "When you complete the target reps in every normal set, your next workout starts heavier." },
-  { value: "double", label: "Add reps first, then weight", hint: "Work in a rep range, for example 8 to 12. Add reps each workout; once every set reaches the top, the weight goes up and you start again from the bottom." },
-];
-function setProg(e: any, k: string) {
-  // lowering by a fixed weight is the default: it lands on weights the gym has, where 10% often doesn't
-  const p = e.progression;
-  e.progression = k ? { kind: k, incrementKg: p?.incrementKg ?? 2.5, deloadAfter: p?.deloadAfter ?? 3, deloadPct: p?.deloadPct ?? 10,
-    deloadKg: p ? p.deloadKg ?? null : fmt.value.toKg(fmt.value.wu === "lb" ? 10 : 5) } : null;
-  // a rep range needs a top: start with 4 above the target
-  if (k === "double") e.sets.forEach((x: any) => { if (x.kind !== "warmup" && x.kind !== "drop" && x.reps != null && !x.repsMax) x.repsMax = x.reps + 4; });
+// Progression for one exercise (its ⋮ menu → Progression): each field null uses your default (Settings → Workout →
+// Progression), so changing the default there moves every exercise without its own
+const progFor = ref<any>(null);
+const defStepKg = (e: any) => exOf(e)?.incrementKg || W_INC.value;
+const W_INC = computed(() => (s.value.units.weight === "lb" ? fmt.value.toKg(s.value.increments.lb) : s.value.increments.kg));
+const ownProg = (e: any) => !!e.progression && (e.progression.mode != null || e.progression.stepKg != null || e.progression.lowerAfter != null);
+function setProg(e: any, k: "mode" | "stepKg" | "lowerAfter", v: unknown) {
+  const p = { mode: null, stepKg: null, lowerAfter: null, ...(e.progression ?? {}), [k]: v };
+  e.progression = p.mode == null && p.stepKg == null && p.lowerAfter == null ? null : p;
   touch();
 }
-const firstWork = (e: any) => e.sets.find((x: any) => x.kind !== "warmup" && x.kind !== "drop") ?? {};
-function setRange(e: any, k: "reps" | "repsMax", n: number) { e.sets.forEach((x: any) => { if (x.kind !== "warmup" && x.kind !== "drop") x[k] = n; }); touch(); }
+const progChip = (e: any) => `Progression: ${modeLabel(e.progression?.mode ?? s.value.progression.mode)}`;
+// Progression moves the weight by reps reached, so it's offered only where an exercise has both
+const progUsable = (e: any) => usesWeight(tr(e)) && usesReps(tr(e)) && (!planMode.value || asRoutine.value);
 const wNum = (kg: number | null) => (kg == null ? null : Math.round(fmt.value.fromKg(kg) * 100) / 100);
 const restSummary = (e: any) => `${fmt.value.clock(workRest(e))} between sets, ${fmt.value.clock(e.restAfterS ?? s.value.workout.restAfterExerciseS)} after the last one${e.sets.some((x: any) => x.restS != null) ? ", some sets their own" : ""}`;
-const progSummary = (e: any) => !e.progression ? "Off" : e.progression.kind === "double" ? `Reps first, then +${fmt.value.w(e.progression.incrementKg)} ${fmt.value.wu}` : `+${fmt.value.w(e.progression.incrementKg)} ${fmt.value.wu} when every set is done`;
 const wIn = (kg: number | null) => (kg == null ? "" : String(Math.round(fmt.value.fromKg(kg) * 100) / 100));
 const wOut = (v: string) => (v === "" ? null : fmt.value.toKg(Number(v)));
 const dIn = (m: number | null) => (m == null ? "" : String(Math.round(fromM(m, fmt.value.du) * 100) / 100));
@@ -299,7 +298,7 @@ async function startFrom(kind: "template" | "copy", v: string) {
   else { const x = await api.post("/routines", { template: v }); invalidate(["routines"]); router.replace(`/routines/${x.id}/edit`); }
   starter.value = false;
 }
-// in groups: what it is, where it sits in the routine, which numbers it starts with, then Remove on its own
+// in groups: what it is, where it sits in the routine, how its numbers change, then Remove on its own
 const exMenu = (e: any, i: number) => [
   { label: "About this exercise", icon: "info", run: () => (exerciseSheet.value = e.exerciseId) },
   { label: "Swap for another exercise", hint: "Keeps these sets, rests and notes", sep: true, icon: "swap", run: () => (picking.value = { replace: i }) },
@@ -307,7 +306,8 @@ const exMenu = (e: any, i: number) => [
   { label: "Move down", icon: "down", run: () => move(i, 1), hidden: i === r.value.exercises.length - 1 },
   { label: "Superset with next", hint: "Do one set of each in turn, resting after the pair", icon: "link", run: () => superset(i), hidden: !s.value.features.supersets || i === r.value.exercises.length - 1 || inSupersetWithNext(i) },
   { label: "Remove from superset", icon: "link", run: () => unsuperset(i), hidden: !e.superset },
-  e.prefill === "target" ? { label: "Start with last time's numbers", hint: "Instead of the numbers set here", sep: true, icon: "refresh", run: () => { e.prefill = "last"; touch(); } } : { label: "Always start with these numbers", hint: "Instead of what you did last time", sep: true, icon: "refresh", run: () => { e.prefill = "target"; touch(); } },
+  { label: "Progression", hint: ownProg(e) ? modeLabel(e.progression.mode ?? s.value.progression.mode) : "Uses your default", sep: true, icon: "arrowUp", hidden: e.fixed || !progUsable(e), run: () => (progFor.value = e) },
+  { label: "Keep these numbers fixed", hint: "The numbers don't update after workouts and progression is off", sep: !progUsable(e) || e.fixed, icon: "lock", checked: !!e.fixed, run: () => { e.fixed = !e.fixed; touch(); } },
   { label: "Remove from routine", icon: "trash", danger: true, sep: true, run: () => removeEx(i) },
 ];
 const setMenu = (e: any, j: number) => e.sets[j].kind === "drop" ? [
@@ -386,7 +386,8 @@ await loaded(src, all, folders, routines, templates);
             <div class="thumb sm click" @click="exerciseSheet = e.exerciseId"><img v-if="exImg(e)" :src="mediaUrl(exImg(e))" alt="" /><Icon v-else name="dumbbell" :size="18" /></div>
             <button class="exn" :aria-expanded="isOpen(e)" @click="toggle(e)">
               <span class="t">{{ exName(e) }}</span>
-              <span class="tiny">{{ e.superset ? `Superset ${e.superset} · ` : "" }}{{ isOpen(e) ? (e.prefill === "target" ? "Starts with these numbers" : "Starts with last time's numbers") : setSummary(e) }}</span>
+              <span class="tiny">{{ e.superset ? `Superset ${e.superset} · ` : "" }}{{ setSummary(e) }}</span>
+              <span v-if="e.fixed || (ownProg(e) && progUsable(e))" class="exchips"><span v-if="e.fixed" class="mchip">Fixed numbers</span><span v-else class="mchip">{{ progChip(e) }}</span></span>
             </button>
             <button class="ib sm plain chev" :class="{ on: isOpen(e) }" :aria-label="isOpen(e) ? 'Collapse' : 'Expand'" @click="toggle(e)"><Icon name="down" :size="18" /></button>
             <Menu :items="exMenu(e, i)" />
@@ -435,34 +436,6 @@ await loaded(src, all, folders, routines, templates);
                 <button class="ritem" style="flex:none" @click="restFor = { ex: i, kind: 'rep' }"><b :class="{ dim: !e.repRestS }">{{ e.repRestS ? `Every ${e.repRestS}s` : "Off" }}</b></button></div>
             </div>
 
-            <details v-if="s.features.progression && (!planMode || asRoutine)" class="fold sect prog">
-              <summary class="sect-h"><span class="si"><Icon name="arrowUp" :size="16" /></span><span class="grow"><b>Automatic weight increase</b><span class="tiny">{{ progSummary(e) }}</span></span></summary>
-              <div class="tiny" style="margin:8px 0 10px">Motus can raise the weight for you when you're ready, and lower it when you keep missing your reps. You'll see why when the workout starts.</div>
-              <RadioList :model-value="e.progression?.kind ?? ''" :options="PROG" @update:model-value="(k) => setProg(e, k)" />
-              <div v-if="e.progression" class="pset">
-                <div v-if="e.progression.kind === 'double' && usesReps(tr(e))" class="prow">
-                  <div class="pl"><div class="t">Rep range</div><div class="s">For every normal set</div></div>
-                  <div class="pc"><NumStep :value="firstWork(e).reps ?? null" :min="1" :max="100" label="lowest reps" @set="(v) => setRange(e, 'reps', v)" /><span class="tiny">to</span>
-                    <NumStep :value="firstWork(e).repsMax ?? null" :min="1" :max="100" label="highest reps" @set="(v) => setRange(e, 'repsMax', v)" /></div>
-                </div>
-                <div class="prow">
-                  <div class="pl"><div class="t">Add each time</div><div class="s">{{ e.progression.kind === "double" ? "Once every set reaches the top of the range" : "Once every set reaches its reps" }}</div></div>
-                  <div class="pc"><NumStep :value="wNum(e.progression.incrementKg)" :step="fmt.wu === 'lb' ? 1 : 0.5" :max="100" :unit="fmt.wu" label="weight to add" @set="(v) => { e.progression.incrementKg = fmt.toKg(v); touch(); }" /></div>
-                </div>
-                <div class="prow">
-                  <div class="pl"><div class="t">Lower the weight after</div><div class="s">Missed reps this many workouts in a row</div></div>
-                  <div class="pc"><NumStep :value="e.progression.deloadAfter ?? 3" :min="1" :max="10" :unit="(e.progression.deloadAfter ?? 3) === 1 ? 'workout' : 'workouts'" label="workouts" @set="(v) => { e.progression.deloadAfter = v; touch(); }" /></div>
-                </div>
-                <div class="prow">
-                  <div class="pl"><div class="t">Lower it by</div><div class="s">{{ e.progression.deloadKg ? "A fixed amount, handy for machines" : "A share of the weight" }}</div></div>
-                  <div class="pc">
-                    <div class="seg mini"><button :class="{ on: !!e.progression.deloadKg }" @click="e.progression.deloadKg = e.progression.deloadKg || fmt.toKg(fmt.wu === 'lb' ? 10 : 5); touch()">{{ fmt.wu }}</button><button :class="{ on: !e.progression.deloadKg }" @click="e.progression.deloadKg = null; touch()">%</button></div>
-                    <NumStep v-if="!e.progression.deloadKg" :value="e.progression.deloadPct ?? 10" :step="5" :min="5" :max="50" unit="%" label="percent to lower" @set="(v) => { e.progression.deloadPct = v; touch(); }" />
-                    <NumStep v-else :value="wNum(e.progression.deloadKg)" :step="fmt.wu === 'lb' ? 5 : 2.5" :min="fmt.wu === 'lb' ? 1 : 0.5" :max="500" :unit="fmt.wu" label="weight to lower" @set="(v) => { e.progression.deloadKg = fmt.toKg(v); touch(); }" />
-                  </div>
-                </div>
-              </div>
-            </details>
             <div class="sect"><input v-model="e.note" class="in" placeholder="Note: seat height, grip…" style="font-size:13px" @input="touch" /></div>
           </div></Collapse>
         </div>
@@ -509,6 +482,21 @@ await loaded(src, all, folders, routines, templates);
     <ExercisePicker v-if="picking" :multi="picking.replace == null" :title="picking.replace != null ? 'Swap for' : 'Add exercises'" @close="picking = null" @pick="addExercises" />
     <RestPicker v-if="restFor" :title="restTitle(restFor)" :value="restGet(restFor)" :default-label="restDefault(restFor)"
       :presets="restFor.kind === 'rep' ? [5, 10, 15, 20, 30, 45, 60] : undefined" @close="restFor = null" @pick="setRest" />
+    <Sheet v-if="progFor" :title="`Progression · ${exName(progFor)}`" @close="progFor = null">
+      <p class="tiny pg-intro">After a workout the routine has today's numbers. Progression decides whether the weight goes up or down next time.</p>
+      <div class="flbl">Mode</div>
+      <RadioList :model-value="progFor.progression?.mode ?? null" :options="[{ value: null, label: `Your default (${modeLabel(s.progression.mode)})`, hint: 'From Settings → Workout → Progression' }, ...PROGRESSION_MODES]"
+        @update:model-value="(v) => setProg(progFor, 'mode', v)" />
+      <div class="card pg-rows">
+        <div class="li"><div class="grow"><div class="t">Weight step</div><div class="s">How much the weight goes up or down</div></div>
+          <div class="seg mini"><button :class="{ on: progFor.progression?.stepKg == null }" @click="setProg(progFor, 'stepKg', null)">Your default ({{ fmt.wu_(defStepKg(progFor)) }})</button><button :class="{ on: progFor.progression?.stepKg != null }" @click="setProg(progFor, 'stepKg', progFor.progression?.stepKg ?? defStepKg(progFor))">Its own</button></div></div>
+        <div v-if="progFor.progression?.stepKg != null" class="li"><div class="grow"><div class="t">Its own weight step</div></div>
+          <NumStep :value="wNum(progFor.progression.stepKg)" :step="fmt.wu === 'lb' ? 1 : 0.5" :min="fmt.wu === 'lb' ? 0.5 : 0.25" :max="100" :unit="fmt.wu" label="weight step" @set="(v) => setProg(progFor, 'stepKg', fmt.toKg(v))" /></div>
+        <div class="li"><div class="grow"><div class="t">Lower the weight after</div><div class="s">{{ MISSED_HINT }}</div></div>
+          <AppSelect :model-value="progFor.progression?.lowerAfter ?? null" :options="[{ value: null, label: `Your default (${lowerAfterLabel(s.progression.lowerAfter)})` }, ...LOWER_AFTER]" title="Lower the weight after" style="width:auto"
+            @update:model-value="(v) => setProg(progFor, 'lowerAfter', v)" /></div>
+      </div>
+    </Sheet>
   </div>
 </template>
 
@@ -522,6 +510,10 @@ await loaded(src, all, folders, routines, templates);
 .body { max-width: 860px; }
 .starter, .plan-opt { margin-bottom: var(--spg); }
 .pl-k { margin-bottom: 2px; }
+.prog > summary { cursor: pointer; margin-bottom: 0; }
+.exchips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 2px; }
+.pg-intro { margin: 0 0 var(--hg); }
+.pg-rows { margin-top: var(--hg); }
 .st-t { font-size: 17px; font-weight: 600; }
 
 .exlist { display: flex; flex-direction: column; gap: var(--spg); margin-bottom: var(--spg); }
@@ -567,18 +559,9 @@ html.he .chev svg { transform: rotate(90deg); }
 .ritem:hover { background: color-mix(in srgb, var(--acc) 12%, var(--s2)); }
 .ritem b { font-variant-numeric: tabular-nums; }
 .ritem b.dim { color: var(--tx2); font-weight: 500; }
-.prog > summary { cursor: pointer; margin-bottom: 0; }
-.pset { margin-top: 12px; padding: 2px calc(var(--cpx) - 2px); border-radius: var(--r-md); background: var(--s2); }
-.prow { display: flex; align-items: center; gap: 12px; padding: calc(var(--lpy) + 2px) 0; border-bottom: 1px solid var(--ol); }
-.prow:last-child { border-bottom: 0; }
-.prow .pl { flex: 1; min-width: 0; }
-.prow .pl .t { font-size: 14px; font-weight: 500; }
-.prow .pl .s { font-size: 12px; color: var(--tx2); margin-top: 2px; }
-.prow .pc { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 /* on the shaded panel a plain .seg would vanish: give it its own outline so it reads as a switch */
 .seg.mini { margin: 0; flex: none; background: var(--s1); box-shadow: inset 0 0 0 1px var(--ol); }
 .seg.mini button { padding: 6px 14px; font-size: 13px; min-height: 32px; min-width: 44px; }
-@media (max-width: 600px) { .prow { flex-wrap: wrap; } .prow .pc { width: 100%; justify-content: flex-start; } }
 .hint { display: inline-flex; align-items: center; gap: 4px; }
 .ovn { width: 26px; height: 26px; border-radius: 8px; background: var(--s2); display: grid; place-items: center; font-size: 12.5px; font-weight: 600; color: var(--tx2); flex: none; }
 </style>

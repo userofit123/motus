@@ -14,6 +14,7 @@ import m011 from "./migrations/011_workouts_routine_index";
 import m012 from "./migrations/012_schedule_monthly";
 import m013 from "./migrations/013_set_rep_range";
 import m014 from "./migrations/014_reminder_body_plain";
+import m015 from "./migrations/015_routine_now";
 
 const MIGRATIONS: [string, string][] = [
   ["001_init", m001],
@@ -30,6 +31,7 @@ const MIGRATIONS: [string, string][] = [
   ["012_schedule_monthly", m012],
   ["013_set_rep_range", m013],
   ["014_reminder_body_plain", m014],
+  ["015_routine_now", m015],
 ];
 
 export async function migrate(db: Db): Promise<string[]> {

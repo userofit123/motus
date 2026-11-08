@@ -1,6 +1,6 @@
-// Turning a routine into today's plan: the sets to do, pre-filled from last time (PLAN.md §8.7), with reminders,
-// pinned notes, progression suggestions and an estimate of how long it takes. Used by the pre-start preview and by "Start".
-import { estimate, routineProgression, restAfterSet, restDefaultsOf, type Exercise, type Reminder, type Note, type Settings, type SetKind, type Progression } from "@motus/shared";
+// Turning a routine into today's plan: the sets to do with the routine's numbers (which are where you are now, PLAN.md
+// §8.7), last time's beside them, with reminders, pinned notes and an estimate of how long it takes. Used by the pre-start preview and by "Start".
+import { estimate, restAfterSet, restDefaultsOf, type Exercise, type Reminder, type Note, type Settings, type SetKind } from "@motus/shared";
 import type { Sql } from "../db";
 import { camel } from "../util";
 import { exerciseSessions, getExercises } from "./library";
@@ -18,7 +18,7 @@ export interface PlannedSet {
   targetWeightKg: number | null;
   prev: { weightKg: number | null; reps: number | null; durationS: number | null; distanceM: number | null } | null;
   prefilled: boolean;
-  adjusted: boolean; // changed by a reminder or a progression rule
+  adjusted: boolean; // changed by a reminder or a program's lighter week
 }
 export interface PlannedExercise {
   routineExerciseId: string | null;
@@ -33,7 +33,6 @@ export interface PlannedExercise {
   last: { workoutId: string; workoutName: string; startedAt: string; position: number; ofN: number; sets: any[] } | null;
   reminders: Reminder[];
   notes: Note[];
-  suggestion: string | null;
 }
 
 export async function loadRoutine(q: Sql, routineId: string) {
@@ -83,9 +82,8 @@ function matchPrev(kinds: SetKind[], lastSets: any[]) {
   });
 }
 
-/** The saved settings with a workout's own Workout settings over them (the start screen's, for this workout only:
- * "Start from what you did last time", "Last time's numbers come from" and the rest), only known keys of the right
- * type. Used by the start and its preview alike, so the preview shows the numbers the workout will start with. */
+/** The saved settings with a workout's own Workout settings over them (the start screen's, for this workout only),
+ * only known keys of the right type. Used by the start and its preview alike, so the preview matches the start. */
 export function withWorkoutOverrides(settings: Settings, raw: unknown): Settings {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return settings;
   const base = settings.workout as unknown as Record<string, unknown>;
@@ -94,8 +92,7 @@ export function withWorkoutOverrides(settings: Settings, raw: unknown): Settings
   // each key checked on its own (it comes from the query string): anything not of the saved setting's kind is dropped
   for (const [k, v] of Object.entries(raw)) {
     if (!Object.hasOwn(base, k)) continue;
-    if (k === "prefillScope") { if (v === "any" || v === "routine") own[k] = v; }
-    else if (k === "restByKindS") {
+    if (k === "restByKindS") {
       if (!v || typeof v !== "object" || Array.isArray(v) || Object.getPrototypeOf(v) !== Object.prototype) continue;
       own[k] = Object.fromEntries(Object.entries(v).filter(([kind, n]) => REST_KINDS.includes(kind) && rest(n)));
     }
@@ -116,32 +113,25 @@ export async function buildPlan(q: Sql, routine: any, settings: Settings, today:
   ]);
   const prefs = new Map((await q.query("SELECT * FROM exercise_prefs WHERE exercise_id = ANY($1::uuid[])", [exIds])).rows.map((p: any) => [p.exercise_id, p]));
   const d = restDefaultsOf(settings.workout);
-  const progressionOn = !!settings.features.progression;
 
   const out: PlannedExercise[] = [];
   for (const re of routine.exercises) {
-    const scope = re.prefillScope === "routine" || settings.workout.prefillScope === "routine" ? "routine" : "any";
-    let hist = await exerciseSessions(q, re.exerciseId, 6, routine.id);
-    if (!hist.length && scope === "any") hist = await exerciseSessions(q, re.exerciseId, 6);
+    // last time beside each set: this routine's own, else any; a routine starts from its own numbers (they follow each
+    // finished workout), a workout planned on the spot (no routine) from last time's, unless kept fixed
+    let hist = routine.id ? await exerciseSessions(q, re.exerciseId, 1, routine.id) : [];
+    if (!hist.length) hist = await exerciseSessions(q, re.exerciseId, 1);
     const last = hist[0] ?? null;
-    const useLast = re.prefill !== "target" && settings.workout.prefillFromLast;
+    const useLast = !routine.id && !re.fixed;
     const pref: any = prefs.get(re.exerciseId);
     const kinds = re.sets.map((s: any) => s.kind as SetKind);
     const prevs = matchPrev(kinds, last?.sets ?? []);
     const exReminders = reminders.filter((r) => r.targetType === "exercise" && r.targetId === re.exerciseId);
     const delta = exReminders.reduce((a, r) => ({ w: a.w + (r.action?.weightKg ?? 0), r: a.r + (r.action?.reps ?? 0) }), { w: 0, r: 0 });
-    // "Ready for more weight" accepted on the Finish screen: an exact weight and reps (the newest such reminder wins)
+    // an older "Ready for more weight" reminder still pending: an exact weight and reps (the newest wins). None are made
+    // any more (Progression writes into the routine at the finish)
     const exact = exReminders.filter((r) => r.action?.setWeightKg != null).at(-1)?.action ?? null;
 
-    let suggestion: string | null = null, progWeight: number | null = null;
-    const prog: Progression | null = re.progression;
-    if (progressionOn && prog) {
-      const res = routineProgression(prog, re.sets, hist);
-      if (res && res.action !== "hold") { progWeight = res.weightKg; suggestion = `${res.action === "add" ? "Add weight" : "Deload"}: ${res.reason}`; }
-      else if (res) suggestion = res.reason;
-    }
-
-    // a drop set moves with the set it drops from: when progression changes that set's weight, the drop shifts by as much
+    // a drop set moves with the set it drops from: when a reminder sets that set's weight, the drop shifts by as much
     let parentShift = 0;
     const sets: PlannedSet[] = re.sets.map((s: any, i: number) => {
       const prev = prevs[i];
@@ -151,7 +141,6 @@ export async function buildPlan(q: Sql, routine: any, settings: Settings, today:
       let adjusted = false;
       if (s.kind !== "warmup") {
         if (s.kind === "drop") { if (parentShift && weightKg != null) { weightKg = Math.max(0, weightKg + parentShift); adjusted = true; } }
-        else if (progWeight != null) { parentShift = weightKg != null ? progWeight - weightKg : 0; weightKg = progWeight; reps = s.reps ?? reps; adjusted = true; }
         else parentShift = 0;
         if (delta.w && weightKg != null) { weightKg = Math.round((weightKg + delta.w) * 100) / 100; adjusted = true; }
         if (delta.r && reps != null) { reps += delta.r; adjusted = true; }
@@ -177,7 +166,6 @@ export async function buildPlan(q: Sql, routine: any, settings: Settings, today:
       repRestS: re.repRestS, note: re.note ?? "", sets,
       last: last ? { workoutId: last.workoutId, workoutName: last.workoutName, startedAt: last.startedAt, position: last.position, ofN: last.ofN, sets: last.sets } : null,
       reminders: exReminders, notes: notes.filter((n) => (n.targetType === "exercise" && n.targetId === re.exerciseId) || (n.targetType === "routine_exercise" && n.targetId === re.id)),
-      suggestion,
     });
   }
   // superset rounds: no rest between the exercises inside a round

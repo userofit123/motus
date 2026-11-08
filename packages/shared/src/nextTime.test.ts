@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyStructure, readyForMore, stepUp, structureChanges } from "./nextTime";
+import { applyStructure, cleanProgression, planNext, stepDown, stepUp, structureChanges } from "./nextTime";
 import { withDefaults } from "./settings";
 import type { WorkoutExercise, WorkoutSet } from "./types";
 
@@ -8,27 +8,71 @@ const ex = (p: Partial<WorkoutExercise> & { name?: string; tracking?: string }):
   ({ id: Math.random().toString(36), exerciseId: p.name ?? "x", routineExerciseId: null, status: "done", sets: [], ...p, exercise: { name: p.name ?? "x", tracking: p.tracking ?? "weight_reps" } }) as unknown as WorkoutExercise;
 const range = (reps: number, weightKg = 20) => set({ weightKg, reps, targetReps: 8, targetRepsMax: 12 });
 
-describe("readyForMore", () => {
-  it("suggests one step up with reps back at the bottom when every set reached the top of the range", () => {
-    const [m] = readyForMore({ exercises: [ex({ name: "Curl", sets: [set({ kind: "warmup", weightKg: 10, reps: 5, targetReps: 10 }), range(12), range(12, 22.5)] })] }, 2.5);
-    expect(m).toMatchObject({ name: "Curl", fromKg: 22.5, toKg: 25, reps: 8, topReps: 12 });
+describe("planNext", () => {
+  const D = { mode: "suggest" as const, stepKg: 2.5, lowerAfter: 3 };
+  const rs = (p: Record<string, unknown>) => ({ kind: "normal", reps: 8, repsMax: 12, weightKg: 20, durationS: null, distanceM: null, ...p });
+  const slot = (p: Record<string, unknown> = {}) => ({ id: "re1", exerciseId: "x", fixed: false, progression: null, missed: 0, sets: [rs({ kind: "warmup", reps: 10, repsMax: null, weightKg: 10 }), rs({}), rs({})], ...p });
+  const done = (sets: WorkoutSet[], p: Partial<WorkoutExercise> & { tracking?: string } = {}) => ({ exercises: [ex({ routineExerciseId: "re1", sets, ...p })] });
+  const warm = () => set({ kind: "warmup", weightKg: 15, reps: 10 });
+
+  it("takes today's working numbers, keeps warm-ups and the rep range", () => {
+    const r = planNext([slot()], done([warm(), range(10, 22.5), range(9, 22.5)]), D);
+    expect(r.exercises[0]!.sets.map((s: any) => [s.kind, s.weightKg, s.reps, s.repsMax])).toEqual([["warmup", 10, 10, null], ["normal", 22.5, 8, 12], ["normal", 22.5, 8, 12]]);
+    expect(r.changes).toEqual([]);
+    expect(r.numbersChanged).toBe(true);
   });
-  it("waits while any set is short of the top, unticked, or without a target", () => {
-    expect(readyForMore({ exercises: [ex({ sets: [range(12), range(11)] })] }, 2.5)).toEqual([]);
-    expect(readyForMore({ exercises: [ex({ sets: [range(12), { ...range(12), done: false }] })] }, 2.5)).toEqual([]);
-    expect(readyForMore({ exercises: [ex({ sets: [set({ weightKg: 20, reps: 12 })] })] }, 2.5)).toEqual([]);
+  it("goes up a step with reps at the bottom when every set reached the top; suggest asks, a switched-off one keeps today", () => {
+    const r = planNext([slot()], done([warm(), range(12), range(12)]), D);
+    expect(r.changes[0]).toMatchObject({ mode: "suggest", direction: "up", fromKg: 20, toKg: 22.5, reps: 8, reason: "Every set reached 12 reps" });
+    expect(r.exercises[0]!.sets.map((s: any) => s.weightKg)).toEqual([10, 22.5, 22.5]);
+    expect(planNext([slot()], done([warm(), range(12), range(12)]), D, ["re1"]).exercises[0]!.sets.map((s: any) => s.weightKg)).toEqual([10, 20, 20]);
+    expect(planNext([slot({ progression: { mode: "off", stepKg: null, lowerAfter: null } })], done([range(12), range(12)]), D).changes).toEqual([]);
+    expect(planNext([slot({ progression: { mode: "auto", stepKg: null, lowerAfter: null } })], done([range(12), range(12)]), D).changes[0]!.mode).toBe("auto");
   });
-  it("uses the rep target when there is no range, and leaves out assisted and skipped exercises", () => {
-    expect(readyForMore({ exercises: [ex({ sets: [set({ weightKg: 100, reps: 5, targetReps: 5 })] })] }, 2.5)[0]).toMatchObject({ toKg: 102.5, reps: 5 });
-    expect(readyForMore({ exercises: [ex({ tracking: "assisted", sets: [range(12)] }), ex({ status: "skipped", sets: [range(12)] })] }, 2.5)).toEqual([]);
-  });
-  it("uses each exercise's own step when given, snaps to its grid, and leaves out exercises with no step", () => {
-    const a = ex({ name: "A", sets: [range(12, 21)] }), b = ex({ name: "B", sets: [range(12, 20)] }), c = ex({ name: "C", sets: [range(12)] });
-    const steps: Record<string, number | null> = { A: 2.5, B: 1, C: null };
-    expect(readyForMore({ exercises: [a, b, c] }, (e) => steps[e.exercise.name]!).map((m) => [m.name, m.toKg])).toEqual([["A", 22.5], ["B", 21]]);
+  it("snaps to the step's grid, the exercise's own step before Settings'", () => {
     expect(stepUp(22.5, 2.5)).toBe(25);
     expect(stepUp(21.3, 2.5)).toBe(25);
     expect(stepUp(20, 2.27)).toBe(22.7);
+    expect(stepDown(21.3, 2.5)).toBe(20);
+    expect(stepDown(1, 2.5)).toBe(0);
+    const own = ex({ routineExerciseId: "re1", sets: [range(12, 21), range(12, 21)] });
+    (own.exercise as any).incrementKg = 1;
+    expect(planNext([slot()], { exercises: [own] }, D).changes[0]!.toKg).toBe(22);
+  });
+  it("uses the rep target when there is no range: reached, it becomes today's reps; missed, it stays", () => {
+    const one = slot({ sets: [rs({ repsMax: null, reps: 5, weightKg: 100 })] });
+    expect(planNext([one], done([set({ weightKg: 100, reps: 5 })]), D).changes[0]).toMatchObject({ toKg: 102.5, reps: 5, reason: "Every set reached 5 reps" });
+    expect(planNext([one], done([set({ weightKg: 100, reps: 4 })]), D).exercises[0]!.sets[0]).toMatchObject({ reps: 5, weightKg: 100 });
+  });
+  it("lowers a step after N missed workouts in a row, with the reason, and never when set so", () => {
+    const miss = done([range(7), range(8)]);
+    expect(planNext([slot({ missed: 1 })], miss, D)).toMatchObject({ changes: [], exercises: [{ missed: 2 }] });
+    const r = planNext([slot({ missed: 2, progression: { mode: "auto", stepKg: null, lowerAfter: null } })], miss, D);
+    expect(r.changes[0]).toMatchObject({ direction: "down", toKg: 17.5, reason: "Missed reps 3 workouts in a row" });
+    expect(r.exercises[0]).toMatchObject({ missed: 0 });
+    expect(planNext([slot({ missed: 9 })], miss, { ...D, lowerAfter: 0 }).changes).toEqual([]);
+    expect(planNext([slot({ missed: 5 })], done([range(9), range(9)]), D).exercises[0]).toMatchObject({ missed: 0 });
+  });
+  it("leaves fixed, skipped and swapped-away exercises alone", () => {
+    const today = done([range(12, 30), range(12, 30)]);
+    expect(planNext([slot({ fixed: true })], today, D).numbersChanged).toBe(false);
+    expect(planNext([slot()], done([range(12, 30)], { status: "skipped" }), D).numbersChanged).toBe(false);
+    expect(planNext([slot({ exerciseId: "other" })], today, D).numbersChanged).toBe(false);
+  });
+  it("handles bodyweight, assisted and timed exercises sensibly", () => {
+    const bw = slot({ sets: [rs({ weightKg: null, repsMax: null, reps: 10 })] });
+    const r = planNext([bw], done([set({ reps: 12 })], { tracking: "reps" }), D);
+    expect([r.changes, r.exercises[0]!.sets[0]]).toMatchObject([[], { reps: 12, weightKg: null }]);
+    // assisted: up means less help
+    const as = planNext([slot()], done([range(12, 20), range(12, 20)], { tracking: "assisted" }), D);
+    expect(as.changes[0]).toMatchObject({ direction: "up", fromKg: 20, toKg: 17.5 });
+    const timed = slot({ sets: [rs({ reps: null, repsMax: null, weightKg: null, durationS: 60 })] });
+    const t = planNext([timed], done([set({ durationS: 75 })], { tracking: "duration" }), D);
+    expect([t.changes, t.exercises[0]!.sets[0]]).toMatchObject([[], { durationS: 75 }]);
+  });
+  it("turns an old rule into its own Automatic", () => {
+    expect(cleanProgression({ kind: "double", incrementKg: 5, deloadAfter: 2 })).toEqual({ mode: "auto", stepKg: 5, lowerAfter: 2 });
+    expect(cleanProgression({ mode: null, stepKg: null, lowerAfter: null })).toBeNull();
   });
 });
 
@@ -124,9 +168,12 @@ describe("applyStructure", () => {
   });
 });
 
-describe("the old routine update setting", () => {
-  it("is dropped from saved settings", () => {
-    expect("updateRoutine" in withDefaults({ workout: { updateRoutine: "always", prefillFromLast: false } }).workout).toBe(false);
-    expect(withDefaults({ workout: { updateRoutine: "always", prefillFromLast: false } }).workout.prefillFromLast).toBe(false);
+describe("the old routine settings", () => {
+  it("are dropped from saved settings, and Progression gets its defaults", () => {
+    const s = withDefaults({ workout: { updateRoutine: "always", prefillFromLast: false, prefillScope: "routine" }, features: { progression: true } });
+    expect(["updateRoutine", "prefillFromLast", "prefillScope"].filter((k) => k in s.workout)).toEqual([]);
+    expect("progression" in s.features).toBe(false);
+    expect(s.progression).toEqual({ mode: "suggest", lowerAfter: 3 });
+    expect(withDefaults({ progression: { mode: "nope", lowerAfter: 40 } }).progression).toEqual({ mode: "suggest", lowerAfter: 10 });
   });
 });

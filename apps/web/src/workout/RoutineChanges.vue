@@ -17,7 +17,7 @@ function toggle(k: string, on: boolean) { picked.value = on ? [...picked.value, 
 
 <template>
   <div>
-    <p class="tiny hgap">Switch on what to save to the routine. Its weights and reps stay as set.
+    <p class="tiny hgap">Switch on what to save to the routine.
       <button v-if="changes.length > 1" class="lnk inl" @click="picked = allOn ? [] : changes.map((c) => c.key)">{{ allOn ? "Clear" : "Select all" }}</button></p>
     <div class="card">
       <template v-for="x in GROUPS" :key="x.g">

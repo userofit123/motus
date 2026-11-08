@@ -1,13 +1,11 @@
 // A person's settings, with defaults. Stored as JSON per user; missing keys fall back to these.
 import type { WeightUnit, DistanceUnit, LengthUnit } from "./units";
 import { FEATURE_DEFAULTS } from "./features";
-import type { RestByKind } from "./types";
+import type { ProgressionMode, RestByKind } from "./types";
 import type { RestDefaults } from "./training";
 import { cleanIntervalPresets, type IntervalPreset } from "./intervals";
 
 export interface WorkoutPrefs {
-  prefillFromLast: boolean;
-  prefillScope: "any" | "routine";
   autoRest: boolean;
   restEndNext: boolean; // when the rest ends, go straight on to the next set instead of showing "Rest over"
   restBetweenSetsS: number;
@@ -34,7 +32,11 @@ export interface Settings {
   dateFormat: "dmy" | "mdy" | "ymd";
   clock: "24" | "12";
   workout: WorkoutPrefs;
+  /** the weight step, also Progression's default step */
   increments: { kg: number; lb: number };
+  /** Progression's defaults for every routine exercise without its own: the mode, and missed workouts in a row before
+   * the weight goes down a step (0: never) */
+  progression: { mode: ProgressionMode; lowerAfter: number };
   barKg: number;
   platesKg: number[];
   platesLb: number[];
@@ -113,11 +115,12 @@ export const DEFAULT_SETTINGS: Settings = {
   dateFormat: "dmy",
   clock: "24",
   workout: {
-    prefillFromLast: true, prefillScope: "any", autoRest: true, restEndNext: true, restBetweenSetsS: 90, restAfterExerciseS: 150, restByKindS: {}, sessionNotice: true, countdown: true,
+    autoRest: true, restEndNext: true, restBetweenSetsS: 90, restAfterExerciseS: 150, restByKindS: {}, sessionNotice: true, countdown: true,
     sound: true, vibrate: true, warn10: true, voice: false, keepAwake: true, lockScreen: true, showWarmups: true, autoAdvance: true,
     showPrevious: true, showReminders: true, confirmSkip: false,
   },
   increments: { kg: 2.5, lb: 5 },
+  progression: { mode: "suggest", lowerAfter: 3 },
   barKg: 20,
   platesKg: [25, 20, 15, 10, 5, 2.5, 1.25],
   platesLb: [45, 35, 25, 10, 5, 2.5],
@@ -162,11 +165,15 @@ export function withDefaults(saved: unknown): Settings {
   // everyone starts from the new layout
   const { cards: _c, sections: _s, ...home } = out.home as Settings["home"] & { cards?: unknown; sections?: unknown };
   out.home = { ...home, blocks: cleanHomeBlocks(home.blocks) };
-  // "After a workout, update its routine" (Ask / Always / Never) mixed next time's numbers with the routine's structure. Numbers
-  // now always carry over through prefillFromLast, and structure changes are only ever saved when ticked on the Finish
-  // screen, so the old choice means nothing any more and is dropped
-  const { updateRoutine: _u, ...workout } = out.workout as WorkoutPrefs & { updateRoutine?: unknown };
+  // "After a workout, update its routine", "Start from what you did last time" and "Last time's numbers come from" are
+  // gone: a routine always holds where you are now (its numbers follow each finished workout, then Progression), and
+  // structure changes are only ever saved when ticked on the Finish screen, so the old choices mean nothing and are dropped
+  const { updateRoutine: _u, prefillFromLast: _pl, prefillScope: _ps, ...workout } = out.workout as WorkoutPrefs & { updateRoutine?: unknown; prefillFromLast?: unknown; prefillScope?: unknown };
   out.workout = workout;
+  // the "Progression rules" feature switch went with them: Progression is always there, its mode Off when unwanted
+  delete out.features.progression;
+  const pm = out.progression.mode;
+  out.progression = { mode: pm === "auto" || pm === "off" ? pm : "suggest", lowerAfter: Number.isInteger(out.progression.lowerAfter) ? Math.min(10, Math.max(0, out.progression.lowerAfter)) : 3 };
   return out;
 }
 

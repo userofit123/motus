@@ -57,13 +57,15 @@ export interface RoutineSet {
   restS: number | null;
 }
 
+/** How a routine exercise's weight moves after a workout (Settings → Workout → Progression): "suggest" asks on the
+ * Finish screen, "auto" just does it, "off" never. */
+export type ProgressionMode = "suggest" | "auto" | "off";
+/** A routine exercise's own Progression; each field null follows Settings. */
 export interface Progression {
-  kind: "linear" | "double";
-  incrementKg: number;
-  // double progression: work up to repsMax in every set, then add weight and go back to reps
-  deloadAfter?: number; // failed sessions in a row before a deload
-  deloadPct?: number; // e.g. 10 → −10%
-  deloadKg?: number | null; // a fixed amount instead, for machines whose stack has no 10% steps
+  mode: ProgressionMode | null;
+  stepKg: number | null;
+  /** missed workouts in a row before lowering a step (0: never) */
+  lowerAfter: number | null;
 }
 
 export interface RoutineExercise {
@@ -75,9 +77,11 @@ export interface RoutineExercise {
   restAfterS: number | null;
   restByKind?: RestByKind | null;
   repRestS: number | null;
-  prefill: "last" | "target";
-  prefillScope: "any" | "routine";
+  /** "Keep these numbers fixed": workouts never change its numbers and Progression leaves it alone */
+  fixed: boolean;
   progression: Progression | null;
+  /** workouts in a row with missed reps, for lowering the weight (kept by finishing) */
+  missed?: number;
   note: string;
   sets: RoutineSet[];
 }
@@ -267,7 +271,8 @@ export interface Note {
 export interface ReminderAction {
   weightKg?: number; // add to the pre-filled weight
   reps?: number; // add to the pre-filled reps
-  // "Ready for more weight" accepted on the Finish screen: the working sets start at exactly this weight and these reps
+  // an older "Ready for more weight" reminder (none are made now: Progression writes into the routine at the finish):
+  // the working sets start at exactly this weight and these reps
   setWeightKg?: number;
   setReps?: number;
   restS?: number; // set the rest

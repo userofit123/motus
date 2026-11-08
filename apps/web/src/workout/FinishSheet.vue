@@ -1,12 +1,11 @@
 <script setup lang="ts">
 // Finishing: the workout's summary first (time, how it went against the plan and against last time, what was done),
-// then what it means for next time, kept as two separate things: next time's numbers (where they start from, then every
-// weight change in one list: progression rules' own, and a step up where the top of the rep range was reached, each of
-// those can be switched off) and how this session differed from the routine (listed, each saved only when switched
-// on). Then how it felt, notes, body weight.
-import { computed, onBeforeUnmount, ref, watch } from "vue";
+// then what it means for next time, kept as two separate things: next time's numbers (the routine has today's, then
+// Progression; every routine exercise done is listed, a "Suggest" change with its switch) and how this session differed
+// from the routine (listed, each saved only when switched on). Then how it felt, notes, body weight.
+import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
-import { readyForMore, structureChanges, workoutScore, workoutSoFar, type MoreWeight, type NextRule, type Routine, type StructureChange, type WorkoutExercise } from "@motus/shared";
+import { applyStructure, planNext, structureChanges, workoutScore, workoutSoFar, type NextChange, type Routine, type StructureChange } from "@motus/shared";
 import { useWorkout, endWorkout, finishDraft } from "./useWorkout";
 import { api } from "../api/client";
 import { settle } from "../api/outbox";
@@ -53,82 +52,52 @@ const vsLast = computed(() => {
     trend: l.verdict === "better" ? "up" : l.verdict === "worse" ? "down" : null,
   };
 });
-// next time's numbers follow the saved settings (Settings → Workout), not a change made for this workout only on the
-// routine's start screen: next time starts from the saved ones
+// next time: the routine has today's numbers, then Progression (planNext, the very function the engine saves with at
+// the finish), on the routine as the switched-on "Routine changes" leave it: a swap saved puts today's exercise in the
+// slot, set counts saved change its sets. Every routine exercise done today is listed with next time's numbers and the
+// difference from today; "Suggest" changes have a switch, "Automatic" ones just say so
 const routine = useRoutine(computed(() => w.value.routineId ?? ""));
-const routineEx = computed(() => new Map(((routine.data.value as Routine | undefined)?.exercises ?? []).filter((r) => r.id).map((r) => [r.id!, r])));
-// what each progression rule will do at the next start, worked out by the engine as the start does (it needs the
-// routine's earlier sessions), on the routine as the switched-on "Routine changes" leave it: a swap saved puts the rule
-// on the exercise swapped in, set counts saved change its targets. Asked again when those switches change; offline it
-// stays empty: the rules still apply, they just aren't listed
-const rules = ref<NextRule[]>([]);
-const ruleKeys = computed(() => d.routineChanges.filter((k) => /^(swapped|more|fewer):/.test(k)).sort().join(","));
-let asked = 0, wait: ReturnType<typeof setTimeout> | undefined;
-if (W.settings.value.features.progression && w.value.routineId) {
-  const ask = (keys: string) => {
-    const n = ++asked;
-    void settle().then(() => api.get(`/workouts/${w.value.id}/next-rules`, keys ? { changes: keys } : undefined))
-      .then((r) => { if (n === asked) rules.value = r as NextRule[]; }).catch(() => {});
-  };
-  // at once on opening; after that once the switches rest for a moment, not on every flick
-  watch(ruleKeys, (keys, old) => {
-    clearTimeout(wait);
-    if (old === undefined) ask(keys); else wait = setTimeout(() => ask(keys), 300);
-  }, { immediate: true });
-  onBeforeUnmount(() => clearTimeout(wait));
-}
-const ruled = computed(() => new Set(rules.value.map((r) => r.workoutExerciseId)));
-const names = (xs: string[]) => (xs.length > 3 ? `${xs.length} exercises` : xs.length > 1 ? `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}` : xs[0] ?? "");
-// where next time's numbers start from, in one short line: "Start from what you did last time" and "Last time's
-// numbers come from", and each routine exercise's own "Always start with these numbers" (an exercise whose rule sets
-// its weight is left out here: its row below says what it starts with)
-const startsFrom = computed(() => {
-  const wo = W.settings.value.workout;
-  // a routine fills in from its own last time first; another workout's only where it has none for the exercise
-  if (!w.value.routineId) {
-    if (!wo.prefillFromLast) return { t: "Routines start from their own numbers", s: "Today's numbers show beside each set next time" };
-    return wo.prefillScope === "routine"
-      ? { t: "Not used to fill in a routine", s: "Routines fill in from their own last time (Settings → Workout)" }
-      : { t: "Today's weights and reps fill in next time", s: "In a routine only where it hasn't done the exercise itself yet" };
-  }
-  if (!wo.prefillFromLast) return { t: "Starts from the routine's numbers", s: "Today's numbers show beside each set" };
-  const done = w.value.exercises.filter((e) => e.status !== "skipped" && e.sets.some((x) => x.done) && !ruled.value.has(e.id))
-    .map((e) => routineEx.value.get(e.routineExerciseId ?? "")).filter((r): r is NonNullable<typeof r> => !!r);
-  const fixed = done.filter((r) => r.prefill === "target").map((r) => r.exercise?.name ?? "");
-  if (fixed.length && fixed.length === done.length) return { t: "Starts from the routine's numbers", s: "Each of these exercises always starts with the routine's numbers" };
-  // today becomes this routine's own last time, which comes first whatever "Last time's numbers come from" says
-  return {
-    t: fixed.length ? `Starts from today's weights and reps, except ${names(fixed)} (always start${fixed.length === 1 ? "s" : ""} from the routine's numbers)` : "Starts from today's weights and reps",
-    s: "What you did fills in next time you do this routine",
-  };
+type Item = Routine["exercises"][number];
+const shaped = computed<Item[]>(() => {
+  const r = routine.data.value as Routine | undefined;
+  if (!r) return [];
+  return ((applyStructure(r, w.value, d.routineChanges) ?? r.exercises) as Item[]).filter((x) => x.id);
 });
-// the weight step: the exercise's own (its settings), else the routine exercise's progression step, else Settings'.
-// Where a progression rule moves that routine exercise's weight next time, no suggestion: the rule decides. An
-// exercise swapped in has the rule only when its swap is switched on (else next time starts with the routine's one)
-const stepFor = (e: WorkoutExercise): number | null => {
-  const slot = e.routineExerciseId ? routineEx.value.get(e.routineExerciseId) : undefined;
-  const re = slot && (slot.exerciseId === e.exerciseId || d.routineChanges.includes(`swapped:${slot.id}`)) ? slot : undefined;
-  if (re?.progression && W.settings.value.features.progression) return null;
-  return e.exercise?.incrementKg || re?.progression?.incrementKg || W.incKg.value;
+const plan = computed(() => planNext(shaped.value, w.value, { ...W.settings.value.progression, stepKg: W.incKg.value }, d.declined));
+const deciding = (k: string) => k !== "warmup" && k !== "drop";
+const heaviest = (sets: { kind: string; weightKg: number | null }[]) => {
+  const ws = sets.filter((x) => deciding(x.kind) && x.weightKg != null).map((x) => x.weightKg!);
+  return ws.length ? Math.max(...ws) : null;
 };
-const more = computed(() => readyForMore(w.value, stepFor));
-const taken = computed(() => more.value.filter((m) => !d.skipMore.includes(m.workoutExerciseId)));
-// every weight change next time in one list, in the workout's order: a rule's (no switch) or a suggestion (a switch)
-type NextRow = { id: string; rule: NextRule; m?: undefined } | { id: string; m: MoreWeight; rule?: undefined };
+type NextRow = { id: string; name: string; next: string; diff: number | null; fixed: boolean; change?: NextChange; on: boolean };
 const nextRows = computed<NextRow[]>(() => w.value.exercises.flatMap((e): NextRow[] => {
-  const rule = rules.value.find((r) => r.workoutExerciseId === e.id);
-  if (rule) return [{ id: e.id, rule }];
-  const m = more.value.find((x) => x.workoutExerciseId === e.id);
-  return m ? [{ id: e.id, m }] : [];
+  if (e.status === "skipped" || !e.sets.some((x) => x.done) || !e.routineExerciseId) return [];
+  const i = shaped.value.findIndex((x) => x.id === e.routineExerciseId && x.exerciseId === e.exerciseId);
+  if (i < 0) return [];
+  const item = plan.value.exercises[i]!;
+  const sets = item.sets as Item["sets"];
+  const first = sets.find((x) => deciding(x.kind)) ?? sets[0];
+  const today = heaviest(e.sets.filter((x) => x.done)), next = heaviest(sets);
+  const change = plan.value.changes.find((c) => c.routineExerciseId === item.id);
+  return [{
+    id: item.id!, name: e.exercise?.name ?? "", next: first ? numbers(first) : "-", fixed: !!item.fixed, change,
+    diff: today != null && next != null ? Math.round((next - today) * 100) / 100 : null, on: !!change && (change.mode === "auto" || !d.declined.includes(item.id!)),
+  }];
 }));
-function toggleMore(id: string) {
-  const i = d.skipMore.indexOf(id);
-  if (i >= 0) d.skipMore.splice(i, 1); else d.skipMore.push(id);
+// next time's numbers on its first working set: "62.5 kg × 8", "12 reps", "1:00"
+function numbers(x: Item["sets"][number]) {
+  const f = fmt.value;
+  if (x.weightKg != null && x.reps != null) return `${f.wu_(x.weightKg)} × ${x.reps}`;
+  if (x.reps != null) return `${x.reps} reps`;
+  if (x.durationS != null) return f.clock(x.durationS);
+  if (x.distanceM != null) return f.dist(x.distanceM);
+  return x.weightKg != null ? f.wu_(x.weightKg) : "-";
 }
-// why the rule moves the weight ("missed reps 3 times in a row"); an older server only says which way
-const ruleWhy = (r: NextRule) => (r.reason ? r.reason[0]!.toLowerCase() + r.reason.slice(1) : r.action === "add" ? "add weight" : "lower weight");
-const range = (m: { reps: number; topReps: number }) => m.reps === m.topReps ? `${m.topReps}` : `${m.reps}-${m.topReps}`;
-const next = (kg: number, reps: number | null) => `${fmt.value.w(kg)} ${fmt.value.wu}${reps ? ` × ${reps}` : ""}`;
+function toggleNext(id: string) {
+  const i = d.declined.indexOf(id);
+  if (i >= 0) d.declined.splice(i, 1); else d.declined.push(id);
+}
+const diffText = (r: NextRow) => (r.fixed ? "Fixed numbers" : !r.diff ? "Same as today" : `${r.diff > 0 ? "+" : "-"}${fmt.value.wu_(Math.abs(r.diff))}`);
 // how this session differed from the routine, each change saved only when switched on
 const changes = computed<StructureChange[]>(() => w.value.routineId && routine.data.value ? structureChanges(routine.data.value, w.value) : []);
 const unticked = computed(() => w.value.exercises.reduce((a, e) => a + (e.status === "skipped" ? 0 : e.sets.filter((s) => !s.done).length), 0));
@@ -143,7 +112,7 @@ async function finish() {
     await api.post(`/workouts/${id}/finish`, {
       rating: d.rating, notes: d.notes, bodyweightKg: d.bw ? fmt.value.toKg(d.bw) : null,
       routineChanges: d.routineChanges.filter((k) => changes.value.some((c) => c.key === k)),
-      moreWeight: taken.value.map((m) => ({ exerciseId: m.exerciseId, weightKg: m.toKg, reps: m.reps })),
+      declined: d.declined.filter((x) => plan.value.changes.some((c) => c.routineExerciseId === x && c.mode === "suggest")),
     });
     keepAwake(false);
     if (prs) toast(`${prs} new record${prs > 1 ? "s" : ""}!`, { kind: "pr" });
@@ -168,21 +137,21 @@ async function finish() {
     <div class="spb"><WorkoutSoFar :w="w" final :vs-last="sc.vsLast" @open="emit('open', $event)" /></div>
     <div v-if="unticked" class="banner note"><Icon name="info" />{{ unticked }} set{{ unticked > 1 ? "s were" : " was" }} not ticked. They will be left out.</div>
 
-    <div class="sh"><h2>Next time</h2></div>
-    <div class="card">
-      <div class="li"><Icon name="refresh" :size="18" class="fin-i" /><div class="grow"><div class="t">{{ startsFrom.t }}</div><div class="s">{{ startsFrom.s }}</div></div></div>
-      <template v-for="x in nextRows" :key="x.id">
-        <div v-if="x.rule" class="li"><Icon :name="x.rule.action === 'add' ? 'arrowUp' : 'arrowDown'" :size="18" class="fin-i" :class="x.rule.action === 'add' ? 'pos' : 'neg'" />
-          <div class="grow" style="min-width:0"><div class="t ellipsis">{{ x.rule.name }}</div>
-            <div class="s">Rule: {{ ruleWhy(x.rule) }} · next time <b class="fin-next">{{ next(x.rule.weightKg, x.rule.reps) }}</b></div></div></div>
-        <label v-else-if="x.m" class="tgl"><Icon name="arrowUp" :size="18" class="fin-i pos" />
-          <div class="grow" style="min-width:0"><div class="t ellipsis">{{ x.m.name }}</div>
-            <div class="s">{{ x.m.topReps }} reps in every set at {{ fmt.w(x.m.fromKg) }} {{ fmt.wu }} · next time <b class="fin-next">{{ next(x.m.toKg, x.m.reps) }}</b></div></div>
-          <span class="tg"><input type="checkbox" :checked="!d.skipMore.includes(x.m.workoutExerciseId)" @change="toggleMore(x.m.workoutExerciseId)" /></span></label>
-      </template>
-    </div>
-    <p v-if="more.length" class="tiny fin-note">You reached the top of the rep range ({{ more.length === 1 ? range(more[0]!) : "each one's" }}) in every set: up one weight step, reps back to the bottom. Switch off any you'd rather repeat.</p>
-    <p v-if="rules.length" class="tiny fin-note">Rules are each exercise's progression rule. Change one in the routine's editor.</p>
+    <template v-if="w.routineId && nextRows.length">
+      <div class="sh"><h2>Next time</h2></div>
+      <div class="card">
+        <div class="li fin-lead"><Icon name="refresh" :size="18" class="fin-i" /><div class="grow t">The routine now has today's numbers</div></div>
+        <component :is="r.change?.mode === 'suggest' ? 'label' : 'div'" v-for="r in nextRows" :key="r.id" :class="r.change?.mode === 'suggest' ? 'tgl' : 'li'">
+          <Icon :name="r.fixed ? 'lock' : r.diff && r.diff > 0 ? 'arrowUp' : r.diff && r.diff < 0 ? 'arrowDown' : 'check'" :size="18" class="fin-i" :class="{ pos: !r.fixed && (r.diff ?? 0) > 0, neg: !r.fixed && (r.diff ?? 0) < 0 }" />
+          <div class="grow" style="min-width:0">
+            <div class="fin-row"><span class="t ellipsis">{{ r.name }}</span><span class="sep">·</span><span class="fin-next">next time {{ r.next }}</span></div>
+            <div v-if="r.change" class="s">{{ r.change.reason }}<template v-if="r.change.mode === 'auto'"><span class="sep">·</span>Automatic</template></div>
+          </div>
+          <span class="mchip fin-diff" :class="{ pos: !r.fixed && (r.diff ?? 0) > 0, neg: !r.fixed && (r.diff ?? 0) < 0 }">{{ diffText(r) }}</span>
+          <span v-if="r.change?.mode === 'suggest'" class="tg"><input type="checkbox" :checked="r.on" :aria-label="`${r.change.direction === 'up' ? 'Raise' : 'Lower'} the weight for ${r.name}`" @change="toggleNext(r.id)" /></span>
+        </component>
+      </div>
+    </template>
 
     <template v-if="changes.length">
       <div class="sh"><h2>Routine changes</h2></div>
@@ -199,8 +168,13 @@ async function finish() {
 </template>
 
 <style scoped>
-.fin-note { margin-top: var(--hg); }
-.fin-next { color: var(--tx); font-weight: 600; white-space: nowrap; }
+.fin-next { color: var(--tx2); white-space: nowrap; }
+.fin-row { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.fin-row .t { min-width: 0; }
+.fin-diff { flex: none; }
+.fin-diff.pos { color: var(--pos); }
+.fin-diff.neg { color: var(--neg); }
+.fin-lead .t { color: var(--tx2); }
 .fin-time { font-size: 34px; font-weight: 700; line-height: 1.15; font-variant-numeric: tabular-nums; }
 .fin-hero .list { margin-top: var(--lpy); }
 .fin-hero .li:last-child { border-bottom: 0; }

@@ -46,7 +46,7 @@ describe("starting a planned workout", () => {
   it("fills from last time unless the numbers are fixed, and keeps supersets without rest inside a round", async () => {
     const w = await call("POST", "/workouts/start", { exercises: [
       { exerciseId: bench, superset: "A", sets: [{ reps: 8, weightKg: 40 }, { reps: 8, weightKg: 40 }] },
-      { exerciseId: row, superset: "A", prefill: "target", sets: [{ reps: 10, weightKg: 30 }] },
+      { exerciseId: row, superset: "A", fixed: true, sets: [{ reps: 10, weightKg: 30 }] },
     ] });
     expect(w.name).toBe("Workout");
     expect(w.exercises[0].sets.map((s: any) => [s.weightKg, s.reps, s.prefilled])).toEqual([[70, 5, true], [70, 5, true]]);

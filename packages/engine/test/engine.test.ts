@@ -90,11 +90,12 @@ describe("engine", () => {
     expect((await call(B, "GET", "/routines")).find((x: any) => x.id === r.id)).toBeUndefined();
   });
 
-  it("pre-fills the next workout from last time, with the reminder applied", async () => {
+  it("starts the next workout from the routine's numbers (today's, after the finish), with the reminder applied", async () => {
     const prev = await call(A, "GET", `/routines/${routineId}/preview`);
     const bench = prev.exercises[0];
     expect(bench.sets[0].weightKg).toBe(82.5); // 80 + reminder
-    expect(bench.sets[1].reps).toBe(7);
+    // the rep range stays as set (the reps move inside it): its bottom, 6
+    expect(bench.sets[1].reps).toBe(6);
     expect(bench.sets[0].prev.weightKg).toBe(80);
     expect(bench.reminders.length).toBe(1);
     expect(bench.notes[0].body).toBe("Felt strong");
@@ -205,7 +206,7 @@ describe("engine", () => {
 });
 
 describe("updating a routine from a workout", () => {
-  it("saves only the changes switched on: an added exercise, then a skipped one taken out; never today's numbers", async () => {
+  it("saves only the structure changes switched on: an added exercise, then a skipped one taken out; numbers follow today", async () => {
     const C = uuidv7();
     await eng.db.admin.query("INSERT INTO users (id, username, display_name) VALUES ($1,'legs-tester','C')", [C]);
     const ex = await call(C, "GET", "/exercises");
@@ -223,8 +224,8 @@ describe("updating a routine from a workout", () => {
     await call(C, "POST", `/workouts/${w.id}/finish`, { routineChanges: [`added:${plank}`] });
     const after = await call(C, "GET", `/routines/${r.id}`);
     expect(after.exercises.map((e: any) => e.exerciseId)).toEqual([a, b, c]);
-    // today's 105 carries over through "start from what you did", not by rewriting the routine's own numbers
-    expect(after.exercises[0].sets.map((s: any) => s.weightKg)).toEqual([100, 100]);
+    // today's 105 × 5 in every set: the routine takes it, then Progression (Suggest by default, kept) a step up
+    expect(after.exercises[0].sets.map((s: any) => s.weightKg)).toEqual([107.5, 107.5]);
     expect(after.exercises[1].sets[0].weightKg).toBe(140);
     expect(after.exercises[2].sets[0].durationS).toBe(60);
     // asked for later from the ⋮ menu: the skipped one leaves the routine
@@ -246,11 +247,10 @@ describe("updating a routine from a workout", () => {
     expect((await call(C, "GET", `/routines/${r.id}`)).exercises[0].sets.length).toBe(2);
     const rid = (await call(C, "GET", `/routines/${r.id}`)).exercises[0].id;
     await call(C, "POST", `/routines/${r.id}/from-workout`, { workoutId: w.id, changes: [`fewer:${rid}`] });
-    // one set ticked today: the routine keeps one, at its own 50, not today's 55
-    expect((await call(C, "GET", `/routines/${r.id}`)).exercises[0].sets.map((s: any) => s.weightKg)).toEqual([50]);
-    // the start preview follows this workout's own "Start from what you did last time", as the start will
+    // one set ticked today: the routine keeps one, with today's 55 (finishing gave it today's numbers)
+    expect((await call(C, "GET", `/routines/${r.id}`)).exercises[0].sets.map((s: any) => s.weightKg)).toEqual([55]);
+    // the start fills in the routine's numbers
     expect((await call(C, "GET", `/routines/${r.id}/preview`)).exercises[0].sets[0].weightKg).toBe(55);
-    expect((await call(C, "GET", `/routines/${r.id}/preview`, undefined, { settings: JSON.stringify({ prefillFromLast: false }) })).exercises[0].sets[0].weightKg).toBe(50);
   });
 
   it("gives a swapped exercise today's numbers, treats one with nothing ticked as skipped, and ignores the old updateRoutine", async () => {
@@ -284,7 +284,8 @@ describe("updating a routine from a workout", () => {
     await call(C, "POST", `/workouts/${w2.id}/finish`, { saveLayout: true });
     const after = await call(C, "GET", `/routines/${r.id}`);
     expect(after.exercises.map((e: any) => e.exerciseId)).toEqual([c, b]);
-    expect(after.exercises[0].sets.map((s: any) => [s.weightKg, s.reps])).toEqual([[30, 12]]);
+    // the swap saved takes today's 30 × 12, then Progression a step up (every set reached its 12 reps)
+    expect(after.exercises[0].sets.map((s: any) => [s.weightKg, s.reps])).toEqual([[32.5, 12]]);
     expect(after.exercises[1].sets.map((s: any) => s.weightKg)).toEqual([140, 140]);
   });
 });
@@ -313,45 +314,43 @@ describe("saving routine changes twice", () => {
   });
 });
 
-describe("next time's progression rules", () => {
-  it("counts a swapped exercise only when its swap is saved, with the rule's reason", async () => {
+describe("the routine's numbers and Progression", () => {
+  it("takes today's numbers at the finish, applies Automatic, asks for Suggest, keeps fixed ones, and keeps History", async () => {
     const C = uuidv7();
-    await eng.db.admin.query("INSERT INTO users (id, username, display_name) VALUES ($1,'swap-rule-tester','C')", [C]);
-    await call(C, "PUT", "/settings", { features: { progression: true } });
+    await eng.db.admin.query("INSERT INTO users (id, username, display_name) VALUES ($1,'prog-tester','C')", [C]);
     const ex = await call(C, "GET", "/exercises");
-    const r = await call(C, "POST", "/routines", { name: "SwapRule", exercises: [
-      { exerciseId: ex[0].id, progression: { kind: "linear", incrementKg: 2.5 }, sets: [{ kind: "normal", reps: 5, weightKg: 60 }] }] });
+    const r = await call(C, "POST", "/routines", { name: "Prog", exercises: [
+      { exerciseId: ex[0].id, progression: { mode: "auto" }, sets: [{ kind: "warmup", reps: 10, weightKg: 20 }, { kind: "normal", reps: 5, weightKg: 60 }, { kind: "normal", reps: 5, weightKg: 60 }] },
+      { exerciseId: ex[1].id, sets: [{ kind: "normal", reps: 8, repsMax: 10, weightKg: 40 }] },
+      { exerciseId: ex[2].id, sets: [{ kind: "normal", reps: 8, weightKg: 30 }] },
+      { exerciseId: ex[3].id, fixed: true, sets: [{ kind: "normal", reps: 8, weightKg: 10 }] }] });
     const w = await call(C, "POST", "/workouts/start", { routineId: r.id });
-    // swapped during the workout: it keeps its place in the routine
-    await call(C, "PUT", `/workout-exercises/${w.exercises[0].id}`, { exerciseId: ex[1].id });
-    await call(C, "PUT", `/workout-sets/${w.exercises[0].sets[0].id}`, { weightKg: 40, reps: 5, done: true });
-    expect(await call(C, "GET", `/workouts/${w.id}/next-rules`)).toEqual([]);
-    const rid = (await call(C, "GET", `/routines/${r.id}`)).exercises[0].id;
-    const rules = await call(C, "GET", `/workouts/${w.id}/next-rules`, undefined, { changes: `swapped:${rid}` });
-    expect(rules.map((x: any) => [x.exerciseId, x.action, x.weightKg, x.reason])).toEqual([[ex[1].id, "add", 42.5, "All target reps done"]]);
+    expect(w.exercises.map((e: any) => e.sets.at(-1).weightKg)).toEqual([60, 40, 30, 10]);
+    await call(C, "PUT", `/workout-sets/${w.exercises[0].sets[0].id}`, { weightKg: 25, reps: 10, done: true });
+    for (const s of w.exercises[0].sets.slice(1)) await call(C, "PUT", `/workout-sets/${s.id}`, { weightKg: 60, reps: 5, done: true });
+    await call(C, "PUT", `/workout-sets/${w.exercises[1].sets[0].id}`, { weightKg: 40, reps: 10, done: true });
+    await call(C, "PUT", `/workout-sets/${w.exercises[2].sets[0].id}`, { weightKg: 32.5, reps: 6, done: true });
+    await call(C, "PUT", `/workout-sets/${w.exercises[3].sets[0].id}`, { weightKg: 15, reps: 8, done: true });
+    const rid = (await call(C, "GET", `/routines/${r.id}`)).exercises[1].id;
+    await call(C, "POST", `/workouts/${w.id}/finish`, { declined: [rid] });
+    const after = (await call(C, "GET", `/routines/${r.id}`)).exercises;
+    // warm-up untouched, Automatic up a step; Suggest switched off keeps today's; a miss keeps the rep target; fixed stays
+    expect(after.map((e: any) => e.sets.map((s: any) => [s.weightKg, s.reps]))).toEqual([[[20, 10], [62.5, 5], [62.5, 5]], [[40, 8]], [[32.5, 8]], [[10, 8]]]);
+    expect(after[2].missed).toBe(1);
+    const next = await call(C, "POST", "/workouts/start", { routineId: r.id, force: true });
+    expect(next.exercises[0].sets.map((s: any) => s.weightKg)).toEqual([20, 62.5, 62.5]);
+    const hist = await call(C, "GET", `/routines/${r.id}/versions`);
+    expect(hist.map((v: any) => v.reason)).toEqual(["workout", "edit"]);
+    expect(hist[0]).toMatchObject({ workoutId: w.id, workoutName: "Prog" });
+    expect(hist[0].top[0].kg).toBe(62.5);
+    const old = await call(C, "GET", `/routines/${r.id}/versions/${hist[1].id}`);
+    expect(old.exercises[0].sets[1].weightKg).toBe(60);
+    await call(C, "POST", `/routines/${r.id}/versions/${hist[1].id}/restore`);
+    expect((await call(C, "GET", `/routines/${r.id}`)).exercises[0].sets[1].weightKg).toBe(60);
+    expect((await call(C, "GET", `/routines/${r.id}/versions`)).length).toBe(3);
   });
 
-  it("says on Finish what the rule will do at the next start, and the start does just that", async () => {
-    const C = uuidv7();
-    await eng.db.admin.query("INSERT INTO users (id, username, display_name) VALUES ($1,'rule-tester','C')", [C]);
-    await call(C, "PUT", "/settings", { features: { progression: true } });
-    const ex = await call(C, "GET", "/exercises");
-    const r = await call(C, "POST", "/routines", { name: "Rule", exercises: [
-      { exerciseId: ex[0].id, progression: { kind: "linear", incrementKg: 2.5 }, sets: [{ kind: "normal", reps: 5, weightKg: 60 }, { kind: "normal", reps: 5, weightKg: 60 }] },
-      { exerciseId: ex[1].id, sets: [{ kind: "normal", reps: 5, weightKg: 40 }] }] });
-    const w = await call(C, "POST", "/workouts/start", { routineId: r.id });
-    for (const s of w.exercises[0].sets) await call(C, "PUT", `/workout-sets/${s.id}`, { weightKg: 60, reps: 5, done: true });
-    await call(C, "PUT", `/workout-sets/${w.exercises[1].sets[0].id}`, { weightKg: 40, reps: 5, done: true });
-    const rules = await call(C, "GET", `/workouts/${w.id}/next-rules`);
-    expect(rules.map((x: any) => [x.exerciseId, x.action, x.weightKg, x.reps])).toEqual([[ex[0].id, "add", 62.5, 5]]);
-    await call(C, "POST", `/workouts/${w.id}/finish`, {});
-    const plan = await call(C, "GET", `/routines/${r.id}/preview`);
-    expect(plan.exercises[0].sets.map((s: any) => s.weightKg)).toEqual([62.5, 62.5]);
-  });
-});
-
-describe("ready for more weight", () => {
-  it("keeps the rep range on the sets, and an accepted step starts next time at the new weight with reps at the bottom", async () => {
+  it("makes no more-weight reminders, and an older app's moreWeight is left out", async () => {
     const C = uuidv7();
     await eng.db.admin.query("INSERT INTO users (id, username, display_name) VALUES ($1,'more-tester','C')", [C]);
     const ex = await call(C, "GET", "/exercises");
@@ -359,13 +358,14 @@ describe("ready for more weight", () => {
     const w = await call(C, "POST", "/workouts/start", { routineId: r.id });
     expect(w.exercises[0].sets[0].targetRepsMax).toBe(12);
     for (const s of w.exercises[0].sets) await call(C, "PUT", `/workout-sets/${s.id}`, { weightKg: 20, reps: 12, done: true });
-    await call(C, "POST", `/workouts/${w.id}/finish`, { moreWeight: [{ exerciseId: ex[0].id, weightKg: 22.5, reps: 8, body: "22.5 kg × 8" }] });
+    await call(C, "POST", `/workouts/${w.id}/finish`, { moreWeight: [{ exerciseId: ex[0].id, weightKg: 22.5, reps: 8 }] });
+    expect((await eng.db.admin.query("SELECT 1 FROM reminders WHERE created_workout_id = $1", [w.id])).rows.length).toBe(0);
+    // Settings' default is Suggest, kept (nothing switched off): next time at one step more, reps at the bottom
     const next = await call(C, "POST", "/workouts/start", { routineId: r.id });
-    // last time's 20 × 12 would fill in; the accepted step wins
     expect(next.exercises[0].sets.map((s: any) => [s.weightKg, s.reps])).toEqual([[22.5, 8], [22.5, 8]]);
   });
 
-  it("keeps the rep target and range on a set added during the workout, and stores the reminder without a unit", async () => {
+  it("keeps the rep target and range on a set added during the workout", async () => {
     const C = uuidv7();
     await eng.db.admin.query("INSERT INTO users (id, username, display_name) VALUES ($1,'addset-tester','C')", [C]);
     const ex = await call(C, "GET", "/exercises");
@@ -377,11 +377,5 @@ describe("ready for more weight", () => {
     await call(C, "POST", `/workout-exercises/${we.id}/sets`, {});
     const sets = (await call(C, "GET", `/workouts/${w.id}`)).exercises[0].sets;
     expect(sets.map((s: any) => [s.targetReps, s.targetRepsMax])).toEqual([[8, 12], [8, 12], [8, 12]]);
-    for (const s of sets) await call(C, "PUT", `/workout-sets/${s.id}`, { weightKg: 20, reps: 12, done: true });
-    const done = await call(C, "POST", `/workouts/${w.id}/finish`, { moreWeight: [{ exerciseId: ex[0].id, weightKg: 22.5, reps: 8, body: "22.5 kg × 8" }] });
-    const rem = (await eng.db.admin.query("SELECT body, action FROM reminders WHERE created_workout_id = $1", [w.id])).rows[0];
-    expect(rem.body).toBe("Ready for more weight");
-    expect(rem.action).toEqual({ setWeightKg: 22.5, setReps: 8 });
-    expect(done).toBeTruthy();
   });
 });

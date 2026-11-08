@@ -15,6 +15,8 @@ import { askNotificationPermission, notificationState, isNativeApp, type Notific
 import Icon from "../components/Icon.vue";
 import RestPicker from "../components/RestPicker.vue";
 import AppSelect from "../components/AppSelect.vue";
+import RadioList from "../components/RadioList.vue";
+import { PROGRESSION_MODES, LOWER_AFTER, MISSED_HINT } from "../core/progression";
 import PrefRow from "../components/PrefRow.vue";
 import { prefGroups } from "../core/workoutPrefs";
 import ChoiceTiles from "../components/ChoiceTiles.vue";
@@ -173,12 +175,21 @@ await loaded(me);
             <div class="sh"><h2>{{ g.title }}</h2></div>
             <div class="card"><PrefRow v-for="r in g.rows" :key="r.key" :row="r" :value="w[r.key]" @set="set({ workout: { [r.key]: $event } })" /></div>
           </template>
+          <div class="sh"><h2>Progression</h2></div>
+          <div class="card">
+            <p class="tiny prog-intro">After each workout a routine has today's numbers. Progression decides whether the weight goes up or down next time. An exercise can have its own in the routine's editor.</p>
+            <RadioList :model-value="s.progression.mode" :options="PROGRESSION_MODES" @update:model-value="(v) => set({ progression: { mode: v } })" />
+            <div class="li"><div class="grow"><div class="t">Weight step</div><div class="s">How much the weight goes up or down, unless an exercise has its own</div></div><input type="number" step="0.25" min="0.25" :value="s.units.weight === 'kg' ? s.increments.kg : s.increments.lb" style="width:90px" @change="set({ increments: { [s.units.weight]: Number(($event.target as HTMLInputElement).value) || (s.units.weight === 'kg' ? 2.5 : 5) } })" /><span class="tiny">{{ s.units.weight }}</span></div>
+            <div class="li"><div class="grow"><div class="t">Lower the weight after</div><div class="s">{{ MISSED_HINT }}</div></div>
+              <AppSelect :model-value="s.progression.lowerAfter" :options="LOWER_AFTER" title="Lower the weight after" style="width:auto" @update:model-value="(v) => set({ progression: { lowerAfter: v } })" /></div>
+          </div>
+          <template v-if="s.features.plates || s.features.warmupCalc">
           <div class="sh"><h2>Weights</h2></div>
           <div class="card">
-            <div class="li"><div class="grow"><div class="t">Weight steps</div><div class="s">Used by reminders and progression</div></div><input type="number" step="0.25" :value="s.units.weight === 'kg' ? s.increments.kg : s.increments.lb" style="width:90px" @change="set({ increments: { [s.units.weight]: Number(($event.target as HTMLInputElement).value) || 2.5 } })" /><span class="tiny">{{ s.units.weight }}</span></div>
             <div v-if="s.features.plates || s.features.warmupCalc" class="li"><div class="grow"><div class="t">Bar weight</div></div><input type="number" step="0.5" :value="s.barKg" style="width:90px" @change="set({ barKg: Number(($event.target as HTMLInputElement).value) || 20 })" /><span class="tiny">kg</span></div>
             <div v-if="s.features.plates" class="li"><div class="grow"><div class="t">Your plates</div><div class="s">{{ (s.units.weight === "kg" ? s.platesKg : s.platesLb).join(", ") }} {{ s.units.weight }}</div></div><button class="qb acc" @click="editPlates">Edit</button></div>
           </div>
+          </template>
           <div class="sh"><h2>Note tags</h2><button class="lnk" @click="addNoteTag">Add</button></div>
           <div class="card">
             <p class="tiny" style="margin:0 0 6px">Offered as quick tags when you write a note. Notes you already tagged keep their tags.</p>
@@ -243,6 +254,7 @@ await loaded(me);
 </template>
 
 <style scoped>
+.prog-intro { margin: 0 0 var(--lpy); }
 /* the computer's section list: small group names over plain rows, the open one filled */
 .snav { position: sticky; top: calc(24px + var(--st)); padding: calc(var(--cpy) / 2); display: flex; flex-direction: column; gap: 1px; }
 /* the group names and rows share one side inset, and the first group name sits that far below the top too, so the

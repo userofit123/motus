@@ -1,5 +1,5 @@
 // Training maths: estimated one-rep max, volume, how long a routine takes, which rest applies, plates, warm-ups.
-import type { SetKind, Tracking, Progression, RestByKind } from "./types";
+import type { SetKind, Tracking, RestByKind } from "./types";
 import { duration, fromKg, toKg } from "./units";
 
 /** Estimated one-rep max (Epley by default; Brzycki is better for low reps). Only for 1-15 reps. */
@@ -126,41 +126,6 @@ export function warmups(workKg: number, barKg = 20, stepKg = 2.5): { weightKg: n
   const round = (v: number) => Math.max(barKg, Math.round(v / stepKg) * stepKg);
   const out = [{ weightKg: barKg, reps: 10 }, { weightKg: round(workKg * 0.4), reps: 5 }, { weightKg: round(workKg * 0.6), reps: 3 }, { weightKg: round(workKg * 0.8), reps: 2 }];
   return out.filter((s, i) => i === 0 || (s.weightKg > out[i - 1]!.weightKg && s.weightKg < workKg));
-}
-
-// ----- progression -----
-
-export interface SessionResult { sets: { weightKg: number | null; reps: number | null; targetReps: number | null; targetRepsMax?: number | null; kind: SetKind }[] }
-/** What to do next time, from the last sessions (newest first): "add", "hold" or "deload", and the next working weight. */
-export function nextProgression(p: Progression, history: SessionResult[], repsTarget: number | null, repsMax: number | null): { action: "add" | "hold" | "deload"; weightKg: number | null; reason: string } | null {
-  const last = history[0];
-  if (!last) return null;
-  // warm-ups and drop sets (lighter on purpose, taken to failure) don't decide progression
-  const work = last.sets.filter((s) => s.kind !== "warmup" && s.kind !== "drop" && s.weightKg != null);
-  if (!work.length) return null;
-  const top = Math.max(...work.map((s) => s.weightKg ?? 0));
-  const hit = (s: SessionResult["sets"][number], goal: number | null) => goal == null || (s.reps ?? 0) >= goal;
-  const goal = p.kind === "double" ? repsMax ?? repsTarget : repsTarget;
-  const success = work.every((s) => hit(s, goal ?? s.targetReps));
-  if (success) return { action: "add", weightKg: top + p.incrementKg, reason: p.kind === "double" ? "Top of the rep range in every set" : "All target reps done" };
-  const n = p.deloadAfter ?? 3;
-  const fails = history.slice(0, n).filter((h) => !h.sets.filter((s) => s.kind !== "warmup" && s.kind !== "drop").every((s) => hit(s, goal ?? s.targetReps))).length;
-  if (fails >= n) {
-    const pct = (p.deloadPct ?? 10) / 100;
-    const w = p.deloadKg ? Math.max(0, top - p.deloadKg) : Math.round((top * (1 - pct)) / 1.25) * 1.25;
-    return { action: "deload", weightKg: w, reason: `Missed reps ${n} times in a row` };
-  }
-  return { action: "hold", weightKg: top, reason: "Not every set reached its reps yet" };
-}
-
-/** A routine exercise's progression rule against its sessions (newest first), its first working set giving the rep
- * target. One call for both places that need it: a routine's start (buildPlan) and the Finish screen's "Next time",
- * so what Finish says the rule will do is what the next start does. `reps` is next time's rep target. */
-export function routineProgression(p: Progression, sets: { kind: SetKind; reps: number | null; repsMax?: number | null }[], history: { sets: { kind: SetKind; weightKg: number | null; reps: number | null }[] }[]) {
-  const firstWork = sets.find((s) => s.kind !== "warmup");
-  const repsTarget = firstWork?.reps ?? null;
-  const res = nextProgression(p, history.map((h) => ({ sets: h.sets.map((s) => ({ ...s, targetReps: repsTarget })) })), repsTarget, firstWork?.repsMax ?? null);
-  return res && { ...res, reps: repsTarget };
 }
 
 // ----- quick text entry: "3x8 80", "80x8, 8, 7", "5x5@100" -----

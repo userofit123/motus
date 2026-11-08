@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // One exercise in the running workout: its reminders and pinned notes when it comes up, and the sets table
-// (Previous · kg · Reps · ✓). Last time's numbers are already filled in; tap Previous to copy it, tick to log the set.
+// (Previous · kg · Reps · ✓). The routine's numbers are already filled in (last time's in an empty workout); tap Previous to copy it, tick to log the set.
 import { computed, ref, onBeforeUnmount } from "vue";
 import { usesWeight, usesReps, usesDuration, usesDistance, toM, fromM, parseQuick, warmups, muscleName, type WorkoutExercise, type WorkoutSet } from "@motus/shared";
 import { SET_KINDS } from "../core/format";

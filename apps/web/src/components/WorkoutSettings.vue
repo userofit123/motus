@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // A workout's settings (PLAN.md §8.4.3), in the same groups, order and words as Settings → Workout defaults (one list
 // for both: core/workoutPrefs.ts). Each shows the default, can be changed for this workout only, or saved as the new
-// default. Before the start (`atStart`) it also offers how sets are filled in; during a workout those can't change.
+// default.
 import { computed } from "vue";
 import type { WorkoutPrefs } from "@motus/shared";
 import { useSettings, saveSettings } from "../api/queries";
@@ -10,9 +10,8 @@ import { prefGroups } from "../core/workoutPrefs";
 import PrefRow from "./PrefRow.vue";
 
 const model = defineModel<Record<string, unknown>>({ default: {} });
-const props = defineProps<{ atStart?: boolean }>();
 const s = useSettings();
-const groups = computed(() => prefGroups(s.value, !props.atStart));
+const groups = computed(() => prefGroups(s.value));
 const val = (k: keyof WorkoutPrefs) => (k in model.value ? model.value[k] : s.value.workout[k]);
 function set(k: keyof WorkoutPrefs, v: unknown) {
   const o = { ...model.value };

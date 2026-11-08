@@ -47,8 +47,10 @@ describe("activity log", () => {
     expect(entries.filter((e: any) => e.kind === "workout")).toHaveLength(2); // the start, hours earlier, stays its own entry
     await call(A, "POST", `/workouts/${workoutId}/finish`, {});
     ({ entries } = await log());
-    expect(entries[0]).toMatchObject({ kind: "workout", action: "finished", text: `Finished ${w.name}`, detail: "3 sets", open: { kind: "workout", id: workoutId } });
-    expect(entries[0].open.live).toBeUndefined();
+    // finishing also gives the routine today's numbers: that is the routine's own entry
+    const fin = entries.find((e: any) => e.kind === "workout");
+    expect(fin).toMatchObject({ kind: "workout", action: "finished", text: `Finished ${w.name}`, detail: "3 sets", open: { kind: "workout", id: workoutId } });
+    expect(fin.open.live).toBeUndefined();
   });
   it("describes goals, body entries, notes, settings and deletions", async () => {
     await age(5);

@@ -1,5 +1,6 @@
 // Everything in and out: the full backup/export (JSON), restore (replace or merge), CSV export in Strong's layout,
 // and imports from Strong, Hevy and FitNotes CSV files.
+import { cleanProgression } from "@motus/shared";
 import type { Router, Ctx } from "../router";
 import type { Sql } from "../db";
 import { uuidv7, isUuid } from "../ids";
@@ -148,6 +149,12 @@ export async function importAll(ctx: Ctx, data: any, mode: "replace" | "merge") 
       const row: Record<string, unknown> = {};
       for (const [k, v] of Object.entries(raw)) if (/^[a-z_0-9]+$/.test(k)) row[k] = fix(v);
       if (t === "routines") row.based_on_id = null;
+      // a backup from before "Keep these numbers fixed" and Progression (015_routine_now): carried over the same way
+      if (t === "routine_exercises") {
+        if (!("fixed" in row)) row.fixed = row.prefill === "target";
+        row.progression = cleanProgression(row.progression);
+        delete row.prefill; delete row.prefill_scope;
+      }
       row[OWNER_COL[t] ?? "user_id"] = ctx.userId;
       if (t === "exercises") row.source = "custom";
       // a note or reminder limited to one routine means nothing without it: left out rather than made unlimited
