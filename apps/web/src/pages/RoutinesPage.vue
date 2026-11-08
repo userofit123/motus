@@ -5,7 +5,7 @@ import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { duration, muscleName, type RoutineSummary } from "@motus/shared";
 import MuscleFig from "../components/MuscleFig.vue";
-import { useRoutines, useFolders, useChange, usePrograms, loaded } from "../api/queries";
+import { useRoutines, useFolders, usePrograms, loaded } from "../api/queries";
 import { api } from "../api/client";
 import { ago } from "../core/format";
 import { readJson, writeJson } from "../core/prefs";

@@ -15,6 +15,6 @@ export const bodySheet = ref<boolean | string>(false);
 /** The daily log sheet: steps, sleep, water, mood */
 export const dailySheet = ref(false);
 /** The schedule editor, opened from anywhere (a routine's ⋮ menu); an existing schedule to edit it, or just the routine to plan */
-export const scheduleSheet = ref<any>(null);
+export const scheduleSheet = ref<null | { id?: string; routineId?: string | null; activityType?: string | null; rule?: string; [key: string]: unknown }>(null);
 /** The earlier versions of a routine (its id) */
 export const versionsSheet = ref<string | null>(null);

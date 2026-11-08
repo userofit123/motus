@@ -7,15 +7,15 @@ import { confirm, prompt, choose } from "./ask";
 import { toast, toastError } from "./toast";
 import { saveFile } from "./saveFile";
 import { noteSheet, reminderSheet, scheduleSheet, versionsSheet } from "./ui";
+import type { Folder, Routine } from "@motus/shared";
 import type { MenuItem } from "../components/Menu.vue";
 
 export type MenuRoutine = { id: string; name: string; pinned: boolean; archived: boolean };
 
-/** page: the menu on the routine's own page, which already has a Start button and leaves the page when the routine goes. */
 export function useRoutineMenu() {
   const router = useRouter(), settings = useSettings();
   async function moveTo(r: MenuRoutine) {
-    const fs = (await api.get("/folders")) as any[];
+    const fs = await api.get<Folder[]>("/folders");
     const v = await choose(`Move ${r.name} to`, [...fs.map((f) => ({ label: f.name, value: f.id })), { label: "No folder", value: "" }, { label: "New folder…", value: "__new" }]);
     if (v == null) return;
     let fid: string | null = v || null;
@@ -30,7 +30,8 @@ export function useRoutineMenu() {
     toast("Routine deleted", { action: { label: "Undo", run: async () => { await api.post(`/routines/${r.id}/restore`); invalidate(["routines", "home"]); } } });
     if (page) router.push("/routines");
   }
-  const set = (r: MenuRoutine, b: any, msg: string) => api.put(`/routines/${r.id}`, b).then(() => { invalidate(["routines"]); toast(msg); }).catch(toastError);
+  const set = (r: MenuRoutine, b: Partial<Pick<Routine, "pinned" | "archived" | "folderId">>, msg: string) => api.put(`/routines/${r.id}`, b).then(() => { invalidate(["routines"]); toast(msg); }).catch(toastError);
+  /** page: the menu on the routine's own page, which already has a Start button and leaves the page when the routine goes. */
   return (r: MenuRoutine, page = false): MenuItem[] => [
     { label: "Start", icon: "play", hidden: page, run: () => router.push(`/routines/${r.id}/start`) },
     { label: "Edit", icon: "edit", run: () => router.push(`/routines/${r.id}/edit`) },
@@ -44,7 +45,7 @@ export function useRoutineMenu() {
     { label: r.archived ? "Restore from archive" : "Archive", icon: "archive", run: () => set(r, { archived: !r.archived }, r.archived ? "Routine restored" : "Routine archived") },
     { label: "Earlier versions", icon: "history", run: () => (versionsSheet.value = r.id) },
     { label: "Send a copy to…", icon: "share", hidden: !settings.value.features.sharing, run: async () => { const u = await prompt("Send a copy to", { placeholder: "Their username on this server" }); if (u) { try { await api.post("/share/routine", { routineId: r.id, username: u }); toast(`Sent to ${u}`); } catch (e) { toastError(e); } } } },
-    { label: "Export", icon: "download", run: async () => { try { const full = await api.get<any>(`/routines/${r.id}`); await saveFile(new Blob([JSON.stringify({ motusRoutine: 1, ...full }, null, 2)], { type: "application/json" }), `${r.name}.motusroutine`); } catch (e) { toastError(e); } } },
+    { label: "Export", icon: "download", run: async () => { try { const full = await api.get<Routine>(`/routines/${r.id}`); await saveFile(new Blob([JSON.stringify({ motusRoutine: 1, ...full }, null, 2)], { type: "application/json" }), `${r.name}.motusroutine`); } catch (e) { toastError(e); } } },
     { label: "Delete", icon: "trash", danger: true, sep: true, run: () => del(r, page) },
   ];
 }

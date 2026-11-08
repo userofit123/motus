@@ -12,7 +12,7 @@ const props = defineProps<{ id: string }>();
 const emit = defineEmits<{ close: [] }>();
 const fmt = useFmt();
 const versions = useQuery({ queryKey: ["routines", "versions", props.id], queryFn: () => api.get(`/routines/${props.id}/versions`) });
-async function restore(v: any) {
+async function restore(v: { id: string }) {
   if (!(await confirm("Restore this version?", { text: "The current version is kept in the history too.", ok: "Restore" }))) return;
   await api.post(`/routines/${props.id}/versions/${v.id}/restore`); invalidate(["routines"]); emit("close"); toast("Restored");
 }

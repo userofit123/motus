@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Panels any screen can open: Start, an exercise, a note, a reminder, an activity, body weight, Appearance.
+// Panels any screen can open: Start, an exercise, a note, a reminder, an activity, body weight, Appearance, the schedule editor, a routine's earlier versions.
 import { exerciseSheet, noteSheet, reminderSheet, activitySheet, bodySheet, dailySheet, startOpen, scheduleSheet, versionsSheet } from "../core/ui";
 import ScheduleEditor from "../components/ScheduleEditor.vue";
 import RoutineVersions from "./RoutineVersions.vue";
