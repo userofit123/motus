@@ -117,7 +117,7 @@ export const DEFAULT_SETTINGS: Settings = {
   workout: {
     autoRest: true, restEndNext: true, restBetweenSetsS: 90, restAfterExerciseS: 150, restByKindS: {}, sessionNotice: true, countdown: true,
     sound: true, vibrate: true, warn10: true, voice: false, keepAwake: true, lockScreen: true, showWarmups: true, autoAdvance: true,
-    showPrevious: true, showReminders: true, confirmSkip: false,
+    showPrevious: false, showReminders: true, confirmSkip: false,
   },
   increments: { kg: 2.5, lb: 5 },
   progression: { mode: "suggest", lowerAfter: 3 },

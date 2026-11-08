@@ -15,7 +15,7 @@ export interface PrefGroup { id: "fill" | "timer" | "during"; title: string; row
 
 export const WORKOUT_PREF_GROUPS: PrefGroup[] = [
   { id: "fill", title: "Sets", rows: [
-    { key: "showPrevious", label: "Show last time's numbers", hint: "Beside each set" },
+    { key: "showPrevious", label: "Show last time's numbers", hint: "A Previous column beside each set" },
     { key: "showWarmups", label: "Show warm-up sets", hint: "", feature: "setTypes" },
   ] },
   { id: "timer", title: "Rest timer", rows: [

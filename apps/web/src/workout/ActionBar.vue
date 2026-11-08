@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // The controls of the running workout, in one sheet at the bottom: everything you press is here, always for the exercise
-// being done now (state.active), whichever one is on screen above. A set to do: which set, last time's numbers, the
+// being done now (state.active), whichever one is on screen above. A set to do: which set, the
 // weight and reps with - and + for thumbs, the rest after it, then Pause, Skip and Done. Resting: a ring counting down,
 // with -15 and +15 either side. When an exercise is finished: on to the next, or Finish. The workout's Pause is always
 // the first button of the bottom row.
@@ -33,14 +33,6 @@ const setLabel = computed(() => {
   if (x.kind === "drop") return `Drop set · set ${work.value.indexOf(parentOf(x)) + 1} of ${work.value.length}`;
   return `${x.kind === "failure" ? "Set to failure" : "Set"} ${work.value.indexOf(x) + 1} of ${work.value.length}`;
 });
-const short = (x: WorkoutSet) => (x.kind === "warmup" ? "W" : x.kind === "drop" ? "D" : x.kind === "failure" ? "F" : String(work.value.indexOf(x) + 1));
-const prevText = (x: WorkoutSet) => {
-  const p = x.prev; if (!p) return "-";
-  const wt = usesWeight(tr.value) && p.weightKg != null ? fmt.value.w(p.weightKg) : "", r = usesReps(tr.value) && p.reps != null ? String(p.reps) : "";
-  const d = usesDuration(tr.value) && p.durationS ? fmt.value.clock(p.durationS) : "";
-  return [wt, r, d].filter(Boolean).join(" × ") || "-";
-};
-const hasPrev = computed(() => shown.value.some((x) => x.prev));
 
 const resting = computed(() => restActive() || (rest.done && !!rest.endAt));
 const left = computed(() => restLeft());
@@ -103,10 +95,6 @@ const RING = 2 * Math.PI * 58;
         <span class="ab-k grow ellipsis"><b>{{ e.exercise?.name }}</b> · {{ setLabel }}</span>
         <button class="qb ab-rp" title="Rest after this set" @click="editingRest = true"><Icon name="timer" :size="14" />{{ restAfter ? `${clock(restAfter)} rest` : "No rest" }}</button>
       </div>
-      <div v-if="hasPrev" class="ab-last">
-        <span class="ab-k">Last time</span>
-        <span v-for="x in shown" :key="x.id" class="lt" :class="{ n: x === s }"><small>{{ short(x) }}</small>{{ prevText(x) }}</span>
-      </div>
       <div class="ab-in">
         <NumStep v-if="usesWeight(tr)" big :value="wNum(s.weightKg)" :step="wStep" :max="2000" :unit="fmt.wu" label="weight" @set="(v) => W.editSet(s!, { weightKg: fmt.toKg(v) })" />
         <NumStep v-if="usesReps(tr)" big :value="s.reps ?? s.targetReps ?? null" :min="0" :max="1000" unit="reps" label="reps" @set="(v) => W.editSet(s!, { reps: v })" />
@@ -141,12 +129,6 @@ const RING = 2 * Math.PI * 58;
 .ab-k b { color: var(--tx); font-weight: 600; font-size: 14px; }
 .ab-rp { flex: none; font-size: 12.5px; padding: 4px 8px; font-variant-numeric: tabular-nums; }
 .ab-n2 { font-size: 14px; font-weight: 600; }
-.ab-last { display: flex; align-items: center; gap: 6px; overflow-x: auto; scrollbar-width: none; }
-.ab-last::-webkit-scrollbar { display: none; }
-.ab-last .ab-k { flex: none; margin-inline-end: 2px; }
-.lt { flex: none; display: inline-flex; align-items: baseline; gap: 4px; font-size: 12.5px; font-variant-numeric: tabular-nums; color: var(--tx2); padding: 3px 8px; border-radius: var(--pill); background: var(--s2); }
-.lt small { font-size: 10.5px; font-weight: 700; opacity: .7; }
-.lt.n { background: var(--accc); color: var(--onc); font-weight: 600; }
 .ab-in { display: flex; gap: 8px; }
 .ab-in :deep(.nstep) { flex: 1; justify-content: space-between; background: var(--bg); }
 .ab-row { display: flex; align-items: center; gap: 8px; }
