@@ -38,6 +38,8 @@ function sync(sg) {
   const k = keyOf(sg), idx = bs.indexOf(b), g = { l: b.offsetLeft, r: b.offsetLeft + b.offsetWidth, t: b.offsetTop, b: b.offsetTop + b.offsetHeight }, h = g.b - g.t;
   const R = Math.round(Math.max(1, Math.min(parseFloat(getComputedStyle(b).borderTopLeftRadius) || 99, h / 2))), M = Math.min(R, Math.max(3, Math.round(h * 0.3)));
   const lo = Math.min(...bs.map((x) => x.offsetLeft)), hi = Math.max(...bs.map((x) => x.offsetLeft + x.offsetWidth)), rd = bs.length < 2 ? R + "px" : rad(R, M, g.l <= lo + 1, g.r >= hi - 1);
+  // rows that left the page (a closed popup) would otherwise stay here for good
+  for (const [kk, v] of st) if (v.el && !v.el.isConnected && v.el !== sg) st.delete(kk);
   let s = st.get(k);
   const e = pill.firstChild;
   const rest = () => { if (s.anim) { s.anim.cancel(); s.anim = null; } put(pill, g, g.l, g.r, rd); s.cur = { l: g.l, r: g.r, rd }; s.g = g; };

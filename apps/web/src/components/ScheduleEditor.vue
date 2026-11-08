@@ -3,7 +3,7 @@
 // time and reminder, and one line saying what will happen. Nothing is saved until the Plan / Save button.
 // Opened without a routine (from Home or the calendar), it first asks what to plan.
 import { computed, ref, watch } from "vue";
-import { scheduleSummary } from "@motus/shared";
+import { scheduleSummary, type Schedule } from "@motus/shared";
 import { useRoutines, useActivityTypes } from "../api/queries";
 import { api } from "../api/client";
 import { invalidate } from "../api/live";
@@ -42,15 +42,19 @@ const startDate: string = s.startDate ?? localYmd(new Date());
 const f = ref({ rule: daily ? "daily" : (s.rule ?? "once") as string, days: [...(s.days?.length ? s.days : [dow(startDate)])] as number[], intervalDays: s.intervalDays > 1 ? s.intervalDays : 2,
   startDate, endDate: s.endDate ?? "", timeOfDay: s.timeOfDay ?? "", remind: s.remindMin != null, remindMin: s.remindMin ?? 30 });
 // "Every week" follows the chosen day: moving the start from a Monday to a Thursday moves a Monday-only plan with it
-watch(() => f.value.startDate, (d, old) => { const x = f.value.days; if (x.length === 1 && x[0] === dow(old)) f.value.days = [dow(d)]; });
+// an end that the new start has passed is dropped rather than left before the start
+watch(() => f.value.startDate, (d, old) => {
+  const x = f.value.days; if (x.length === 1 && x[0] === dow(old)) f.value.days = [dow(d)];
+  if (f.value.endDate && f.value.endDate < d) f.value.endDate = "";
+});
 watch(() => f.value.rule, (r) => { if (r === "weekly" && !f.value.days.length) f.value.days = [dow(f.value.startDate)]; });
 const repeats = computed(() => f.value.rule !== "once");
-const ready = computed(() => !!what.value && (f.value.rule !== "weekly" || f.value.days.length > 0) && (f.value.rule !== "interval" || f.value.intervalDays >= 1));
+const ready = computed(() => !!what.value && (f.value.rule !== "weekly" || f.value.days.length > 0) && (f.value.rule !== "interval" || f.value.intervalDays >= 1) && (!f.value.endDate || f.value.endDate >= f.value.startDate));
 const body = computed(() => {
   const d = f.value.rule === "daily";
-  return { rule: d ? "interval" : f.value.rule, days: f.value.days, intervalDays: d ? 1 : f.value.intervalDays, startDate: f.value.startDate, endDate: repeats.value ? f.value.endDate || null : null, timeOfDay: f.value.timeOfDay || null };
+  return { rule: (d ? "interval" : f.value.rule) as Schedule["rule"], days: f.value.days, intervalDays: d ? 1 : f.value.intervalDays, startDate: f.value.startDate, endDate: repeats.value ? f.value.endDate || null : null, timeOfDay: f.value.timeOfDay || null };
 });
-const summary = computed(() => scheduleSummary(body.value as any, fmt.value.day));
+const summary = computed(() => scheduleSummary(body.value, fmt.value.day));
 async function save() {
   try {
     const [k, v] = [what.value.slice(0, 1), what.value.slice(2)];

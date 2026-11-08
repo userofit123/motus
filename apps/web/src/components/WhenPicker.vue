@@ -19,9 +19,9 @@ async function pickOther() { other.value = true; await nextTick(); dp.value?.sho
 
 <template>
   <div class="seg block" role="radiogroup" :aria-label="title ?? 'When'">
-    <button type="button" :class="{ on: which === 'today' }" @click="set(today)">Today</button>
-    <button type="button" :class="{ on: which === 'tomorrow' }" @click="set(tomorrow)">Tomorrow</button>
-    <button type="button" :class="{ on: which === 'other' }" @click="pickOther">Pick a date</button>
+    <button type="button" role="radio" :aria-checked="which === 'today'" :class="{ on: which === 'today' }" @click="set(today)">Today</button>
+    <button type="button" role="radio" :aria-checked="which === 'tomorrow'" :class="{ on: which === 'tomorrow' }" @click="set(tomorrow)">Tomorrow</button>
+    <button type="button" role="radio" :aria-checked="which === 'other'" :class="{ on: which === 'other' }" @click="pickOther">Pick a date</button>
   </div>
   <DatePicker v-if="which === 'other'" ref="dp" :model-value="modelValue" :title="title ?? 'Choose a day'" @update:model-value="(v: string) => v && emit('update:modelValue', v)" />
 </template>
