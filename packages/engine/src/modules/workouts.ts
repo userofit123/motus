@@ -234,12 +234,12 @@ async function insertSets(ctx: Ctx, weId: string, sets: any[], startPos = 0) {
     // user's set; an id taken by someone else's row is refused (and says nothing about that row).
     const res = await ctx.q.query(
       `INSERT INTO workout_sets (id, user_id, workout_exercise_id, position, kind, weight_kg, reps, duration_s, distance_m, rpe, rir, side, done, done_at,
-         rest_planned_s, rest_actual_s, target_reps, target_weight_kg, prefilled)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)${given ? " ON CONFLICT (id) DO NOTHING" : ""} RETURNING id`,
+         rest_planned_s, rest_actual_s, target_reps, target_weight_kg, prefilled, target_reps_max)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)${given ? " ON CONFLICT (id) DO NOTHING" : ""} RETURNING id`,
       [given ?? uuidv7(), ctx.userId, weId, startPos + i, oneOf(s.kind, KINDS, "normal"), numOrNull(s.weightKg, -500, 2000), intOrNull(s.reps, 0, 10000),
         intOrNull(s.durationS, 0, 86400), numOrNull(s.distanceM, 0, 1e7), numOrNull(s.rpe, 0, 10), numOrNull(s.rir, 0, 20), s.side ? str(s.side, 5) : null,
         bool(s.done), s.done ? (s.doneAt ? isoTime(s.doneAt) : ctx.now().toISOString()) : null, intOrNull(s.restS ?? s.restPlannedS, 0, 3600),
-        intOrNull(s.restActualS, 0, 86400), intOrNull(s.targetReps, 0, 10000), numOrNull(s.targetWeightKg, -500, 2000), bool(s.prefilled)]);
+        intOrNull(s.restActualS, 0, 86400), intOrNull(s.targetReps, 0, 10000), numOrNull(s.targetWeightKg, -500, 2000), bool(s.prefilled), intOrNull(s.targetRepsMax, 0, 10000)]);
     if (!res.rows.length && !(await ownSet(ctx, given!, weId))) throw bad("That set id is already in use");
   }
 }
@@ -582,9 +582,25 @@ export function workoutRoutes(r: Router) {
     await ctx.q.query(
       `UPDATE reminders SET status = 'done', done_at = now() WHERE status = 'pending' AND last_shown_workout_id = $1 AND created_workout_id IS DISTINCT FROM $1
          AND (trigger = 'next' OR (trigger = 'after_n' AND seen_n >= coalesce(trigger_n, 1)) OR (trigger = 'date' AND trigger_date <= $2::date))`, [wid, end.slice(0, 10)]);
-    if (b?.updateRoutine && w.routine_id) {
+    // "Ready for more weight" accepted on the Finish screen: a reminder that starts next time at that weight and those reps
+    // (a reminder, so it shows at the start, applies whether next time fills in last time's numbers or the routine's, and
+    // can be dismissed there)
+    const more = Array.isArray(b?.moreWeight) ? b.moreWeight.slice(0, 50) : [];
+    for (const m of more) {
+      const exId = id(m?.exerciseId), kg = numOrNull(m?.weightKg, 0, 2000), reps = intOrNull(m?.reps, 1, 1000);
+      if (kg == null || !doneEx.includes(exId)) continue;
+      await ctx.q.query(
+        `INSERT INTO reminders (id, user_id, target_type, target_id, scope_routine_id, body, trigger, action, created_workout_id)
+         VALUES ($1,$2,'exercise',$3,$4,$5,'next',$6,$7)`,
+        [uuidv7(), ctx.userId, exId, w.routine_id, str(m?.body, 200) || "More weight", JSON.stringify({ setWeightKg: kg, ...(reps ? { setReps: reps } : {}) }), wid]);
+    }
+    if (more.length) ctx.changed("reminder");
+    // the routine's layout (exercises added, removed, swapped, moved; sets added or left out) is only saved when ticked
+    // on the Finish screen, and then without today's numbers: those carry over to next time anyway (prefillFromLast).
+    // updateRoutine is what older apps send for the same switch.
+    if ((b?.saveLayout || b?.updateRoutine) && w.routine_id) {
       const { updateRoutineFromWorkout } = await import("./routines");
-      await updateRoutineFromWorkout(ctx, w.routine_id, wid);
+      await updateRoutineFromWorkout(ctx, w.routine_id, wid, { numbers: false });
       ctx.changed("routine");
     }
     ctx.changed("workout");

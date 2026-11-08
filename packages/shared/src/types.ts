@@ -179,6 +179,8 @@ export interface WorkoutSet {
   restPlannedS: number | null;
   restActualS: number | null;
   targetReps: number | null;
+  /** the top of the rep range when the routine gives one ("8-12": 8 and 12) */
+  targetRepsMax?: number | null;
   targetWeightKg: number | null;
   prefilled: boolean;
   // the same set last time (for the "Previous" column)
@@ -261,6 +263,9 @@ export interface Note {
 export interface ReminderAction {
   weightKg?: number; // add to the pre-filled weight
   reps?: number; // add to the pre-filled reps
+  // "Ready for more weight" accepted on the Finish screen: the working sets start at exactly this weight and these reps
+  setWeightKg?: number;
+  setReps?: number;
   restS?: number; // set the rest
 }
 export interface Reminder {

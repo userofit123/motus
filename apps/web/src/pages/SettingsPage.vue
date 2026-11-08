@@ -70,7 +70,7 @@ async function editPlates() {
 }
 type Toggle = [keyof Settings["workout"], string, string];
 const TOGGLES: Record<"fill" | "timer" | "during", Toggle[]> = {
-  fill: [["prefillFromLast", "Fill in last time's numbers", "Otherwise each routine's targets"], ["showPrevious", "Show last time's numbers", "Beside each set"]],
+  fill: [["prefillFromLast", "Start from what you did last time", "Weights and reps fill in from last time. Off: the routine's own numbers"], ["showPrevious", "Show last time's numbers", "Beside each set"]],
   timer: [["autoRest", "Start the rest timer when a set is ticked", ""], ["restEndNext", "Go to the next set when the rest ends", "Otherwise it waits on \"Rest over\" until you tap Next set"], ["sound", "Sound when the rest ends", ""], ["vibrate", "Vibrate when the rest ends", ""],
     ["warn10", "Warn 10 seconds before the rest ends", ""], ["countdown", "3-2-1 before timed sets", ""], ["lockScreen", "Rest timer on the lock screen", "Android app"]],
   during: [["autoAdvance", "Go to the next exercise when one is done", ""], ["keepAwake", "Keep the screen on", ""], ["sessionNotice", "Show the workout as a notification", "Its name, the exercise and set you're on, and how far along you are"],
@@ -177,7 +177,6 @@ await loaded(me);
           <div class="card">
             <label v-for="[k, l, d] in TOGGLES.fill" :key="k" class="tgl"><div class="grow"><div class="t">{{ l }}</div><div v-if="d" class="s">{{ d }}</div></div><span class="tg"><input type="checkbox" :checked="w[k] as boolean" @change="set({ workout: { [k]: ($event.target as HTMLInputElement).checked } })" /></span></label>
             <div class="li"><div class="grow"><div class="t">Last time's numbers come from</div></div><AppSelect :model-value="w.prefillScope" :options="[{ value: 'any', label: 'Any routine' }, { value: 'routine', label: 'The same routine' }]" title="Last time's numbers come from" style="width:auto" @update:model-value="(v) => set({ workout: { prefillScope: v } })" /></div>
-            <div class="li"><div class="grow"><div class="t">After a workout, update its routine</div><div class="s">When you changed things (exercises added, sets left unticked, other weights or reps). Ask: a switch on the Finish screen, off to start with, as it also removes the sets you didn't tick from the routine. Always: updated without asking.</div></div><AppSelect :model-value="w.updateRoutine" :options="[{ value: 'ask', label: 'Ask' }, { value: 'always', label: 'Always' }, { value: 'never', label: 'Never' }]" title="Update the routine" style="width:auto" @update:model-value="(v) => set({ workout: { updateRoutine: v } })" /></div>
           </div>
           <template v-for="[h, list] in [['Rest timer', TOGGLES.timer], ['During a workout', TOGGLES.during]] as const" :key="h">
             <div class="sh"><h2>{{ h }}</h2></div>

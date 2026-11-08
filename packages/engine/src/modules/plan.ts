@@ -106,6 +106,8 @@ export async function buildPlan(q: Sql, routine: any, settings: Settings, today:
     const prevs = matchPrev(kinds, last?.sets ?? []);
     const exReminders = reminders.filter((r) => r.targetType === "exercise" && r.targetId === re.exerciseId);
     const delta = exReminders.reduce((a, r) => ({ w: a.w + (r.action?.weightKg ?? 0), r: a.r + (r.action?.reps ?? 0) }), { w: 0, r: 0 });
+    // "Ready for more weight" accepted on the Finish screen: an exact weight and reps (the newest such reminder wins)
+    const exact = exReminders.filter((r) => r.action?.setWeightKg != null).at(-1)?.action ?? null;
 
     let suggestion: string | null = null, progWeight: number | null = null;
     const prog: Progression | null = re.progression;
@@ -130,6 +132,10 @@ export async function buildPlan(q: Sql, routine: any, settings: Settings, today:
         else parentShift = 0;
         if (delta.w && weightKg != null) { weightKg = Math.round((weightKg + delta.w) * 100) / 100; adjusted = true; }
         if (delta.r && reps != null) { reps += delta.r; adjusted = true; }
+        if (exact && s.kind !== "drop") {
+          parentShift += exact.setWeightKg! - (weightKg ?? exact.setWeightKg!);
+          weightKg = exact.setWeightKg!; if (exact.setReps != null) reps = exact.setReps; adjusted = true;
+        }
       }
       const isLastSet = i === re.sets.length - 1;
       return {

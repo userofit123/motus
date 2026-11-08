@@ -12,6 +12,7 @@ import m009 from "./migrations/009_activity_steps_nullable";
 import m010 from "./migrations/010_weekly_target_scope";
 import m011 from "./migrations/011_workouts_routine_index";
 import m012 from "./migrations/012_schedule_monthly";
+import m013 from "./migrations/013_set_rep_range";
 
 const MIGRATIONS: [string, string][] = [
   ["001_init", m001],
@@ -26,6 +27,7 @@ const MIGRATIONS: [string, string][] = [
   ["010_weekly_target_scope", m010],
   ["011_workouts_routine_index", m011],
   ["012_schedule_monthly", m012],
+  ["013_set_rep_range", m013],
 ];
 
 export async function migrate(db: Db): Promise<string[]> {

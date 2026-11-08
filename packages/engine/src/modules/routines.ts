@@ -123,8 +123,11 @@ async function bodyFromWorkout(q: Sql, workoutId: string) {
 }
 
 /** "Update the routine from this workout": today's exercises, order and numbers, keeping each exercise's own settings
- * (prefill, progression, note, rep ranges, rests) and the routine as it was in its history. */
-export async function updateRoutineFromWorkout(ctx: Ctx, routineId: string, workoutId: string) {
+ * (prefill, progression, note, rep ranges, rests) and the routine as it was in its history. With `numbers: false`
+ * (the Finish screen's "Save these changes to the routine") only the layout changes: exercises the routine already had
+ * keep their own weights and reps, sets added today copy the exercise's last set, and only new exercises take today's. */
+export async function updateRoutineFromWorkout(ctx: Ctx, routineId: string, workoutId: string, opts: { numbers?: boolean } = {}) {
+  const numbers = opts.numbers ?? true;
   const body = await bodyFromWorkout(ctx.q, workoutId);
   if (!body.length) return;
   await snapshot(ctx, routineId);
@@ -137,7 +140,11 @@ export async function updateRoutineFromWorkout(ctx: Ctx, routineId: string, work
     if ("kept" in e) return e.kept;
     const old: any = e.id ? cur.get(e.id) : null;
     if (!old) return e;
-    return { ...old, exerciseId: e.exerciseId, sets: e.sets.map((s: any, i: number) => ({ ...(old.sets?.[i] ?? old.sets?.at(-1) ?? {}), ...s })) };
+    return { ...old, exerciseId: e.exerciseId, sets: e.sets.map((s: any, i: number) => {
+      const was = old.sets?.[i] ?? old.sets?.at(-1);
+      if (numbers || !was) return { ...(was ?? {}), ...s };
+      return { ...was, kind: s.kind };
+    }) };
   }));
 }
 
@@ -227,7 +234,7 @@ export function routineRoutes(r: Router) {
     return { id: rid };
   });
 
-  // update a routine from a workout (the finish screen's "Update routine with today's values")
+  // update a routine from a workout, numbers and all (a finished workout's ⋮ menu: "Update the routine from this")
   r.post("/routines/:id/from-workout", async (ctx, p, b) => {
     const rid = id(p.id);
     if (!(await ctx.q.query("SELECT 1 FROM routines WHERE id = $1", [rid])).rows.length) throw notFound("Routine not found");

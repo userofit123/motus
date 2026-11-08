@@ -10,7 +10,7 @@ const model = defineModel<Record<string, unknown>>({ default: {} });
 defineProps<{ routineId?: string }>();
 const s = useSettings();
 const ROWS = computed(() => ([
-  ["prefillFromLast", "Fill in last time's numbers", "Otherwise the routine's targets"],
+  ["prefillFromLast", "Start from what you did last time", "Weights and reps fill in from last time. Off: the routine's own numbers"],
   ["autoRest", "Start the rest timer when a set is ticked", ""],
   ["restEndNext", "Go to the next set when the rest ends", "Otherwise it waits on \"Rest over\" until you tap Next set"],
   ["countdown", "3-2-1 before timed sets", ""],

@@ -1,14 +1,16 @@
 <script setup lang="ts">
 // Finishing: the workout's summary first (time, how it went against the plan and against last time, what was done),
-// then how it felt, notes, body weight, the routine update (as Settings → Workout says: asked here, done anyway, or
-// never) and one-tap reminders to add weight where every rep target was reached.
+// then what it means for next time, kept as two separate things: next time's numbers (filled in from today, plus a
+// weight step up where the top of the rep range was reached, each one can be switched off) and the routine's layout
+// (exercises or sets changed today: listed, and only saved when switched on). Then how it felt, notes, body weight.
 import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
-import { workoutScore, workoutSoFar, type WorkoutExercise } from "@motus/shared";
+import { readyForMore, structureChanges, workoutScore, workoutSoFar, type StructureChange } from "@motus/shared";
 import { useWorkout, endWorkout, finishDraft } from "./useWorkout";
 import { api } from "../api/client";
 import { settle } from "../api/outbox";
 import { invalidate } from "../api/live";
+import { useRoutine } from "../api/queries";
 import { toast, toastError } from "../core/toast";
 import { elapsed, finishRest } from "./runtime";
 import { keepAwake } from "./native";
@@ -24,10 +26,6 @@ const w = computed(() => W.state.w!);
 const fmt = W.fmt;
 // the typed-in answers live outside the sheet, so tapping an exercise line (which closes it) loses nothing
 const d = finishDraft(w.value), busy = ref(false);
-// Settings → Workout → "After a workout, update its routine": Ask shows the switch (off until ticked, as updating
-// also drops unticked sets); Always updates without asking (the changes are listed); Never hides it all.
-const mode = computed(() => W.prefs.value.updateRoutine);
-const updateRoutine = computed(() => mode.value === "always" || (mode.value === "ask" && d.askUpdate));
 const secs = computed(() => elapsed(w.value));
 const records = computed(() => workoutSoFar(w.value).records);
 const sc = computed(() => workoutScore(w.value));
@@ -53,30 +51,21 @@ const vsLast = computed(() => {
     trend: l.verdict === "better" ? "up" : l.verdict === "worse" ? "down" : null,
   };
 });
-// what "update the routine" would change, in words: exercises added today, unticked sets dropped, new numbers
-// (skipped exercises stay in the routine as they were)
-const routineChanges = computed(() => !w.value.routineId ? [] : w.value.exercises.filter((e) => e.status !== "skipped" && e.sets.some((s) => s.done)).flatMap((e) => {
-  const name = e.exercise.name;
-  if (!e.routineExerciseId) return [`Adds ${name}`];
-  const left = e.sets.filter((s) => !s.done).length;
-  const nums = e.sets.some((s) => s.done && (s.weightKg !== s.targetWeightKg || (s.targetReps != null && s.reps !== s.targetReps)));
-  const parts = [nums ? "today's weights and reps" : "", left ? `without the ${left} unticked set${left > 1 ? "s" : ""}` : ""].filter(Boolean);
-  return parts.length ? [`${name}: ${parts.join(", ")}`] : [];
-}));
-const changedFromPlan = computed(() => routineChanges.value.length > 0);
-// exercises with weight where every working set was done and reached its target reps: offer "add weight next time".
-// At least one set must have had a rep target, or "every target reached" would be true of no targets at all.
-const hitAll = computed(() => w.value.exercises.filter((e) => {
-  const work = e.sets.filter((s) => s.kind !== "warmup");
-  return e.status !== "skipped" && e.exercise?.tracking !== "assisted" && work.some((s) => s.targetReps != null) && work.some((s) => s.weightKg)
-    && work.every((s) => s.done && (s.targetReps == null || (s.reps ?? 0) >= s.targetReps));
-}));
-const reminded = ref<string[]>([]);
-async function remind(e: WorkoutExercise) {
-  const inc = W.incKg.value;
-  await api.post("/reminders", { targetType: "exercise", targetId: e.exerciseId, body: `Add ${fmt.value.w(inc)} ${fmt.value.wu}`, action: { weightKg: inc }, workoutId: w.value.id });
-  reminded.value.push(e.id);
+// next time's numbers: Settings → Workout → "Start from what you did last time" (the saved choice, not a change made
+// for this workout only on the routine's start screen, as next time starts from the saved one)
+const fromToday = computed(() => W.settings.value.workout.prefillFromLast);
+const more = computed(() => readyForMore(w.value, W.incKg.value));
+const taken = computed(() => more.value.filter((m) => !d.skipMore.includes(m.workoutExerciseId)));
+function toggleMore(id: string) {
+  const i = d.skipMore.indexOf(id);
+  if (i >= 0) d.skipMore.splice(i, 1); else d.skipMore.push(id);
 }
+const range = (m: { reps: number; topReps: number }) => m.reps === m.topReps ? `${m.topReps}` : `${m.reps}-${m.topReps}`;
+const next = (m: { toKg: number; reps: number }) => `${fmt.value.w(m.toKg)} ${fmt.value.wu} × ${m.reps}`;
+// the routine's layout: what saving would change, against the routine as it is now
+const routine = useRoutine(computed(() => w.value.routineId ?? ""));
+const changes = computed<StructureChange[]>(() => w.value.routineId && routine.data.value ? structureChanges(routine.data.value, w.value) : []);
+const CHANGE_ICON: Record<StructureChange["kind"], string> = { added: "plus", removed: "minus", swapped: "swap", sets: "layers", order: "drag" };
 const unticked = computed(() => w.value.exercises.reduce((a, e) => a + (e.status === "skipped" ? 0 : e.sets.filter((s) => !s.done).length), 0));
 async function finish() {
   if (busy.value) return;
@@ -86,7 +75,11 @@ async function finish() {
     finishRest(true);
     // sets ticked while offline must reach the server first, or finishing would remove them as unticked
     if (!(await settle())) { toast("Can't reach the server yet: your sets are kept here. Finish again when you're back online.", { kind: "err" }); return; }
-    await api.post(`/workouts/${id}/finish`, { rating: d.rating, notes: d.notes, bodyweightKg: d.bw ? fmt.value.toKg(d.bw) : null, updateRoutine: updateRoutine.value });
+    await api.post(`/workouts/${id}/finish`, {
+      rating: d.rating, notes: d.notes, bodyweightKg: d.bw ? fmt.value.toKg(d.bw) : null,
+      saveLayout: changes.value.length > 0 && d.saveLayout,
+      moreWeight: taken.value.map((m) => ({ exerciseId: m.exerciseId, weightKg: m.toKg, reps: m.reps, body: `Ready for more weight: ${next(m)}` })),
+    });
     keepAwake(false);
     if (prs) toast(`${prs} new record${prs > 1 ? "s" : ""}!`, { kind: "pr" });
     // leave first, then drop it everywhere (this sheet lives on the workout screen, which needs it until then)
@@ -109,31 +102,44 @@ async function finish() {
     </div>
     <div class="spb"><WorkoutSoFar :w="w" final :vs-last="sc.vsLast" @open="emit('open', $event)" /></div>
     <div v-if="unticked" class="banner note"><Icon name="info" />{{ unticked }} set{{ unticked > 1 ? "s were" : " was" }} not ticked. They will be left out.</div>
-    <template v-if="hitAll.length">
-      <div class="sh"><h2>Ready for more weight</h2></div>
-      <p class="tiny">You did every set and reached every rep target on these. Set a reminder to add weight next time?</p>
-      <div class="list spb"><div v-for="e in hitAll" :key="e.id" class="li"><div class="grow" style="min-width:0"><div class="t ellipsis">{{ e.exercise.name }}</div></div>
-        <button class="btn s" :class="reminded.includes(e.id) ? 'o' : 'tonal'" :disabled="reminded.includes(e.id)" @click="remind(e)"><Icon :name="reminded.includes(e.id) ? 'check' : 'bell'" :size="14" />{{ reminded.includes(e.id) ? "Reminder set" : `Add ${fmt.w(W.incKg.value)} ${fmt.wu}` }}</button></div></div>
+
+    <div class="sh"><h2>Next time</h2></div>
+    <div class="card">
+      <div class="li"><Icon name="refresh" :size="18" class="fin-i" /><div class="grow"><div class="t">{{ fromToday ? "Starts from today's weights and reps" : "Starts from the routine's numbers" }}</div>
+        <div class="s">{{ fromToday ? "What you did fills in next time" : "Today's numbers show beside each set" }}</div></div></div>
+      <label v-for="m in more" :key="m.workoutExerciseId" class="tgl"><Icon name="arrowUp" :size="18" class="fin-i pos" />
+        <div class="grow" style="min-width:0"><div class="t ellipsis">{{ m.name }}</div>
+          <div class="s">{{ m.topReps }} reps in every set at {{ fmt.w(m.fromKg) }} {{ fmt.wu }} · next time <b class="fin-next">{{ next(m) }}</b></div></div>
+        <span class="tg"><input type="checkbox" :checked="!d.skipMore.includes(m.workoutExerciseId)" @change="toggleMore(m.workoutExerciseId)" /></span></label>
+    </div>
+    <p v-if="more.length" class="tiny fin-note">You reached the top of the rep range ({{ more.length === 1 ? range(more[0]!) : "each one's" }}) in every set: up one weight step, reps back to the bottom. Switch off any you'd rather repeat.</p>
+
+    <template v-if="changes.length">
+      <div class="sh"><h2>Routine changes</h2></div>
+      <p class="tiny">Today's layout differs from the routine. These stay in this workout unless you save them.</p>
+      <div class="card">
+        <div v-for="c in changes" :key="c.text" class="li"><Icon :name="CHANGE_ICON[c.kind]" :size="18" class="fin-i" /><div class="grow" style="min-width:0"><div class="t">{{ c.text }}</div></div></div>
+        <label class="tgl"><div class="grow"><div class="t">Save these changes to the routine</div><div class="s">{{ d.saveLayout ? "The routine changes as listed. Its weights and reps stay as set." : "Off: the routine stays as it is" }}</div></div>
+          <span class="tg"><input v-model="d.saveLayout" type="checkbox" /></span></label>
+      </div>
     </template>
+
+    <div class="sh"><h2>How it went</h2></div>
     <div class="fld"><label>How did it feel?</label><div class="seg block"><button v-for="k in 5" :key="k" :class="{ on: d.rating === k }" @click="d.rating = d.rating === k ? null : k">{{ ["Awful", "Meh", "OK", "Good", "Great"][k - 1] }}</button></div></div>
     <div class="fld"><label>Notes</label><textarea v-model="d.notes" rows="3" placeholder="Anything to remember about this workout" /></div>
     <div class="fld"><label>Body weight today ({{ fmt.wu }}, optional)</label><input v-model.number="d.bw" type="number" inputmode="decimal" step="0.1" /></div>
-    <template v-if="changedFromPlan && mode !== 'never'">
-      <label v-if="mode === 'ask'" class="tgl"><div class="grow"><div class="t">Also update the routine</div><div class="s">Next time starts from what you did today. Off to start with, as it also removes the sets you didn't tick from the routine:</div>
-        <ul class="rchg"><li v-for="c in routineChanges" :key="c">{{ c }}</li></ul><div class="s">Skipped exercises stay in the routine. You can make this automatic in Settings.</div></div><span class="tg"><input v-model="d.askUpdate" type="checkbox" /></span></label>
-      <div v-else class="banner note"><Icon name="refresh" /><div>The routine will be updated with today's sets:<ul class="rchg"><li v-for="c in routineChanges" :key="c">{{ c }}</li></ul></div></div>
-    </template>
     <button class="qb danger fin-cancel" @click="emit('cancel')"><Icon name="trash" :size="16" />Cancel the workout instead (nothing is saved)</button>
     <template #foot><button class="btn o" @click="emit('close')">Keep going</button><button class="btn" :disabled="busy" @click="finish">Finish</button></template>
   </Sheet>
 </template>
 
 <style scoped>
-.rchg { margin: 4px 0 4px 18px; font-size: 12.5px; color: var(--tx); line-height: 1.5; }
+.fin-note { margin-top: var(--hg); }
+.fin-next { color: var(--tx); font-weight: 600; white-space: nowrap; }
 .fin-time { font-size: 34px; font-weight: 700; line-height: 1.15; font-variant-numeric: tabular-nums; }
 .fin-hero .list { margin-top: var(--lpy); }
 .fin-hero .li:last-child { border-bottom: 0; }
-.fin-cancel { margin-top: var(--spg); }
+.fin-cancel { margin-top: calc(var(--spg) * 1.75); }
 .fin-i { flex: none; color: var(--tx2); }
 .fin-i.pos { color: var(--pos); }
 .fin-i.neg { color: var(--neg); }
