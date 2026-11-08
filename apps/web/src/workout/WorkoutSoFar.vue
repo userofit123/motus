@@ -1,57 +1,137 @@
 <script setup lang="ts">
-// The workout so far: time, exercises and sets done against planned, volume, records and rep targets, and a line per
-// exercise with its best set (the least help, for assisted ones). The last tab of the running workout; the numbers come from workoutSoFar (shared), so the
-// Finish screen shows the same. There (`final`) the time leaves the tiles (Finish shows it larger) and each line says
-// how the exercise compares with last time.
+// The workout so far, in the app's own look: a hero with the muscles worked so far (the routine card's figure, left)
+// and a ring for sets done of planned, stat tiles (time, volume, records), then a row per exercise with its done state,
+// best set (the least help, for assisted ones), PR badge and a small bar for its sets. The last tab of the running
+// workout; the numbers come from workoutSoFar (shared), so the Finish screen shows the same. There (`final`) the time
+// leaves the tiles (Finish shows it larger) and each row says how the exercise compares with last time.
 import { computed } from "vue";
-import { workoutSoFar, type Trend, type Workout } from "@motus/shared";
+import { musclesWorked, muscleName, workoutSoFar, type Trend, type Workout } from "@motus/shared";
 import { useFmt } from "../core/format";
 import { elapsed } from "./runtime";
 import Icon from "../components/Icon.vue";
+import Ring from "../components/Ring.vue";
+import BodyMap from "../components/BodyMap.vue";
 
 const props = defineProps<{ w: Workout; final?: boolean; vsLast?: Record<string, Trend> }>();
 const emit = defineEmits<{ open: [index: number] }>();
 const fmt = useFmt();
-const TREND: Record<Trend, string> = { up: "better than last time", same: "same as last time", down: "below last time" };
+const TREND: Record<Trend, string> = { up: "Better than last time", same: "Same as last time", down: "Below last time" };
 const r = computed(() => workoutSoFar(props.w));
 const secs = computed(() => elapsed(props.w));
-const extras = computed(() => [
-  r.value.records ? `${r.value.records} new record${r.value.records === 1 ? "" : "s"}` : "",
-  r.value.targets ? `${r.value.targetsHit} of ${r.value.targets} rep targets reached` : "",
-].filter(Boolean));
-const line = (i: number) => {
-  const p = r.value.perExercise[i]!, e = props.w.exercises[i]!;
-  if (p.status === "skipped") return `Skipped${e.skipReason ? " · " + e.skipReason : ""}`;
-  const vs = props.vsLast?.[p.id];
-  return [`${p.setsDone} of ${p.setsPlanned} sets`, p.best ? `${e.exercise?.tracking === "assisted" ? "least help" : "best"} ${fmt.value.set(p.best, e.exercise?.tracking)}` : "",
-    vs ? TREND[vs] : ""].filter(Boolean).join(" · ");
-};
+const pct = computed(() => (r.value.setsPlanned ? r.value.setsDone / r.value.setsPlanned : 0));
+const allDone = computed(() => r.value.setsPlanned > 0 && r.value.setsDone >= r.value.setsPlanned);
+// only exercises with a working set done count as worked; main muscles beat helpers (as on the routine cards)
+const worked = computed(() => musclesWorked(props.w.exercises
+  .filter((e) => e.status !== "skipped" && e.sets.some((s) => s.done && s.kind !== "warmup"))
+  .map((e) => ({ primary: e.exercise?.primaryMuscles ?? [], secondary: e.exercise?.secondaryMuscles ?? [] }))));
+const muscleLine = computed(() => {
+  const m = worked.value.primary.map(muscleName);
+  return m.length > 3 ? `${m.slice(0, 3).join(" · ")} · ${m.length - 3} more` : m.join(" · ");
+});
+const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
+const recordsSub = computed(() => r.value.targets ? `${r.value.targetsHit} of ${r.value.targets} rep targets` : r.value.records ? "Best sets beaten" : props.final ? "None this time" : "None yet");
+
+const rows = computed(() => r.value.perExercise.map((p, i) => {
+  const e = props.w.exercises[i]!;
+  const done = p.status === "done" || p.status === "partial", skipped = p.status === "skipped";
+  return {
+    p, done, skipped, started: !done && !skipped && p.setsDone > 0,
+    bestLbl: e.exercise?.tracking === "assisted" ? "Least help" : "Best",
+    best: p.best ? fmt.value.set(p.best, e.exercise?.tracking) : "",
+    reason: e.skipReason ?? "",
+    trend: props.vsLast?.[p.id],
+    fill: p.setsPlanned ? Math.min(1, p.setsDone / p.setsPlanned) : 0,
+  };
+}));
 </script>
 
 <template>
-  <div class="aw-ex">
-    <div class="exh"><div class="grow"><h3 class="wsf-h">{{ final ? "What you did" : "Summary so far" }}</h3><div v-if="extras.length" class="tiny wsf-x"><template v-for="(x, i) in extras" :key="x"><span v-if="i" class="sep">·</span><span>{{ x }}</span></template></div></div></div>
-    <div class="grid keep wsf-t" :class="final ? 'g3' : 'g2'">
-      <div v-if="!final"><div class="lbl">Time</div><div class="wsf-v">{{ fmt.clock(secs) }}</div></div>
-      <div><div class="lbl">Volume</div><div class="wsf-v">{{ fmt.vol(r.volumeKg) }}</div></div>
-      <div><div class="lbl">Exercises</div><div class="wsf-v">{{ r.exercisesDone }} <small>of {{ r.exercisesTotal }}</small></div></div>
-      <div><div class="lbl">Sets</div><div class="wsf-v">{{ r.setsDone }} <small>of {{ r.setsPlanned }}</small></div></div>
+  <div class="aw-ex wsf">
+    <div class="exh"><div class="grow"><h3 class="wsf-h">{{ final ? "What you did" : "Summary so far" }}</h3>
+      <div class="tiny">{{ r.exercisesDone }} of {{ plural(r.exercisesTotal, "exercise") }} done</div></div></div>
+
+    <div class="wsf-hero">
+      <BodyMap class="rbody" :values="{}" :highlight="worked.primary" :secondary="worked.secondary" />
+      <div class="wsf-prog">
+        <div class="wsf-cap">Sets done</div>
+        <div class="wsf-ringrow">
+          <div class="wsf-ring"><Ring :pct="pct" :size="62" :stroke="6" :color="allDone ? 'var(--pos)' : undefined" /><span>{{ Math.round(pct * 100) }}%</span></div>
+          <div class="wsf-big">{{ r.setsDone }}<small> of {{ r.setsPlanned }}</small></div>
+        </div>
+        <div class="wsf-cap">{{ muscleLine || (final ? "No sets ticked" : "Muscles show here as you tick sets") }}</div>
+      </div>
     </div>
-    <div class="list">
-      <div v-for="(p, i) in r.perExercise" :key="p.id" class="li click" :class="{ skip: p.status === 'skipped' }" @click="emit('open', i)">
-        <div class="grow" style="min-width:0"><div class="t ellipsis">{{ p.name }}</div><div class="s">{{ line(i) }}</div></div>
-        <span v-if="p.records" class="pr">{{ p.records > 1 ? `${p.records} PRs` : "PR" }}</span>
-        <Icon v-if="p.status === 'done' || p.status === 'partial'" name="check" :size="16" class="pos" />
+
+    <div class="wsf-tiles">
+      <div v-if="!final" class="stat wsf-tile"><div class="lbl"><span class="bi"><Icon name="clock" :size="15" /></span>Time</div>
+        <div class="val">{{ fmt.clock(secs) }}</div><div class="sub">Since {{ fmt.time(w.startedAt) }}</div></div>
+      <div class="stat wsf-tile"><div class="lbl"><span class="bi"><Icon name="layers" :size="15" /></span>Volume</div>
+        <div class="val">{{ fmt.vol(r.volumeKg) }}</div><div class="sub">{{ plural(r.reps, "rep") }}</div></div>
+      <div class="stat wsf-tile" :class="{ rec: r.records }"><div class="lbl"><span class="bi"><Icon name="trophy" :size="15" /></span>Records</div>
+        <div class="val">{{ r.records }}</div><div class="sub">{{ recordsSub }}</div></div>
+    </div>
+
+    <div>
+      <div class="lbl hgap">Exercises</div>
+      <div class="list">
+        <div v-for="(x, i) in rows" :key="x.p.id" class="li click" :class="{ skip: x.skipped }" @click="emit('open', i)">
+          <span class="stt" :class="{ done: x.done, part: x.started }"><Icon v-if="x.done" name="check" :size="13" /><Icon v-else-if="x.skipped" name="skip" :size="11" /></span>
+          <div class="grow wsf-main">
+            <div class="wsf-name"><span class="t ellipsis">{{ x.p.name }}</span><span v-if="x.p.records" class="pr">{{ x.p.records > 1 ? `${x.p.records} PRs` : "PR" }}</span></div>
+            <div class="s wsf-sub">
+              <template v-if="x.skipped"><span>Skipped</span><template v-if="x.reason"><span class="sep">·</span><span>{{ x.reason }}</span></template></template>
+              <template v-else>
+                <span v-if="x.best">{{ x.bestLbl }} <b>{{ x.best }}</b></span><span v-else>{{ x.started ? "Under way" : "Not started" }}</span>
+                <template v-if="x.trend"><span class="sep">·</span><span class="wsf-tr" :class="{ pos: x.trend === 'up', neg: x.trend === 'down' }"><Icon v-if="x.trend !== 'same'" :name="x.trend === 'up' ? 'arrowUp' : 'arrowDown'" :size="13" />{{ TREND[x.trend] }}</span></template>
+              </template>
+            </div>
+          </div>
+          <div v-if="!x.skipped" class="r wsf-cnt">
+            <div class="wsf-n">{{ x.p.setsDone }}<small>/{{ x.p.setsPlanned }}</small></div>
+            <div class="pbar" :class="{ ok: x.fill >= 1 }"><i :style="{ width: `${x.fill * 100}%` }" /></div>
+          </div>
+        </div>
       </div>
     </div>
   </div>
 </template>
 
 <style scoped>
+.wsf { display: flex; flex-direction: column; gap: var(--spg); }
+.wsf .exh { margin-bottom: 0; }
 .wsf-h { cursor: default; }
-.wsf-x { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 3px; }
-.wsf-t { margin-bottom: var(--spg); }
-.wsf-v { font-weight: 600; font-size: 18px; font-variant-numeric: tabular-nums; }
-.wsf-v small { font-size: 13px; font-weight: 500; color: var(--tx2); }
+
+/* the hero: Home's accent hero look, figure on the left and the progress on the right (CLAUDE.md card rule) */
+.wsf-hero { display: flex; align-items: stretch; gap: var(--cpx); padding: var(--cpy) var(--cpx); border-radius: var(--r-md); color: var(--onc);
+  background: linear-gradient(140deg, var(--accc), color-mix(in srgb, var(--accc) 55%, var(--s1))); border: 1px solid color-mix(in srgb, var(--onc) 14%, transparent); }
+.wsf-prog { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: var(--tdy); }
+.wsf-cap { font-size: var(--fs-sm); color: color-mix(in srgb, var(--onc) 75%, transparent); }
+.wsf-ringrow { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tdy) var(--cpx); }
+.wsf-ring { position: relative; flex: none; display: grid; }
+.wsf-ring span { position: absolute; inset: 0; display: grid; place-items: center; font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.wsf-big { font-size: 28px; font-weight: 700; letter-spacing: -.5px; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.wsf-big small { font-size: 15px; font-weight: 500; letter-spacing: 0; color: color-mix(in srgb, var(--onc) 70%, transparent); }
+
+/* stat tiles: the app's .stat look, sized down to sit three in a row on a phone */
+.wsf-tiles { display: grid; gap: var(--hg); grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); }
+.wsf-tile { min-height: 0; padding: calc(var(--cpy) - 3px) calc(var(--cpx) - 4px); border: 1px solid var(--ol); border-radius: var(--r-md); background: var(--s1); }
+.wsf-tile .lbl { font-size: var(--fs-sm); gap: 6px; }
+.wsf-tile .val { font-size: 21px; letter-spacing: -.4px; margin: var(--tdy) 0 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wsf-tile .sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wsf-tile.rec { border-color: color-mix(in srgb, var(--acc) 45%, var(--ol)); background: color-mix(in srgb, var(--acc) 7%, var(--s1)); }
+.wsf-tile.rec .bi { background: var(--acc); color: var(--on); }
+
+/* exercise rows: done state on the left, best set in full colour, sets as a small bar on the right */
+.wsf-main { min-width: 0; }
+.wsf-name { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.wsf-sub { display: flex; flex-wrap: wrap; align-items: center; gap: 0 6px; }
+.wsf-sub b { color: var(--tx); font-weight: 600; font-variant-numeric: tabular-nums; }
+.wsf-tr { display: inline-flex; align-items: center; gap: 3px; }
+.wsf-cnt { width: 52px; display: flex; flex-direction: column; align-items: stretch; gap: var(--tdy); }
+.wsf-n { font-weight: 600; font-size: 15px; font-variant-numeric: tabular-nums; }
+.wsf-n small { font-size: 12px; font-weight: 500; color: var(--tx2); }
+.wsf-cnt .pbar { height: 5px; }
+.stt { color: var(--tx2); }
+.stt.done { color: var(--bg); }
 .li.skip .t { text-decoration: line-through; opacity: .6; }
 </style>
