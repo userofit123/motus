@@ -22,7 +22,7 @@ const set = (patch: Record<string, unknown>) => saveSettings({ backup: patch });
 async function now() {
   busy.value = true;
   try {
-    const pw = s.value.backup.encrypt ? await prompt("Backup password", { text: "You'll need it to restore this backup." }) : undefined;
+    const pw = s.value.backup.encrypt ? await prompt("Backup password", { text: "You'll need it to restore this backup.", secret: true, autocomplete: "new-password" }) : undefined;
     if (s.value.backup.encrypt && !pw) return;
     const n = await backupNow({ password: pw ?? undefined, keep: s.value.backup.keep });
     log.value = backupLog(); toast(`Saved ${n}`);
@@ -35,7 +35,7 @@ async function restore(ev: Event) {
   const file = (ev.target as HTMLInputElement).files?.[0]; (ev.target as HTMLInputElement).value = "";
   if (!file) return;
   try {
-    const data = await readBackup(file, () => prompt("This backup is encrypted", { text: "Enter its password." }));
+    const data = await readBackup(file, () => prompt("This backup is encrypted", { text: "Enter its password.", secret: true }));
     const pv = await api.post("/import/preview", { data });
     const mode = await choose(`Restore backup from ${`${fmt.value.date(pv.exportedAt)} ${fmt.value.time(pv.exportedAt)}`}?`, [
       { label: "Merge: add what's missing, keep everything you have", value: "merge" },

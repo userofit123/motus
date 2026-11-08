@@ -1,5 +1,6 @@
 // Deleting your own account asks for the password again: a wrong one is refused without signing you out,
 // too many wrong ones wait like sign-in does, and the right one deletes everything.
+// Also here: no way of choosing a password (first setup, invite sign-up, own change, admin) accepts the username.
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -82,4 +83,39 @@ describe("a password the same as the username", () => {
     expect(reset.statusCode).toBe(400);
     expect(reset.json().error).toBe("The password can't be the same as the username");
   });
+});
+
+describe("a password the same as the username, on the other ways in", () => {
+  const SAME = "The password can't be the same as the username";
+
+  it("is refused when changing your own password", async () => {
+    const id = uuidv7();
+    await db.admin.query("INSERT INTO users (id, username, password_hash) VALUES ($1,$2,$3)", [id, "gustavo1", await hashPassword(PW)]);
+    const h = { authorization: `Bearer ${await createSession(db, id, "Browser", "web")}` };
+    // another address: the wrong passwords above have put the test address on the wait
+    const r = await app.inject({ method: "PUT", url: "/api/auth/password", headers: h, remoteAddress: "10.9.8.7", payload: { current: PW, next: "Gustavo1" } });
+    expect(r.statusCode).toBe(400);
+    expect(r.json().error).toBe(SAME);
+  });
+
+  it("is refused when signing up with an invite", async () => {
+    await db.admin.query("INSERT INTO invites (code, created_by, expires_at) VALUES ('same-pw', (SELECT id FROM users WHERE username = 'boss'), now() + interval '1 day')");
+    const r = await app.inject({ method: "POST", url: "/api/auth/register", payload: { username: "hal900000", password: "HAL900000", invite: "same-pw" } });
+    expect(r.statusCode).toBe(400);
+    expect(r.json().error).toBe(SAME);
+    expect((await db.admin.query("SELECT 1 FROM users WHERE username = 'hal900000'")).rows.length).toBe(0);
+  });
+
+  it("is refused when creating the first account", async () => {
+    // setup only works on a server with no users, so this one is its own
+    const db2 = await pgliteDb("memory://");
+    const dir2 = fs.mkdtempSync(path.join(os.tmpdir(), "motus-server-test-"));
+    const { app: app2 } = await buildApp({ db: db2, dataDir: dir2 });
+    try {
+      const r = await app2.inject({ method: "POST", url: "/api/auth/setup", payload: { username: "owner9999", password: "Owner9999" } });
+      expect(r.statusCode).toBe(400);
+      expect(r.json().error).toBe(SAME);
+      expect((await db2.admin.query("SELECT 1 FROM users")).rows.length).toBe(0);
+    } finally { await app2.close(); await db2.close(); fs.rmSync(dir2, { recursive: true, force: true }); }
+  }, 120000);
 });

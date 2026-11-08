@@ -14,8 +14,6 @@ const f = ref({ username: "", password: "", displayName: "", invite: new URLSear
 if (f.value.invite) mode.value = "register";
 const err = ref(""), busy = ref(false);
 const setup = computed(() => session.setupNeeded);
-// "Your name" and "Username" sit next to each other on a new account; the placeholders say which is which, and the
-// server refuses a password the same as the username (it is shown on screen as "@username").
 async function go() {
   err.value = ""; busy.value = true;
   try {
@@ -35,6 +33,7 @@ async function go() {
       <Logo />
       <h1>{{ setup ? "Welcome to Motus" : mode === "login" ? "Sign in" : "Create your account" }}</h1>
       <p class="muted" style="margin-bottom:20px;font-size:13.5px">{{ setup ? "Create the first account. It will be the admin of this server." : mode === "login" ? "Your workouts, routines and goals." : "You need an invite code from the admin." }}</p>
+      <!-- "Your name" and "Username" sit next to each other on a new account; the placeholders say which is which -->
       <div v-if="setup || mode === 'register'" class="fld"><label>Your name</label><input v-model="f.displayName" autocomplete="name" placeholder="Shown in the app" /></div>
       <div class="fld"><label>Username</label><input v-model="f.username" autocomplete="username" autocapitalize="off" :placeholder="mode === 'login' && !setup ? '' : 'You sign in with this'" required /></div>
       <div class="fld"><label>Password</label><input v-model="f.password" type="password" :autocomplete="mode === 'login' && !setup ? 'current-password' : 'new-password'" required minlength="8" /></div>
