@@ -215,14 +215,15 @@ function restDefault(t: RestTarget) {
 }
 // the top of a rep range is hidden on phones to save room, unless the exercise uses one or its ⋮ "Rep range" is on
 const rangeOn = reactive(new WeakSet<object>());
-const showRange = (e: any) => !isPhone.value || rangeOn.has(e) || e.sets.some((x: any) => x.repsMax != null);
+type RangeEx = { sets: { repsMax: number | null }[] };
+const showRange = (e: RangeEx) => !isPhone.value || rangeOn.has(e) || e.sets.some((x) => x.repsMax != null);
 // phones offer it in the exercise's ⋮ menu, where it opens the "Up to" column
-const rangeItem = (e: any) => isPhone.value && usesReps(tr(e));
+const rangeItem = (e: RangeEx) => isPhone.value && usesReps(tr(e));
 // off again: the range goes, each set keeps its bottom as its reps
-function toggleRange(e: any) {
+function toggleRange(e: RangeEx) {
   if (!showRange(e)) { rangeOn.add(e); return; }
   rangeOn.delete(e);
-  if (e.sets.some((x: any) => x.repsMax != null)) { for (const x of e.sets) x.repsMax = null; touch(); }
+  if (e.sets.some((x) => x.repsMax != null)) { for (const x of e.sets) x.repsMax = null; touch(); }
 }
 const cols = (e: any) => {
   const t = tr(e);

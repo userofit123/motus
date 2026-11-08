@@ -127,7 +127,7 @@ const canon = (v: unknown): string => Array.isArray(v) ? `[${v.map(canon).join("
   : v && typeof v === "object" ? `{${Object.keys(v).sort().map((k) => `${JSON.stringify(k)}:${canon((v as Record<string, unknown>)[k])}`).join(",")}}` : JSON.stringify(v ?? null);
 const sameVersion = (a: RoutineSnapshot, b: RoutineSnapshot) => canon(a) === canon(b);
 
-const NEWEST = "SELECT id, snapshot FROM routine_versions WHERE routine_id = $1 ORDER BY created_at DESC, id DESC LIMIT 1";
+const NEWEST = "SELECT id, snapshot, created_at FROM routine_versions WHERE routine_id = $1 ORDER BY created_at DESC, id DESC LIMIT 1";
 /** The routine as it is now, kept in its History (every version, none dropped), unless the newest version already is
  * it: after an edit, or after a workout changed it (with that workout). So the newest version is always the routine as
  * it is now. `keepCurrent` (before a change) keeps the current one first when something else changed the routine since
@@ -137,8 +137,11 @@ async function snapshot(ctx: Ctx, routineId: string, reason: "edit" | "workout" 
   if (!r) return;
   const now = slimRoutine(r), newest = (await ctx.q.query(NEWEST, [routineId])).rows[0];
   if (newest && sameVersion(slimRoutine(newest.snapshot), now)) return;
+  // strictly after the newest one, so two versions kept in one request (before and after a change) never tie on the
+  // millisecond and History's newest-first order is always right
+  const t = Math.max(ctx.now().getTime(), newest ? new Date(newest.created_at).getTime() + 1 : 0);
   await ctx.q.query("INSERT INTO routine_versions (id, user_id, routine_id, snapshot, reason, workout_id, created_at) VALUES ($1,$2,$3,$4,$5,$6,$7)",
-    [uuidv7(), ctx.userId, routineId, JSON.stringify(now), reason, workoutId, ctx.now().toISOString()]);
+    [uuidv7(), ctx.userId, routineId, JSON.stringify(now), reason, workoutId, new Date(t).toISOString()]);
 }
 const keepCurrent = (ctx: Ctx, routineId: string) => snapshot(ctx, routineId);
 

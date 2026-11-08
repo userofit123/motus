@@ -394,3 +394,30 @@ describe("the routine's numbers and Progression", () => {
     expect(sets.map((s: any) => [s.targetReps, s.targetRepsMax])).toEqual([[8, 12], [8, 12], [8, 12]]);
   });
 });
+
+describe("Progression edits and kept versions", () => {
+  it("an edit to an exercise's Progression resets its missed count, other edits keep it", async () => {
+    const C = uuidv7();
+    await eng.db.admin.query("INSERT INTO users (id, username, display_name) VALUES ($1,'missed-tester','C')", [C]);
+    const ex = await call(C, "GET", "/exercises");
+    const r = await call(C, "POST", "/routines", { name: "Miss", exercises: [{ exerciseId: ex[0].id, progression: { mode: "auto" }, sets: [{ kind: "normal", reps: 8, weightKg: 30 }] }] });
+    const reId = (await call(C, "GET", `/routines/${r.id}`)).exercises[0].id;
+    await eng.db.admin.query("UPDATE routine_exercises SET missed = 2 WHERE id = $1", [reId]);
+    const body = (progression: unknown, note: string) => ({ exercises: [{ id: reId, exerciseId: ex[0].id, progression, note, sets: [{ kind: "normal", reps: 8, weightKg: 30 }] }] });
+    await call(C, "PUT", `/routines/${r.id}`, body({ mode: "auto" }, "same rule"));
+    expect((await call(C, "GET", `/routines/${r.id}`)).exercises[0].missed).toBe(2);
+    await call(C, "PUT", `/routines/${r.id}`, body({ mode: "suggest" }, "same rule"));
+    expect((await call(C, "GET", `/routines/${r.id}`)).exercises[0].missed).toBe(0);
+  });
+
+  it("versions kept within one request stay in order, newest first", async () => {
+    const C = uuidv7();
+    await eng.db.admin.query("INSERT INTO users (id, username, display_name) VALUES ($1,'order-tester','C')", [C]);
+    const r = await call(C, "POST", "/routines", { name: "A" });
+    for (const n of ["B", "C", "D"]) await call(C, "PUT", `/routines/${r.id}`, { name: n });
+    const names = (await call(C, "GET", `/routines/${r.id}/versions`)).items;
+    expect(names.length).toBe(4);
+    const at = (await eng.db.admin.query("SELECT created_at FROM routine_versions WHERE routine_id = $1", [r.id])).rows.map((x: any) => +new Date(x.created_at));
+    expect(new Set(at).size).toBe(4);
+  });
+});

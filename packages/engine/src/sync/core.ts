@@ -71,6 +71,13 @@ export function overrule(c: Change, here: { row: Record<string, unknown> | null;
   return null;
 }
 
+/** Whether the user has Progression switched on (the default); a stored false is the only thing that turns it off. */
+async function progressionOn(q: Sql, userId: string) {
+  const r = await q.query<{ on: boolean | null }>(
+    "SELECT CASE WHEN jsonb_typeof(data->'features'->'progression') = 'boolean' THEN (data->'features'->>'progression')::boolean END AS on FROM user_settings WHERE user_id = $1", [userId]);
+  return r.rows[0]?.on ?? true;
+}
+
 /**
  * Writes changes made elsewhere: upserts parents first, then deletes children first.
  * Each row on its own savepoint, so one that no longer fits (its parent was deleted meanwhile) doesn't stop the rest.
@@ -99,7 +106,12 @@ export async function applyChanges(q: Sql, userId: string, changes: Change[], op
         // a routine exercise from a device on an app from before 015_routine_now: its Progression made safe (an old rule
         // becomes its own Automatic), and "Always start with these numbers" (prefill 'target') becomes fixed
         if (c.tbl === "routine_exercises") {
-          if ("progression" in row) row.progression = cleanProgression(row.progression);
+          if ("progression" in row) {
+            const p = row.progression as Record<string, unknown> | null;
+            // an old rule only becomes Automatic when the Progression feature is on (as migration 015 does), else Settings rule
+            const old = !!p && typeof p === "object" && "kind" in p && !("mode" in p);
+            row.progression = old && !(await progressionOn(q, userId)) ? null : cleanProgression(p);
+          }
           if ("prefill" in row && !("fixed" in row)) row.fixed = row.prefill === "target";
         }
         // only the columns the JSON has: a device on an older app doesn't know newer columns, so a new row takes their

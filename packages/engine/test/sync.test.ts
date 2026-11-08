@@ -107,4 +107,18 @@ describe("sync", () => {
     await sync();
     expect((await D()("GET", "/body")).length).toBe(0);
   }, 60000);
+
+  it("turns an old-shape Progression rule from an old app into Automatic, or into Settings' when the feature is off", async () => {
+    const r = await S()("POST", "/routines", { name: "Old app", exercises: [] });
+    const ex = (await S()("GET", "/exercises"))[0];
+    const push = async (id: string) => {
+      const row = { id, user_id: U, routine_id: r.id, exercise_id: ex.id, position: 0, progression: { kind: "linear", incrementKg: 2.5, deloadAfter: 3 } };
+      await S()("POST", "/sync/push", { device: "old-app", changes: [{ tbl: "routine_exercises", pk: { id }, op: "upsert", at: new Date().toISOString(), row }] });
+      return (await server.db.admin.query("SELECT progression FROM routine_exercises WHERE id = $1", [id])).rows[0]?.progression;
+    };
+    expect(await push(uuidv7())).toEqual({ mode: "auto", stepKg: 2.5, lowerAfter: 3 });
+    // the old switch lives in the stored settings (the current app drops it when reading them)
+    await server.db.admin.query("INSERT INTO user_settings (user_id, data) VALUES ($1, $2) ON CONFLICT (user_id) DO UPDATE SET data = $2", [U, JSON.stringify({ features: { progression: false } })]);
+    expect(await push(uuidv7())).toBeNull();
+  }, 60000);
 });
