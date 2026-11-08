@@ -12,7 +12,7 @@ import { invalidate, queryClient } from "../api/live";
 import { confirm } from "../core/ask";
 import { toast } from "../core/toast";
 import { onHome, streakOnHome, toggleHomeGoal, setHomeStreak, periodWord, periodNow, periodLabel, useStepGoal } from "../core/goals";
-import { useFmt, ago, goalLabel, localYmd } from "../core/format";
+import { useFmt, ago, goalLabel, localYmd, tomorrowYmd } from "../core/format";
 import { startOpen, bodySheet, dailySheet, activitySheet } from "../core/ui";
 import { isPhone } from "../core/device";
 import Icon from "../components/Icon.vue";
@@ -108,7 +108,7 @@ const resting = computed(() => [...groups.value].filter((g) => g.days == null ||
 
 // up next: the first few plans of the coming days. Today's are all listed in Today (also while a workout is in progress)
 const upNext = computed<HomePlan[]>(() => (h.value?.upNext ?? []).filter((p) => p.date !== today).slice(0, 5));
-const dayName = (d: string) => { const tm = localYmd(new Date(Date.now() + 86400000)); return d === today ? "Today" : d === tm ? "Tomorrow" : fmt.value.date(d, { weekday: "long" }); };
+const dayName = (d: string) => { const tm = tomorrowYmd(); return d === today ? "Today" : d === tm ? "Tomorrow" : fmt.value.date(d, { weekday: "long" }); };
 const start = (p: HomePlan) => router.push(`/routines/${p.routineId}/start${p.scheduleId ? `?schedule=${p.scheduleId}&date=${p.date}` : ""}`);
 const planOpen = ref<any>(null);
 

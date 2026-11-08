@@ -63,6 +63,11 @@ export function ago(iso: string | null | undefined): string {
 }
 /** A date as YYYY-MM-DD on this device's calendar (the shared ymd, under the name the screens use). */
 export const localYmd = ymd;
+// tomorrow by calendar (not now + 24h, which lands on the wrong day across a clock change)
+export const tomorrowYmd = () => { const n = new Date(); return ymd(new Date(n.getFullYear(), n.getMonth(), n.getDate() + 1)); };
+// the icon for an activity type: its own for the common ones, else the general one (shared by Home and History)
+const ACTIVITY_ICONS = ["walk", "run", "cycle", "hike", "swim", "yoga"];
+export const activityIcon = (type?: string | null) => (type && ACTIVITY_ICONS.includes(type) ? type : "activity");
 
 /** "62.5 / 80 kg" in your units: goals keep weights in kg and distances in km.
  *  Body goals read "now → target" ("87.5 → 85 cm"), which says where you are and where you're heading either way, without a value judgement. */

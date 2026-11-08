@@ -13,7 +13,7 @@ import { api } from "../api/client";
 import { invalidate } from "../api/live";
 import { toast } from "../core/toast";
 import Menu from "../components/Menu.vue";
-import { useFmt, localYmd } from "../core/format";
+import { useFmt, localYmd, activityIcon } from "../core/format";
 import { isPhone } from "../core/device";
 import { activitySheet } from "../core/ui";
 import Icon from "../components/Icon.vue";
@@ -26,7 +26,16 @@ const view = ref<"calendar" | "list">(route.query.view === "list" ? "list" : "ca
 watch(view, (v) => router.replace({ query: v === "list" ? { view: "list" } : {} }));
 // where you were (month, chosen day), so coming Back from something you opened from here lands on the same day;
 // kept for this visit of the app only. A link to a day (?date=YYYY-MM-DD, e.g. from Home's week) opens on that day instead
-const qd = typeof route.query.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(route.query.date) ? route.query.date : null;
+// a real calendar day only (2026-02-31 is not one)
+const dayParam = (v: unknown) => {
+  if (typeof v !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(v)) return null;
+  const [y, m, d] = v.split("-").map(Number);
+  return localYmd(new Date(y!, m! - 1, d!)) === v ? v : null;
+};
+// the link is used once and then dropped from the address, so Back from a workout returns to where you were, not to the link's day
+const dropDate = () => { if (route.query.date !== undefined) router.replace({ query: { ...route.query, date: undefined } }); };
+const qd = dayParam(route.query.date);
+dropDate();
 const memo = qd ? { month: new Date(Number(qd.slice(0, 4)), Number(qd.slice(5, 7)) - 1, 1).getTime(), sel: qd } : kept.v;
 const month = ref(memo ? new Date(memo.month) : new Date(new Date().getFullYear(), new Date().getMonth(), 1));
 const first = computed(() => s.value.firstDay);
@@ -56,13 +65,19 @@ const DOW = computed(() => Array.from({ length: 7 }, (_, i) => ["Sun", "Mon", "T
 const calDir = ref("nx");
 const shift = (n: number) => { calDir.value = n > 0 ? "nx" : "pv"; month.value = new Date(month.value.getFullYear(), month.value.getMonth() + n, 1); };
 const sel = ref<string | null>(memo?.sel ?? today);
+// a link to a day while this page is already open
+watch(() => route.query.date, (v) => {
+  const d = dayParam(v);
+  if (d) { month.value = new Date(Number(d.slice(0, 4)), Number(d.slice(5, 7)) - 1, 1); sel.value = d; }
+  dropDate();
+});
 watch([month, sel], () => { kept.v = { month: month.value.getTime(), sel: sel.value }; }, { flush: "sync" });
 // on the phone a sideways swipe on the month changes the month (elsewhere on the page it changes tab)
 let sx = 0, sy = 0;
 const calStart = (e: TouchEvent) => { sx = e.touches[0]!.clientX; sy = e.touches[0]!.clientY; };
 const calEnd = (e: TouchEvent) => { const dx = e.changedTouches[0]!.clientX - sx, dy = e.changedTouches[0]!.clientY - sy; if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.3) shift(dx < 0 ? 1 : -1); };
 function open(x: any) { if (x.kind === "workout") router.push(x.status === "in_progress" ? "/workout" : `/workouts/${x.id}`); else if (x.kind === "activity") router.push(`/activities/${x.id}`); else if (x.routineId) router.push(`/routines/${x.routineId}/start?schedule=${x.scheduleId}&date=${x.date}`); else activitySheet.value = { type: x.activityType }; }
-const icon = (x: any) => (x.kind === "activity" ? (["walk", "run", "cycle", "hike", "swim", "yoga"].includes(x.type) ? x.type : "activity") : x.kind === "planned" ? "calendar" : "dumbbell");
+const icon = (x: any) => (x.kind === "activity" ? activityIcon(x.type) : x.kind === "planned" ? "calendar" : "dumbbell");
 const label = (x: any) => x.name || (x.type ? x.type[0].toUpperCase() + x.type.slice(1) : "Workout");
 const monthStats = computed(() => {
   const inMonth = [...byDay.value.entries()].filter(([d]) => d.slice(0, 7) === localYmd(month.value).slice(0, 7));

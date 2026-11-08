@@ -8,7 +8,7 @@ import { computed, ref } from "vue";
 import type { HomePlan, HomeToday } from "@motus/shared";
 import { useRouter } from "vue-router";
 import { useSettings } from "../../api/queries";
-import { useFmt, ago, localYmd } from "../../core/format";
+import { useFmt, ago, localYmd, tomorrowYmd, activityIcon } from "../../core/format";
 import { startOpen, activitySheet } from "../../core/ui";
 import Icon from "../Icon.vue";
 import MuscleFig from "../MuscleFig.vue";
@@ -18,7 +18,7 @@ const router = useRouter();
 const s = useSettings();
 const fmt = useFmt();
 const today = localYmd(new Date());
-const tomorrow = localYmd(new Date(Date.now() + 86400000));
+const tomorrow = tomorrowYmd();
 // the day the block shows: today unless you tapped another day in the week
 const sel = ref(today);
 
@@ -29,8 +29,7 @@ const open = (p: HomePlan) => (p.routineId ? start(p) : (activitySheet.value = {
 const plansOn = (d: string) => (props.h.upNext ?? []).filter((p) => p.date === d);
 const todays = computed(() => plansOn(today));
 const picked = computed(() => plansOn(sel.value));
-const ACTS = ["walk", "run", "cycle", "hike", "swim", "yoga"];
-const kindIcon = (p: HomePlan) => (p.routineId ? "dumbbell" : ACTS.includes(p.activityType ?? "") ? p.activityType! : "activity");
+const kindIcon = (p: HomePlan) => (p.routineId ? "dumbbell" : activityIcon(p.activityType));
 const kindName = (p: HomePlan) => (p.routineId ? "Routine" : p.activityType ? p.activityType[0]!.toUpperCase() + p.activityType.slice(1) : "Activity");
 const planSub = (p: HomePlan) => [p.timeOfDay ?? "Any time", kindName(p)].join(" · ");
 const since = computed(() => { const d = props.h.daysSinceLast; return d == null ? "" : d === 0 ? "today" : d === 1 ? "yesterday" : `${d} days ago`; });
@@ -102,7 +101,7 @@ const doneCount = computed(() => week.value.filter((d) => d.done).length);
     </div>
   </div>
   <div v-else class="card hero today" :class="{ live: !!h.active && sel === today }">
-    <div class="tmain">
+    <div class="tmain" aria-live="polite">
       <div class="ch"><span class="bi"><Icon name="play" :size="15" /></span><span class="t grow">{{ sel === today ? "Today" : dayLabel }}</span>
         <button v-if="sel !== today" class="tlnk" @click="openDay">Open in calendar<Icon name="right" :size="14" /></button></div>
 
@@ -121,8 +120,8 @@ const doneCount = computed(() => week.value.filter((d) => d.done).length);
             <div v-for="(p, i) in rows" :key="p.scheduleId" role="listitem" class="prow">
               <span class="pk"><Icon :name="kindIcon(p)" :size="16" /></span>
               <div class="pt"><div class="pn">{{ p.name }}</div><div class="ps">{{ planSub(p) }}</div></div>
-              <button class="btn s" :class="{ tonal: !primary(i) }" :aria-label="`${p.routineId ? 'Start' : 'Log'} ${p.name}`" @click="open(p)">
-                <Icon :name="p.routineId ? 'play' : 'plus'" :size="14" />{{ p.routineId ? "Start" : "Log" }}</button>
+              <button class="btn s" :class="{ tonal: !primary(i) }" :aria-label="`${p.routineId ? 'Start' : 'Log it'} ${p.name}`" @click="open(p)">
+                <Icon :name="p.routineId ? 'play' : 'plus'" :size="14" />{{ p.routineId ? "Start" : "Log it" }}</button>
             </div>
           </div>
           <div v-if="!hero && lastLine" class="ts">{{ lastLine }}</div>
