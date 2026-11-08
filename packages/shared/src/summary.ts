@@ -37,6 +37,9 @@ const working = (s: WorkoutSet) => s.done && s.kind !== "warmup";
  * then reps, time, distance. Assisted exercises log the help taken off, so less is better there. */
 function score(s: WorkoutSet, t: Tracking): number {
   if (t === "assisted") return -(s.weightKg ?? 0) * 1000 + (s.reps ?? 0);
+  // bodyweight: any added weight beats none, more added weight beats less, then more reps (no body weight to put
+  // weighted and unweighted sets on one e1RM scale, so 20 plain reps never outrank 10 kg × 8)
+  if (t === "bodyweight_reps") return (s.weightKg ?? 0) * 1000 + (s.reps ?? 0);
   if (usesWeight(t) && s.weightKg) return usesReps(t) ? (e1rm(s.weightKg, s.reps) ?? liftedKg(s.weightKg, s.reps, t)) : s.weightKg * 1e6 + (s.durationS ?? 0) + (Number(s.distanceM) || 0);
   if (usesReps(t)) return s.reps ?? 0;
   if (usesDistance(t)) return Number(s.distanceM) || 0;
@@ -82,13 +85,14 @@ export type Trend = "up" | "same" | "down";
 /** How a finished workout went, in parts that can each be said in plain words: against its plan (sets, rep and weight
  * targets) and against last time (each exercise's best set, and volume). */
 export interface WorkoutScore {
+  /** null when the workout had no routine (no plan to measure against) */
   plan: {
     setsDone: number; setsPlanned: number; skipped: number;
     repTargets: number; repTargetsHit: number;
     weightTargets: number; weightTargetsHit: number;
     /** all: every planned set done and every target reached; most: at least 80% of the sets; part: less */
     verdict: "all" | "most" | "part";
-  };
+  } | null;
   /** null when no exercise was done before (nothing to compare with) */
   last: {
     /** exercises done today that were also done last time */
@@ -105,10 +109,12 @@ export interface WorkoutScore {
 const EPS = 0.01;
 const trend = (now: number, before: number): Trend => now > before + EPS ? "up" : now < before - EPS ? "down" : "same";
 
-/** "Last time" is each set's `prev`: the same set in the exercise's last session (in this routine when there is one).
- * An exercise is up when its best set beats last time's best (or ties it with more volume), down the other way round.
- * The workout is better when more exercises went up than down; a tie is settled by volume (2% either way). */
-export function workoutScore(w: { exercises: WorkoutExercise[] }): WorkoutScore {
+/** "Last time" is the exercise's `last`: every working set of its last session (in this routine when there is one), so
+ * doing fewer sets than last time shows as less volume. An exercise is up when its best set beats last time's best (or
+ * ties it with more volume), down the other way round. The workout is better when more exercises went up than down; a
+ * tie is settled by volume (2% either way). The plan verdict needs a routine; skipped exercises count as planned but
+ * not done (skipping is not doing the plan). */
+export function workoutScore(w: { routineId?: string | null; exercises: WorkoutExercise[] }): WorkoutScore {
   const so = workoutSoFar(w);
   let weightTargets = 0, weightTargetsHit = 0, compared = 0, improved = 0, dropped = 0, vol = 0, lastVol = 0;
   const vsLast: Record<string, Trend> = {};
@@ -119,7 +125,7 @@ export function workoutScore(w: { exercises: WorkoutExercise[] }): WorkoutScore 
       weightTargets++;
       if (t === "assisted" ? (s.weightKg ?? Infinity) <= s.targetWeightKg + EPS : (s.weightKg ?? 0) >= s.targetWeightKg - EPS) weightTargetsHit++;
     }
-    const before: WorkoutSet[] = e.sets.filter((s) => s.kind !== "warmup" && s.prev).map((s) => ({ ...s, ...s.prev!, done: true }));
+    const before = (e.last ?? []).map((p) => ({ ...p, kind: "normal", done: true }) as WorkoutSet);
     const best = bestSet(e.sets, t), lastBest = bestSet(before, t);
     if (!best || !lastBest) continue;
     const v = so.perExercise[i]!.volumeKg, lv = before.reduce((a, s) => a + setVolume(s, t), 0);
@@ -130,12 +136,14 @@ export function workoutScore(w: { exercises: WorkoutExercise[] }): WorkoutScore 
   }
   const volumePct = lastVol > 0 ? Math.round(((vol - lastVol) / lastVol) * 100) : null;
   const skipped = w.exercises.filter((e) => e.status === "skipped").length;
-  const allDone = so.setsDone >= so.setsPlanned && !skipped && so.targetsHit === so.targets && weightTargetsHit === weightTargets;
+  // skipped exercises' sets are planned but not done (none of them count as done, as in workoutSoFar)
+  const planned = so.setsPlanned + so.perExercise.reduce((a, p) => a + (p.status === "skipped" ? p.setsPlanned : 0), 0);
+  const allDone = so.setsDone >= planned && !skipped && so.targetsHit === so.targets && weightTargetsHit === weightTargets;
   return {
-    plan: {
-      setsDone: so.setsDone, setsPlanned: so.setsPlanned, skipped,
+    plan: !w.routineId ? null : {
+      setsDone: so.setsDone, setsPlanned: planned, skipped,
       repTargets: so.targets, repTargetsHit: so.targetsHit, weightTargets, weightTargetsHit,
-      verdict: allDone ? "all" : so.setsDone >= so.setsPlanned * 0.8 ? "most" : "part",
+      verdict: allDone ? "all" : planned > 0 && so.setsDone >= planned * 0.8 ? "most" : "part",
     },
     last: !compared ? null : {
       compared, improved, dropped, volumeKg: vol, lastVolumeKg: lastVol, volumePct,

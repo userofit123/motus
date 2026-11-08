@@ -316,7 +316,17 @@ export function replacingWorkout(): () => void {
  * The workout is over (finished or cancelled): every screen drops it now, not when the next reload comes back, so no
  * "workout in progress" bar lingers and Start doesn't find it running.
  */
+// what was typed on the Finish screen (rating, notes, body weight, the routine switch): kept here, outside the sheet,
+// so closing it to look at an exercise and opening Finish again brings it all back. Dropped with the workout.
+export interface FinishDraft { workoutId: string; rating: number | null; notes: string; bw: number | null; askUpdate: boolean }
+let draft: FinishDraft | null = null;
+export function finishDraft(w: Workout): FinishDraft {
+  if (draft?.workoutId !== w.id) draft = reactive({ workoutId: w.id, rating: null, notes: w.notes ?? "", bw: null, askUpdate: false });
+  return draft;
+}
+
 export function endWorkout(id: string) {
+  if (draft?.workoutId === id) draft = null;
   markEnded(id);
   // its rest goes with it, with the "Rest over" alarm the Android app has scheduled for it
   if (rest.workoutId === id) finishRest(false);

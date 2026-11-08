@@ -140,6 +140,9 @@ async function loadWorkout(q: Sql, workoutId: string, today: string): Promise<Wo
     x.exercise = exs.get(e.exercise_id);
     const prev = prevByEx.get(e.exercise_id) ?? [];
     const warm = prev.filter((s) => s.kind === "warmup"), work = prev.filter((s) => s.kind !== "warmup");
+    // the whole of last session's working sets too (prev pairs them by position, so a set fewer today has no pair):
+    // the Finish screen compares sessions with it. Already loaded above, so no extra query.
+    x.last = work.map((p) => ({ weightKg: p.weightKg, reps: p.reps, durationS: p.durationS, distanceM: p.distanceM }));
     let wi = 0, ki = 0;
     x.sets = sets.filter((s: any) => s.workout_exercise_id === e.id).map((s: any) => {
       const c = camel<any>(s);

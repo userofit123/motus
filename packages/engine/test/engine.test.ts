@@ -86,6 +86,11 @@ describe("engine", () => {
     await call(A, "PUT", `/workout-sets/${s.id}`, { weightKg: 85, reps: 8, done: true });
     const live = await call(A, "GET", "/workouts/active");
     expect(live.exercises[0].sets[0].pr).toContain("weight");
+    // last time's whole session comes along, even for sets that have no pair today
+    await call(A, "DELETE", `/workout-sets/${w.exercises[0].sets.at(-1).id}`);
+    const fewer = await call(A, "GET", "/workouts/active");
+    expect(fewer.exercises[0].sets.length).toBe(3);
+    expect(fewer.exercises[0].last.map((x: any) => [x.weightKg, x.reps])).toEqual([[80, 8], [80, 7], [80, 6], [80, 5]]);
     await call(A, "POST", `/workouts/${w.id}/finish`, {});
     const hist = await call(A, "GET", `/exercises/${benchId}/history`);
     expect(hist.sessions.length).toBe(2);

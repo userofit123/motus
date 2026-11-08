@@ -201,6 +201,8 @@ export interface WorkoutExercise {
   reminders?: Reminder[];
   notes?: Note[];
   suggestion?: string | null;
+  // every working set of the exercise's last session (the one `prev` comes from), for comparing whole sessions
+  last?: { weightKg: number | null; reps: number | null; durationS: number | null; distanceM: number | null }[];
 }
 
 export interface Workout {

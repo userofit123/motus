@@ -9,15 +9,15 @@ import { useFmt } from "../core/format";
 import { elapsed } from "./runtime";
 import Icon from "../components/Icon.vue";
 
-const props = defineProps<{ w: Workout; durationS?: number; final?: boolean; vsLast?: Record<string, Trend> }>();
+const props = defineProps<{ w: Workout; final?: boolean; vsLast?: Record<string, Trend> }>();
 const emit = defineEmits<{ open: [index: number] }>();
 const fmt = useFmt();
 const TREND: Record<Trend, string> = { up: "better than last time", same: "same as last time", down: "below last time" };
 const r = computed(() => workoutSoFar(props.w));
-const secs = computed(() => props.durationS ?? elapsed(props.w));
+const secs = computed(() => elapsed(props.w));
 const extras = computed(() => [
   r.value.records ? `${r.value.records} new record${r.value.records === 1 ? "" : "s"}` : "",
-  r.value.targets ? `${r.value.targetsHit} of ${r.value.targets} rep targets hit` : "",
+  r.value.targets ? `${r.value.targetsHit} of ${r.value.targets} rep targets reached` : "",
 ].filter(Boolean));
 const line = (i: number) => {
   const p = r.value.perExercise[i]!, e = props.w.exercises[i]!;
