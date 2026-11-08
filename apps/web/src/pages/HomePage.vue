@@ -391,7 +391,7 @@ await loaded(home, ach);
 
         <div v-else-if="id === 'reminders'" class="card hb sz-m">
           <div class="ch"><span class="bi"><Icon name="bell" :size="15" /></span><span class="t grow">Reminders</span></div>
-          <div class="list"><div v-for="r in h.reminders" :key="r.id" class="li click" role="button" tabindex="0" @click="reminderView = { r }" @keydown.enter="reminderView = { r }"><div class="grow"><div class="t">{{ reminderText(r, fmt) }}</div><div class="s">{{ r.targetName }}</div></div><Icon name="right" :size="16" class="muted" /></div></div>
+          <div class="list"><div v-for="r in h.reminders" :key="r.id" class="li click" v-bind="link(() => (reminderView = { r }))"><div class="grow"><div class="t">{{ reminderText(r, fmt) }}</div><div class="s">{{ r.targetName }}</div></div><Icon name="right" :size="16" class="muted" /></div></div>
         </div>
 
         <!-- body weight: the latest, the change over 30 days and the trend -->

@@ -285,7 +285,7 @@ export interface Reminder {
   createdWorkoutId: string | null;
   createdAt: string;
   doneAt: string | null;
-  targetName?: string;
+  targetName?: string | null;
 }
 
 export type GoalScope = "general" | "routine" | "exercise" | "muscle" | "activity" | "body";
@@ -439,7 +439,7 @@ export interface HomeData extends HomeToday {
   weeks: HomeWeek[]; thisWeek: HomeWeek; lastWeek: HomeWeek;
   homeGoals: (Goal & { showStreak: boolean })[];
   goals: Goal[];
-  reminders: { id: string; body: string; targetType: string; targetId: string; targetName: string | null }[];
+  reminders: Reminder[];
   bodyweight: { value: number; at: string }[];
   feed: HomeFeedItem[];
   muscles7: Record<string, number>; main7: string[]; helpers7: string[];

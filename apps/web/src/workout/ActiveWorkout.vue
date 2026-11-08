@@ -4,7 +4,7 @@
 // and the action bar (rest included) in the middle, what comes next and the totals on the right.
 import { computed, nextTick, onMounted, onBeforeUnmount, ref, watch } from "vue";
 import { useRouter } from "vue-router";
-import { clock, muscleName, workoutSoFar } from "@motus/shared";
+import { clock, muscleName, workoutSoFar, type Reminder } from "@motus/shared";
 import { useWorkout, endWorkout } from "./useWorkout";
 import { elapsed, finishRest } from "./runtime";
 import { keepAwake } from "./native";
@@ -132,7 +132,7 @@ const menu = computed(() => [
       <button class="btn" :class="{ o: done === 0 }" @click="finishing = true">Finish</button>
     </div>
     <div v-if="!isPhone" class="aw-prog" aria-hidden="true"><span v-for="g in segs" :key="g.id" :style="{ flexGrow: g.n }"><i :style="{ width: (g.done / g.n) * 100 + '%' }" /></span></div>
-    <div v-if="w.reminders?.length" class="col spb" style="gap:8px"><ReminderItem v-for="m in w.reminders" :key="m.id" :reminder="m" @gone="w.reminders = w.reminders.filter((x: any) => x.id !== m.id)" /></div>
+    <div v-if="w.reminders?.length" class="col spb" style="gap:8px"><ReminderItem v-for="m in w.reminders" :key="m.id" :reminder="m" @gone="w.reminders = w.reminders.filter((x: Reminder) => x.id !== m.id)" /></div>
 
 
     <div v-if="!w.exercises.length" class="card empty"><Icon name="dumbbell" :size="34" /><b>Add your first exercise</b><button class="btn" @click="adding = true">Add exercises</button></div>

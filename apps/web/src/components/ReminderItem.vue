@@ -18,7 +18,7 @@ const open = () => (reminderView.value = { r: r.value, routineName: props.routin
 </script>
 
 <template>
-  <div class="ritem" role="button" tabindex="0" @click="open" @keydown.enter.self="open">
+  <div class="ritem" role="button" tabindex="0" @click="open" @keydown.enter.self.prevent="open" @keydown.space.self.prevent="open">
     <Icon name="bell" :size="18" class="ic" />
     <div class="b">
       <div class="tx">{{ reminderText(r, fmt) }}</div>
@@ -33,6 +33,7 @@ const open = () => (reminderView.value = { r: r.value, routineName: props.routin
 <style scoped>
 .ritem { display: flex; align-items: flex-start; gap: 10px; text-align: start; padding: calc(var(--cpy) - 4px) calc(var(--cpx) - 3px); border-radius: var(--r-sm); background: color-mix(in srgb, var(--acc) 13%, transparent); font-size: 13.5px; color: var(--tx); cursor: pointer; }
 .ritem:hover { background: color-mix(in srgb, var(--acc) 18%, transparent); }
+.ritem:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
 .ic { color: var(--acc); flex: none; margin-top: 1px; }
 .b { flex: 1; min-width: 0; }
 .tx { font-weight: 600; white-space: pre-wrap; overflow-wrap: anywhere; }

@@ -1,19 +1,21 @@
+import type { Reminder } from "@motus/shared";
+
 // One text for a reminder everywhere it shows: its body, plus the exact weight × reps of a "Ready for more weight"
 // reminder, which are kept in kg in the action and shown in the person's unit.
-export function reminderText(r: any, fmt: { wu_: (kg: number) => string }): string {
+export function reminderText(r: Reminder, fmt: { wu_: (kg: number) => string }): string {
   const a = r?.action;
   if (a?.setWeightKg == null) return r?.body ?? "";
   return `${r.body} · ${fmt.wu_(a.setWeightKg)}${a.setReps != null ? ` × ${a.setReps}` : ""}`;
 }
 
 /** When it comes up, in a couple of words (the reminder line and its sheet say it the same way) */
-export function reminderWhen(r: any, fmt: { date: (iso: string) => string }): string {
-  return r?.trigger === "next" ? "Next time" : r?.trigger === "every" ? "Every time" : r?.trigger === "after_n" ? `After ${r.triggerN} sessions` : r?.trigger === "date" ? `From ${fmt.date(r.triggerDate)}` : "";
+export function reminderWhen(r: Reminder, fmt: { date: (iso: string) => string }): string {
+  return r?.trigger === "next" ? "Next time" : r?.trigger === "every" ? "Every time" : r?.trigger === "after_n" ? `After ${r.triggerN} sessions` : r?.trigger === "date" ? `From ${fmt.date(r.triggerDate ?? "")}` : "";
 }
 
 /** The change it makes to the numbers filled in for you, e.g. "+2.5 kg, +1 reps"; null when it only reminds.
  *  The exact weight of a "Ready for more weight" reminder is already in its text, so it isn't repeated here. */
-export function reminderChange(r: any, fmt: { wu_: (kg: number) => string; clock: (s: number) => string }): string | null {
+export function reminderChange(r: Reminder, fmt: { wu_: (kg: number) => string; clock: (s: number) => string }): string | null {
   const a = r?.action;
   if (!a) return null;
   const sign = (n: number) => (n > 0 ? "+" : "-");
