@@ -11,6 +11,7 @@ import { useWorkoutQuery, useSettings, loaded } from "../api/queries";
 import { api, mediaUrl } from "../api/client";
 import { invalidate } from "../api/live";
 import { useFmt, localYmd } from "../core/format";
+import { reminderText } from "../core/reminderText";
 import { exerciseSheet, noteSheet } from "../core/ui";
 import { confirm, prompt } from "../core/ask";
 import { shareWorkoutImage } from "../core/shareImage";
@@ -29,7 +30,8 @@ const s = useSettings();
 const fmt = useFmt();
 const w = computed<any>(() => q.data.value);
 const rep = computed<any>(() => w.value?.report);
-// straight after Finish: the summary opens with a word of what you did, and Back goes home rather than to the calendar
+// straight after Finish: the summary opens with a word of what you did, and the back link says Home and goes there
+// rather than to the calendar. No button of its own in that word: it only duplicated the back link and vanished on return.
 const justDone = computed(() => route.query.done === "1");
 const doneLine = computed(() => { const t = rep.value?.totals; if (!t) return "";
   return [fmt.value.dur(t.durationS, true), `${t.workingSets} set${t.workingSets === 1 ? "" : "s"}`, t.volumeKg ? fmt.value.vol(t.volumeKg) : "", t.records ? `${t.records} new record${t.records === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · "); });
@@ -110,7 +112,7 @@ await loaded(q);
 <template>
   <div v-if="w" class="page">
     <div class="row" style="margin-bottom:8px">
-      <button class="back" style="margin:0" @click="justDone ? router.replace('/') : goBack(router, '/history')"><Icon name="left" :size="16" /><span>Back</span></button>
+      <button class="back" style="margin:0" @click="justDone ? router.replace('/') : goBack(router, '/history')"><Icon name="left" :size="16" /><span>{{ justDone ? "Home" : "Back" }}</span></button>
       <div class="grow" />
       <button class="ib sm plain" :disabled="!w.prevId" aria-label="Earlier workout" @click="router.push(`/workouts/${w.prevId}`)"><Icon name="left" :size="18" /></button>
       <button class="ib sm plain" :disabled="!w.nextId" aria-label="Later workout" @click="router.push(`/workouts/${w.nextId}`)"><Icon name="right" :size="18" /></button>
@@ -121,8 +123,7 @@ await loaded(q);
     </div>
 
     <div v-if="justDone" class="card done-hi spb"><span class="bi sg"><Icon name="check" :size="20" /></span>
-      <div class="grow" style="min-width:0"><div class="t">Workout done</div><div class="tiny">{{ doneLine }}{{ rep?.compared ? ` · beat last time on ${rep.beat} of ${rep.compared} exercises` : "" }}</div></div>
-      <button class="btn" @click="router.replace('/')">Done</button></div>
+      <div class="grow" style="min-width:0"><div class="t">Well done - workout saved</div><div class="tiny">{{ doneLine }}{{ rep?.compared ? ` · beat last time on ${rep.beat} of ${rep.compared} exercises` : "" }}</div></div></div>
     <div class="grid g4">
       <div class="card hero stat"><div class="lbl"><span class="bi"><Icon name="clock" :size="15" /></span>Duration</div><div class="val">{{ fmt.dur(rep.totals.durationS, true) }}</div><div class="sub">{{ fmt.dur(rep.totals.activeS, true) }} active · {{ fmt.dur(rep.totals.restS, true) }} rest</div></div>
       <div class="card stat"><div class="lbl"><span class="bi"><Icon name="layers" :size="15" /></span>Volume</div><div class="val">{{ fmt.vol(rep.totals.volumeKg) }}</div>
@@ -177,7 +178,7 @@ await loaded(q);
         <div v-if="rep.previous" class="card click" @click="router.push(`/workouts/${rep.previous.id}`)"><div class="lbl">Last time ({{ fmt.date(rep.previous.startedAt) }})</div>
           <div class="tiny" style="margin-top:6px">{{ fmt.dur(rep.previous.durationS, true) }} · {{ fmt.vol(rep.previous.volumeKg) }}</div>
           <div class="tiny" :class="rep.totals.durationS <= rep.previous.durationS ? 'pos' : ''">{{ rep.totals.durationS <= rep.previous.durationS ? `${fmt.dur(rep.previous.durationS - rep.totals.durationS, true)} faster` : `${fmt.dur(rep.totals.durationS - rep.previous.durationS, true)} longer` }}</div></div>
-        <div v-if="w.createdReminders?.length" class="card"><div class="lbl hgap">Reminders set</div><div v-for="m in w.createdReminders" :key="m.id" class="row tiny" style="padding:3px 0"><Icon name="bell" :size="14" />{{ m.body }}<template v-if="m.action?.setWeightKg != null"> · {{ fmt.wu_(m.action.setWeightKg) }}{{ m.action.setReps != null ? ` × ${m.action.setReps}` : "" }}</template></div></div>
+        <div v-if="w.createdReminders?.length" class="card"><div class="lbl hgap">Reminders set</div><div v-for="m in w.createdReminders" :key="m.id" class="row tiny" style="padding:3px 0"><Icon name="bell" :size="14" />{{ reminderText(m, fmt) }}</div></div>
         <div v-if="rep.totals.avgRestS" class="card tight"><div class="lbl">Average rest</div><div style="font-weight:600;font-size:18px">{{ fmt.clock(rep.totals.avgRestS) }}</div></div>
       </div>
     </div>
