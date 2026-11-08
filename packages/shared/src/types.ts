@@ -188,6 +188,10 @@ export interface WorkoutSet {
   /** the top of the rep range when the routine gives one ("8-12": 8 and 12) */
   targetRepsMax?: number | null;
   targetWeightKg: number | null;
+  /** the numbers the workout started this set with (the plan's, after a lighter week or a reminder); null on sets added
+   * later and on workouts started before they were kept */
+  startWeightKg?: number | null;
+  startReps?: number | null;
   prefilled: boolean;
   // the same set last time (for the "Previous" column)
   prev?: { weightKg: number | null; reps: number | null; durationS: number | null; distanceM: number | null } | null;

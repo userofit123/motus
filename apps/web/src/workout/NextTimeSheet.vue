@@ -3,8 +3,11 @@ import type { NextChange } from "@motus/shared";
 /** one set whose numbers change: the routine's before this workout and next time's, as text ("-" when empty) */
 export interface NextSet { key: number; label: string; from: string; to: string; trend: "up" | "down" | null }
 /** a routine exercise whose numbers change next time (or that has a Progression change, or sets left unticked with
- * numbers typed in); `index` is its place in the workout, for "Go to exercise" */
-export interface NextGroup { id: string; index: number; name: string; sets: NextSet[]; change?: NextChange; unticked: boolean }
+ * numbers typed in); `index` is its place in the workout, for "Go to exercise"; `note` says when the slot is new or
+ * holds another exercise now ("Was: Bench press") */
+export interface NextGroup { id: string; index: number; name: string; note?: string; sets: NextSet[]; change?: NextChange; unticked: boolean }
+/** an exercise that stays as it is, with the routine's numbers in short ("3 × 20 kg × 10") */
+export interface NextSame { id: string; name: string; fixed: boolean; sets: string }
 </script>
 
 <script setup lang="ts">
@@ -17,7 +20,7 @@ import { useWorkout } from "./useWorkout";
 import Sheet from "../components/Sheet.vue";
 import Icon from "../components/Icon.vue";
 
-const props = defineProps<{ groups: NextGroup[]; unchanged: { id: string; name: string; fixed: boolean }[] }>();
+const props = defineProps<{ groups: NextGroup[]; unchanged: NextSame[] }>();
 const accepted = defineModel<string[]>({ required: true });
 const emit = defineEmits<{ close: []; open: [index: number] }>();
 const fmt = useWorkout().fmt;
@@ -33,6 +36,7 @@ const applyLabel = (c: NextChange, name: string) => `${c.direction === "up" ? "R
     <div v-for="g in groups" :key="g.id" class="card spb nt-ex">
       <!-- the name has its own line (long ones wrap), the numbers sit under it -->
       <div class="nt-name">{{ g.name }}</div>
+      <div v-if="g.note" class="nt-was"><Icon :name="g.note.startsWith('Was') ? 'swap' : 'plus'" :size="14" />{{ g.note }}</div>
       <div v-if="g.sets.length" class="nt-sets">
         <div v-for="x in g.sets" :key="x.key" class="nt-set">
           <span class="nt-lbl">{{ x.label }}</span>
@@ -65,7 +69,8 @@ const applyLabel = (c: NextChange, name: string) => `${c.direction === "up" ? "R
       </div>
       <template v-if="showSame">
         <div v-for="x in unchanged" :key="x.id" class="li">
-          <div class="grow ellipsis">{{ x.name }}</div>
+          <Icon name="dumbbell" :size="18" class="muted" />
+          <div class="grow" style="min-width:0"><div class="t ellipsis">{{ x.name }}</div><div class="s ellipsis">{{ x.sets }}</div></div>
           <span v-if="x.fixed" class="mchip"><Icon name="lock" :size="12" />Fixed numbers</span>
         </div>
       </template>
@@ -75,6 +80,10 @@ const applyLabel = (c: NextChange, name: string) => `${c.direction === "up" ? "R
 </template>
 
 <style scoped>
+/* every line in the card keeps the .li rows' inline inset, so all left edges line up with the list below */
+.nt-ex > * { padding-inline: 4px; }
+.nt-was { display: flex; align-items: center; gap: var(--tdy); margin-top: var(--tdy); font-size: var(--fs-sm); color: var(--tx2); }
+.nt-was .ico { flex: none; }
 .nt-name { font-weight: 600; font-size: var(--fs-lg); overflow-wrap: anywhere; }
 .nt-sets { display: flex; flex-direction: column; gap: var(--tdy); margin-top: var(--tdy); }
 .nt-set { display: grid; grid-template-columns: 4.5em 1fr; align-items: baseline; font-variant-numeric: tabular-nums; }
@@ -86,10 +95,10 @@ const applyLabel = (c: NextChange, name: string) => `${c.direction === "up" ? "R
 .nt-to.pos { color: var(--pos); }
 .nt-to.neg { color: var(--neg); }
 .nt-auto { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tdy); margin-top: var(--lpy); }
-.mchip { display: inline-flex; align-items: center; gap: 4px; }
+.mchip { display: inline-flex; align-items: center; gap: var(--tdy); }
 .mchip.pos { color: var(--pos); }
 .mchip.neg { color: var(--neg); }
-.nt-apply { margin-top: var(--tdy); border-top: 1px solid var(--ol); border-bottom: 0; padding-inline: 0; }
+.nt-apply { margin-top: var(--tdy); border-top: 1px solid var(--ol); border-bottom: 0; }
 .nt-note { display: flex; align-items: center; gap: var(--tdy) var(--hg); flex-wrap: wrap; margin-top: var(--lpy); padding-top: var(--lpy); border-top: 1px solid var(--ol); font-size: var(--fs-sm); color: var(--tx2); }
 .nt-note .ico { flex: none; color: var(--acc); }
 </style>

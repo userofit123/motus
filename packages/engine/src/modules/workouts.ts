@@ -240,12 +240,13 @@ async function insertSets(ctx: Ctx, weId: string, sets: any[], startPos = 0) {
     // user's set; an id taken by someone else's row is refused (and says nothing about that row).
     const res = await ctx.q.query(
       `INSERT INTO workout_sets (id, user_id, workout_exercise_id, position, kind, weight_kg, reps, duration_s, distance_m, rpe, rir, side, done, done_at,
-         rest_planned_s, rest_actual_s, target_reps, target_weight_kg, prefilled, target_reps_max)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)${given ? " ON CONFLICT (id) DO NOTHING" : ""} RETURNING id`,
+         rest_planned_s, rest_actual_s, target_reps, target_weight_kg, prefilled, target_reps_max, start_weight_kg, start_reps)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)${given ? " ON CONFLICT (id) DO NOTHING" : ""} RETURNING id`,
       [given ?? uuidv7(), ctx.userId, weId, startPos + i, oneOf(s.kind, KINDS, "normal"), numOrNull(s.weightKg, -500, 2000), intOrNull(s.reps, 0, 10000),
         intOrNull(s.durationS, 0, 86400), numOrNull(s.distanceM, 0, 1e7), numOrNull(s.rpe, 0, 10), numOrNull(s.rir, 0, 20), s.side ? str(s.side, 5) : null,
         bool(s.done), s.done ? (s.doneAt ? isoTime(s.doneAt) : ctx.now().toISOString()) : null, intOrNull(s.restS ?? s.restPlannedS, 0, 3600),
-        intOrNull(s.restActualS, 0, 86400), intOrNull(s.targetReps, 0, 10000), numOrNull(s.targetWeightKg, -500, 2000), bool(s.prefilled), intOrNull(s.targetRepsMax, 0, 10000)]);
+        intOrNull(s.restActualS, 0, 86400), intOrNull(s.targetReps, 0, 10000), numOrNull(s.targetWeightKg, -500, 2000), bool(s.prefilled), intOrNull(s.targetRepsMax, 0, 10000),
+        numOrNull(s.startWeightKg, -500, 2000), intOrNull(s.startReps, 0, 10000)]);
     if (!res.rows.length && !(await ownSet(ctx, given!, weId))) throw bad("That set id is already in use");
   }
 }
@@ -376,7 +377,7 @@ export function workoutRoutes(r: Router) {
       if (order) exs = [...exs].sort((a, c) => order.indexOf(a.routineExerciseId ?? "") - order.indexOf(c.routineExerciseId ?? ""));
       let pos = 0;
       for (const e of exs) {
-        const weId = await addExercise(ctx, wid, { ...e, position: pos++, sets: e.sets.map((s) => ({ ...s, restPlannedS: s.restS })) });
+        const weId = await addExercise(ctx, wid, { ...e, position: pos++, sets: e.sets.map((s) => ({ ...s, restPlannedS: s.restS, startWeightKg: s.weightKg, startReps: s.reps })) });
         if (e.routineExerciseId && skip.has(e.routineExerciseId)) await ctx.q.query("UPDATE workout_exercises SET status = 'skipped', skip_reason = 'Skipped before starting' WHERE id = $1", [weId]);
       }
     } else if (Array.isArray(b.exerciseIds)) {

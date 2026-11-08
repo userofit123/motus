@@ -61,10 +61,13 @@ const vsLast = computed(() => {
 const routine = useRoutine(computed(() => w.value.routineId ?? ""));
 type Item = Routine["exercises"][number];
 type RSet = Item["sets"][number];
-const shaped = computed<Item[]>(() => {
+// the routine as the switched-on changes leave it; exercises added today come in without an id (they carry the workout
+// exercise they came from)
+type Shaped = Item & { fromWorkoutExerciseId?: string };
+const shaped = computed<Shaped[]>(() => {
   const r = routine.data.value as Routine | undefined;
   if (!r) return [];
-  return ((applyStructure(r, w.value, d.routineChanges) ?? r.exercises) as Item[]).filter((x) => x.id);
+  return (applyStructure(r, w.value, d.routineChanges) ?? r.exercises) as Shaped[];
 });
 const plan = computed(() => planNext(shaped.value, w.value, { ...W.settings.value.progression, stepKg: W.incKg.value }, d.accepted));
 const FIELDS = ["kind", "weightKg", "reps", "repsMax", "durationS", "distanceM"] as const;
@@ -77,32 +80,58 @@ function setText(x: RSet, t: Tracking) {
   const r = reps ? (kg ? `× ${reps}` : `${reps} rep${reps === "1" ? "" : "s"}`) : "";
   return [kg, r, x.durationS ? f.clock(x.durationS) : "", x.distanceM ? f.dist(x.distanceM) : ""].filter(Boolean).join(" ") || "-";
 }
-// sets left unticked with numbers typed in (not the routine's own, not last time's prefilled ones): finishing drops them
-const typedUnticked = (e: Workout["exercises"][number]) => e.status !== "skipped" && e.sets.some((s) => !s.done && !s.prefilled
-  && ((s.weightKg != null && s.weightKg !== s.targetWeightKg) || (s.reps != null && s.reps !== s.targetReps)));
+// an exercise's working sets in short, runs of the same numbers counted: "3 × 20 kg × 10", "2 × 20 kg × 10, 25 kg × 8"
+function setsText(sets: RSet[], t: Tracking) {
+  const runs: { k: number; text: string }[] = [];
+  for (const x of sets.filter((x) => x.kind !== "warmup")) {
+    const text = setText(x, t), last = runs.at(-1);
+    if (last?.text === text) last.k++; else runs.push({ k: 1, text });
+  }
+  if (!runs.length || runs.every((x) => x.text === "-")) return n(runs.reduce((a, x) => a + x.k, 0), "set");
+  return runs.map((x) => (x.k > 1 ? `${x.k} × ${x.text}` : x.text)).join(", ");
+}
+// sets left unticked with numbers typed in: finishing drops them. Compared with the numbers the set started with (a
+// lighter week or a reminder may have moved them off the routine's), so only sets you edited count; prefilled ones and
+// workouts started before sets kept their start fall back to the routine's target
+type WSet = Workout["exercises"][number]["sets"][number];
+const edited = (s: WSet) => {
+  if (s.prefilled) return false;
+  const kept = s.startWeightKg != null || s.startReps != null;
+  const w0 = kept ? s.startWeightKg ?? null : s.targetWeightKg, r0 = kept ? s.startReps ?? null : s.targetReps;
+  return (s.weightKg != null && s.weightKg !== w0) || (s.reps != null && s.reps !== r0);
+};
+const typedUnticked = (e: Workout["exercises"][number]) => e.status !== "skipped" && e.sets.some((s) => !s.done && edited(s));
 const nextTime = computed(() => {
-  const groups: NextGroup[] = [], unchanged: { id: string; name: string; fixed: boolean }[] = [];
+  const groups: NextGroup[] = [], unchanged: { id: string; name: string; fixed: boolean; sets: string }[] = [];
   const listed = new Set<number>();
+  // "before" is the routine as it is now, not as the switched-on changes reshape it
+  const orig = new Map(((routine.data.value as Routine | undefined)?.exercises ?? []).map((x) => [x.id, x] as const));
   shaped.value.forEach((item, i) => {
     const after = plan.value.exercises[i]!;
-    const index = w.value.exercises.findIndex((e) => e.routineExerciseId === item.id && e.exerciseId === item.exerciseId);
+    const was = item.id ? orig.get(item.id) : undefined;
+    const index = item.id ? w.value.exercises.findIndex((e) => e.routineExerciseId === item.id && e.exerciseId === item.exerciseId)
+      : w.value.exercises.findIndex((e) => e.id === item.fromWorkoutExerciseId);
     const e = w.value.exercises[index];
     const name = e?.exercise?.name ?? item.exercise?.name ?? "";
     const t = (e?.exercise?.tracking ?? item.exercise?.tracking ?? "weight_reps") as Tracking;
-    const before = item.sets as RSet[];
+    // a swap switched on puts another exercise in the slot: nothing of the old one carries over, so its sets are all new
+    const swapped = !!was && was.exerciseId !== item.exerciseId;
+    const note = !was ? "New in the routine" : swapped ? `Was: ${was.exercise?.name ?? ""}` : undefined;
+    const before = (was && !swapped ? was.sets : []) as RSet[];
     let k = 0;
     const sets = (after.sets as RSet[]).flatMap((x, j): NextSet[] => {
-      const label = x.kind === "warmup" ? "Warm-up" : `Set ${++k}`;
+      const label = x.kind === "warmup" ? "Warm-up" : x.kind === "drop" ? "Drop" : `Set ${++k}`;
       const b = before[j];
       if (sameSet(b, x)) return [];
       const delta = b?.weightKg != null && x.weightKg != null ? (x.weightKg - b.weightKg) * (t === "assisted" ? -1 : 1) : 0;
       return [{ key: j, label, from: b ? setText(b, t) : "-", to: setText(x, t), trend: delta > 0 ? "up" : delta < 0 ? "down" : null }];
     });
-    const change = plan.value.changes.find((c) => c.routineExerciseId === item.id);
+    const change = item.id ? plan.value.changes.find((c) => c.routineExerciseId === item.id) : undefined;
     const unticked = !!e && typedUnticked(e);
     if (e) listed.add(index);
-    if (sets.length || change || unticked) groups.push({ id: item.id!, index, name, sets, change, unticked });
-    else unchanged.push({ id: item.id!, name, fixed: !!item.fixed });
+    const id = item.id ?? e?.id ?? `new-${i}`;
+    if (sets.length || change || unticked || note) groups.push({ id, index, name, note, sets, change, unticked });
+    else unchanged.push({ id, name, fixed: !!item.fixed, sets: setsText(after.sets as RSet[], t) });
   });
   // exercises outside the routine lose their unticked sets too
   w.value.exercises.forEach((e, index) => {
@@ -120,7 +149,8 @@ const nextSummary = computed(() => {
   if (fresh) lines.push({ icon: "refresh", text: `${n(fresh, "exercise has", "exercises have")} new numbers` });
   if (auto("up")) lines.push({ icon: "arrowUp", text: `${n(auto("up"), "weight goes", "weights go")} up automatically`, tone: "pos" });
   if (auto("down")) lines.push({ icon: "arrowDown", text: `${n(auto("down"), "weight goes", "weights go")} down automatically`, tone: "neg" });
-  if (sug.length) lines.push({ icon: "sparkle", tone: on ? undefined : "acc",
+  // in the accent colour until every suggestion is switched on
+  if (sug.length) lines.push({ icon: "sparkle", tone: on < sug.length ? "acc" : undefined,
     text: !on ? `${n(sug.length, "suggestion", "suggestions")} to review` : on === sug.length ? `${n(on, "suggestion", "suggestions")} applied` : `${on} of ${sug.length} suggestions applied` });
   if (unticked) lines.push({ icon: "info", text: `${n(unticked, "exercise has", "exercises have")} sets you didn't tick`, tone: "acc" });
   return lines;
@@ -129,6 +159,7 @@ const showNext = ref(false);
 function goTo(index: number) { showNext.value = false; emit("open", index); }
 // how this session differed from the routine, each change saved only when switched on
 const changes = computed<StructureChange[]>(() => w.value.routineId && routine.data.value ? structureChanges(routine.data.value, w.value) : []);
+const hasNext = computed(() => !!w.value.routineId && shaped.value.length > 0);
 const unticked = computed(() => w.value.exercises.reduce((a, e) => a + (e.status === "skipped" ? 0 : e.sets.filter((s) => !s.done).length), 0));
 async function finish() {
   if (busy.value) return;
@@ -164,9 +195,10 @@ async function finish() {
       </div>
     </div>
     <div class="spb"><WorkoutSoFar :w="w" final :vs-last="sc.vsLast" @open="emit('open', $event)" /></div>
-    <div v-if="unticked" class="banner note"><Icon name="info" />{{ unticked }} set{{ unticked > 1 ? "s were" : " was" }} not ticked. They will be left out.</div>
+    <!-- with a routine, the Next time card points out unticked sets; without one this is the only place -->
+    <div v-if="unticked && !hasNext" class="banner note"><Icon name="info" />{{ unticked }} set{{ unticked > 1 ? "s weren't" : " wasn't" }} ticked and won't be saved</div>
 
-    <template v-if="w.routineId && shaped.length">
+    <template v-if="hasNext">
       <div class="sh"><h2>Next time</h2></div>
       <div class="card spb">
         <div class="li click nt-sum" role="button" tabindex="0" @click="showNext = true" @keydown.enter="showNext = true">
