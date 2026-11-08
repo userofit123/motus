@@ -50,24 +50,24 @@ const rows = computed(() => r.value.perExercise.map((p, i) => {
     <div class="exh"><div class="grow"><h3 class="wsf-h">{{ final ? "What you did" : "Summary so far" }}</h3>
       <div class="tiny">{{ r.exercisesDone }} of {{ plural(r.exercisesTotal, "exercise") }} done</div></div></div>
 
-    <div class="wsf-hero">
+    <div class="card hero wbody">
       <BodyMap class="rbody" :values="{}" :highlight="worked.primary" :secondary="worked.secondary" />
       <div class="wsf-prog">
         <div class="wsf-cap">Sets done</div>
         <div class="wsf-ringrow">
-          <div class="wsf-ring"><Ring :pct="pct" :size="62" :stroke="6" :color="allDone ? 'var(--pos)' : undefined" /><span>{{ Math.round(pct * 100) }}%</span></div>
+          <div class="wsf-ring"><Ring aria-hidden="true" :pct="pct" :size="62" :stroke="6" :color="allDone ? 'var(--pos)' : undefined" /><span>{{ Math.round(pct * 100) }}%</span></div>
           <div class="wsf-big">{{ r.setsDone }}<small> of {{ r.setsPlanned }}</small></div>
         </div>
         <div class="wsf-cap">{{ muscleLine || (final ? "No sets ticked" : "Muscles show here as you tick sets") }}</div>
       </div>
     </div>
 
-    <div class="wsf-tiles">
-      <div v-if="!final" class="stat wsf-tile"><div class="lbl"><span class="bi"><Icon name="clock" :size="15" /></span>Time</div>
+    <div class="wsf-tiles" :class="{ two: final }">
+      <div v-if="!final" class="card stat wsf-tile"><div class="lbl"><span class="bi"><Icon name="clock" :size="15" /></span>Time</div>
         <div class="val">{{ fmt.clock(secs) }}</div><div class="sub">Since {{ fmt.time(w.startedAt) }}</div></div>
-      <div class="stat wsf-tile"><div class="lbl"><span class="bi"><Icon name="layers" :size="15" /></span>Volume</div>
+      <div class="card stat wsf-tile"><div class="lbl"><span class="bi"><Icon name="layers" :size="15" /></span>Volume</div>
         <div class="val">{{ fmt.vol(r.volumeKg) }}</div><div class="sub">{{ plural(r.reps, "rep") }}</div></div>
-      <div class="stat wsf-tile" :class="{ rec: r.records }"><div class="lbl"><span class="bi"><Icon name="trophy" :size="15" /></span>Records</div>
+      <div class="card stat wsf-tile" :class="{ rec: r.records }"><div class="lbl"><span class="bi"><Icon name="trophy" :size="15" /></span>Records</div>
         <div class="val">{{ r.records }}</div><div class="sub">{{ recordsSub }}</div></div>
     </div>
 
@@ -101,23 +101,22 @@ const rows = computed(() => r.value.perExercise.map((p, i) => {
 .wsf .exh { margin-bottom: 0; }
 .wsf-h { cursor: default; }
 
-/* the hero: Home's accent hero look, figure on the left and the progress on the right (CLAUDE.md card rule) */
-.wsf-hero { display: flex; align-items: stretch; gap: var(--cpx); padding: var(--cpy) var(--cpx); border-radius: var(--r-md); color: var(--onc);
-  background: linear-gradient(140deg, var(--accc), color-mix(in srgb, var(--accc) 55%, var(--s1))); border: 1px solid color-mix(in srgb, var(--onc) 14%, transparent); }
+/* the hero is a real .card.hero.wbody (Home's accent look, figure left as on the routine cards), so every look styles it */
 .wsf-prog { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: var(--tdy); }
 .wsf-cap { font-size: var(--fs-sm); color: color-mix(in srgb, var(--onc) 75%, transparent); }
 .wsf-ringrow { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tdy) var(--cpx); }
 .wsf-ring { position: relative; flex: none; display: grid; }
-.wsf-ring span { position: absolute; inset: 0; display: grid; place-items: center; font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
-.wsf-big { font-size: 28px; font-weight: 700; letter-spacing: -.5px; line-height: 1.1; font-variant-numeric: tabular-nums; }
-.wsf-big small { font-size: 15px; font-weight: 500; letter-spacing: 0; color: color-mix(in srgb, var(--onc) 70%, transparent); }
+.wsf-ring span { position: absolute; inset: 0; display: grid; place-items: center; font-size: var(--fs-sm); font-weight: 700; font-variant-numeric: tabular-nums; }
+.wsf-big { font-size: var(--fs-h1); font-weight: 700; letter-spacing: -.5px; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.wsf-big small { font-size: var(--fs); font-weight: 500; letter-spacing: 0; color: color-mix(in srgb, var(--onc) 70%, transparent); }
 
-/* stat tiles: the app's .stat look, sized down to sit three in a row on a phone */
-.wsf-tiles { display: grid; gap: var(--hg); grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); }
-.wsf-tile { min-height: 0; padding: calc(var(--cpy) - 3px) calc(var(--cpx) - 4px); border: 1px solid var(--ol); border-radius: var(--r-md); background: var(--s1); }
+/* stat tiles: the app's .card.stat, always three across (two when the time leaves on Finish); the value shrinks with the
+   row like the phone stat cards (app.css) instead of being cut off, measured on the row so it also fits the desktop column */
+.wsf-tiles { display: grid; gap: var(--hg); grid-template-columns: repeat(3, minmax(0, 1fr)); container-type: inline-size; }
+.wsf-tiles.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.wsf-tile { min-height: 0; }
 .wsf-tile .lbl { font-size: var(--fs-sm); gap: 6px; }
-.wsf-tile .val { font-size: 21px; letter-spacing: -.4px; margin: var(--tdy) 0 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.wsf-tile .sub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wsf-tile .val { font-size: clamp(var(--fs-lg), 5.2cqi, var(--fs-val)); margin-top: var(--tdy); }
 .wsf-tile.rec { border-color: color-mix(in srgb, var(--acc) 45%, var(--ol)); background: color-mix(in srgb, var(--acc) 7%, var(--s1)); }
 .wsf-tile.rec .bi { background: var(--acc); color: var(--on); }
 
@@ -128,10 +127,9 @@ const rows = computed(() => r.value.perExercise.map((p, i) => {
 .wsf-sub b { color: var(--tx); font-weight: 600; font-variant-numeric: tabular-nums; }
 .wsf-tr { display: inline-flex; align-items: center; gap: 3px; }
 .wsf-cnt { width: 52px; display: flex; flex-direction: column; align-items: stretch; gap: var(--tdy); }
-.wsf-n { font-weight: 600; font-size: 15px; font-variant-numeric: tabular-nums; }
-.wsf-n small { font-size: 12px; font-weight: 500; color: var(--tx2); }
+.wsf-n { font-weight: 600; font-size: var(--fs); font-variant-numeric: tabular-nums; }
+.wsf-n small { font-size: var(--fs-sm); font-weight: 500; color: var(--tx2); }
 .wsf-cnt .pbar { height: 5px; }
-.stt { color: var(--tx2); }
-.stt.done { color: var(--bg); }
+.stt:not(.done) { color: var(--tx2); }
 .li.skip .t { text-decoration: line-through; opacity: .6; }
 </style>

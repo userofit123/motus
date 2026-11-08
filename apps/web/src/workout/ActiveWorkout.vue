@@ -177,7 +177,8 @@ const menu = computed(() => [
       </div>
       <div class="stack" style="position:sticky;top:calc(24px + var(--st))">
         <Peek />
-        <div class="card"><Transition name="sw" mode="out-in"><WorkoutSoFar v-if="onSummary" key="summary" :w="w" @open="go" /><ExerciseCard v-else-if="w.exercises[W.state.cur]" :key="w.exercises[W.state.cur]!.id" :e="w.exercises[W.state.cur]!" :index="W.state.cur" /></Transition></div>
+        <!-- the summary brings its own cards (hero, tiles), so only the exercise sits in one, as on the phone -->
+        <div :class="{ card: !onSummary }"><Transition name="sw" mode="out-in"><WorkoutSoFar v-if="onSummary" key="summary" :w="w" @open="go" /><ExerciseCard v-else-if="w.exercises[W.state.cur]" :key="w.exercises[W.state.cur]!.id" :e="w.exercises[W.state.cur]!" :index="W.state.cur" /></Transition></div>
         <ActionBar :paused="paused" @finish="finishing = true" @pause="togglePause" />
         <div v-if="workoutNotes.length" class="aw-notes">
           <NoteItem v-for="n in workoutNotes" :key="n.id" :note="n" />
