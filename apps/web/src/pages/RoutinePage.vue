@@ -12,6 +12,7 @@ import { useFmt, ago } from "../core/format";
 import { noteSheet, reminderSheet, exerciseSheet } from "../core/ui";
 import { confirm, prompt } from "../core/ask";
 import { toast, toastError } from "../core/toast";
+import { saveFile } from "../core/saveFile";
 import Icon from "../components/Icon.vue";
 import MuscleFig from "../components/MuscleFig.vue";
 import Menu from "../components/Menu.vue";
@@ -78,7 +79,7 @@ const menu = computed(() => [
   { label: "Schedule", icon: "calendar", run: () => (editSchedule.value = { routineId: id.value }) },
   { label: "Earlier versions", icon: "history", run: () => (showVersions.value = true) },
   { label: "Send a copy to…", icon: "share", hidden: !settings.value.features.sharing, run: async () => { const u = await prompt("Send a copy to", { placeholder: "Their username on this server" }); if (u) { try { await api.post("/share/routine", { routineId: id.value, username: u }); toast(`Sent to ${u}`); } catch (e) { toastError(e); } } } },
-  { label: "Export", icon: "download", run: () => { const b = new Blob([JSON.stringify({ motusRoutine: 1, ...routine.value }, null, 2)], { type: "application/json" }); const a = document.createElement("a"); a.href = URL.createObjectURL(b); a.download = `${routine.value.name}.motusroutine`; a.click(); } },
+  { label: "Export", icon: "download", run: () => { const b = new Blob([JSON.stringify({ motusRoutine: 1, ...routine.value }, null, 2)], { type: "application/json" }); void saveFile(b, `${routine.value.name}.motusroutine`); } },
   { label: "Delete", icon: "trash", danger: true, sep: true, run: del },
 ]);
 // show the page once its data is in, all at once

@@ -15,13 +15,25 @@ function base64(bytes: Uint8Array) {
   let bin = ""; for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
   return btoa(bin);
 }
-// the first of "name.json", "name (2).json", ... not there yet, so an earlier file is never overwritten
-async function freeName(fs: any, dir: string, directory: string, name: string) {
-  const dot = name.lastIndexOf("."), base = dot > 0 ? name.slice(0, dot) : name, ext = dot > 0 ? name.slice(dot) : "";
-  for (let i = 1; ; i++) {
-    const n = i === 1 ? name : `${base} (${i})${ext}`;
-    if (!(await fs.stat({ path: `${dir}/${n}`, directory }).then(() => true, () => false))) return n;
+// "name.json", then "name (2).json", ...: a later try when an earlier name is taken, so a file is never overwritten
+function numbered(name: string, i: number) {
+  const dot = name.lastIndexOf(".");
+  return i === 1 ? name : dot > 0 ? `${name.slice(0, dot)} (${i})${name.slice(dot)}` : `${name} (${i})`;
+}
+type Fs = {
+  stat(o: { path: string; directory: string }): Promise<unknown>;
+  writeFile(o: { path: string; data: string; directory: string; recursive?: boolean }): Promise<unknown>;
+};
+// writes the file under the first free name in dir. Android 11+ hides files of other apps from stat, so a name that
+// looks free can still fail on write: that name is skipped and the next one tried (a few times, then the error stands)
+async function writeFree(fs: Fs, dir: string, directory: string, name: string, data: string) {
+  let err: unknown;
+  for (let i = 1; i <= 6; i++) {
+    const n = numbered(name, i);
+    if (await fs.stat({ path: `${dir}/${n}`, directory }).then(() => true, () => false)) continue;
+    try { await fs.writeFile({ path: `${dir}/${n}`, data, directory, recursive: true }); return n; } catch (e) { err = e; }
   }
+  throw err ?? new Error("No free file name");
 }
 
 async function latestApk() {
@@ -58,15 +70,11 @@ export function installAndroidBridge() {
     // Android 10 and older don't let an app write there without a storage permission Motus doesn't ask for: the file
     // then goes to Motus's own folder on the phone's storage instead, and the toast names that path.
     async saveFile(name: string, bytes: Uint8Array): Promise<string> {
-      const fs = P("Filesystem"), data = base64(bytes);
+      const fs: Fs = P("Filesystem"), data = base64(bytes);
       try {
-        const n = await freeName(fs, "Download", "EXTERNAL_STORAGE", name);
-        await fs.writeFile({ path: `Download/${n}`, data, directory: "EXTERNAL_STORAGE", recursive: true });
-        return `Downloads/${n}`;
+        return `Downloads/${await writeFree(fs, "Download", "EXTERNAL_STORAGE", name, data)}`;
       } catch {
-        const n = await freeName(fs, "Motus", "EXTERNAL", name);
-        await fs.writeFile({ path: `Motus/${n}`, data, directory: "EXTERNAL", recursive: true });
-        return `Android/data/org.motus.app/files/Motus/${n}`;
+        return `Android/data/org.motus.app/files/Motus/${await writeFree(fs, "Motus", "EXTERNAL", name, data)}`;
       }
     },
     update: {

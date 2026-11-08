@@ -5,7 +5,7 @@ import { toast } from "./toast";
 
 /** Saves the file and says where it went. False when the person cancelled the desktop app's save dialog. */
 export async function saveFile(blob: Blob, name: string): Promise<boolean> {
-  const native = (globalThis as any).motusNative?.saveFile as ((name: string, bytes: Uint8Array) => Promise<string | null>) | undefined;
+  const native = (globalThis as { motusNative?: { saveFile?: (name: string, bytes: Uint8Array) => Promise<string | null> } }).motusNative?.saveFile;
   if (native) {
     const where = await native(name, new Uint8Array(await blob.arrayBuffer()));
     if (!where) return false;
@@ -17,6 +17,6 @@ export async function saveFile(blob: Blob, name: string): Promise<boolean> {
   a.href = URL.createObjectURL(blob); a.download = name;
   document.body.append(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 60000);
-  toast(`Saved ${name} to your downloads`, { ms: 6000 });
+  toast(`Downloading ${name}`, { ms: 6000 });
   return true;
 }
