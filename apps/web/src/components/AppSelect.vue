@@ -2,6 +2,8 @@
 // The app's own drop-down list, in place of the browser's <select> (whose list is drawn by the browser or the phone, not
 // in the app's look). Options are plain strings or { value, label }; options with a `group` go under that heading.
 // Keys as on a <select>: arrows, Home/End, Enter or Space, Esc, and typing a name's first letters jumps to it.
+// `icon` puts an icon at the start of the field (in the accent colour once something is chosen); `groupIcons` ({ heading: icon name })
+// puts one before a heading, so the groups can be told apart at a glance.
 // Slot "end" (given the option) adds something at the right of each option, e.g. a button that plays a sound; it must
 // stop its own click, or the click picks the option too.
 import { computed, nextTick, ref, useId, watch } from "vue";
@@ -11,7 +13,7 @@ import PickerPop from "./PickerPop.vue";
 
 interface SelectOption { value: any; label: string; hint?: string; group?: string; disabled?: boolean }
 defineOptions({ inheritAttrs: false });
-const props = defineProps<{ modelValue: any; options: (string | SelectOption)[]; placeholder?: string; disabled?: boolean; title?: string }>();
+const props = defineProps<{ modelValue: any; options: (string | SelectOption)[]; placeholder?: string; disabled?: boolean; title?: string; icon?: string; groupIcons?: Record<string, string> }>();
 const emit = defineEmits<{ "update:modelValue": [v: any]; change: [v: any] }>();
 
 const id = useId();
@@ -84,12 +86,12 @@ function key(e: KeyboardEvent) {
 <template>
   <button ref="btn" type="button" class="fpick" v-bind="$attrs" role="combobox" aria-haspopup="listbox" :aria-expanded="open" :aria-controls="open ? `${id}-l` : undefined"
     :aria-activedescendant="open && hi >= 0 ? `${id}-${hi}` : undefined" :disabled="disabled" @click="open ? close() : show()" @keydown="key">
-    <span class="v" :class="{ unset: !cur }">{{ cur?.label ?? placeholder ?? "" }}</span><Icon name="down" :size="16" />
+    <Icon v-if="icon" class="lead" :class="{ on: cur }" :name="icon" :size="18" /><span class="v" :class="{ unset: !cur }">{{ cur?.label ?? placeholder ?? "" }}</span><Icon name="down" :size="16" />
   </button>
   <PickerPop v-if="open" :anchor="btn" :title="title ?? placeholder ?? 'Choose'" @close="close(false)">
     <div :id="`${id}-l`" class="asl" role="listbox">
       <template v-for="[g, os] in groups" :key="g">
-        <div v-if="g" class="asg" role="presentation">{{ g }}</div>
+        <div v-if="g" class="asg" role="presentation"><span v-if="groupIcons?.[g]" class="agi"><Icon :name="groupIcons[g]!" :size="14" /></span>{{ g }}</div>
         <div v-for="o in os" :id="`${id}-${flat.indexOf(o)}`" :key="String(o.value)" class="aso" role="option" :aria-selected="o.value === modelValue" :aria-disabled="o.disabled || undefined"
           :class="{ sel: o.value === modelValue, hi: flat.indexOf(o) === hi, dis: o.disabled }" @click="pick(o)" @mousemove="!o.disabled && (hi = flat.indexOf(o))">
           <span class="ol"><span>{{ o.label }}</span><small v-if="o.hint">{{ o.hint }}</small></span><Icon name="check" :size="16" />
@@ -101,10 +103,13 @@ function key(e: KeyboardEvent) {
 </template>
 
 <style scoped>
-/* a heading is a label, not a row: small muted capitals, a rule and air above (except the first), options indented under it */
-.asg { padding: 10px 12px 4px; font-size: var(--fs-xs); font-weight: 700; letter-spacing: .7px; text-transform: uppercase; color: var(--tx2); cursor: default; user-select: none; }
-.asg:not(:first-child) { margin-top: 6px; border-top: 1px solid var(--ol); padding-top: 12px; border-radius: 0; }
-.asg ~ .aso { padding-left: 20px; }
+/* a heading is a label, not a row: small muted capitals (after an icon tile when given), the usual section gap above
+   every group but the first */
+.asg { display: flex; align-items: center; gap: 8px; padding: 6px 12px 4px; font-size: var(--fs-xs); font-weight: 700; letter-spacing: .7px; text-transform: uppercase; color: var(--tx2); cursor: default; user-select: none; }
+.asg:not(:first-child) { margin-top: calc(var(--spg) * .75); }
+.agi { width: 22px; height: 22px; border-radius: 7px; display: grid; place-items: center; background: var(--s2); color: var(--acc); flex: none; }
+.fpick > .lead { flex: none; color: var(--tx2); }
+.fpick > .lead.on { color: var(--acc); }
 .aso { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 12px; border-radius: 10px; font-size: var(--fs); line-height: 1.3; color: var(--tx); cursor: pointer; }
 .aso.hi { background: var(--s2); }
 .aso.sel { color: var(--acc); font-weight: 600; }
@@ -118,6 +123,5 @@ function key(e: KeyboardEvent) {
 /* a sheet on the phone: rows big enough for a thumb */
 .sh_b .asl { margin: 0 -10px; }
 .sh_b .aso { min-height: var(--lmh); padding: var(--lpy) 12px; font-size: var(--fs-lg); border-radius: var(--r-sm); }
-.sh_b .asg ~ .aso { padding-left: 20px; }
-.sh_b .asg { padding-left: 12px; font-size: var(--fs-sm); }
+.sh_b .asg { font-size: var(--fs-sm); }
 </style>

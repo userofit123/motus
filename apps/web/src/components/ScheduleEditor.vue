@@ -25,10 +25,14 @@ const pick = !s.id && !s.routineId && !s.activityType;
 const routines = useRoutines();
 const types = useActivityTypes();
 const what = ref<string>(s.routineId ? "r:" + s.routineId : s.activityType ? "a:" + s.activityType : "");
-const options = computed(() => [
-  ...(routines.data.value ?? []).map((r: any) => ({ value: "r:" + r.id, label: r.name, group: "Routines" })),
-  ...(types.data.value ?? []).map((t: any) => ({ value: "a:" + t.slug, label: t.name, group: "Activities" })),
-]);
+// a routine or an activity, each in its own list (one long list mixing both was hard to read and to scroll); both write
+// the one `what`, so choosing in one empties the other. A list with nothing in it is left out once it has loaded.
+const routineOpts = computed(() => (routines.data.value ?? []).map((r: any) => ({ value: "r:" + r.id, label: r.name })));
+const activityOpts = computed(() => (types.data.value ?? []).map((t: any) => ({ value: "a:" + t.slug, label: t.name })));
+const showRoutine = computed(() => !routines.data.value || routineOpts.value.length > 0 || !activityOpts.value.length);
+const showActivity = computed(() => !types.data.value || activityOpts.value.length > 0);
+const part = (k: string) => computed({ get: () => (what.value.startsWith(k) ? what.value : ""), set: (v: string) => { what.value = v; } });
+const whatRoutine = part("r:"), whatActivity = part("a:");
 const REMIND = [{ value: 0, label: "At the time" }, { value: 15, label: "15 minutes" }, { value: 30, label: "30 minutes" }, { value: 60, label: "1 hour" }, { value: 120, label: "2 hours" }];
 const REPEATS = [{ value: "once", label: "Once" }, { value: "daily", label: "Every day" }, { value: "weekly", label: "Every week" }, { value: "monthly", label: "Every month" }, { value: "interval", label: "Every few days" }];
 // Sunday is 0, as Date.getDay() counts
@@ -71,8 +75,13 @@ async function save() {
 
 <template>
   <Sheet :title="pick ? 'Plan a workout' : 'Schedule'" @close="emit('close')">
-    <div v-if="pick" class="fld"><label>What</label>
-      <AppSelect v-model="what" :options="options" placeholder="Choose a routine or an activity" title="What to plan" /></div>
+    <template v-if="pick">
+      <div v-if="showRoutine" class="fld"><label>Routine</label>
+        <AppSelect v-model="whatRoutine" :options="routineOpts" icon="dumbbell" placeholder="Choose a routine" title="Routine" /></div>
+      <div v-if="showRoutine && showActivity" class="or" aria-hidden="true">or</div>
+      <div v-if="showActivity" class="fld"><label>Activity</label>
+        <AppSelect v-model="whatActivity" :options="activityOpts" icon="walk" placeholder="Choose an activity" title="Activity" /></div>
+    </template>
     <div class="fld"><label>{{ repeats ? "Starting" : "When" }}</label><WhenPicker v-model="f.startDate" :title="repeats ? 'Starting' : 'When'" /></div>
     <div class="fld"><label>Repeats</label><ChoiceTiles v-model="f.rule" :options="REPEATS" compact label="Repeats" /></div>
     <div v-if="f.rule === 'weekly'" class="fld"><label>On</label><ChoiceTiles v-model="f.days" :options="DAYS" multiple compact :cols="7" label="On" /></div>
@@ -86,3 +95,9 @@ async function save() {
     <template #foot><button class="btn o" @click="emit('close')">Cancel</button><button class="btn" :disabled="!ready" @click="save">{{ pick ? "Plan" : "Save" }}</button></template>
   </Sheet>
 </template>
+
+<style scoped>
+/* "or" between the routine and the activity lists: a small muted word centred between two hairlines, plainly not a button */
+.or { display: flex; align-items: center; gap: 10px; margin: calc(var(--hg) * -.4) 0 var(--hg); font-size: var(--fs-xs); font-weight: 700; letter-spacing: .7px; text-transform: uppercase; color: var(--tx2); }
+.or::before, .or::after { content: ""; flex: 1; height: 1px; background: var(--ol); }
+</style>
