@@ -3,7 +3,7 @@
 // With programs switched on, they get a tab of their own next to the routines.
 import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { duration, muscleName, type RoutineSummary } from "@motus/shared";
+import { routineTime, muscleName, type RoutineSummary } from "@motus/shared";
 import MuscleFig from "../components/MuscleFig.vue";
 import { useRoutines, useFolders, usePrograms, loaded } from "../api/queries";
 import { api } from "../api/client";
@@ -111,7 +111,7 @@ await loaded(routines, folders, ...(settings.value.features.programs ? [programs
           <MuscleFig :muscles="r.muscles" :helpers="r.helpers" />
           <div class="rmain">
             <div class="row" style="align-items:flex-start">
-              <div class="grow" style="min-width:0"><div class="row" style="gap:8px"><span class="dot" :style="{ background: r.color ?? undefined }" /><span class="ellipsis" style="font-weight:600;font-size:15.5px">{{ r.name }}</span></div><div class="tiny" style="margin-top:2px">{{ r.exerciseCount }} exercises · ~{{ duration(r.estimateS, true) }}</div></div>
+              <div class="grow" style="min-width:0"><div class="row" style="gap:8px"><span class="dot" :style="{ background: r.color ?? undefined }" /><span class="ellipsis" style="font-weight:600;font-size:15.5px">{{ r.name }}</span></div><div class="tiny" style="margin-top:2px">{{ r.exerciseCount }} exercises · {{ routineTime(r.estimateS, r.usual) }}</div></div>
               <span @click.stop><Menu :items="items(r)" /></span>
             </div>
             <div class="tiny ellipsis" style="margin:10px 0 0">{{ r.exerciseNames.join(" · ") || "No exercises yet" }}</div>

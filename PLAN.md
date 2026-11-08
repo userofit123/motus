@@ -537,10 +537,13 @@ The screen shown after choosing a routine, before pressing **Start**.
 - Routine name, folder, description, last performed ("6 days ago") and times performed.
 - Counts: **exercises**, **total sets** (working + warm-up shown separately), **total target reps**.
 - **Estimated duration** including rests, e.g. "≈ 62 min (sets 24 min · rest 38 min)". The formula:
-  - for each set: estimated set time + its rest; for each exercise: rest-after-exercise.
-  - The set-time estimate comes from **your own history** (median seconds per set for that exercise),
-    otherwise from defaults (≈ 3 s per rep + 10 s setup, or the target duration for timed sets).
-  - It updates live when you change settings or skip exercises in the preview.
+  - for each set: estimated set time + its rest; for each exercise: rest-after-exercise + a 60 s changeover.
+  - Set time: ≈ 4 s per rep + 15 s to get set and rack it, or the target duration + 10 s for timed sets
+    (`estimate()` in shared/training.ts).
+  - Once the routine has been done, the time shown is **what it really takes**: the average of its last 3
+    finished workouts without pauses, leaving out given-up (< 5 min), left-running (> 4 h) and odd ones
+    (`usualDuration()`). Wording says which: "usually 58m", "58m last time", or "about 55m" from the plan.
+  - Skipping exercises in the preview falls back to the plan's numbers for what's left.
 - Muscle map of what this routine trains.
 - **Pending reminders** for this routine and its exercises, shown up front.
 - **Pinned notes** for the routine.

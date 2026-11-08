@@ -1,6 +1,6 @@
 // Training maths: estimated one-rep max, volume, how long a routine takes, which rest applies, plates, warm-ups.
 import type { SetKind, Tracking, Progression, RestByKind } from "./types";
-import { fromKg, toKg } from "./units";
+import { duration, fromKg, toKg } from "./units";
 
 /** Estimated one-rep max (Epley by default; Brzycki is better for low reps). Only for 1-15 reps. */
 export function e1rm(weightKg: number | null | undefined, reps: number | null | undefined, formula: "epley" | "brzycki" = "epley"): number | null {
@@ -63,13 +63,18 @@ export function dropWeightKg(kg: number | null | undefined, unit: "kg" | "lb"): 
 // ----- how long a routine takes -----
 
 export interface EstimateSet { kind: SetKind; reps: number | null; durationS: number | null; restS: number }
-/** Seconds for one set: from the person's history if known, else ~3 s a rep plus 10 s to set up, or the set's own time. */
+/** Seconds to get going on the next exercise: walk over, set the bench, load the bar. */
+export const CHANGEOVER_S = 60;
+/** Seconds for one set: from the person's history if known, else ~4 s a rep plus 15 s to get into position and rack it,
+ *  or the set's own time plus 10 s. (3 s a rep and no changeover made an hour's workout look like 40 minutes.) */
 export function setSeconds(s: { reps: number | null; durationS: number | null }, historyMedianS?: number | null): number {
-  if (s.durationS) return s.durationS + 5;
+  if (s.durationS) return s.durationS + 10;
   if (historyMedianS) return historyMedianS;
-  return Math.max(15, (s.reps ?? 8) * 3 + 10);
+  return Math.max(20, (s.reps ?? 8) * 4 + 15);
 }
-export function estimate(exercises: { sets: EstimateSet[]; medianSetS?: number | null }[]): { totalS: number; workS: number; restS: number } {
+/** How long a plan takes by the numbers: every set's time, every planned rest except after the very last set,
+ *  and a changeover for each exercise. */
+export function estimate(exercises: { sets: EstimateSet[]; medianSetS?: number | null }[]): { totalS: number; workS: number; restS: number; changeS: number } {
   let workS = 0, restS = 0;
   exercises.forEach((ex, i) => {
     ex.sets.forEach((s, j) => {
@@ -78,7 +83,25 @@ export function estimate(exercises: { sets: EstimateSet[]; medianSetS?: number |
       if (!last) restS += s.restS;
     });
   });
-  return { totalS: workS + restS, workS, restS };
+  const changeS = exercises.filter((e) => e.sets.length).length * CHANGEOVER_S;
+  return { totalS: workS + restS + changeS, workS, restS, changeS };
+}
+/** How long a routine really takes you: the average of its last 3 workouts (newest first, in seconds, pauses already
+ *  taken out). Leaves out ones that say nothing about a normal session: under 5 min (given up), over 4 h (left running),
+ *  and anything under half or over twice the median of the recent ones. `of` is how many went into the average. */
+export function usualDuration(recentS: number[]): { s: number; of: number } | null {
+  const ok = recentS.filter((s) => s >= 300 && s <= 4 * 3600);
+  if (!ok.length) return null;
+  const sorted = [...ok].sort((a, b) => a - b), mid = Math.floor(sorted.length / 2);
+  const med = sorted.length % 2 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2;
+  const kept = ok.filter((s) => s >= med / 2 && s <= med * 2).slice(0, 3);
+  return { s: Math.round(kept.reduce((a, s) => a + s, 0) / kept.length), of: kept.length };
+}
+/** The time to show for a routine, saying which kind it is: "usually 58m" from your workouts, "58m last time" from one,
+ *  "about 55m" from the plan alone. */
+export function routineTime(estimateS: number, usual: { s: number; of: number } | null | undefined): string {
+  if (!usual) return `about ${duration(estimateS, true)}`;
+  return usual.of > 1 ? `usually ${duration(usual.s, true)}` : `${duration(usual.s, true)} last time`;
 }
 
 // ----- plates and warm-ups -----

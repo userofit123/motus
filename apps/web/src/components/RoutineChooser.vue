@@ -2,7 +2,7 @@
 // Picking a routine from the folders they live in, as on the Routines page: pinned first, then each folder, then the
 // rest. Folding a folder here folds it there too (same remembered list), so both read the same way.
 import { computed, ref } from "vue";
-import { duration, type RoutineSummary } from "@motus/shared";
+import { routineTime, type RoutineSummary } from "@motus/shared";
 import { useRoutines, useFolders } from "../api/queries";
 import { ago } from "../core/format";
 import { readJson, writeJson } from "../core/prefs";
@@ -47,7 +47,7 @@ function fold(g: { id: string | null }) { const k = fkey(g); folded.value = isFo
       <Collapse :open="!isFolded(g) || !!q"><div class="list">
         <div v-for="r in g.items" :key="r.id" class="li click" @click="emit('pick', r)">
           <span class="dot" :style="r.color ? { background: r.color } : undefined" />
-          <div class="grow"><div class="t">{{ r.name }}</div><div class="s">{{ r.exerciseCount }} exercises · ~{{ duration(r.estimateS, true) }} · {{ r.lastDoneAt ? `last done ${ago(r.lastDoneAt)}` : "not done yet" }}</div></div>
+          <div class="grow"><div class="t">{{ r.name }}</div><div class="s">{{ r.exerciseCount }} exercises · {{ routineTime(r.estimateS, r.usual) }} · {{ r.lastDoneAt ? `last done ${ago(r.lastDoneAt)}` : "not done yet" }}</div></div>
           <Icon name="play" :size="16" class="go" />
         </div>
       </div></Collapse>

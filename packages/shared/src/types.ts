@@ -111,7 +111,10 @@ export interface RoutineSummary {
   position: number;
   exerciseCount: number;
   setCount: number;
+  /** how long the plan takes by the numbers */
   estimateS: number;
+  /** how long it really takes: the average of its last few workouts (`of` of them), null before it's been done */
+  usual: { s: number; of: number } | null;
   muscles: string[];
   /** muscles that only help (no exercise here works them as a main muscle) */
   helpers?: string[];

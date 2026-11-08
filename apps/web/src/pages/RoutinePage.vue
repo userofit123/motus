@@ -4,7 +4,7 @@ import { goBack } from "../core/leave";
 import { computed, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useQuery } from "@tanstack/vue-query";
-import { duration, muscleName, muscleSets, musclesWorked } from "@motus/shared";
+import { routineTime, muscleName, muscleSets, musclesWorked } from "@motus/shared";
 import { useRoutine, useRoutines, useNotes, useReminders, useSchedules, useChange, loaded } from "../api/queries";
 import { api, mediaUrl } from "../api/client";
 import { useFmt, ago } from "../core/format";
@@ -64,7 +64,7 @@ await loaded(r, summaries, notes, rems, schedules, history);
   <div v-if="routine" class="page">
     <button class="back" @click="goBack(router, '/routines')"><Icon name="left" :size="16" /><span>Routines</span></button>
     <div class="ph">
-      <div><h1>{{ routine.name }}</h1><div class="sub">{{ routine.exercises.length }} exercises · ~{{ duration(sum?.estimateS ?? 0, true) }} · {{ sum?.lastDoneAt ? `last done ${ago(sum.lastDoneAt)}` : "not done yet" }}</div></div>
+      <div><h1>{{ routine.name }}</h1><div class="sub">{{ routine.exercises.length }} exercises · {{ routineTime(sum?.estimateS ?? 0, sum?.usual) }} · {{ sum?.lastDoneAt ? `last done ${ago(sum.lastDoneAt)}` : "not done yet" }}</div></div>
       <div class="acts"><Menu :items="menu" /><button class="btn keep" @click="router.push(`/routines/${id}/start`)"><Icon name="play" :size="16" />Start</button></div>
     </div>
     <p v-if="routine.description" class="muted" style="margin:calc(var(--hg) * -0.5) 0 var(--spg);max-width:680px">{{ routine.description }}</p>

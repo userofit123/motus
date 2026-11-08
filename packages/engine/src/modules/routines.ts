@@ -1,6 +1,6 @@
 // Routines (saved plans) and their folders: list, open, create (from scratch, from another routine, from a workout,
 // from a template), edit, duplicate, version history, and the pre-start preview.
-import { TEMPLATES, estimate, restAfterSet, restDefaultsOf, ymd, LIFTED_SQL, type RoutineSummary } from "@motus/shared";
+import { TEMPLATES, estimate, usualDuration, restAfterSet, restDefaultsOf, ymd, LIFTED_SQL, type RoutineSummary } from "@motus/shared";
 import { SOURCE } from "@motus/exercise-data/meta";
 import type { Router, Ctx } from "../router";
 import type { Sql } from "../db";
@@ -12,6 +12,12 @@ import { buildPlan, loadRoutine } from "./plan";
 
 const KINDS = ["warmup", "normal", "drop", "failure"] as const;
 
+/** The routine `r`'s last few finished workouts, newest first, each how long it took without its pauses (seconds).
+ *  A few more than the 3 that get averaged, so a given-up session doesn't leave too few. */
+const RECENT_DURATIONS = `coalesce((SELECT json_agg(x.d ORDER BY x.at DESC) FROM (
+    SELECT greatest(0, extract(epoch FROM w.ended_at - w.started_at)::int - w.paused_s) AS d, w.started_at AS at
+    FROM workouts w WHERE w.routine_id = r.id AND w.status = 'completed' AND w.ended_at IS NOT NULL ORDER BY w.started_at DESC LIMIT 6) x), '[]')`;
+
 export async function routineSummaries(q: Sql, userId: string, where = "r.deleted_at IS NULL"): Promise<RoutineSummary[]> {
   const settings = await getSettings(q, userId);
   const d = restDefaultsOf(settings.workout);
@@ -19,6 +25,7 @@ export async function routineSummaries(q: Sql, userId: string, where = "r.delete
     `SELECT r.*,
        (SELECT count(*) FROM workouts w WHERE w.routine_id = r.id AND w.status = 'completed') AS times_done,
        (SELECT max(started_at) FROM workouts w WHERE w.routine_id = r.id AND w.status = 'completed') AS last_done_at,
+       ${RECENT_DURATIONS} AS recent_s,
        (SELECT count(*) FROM reminders m WHERE m.status = 'pending' AND ((m.target_type = 'routine' AND m.target_id = r.id)
           OR (m.target_type = 'exercise' AND m.target_id IN (SELECT exercise_id FROM routine_exercises WHERE routine_id = r.id)
               AND (m.scope_routine_id IS NULL OR m.scope_routine_id = r.id)))) AS pending_reminders,
@@ -31,13 +38,13 @@ export async function routineSummaries(q: Sql, userId: string, where = "r.delete
     const exs = r.exs as any[];
     const est = estimate(exs.map((e, i) => ({
       sets: (e.sets as any[]).map((s, j) => ({ ...s, restS: restAfterSet({ setRestS: s.restS, kind: s.kind, nextKind: e.sets[j + 1]?.kind, byKindS: e.restByKind, exRestS: e.restS, isLastSet: j === e.sets.length - 1, exRestAfterS: e.restAfterS }, d) })),
-    })).map((x, i, a) => x));
+    })));
     const muscles = [...new Set(exs.flatMap((e) => e.primary as string[]))];
     // helpers that are nobody's main muscle here, for the little body on the routine card
     const helpers = [...new Set(exs.flatMap((e) => (e.secondary ?? []) as string[]))].filter((m) => !muscles.includes(m));
     return {
       id: r.id, folderId: r.folder_id, name: r.name, description: r.description, color: r.color, pinned: r.pinned, archived: r.archived, position: r.position,
-      exerciseCount: exs.length, setCount: exs.reduce((a, e) => a + e.sets.length, 0), estimateS: est.totalS, muscles, helpers,
+      exerciseCount: exs.length, setCount: exs.reduce((a, e) => a + e.sets.length, 0), estimateS: est.totalS, usual: usualDuration((r.recent_s as number[]).map(Number)), muscles, helpers,
       lastDoneAt: r.last_done_at, timesDone: Number(r.times_done), pendingReminders: Number(r.pending_reminders), exerciseNames: exs.map((e) => e.name),
     };
   });
@@ -148,10 +155,11 @@ export function routineRoutes(r: Router) {
     const settings = await getSettings(ctx.q, ctx.userId);
     const plan = await buildPlan(ctx.q, routine, settings, ymd(ctx.now()));
     const stats = (await ctx.q.query(
-      `SELECT count(*) AS n, max(started_at) AS last_at,
-         percentile_cont(0.5) WITHIN GROUP (ORDER BY extract(epoch FROM ended_at - started_at) - paused_s) AS median_s
-       FROM workouts WHERE routine_id = $1 AND status = 'completed'`, [p.id])).rows[0];
-    return { routine, ...plan, timesDone: Number(stats.n), lastDoneAt: stats.last_at, medianDurationS: stats.median_s ? Math.round(stats.median_s) : null };
+      `SELECT (SELECT count(*) FROM workouts w WHERE w.routine_id = r.id AND w.status = 'completed') AS n,
+         (SELECT max(started_at) FROM workouts w WHERE w.routine_id = r.id AND w.status = 'completed') AS last_at,
+         ${RECENT_DURATIONS} AS recent_s
+       FROM routines r WHERE r.id = $1`, [routine.id])).rows[0];
+    return { routine, ...plan, timesDone: Number(stats.n), lastDoneAt: stats.last_at, usual: usualDuration((stats.recent_s as number[]).map(Number)) };
   });
 
   r.post("/routines", async (ctx, _p, b) => {

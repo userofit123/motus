@@ -69,6 +69,26 @@ describe("engine", () => {
     expect(done.report.totals.volumeKg).toBe(80 * (8 + 7 + 6 + 5));
   });
 
+  it("says how long a routine usually takes from its last finished workouts, without pauses or given-up ones", async () => {
+    // its own account, so these workouts don't change what the other tests count
+    const D = uuidv7();
+    await eng.db.admin.query("INSERT INTO users (id, username, display_name) VALUES ($1,'d','D')", [D]);
+    const r = await call(D, "POST", "/routines", { name: "Timed", exercises: [{ exerciseId: benchId, sets: [{ kind: "normal", reps: 8 }] }] });
+    const before = (await call(D, "GET", "/routines")).find((x: any) => x.id === r.id);
+    expect(before.usual).toBeNull();
+    expect(before.estimateS).toBeGreaterThan(0);
+    // newest first: 2 min (given up), 60 min with 5 min paused, 50 min, 60 min, and an hour that was discarded
+    const add = (daysAgo: number, min: number, pausedS = 0, status = "completed") => eng.db.admin.query(
+      "INSERT INTO workouts (id, user_id, routine_id, name, status, started_at, ended_at, paused_s) VALUES ($1,$2,$3,'Timed',$4, now() - make_interval(days => $5), now() - make_interval(days => $5) + make_interval(mins => $6), $7)",
+      [uuidv7(), D, r.id, status, daysAgo, min, pausedS]);
+    await add(1, 2); await add(2, 60, 300); await add(3, 50); await add(4, 60); await add(5, 60, 0, "discarded");
+    const after = (await call(D, "GET", "/routines")).find((x: any) => x.id === r.id);
+    expect(after.usual).toEqual({ s: (55 + 50 + 60) * 60 / 3, of: 3 });
+    expect((await call(D, "GET", `/routines/${r.id}/preview`)).usual).toEqual(after.usual);
+    // someone else sees neither the routine nor its times
+    expect((await call(B, "GET", "/routines")).find((x: any) => x.id === r.id)).toBeUndefined();
+  });
+
   it("pre-fills the next workout from last time, with the reminder applied", async () => {
     const prev = await call(A, "GET", `/routines/${routineId}/preview`);
     const bench = prev.exercises[0];
