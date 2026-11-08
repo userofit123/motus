@@ -500,7 +500,9 @@ await loaded(src, all, folders, routines, templates);
         @update:model-value="(v) => setProg(progFor, 'mode', v)" />
       <div class="card pg-rows">
         <div class="li"><div class="grow"><div class="t">Weight step</div><div class="s">How much the weight goes up or down</div></div>
-          <div class="seg mini"><button :class="{ on: progFor.progression?.stepKg == null }" @click="setProg(progFor, 'stepKg', null)">Your default ({{ fmt.wu_(defStepKg(progFor)) }})</button><button :class="{ on: progFor.progression?.stepKg != null }" @click="setProg(progFor, 'stepKg', progFor.progression?.stepKg ?? defStepKg(progFor))">Its own</button></div></div>
+          <!-- a picker like "Lower the weight after": the default's label is too long for a two-part toggle on a phone -->
+          <AppSelect :model-value="progFor.progression?.stepKg != null" :options="[{ value: false, label: `Your default (${fmt.wu_(defStepKg(progFor))})` }, { value: true, label: 'Its own' }]" title="Weight step" style="width:auto"
+            @update:model-value="(v) => setProg(progFor, 'stepKg', v ? (progFor.progression?.stepKg ?? defStepKg(progFor)) : null)" /></div>
         <div v-if="progFor.progression?.stepKg != null" class="li"><div class="grow"><div class="t">Its own weight step</div></div>
           <NumStep :value="wNum(progFor.progression.stepKg)" :step="fmt.wu === 'lb' ? 1 : 0.5" :min="fmt.wu === 'lb' ? 0.5 : 0.25" :max="100" :unit="fmt.wu" label="weight step" @set="(v) => setProg(progFor, 'stepKg', fmt.toKg(v))" /></div>
         <div class="li"><div class="grow"><div class="t">Lower the weight after</div><div class="s">{{ MISSED_HINT }}</div></div>
