@@ -86,22 +86,24 @@ export function estimate(exercises: { sets: EstimateSet[]; medianSetS?: number |
   const changeS = exercises.filter((e) => e.sets.length).length * CHANGEOVER_S;
   return { totalS: workS + restS + changeS, workS, restS, changeS };
 }
-/** How long a routine really takes you: the average of its last 3 workouts (newest first, in seconds, pauses already
- *  taken out). Leaves out ones that say nothing about a normal session: under 5 min (given up), over 4 h (left running),
- *  and anything under half or over twice the median of the recent ones. `of` is how many went into the average. */
-export function usualDuration(recentS: number[]): { s: number; of: number } | null {
-  const ok = recentS.filter((s) => s >= 300 && s <= 4 * 3600);
+/** How long a routine really takes you: the average of its recent workouts (newest first, in seconds, pauses already
+ *  taken out). Looks only at the last 3 usable ones (5 min - 4 h; shorter was given up, longer left running) so it
+ *  follows a routine that has changed, and leaves out any of those under half or over twice their median. The newest
+ *  usable one is always kept: if it differs a lot, the routine probably changed and that is the news.
+ *  `of` is how many went into the average; `newest` is whether the newest workout is one of them. */
+export function usualDuration(recentS: number[]): { s: number; of: number; newest: boolean } | null {
+  const ok = recentS.map((s, i) => ({ s, i })).filter((x) => x.s >= 300 && x.s <= 4 * 3600).slice(0, 3);
   if (!ok.length) return null;
-  const sorted = [...ok].sort((a, b) => a - b), mid = Math.floor(sorted.length / 2);
+  const sorted = ok.map((x) => x.s).sort((a, b) => a - b), mid = Math.floor(sorted.length / 2);
   const med = sorted.length % 2 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2;
-  const kept = ok.filter((s) => s >= med / 2 && s <= med * 2).slice(0, 3);
-  return { s: Math.round(kept.reduce((a, s) => a + s, 0) / kept.length), of: kept.length };
+  const kept = ok.filter((x, k) => k === 0 || (x.s >= med / 2 && x.s <= med * 2));
+  return { s: Math.round(kept.reduce((a, x) => a + x.s, 0) / kept.length), of: kept.length, newest: kept[0]!.i === 0 };
 }
-/** The time to show for a routine, saying which kind it is: "usually 58m" from your workouts, "58m last time" from one,
- *  "about 55m" from the plan alone. */
-export function routineTime(estimateS: number, usual: { s: number; of: number } | null | undefined): string {
+/** The time to show for a routine, saying which kind it is: "usually 58m" from your workouts, "58m last time" when it
+ *  is just your newest one, "about 55m" from the plan alone. */
+export function routineTime(estimateS: number, usual: { s: number; of: number; newest?: boolean } | null | undefined): string {
   if (!usual) return `about ${duration(estimateS, true)}`;
-  return usual.of > 1 ? `usually ${duration(usual.s, true)}` : `${duration(usual.s, true)} last time`;
+  return usual.of === 1 && usual.newest ? `${duration(usual.s, true)} last time` : `usually ${duration(usual.s, true)}`;
 }
 
 // ----- plates and warm-ups -----

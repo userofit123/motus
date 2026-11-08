@@ -43,7 +43,7 @@ const counts = computed(() => {
   return { exercises: active.value.length, sets: sets.filter((x: any) => x.kind !== "warmup").length, warm: sets.filter((x: any) => x.kind === "warmup").length, reps: sets.reduce((a: number, x: any) => a + (x.kind !== "warmup" ? x.reps ?? 0 : 0), 0) };
 });
 // your real times say more than the plan's numbers, but only for the whole routine: skip something and it's the plan again
-const usual = computed<{ s: number; of: number } | null>(() => (skip.value.length ? null : p.value?.usual ?? null));
+const usual = computed<{ s: number; of: number; newest: boolean } | null>(() => (skip.value.length ? null : p.value?.usual ?? null));
 const est = computed(() => estimate(active.value.map((e) => ({ sets: e.sets.map((x: any) => ({ kind: x.kind, reps: x.reps, durationS: x.durationS, restS: x.restS })) }))));
 const muscles = computed(() => muscleSets(active.value.map((e) => ({ primary: e.exercise?.primaryMuscles ?? [], secondary: e.exercise?.secondaryMuscles ?? [], sets: e.sets.length }))));
 // main and helped by whether any exercise has the muscle as a main one, not by amounts (a busy helper isn't a main muscle)
@@ -91,7 +91,7 @@ await loaded(pv);
     </div>
 
     <div class="grid g4">
-      <div v-if="usual" class="card hero stat"><div class="lbl"><span class="bi"><Icon name="clock" :size="15" /></span>{{ usual.of > 1 ? "Usually" : "Last time" }}</div><div class="val">{{ duration(usual.s, true) }}</div><div class="sub">{{ usual.of > 1 ? `your last ${usual.of} workouts` : "your one workout so far" }}</div></div>
+      <div v-if="usual" class="card hero stat"><div class="lbl"><span class="bi"><Icon name="clock" :size="15" /></span>{{ usual.of === 1 && usual.newest ? "Last time" : "Usually" }}</div><div class="val">{{ duration(usual.s, true) }}</div><div class="sub">{{ usual.of > 1 ? `from ${usual.of} recent workouts` : p.timesDone === 1 ? "your one workout so far" : usual.newest ? "your latest workout" : "from your recent workouts" }}</div></div>
       <div v-else class="card hero stat"><div class="lbl"><span class="bi"><Icon name="clock" :size="15" /></span>About</div><div class="val">{{ duration(est.totalS, true) }}</div><div class="sub">{{ duration(est.restS, true) }} of it resting</div></div>
       <div class="card stat"><div class="lbl"><span class="bi"><Icon name="dumbbell" :size="15" /></span>Exercises</div><div class="val">{{ counts.exercises }}</div><div class="sub">{{ skip.length ? `${skip.length} skipped today` : "in this order" }}</div></div>
       <div class="card stat"><div class="lbl"><span class="bi"><Icon name="layers" :size="15" /></span>Sets</div><div class="val">{{ counts.sets }}</div><div class="sub">{{ counts.warm ? `+ ${counts.warm} warm-up` : "working sets" }}</div></div>

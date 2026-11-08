@@ -15,7 +15,7 @@ const EX_STATUS = ["pending", "done", "skipped", "partial"] as const;
 
 const VOLUME_SQL = `coalesce((SELECT sum(${LIFTED_SQL}) FROM workout_sets s JOIN workout_exercises we ON we.id = s.workout_exercise_id
   JOIN exercises e ON e.id = we.exercise_id WHERE we.workout_id = w.id AND s.done AND s.kind <> 'warmup'), 0)`;
-const DURATION_SQL = `greatest(0, extract(epoch FROM coalesce(w.ended_at, now()) - w.started_at)::int - w.paused_s)`;
+export const DURATION_SQL = `greatest(0, extract(epoch FROM coalesce(w.ended_at, now()) - w.started_at)::int - w.paused_s)`;
 
 export async function workoutSummaries(q: Sql, where: string, params: unknown[], limit = 100): Promise<WorkoutSummary[]> {
   const { rows } = await q.query(

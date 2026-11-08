@@ -543,6 +543,8 @@ The screen shown after choosing a routine, before pressing **Start**.
   - Once the routine has been done, the time shown is **what it really takes**: the average of its last 3
     finished workouts without pauses, leaving out given-up (< 5 min), left-running (> 4 h) and odd ones
     (`usualDuration()`). Wording says which: "usually 58m", "58m last time", or "about 55m" from the plan.
+  - Once "Usually" shows, changing rest settings in the preview does not change the shown time: it reflects real past
+    workouts, not the settings.
   - Skipping exercises in the preview falls back to the plan's numbers for what's left.
 - Muscle map of what this routine trains.
 - **Pending reminders** for this routine and its exercises, shown up front.

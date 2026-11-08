@@ -21,11 +21,21 @@ describe("estimate", () => {
 
 describe("usualDuration", () => {
   it("averages the last 3 workouts", () => {
-    expect(usualDuration([3600, 3300, 3900, 1200 * 3])).toEqual({ s: 3600, of: 3 });
+    expect(usualDuration([3600, 3300, 3900, 1200 * 3])).toEqual({ s: 3600, of: 3, newest: true });
   });
   it("leaves out given-up, left-running and odd sessions", () => {
-    // 2 min (given up), 6 h (left running), 20 min (way under the usual hour)
-    expect(usualDuration([120, 6 * 3600, 1200, 3600, 3700, 3500])).toEqual({ s: 3600, of: 3 });
+    // 2 min (given up), 6 h (left running) are skipped; 20 min is way under the usual hour
+    expect(usualDuration([120, 6 * 3600, 3600, 3700, 1200])).toEqual({ s: 3650, of: 2, newest: false });
+  });
+  it("says when the newest workout is not part of it", () => {
+    expect(usualDuration([120, 3600])).toEqual({ s: 3600, of: 1, newest: false });
+    expect(usualDuration([3600])).toEqual({ s: 3600, of: 1, newest: true });
+  });
+  it("never drops the newest usable workout, so a routine that got much longer shows it", () => {
+    // newest is over twice the median of the last 3 usable ones, yet it still counts
+    expect(usualDuration([7000, 3000, 3100])).toEqual({ s: Math.round(13100 / 3), of: 3, newest: true });
+    // only the last 3 usable ones count, so an old short session can't hold "usually" down
+    expect(usualDuration([5000, 5200, 5100, 1000])).toEqual({ s: 5100, of: 3, newest: true });
   });
   it("is null with nothing usable", () => {
     expect(usualDuration([])).toBeNull();
@@ -36,7 +46,9 @@ describe("usualDuration", () => {
 describe("routineTime", () => {
   it("says which kind of time it is", () => {
     expect(routineTime(3300, null)).toBe("about 55m");
-    expect(routineTime(3300, { s: 3480, of: 3 })).toBe("usually 58m");
-    expect(routineTime(3300, { s: 3480, of: 1 })).toBe("58m last time");
+    expect(routineTime(3300, { s: 3480, of: 3, newest: true })).toBe("usually 58m");
+    expect(routineTime(3300, { s: 3480, of: 1, newest: true })).toBe("58m last time");
+    // the newest workout was given up, so the one kept is an older one: not "last time"
+    expect(routineTime(3300, usualDuration([120, 3480]))).toBe("usually 58m");
   });
 });

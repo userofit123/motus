@@ -83,7 +83,7 @@ describe("engine", () => {
       [uuidv7(), D, r.id, status, daysAgo, min, pausedS]);
     await add(1, 2); await add(2, 60, 300); await add(3, 50); await add(4, 60); await add(5, 60, 0, "discarded");
     const after = (await call(D, "GET", "/routines")).find((x: any) => x.id === r.id);
-    expect(after.usual).toEqual({ s: (55 + 50 + 60) * 60 / 3, of: 3 });
+    expect(after.usual).toEqual({ s: (55 + 50 + 60) * 60 / 3, of: 3, newest: false });
     expect((await call(D, "GET", `/routines/${r.id}/preview`)).usual).toEqual(after.usual);
     // someone else sees neither the routine nor its times
     expect((await call(B, "GET", "/routines")).find((x: any) => x.id === r.id)).toBeUndefined();

@@ -9,13 +9,14 @@ import { uuidv7 } from "../ids";
 import { notFound, bad } from "../errors";
 import { getSettings } from "./settings";
 import { buildPlan, loadRoutine } from "./plan";
+import { DURATION_SQL } from "./workouts";
 
 const KINDS = ["warmup", "normal", "drop", "failure"] as const;
 
 /** The routine `r`'s last few finished workouts, newest first, each how long it took without its pauses (seconds).
  *  A few more than the 3 that get averaged, so a given-up session doesn't leave too few. */
 const RECENT_DURATIONS = `coalesce((SELECT json_agg(x.d ORDER BY x.at DESC) FROM (
-    SELECT greatest(0, extract(epoch FROM w.ended_at - w.started_at)::int - w.paused_s) AS d, w.started_at AS at
+    SELECT ${DURATION_SQL} AS d, w.started_at AS at
     FROM workouts w WHERE w.routine_id = r.id AND w.status = 'completed' AND w.ended_at IS NOT NULL ORDER BY w.started_at DESC LIMIT 6) x), '[]')`;
 
 export async function routineSummaries(q: Sql, userId: string, where = "r.deleted_at IS NULL"): Promise<RoutineSummary[]> {
