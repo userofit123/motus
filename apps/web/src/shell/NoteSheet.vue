@@ -14,17 +14,14 @@ import ChoiceTiles from "../components/ChoiceTiles.vue";
 import RadioList from "../components/RadioList.vue";
 import Icon from "../components/Icon.vue";
 import { DIFFICULTY } from "../components/NoteItem.vue";
+import { SHOWS } from "../core/noteMenu";
 
 const props = defineProps<{ o: { targets: { type: string; id: string; label: string; scopeRoutineId?: string | null }[]; workoutId?: string | null; edit?: any } }>();
 const emit = defineEmits<{ close: [] }>();
 const settings = useSettings();
 
-// places a note can come back from; workout and activity notes only ever stay with their workout or activity
-const REPEATS = ["exercise", "routine_exercise", "routine"];
-const SHOWS: Record<string, string> = {
-  exercise: "Shows in every workout with this exercise, in any routine", routine_exercise: "Shows when you do this exercise in this routine",
-  routine: "Shows in every workout of this routine",
-};
+// places a note can come back from (SHOWS, shared with the note's ⋮ menu); workout and activity notes only ever stay with their workout or activity
+const REPEATS = Object.keys(SHOWS);
 const KEPT: Record<string, string> = { workout_exercise: "Saved with today's workout. Won't show again", workout: "Saved with today's workout. Won't show again", activity: "Saved with this activity" };
 const RECORD = "Saved in the notes. Won't show during workouts";
 type Opt = { ti: number; pinned: boolean; label: string; hint: string };
