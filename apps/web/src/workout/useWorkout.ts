@@ -318,12 +318,12 @@ export function replacingWorkout(): () => void {
  */
 // what was typed on the Finish screen (rating, notes, body weight, the routine switch): kept here, outside the sheet,
 // so closing it to look at an exercise and opening Finish again brings it all back. Dropped with the workout.
-// routineChanges: the "Routine changes" switched on (their keys), none to start with; declined: Progression's "Suggest"
-// changes switched off in "Next time" (by routine exercise id; the rest are taken)
-export interface FinishDraft { workoutId: string; rating: number | null; notes: string; bw: number | null; routineChanges: string[]; declined: string[] }
+// routineChanges: the "Routine changes" switched on (their keys), none to start with; accepted: Progression's "Suggest"
+// changes switched on with Apply in "Next time" (by routine exercise id), none to start with: nothing applies unasked
+export interface FinishDraft { workoutId: string; rating: number | null; notes: string; bw: number | null; routineChanges: string[]; accepted: string[] }
 let draft: FinishDraft | null = null;
 export function finishDraft(w: Workout): FinishDraft {
-  if (draft?.workoutId !== w.id) draft = reactive({ workoutId: w.id, rating: null, notes: w.notes ?? "", bw: null, routineChanges: [], declined: [] });
+  if (draft?.workoutId !== w.id) draft = reactive({ workoutId: w.id, rating: null, notes: w.notes ?? "", bw: null, routineChanges: [], accepted: [] });
   return draft;
 }
 

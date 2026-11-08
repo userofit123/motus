@@ -708,12 +708,16 @@ This is the heart of the tracker. One simple model (M-74):
 - One pure function, `planNext` (@motus/shared), lists it on the Finish screen and saves it in the engine at
   the finish, so the two can't disagree. Old "Progression rules" became each exercise's own Automatic.
 
-**3. Finish: "Next time".** One plain line, "The routine now has today's numbers", then every routine exercise
-done today: "Bench Press · next time 62.5 kg × 8" with a chip for the difference from today ("+2.5 kg",
-"Same as today", "-2.5 kg"; "Fixed numbers" for fixed ones) and the reason under a change ("Every set reached
-10 reps", "Missed reps 3 workouts in a row"). Suggest rows have a switch (on by default; off keeps today's
-numbers), Automatic rows say "Automatic". Finish sends the switched-off ones (`declined`); the engine applies
-the numbers, Progression and the switched-on routine changes in the finish's own transaction.
+**3. Finish: "Next time".** One compact card, "The routine's numbers", with a line only for what applies ("4
+exercises have new numbers", "1 weight goes up automatically", "2 suggestions to review" in the accent colour, "1
+exercise has sets you didn't tick"; else "The routine stays the same"). Tapping it opens the "Next time" sheet:
+each exercise whose routine numbers change, set by set, the routine before this workout (as the switched-on
+routine changes shape it) against next time ("Set 1  - → 20 kg × 10"). Automatic changes show "Automatic" and
+the reason ("Every set reached 10 reps", "Missed reps 3 workouts in a row"); Suggest changes have an "Apply"
+switch, off by default. Exercises with typed but unticked sets say "Sets you didn't tick won't be saved" with
+"Go to exercise"; the rest fold into "N exercises unchanged". Finish sends the applied Suggest ones
+(`accepted`; none from older apps, whose `declined` is ignored); the engine applies the numbers, Progression and
+the switched-on routine changes in the finish's own transaction.
 
 **4. History keeps every past version.** Each change saves the routine as it now is: after a workout that
 changed it ("After workout · Push Day · 8 Nov", with the workout) and after an edit or a restore ("Edited · 8

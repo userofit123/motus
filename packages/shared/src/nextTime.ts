@@ -71,11 +71,11 @@ const deciding = (k: string) => k !== "warmup" && k !== "drop";
  * last keep theirs), then its Progression: a step up when every working set reached the top of its rep range (reps
  * back to the bottom), a step down after `lowerAfter` workouts in a row with missed reps. A rep range stays as set (the
  * reps move inside it); a single rep target takes today's reps when they reached it, and keeps its target when missed
- * (so misses count; not while Progression is Off, and a declined "lower" starts the count again). "Keep these numbers fixed" exercises and skipped ones keep everything. `declined`: routine
- * exercise ids whose "suggest" change was switched off (their numbers still follow today). Pure, for both the Finish
- * screen and the engine. `missed` is each exercise's run of workouts with missed reps, carried to the next finish. */
-export function planNext<R extends RoutineItemLike>(exercises: R[], w: { exercises: WorkoutExercise[] }, d: ProgressionDefaults, declined: Iterable<string> = []): { exercises: R[]; changes: NextChange[]; numbersChanged: boolean } {
-  const off = new Set(declined);
+ * (so misses count; not while Progression is Off, and a "lower" not applied starts the count again). "Keep these numbers fixed" exercises and skipped ones keep everything. `accepted`: routine
+ * exercise ids whose "suggest" change was switched on with Apply; the rest are not applied (their numbers still follow
+ * today). Pure, for both the Finish screen and the engine. `missed` is each exercise's run of workouts with missed reps, carried to the next finish. */
+export function planNext<R extends RoutineItemLike>(exercises: R[], w: { exercises: WorkoutExercise[] }, d: ProgressionDefaults, accepted: Iterable<string> = []): { exercises: R[]; changes: NextChange[]; numbersChanged: boolean } {
+  const on = new Set(accepted);
   const changes: NextChange[] = [];
   let numbersChanged = false;
   const out = exercises.map((re): R => {
@@ -132,9 +132,9 @@ export function planNext<R extends RoutineItemLike>(exercises: R[], w: { exercis
           reason: direction === "up" ? `Every set reached ${Math.max(...dec.map((x) => top(x.rs)))} reps`
             : p.lowerAfter === 1 ? "Missed reps last workout" : `Missed reps ${p.lowerAfter} workouts in a row`,
         });
-        // applied, or a "lower" switched off on Finish: either way the run of misses starts again from 0, so a declined
-        // lower isn't asked again at the very next miss
-        if (mode === "auto" || !off.has(re.id!)) next = moved;
+        // applied, or a "lower" not applied on Finish: either way the run of misses starts again from 0, so a lower left
+        // off isn't asked again at the very next miss
+        if (mode === "auto" || on.has(re.id!)) next = moved;
         missed = 0;
       }
     }

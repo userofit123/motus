@@ -173,11 +173,11 @@ async function bodyFromWorkout(q: Sql, workoutId: string) {
 /** What a finished session changes in its routine. Structure: only the changes asked for (their keys from
  * structureChanges), the Finish screen's "Routine changes" and a finished workout's ⋮ "Update the routine from this",
  * the same list and the same save in both places (applyStructure). Numbers (`numbers`, finishing only): each exercise
- * done takes today's numbers, then its Progression, the "Suggest" ones switched off on Finish left out (planNext, as the
+ * done takes today's numbers, then its Progression, the "Suggest" ones only when Apply was switched on (planNext, as the
  * Finish screen lists them). An exercise added to the routine becomes the workout exercise's own routine exercise, so
  * the change isn't listed (or saved) again. A change shows in the routine's History, with the workout. True when the
  * routine's numbers or structure changed. */
-export async function updateRoutineFromWorkout(ctx: Ctx, routineId: string, workoutId: string, accept: string[], numbers?: { declined: string[] | null }): Promise<boolean> {
+export async function updateRoutineFromWorkout(ctx: Ctx, routineId: string, workoutId: string, accept: string[], numbers?: { accepted: string[] }): Promise<boolean> {
   const routine = await loadRoutine(ctx.q, routineId);
   const w = await loadWorkout(ctx.q, workoutId, ymd(ctx.now()));
   if (!routine || !w) return false;
@@ -189,10 +189,7 @@ export async function updateRoutineFromWorkout(ctx: Ctx, routineId: string, work
     const s = await getSettings(ctx.q, ctx.userId);
     const stepKg = s.units.weight === "lb" ? s.increments.lb * 0.45359237 : s.increments.kg;
     const d = { ...s.progression, stepKg };
-    // an older app sends no `declined` (it never showed the switches): every "Suggest" change counts as switched off,
-    // so only Automatic ones apply
-    const declined = numbers.declined ?? planNext(body, w, d).changes.filter((c) => c.mode === "suggest").map((c) => c.routineExerciseId);
-    const next = planNext(body, w, d, declined);
+    const next = planNext(body, w, d, numbers.accepted);
     missedMoved = next.exercises.some((e, i) => (e.missed ?? 0) !== (body[i]!.missed ?? 0));
     changed ||= next.numbersChanged;
     body = next.exercises;

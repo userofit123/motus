@@ -597,12 +597,14 @@ export function workoutRoutes(r: Router) {
       `UPDATE reminders SET status = 'done', done_at = now() WHERE status = 'pending' AND last_shown_workout_id = $1 AND created_workout_id IS DISTINCT FROM $1
          AND (trigger = 'next' OR (trigger = 'after_n' AND seen_n >= coalesce(trigger_n, 1)) OR (trigger = 'date' AND trigger_date <= $2::date))`, [wid, end.slice(0, 10)]);
     // the routine always holds where you are now: each exercise done takes today's numbers, then its Progression
-    // (`declined`: the "Suggest" ones switched off on Finish, by routine exercise id), and its structure changes only
+    // (`accepted`: the "Suggest" ones switched on with Apply on Finish, by routine exercise id; Automatic ones always
+    // apply), and its structure changes only
     // as asked: each listed change (exercises added, removed, swapped, moved, skipped; sets added or not done) has its
     // own switch, and `routineChanges` names those switched on. All in this one transaction with the finish. Older apps
     // sent `saveLayout` for "save what's listed", which then listed neither skipped exercises nor their own
     // updateRoutine (sent on every finish with "Always", so ignored): saveLayout saves today's list without the skipped
-    // ones. Their `moreWeight` is left: Progression decides now, and without `declined` only Automatic changes apply.
+    // ones. Their `moreWeight` is left: Progression decides now, and without `accepted` only Automatic changes apply. The
+    // `declined` list apps sent before (Suggest applied unless switched off) is ignored, so it never applies one unasked.
     if (w.routine_id) {
       const { updateRoutineFromWorkout } = await import("./routines");
       let accept = strList(b?.routineChanges);
@@ -610,7 +612,7 @@ export function workoutRoutes(r: Router) {
         const [routine, done] = [await loadRoutine(ctx.q, w.routine_id), await loadWorkout(ctx.q, wid, ymd(ctx.now()))];
         if (routine && done) accept = structureChanges(routine, done).filter((c) => c.kind !== "skipped").map((c) => c.key);
       }
-      await updateRoutineFromWorkout(ctx, w.routine_id, wid, accept, { declined: Array.isArray(b?.declined) ? strList(b.declined) : null });
+      await updateRoutineFromWorkout(ctx, w.routine_id, wid, accept, { accepted: strList(b?.accepted) });
     }
     ctx.changed("workout");
     return { ok: true };

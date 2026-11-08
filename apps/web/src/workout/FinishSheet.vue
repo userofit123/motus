@@ -1,11 +1,11 @@
 <script setup lang="ts">
 // Finishing: the workout's summary first (time, how it went against the plan and against last time, what was done),
 // then what it means for next time, kept as two separate things: next time's numbers (the routine has today's, then
-// Progression; every routine exercise done is listed, a "Suggest" change with its switch) and how this session differed
-// from the routine (listed, each saved only when switched on). Then how it felt, notes, body weight.
+// Progression; a short summary here, the details and the Apply switches in the "Next time" sheet) and how this session
+// differed from the routine (listed, each saved only when switched on). Then how it felt, notes, body weight.
 import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
-import { applyStructure, planNext, structureChanges, workoutScore, workoutSoFar, type NextChange, type Routine, type StructureChange } from "@motus/shared";
+import { applyStructure, planNext, structureChanges, usesReps, usesWeight, workoutScore, workoutSoFar, type Routine, type StructureChange, type Tracking, type Workout } from "@motus/shared";
 import { useWorkout, endWorkout, finishDraft } from "./useWorkout";
 import { api } from "../api/client";
 import { settle } from "../api/outbox";
@@ -19,6 +19,7 @@ import Sheet from "../components/Sheet.vue";
 import Icon from "../components/Icon.vue";
 import WorkoutSoFar from "./WorkoutSoFar.vue";
 import RoutineChanges from "./RoutineChanges.vue";
+import NextTimeSheet, { type NextGroup, type NextSet } from "./NextTimeSheet.vue";
 
 const emit = defineEmits<{ close: []; cancel: []; open: [index: number] }>();
 const router = useRouter();
@@ -54,50 +55,78 @@ const vsLast = computed(() => {
 });
 // next time: the routine has today's numbers, then Progression (planNext, the very function the engine saves with at
 // the finish), on the routine as the switched-on "Routine changes" leave it: a swap saved puts today's exercise in the
-// slot, set counts saved change its sets. Every routine exercise done today is listed with next time's numbers and the
-// difference from today; "Suggest" changes have a switch, "Automatic" ones just say so
+// slot, set counts saved change its sets. Here a short summary; the "Next time" sheet lists, set by set, each exercise
+// whose numbers change against that routine before this workout. "Automatic" changes just apply; a "Suggest" one only
+// when its Apply switch is on
 const routine = useRoutine(computed(() => w.value.routineId ?? ""));
 type Item = Routine["exercises"][number];
+type RSet = Item["sets"][number];
 const shaped = computed<Item[]>(() => {
   const r = routine.data.value as Routine | undefined;
   if (!r) return [];
   return ((applyStructure(r, w.value, d.routineChanges) ?? r.exercises) as Item[]).filter((x) => x.id);
 });
-const plan = computed(() => planNext(shaped.value, w.value, { ...W.settings.value.progression, stepKg: W.incKg.value }, d.declined));
-const deciding = (k: string) => k !== "warmup" && k !== "drop";
-const heaviest = (sets: { kind: string; weightKg: number | null }[]) => {
-  const ws = sets.filter((x) => deciding(x.kind) && x.weightKg != null).map((x) => x.weightKg!);
-  return ws.length ? Math.max(...ws) : null;
-};
-type NextRow = { id: string; name: string; next: string; diff: number | null; fixed: boolean; change?: NextChange; on: boolean };
-const nextRows = computed<NextRow[]>(() => w.value.exercises.flatMap((e): NextRow[] => {
-  if (e.status === "skipped" || !e.sets.some((x) => x.done) || !e.routineExerciseId) return [];
-  const i = shaped.value.findIndex((x) => x.id === e.routineExerciseId && x.exerciseId === e.exerciseId);
-  if (i < 0) return [];
-  const item = plan.value.exercises[i]!;
-  const sets = item.sets as Item["sets"];
-  const first = sets.find((x) => deciding(x.kind)) ?? sets[0];
-  const today = heaviest(e.sets.filter((x) => x.done)), next = heaviest(sets);
-  const change = plan.value.changes.find((c) => c.routineExerciseId === item.id);
-  return [{
-    id: item.id!, name: e.exercise?.name ?? "", next: first ? numbers(first) : "-", fixed: !!item.fixed, change,
-    diff: today != null && next != null ? Math.round((next - today) * 100) / 100 : null, on: !!change && (change.mode === "auto" || !d.declined.includes(item.id!)),
-  }];
-}));
-// next time's numbers on its first working set: "62.5 kg × 8", "12 reps", "1:00"
-function numbers(x: Item["sets"][number]) {
+const plan = computed(() => planNext(shaped.value, w.value, { ...W.settings.value.progression, stepKg: W.incKg.value }, d.accepted));
+const FIELDS = ["kind", "weightKg", "reps", "repsMax", "durationS", "distanceM"] as const;
+const sameSet = (a: RSet | undefined, b: RSet) => !!a && FIELDS.every((k) => (a[k] ?? null) === (b[k] ?? null));
+// a set's numbers as the routine lists them: "20 kg × 8-12", "12 reps", "1:00"; "-" when it has none
+function setText(x: RSet, t: Tracking) {
   const f = fmt.value;
-  if (x.weightKg != null && x.reps != null) return `${f.wu_(x.weightKg)} × ${x.reps}`;
-  if (x.reps != null) return `${x.reps} reps`;
-  if (x.durationS != null) return f.clock(x.durationS);
-  if (x.distanceM != null) return f.dist(x.distanceM);
-  return x.weightKg != null ? f.wu_(x.weightKg) : "-";
+  const kg = x.weightKg != null && usesWeight(t) ? f.wu_(x.weightKg) : "";
+  const reps = x.reps == null || !usesReps(t) ? "" : x.repsMax != null && x.repsMax !== x.reps ? `${x.reps}-${x.repsMax}` : String(x.reps);
+  const r = reps ? (kg ? `× ${reps}` : `${reps} rep${reps === "1" ? "" : "s"}`) : "";
+  return [kg, r, x.durationS ? f.clock(x.durationS) : "", x.distanceM ? f.dist(x.distanceM) : ""].filter(Boolean).join(" ") || "-";
 }
-function toggleNext(id: string) {
-  const i = d.declined.indexOf(id);
-  if (i >= 0) d.declined.splice(i, 1); else d.declined.push(id);
-}
-const diffText = (r: NextRow) => (r.fixed ? "Fixed numbers" : !r.diff ? "Same as today" : `${r.diff > 0 ? "+" : "-"}${fmt.value.wu_(Math.abs(r.diff))}`);
+// sets left unticked with numbers typed in (not the routine's own, not last time's prefilled ones): finishing drops them
+const typedUnticked = (e: Workout["exercises"][number]) => e.status !== "skipped" && e.sets.some((s) => !s.done && !s.prefilled
+  && ((s.weightKg != null && s.weightKg !== s.targetWeightKg) || (s.reps != null && s.reps !== s.targetReps)));
+const nextTime = computed(() => {
+  const groups: NextGroup[] = [], unchanged: { id: string; name: string; fixed: boolean }[] = [];
+  const listed = new Set<number>();
+  shaped.value.forEach((item, i) => {
+    const after = plan.value.exercises[i]!;
+    const index = w.value.exercises.findIndex((e) => e.routineExerciseId === item.id && e.exerciseId === item.exerciseId);
+    const e = w.value.exercises[index];
+    const name = e?.exercise?.name ?? item.exercise?.name ?? "";
+    const t = (e?.exercise?.tracking ?? item.exercise?.tracking ?? "weight_reps") as Tracking;
+    const before = item.sets as RSet[];
+    let k = 0;
+    const sets = (after.sets as RSet[]).flatMap((x, j): NextSet[] => {
+      const label = x.kind === "warmup" ? "Warm-up" : `Set ${++k}`;
+      const b = before[j];
+      if (sameSet(b, x)) return [];
+      const delta = b?.weightKg != null && x.weightKg != null ? (x.weightKg - b.weightKg) * (t === "assisted" ? -1 : 1) : 0;
+      return [{ key: j, label, from: b ? setText(b, t) : "-", to: setText(x, t), trend: delta > 0 ? "up" : delta < 0 ? "down" : null }];
+    });
+    const change = plan.value.changes.find((c) => c.routineExerciseId === item.id);
+    const unticked = !!e && typedUnticked(e);
+    if (e) listed.add(index);
+    if (sets.length || change || unticked) groups.push({ id: item.id!, index, name, sets, change, unticked });
+    else unchanged.push({ id: item.id!, name, fixed: !!item.fixed });
+  });
+  // exercises outside the routine lose their unticked sets too
+  w.value.exercises.forEach((e, index) => {
+    if (!listed.has(index) && typedUnticked(e)) groups.push({ id: e.id, index, name: e.exercise?.name ?? "", sets: [], unticked: true });
+  });
+  return { groups, unchanged };
+});
+// the Finish screen's summary of it: a line for each thing that applies, suggestions to review in the accent colour
+const nextSummary = computed(() => {
+  const { groups } = nextTime.value, ch = plan.value.changes;
+  const lines: { icon: string; text: string; tone?: "pos" | "neg" | "acc" }[] = [];
+  const auto = (dir: "up" | "down") => ch.filter((c) => c.mode === "auto" && c.direction === dir).length;
+  const sug = ch.filter((c) => c.mode === "suggest"), on = sug.filter((c) => d.accepted.includes(c.routineExerciseId)).length;
+  const fresh = groups.filter((g) => g.sets.length).length, unticked = groups.filter((g) => g.unticked).length;
+  if (fresh) lines.push({ icon: "refresh", text: `${n(fresh, "exercise has", "exercises have")} new numbers` });
+  if (auto("up")) lines.push({ icon: "arrowUp", text: `${n(auto("up"), "weight goes", "weights go")} up automatically`, tone: "pos" });
+  if (auto("down")) lines.push({ icon: "arrowDown", text: `${n(auto("down"), "weight goes", "weights go")} down automatically`, tone: "neg" });
+  if (sug.length) lines.push({ icon: "sparkle", tone: on ? undefined : "acc",
+    text: !on ? `${n(sug.length, "suggestion", "suggestions")} to review` : on === sug.length ? `${n(on, "suggestion", "suggestions")} applied` : `${on} of ${sug.length} suggestions applied` });
+  if (unticked) lines.push({ icon: "info", text: `${n(unticked, "exercise has", "exercises have")} sets you didn't tick`, tone: "acc" });
+  return lines;
+});
+const showNext = ref(false);
+function goTo(index: number) { showNext.value = false; emit("open", index); }
 // how this session differed from the routine, each change saved only when switched on
 const changes = computed<StructureChange[]>(() => w.value.routineId && routine.data.value ? structureChanges(routine.data.value, w.value) : []);
 const unticked = computed(() => w.value.exercises.reduce((a, e) => a + (e.status === "skipped" ? 0 : e.sets.filter((s) => !s.done).length), 0));
@@ -112,7 +141,7 @@ async function finish() {
     await api.post(`/workouts/${id}/finish`, {
       rating: d.rating, notes: d.notes, bodyweightKg: d.bw ? fmt.value.toKg(d.bw) : null,
       routineChanges: d.routineChanges.filter((k) => changes.value.some((c) => c.key === k)),
-      declined: d.declined.filter((x) => plan.value.changes.some((c) => c.routineExerciseId === x && c.mode === "suggest")),
+      accepted: d.accepted.filter((x) => plan.value.changes.some((c) => c.routineExerciseId === x && c.mode === "suggest")),
     });
     keepAwake(false);
     if (prs) toast(`${prs} new record${prs > 1 ? "s" : ""}!`, { kind: "pr" });
@@ -137,21 +166,20 @@ async function finish() {
     <div class="spb"><WorkoutSoFar :w="w" final :vs-last="sc.vsLast" @open="emit('open', $event)" /></div>
     <div v-if="unticked" class="banner note"><Icon name="info" />{{ unticked }} set{{ unticked > 1 ? "s were" : " was" }} not ticked. They will be left out.</div>
 
-    <template v-if="w.routineId && nextRows.length">
+    <template v-if="w.routineId && shaped.length">
       <div class="sh"><h2>Next time</h2></div>
-      <div class="card">
-        <div class="li fin-lead"><Icon name="refresh" :size="18" class="fin-i" /><div class="grow t">The routine now has today's numbers</div></div>
-        <component :is="r.change?.mode === 'suggest' ? 'label' : 'div'" v-for="r in nextRows" :key="r.id" :class="r.change?.mode === 'suggest' ? 'tgl' : 'li'">
-          <Icon :name="r.fixed ? 'lock' : r.diff && r.diff > 0 ? 'arrowUp' : r.diff && r.diff < 0 ? 'arrowDown' : 'check'" :size="18" class="fin-i" :class="{ pos: !r.fixed && (r.diff ?? 0) > 0, neg: !r.fixed && (r.diff ?? 0) < 0 }" />
+      <div class="card spb">
+        <div class="li click nt-sum" role="button" tabindex="0" @click="showNext = true" @keydown.enter="showNext = true">
+          <span class="bi sg"><Icon name="routines" :size="17" /></span>
           <div class="grow" style="min-width:0">
-            <!-- the name gets its own line; next time's numbers and the reason sit under it in the small line -->
-            <div class="t ellipsis">{{ r.name }}</div>
-            <div class="s">Next time {{ r.next }}<template v-if="r.change"> · {{ r.change.reason }}</template><template v-if="r.change?.mode === 'auto'"> · Automatic</template></div>
+            <div class="t">The routine's numbers</div>
+            <div v-if="!nextSummary.length" class="s">The routine stays the same</div>
+            <div v-for="x in nextSummary" :key="x.text" class="nt-line" :class="x.tone"><Icon :name="x.icon" :size="14" />{{ x.text }}</div>
           </div>
-          <span class="mchip fin-diff" :class="{ pos: !r.fixed && (r.diff ?? 0) > 0, neg: !r.fixed && (r.diff ?? 0) < 0 }">{{ diffText(r) }}</span>
-          <span v-if="r.change?.mode === 'suggest'" class="tg"><input type="checkbox" :checked="r.on" :aria-label="`${r.change.direction === 'up' ? 'Raise' : 'Lower'} the weight for ${r.name}`" @change="toggleNext(r.id)" /></span>
-        </component>
+          <Icon name="right" :size="16" class="muted" />
+        </div>
       </div>
+      <NextTimeSheet v-if="showNext" v-model="d.accepted" :groups="nextTime.groups" :unchanged="nextTime.unchanged" @close="showNext = false" @open="goTo" />
     </template>
 
     <template v-if="changes.length">
@@ -169,10 +197,14 @@ async function finish() {
 </template>
 
 <style scoped>
-.fin-diff { flex: none; }
-.fin-diff.pos { color: var(--pos); }
-.fin-diff.neg { color: var(--neg); }
-.fin-lead .t { color: var(--tx2); }
+.nt-sum { align-items: flex-start; }
+.nt-sum > .muted { align-self: center; }
+.nt-sum .t { margin-bottom: var(--tdy); }
+.nt-line { display: flex; align-items: center; gap: var(--tdy); font-size: var(--fs-sm); color: var(--tx2); line-height: 1.6; }
+.nt-line .ico { flex: none; }
+.nt-line.pos .ico { color: var(--pos); }
+.nt-line.neg .ico { color: var(--neg); }
+.nt-line.acc { color: var(--acc); font-weight: 600; }
 .fin-time { font-size: 34px; font-weight: 700; line-height: 1.15; font-variant-numeric: tabular-nums; }
 .fin-hero .list { margin-top: var(--lpy); }
 .fin-hero .li:last-child { border-bottom: 0; }

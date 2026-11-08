@@ -21,11 +21,12 @@ describe("planNext", () => {
     expect(r.changes).toEqual([]);
     expect(r.numbersChanged).toBe(true);
   });
-  it("goes up a step with reps at the bottom when every set reached the top; suggest asks, a switched-off one keeps today", () => {
+  it("goes up a step with reps at the bottom when every set reached the top; suggest applies only when accepted", () => {
     const r = planNext([slot()], done([warm(), range(12), range(12)]), D);
     expect(r.changes[0]).toMatchObject({ mode: "suggest", direction: "up", fromKg: 20, toKg: 22.5, reps: 8, reason: "Every set reached 12 reps" });
-    expect(r.exercises[0]!.sets.map((s: any) => s.weightKg)).toEqual([10, 22.5, 22.5]);
-    expect(planNext([slot()], done([warm(), range(12), range(12)]), D, ["re1"]).exercises[0]!.sets.map((s: any) => s.weightKg)).toEqual([10, 20, 20]);
+    expect(r.exercises[0]!.sets.map((s: any) => s.weightKg)).toEqual([10, 20, 20]);
+    expect(planNext([slot()], done([warm(), range(12), range(12)]), D, ["re1"]).exercises[0]!.sets.map((s: any) => s.weightKg)).toEqual([10, 22.5, 22.5]);
+    expect(planNext([slot()], done([warm(), range(12), range(12)]), D, ["other"]).exercises[0]!.sets.map((s: any) => s.weightKg)).toEqual([10, 20, 20]);
     expect(planNext([slot({ progression: { mode: "off", stepKg: null, lowerAfter: null } })], done([range(12), range(12)]), D).changes).toEqual([]);
     expect(planNext([slot({ progression: { mode: "auto", stepKg: null, lowerAfter: null } })], done([range(12), range(12)]), D).changes[0]!.mode).toBe("auto");
   });
@@ -53,11 +54,12 @@ describe("planNext", () => {
     expect(planNext([slot({ missed: 9 })], miss, { ...D, lowerAfter: 0 }).changes).toEqual([]);
     expect(planNext([slot({ missed: 5 })], done([range(9), range(9)]), D).exercises[0]).toMatchObject({ missed: 0 });
   });
-  it("starts the missed count again when a lower is declined, and counts nothing while Progression is Off", () => {
+  it("starts the missed count again when a lower is not applied, and counts nothing while Progression is Off", () => {
     const miss = done([range(7), range(8)]);
-    const r = planNext([slot({ missed: 2 })], miss, D, ["re1"]);
+    const r = planNext([slot({ missed: 2 })], miss, D);
     expect(r.changes[0]).toMatchObject({ mode: "suggest", direction: "down" });
     expect(r.exercises[0]).toMatchObject({ missed: 0, sets: [{ weightKg: 10 }, { weightKg: 20 }, { weightKg: 20 }] });
+    expect(planNext([slot({ missed: 2 })], miss, D, ["re1"]).exercises[0]).toMatchObject({ missed: 0, sets: [{ weightKg: 10 }, { weightKg: 17.5 }, { weightKg: 17.5 }] });
     expect(planNext([slot({ missed: 2 })], miss, { ...D, mode: "off" }).exercises[0]).toMatchObject({ missed: 0 });
     expect(planNext([slot({ missed: 2, progression: { mode: "off", stepKg: null, lowerAfter: null } })], miss, D).exercises[0]).toMatchObject({ missed: 0 });
   });
