@@ -15,6 +15,12 @@ import { choose } from "../core/ask";
 
 // cur: the exercise on screen (look around freely); active: the one being done now, which the action bar works on
 const state = reactive<{ w: Workout | null; pending: number; cur: number; active: number }>({ w: null, pending: 0, cur: 0, active: 0 });
+// the Summary tab is cur one past the last exercise; kept (motusCur) as "summary" rather than that number, so it
+// survives a reload or the workout coming back with more or fewer exercises (a refetch after a change, another device)
+const SUMMARY = "summary";
+const curKey = () => (state.w && state.cur >= state.w.exercises.length ? SUMMARY : state.cur);
+// exercises just added here: the screen goes to the first of them once the server's copy has it (any id not in had)
+let goNew: { workoutId: string; had: Set<string> } | null = null;
 let wired = false;
 let actionsWired = false;
 // settled once the active workout has been asked for the first time (and state.w taken from it): a notification tap
@@ -44,14 +50,17 @@ export function useWorkout() {
       state.w = v ? JSON.parse(JSON.stringify(v)) : null;
       if (v) {
         const firstPending = Math.max(0, v.exercises.findIndex((e: any) => e.status === "pending"));
-        const saved = readJson<Record<string, number>>("motusCur", {})[v.id], act = readJson<Record<string, number>>("motusActive", {})[v.id];
-        state.cur = saved != null && saved < v.exercises.length ? saved : firstPending;
+        const saved = readJson<Record<string, number | typeof SUMMARY>>("motusCur", {})[v.id], act = readJson<Record<string, number>>("motusActive", {})[v.id];
+        state.cur = saved === SUMMARY ? v.exercises.length : saved != null && saved < v.exercises.length ? saved : firstPending;
+        const added = goNew?.workoutId === v.id ? v.exercises.findIndex((x: WorkoutExercise) => !goNew!.had.has(x.id)) : -1;
+        if (added >= 0) { state.cur = added; goNew = null; }
         state.active = act != null && act < v.exercises.length ? act : firstPending;
       }
     }, { immediate: true });
     // after the watcher above has taken the answer (nextTick), also when it failed (offline: whatever is kept here counts)
     watch(() => active.isFetched.value || active.data.value !== undefined, (ok) => { if (ok) void nextTick(activeLoaded); }, { immediate: true });
-    watch(() => state.cur, (c) => { if (state.w) writeJson("motusCur", { [state.w.id]: c }); });
+    // by curKey, not cur: the same number turns from Summary into an exercise when exercises are added
+    watch(curKey, (c) => { if (state.w) writeJson("motusCur", { [state.w.id]: c }); });
     watch(() => state.active, (c) => { if (state.w) writeJson("motusActive", { [state.w.id]: c }); });
     // the same as prefs and fmt below, kept here so the notification lives as long as the app
     const appSettings = useSettings();
@@ -143,7 +152,7 @@ export function useWorkout() {
     const i = w.exercises.indexOf(after);
     const nextSet = after.sets.slice(si + 1).find((x) => !x.done);
     const f = fmt.value;
-    const txt = (e: WorkoutExercise, s: WorkoutSet) => `${e.exercise.name}${s.weightKg != null ? ` · ${f.w(s.weightKg)} ${f.wu}` : ""}${s.reps != null ? ` × ${s.reps}` : ""}${s.durationS ? ` · ${f.clock(s.durationS)}` : ""}`;
+    const txt = (e: WorkoutExercise, s: WorkoutSet) => [e.exercise.name, f.set(s, e.exercise.tracking)].filter(Boolean).join(" · ");
     if (nextSet) return `Set ${after.sets.indexOf(nextSet) + 1} · ${txt(after, nextSet)}`;
     const ne = w.exercises.slice(i + 1).find((e) => e.status === "pending") ?? w.exercises.find((e) => e.status === "pending" && e !== after);
     const ns = ne?.sets.find((x) => !x.done);
@@ -232,8 +241,13 @@ export function useWorkout() {
     await call("put", `/workout-exercises/${e.id}`, patch, refresh);
   }
   async function addExercises(ids: string[]) {
-    for (const id of ids) await api.post(`/workouts/${state.w!.id}/exercises`, { exerciseId: id });
-    invalidate(["workouts"]);
+    if (!ids.length || !state.w) return;
+    // on purpose to the first one added (also from the Summary tab), see goNew
+    const wid = state.w.id;
+    goNew = { workoutId: wid, had: new Set(state.w.exercises.map((x) => x.id)) };
+    try { for (const id of ids) await api.post(`/workouts/${wid}/exercises`, { exerciseId: id }); }
+    catch (e) { goNew = null; throw e; }
+    finally { invalidate(["workouts"]); }
   }
   async function removeExercise(e: WorkoutExercise) {
     const i = state.w!.exercises.indexOf(e);

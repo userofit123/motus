@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // The workout so far: time, exercises and sets done against planned, volume, records and rep targets, and a line per
-// exercise with its best set. The last tab of the running workout; the numbers come from workoutSoFar (shared), so the
+// exercise with its best set (the least help, for assisted ones). The last tab of the running workout; the numbers come from workoutSoFar (shared), so the
 // Finish screen can show the same.
 import { computed } from "vue";
 import { workoutSoFar, type Workout } from "@motus/shared";
@@ -20,7 +20,7 @@ const extras = computed(() => [
 const line = (i: number) => {
   const p = r.value.perExercise[i]!, e = props.w.exercises[i]!;
   if (p.status === "skipped") return `Skipped${e.skipReason ? " · " + e.skipReason : ""}`;
-  return [`${p.setsDone} of ${p.setsPlanned} sets`, p.best ? `best ${fmt.value.set(p.best, e.exercise?.tracking)}` : ""].filter(Boolean).join(" · ");
+  return [`${p.setsDone} of ${p.setsPlanned} sets`, p.best ? `${e.exercise?.tracking === "assisted" ? "least help" : "best"} ${fmt.value.set(p.best, e.exercise?.tracking)}` : ""].filter(Boolean).join(" · ");
 };
 </script>
 

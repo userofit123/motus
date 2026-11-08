@@ -11,6 +11,9 @@ export function makeFmt(s: Settings) {
   const wu = s.units.weight, du = s.units.distance, lu = s.units.length;
   const locale = s.dateFormat === "mdy" ? "en-US" : s.dateFormat === "ymd" ? "sv-SE" : "en-GB";
   const hour12 = s.clock === "12";
+  const w = (kg: number | null | undefined, dp = 1) => (kg == null ? "" : num(fromKg(kg, wu), dp));
+  const wu_ = (kg: number | null | undefined, dp = 1) => (kg == null ? "" : `${w(kg, dp)} ${wu}`);
+  const dist = (m: number | null | undefined, dp = 2) => (m == null ? "" : `${num(fromM(m, du), dp)} ${du}`);
   return {
     s,
     wu, du, lu,
@@ -18,20 +21,20 @@ export function makeFmt(s: Settings) {
     len: (cm: number | null | undefined, dp = 1) => (cm == null ? "" : num(fromCm(cm, lu), dp)),
     toCm: (v: number) => toCm(v, lu),
     /** 80 kg → "80" (or "176.4" in lb) */
-    w: (kg: number | null | undefined, dp = 1) => (kg == null ? "" : num(fromKg(kg, wu), dp)),
-    wu_: (kg: number | null | undefined, dp = 1) => (kg == null ? "" : `${num(fromKg(kg, wu), dp)} ${wu}`),
+    w,
+    wu_,
     toKg: (v: number) => toKg(v, wu),
     fromKg: (kg: number) => fromKg(kg, wu),
     vol: (kg: number) => { const v = fromKg(kg, wu); return v >= 10000 ? `${num(v / 1000, 1)}k ${wu}` : `${num(v, 0)} ${wu}`; },
-    dist: (m: number | null | undefined, dp = 2) => (m == null ? "" : `${num(fromM(m, du), dp)} ${du}`),
+    dist,
     distNum: (m: number) => fromM(m, du),
     pace: (s: number, m: number) => { if (!m || !s) return ""; const per = s / fromM(m, du); return `${clock(per)} /${du}`; },
     clock, dur,
     /** one set as done: "80 kg × 8", "12 reps", "1:30", "2.5 km" (what the exercise tracks) */
-    set: (x: { weightKg: number | null; reps: number | null; durationS: number | null; distanceM: number | null }, t: Tracking | null | undefined) => {
-      const w = x.weightKg != null && !!t && usesWeight(t) ? `${num(fromKg(x.weightKg, wu), 1)} ${wu}` : "";
-      const r = x.reps != null && !!t && usesReps(t) ? (w ? `× ${x.reps}` : `${x.reps} rep${x.reps === 1 ? "" : "s"}`) : "";
-      return [w, r, x.durationS ? clock(x.durationS) : "", x.distanceM ? `${num(fromM(x.distanceM, du), 2)} ${du}` : ""].filter(Boolean).join(" ");
+    set: (x: SetFigures, t: Tracking | null | undefined) => {
+      const kg = x.weightKg != null && !!t && usesWeight(t) ? wu_(x.weightKg) : "";
+      const r = x.reps != null && !!t && usesReps(t) ? (kg ? `× ${x.reps}` : `${x.reps} rep${x.reps === 1 ? "" : "s"}`) : "";
+      return [kg, r, x.durationS ? clock(x.durationS) : "", x.distanceM ? dist(x.distanceM) : ""].filter(Boolean).join(" ");
     },
     date: (iso: string | null | undefined, o: Intl.DateTimeFormatOptions = { day: "numeric", month: "short" }) => (iso ? new Date(iso.length === 10 ? iso + "T12:00:00" : iso).toLocaleDateString(locale, o) : ""),
     dateLong: (iso: string | null | undefined) => (iso ? new Date(iso.length === 10 ? iso + "T12:00:00" : iso).toLocaleDateString(locale, { weekday: "long", day: "numeric", month: "long", year: "numeric" }) : ""),
@@ -41,6 +44,8 @@ export function makeFmt(s: Settings) {
   };
 }
 export type Fmt = ReturnType<typeof makeFmt>;
+/** What fmt.set reads from a set (a logged set, a planned one or a record) */
+export interface SetFigures { weightKg: number | null; reps: number | null; durationS: number | null; distanceM: number | null }
 
 export function ago(iso: string | null | undefined): string {
   if (!iso) return "never";

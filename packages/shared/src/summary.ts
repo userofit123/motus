@@ -63,13 +63,13 @@ export function exerciseSoFar(e: WorkoutExercise): ExerciseSoFar {
   };
 }
 
-/** Skipped exercises count neither as planned nor as done; a partly done one ("skip the remaining sets") counts as done. */
+/** Skipped exercises count neither as planned nor as done (not even sets done before the skip, or done could pass planned); a partly done one ("skip the remaining sets") counts as done. */
 export function workoutSoFar(w: { exercises: WorkoutExercise[] }): WorkoutSoFar {
   const per = w.exercises.map(exerciseSoFar), kept = per.filter((p) => p.status !== "skipped");
   const sum = (f: (p: ExerciseSoFar) => number, list = per) => list.reduce((a, p) => a + f(p), 0);
   return {
     exercisesDone: kept.filter((p) => p.status === "done" || p.status === "partial").length, exercisesTotal: kept.length,
-    setsDone: sum((p) => p.setsDone), setsPlanned: sum((p) => p.setsPlanned, kept),
+    setsDone: sum((p) => p.setsDone, kept), setsPlanned: sum((p) => p.setsPlanned, kept),
     volumeKg: sum((p) => p.volumeKg),
     reps: w.exercises.reduce((a, e) => a + e.sets.filter(working).reduce((b, s) => b + (s.reps ?? 0), 0), 0),
     records: sum((p) => p.records), targets: sum((p) => p.targets), targetsHit: sum((p) => p.targetsHit),

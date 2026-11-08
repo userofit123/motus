@@ -7,7 +7,7 @@ import { strengthLevel, LEVELS, e1rm, weightForReps, usesWeight, usesReps, usesD
 import { invalidate } from "../api/live";
 import { useExercise, useExerciseHistory, useNotes, useReminders, useChange, useSettings, useBody } from "../api/queries";
 import { api, mediaUrl } from "../api/client";
-import { useFmt, ago } from "../core/format";
+import { useFmt, ago, type SetFigures } from "../core/format";
 import { noteSheet, reminderSheet, exerciseSheet } from "../core/ui";
 import { confirm } from "../core/ask";
 import { toast, savedToast } from "../core/toast";
@@ -54,7 +54,7 @@ const usualHour = computed(() => {
   return h == null ? "" : fmt.value.time(new Date(2000, 0, 1, h).toISOString());
 });
 const best1rm = computed(() => hist.data.value?.records?.e1rm?.value ?? null);
-const setText = (s: any) => fmt.value.set(s, tracking.value);
+const setText = (s: SetFigures) => fmt.value.set(s, tracking.value);
 const REC: Record<string, string> = { maxWeight: "Heaviest weight", e1rm: "Best estimated 1RM", maxReps: "Most reps in a set", setVolume: "Best set (weight × reps)", sessionVolume: "Most volume in a session", maxDuration: "Longest", maxDistance: "Farthest" };
 const recVal = (k: string, v: number) => (["maxWeight", "e1rm", "setVolume", "sessionVolume"].includes(k) ? fmt.value.wu_(v) : k === "maxDuration" ? fmt.value.clock(v) : k === "maxDistance" ? fmt.value.dist(v) : String(v));
 const fav = useChange(async (v: boolean) => { await api.put(`/exercises/${props.id}/prefs`, { ...(e.value?.prefs ?? {}), favourite: v }); savedToast(v ? "Added to favourites" : "Removed from favourites"); }, ["exercises"]);

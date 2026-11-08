@@ -15,6 +15,10 @@ describe("workoutSoFar", () => {
   it("counts done against planned, leaving skipped exercises out", () => {
     expect([r.exercisesDone, r.exercisesTotal, r.setsDone, r.setsPlanned]).toEqual([1, 2, 4, 5]);
   });
+  it("never counts more sets done than planned when a skipped exercise had sets done", () => {
+    const s = workoutSoFar({ exercises: [ex("weight_reps", "pending", [set({ weightKg: 60, reps: 5, done: true }), set({ weightKg: 60, reps: 5 })]), ex("weight_reps", "skipped", [set({ weightKg: 50, reps: 10, done: true })])] });
+    expect([s.setsDone, s.setsPlanned]).toEqual([1, 2]);
+  });
   it("adds volume from working sets only, and none for assisted help", () => {
     expect(r.volumeKg).toBe(80 * 8 + 85 * 7);
   });

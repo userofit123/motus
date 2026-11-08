@@ -125,7 +125,7 @@ const bwChange = computed(() => {
 // records
 const KIND: Record<string, string> = { weight: "Heaviest", e1rm: "Best 1RM", volume: "Most volume", reps: "Most reps", duration: "Longest", distance: "Farthest" };
 const recordText = (r: HomeRecord) => r.distanceM ? fmt.value.dist(r.distanceM, 1) : r.durationS && !r.reps ? fmt.value.dur(r.durationS, true)
-  : r.weightKg ? `${fmt.value.w(r.weightKg)} ${fmt.value.wu} × ${r.reps ?? 0}` : `${r.reps ?? 0} reps`;
+  : fmt.value.set(r, r.tracking ?? "weight_reps");
 
 // achievements: the latest reached and the closest still to come
 const ach = useAchievements(computed(() => isOn("achievements")));
