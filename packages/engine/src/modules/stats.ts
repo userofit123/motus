@@ -147,8 +147,9 @@ export function statsRoutes(r: Router) {
     const active = (await ctx.q.query("SELECT id, name, started_at FROM workouts WHERE status = 'in_progress' ORDER BY started_at DESC LIMIT 1")).rows[0] ?? null;
     const today = dayIn(now, tzMin);
     const end = dayIn(new Date(now.getTime() + 7 * 86400000), tzMin);
-    // the same rule as the calendar: a plan done (by its routine, its activity type, or started from it) drops out
-    const upNext = (await plannedOpen(ctx.q, today, end, tzMin)).slice(0, 5);
+    // the same rule as the calendar: a plan done (by its routine, its activity type, or started from it) drops out.
+    // The whole week, uncut: Today lists every plan for today and marks the week's planned days; Up next shortens itself
+    const upNext = await plannedOpen(ctx.q, today, end, tzMin);
     // the programs you're following get their own card on Home, so their next workout isn't also a suggestion
     // with Programs switched off they are absent from Home, Today and suggestions included
     const programsOn = !!s.features.programs;

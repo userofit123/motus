@@ -2,6 +2,7 @@
 // Home's first block: the one thing to do today, and this week's training days at a glance. It changes with the day:
 // a workout in progress takes it over, then today's plan, then your program's next workout, then a suggestion; with
 // none of those it offers a workout of your choice. A new account gets a way to begin instead.
+// With several plans for today the first (in time order) leads and the others follow as a short list, so none is hidden.
 import { computed } from "vue";
 import type { HomePlan, HomeToday } from "@motus/shared";
 import { useRouter } from "vue-router";
@@ -18,6 +19,12 @@ const fmt = useFmt();
 const today = localYmd(new Date());
 
 const start = (p: HomePlan) => router.push(`/routines/${p.routineId}/start${p.scheduleId ? `?schedule=${p.scheduleId}&date=${p.date}` : ""}`);
+// a routine starts, an activity opens its log
+const open = (p: HomePlan) => (p.routineId ? start(p) : (activitySheet.value = { type: p.activityType ?? undefined }));
+// every plan for today not done yet (the engine drops the done ones, each on its own)
+const todays = computed(() => (props.h.upNext ?? []).filter((p) => p.date === today));
+// the rest of today's plans, under the one that leads (none while a workout is in progress: it has the block)
+const also = computed(() => (props.h.active ? [] : todays.value.slice(1)));
 const since = computed(() => { const d = props.h.daysSinceLast; return d == null ? "" : d === 0 ? "today" : d === 1 ? "yesterday" : `${d} days ago`; });
 const lastLine = computed(() => (props.h.last ? `Last workout: ${props.h.last.name} · ${since.value}` : ""));
 const trainedToday = computed(() => (props.h.days ?? []).includes(today));
@@ -27,9 +34,9 @@ const hero = computed<Hero>(() => {
   const h = props.h;
   if (h.active) return { label: "Workout in progress", title: h.active.name || "Workout", sub: `Started ${ago(h.active.startedAt)}`, routine: null,
     act: { label: "Resume", icon: "play", run: () => router.push("/workout") } };
-  const plan = (h.upNext ?? []).find((p) => p.date === today);
+  const plan = todays.value[0];
   if (plan) return { label: plan.timeOfDay ? `Planned for today at ${plan.timeOfDay}` : "Planned for today", title: plan.name, sub: lastLine.value, routine: plan.routineId ?? null,
-    act: plan.routineId ? { label: "Start", icon: "play", run: () => start(plan) } : { label: "Log it", icon: "plus", run: () => (activitySheet.value = { type: plan.activityType ?? undefined }) } };
+    act: plan.routineId ? { label: "Start", icon: "play", run: () => start(plan) } : { label: "Log it", icon: "plus", run: () => open(plan) } };
   // a program only while Programs is switched on (Settings → Features)
   const prog = s.value.features.programs ? (h.programs ?? []).find((p) => p.calendarWeek > 0 && p.next) : undefined;
   const next = prog?.next;
@@ -78,6 +85,12 @@ const doneCount = computed(() => week.value.filter((d) => d.done).length);
         <button class="btn s" @click="hero.act.run()"><Icon :name="hero.act.icon" :size="14" />{{ hero.act.label }}</button>
       </div>
       <div v-if="hero.sub" class="ts">{{ hero.sub }}</div>
+      <div v-if="also.length" class="also" role="list" aria-label="Also planned for today">
+        <span class="al">Also today</span>
+        <button v-for="p in also" :key="p.scheduleId" role="listitem" class="ai" :aria-label="`${p.routineId ? 'Start' : 'Log'} ${p.name}`" @click="open(p)">
+          <Icon :name="p.routineId ? 'play' : 'plus'" :size="12" /><span class="an">{{ p.name }}</span><template v-if="p.timeOfDay"><span class="sep">·</span><span>{{ p.timeOfDay }}</span></template>
+        </button>
+      </div>
     </div>
     <MuscleFig v-if="hero.routine" class="tfig" :routine="hero.routine" />
     <div class="tweek" role="list" :aria-label="`This week: ${doneCount} of 7 days trained`">
@@ -105,6 +118,15 @@ const doneCount = computed(() => week.value.filter((d) => d.done).length);
 .thead .btn { flex: none; }
 .tacts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: var(--hg); }
 .tfig { flex: none; }
+/* the rest of today's plans: quiet chips under the lead, each starts or logs its own (the lead keeps the one button) */
+.also { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: calc(var(--hg) / 2); }
+.al { font-size: var(--fs-xs); font-weight: 600; color: color-mix(in srgb, var(--onc) 70%, transparent); }
+.ai { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-width: 0; padding: 4px 10px; border: 0; border-radius: var(--pill); font: inherit; font-size: var(--fs-sm);
+  color: var(--onc); background: color-mix(in srgb, var(--onc) 10%, transparent); cursor: pointer; }
+.ai:hover { background: color-mix(in srgb, var(--onc) 16%, transparent); }
+.ai .an { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* the hero's own text colour, not the page's muted one */
+.ai .sep { color: inherit; opacity: .7; }
 /* a workout in progress: a calm pulse beside its label is the one moving thing on Home */
 .pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--pos); animation: pulse 1.6s ease-in-out infinite; }
 @keyframes pulse { 50% { opacity: .35; } }

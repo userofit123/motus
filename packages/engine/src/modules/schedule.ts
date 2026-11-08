@@ -40,7 +40,7 @@ async function scheduleList(q: Sql): Promise<(Schedule & { exceptions: any[] })[
 
 async function plannedBetween(q: Sql, from: string, to: string) {
   const list = await scheduleList(q);
-  // soonest first (Home's "Up next" keeps the first few); on one day timed plans in time order, then those with no time
+  // soonest first (Home's "Up next" shows the first few); on one day timed plans in time order, then those with no time
   return list.flatMap((s) => occurrences(s, s.exceptions, from, to).map((date) => ({
     scheduleId: s.id, date, routineId: s.routineId, activityType: s.activityType, name: s.name ?? "Planned", color: (s as any).color ?? null, timeOfDay: s.timeOfDay, remindMin: s.remindMin,
   }))).sort((a, b) => { const x = a.date + (a.timeOfDay ?? "~"), y = b.date + (b.timeOfDay ?? "~"); return x < y ? -1 : x > y ? 1 : 0; });

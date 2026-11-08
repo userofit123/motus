@@ -128,4 +128,24 @@ describe("home on the app's calendar", () => {
     expect(home.daysSinceLast).toBe(2);
     NOW = new Date("2026-10-07T10:00:00Z");
   });
+
+  it("lists every plan for today, of every rule, and drops only the ones done", async () => {
+    NOW = new Date("2026-10-20T10:00:00Z"); // a Tuesday
+    const a = (await call("POST", "/routines", { name: "Many A", exercises: [{ exerciseId: bench, sets: [{ reps: 5 }] }] })).id;
+    const b = (await call("POST", "/routines", { name: "Many B", exercises: [{ exerciseId: bench, sets: [{ reps: 5 }] }] })).id;
+    const ids = [
+      (await call("POST", "/schedules", { routineId: a, rule: "once", startDate: "2026-10-20", timeOfDay: "07:00" })).id,
+      (await call("POST", "/schedules", { routineId: b, rule: "weekly", days: [2], startDate: "2026-10-01" })).id,
+      (await call("POST", "/schedules", { activityType: "walk", rule: "interval", intervalDays: 1, startDate: "2026-10-19" })).id,
+    ];
+    for (let i = 0; i < 3; i++) ids.push((await call("POST", "/schedules", { activityType: "run", rule: "once", startDate: "2026-10-20" })).id);
+    const todays = async () => (await call("GET", "/home", undefined, { tz: TZ })).upNext.filter((p: any) => p.date === "2026-10-20").map((p: any) => p.name);
+    // more than five plans for today alone: all of them are there, the timed one first
+    expect(await todays()).toEqual(["Many A", "Many B", "Walk", "Run", "Run", "Run"]);
+    // doing one leaves the others
+    await call("POST", "/workouts/log", { startedAt: "2026-10-20T08:00:00Z", routineId: b });
+    expect(await todays()).toEqual(["Many A", "Walk", "Run", "Run", "Run"]);
+    for (const sid of ids) await call("DELETE", `/schedules/${sid}`);
+    NOW = new Date("2026-10-07T10:00:00Z");
+  });
 });

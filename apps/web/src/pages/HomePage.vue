@@ -106,8 +106,8 @@ const groups = computed<HomeGroup[]>(() => h.value?.groupDays ?? []);
 const worked = computed(() => groups.value.filter((g) => g.days != null && g.days < 7).length);
 const resting = computed(() => [...groups.value].filter((g) => g.days == null || g.days >= 4).sort((a, b) => (b.days ?? 1e9) - (a.days ?? 1e9)).slice(0, 3));
 
-// up next: the coming days; today's first plan is already in Today
-const upNext = computed<HomePlan[]>(() => { const l = h.value?.upNext ?? []; const first = l.findIndex((p) => p.date === today); return l.filter((_, i) => i !== first); });
+// up next: the first few plans of the coming days. Today's are all in Today, unless a workout in progress has that block
+const upNext = computed<HomePlan[]>(() => (h.value?.upNext ?? []).filter((p) => p.date !== today || !!h.value?.active).slice(0, 5));
 const dayName = (d: string) => { const tm = localYmd(new Date(Date.now() + 86400000)); return d === today ? "Today" : d === tm ? "Tomorrow" : fmt.value.date(d, { weekday: "long" }); };
 const start = (p: HomePlan) => router.push(`/routines/${p.routineId}/start${p.scheduleId ? `?schedule=${p.scheduleId}&date=${p.date}` : ""}`);
 const planOpen = ref<any>(null);
