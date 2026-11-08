@@ -481,6 +481,12 @@ export function workoutRoutes(r: Router) {
     const n = last ? last.position + 1 : 0;
     const asked = Array.isArray(b?.sets) ? b.sets : [b?.kind || b?.weightKg != null || b?.reps != null ? b : { kind: last?.kind === "warmup" ? "normal" : last?.kind ?? "normal",
       weightKg: last?.weight_kg ?? null, reps: last?.reps ?? null, durationS: last?.duration_s ?? null, distanceM: last?.distance_m ?? null, restPlannedS: last?.rest_planned_s ?? null }];
+    // a set added during the workout keeps the last set's rep target and range (unless given), so the Finish screen
+    // can still tell whether the top of the range was reached in every set
+    for (const s of asked) if (s && typeof s === "object" && s.kind !== "warmup") {
+      if (s.targetReps === undefined) s.targetReps = last?.target_reps ?? null;
+      if (s.targetRepsMax === undefined) s.targetRepsMax = last?.target_reps_max ?? null;
+    }
     // sets already saved by an earlier send of this same change are left alone, so a replay moves nothing
     const list: any[] = [];
     for (const s of asked) { const sid = clientSetId(s); if (!sid || !(await ownSet(ctx, sid, weId))) list.push(s); }
@@ -592,13 +598,14 @@ export function workoutRoutes(r: Router) {
       await ctx.q.query(
         `INSERT INTO reminders (id, user_id, target_type, target_id, scope_routine_id, body, trigger, action, created_workout_id)
          VALUES ($1,$2,'exercise',$3,$4,$5,'next',$6,$7)`,
-        [uuidv7(), ctx.userId, exId, w.routine_id, str(m?.body, 200) || "More weight", JSON.stringify({ setWeightKg: kg, ...(reps ? { setReps: reps } : {}) }), wid]);
+        [uuidv7(), ctx.userId, exId, w.routine_id, "Ready for more weight", JSON.stringify({ setWeightKg: kg, ...(reps ? { setReps: reps } : {}) }), wid]);
     }
     if (more.length) ctx.changed("reminder");
     // the routine's layout (exercises added, removed, swapped, moved; sets added or left out) is only saved when ticked
     // on the Finish screen, and then without today's numbers: those carry over to next time anyway (prefillFromLast).
-    // updateRoutine is what older apps send for the same switch.
-    if ((b?.saveLayout || b?.updateRoutine) && w.routine_id) {
+    // Older apps' updateRoutine is ignored on purpose: with "Always" they sent it on every finish, which would now save
+    // the layout without asking.
+    if (b?.saveLayout && w.routine_id) {
       const { updateRoutineFromWorkout } = await import("./routines");
       await updateRoutineFromWorkout(ctx, w.routine_id, wid, { numbers: false });
       ctx.changed("routine");

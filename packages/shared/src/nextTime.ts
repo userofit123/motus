@@ -21,15 +21,24 @@ export interface MoreWeight {
 // drop sets are lighter on purpose and warm-ups don't count: neither decides progression (as in nextProgression)
 const deciding = (s: WorkoutSet) => s.kind !== "warmup" && s.kind !== "drop";
 
+/** One weight step up from `fromKg`, on the step's grid (multiples of the step), so an odd weight lands on a real one. */
+export function stepUp(fromKg: number, stepKg: number): number {
+  let to = Math.round((fromKg + stepKg) / stepKg) * stepKg;
+  if (to <= fromKg) to += stepKg;
+  return Math.round(to * 100) / 100;
+}
+
 /** Exercises ready for more weight: every working set done, with weight, each reaching the top of its rep range
- * (the range's top when it has one, else the rep target). Next time: `stepKg` more, reps back to the range's bottom.
+ * (the range's top when it has one, else the rep target). Next time: one step more (snapped to the step's grid), reps
+ * back to the range's bottom. `stepKg` is one step for all, or per exercise (null leaves that exercise out).
  * Assisted exercises are left out (their weight is help taken off, so "more" is the wrong way). */
-export function readyForMore(w: { exercises: WorkoutExercise[] }, stepKg: number): MoreWeight[] {
-  if (!(stepKg > 0)) return [];
+export function readyForMore(w: { exercises: WorkoutExercise[] }, stepKg: number | ((e: WorkoutExercise) => number | null)): MoreWeight[] {
   const out: MoreWeight[] = [];
   for (const e of w.exercises) {
     const t = e.exercise?.tracking ?? "weight_reps";
     if (e.status === "skipped" || t === "assisted" || !usesWeight(t) || !usesReps(t)) continue;
+    const step = typeof stepKg === "function" ? stepKg(e) : stepKg;
+    if (step == null || !(step > 0)) continue;
     const work = e.sets.filter(deciding);
     if (!work.length || !work.every((s) => s.done && s.targetReps != null && (s.weightKg ?? 0) > 0)) continue;
     const top = (s: WorkoutSet) => s.targetRepsMax ?? s.targetReps!;
@@ -37,7 +46,7 @@ export function readyForMore(w: { exercises: WorkoutExercise[] }, stepKg: number
     const fromKg = Math.max(...work.map((s) => s.weightKg!));
     out.push({
       workoutExerciseId: e.id, exerciseId: e.exerciseId, name: e.exercise?.name ?? "",
-      fromKg, topReps: Math.max(...work.map(top)), toKg: Math.round((fromKg + stepKg) * 100) / 100, reps: Math.min(...work.map((s) => s.targetReps!)),
+      fromKg, topReps: Math.max(...work.map(top)), toKg: stepUp(fromKg, step), reps: Math.min(...work.map((s) => s.targetReps!)),
     });
   }
   return out;
@@ -55,6 +64,8 @@ export interface RoutineShape { exercises: { id?: string | null; exerciseId: str
 export function structureChanges(routine: RoutineShape, w: { exercises: WorkoutExercise[] }): StructureChange[] {
   const out: StructureChange[] = [];
   const byId = new Map(routine.exercises.filter((r) => r.id).map((r) => [r.id!, r]));
+  // an exercise with nothing ticked counts as skipped: it stays in the routine as it was (or, added today, isn't added).
+  // updateRoutineFromWorkout uses the same rule
   const kept = w.exercises.filter((e) => e.status !== "skipped" && e.sets.some((s) => s.done));
   const inWorkout = new Set(w.exercises.map((e) => e.routineExerciseId).filter(Boolean));
   for (const e of kept) {

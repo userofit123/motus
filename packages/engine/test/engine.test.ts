@@ -237,6 +237,33 @@ describe("updating a routine from a workout", () => {
     await call(C, "POST", `/routines/${r.id}/from-workout`, { workoutId: w.id });
     expect((await call(C, "GET", `/routines/${r.id}`)).exercises[0].sets.map((s: any) => s.weightKg)).toEqual([55]);
   });
+
+  it("gives a swapped exercise today's numbers, treats one with nothing ticked as skipped, and ignores the old updateRoutine", async () => {
+    const C = uuidv7();
+    await eng.db.admin.query("INSERT INTO users (id, username, display_name) VALUES ($1,'swap-tester','C')", [C]);
+    const ex = await call(C, "GET", "/exercises");
+    const [a, b, c, d] = [ex[0].id, ex[1].id, ex[2].id, ex[3].id];
+    const r = await call(C, "POST", "/routines", { name: "Swap", exercises: [
+      { exerciseId: a, sets: [{ kind: "normal", reps: 10, weightKg: 100 }] },
+      { exerciseId: b, sets: [{ kind: "normal", reps: 5, weightKg: 140 }, { kind: "normal", reps: 5, weightKg: 140 }] }] });
+    const w = await call(C, "POST", "/workouts/start", { routineId: r.id });
+    // A swapped for C, done at 30 × 12; B left with nothing ticked (not marked skipped); D added with nothing ticked
+    await call(C, "PUT", `/workout-exercises/${w.exercises[0].id}`, { exerciseId: c });
+    await call(C, "PUT", `/workout-sets/${w.exercises[0].sets[0].id}`, { weightKg: 30, reps: 12, done: true });
+    await call(C, "POST", `/workouts/${w.id}/exercises`, { exerciseId: d, sets: [{ kind: "normal", reps: 3, weightKg: 9 }] });
+    await call(C, "POST", `/workouts/${w.id}/finish`, { updateRoutine: true });
+    expect((await call(C, "GET", `/routines/${r.id}`)).exercises.map((e: any) => e.exerciseId)).toEqual([a, b]);
+    // the same again, now asked for with saveLayout
+    const w2 = await call(C, "POST", "/workouts/start", { routineId: r.id });
+    await call(C, "PUT", `/workout-exercises/${w2.exercises[0].id}`, { exerciseId: c });
+    await call(C, "PUT", `/workout-sets/${w2.exercises[0].sets[0].id}`, { weightKg: 30, reps: 12, done: true });
+    await call(C, "POST", `/workouts/${w2.id}/exercises`, { exerciseId: d, sets: [{ kind: "normal", reps: 3, weightKg: 9 }] });
+    await call(C, "POST", `/workouts/${w2.id}/finish`, { saveLayout: true });
+    const after = await call(C, "GET", `/routines/${r.id}`);
+    expect(after.exercises.map((e: any) => e.exerciseId)).toEqual([c, b]);
+    expect(after.exercises[0].sets.map((s: any) => [s.weightKg, s.reps])).toEqual([[30, 12]]);
+    expect(after.exercises[1].sets.map((s: any) => s.weightKg)).toEqual([140, 140]);
+  });
 });
 
 describe("ready for more weight", () => {
@@ -252,5 +279,25 @@ describe("ready for more weight", () => {
     const next = await call(C, "POST", "/workouts/start", { routineId: r.id });
     // last time's 20 × 12 would fill in; the accepted step wins
     expect(next.exercises[0].sets.map((s: any) => [s.weightKg, s.reps])).toEqual([[22.5, 8], [22.5, 8]]);
+  });
+
+  it("keeps the rep target and range on a set added during the workout, and stores the reminder without a unit", async () => {
+    const C = uuidv7();
+    await eng.db.admin.query("INSERT INTO users (id, username, display_name) VALUES ($1,'addset-tester','C')", [C]);
+    const ex = await call(C, "GET", "/exercises");
+    const r = await call(C, "POST", "/routines", { name: "Arms", exercises: [{ exerciseId: ex[0].id, sets: [{ kind: "normal", reps: 8, repsMax: 12, weightKg: 20 }] }] });
+    const w = await call(C, "POST", "/workouts/start", { routineId: r.id });
+    const we = w.exercises[0];
+    // as the app sends it (the copied numbers, no targets) and as an older or bare call does (nothing at all)
+    await call(C, "POST", `/workout-exercises/${we.id}/sets`, { id: uuidv7(), kind: "normal", weightKg: 20, reps: 8, prefilled: true });
+    await call(C, "POST", `/workout-exercises/${we.id}/sets`, {});
+    const sets = (await call(C, "GET", `/workouts/${w.id}`)).exercises[0].sets;
+    expect(sets.map((s: any) => [s.targetReps, s.targetRepsMax])).toEqual([[8, 12], [8, 12], [8, 12]]);
+    for (const s of sets) await call(C, "PUT", `/workout-sets/${s.id}`, { weightKg: 20, reps: 12, done: true });
+    const done = await call(C, "POST", `/workouts/${w.id}/finish`, { moreWeight: [{ exerciseId: ex[0].id, weightKg: 22.5, reps: 8, body: "22.5 kg × 8" }] });
+    const rem = (await eng.db.admin.query("SELECT body, action FROM reminders WHERE created_workout_id = $1", [w.id])).rows[0];
+    expect(rem.body).toBe("Ready for more weight");
+    expect(rem.action).toEqual({ setWeightKg: 22.5, setReps: 8 });
+    expect(done).toBeTruthy();
   });
 });

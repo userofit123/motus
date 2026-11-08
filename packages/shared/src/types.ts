@@ -39,6 +39,8 @@ export interface Exercise {
   hidden?: boolean;
   restS?: number | null;
   restAfterS?: number | null;
+  /** this exercise's own weight step (kg), when set; else the Settings increment */
+  incrementKg?: number | null;
   timesDone?: number;
   lastDoneAt?: string | null;
 }

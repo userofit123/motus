@@ -15,6 +15,8 @@ const whenText = computed(() => {
 const actionText = computed(() => {
   const a = r.value.action;
   if (!a) return null;
+  // "Ready for more weight" from the Finish screen: the exact numbers, kept in kg and shown in the person's unit
+  if (a.setWeightKg != null) return `${fmt.value.wu_(a.setWeightKg)}${a.setReps != null ? ` × ${a.setReps}` : ""}`;
   return [a.weightKg ? `${a.weightKg > 0 ? "+" : "−"}${fmt.value.wu_(Math.abs(a.weightKg))}` : null, a.reps ? `${a.reps > 0 ? "+" : "−"}${Math.abs(a.reps)} reps` : null, a.restS ? `rest ${fmt.value.clock(a.restS)}` : null].filter(Boolean).join(", ") || null;
 });
 const meta = computed(() => [props.where, props.when ? whenText.value : null, actionText.value].filter(Boolean) as string[]);

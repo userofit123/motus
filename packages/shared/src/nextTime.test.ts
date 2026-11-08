@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { readyForMore, structureChanges } from "./nextTime";
+import { readyForMore, stepUp, structureChanges } from "./nextTime";
 import { withDefaults } from "./settings";
 import type { WorkoutExercise, WorkoutSet } from "./types";
 
@@ -21,6 +21,14 @@ describe("readyForMore", () => {
   it("uses the rep target when there is no range, and leaves out assisted and skipped exercises", () => {
     expect(readyForMore({ exercises: [ex({ sets: [set({ weightKg: 100, reps: 5, targetReps: 5 })] })] }, 2.5)[0]).toMatchObject({ toKg: 102.5, reps: 5 });
     expect(readyForMore({ exercises: [ex({ tracking: "assisted", sets: [range(12)] }), ex({ status: "skipped", sets: [range(12)] })] }, 2.5)).toEqual([]);
+  });
+  it("uses each exercise's own step when given, snaps to its grid, and leaves out exercises with no step", () => {
+    const a = ex({ name: "A", sets: [range(12, 21)] }), b = ex({ name: "B", sets: [range(12, 20)] }), c = ex({ name: "C", sets: [range(12)] });
+    const steps: Record<string, number | null> = { A: 2.5, B: 1, C: null };
+    expect(readyForMore({ exercises: [a, b, c] }, (e) => steps[e.exercise.name]!).map((m) => [m.name, m.toKg])).toEqual([["A", 22.5], ["B", 21]]);
+    expect(stepUp(22.5, 2.5)).toBe(25);
+    expect(stepUp(21.3, 2.5)).toBe(25);
+    expect(stepUp(20, 2.27)).toBe(22.7);
   });
 });
 
@@ -44,6 +52,11 @@ describe("structureChanges", () => {
     expect(structureChanges(routine, w).map((c) => c.text)).toEqual(["A: 2 sets instead of 3", "B becomes E", "Add F", "Remove D", "Exercises in today's order"]);
     const skipped = { exercises: [...routine.exercises.map((r) => ex({ name: r.exerciseId, exerciseId: r.exerciseId, routineExerciseId: r.id, status: r.id === "rb" ? "skipped" : "done", sets: r.sets.map(() => set({ done: r.id !== "rb" })) }))] };
     expect(structureChanges(routine, skipped)).toEqual([]);
+  });
+  it("treats an exercise with nothing ticked as skipped: kept as it was, or not added when new today", () => {
+    const w = { exercises: [...routine.exercises.map((r) => ex({ name: r.exerciseId, exerciseId: r.exerciseId, routineExerciseId: r.id, status: "pending", sets: r.sets.map(() => set({ done: r.id !== "rb" })) })),
+      ex({ name: "F", exerciseId: "F", status: "pending", sets: [set({ done: false })] })] };
+    expect(structureChanges(routine, w)).toEqual([]);
   });
 });
 

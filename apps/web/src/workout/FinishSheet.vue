@@ -5,7 +5,7 @@
 // (exercises or sets changed today: listed, and only saved when switched on). Then how it felt, notes, body weight.
 import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
-import { readyForMore, structureChanges, workoutScore, workoutSoFar, type StructureChange } from "@motus/shared";
+import { readyForMore, structureChanges, workoutScore, workoutSoFar, type Routine, type StructureChange, type WorkoutExercise } from "@motus/shared";
 import { useWorkout, endWorkout, finishDraft } from "./useWorkout";
 import { api } from "../api/client";
 import { settle } from "../api/outbox";
@@ -53,8 +53,18 @@ const vsLast = computed(() => {
 });
 // next time's numbers: Settings → Workout → "Start from what you did last time" (the saved choice, not a change made
 // for this workout only on the routine's start screen, as next time starts from the saved one)
+const routine = useRoutine(computed(() => w.value.routineId ?? ""));
 const fromToday = computed(() => W.settings.value.workout.prefillFromLast);
-const more = computed(() => readyForMore(w.value, W.incKg.value));
+// the weight step: the exercise's own (its settings), else the routine exercise's progression step, else Settings'.
+// Where the Progression feature already moves that routine exercise's weight next time, no suggestion here: it would
+// add a second step on top of progression's
+const routineEx = computed(() => new Map(((routine.data.value as Routine | undefined)?.exercises ?? []).filter((r) => r.id).map((r) => [r.id!, r])));
+const stepFor = (e: WorkoutExercise): number | null => {
+  const re = e.routineExerciseId ? routineEx.value.get(e.routineExerciseId) : undefined;
+  if (re?.progression && W.settings.value.features.progression) return null;
+  return e.exercise?.incrementKg || re?.progression?.incrementKg || W.incKg.value;
+};
+const more = computed(() => readyForMore(w.value, stepFor));
 const taken = computed(() => more.value.filter((m) => !d.skipMore.includes(m.workoutExerciseId)));
 function toggleMore(id: string) {
   const i = d.skipMore.indexOf(id);
@@ -63,7 +73,6 @@ function toggleMore(id: string) {
 const range = (m: { reps: number; topReps: number }) => m.reps === m.topReps ? `${m.topReps}` : `${m.reps}-${m.topReps}`;
 const next = (m: { toKg: number; reps: number }) => `${fmt.value.w(m.toKg)} ${fmt.value.wu} × ${m.reps}`;
 // the routine's layout: what saving would change, against the routine as it is now
-const routine = useRoutine(computed(() => w.value.routineId ?? ""));
 const changes = computed<StructureChange[]>(() => w.value.routineId && routine.data.value ? structureChanges(routine.data.value, w.value) : []);
 const CHANGE_ICON: Record<StructureChange["kind"], string> = { added: "plus", removed: "minus", swapped: "swap", sets: "layers", order: "drag" };
 const unticked = computed(() => w.value.exercises.reduce((a, e) => a + (e.status === "skipped" ? 0 : e.sets.filter((s) => !s.done).length), 0));
@@ -78,7 +87,7 @@ async function finish() {
     await api.post(`/workouts/${id}/finish`, {
       rating: d.rating, notes: d.notes, bodyweightKg: d.bw ? fmt.value.toKg(d.bw) : null,
       saveLayout: changes.value.length > 0 && d.saveLayout,
-      moreWeight: taken.value.map((m) => ({ exerciseId: m.exerciseId, weightKg: m.toKg, reps: m.reps, body: `Ready for more weight: ${next(m)}` })),
+      moreWeight: taken.value.map((m) => ({ exerciseId: m.exerciseId, weightKg: m.toKg, reps: m.reps })),
     });
     keepAwake(false);
     if (prs) toast(`${prs} new record${prs > 1 ? "s" : ""}!`, { kind: "pr" });
@@ -116,7 +125,7 @@ async function finish() {
 
     <template v-if="changes.length">
       <div class="sh"><h2>Routine changes</h2></div>
-      <p class="tiny">Today's layout differs from the routine. These stay in this workout unless you save them.</p>
+      <p class="tiny hgap">Today's layout differs from the routine. These stay in this workout unless you save them.</p>
       <div class="card">
         <div v-for="c in changes" :key="c.text" class="li"><Icon :name="CHANGE_ICON[c.kind]" :size="18" class="fin-i" /><div class="grow" style="min-width:0"><div class="t">{{ c.text }}</div></div></div>
         <label class="tgl"><div class="grow"><div class="t">Save these changes to the routine</div><div class="s">{{ d.saveLayout ? "The routine changes as listed. Its weights and reps stay as set." : "Off: the routine stays as it is" }}</div></div>

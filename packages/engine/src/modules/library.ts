@@ -18,13 +18,15 @@ const exerciseFromRow = (r: any): Exercise => {
   e.hidden = !!r.hidden;
   e.timesDone = Number(r.times_done ?? 0);
   e.lastDoneAt = r.last_done_at ?? null;
+  // numeric comes back as text; only getExercises selects it (the Finish screen's weight step), elsewhere it stays absent
+  if ("increment_kg" in r) e.incrementKg = r.increment_kg == null ? null : Number(r.increment_kg);
   return e;
 };
 
 export async function getExercises(q: Sql, ids: string[]): Promise<Map<string, Exercise>> {
   if (!ids.length) return new Map();
   const { rows } = await q.query(
-    `SELECT ${EX_COLS}, p.favourite, p.hidden, p.rest_s, p.rest_after_s FROM exercises e
+    `SELECT ${EX_COLS}, p.favourite, p.hidden, p.rest_s, p.rest_after_s, p.increment_kg FROM exercises e
      LEFT JOIN exercise_prefs p ON p.exercise_id = e.id WHERE e.id = ANY($1::uuid[])`, [ids]);
   return new Map(rows.map((r: any) => [r.id, exerciseFromRow(r)]));
 }

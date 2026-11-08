@@ -129,17 +129,28 @@ async function bodyFromWorkout(q: Sql, workoutId: string) {
 export async function updateRoutineFromWorkout(ctx: Ctx, routineId: string, workoutId: string, opts: { numbers?: boolean } = {}) {
   const numbers = opts.numbers ?? true;
   const body = await bodyFromWorkout(ctx.q, workoutId);
-  if (!body.length) return;
+  // skipping an exercise today doesn't take it out of the routine: it stays where it was, as it was. An exercise with
+  // nothing ticked counts as skipped (and one added today with nothing ticked isn't added): the same rule as
+  // structureChanges in @motus/shared, which lists what this will do on the Finish screen
+  const order = (await ctx.q.query(
+    `SELECT we.routine_exercise_id, we.status, EXISTS (SELECT 1 FROM workout_sets s WHERE s.workout_exercise_id = we.id AND s.done) AS ticked
+     FROM workout_exercises we WHERE we.workout_id = $1 ORDER BY we.position`, [workoutId])).rows;
+  if (!body.length || !order.some((x: any) => x.status !== "skipped" && x.ticked)) return;
   await snapshot(ctx, routineId);
   const cur = new Map(((await loadRoutine(ctx.q, routineId))?.exercises ?? []).map((e: any) => [e.id, e]));
-  // skipping an exercise today doesn't take it out of the routine: it stays where it was, as it was
-  const order = (await ctx.q.query("SELECT routine_exercise_id, status FROM workout_exercises WHERE workout_id = $1 ORDER BY position", [workoutId])).rows;
   let k = 0;
-  const merged = order.map((x: any) => (x.status === "skipped" ? (x.routine_exercise_id ? { kept: cur.get(x.routine_exercise_id) } : null) : body[k++])).filter((x: any) => x && (!("kept" in x) || x.kept));
+  const merged = order.map((x: any) => {
+    const today = x.status === "skipped" ? null : body[k++];
+    if (today && x.ticked) return today;
+    return x.routine_exercise_id ? { kept: cur.get(x.routine_exercise_id) } : null;
+  }).filter((x: any) => x && (!("kept" in x) || x.kept));
   await writeRoutineBody(ctx, routineId, merged.map((e: any) => {
     if ("kept" in e) return e.kept;
     const old: any = e.id ? cur.get(e.id) : null;
     if (!old) return e;
+    // swapped for another exercise: the old one's weights and reps say nothing about it, so today's sets go in as for
+    // a new exercise (the slot's own settings stay)
+    if (old.exerciseId !== e.exerciseId) return { ...old, exerciseId: e.exerciseId, sets: e.sets };
     return { ...old, exerciseId: e.exerciseId, sets: e.sets.map((s: any, i: number) => {
       const was = old.sets?.[i] ?? old.sets?.at(-1);
       if (numbers || !was) return { ...(was ?? {}), ...s };
