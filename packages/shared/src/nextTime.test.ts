@@ -104,12 +104,12 @@ describe("structureChanges", () => {
       ex({ name: "F", id: "wf", exerciseId: "F", sets: [set({})] })] };
     // D was taken out of the workout; B was swapped for E; C got a set more; A had one not done
     expect(structureChanges(routine, w).map((c) => [c.key, c.group, c.text, c.action])).toEqual([
-      ["more:rc", "changed", "C: 2 sets instead of 1", "Add 1 set to the routine"],
-      ["swapped:rb", "changed", "Swapped: B for E", "Use E in the routine"],
-      ["added:wf", "changed", "Added: F", "Add to the routine"],
-      ["removed:rd", "changed", "Removed: D", "Remove from the routine"],
-      ["order", "changed", "Exercises in a different order", "Use this session's order"],
-      ["fewer:ra", "notDone", "A: 2 of 3 sets done", "Keep 2 sets in the routine"]]);
+      ["more:rc", "changed", "Add 1 set to C", "You did 2 sets, the routine has 1 · it would have 2"],
+      ["swapped:rb", "changed", "Replace B with E", "You swapped it in this workout · E takes its place and settings"],
+      ["added:wf", "changed", "Add F to the routine", "You added it in this workout · it joins with today's 1 set"],
+      ["removed:rd", "changed", "Remove D from the routine", "You removed it from this workout"],
+      ["order", "changed", "Use this workout's exercise order", "You did the exercises in a different order"],
+      ["fewer:ra", "notDone", "Remove 1 set from A", "You did 2 of 3 sets · the routine would have 2"]]);
   });
   it("lists a skipped exercise and one with nothing ticked as skipped; one added with nothing ticked isn't listed", () => {
     const w = { exercises: [...routine.exercises.map((r) => ex({ name: r.exerciseId, exerciseId: r.exerciseId, routineExerciseId: r.id, status: r.id === "rc" ? "skipped" : "pending", sets: r.sets.map(() => set({ done: r.id !== "rb" })) })),
@@ -155,7 +155,7 @@ describe("applyStructure", () => {
     expect(sets(applyStructure(routine, w3, ["swapped:ra", "fewer:ra", "swapped:rb", "more:rb"])!)).toEqual([["X", [40]], ["Y", [60, 62]]]);
     // the set-count rows name the routine's exercise, with what was done in its place
     expect(structureChanges(routine, w3).filter((c) => c.kind === "fewer" || c.kind === "more").map((c) => c.text))
-      .toEqual(["B (today: Y): 2 sets instead of 1", "A (today: X): 1 of 2 sets done"]);
+      .toEqual(["Add 1 set to B (today: Y)", "Remove 1 set from A (today: X)"]);
   });
   it("matches a swapped-in exercise's sets by kind: the routine's warm-ups stay, working sets take today's working numbers", () => {
     const r4 = { exercises: [{ id: "ra", exerciseId: "A", exercise: { name: "A" }, sets: [

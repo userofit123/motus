@@ -166,7 +166,7 @@ const routineOf = (routine: RoutineShape, w: SessionShape) => {
   return { slot: (e: WorkoutExercise) => (e.routineExerciseId ? byId.get(e.routineExerciseId) : undefined) };
 };
 
-/** Every way this session differed from the routine, numbers aside (planNext carries them over). Changed in this session: exercises added, removed, swapped, moved, sets added. Not done: exercises
+/** Every way this session differed from the routine, numbers aside (planNext carries them over). Changes you made: exercises added, removed, swapped, moved, sets added. Not done: exercises
  * skipped or with nothing ticked, fewer sets ticked than the routine has. Nothing here changes the routine by itself:
  * each is saved only when asked (applyStructure, used by the engine for both places that save). */
 export function structureChanges(routine: RoutineShape, w: SessionShape): StructureChange[] {
@@ -177,24 +177,24 @@ export function structureChanges(routine: RoutineShape, w: SessionShape): Struct
     const r = slot(e);
     const name = e.exercise?.name ?? "";
     if (!r) {
-      if (wasDone(e)) changed.push({ key: `added:${e.id}`, kind: "added", group: "changed", text: `Added: ${name}`, action: "Add to the routine" });
+      if (wasDone(e)) changed.push({ key: `added:${e.id}`, kind: "added", group: "changed", text: `Add ${name} to the routine`, action: `You added it in this workout · it joins with today's ${plural(e.sets.filter((s) => s.done).length, "set")}` });
       continue;
     }
     const rName = r.exercise?.name ?? "An exercise";
     // set counts change the routine's exercise: name it, and what was done in its place when swapped, so the row is
     // right whether the swap is saved or not
     const label = r.exerciseId !== e.exerciseId ? `${rName} (today: ${name})` : rName;
-    if (!wasDone(e)) { notDone.push({ key: `skipped:${r.id}`, kind: "skipped", group: "notDone", text: `Skipped: ${rName}`, action: "Remove from the routine" }); continue; }
-    if (r.exerciseId !== e.exerciseId) changed.push({ key: `swapped:${r.id}`, kind: "swapped", group: "changed", text: `Swapped: ${rName} for ${name}`, action: `Use ${name} in the routine` });
+    if (!wasDone(e)) { notDone.push({ key: `skipped:${r.id}`, kind: "skipped", group: "notDone", text: `Remove ${rName} from the routine`, action: e.status === "skipped" ? "You skipped it in this workout" : "No sets were ticked in this workout" }); continue; }
+    if (r.exerciseId !== e.exerciseId) changed.push({ key: `swapped:${r.id}`, kind: "swapped", group: "changed", text: `Replace ${rName} with ${name}`, action: `You swapped it in this workout · ${name} takes its place and settings` });
     const done = e.sets.filter((s) => s.done).length, planned = r.sets.length;
-    if (done > planned) changed.push({ key: `more:${r.id}`, kind: "more", group: "changed", text: `${label}: ${done} sets instead of ${planned}`, action: `Add ${plural(done - planned, "set")} to the routine` });
-    if (done < planned) notDone.push({ key: `fewer:${r.id}`, kind: "fewer", group: "notDone", text: `${label}: ${done} of ${planned} sets done`, action: `Keep ${plural(done, "set")} in the routine` });
+    if (done > planned) changed.push({ key: `more:${r.id}`, kind: "more", group: "changed", text: `Add ${plural(done - planned, "set")} to ${label}`, action: `You did ${done} sets, the routine has ${planned} · it would have ${done}` });
+    if (done < planned) notDone.push({ key: `fewer:${r.id}`, kind: "fewer", group: "notDone", text: `Remove ${plural(planned - done, "set")} from ${label}`, action: `You did ${done} of ${planned} sets · the routine would have ${done}` });
   }
-  for (const r of routine.exercises) if (r.id && !inWorkout.has(r.id)) changed.push({ key: `removed:${r.id}`, kind: "removed", group: "changed", text: `Removed: ${r.exercise?.name ?? "an exercise"}`, action: "Remove from the routine" });
+  for (const r of routine.exercises) if (r.id && !inWorkout.has(r.id)) changed.push({ key: `removed:${r.id}`, kind: "removed", group: "changed", text: `Remove ${r.exercise?.name ?? "an exercise"} from the routine`, action: "You removed it from this workout" });
   // order: the routine's own exercises done today, today's sequence against the routine's
   const today = w.exercises.filter(wasDone).map((e) => slot(e)?.id).filter((x): x is string => !!x);
   const planned = routine.exercises.map((r) => r.id).filter((x): x is string => !!x && today.includes(x));
-  if (today.some((x, i) => x !== planned[i])) changed.push({ key: "order", kind: "order", group: "changed", text: "Exercises in a different order", action: "Use this session's order" });
+  if (today.some((x, i) => x !== planned[i])) changed.push({ key: "order", kind: "order", group: "changed", text: "Use this workout's exercise order", action: "You did the exercises in a different order" });
   return [...changed, ...notDone];
 }
 

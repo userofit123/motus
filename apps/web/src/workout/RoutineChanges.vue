@@ -9,7 +9,7 @@ import Icon from "../components/Icon.vue";
 const props = defineProps<{ changes: StructureChange[] }>();
 const picked = defineModel<string[]>({ required: true });
 const ICON: Record<StructureChange["kind"], string> = { added: "plus", removed: "minus", swapped: "swap", order: "drag", more: "layers", skipped: "skip", fewer: "layers" };
-const GROUPS = computed(() => ([["changed", "Changed in this session"], ["notDone", "Not done"]] as const)
+const GROUPS = computed(() => ([["changed", "Changes you made"], ["notDone", "Not done"]] as const)
   .map(([g, title]) => ({ g, title, list: props.changes.filter((c) => c.group === g) })).filter((x) => x.list.length));
 const allOn = computed(() => props.changes.every((c) => picked.value.includes(c.key)));
 function toggle(k: string, on: boolean) { picked.value = on ? [...picked.value, k] : picked.value.filter((x) => x !== k); }
@@ -17,7 +17,7 @@ function toggle(k: string, on: boolean) { picked.value = on ? [...picked.value, 
 
 <template>
   <div>
-    <p class="tiny hgap">Switch on what to save to the routine.
+    <p class="tiny hgap">This workout was different from the routine. Switch on each change you want to keep; the rest stays as it is.
       <button v-if="changes.length > 1" class="lnk inl" @click="picked = allOn ? [] : changes.map((c) => c.key)">{{ allOn ? "Clear" : "Select all" }}</button></p>
     <div class="card">
       <template v-for="x in GROUPS" :key="x.g">
