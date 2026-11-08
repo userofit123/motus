@@ -136,7 +136,7 @@ const nowId = computed(() => (W.state.active === props.index ? visibleSets.value
 
     <!-- reminders come first, before the sets they are about; notes go under the exercise -->
     <div v-if="prefs.showReminders && isCur && e.reminders?.length" class="exrem">
-      <ReminderItem v-for="r in e.reminders" :key="r.id" :reminder="r" :actions="[{ label: 'Done', primary: true, run: () => remDone(r.id, 'done') }, { label: 'Next time', run: () => remDone(r.id, 'pending') }, { label: 'Dismiss', run: () => remDone(r.id, 'dismissed') }]" />
+      <ReminderItem v-for="r in e.reminders" :key="r.id" :reminder="r" @gone="e.reminders = e.reminders?.filter((x) => x.id !== r.id)" :actions="[{ label: 'Done', primary: true, run: () => remDone(r.id, 'done') }, { label: 'Next time', run: () => remDone(r.id, 'pending') }, { label: 'Dismiss', run: () => remDone(r.id, 'dismissed') }]" />
     </div>
 
     <table class="sets">

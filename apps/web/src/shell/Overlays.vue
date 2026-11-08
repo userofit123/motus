@@ -1,6 +1,6 @@
 <script setup lang="ts">
-// Panels any screen can open: Start, an exercise, a note, a reminder, an activity, body weight, Appearance, the schedule editor, a routine's earlier versions, a program's start date.
-import { exerciseSheet, noteSheet, reminderSheet, activitySheet, bodySheet, dailySheet, startOpen, scheduleSheet, versionsSheet, programStartSheet } from "../core/ui";
+// Panels any screen can open: Start, an exercise, a note, a reminder (new, or one in full), an activity, body weight, Appearance, the schedule editor, a routine's earlier versions, a program's start date.
+import { exerciseSheet, noteSheet, reminderSheet, reminderView, activitySheet, bodySheet, dailySheet, startOpen, scheduleSheet, versionsSheet, programStartSheet } from "../core/ui";
 import ScheduleEditor from "../components/ScheduleEditor.vue";
 import RoutineVersions from "./RoutineVersions.vue";
 import ProgramStartSheet from "./ProgramStartSheet.vue";
@@ -9,6 +9,7 @@ import ExerciseView from "../components/ExerciseView.vue";
 import StartSheet from "./StartSheet.vue";
 import NoteSheet from "./NoteSheet.vue";
 import ReminderSheet from "./ReminderSheet.vue";
+import ReminderView from "./ReminderView.vue";
 import ActivitySheet from "./ActivitySheet.vue";
 import BodySheet from "./BodySheet.vue";
 import DailySheet from "./DailySheet.vue";
@@ -41,6 +42,7 @@ onBeforeUnmount(() => removeEventListener("keydown", key));
   <Sheet v-if="exerciseSheet" :title="ex.data.value?.name ?? 'Exercise'" size="wide" @close="exerciseSheet = null"><ExerciseView :id="exerciseSheet" in-sheet /></Sheet>
   <NoteSheet v-if="noteSheet" :o="noteSheet" @close="noteSheet = null" />
   <ReminderSheet v-if="reminderSheet" :o="reminderSheet" @close="reminderSheet = null" />
+  <ReminderView v-if="reminderView" :o="reminderView" @close="reminderView = null" />
   <ScheduleEditor v-if="scheduleSheet" :schedule="scheduleSheet" @close="scheduleSheet = null" />
   <RoutineVersions v-if="versionsSheet" :id="versionsSheet" @close="versionsSheet = null" />
   <ProgramStartSheet v-if="programStartSheet" :o="programStartSheet" @close="programStartSheet = null" />

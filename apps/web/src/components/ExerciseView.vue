@@ -59,7 +59,6 @@ const setText = (s: SetFigures) => fmt.value.set(s, tracking.value);
 const REC: Record<string, string> = { maxWeight: "Heaviest weight", e1rm: "Best estimated 1RM", maxReps: "Most reps in a set", setVolume: "Best set (weight × reps)", sessionVolume: "Most volume in a session", maxDuration: "Longest", maxDistance: "Farthest" };
 const recVal = (k: string, v: number) => (["maxWeight", "e1rm", "setVolume", "sessionVolume"].includes(k) ? fmt.value.wu_(v) : k === "maxDuration" ? fmt.value.clock(v) : k === "maxDistance" ? fmt.value.dist(v) : String(v));
 const fav = useChange(async (v: boolean) => { await api.put(`/exercises/${props.id}/prefs`, { ...(e.value?.prefs ?? {}), favourite: v }); savedToast(v ? "Added to favourites" : "Removed from favourites"); }, ["exercises"]);
-const remDone = useChange(async (id: string, status: string) => { await api.put(`/reminders/${id}`, { status }); toast(status === "done" ? "Reminder done" : "Reminder dismissed"); }, ["reminders"]);
 const noteMenu = useNoteMenu();
 const own = computed(() => !!e.value?.ownerId);
 // strength standards (optional feature): needs a body weight
@@ -192,7 +191,7 @@ const menu = computed<MenuItem[]>(() => [
       </div>
       <div v-if="!notes.data.value?.length && !pending.length" class="empty"><Icon name="note" :size="32" /><b>No notes yet</b>Write how it felt, what to change, or whether it suits you.</div>
       <div v-if="pending.length" class="col" style="gap:8px;margin-bottom:var(--hg)">
-        <ReminderItem v-for="r in pending" :key="r.id" :reminder="r" when :actions="[{ label: 'Done', primary: true, run: () => remDone.run(r.id, 'done') }, { label: 'Dismiss', run: () => remDone.run(r.id, 'dismissed') }]" />
+        <ReminderItem v-for="r in pending" :key="r.id" :reminder="r" when />
       </div>
       <div v-if="notes.data.value?.length">
         <NoteItem v-for="n in notes.data.value" :key="n.id" :note="n" flat date

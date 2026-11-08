@@ -52,7 +52,6 @@ const exItems = (e: any) => [
 const schedLine = (s: any) => { const t = scheduleSummary(s, fmt.value.day, false); return t.charAt(0).toUpperCase() + t.slice(1); };
 const delSched = useChange(async (sid: string) => { await api.del(`/schedules/${sid}`); toast("Schedule removed"); }, ["schedules", "calendar", "home"]);
 const noteMenu = useNoteMenu();
-const remSet = useChange(async (mid: string, status: string) => { await api.put(`/reminders/${mid}`, { status }); toast(status === "done" ? "Reminder done" : "Reminder dismissed"); }, ["reminders", "routines"]);
 // a note on one of the routine's exercises says which; notes on the routine itself need no label
 const noteWhere = (n: any) => (n.targetType === "routine_exercise" ? routine.value?.exercises.find((e: any) => e.id === n.targetId)?.exercise?.name ?? null : null);
 const menuFor = useRoutineMenu();
@@ -70,7 +69,7 @@ await loaded(r, summaries, notes, rems, schedules, history);
     </div>
     <p v-if="routine.description" class="muted" style="margin:calc(var(--hg) * -0.5) 0 var(--spg);max-width:680px">{{ routine.description }}</p>
     <div v-if="myRems.length" class="stack spb">
-      <ReminderItem v-for="m in myRems" :key="m.id" :reminder="m" :where="m.targetType === 'exercise' ? m.targetName : null" when :actions="[{ label: 'Done', primary: true, run: () => remSet.run(m.id, 'done') }, { label: 'Dismiss', run: () => remSet.run(m.id, 'dismissed') }]" />
+      <ReminderItem v-for="m in myRems" :key="m.id" :reminder="m" :where="m.targetType === 'exercise' ? m.targetName : null" :routine-name="routine.name" when />
     </div>
 
     <div class="tabs"><button v-for="[k, l] in [['plan', 'Plan'], ['history', `History · ${sum?.timesDone ?? 0}`], ['notes', `Notes · ${notes.data.value?.length ?? 0}`]]" :key="k" :class="{ on: tab === k }" @click="tab = k as string">{{ l }}</button></div>
