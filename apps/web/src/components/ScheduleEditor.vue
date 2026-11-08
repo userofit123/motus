@@ -60,6 +60,12 @@ const body = computed(() => {
   return { rule: (d ? "interval" : f.value.rule) as Schedule["rule"], days: f.value.days, intervalDays: d ? 1 : f.value.intervalDays, startDate: f.value.startDate, endDate: repeats.value ? f.value.endDate || null : null, timeOfDay: f.value.timeOfDay || null };
 });
 const summary = computed(() => scheduleSummary(body.value, fmt.value.day));
+// the banner leads with the chosen routine or activity ("Push Day · every day, ..."); nothing chosen, the summary alone
+const chosen = computed(() => {
+  const k = what.value, list = k.startsWith("r:") ? routineOpts.value : k.startsWith("a:") ? activityOpts.value : [];
+  return list.find((o: any) => o.value === k)?.label ?? "";
+});
+const sentence = computed(() => summary.value.charAt(0).toLowerCase() + summary.value.slice(1));
 async function save() {
   try {
     const [k, v] = [what.value.slice(0, 1), what.value.slice(2)];
@@ -103,7 +109,7 @@ async function save() {
       <label v-if="f.timeOfDay" class="tgl"><div class="grow"><div class="t">Remind me</div><div class="s">A notification before it starts</div></div><span class="tg"><input v-model="f.remind" type="checkbox" /></span></label>
       <div v-if="f.timeOfDay && f.remind" class="fld"><label>How long before</label><AppSelect v-model="f.remindMin" :options="REMIND" title="How long before" /></div>
     </div>
-    <div class="banner spt sum" aria-live="polite"><Icon name="calendar" :size="18" />{{ summary }}</div>
+    <div class="banner spt sum" aria-live="polite"><Icon name="calendar" :size="18" /><span v-if="chosen"><strong>{{ chosen }}</strong> · {{ sentence }}</span><template v-else>{{ summary }}</template></div>
     <template #foot><button class="btn o" @click="emit('close')">Cancel</button><button class="btn" :disabled="!ready" @click="save">{{ pick ? "Plan" : "Save" }}</button></template>
   </Sheet>
 </template>
