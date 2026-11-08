@@ -31,6 +31,7 @@ const api = {
   backupFolder: () => ipcRenderer.invoke("backup:folder"),
   chooseBackupFolder: () => ipcRenderer.invoke("backup:choose"),
   openBackupFolder: () => ipcRenderer.invoke("backup:open"),
+  saveFile: (name: string, bytes: Uint8Array) => ipcRenderer.invoke("file:save", name, bytes),
   update: {
     version: () => ipcRenderer.invoke("update:version"),
     check: () => ipcRenderer.invoke("update:check"),

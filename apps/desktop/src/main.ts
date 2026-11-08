@@ -183,6 +183,13 @@ ipcMain.handle("backup:save", (_e, name: string, bytes: Uint8Array, keep: number
   return file;
 });
 ipcMain.handle("backup:open", () => shell.openPath(backupDir()));
+// exports and other files saved by hand: a save dialog that starts in Downloads; the path it was saved to, or null
+ipcMain.handle("file:save", async (_e, name: string, bytes: Uint8Array) => {
+  const r = await dialog.showSaveDialog(win!, { defaultPath: path.join(app.getPath("downloads"), path.basename(name)) });
+  if (r.canceled || !r.filePath) return null;
+  fs.writeFileSync(r.filePath, Buffer.from(bytes));
+  return r.filePath;
+});
 
 // ----- updates from GitHub Releases -----
 // the screens decide when to check and download (Settings, App & Versions: automatic checks, downloads, Only on

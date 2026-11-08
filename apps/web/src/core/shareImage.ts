@@ -1,6 +1,7 @@
 // A picture of a finished workout (optional feature): name, date, totals and the exercises, in the current look.
-// Shared through the phone's share sheet when possible, otherwise downloaded.
+// Shared through the phone's share sheet when possible, otherwise saved like any other file (saveFile).
 import type { Fmt } from "./format";
+import { saveFile } from "./saveFile";
 
 export async function shareWorkoutImage(w: any, fmt: Fmt) {
   const css = getComputedStyle(document.documentElement);
@@ -39,7 +40,7 @@ export async function shareWorkoutImage(w: any, fmt: Fmt) {
   const blob: Blob = await new Promise((r) => c.toBlob((b) => r(b!), "image/png"));
   const file = new File([blob], `${w.name}-${w.startedAt.slice(0, 10)}.png`, { type: "image/png" });
   if ((navigator as any).canShare?.({ files: [file] })) { await navigator.share({ files: [file], title: w.name }).catch(() => {}); return; }
-  const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = file.name; a.click();
+  await saveFile(blob, file.name);
 }
 function roundRect(g: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
   g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath();

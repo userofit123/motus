@@ -6,7 +6,7 @@ import { ref } from "vue";
 import { useFmt } from "../../core/format";
 import { api } from "../../api/client";
 import { invalidate } from "../../api/live";
-import { download } from "../../core/backup";
+import { saveFile } from "../../core/saveFile";
 import { toast, toastError } from "../../core/toast";
 import { choose, confirm } from "../../core/ask";
 import { useSettings } from "../../api/queries";
@@ -29,8 +29,8 @@ async function exportJson() {
     const list = partList();
     const d = await api.get("/export", { parts: list.join(",") });
     const what = list.length === PART_LABELS.length ? "export" : list.join("-");
-    download(new Blob([JSON.stringify(d, null, 2)], { type: "application/json" }), `motus-${what}-${new Date().toISOString().slice(0, 10)}.json`);
-    parts.value = null;
+    // the choice stays open when the desktop app's save dialog is cancelled
+    if (await saveFile(new Blob([JSON.stringify(d, null, 2)], { type: "application/json" }), `motus-${what}-${new Date().toISOString().slice(0, 10)}.json`)) parts.value = null;
   } catch (e) { toastError(e); }
 }
 const plural = (n: number, one: string, many = one + "s") => `${n} ${n === 1 ? one : many}`;
@@ -42,7 +42,9 @@ const COUNTED: [string, string, string?][] = [
 const summary = (c: Record<string, number>) => COUNTED.filter(([k]) => c[k]).map(([k, one, many]) => plural(c[k]!, one, many)).join(", ");
 // a file with only settings or exercise preferences in it still has something to add
 const anyRows = (c: Record<string, number>) => Object.values(c).some((n) => n > 0);
-async function exportCsv(what: string) { const r = await api.get("/export/csv", { what }); download(new Blob([r.text], { type: "text/csv" }), r.filename); }
+async function exportCsv(what: string) {
+  try { const r = await api.get("/export/csv", { what }); await saveFile(new Blob([r.text], { type: "text/csv" }), r.filename); } catch (e) { toastError(e); }
+}
 async function importJson(ev: Event) {
   const f = (ev.target as HTMLInputElement).files?.[0]; (ev.target as HTMLInputElement).value = ""; if (!f) return;
   try {

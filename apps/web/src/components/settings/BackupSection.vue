@@ -24,8 +24,8 @@ async function now() {
   try {
     const pw = s.value.backup.encrypt ? await prompt("Backup password", { text: "You'll need it to restore this backup.", secret: true, autocomplete: "new-password" }) : undefined;
     if (s.value.backup.encrypt && !pw) return;
-    const n = await backupNow({ password: pw ?? undefined, keep: s.value.backup.keep });
-    log.value = backupLog(); toast(`Saved ${n}`);
+    await backupNow({ password: pw ?? undefined, keep: s.value.backup.keep }); // it says where the file went
+    log.value = backupLog();
   } catch (e) { toastError(e); } finally { busy.value = false; }
 }
 async function choose_folder() {

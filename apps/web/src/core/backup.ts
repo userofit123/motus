@@ -4,6 +4,8 @@
 // (Chrome, Edge) Motus writes into a folder you pick once; elsewhere it offers the file to download when one is due.
 import { api } from "../api/client";
 import { readJson, writeJson } from "./prefs";
+import { saveFile } from "./saveFile";
+import { toast } from "./toast";
 
 const MAGIC = [0x4d, 0x4f, 0x54, 0x42]; // MOTB
 const enc = new TextEncoder(), dec = new TextDecoder();
@@ -46,11 +48,6 @@ export async function readBackup(file: Blob, askPassword: () => Promise<string |
 }
 
 const backupName = (d = new Date()) => `motus-backup-${d.toISOString().slice(0, 16).replace(/[T:]/g, "-")}.motusbackup`;
-export function download(blob: Blob, name: string) {
-  const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob); a.download = name; a.click();
-  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
-}
 
 // ----- automatic backups -----
 export interface BackupLog { lastAt: string | null; lastName: string | null; error: string | null }
@@ -75,13 +72,15 @@ export async function pickFolder(): Promise<string | null> {
 }
 export async function folderName(): Promise<string | null> { try { return (await idb<any>((s) => s.get("dir")))?.name ?? null; } catch { return null; } }
 
-/** Writes a backup now: into the chosen folder (keeping the newest `keep`), or as a download. */
+/** Writes a backup now: into the chosen folder (keeping the newest `keep`), or as a download. Made by hand
+ * (`interactive`), it says where the file went. */
 export async function backupNow(o: { password?: string; keep?: number; interactive?: boolean } = {}): Promise<string> {
   const blob = await makeBackup(o.password);
   const name = backupName();
   const native = (globalThis as any).motusNative?.saveBackup;
   try {
-    if (native) { await native(name, new Uint8Array(await blob.arrayBuffer()), o.keep ?? 14); }
+    const say = (where: string) => { if (o.interactive !== false) toast(`Saved to ${where}`, { ms: 6000 }); };
+    if (native) say(await native(name, new Uint8Array(await blob.arrayBuffer()), o.keep ?? 14));
     else {
       const h = await idb<any>((s) => s.get("dir")).catch(() => null);
       if (h && (await h.queryPermission?.({ mode: "readwrite" })) === "granted") {
@@ -90,7 +89,8 @@ export async function backupNow(o: { password?: string; keep?: number; interacti
         const names: string[] = [];
         for await (const [n] of h.entries()) if (String(n).endsWith(".motusbackup")) names.push(String(n));
         for (const old of names.sort().reverse().slice(o.keep ?? 14)) await h.removeEntry(old);
-      } else if (o.interactive !== false) download(blob, name);
+        say(`${h.name}/${name}`);
+      } else if (o.interactive !== false) await saveFile(blob, name);
       else throw new Error("Pick a backup folder in Settings → Backup");
     }
     setLog({ lastAt: new Date().toISOString(), lastName: name, error: null });

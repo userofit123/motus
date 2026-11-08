@@ -10,6 +10,19 @@ import { notificationState, askNotificationPermission } from "../workout/native"
 const cap = () => (globalThis as any).Capacitor;
 const P = (n: string) => cap()?.Plugins?.[n];
 export const isAndroid = () => cap()?.getPlatform?.() === "android";
+// the Filesystem plugin takes file contents as base64
+function base64(bytes: Uint8Array) {
+  let bin = ""; for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+// the first of "name.json", "name (2).json", ... not there yet, so an earlier file is never overwritten
+async function freeName(fs: any, dir: string, directory: string, name: string) {
+  const dot = name.lastIndexOf("."), base = dot > 0 ? name.slice(0, dot) : name, ext = dot > 0 ? name.slice(dot) : "";
+  for (let i = 1; ; i++) {
+    const n = i === 1 ? name : `${base} (${i})${ext}`;
+    if (!(await fs.stat({ path: `${dir}/${n}`, directory }).then(() => true, () => false))) return n;
+  }
+}
 
 async function latestApk() {
   const r = await fetchWithin(`https://api.github.com/repos/${REPO}/releases/latest`, { headers: { accept: "application/vnd.github+json" } });
@@ -35,13 +48,27 @@ export function installAndroidBridge() {
     // backups go to Documents/Motus on the phone (the Filesystem plugin), newest `keep` are kept
     async saveBackup(name: string, bytes: Uint8Array, keep: number) {
       const fs = P("Filesystem");
-      let bin = ""; for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
-      await fs.writeFile({ path: `Motus/${name}`, data: btoa(bin), directory: "DOCUMENTS", recursive: true });
+      await fs.writeFile({ path: `Motus/${name}`, data: base64(bytes), directory: "DOCUMENTS", recursive: true });
       const list = (await fs.readdir({ path: "Motus", directory: "DOCUMENTS" })).files.map((f: any) => f.name ?? f).filter((n: string) => n.endsWith(".motusbackup")).sort().reverse();
       for (const old of list.slice(Math.max(1, keep))) await fs.deleteFile({ path: `Motus/${old}`, directory: "DOCUMENTS" }).catch(() => {});
       return `Documents/Motus/${name}`;
     },
     backupFolder: async () => "Documents/Motus",
+    // exports and other files saved by hand go to the phone's Downloads folder, where the Files app shows them first.
+    // Android 10 and older don't let an app write there without a storage permission Motus doesn't ask for: the file
+    // then goes to Motus's own folder on the phone's storage instead, and the toast names that path.
+    async saveFile(name: string, bytes: Uint8Array): Promise<string> {
+      const fs = P("Filesystem"), data = base64(bytes);
+      try {
+        const n = await freeName(fs, "Download", "EXTERNAL_STORAGE", name);
+        await fs.writeFile({ path: `Download/${n}`, data, directory: "EXTERNAL_STORAGE", recursive: true });
+        return `Downloads/${n}`;
+      } catch {
+        const n = await freeName(fs, "Motus", "EXTERNAL", name);
+        await fs.writeFile({ path: `Motus/${n}`, data, directory: "EXTERNAL", recursive: true });
+        return `Android/data/org.motus.app/files/Motus/${n}`;
+      }
+    },
     update: {
       version: async () => (await info)?.version ?? "",
       async check() { const l = await latestApk(); const cur = (await info)?.version ?? "0"; return { current: cur, latest: l.version, newer: newer(l.version, cur), notes: l.notes, url: l.html }; },
