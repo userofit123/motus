@@ -1,33 +1,20 @@
 <script setup lang="ts">
-// A workout's settings (PLAN.md §8.4.3): each switch shows the default, can be changed for this workout only,
-// or saved as the new default. Switches for features that are off are not shown.
+// A workout's settings (PLAN.md §8.4.3), in the same groups, order and words as Settings → Workout defaults (one list
+// for both: core/workoutPrefs.ts). Each shows the default, can be changed for this workout only, or saved as the new
+// default. Before the start (`atStart`) it also offers how sets are filled in; during a workout those can't change.
 import { computed } from "vue";
 import type { WorkoutPrefs } from "@motus/shared";
 import { useSettings, saveSettings } from "../api/queries";
 import { toast } from "../core/toast";
+import { prefGroups } from "../core/workoutPrefs";
+import PrefRow from "./PrefRow.vue";
 
 const model = defineModel<Record<string, unknown>>({ default: {} });
-defineProps<{ routineId?: string }>();
+const props = defineProps<{ atStart?: boolean }>();
 const s = useSettings();
-const ROWS = computed(() => ([
-  ["prefillFromLast", "Start from what you did last time", "Weights and reps fill in from last time. Off: the routine's own numbers"],
-  ["autoRest", "Start the rest timer when a set is ticked", ""],
-  ["restEndNext", "Go to the next set when the rest ends", "Otherwise it waits on \"Rest over\" until you tap Next set"],
-  ["countdown", "3-2-1 before timed sets", ""],
-  ["sound", "Sound when the rest ends", ""],
-  ["vibrate", "Vibrate when the rest ends", ""],
-  ["warn10", "Warn 10 seconds before", ""],
-  ...(s.value.features.voice ? [["voice", "Voice cues", "Says what's next"]] : []),
-  ["keepAwake", "Keep the screen on", ""],
-  ["lockScreen", "Timer on the lock screen", "Android app"],
-  ...(s.value.features.setTypes ? [["showWarmups", "Show warm-up sets", ""]] : []),
-  ["autoAdvance", "Go to the next exercise when one is done", ""],
-  ["showPrevious", "Show last time's numbers", ""],
-  ["showReminders", "Show reminders and pinned notes", ""],
-  ["confirmSkip", "Ask before skipping an exercise", ""],
-] as [keyof WorkoutPrefs, string, string][]));
-const val = (k: keyof WorkoutPrefs) => (k in model.value ? model.value[k] : s.value.workout[k]) as boolean;
-function set(k: keyof WorkoutPrefs, v: boolean) {
+const groups = computed(() => prefGroups(s.value, !props.atStart));
+const val = (k: keyof WorkoutPrefs) => (k in model.value ? model.value[k] : s.value.workout[k]);
+function set(k: keyof WorkoutPrefs, v: unknown) {
   const o = { ...model.value };
   if (v === s.value.workout[k]) delete o[k]; else o[k] = v;
   model.value = o;
@@ -37,10 +24,14 @@ function saveDefault() { saveSettings({ workout: model.value }, { quiet: true })
 
 <template>
   <div>
-    <label v-for="[k, l, d] in ROWS" :key="k" class="tgl">
-      <div class="grow"><div class="t">{{ l }}<span v-if="k in model" class="mchip" style="margin-inline-start:6px">this workout</span></div><div v-if="d" class="s">{{ d }}</div></div>
-      <span class="tg"><input type="checkbox" :checked="val(k)" @change="set(k, ($event.target as HTMLInputElement).checked)" /></span>
-    </label>
-    <div v-if="Object.keys(model).length" class="row" style="margin-top:12px"><button class="qb" @click="model = {}">Back to default</button><div class="grow" /><button class="btn o s" @click="saveDefault">Save as my default</button></div>
+    <template v-for="(g, gi) in groups" :key="g.id">
+      <div class="sh" :class="{ first: gi === 0 }"><h2>{{ g.title }}</h2></div>
+      <div class="card"><PrefRow v-for="r in g.rows" :key="r.key" :row="r" :value="val(r.key)" :local="r.key in model" @set="set(r.key, $event)" /></div>
+    </template>
+    <div v-if="Object.keys(model).length" class="row ws-foot"><button class="qb" @click="model = {}">Back to default</button><div class="grow" /><button class="btn o s" @click="saveDefault">Save as my default</button></div>
   </div>
 </template>
+
+<style scoped>
+.ws-foot { margin-top: var(--spg); }
+</style>

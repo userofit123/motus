@@ -1,6 +1,6 @@
 // Routines (saved plans) and their folders: list, open, create (from scratch, from another routine, from a workout,
 // from a template), edit, duplicate, version history, and the pre-start preview.
-import { TEMPLATES, estimate, usualDuration, restAfterSet, restDefaultsOf, ymd, LIFTED_SQL, type RoutineSummary } from "@motus/shared";
+import { TEMPLATES, applyStructure, estimate, usualDuration, restAfterSet, restDefaultsOf, ymd, LIFTED_SQL, type RoutineSummary } from "@motus/shared";
 import { SOURCE } from "@motus/exercise-data/meta";
 import type { Router, Ctx } from "../router";
 import type { Sql } from "../db";
@@ -9,7 +9,10 @@ import { uuidv7 } from "../ids";
 import { notFound, bad } from "../errors";
 import { getSettings } from "./settings";
 import { buildPlan, loadRoutine } from "./plan";
-import { DURATION_SQL } from "./workouts";
+import { DURATION_SQL, loadWorkout } from "./workouts";
+
+// a list of short strings from a request (change keys), anything else dropped
+const strList = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string").map((x) => x.slice(0, 80)).slice(0, 200) : []);
 
 const KINDS = ["warmup", "normal", "drop", "failure"] as const;
 
@@ -122,41 +125,18 @@ async function bodyFromWorkout(q: Sql, workoutId: string) {
   }));
 }
 
-/** "Update the routine from this workout": today's exercises, order and numbers, keeping each exercise's own settings
- * (prefill, progression, note, rep ranges, rests) and the routine as it was in its history. With `numbers: false`
- * (the Finish screen's "Save these changes to the routine") only the layout changes: exercises the routine already had
- * keep their own weights and reps, sets added today copy the exercise's last set, and only new exercises take today's. */
-export async function updateRoutineFromWorkout(ctx: Ctx, routineId: string, workoutId: string, opts: { numbers?: boolean } = {}) {
-  const numbers = opts.numbers ?? true;
-  const body = await bodyFromWorkout(ctx.q, workoutId);
-  // skipping an exercise today doesn't take it out of the routine: it stays where it was, as it was. An exercise with
-  // nothing ticked counts as skipped (and one added today with nothing ticked isn't added): the same rule as
-  // structureChanges in @motus/shared, which lists what this will do on the Finish screen
-  const order = (await ctx.q.query(
-    `SELECT we.routine_exercise_id, we.status, EXISTS (SELECT 1 FROM workout_sets s WHERE s.workout_exercise_id = we.id AND s.done) AS ticked
-     FROM workout_exercises we WHERE we.workout_id = $1 ORDER BY we.position`, [workoutId])).rows;
-  if (!body.length || !order.some((x: any) => x.status !== "skipped" && x.ticked)) return;
+/** Save a session's structure to its routine, only the changes asked for (their keys from structureChanges): the
+ * Finish screen's "Routine changes" and a finished workout's ⋮ "Update the routine from this", the same list and the
+ * same save in both places. What each change does, and that today's numbers never go in, is applyStructure's
+ * (@motus/shared), which the screens list from too. The routine as it was is kept in its history. */
+export async function updateRoutineFromWorkout(ctx: Ctx, routineId: string, workoutId: string, accept: string[]) {
+  const routine = await loadRoutine(ctx.q, routineId);
+  const w = await loadWorkout(ctx.q, workoutId, ymd(ctx.now()));
+  if (!routine || !w) return;
+  const body = applyStructure(routine, w, accept);
+  if (!body) return;
   await snapshot(ctx, routineId);
-  const cur = new Map(((await loadRoutine(ctx.q, routineId))?.exercises ?? []).map((e: any) => [e.id, e]));
-  let k = 0;
-  const merged = order.map((x: any) => {
-    const today = x.status === "skipped" ? null : body[k++];
-    if (today && x.ticked) return today;
-    return x.routine_exercise_id ? { kept: cur.get(x.routine_exercise_id) } : null;
-  }).filter((x: any) => x && (!("kept" in x) || x.kept));
-  await writeRoutineBody(ctx, routineId, merged.map((e: any) => {
-    if ("kept" in e) return e.kept;
-    const old: any = e.id ? cur.get(e.id) : null;
-    if (!old) return e;
-    // swapped for another exercise: the old one's weights and reps say nothing about it, so today's sets go in as for
-    // a new exercise (the slot's own settings stay)
-    if (old.exerciseId !== e.exerciseId) return { ...old, exerciseId: e.exerciseId, sets: e.sets };
-    return { ...old, exerciseId: e.exerciseId, sets: e.sets.map((s: any, i: number) => {
-      const was = old.sets?.[i] ?? old.sets?.at(-1);
-      if (numbers || !was) return { ...(was ?? {}), ...s };
-      return { ...was, kind: s.kind };
-    }) };
-  }));
+  await writeRoutineBody(ctx, routineId, body);
 }
 
 export function routineRoutes(r: Router) {
@@ -245,11 +225,11 @@ export function routineRoutes(r: Router) {
     return { id: rid };
   });
 
-  // update a routine from a workout, numbers and all (a finished workout's ⋮ menu: "Update the routine from this")
+  // save a finished workout's structure to its routine (its ⋮ menu: "Update the routine from this"), never its numbers
   r.post("/routines/:id/from-workout", async (ctx, p, b) => {
     const rid = id(p.id);
     if (!(await ctx.q.query("SELECT 1 FROM routines WHERE id = $1", [rid])).rows.length) throw notFound("Routine not found");
-    await updateRoutineFromWorkout(ctx, rid, id(b.workoutId));
+    await updateRoutineFromWorkout(ctx, rid, id(b.workoutId), strList(b.changes));
     ctx.changed("routine");
     return { ok: true };
   });

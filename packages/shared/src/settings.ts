@@ -162,8 +162,8 @@ export function withDefaults(saved: unknown): Settings {
   // everyone starts from the new layout
   const { cards: _c, sections: _s, ...home } = out.home as Settings["home"] & { cards?: unknown; sections?: unknown };
   out.home = { ...home, blocks: cleanHomeBlocks(home.blocks) };
-  // "After a workout, update its routine" (Ask / Always / Never) mixed next time's numbers with the routine's layout. Numbers
-  // now always carry over through prefillFromLast, and layout changes are only ever saved when ticked on the Finish
+  // "After a workout, update its routine" (Ask / Always / Never) mixed next time's numbers with the routine's structure. Numbers
+  // now always carry over through prefillFromLast, and structure changes are only ever saved when ticked on the Finish
   // screen, so the old choice means nothing any more and is dropped
   const { updateRoutine: _u, ...workout } = out.workout as WorkoutPrefs & { updateRoutine?: unknown };
   out.workout = workout;

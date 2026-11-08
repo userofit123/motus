@@ -1,6 +1,6 @@
 // Turning a routine into today's plan: the sets to do, pre-filled from last time (PLAN.md §8.7), with reminders,
 // pinned notes, progression suggestions and an estimate of how long it takes. Used by the pre-start preview and by "Start".
-import { estimate, nextProgression, restAfterSet, restDefaultsOf, type Exercise, type Reminder, type Note, type Settings, type SetKind, type Progression } from "@motus/shared";
+import { estimate, routineProgression, restAfterSet, restDefaultsOf, type Exercise, type Reminder, type Note, type Settings, type SetKind, type Progression } from "@motus/shared";
 import type { Sql } from "../db";
 import { camel } from "../util";
 import { exerciseSessions, getExercises } from "./library";
@@ -112,8 +112,7 @@ export async function buildPlan(q: Sql, routine: any, settings: Settings, today:
     let suggestion: string | null = null, progWeight: number | null = null;
     const prog: Progression | null = re.progression;
     if (progressionOn && prog) {
-      const firstWork = re.sets.find((s: any) => s.kind !== "warmup");
-      const res = nextProgression(prog, hist.map((h) => ({ sets: h.sets.map((s: any) => ({ ...s, targetReps: firstWork?.reps ?? null })) })), firstWork?.reps ?? null, firstWork?.repsMax ?? null);
+      const res = routineProgression(prog, re.sets, hist);
       if (res && res.action !== "hold") { progWeight = res.weightKg; suggestion = `${res.action === "add" ? "Add weight" : "Deload"}: ${res.reason}`; }
       else if (res) suggestion = res.reason;
     }

@@ -135,7 +135,7 @@ await loaded(pv);
         </div>
       </div>
     </div>
-    <Sheet v-if="showSettings" title="Workout settings" @close="showSettings = false"><WorkoutSettings v-model="overrides" :routine-id="id" /></Sheet>
+    <Sheet v-if="showSettings" title="Workout settings" @close="showSettings = false"><WorkoutSettings v-model="overrides" at-start /></Sheet>
   </div>
   <div v-else class="page"><div class="empty">Loading…</div></div>
 </template>

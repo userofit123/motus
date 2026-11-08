@@ -1,11 +1,12 @@
 <script setup lang="ts">
 // Finishing: the workout's summary first (time, how it went against the plan and against last time, what was done),
-// then what it means for next time, kept as two separate things: next time's numbers (filled in from today, plus a
-// weight step up where the top of the rep range was reached, each one can be switched off) and the routine's layout
-// (exercises or sets changed today: listed, and only saved when switched on). Then how it felt, notes, body weight.
+// then what it means for next time, kept as two separate things: next time's numbers (where they start from, then every
+// weight change in one list: progression rules' own, and a step up where the top of the rep range was reached, each of
+// those can be switched off) and how this session differed from the routine (listed, each saved only when switched
+// on). Then how it felt, notes, body weight.
 import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
-import { readyForMore, structureChanges, workoutScore, workoutSoFar, type Routine, type StructureChange, type WorkoutExercise } from "@motus/shared";
+import { readyForMore, structureChanges, workoutScore, workoutSoFar, type MoreWeight, type NextRule, type Routine, type StructureChange, type WorkoutExercise } from "@motus/shared";
 import { useWorkout, endWorkout, finishDraft } from "./useWorkout";
 import { api } from "../api/client";
 import { settle } from "../api/outbox";
@@ -18,6 +19,7 @@ import { maybeAutoBackup } from "../core/backup";
 import Sheet from "../components/Sheet.vue";
 import Icon from "../components/Icon.vue";
 import WorkoutSoFar from "./WorkoutSoFar.vue";
+import RoutineChanges from "./RoutineChanges.vue";
 
 const emit = defineEmits<{ close: []; cancel: []; open: [index: number] }>();
 const router = useRouter();
@@ -51,14 +53,42 @@ const vsLast = computed(() => {
     trend: l.verdict === "better" ? "up" : l.verdict === "worse" ? "down" : null,
   };
 });
-// next time's numbers: Settings → Workout → "Start from what you did last time" (the saved choice, not a change made
-// for this workout only on the routine's start screen, as next time starts from the saved one)
+// next time's numbers follow the saved settings (Settings → Workout), not a change made for this workout only on the
+// routine's start screen: next time starts from the saved ones
 const routine = useRoutine(computed(() => w.value.routineId ?? ""));
-const fromToday = computed(() => W.settings.value.workout.prefillFromLast);
-// the weight step: the exercise's own (its settings), else the routine exercise's progression step, else Settings'.
-// Where the Progression feature already moves that routine exercise's weight next time, no suggestion here: it would
-// add a second step on top of progression's
 const routineEx = computed(() => new Map(((routine.data.value as Routine | undefined)?.exercises ?? []).filter((r) => r.id).map((r) => [r.id!, r])));
+// what each progression rule will do at the next start, worked out by the engine as the start does (it needs the
+// routine's earlier sessions). Offline it stays empty: the rules still apply, they just aren't listed
+const rules = ref<NextRule[]>([]);
+if (W.settings.value.features.progression && w.value.routineId) {
+  void settle().then(() => api.get(`/workouts/${w.value.id}/next-rules`)).then((r) => { rules.value = r as NextRule[]; }).catch(() => {});
+}
+const ruled = computed(() => new Set(rules.value.map((r) => r.workoutExerciseId)));
+const names = (xs: string[]) => (xs.length > 3 ? `${xs.length} exercises` : xs.length > 1 ? `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}` : xs[0] ?? "");
+// where next time's numbers start from, in one short line: "Start from what you did last time" and "Last time's
+// numbers come from", and each routine exercise's own "Always start with these numbers" (an exercise whose rule sets
+// its weight is left out here: its row below says what it starts with)
+const startsFrom = computed(() => {
+  const wo = W.settings.value.workout;
+  if (!w.value.routineId) {
+    if (!wo.prefillFromLast) return { t: "Routines start from their own numbers", s: "Today's numbers show beside each set next time" };
+    return wo.prefillScope === "routine"
+      ? { t: "Not used to fill in a routine", s: "Routines fill in from their own last time (Settings → Workout)" }
+      : { t: "Today's weights and reps fill in next time", s: "When you next do these exercises, in any routine" };
+  }
+  if (!wo.prefillFromLast) return { t: "Starts from the routine's numbers", s: "Today's numbers show beside each set" };
+  const done = w.value.exercises.filter((e) => e.status !== "skipped" && e.sets.some((x) => x.done) && !ruled.value.has(e.id))
+    .map((e) => routineEx.value.get(e.routineExerciseId ?? "")).filter((r): r is NonNullable<typeof r> => !!r);
+  const fixed = done.filter((r) => r.prefill === "target").map((r) => r.exercise?.name ?? "");
+  if (fixed.length && fixed.length === done.length) return { t: "Starts from the routine's numbers", s: "Each of these exercises always starts with the routine's numbers" };
+  const sameRoutine = wo.prefillScope === "routine" || (done.length > 0 && done.every((r) => r.prefillScope === "routine"));
+  return {
+    t: fixed.length ? `Starts from today's weights and reps, except ${names(fixed)} (always start${fixed.length === 1 ? "s" : ""} from the routine's numbers)` : "Starts from today's weights and reps",
+    s: sameRoutine ? "What you did fills in next time you do this routine" : "What you did fills in next time, unless another workout with these exercises comes first",
+  };
+});
+// the weight step: the exercise's own (its settings), else the routine exercise's progression step, else Settings'.
+// Where a progression rule moves that routine exercise's weight next time, no suggestion: the rule decides
 const stepFor = (e: WorkoutExercise): number | null => {
   const re = e.routineExerciseId ? routineEx.value.get(e.routineExerciseId) : undefined;
   if (re?.progression && W.settings.value.features.progression) return null;
@@ -66,15 +96,22 @@ const stepFor = (e: WorkoutExercise): number | null => {
 };
 const more = computed(() => readyForMore(w.value, stepFor));
 const taken = computed(() => more.value.filter((m) => !d.skipMore.includes(m.workoutExerciseId)));
+// every weight change next time in one list, in the workout's order: a rule's (no switch) or a suggestion (a switch)
+type NextRow = { id: string; rule: NextRule; m?: undefined } | { id: string; m: MoreWeight; rule?: undefined };
+const nextRows = computed<NextRow[]>(() => w.value.exercises.flatMap((e): NextRow[] => {
+  const rule = rules.value.find((r) => r.workoutExerciseId === e.id);
+  if (rule) return [{ id: e.id, rule }];
+  const m = more.value.find((x) => x.workoutExerciseId === e.id);
+  return m ? [{ id: e.id, m }] : [];
+}));
 function toggleMore(id: string) {
   const i = d.skipMore.indexOf(id);
   if (i >= 0) d.skipMore.splice(i, 1); else d.skipMore.push(id);
 }
 const range = (m: { reps: number; topReps: number }) => m.reps === m.topReps ? `${m.topReps}` : `${m.reps}-${m.topReps}`;
-const next = (m: { toKg: number; reps: number }) => `${fmt.value.w(m.toKg)} ${fmt.value.wu} × ${m.reps}`;
-// the routine's layout: what saving would change, against the routine as it is now
+const next = (kg: number, reps: number | null) => `${fmt.value.w(kg)} ${fmt.value.wu}${reps ? ` × ${reps}` : ""}`;
+// how this session differed from the routine, each change saved only when switched on
 const changes = computed<StructureChange[]>(() => w.value.routineId && routine.data.value ? structureChanges(routine.data.value, w.value) : []);
-const CHANGE_ICON: Record<StructureChange["kind"], string> = { added: "plus", removed: "minus", swapped: "swap", sets: "layers", order: "drag" };
 const unticked = computed(() => w.value.exercises.reduce((a, e) => a + (e.status === "skipped" ? 0 : e.sets.filter((s) => !s.done).length), 0));
 async function finish() {
   if (busy.value) return;
@@ -86,7 +123,7 @@ async function finish() {
     if (!(await settle())) { toast("Can't reach the server yet: your sets are kept here. Finish again when you're back online.", { kind: "err" }); return; }
     await api.post(`/workouts/${id}/finish`, {
       rating: d.rating, notes: d.notes, bodyweightKg: d.bw ? fmt.value.toKg(d.bw) : null,
-      saveLayout: changes.value.length > 0 && d.saveLayout,
+      routineChanges: d.routineChanges.filter((k) => changes.value.some((c) => c.key === k)),
       moreWeight: taken.value.map((m) => ({ exerciseId: m.exerciseId, weightKg: m.toKg, reps: m.reps })),
     });
     keepAwake(false);
@@ -114,23 +151,23 @@ async function finish() {
 
     <div class="sh"><h2>Next time</h2></div>
     <div class="card">
-      <div class="li"><Icon name="refresh" :size="18" class="fin-i" /><div class="grow"><div class="t">{{ fromToday ? "Starts from today's weights and reps" : "Starts from the routine's numbers" }}</div>
-        <div class="s">{{ fromToday ? "What you did fills in next time" : "Today's numbers show beside each set" }}</div></div></div>
-      <label v-for="m in more" :key="m.workoutExerciseId" class="tgl"><Icon name="arrowUp" :size="18" class="fin-i pos" />
-        <div class="grow" style="min-width:0"><div class="t ellipsis">{{ m.name }}</div>
-          <div class="s">{{ m.topReps }} reps in every set at {{ fmt.w(m.fromKg) }} {{ fmt.wu }} · next time <b class="fin-next">{{ next(m) }}</b></div></div>
-        <span class="tg"><input type="checkbox" :checked="!d.skipMore.includes(m.workoutExerciseId)" @change="toggleMore(m.workoutExerciseId)" /></span></label>
+      <div class="li"><Icon name="refresh" :size="18" class="fin-i" /><div class="grow"><div class="t">{{ startsFrom.t }}</div><div class="s">{{ startsFrom.s }}</div></div></div>
+      <template v-for="x in nextRows" :key="x.id">
+        <div v-if="x.rule" class="li"><Icon :name="x.rule.action === 'add' ? 'arrowUp' : 'arrowDown'" :size="18" class="fin-i" :class="x.rule.action === 'add' ? 'pos' : 'neg'" />
+          <div class="grow" style="min-width:0"><div class="t ellipsis">{{ x.rule.name }}</div>
+            <div class="s">Rule: {{ x.rule.action === "add" ? "add weight" : "lower weight" }} · next time <b class="fin-next">{{ next(x.rule.weightKg, x.rule.reps) }}</b></div></div></div>
+        <label v-else-if="x.m" class="tgl"><Icon name="arrowUp" :size="18" class="fin-i pos" />
+          <div class="grow" style="min-width:0"><div class="t ellipsis">{{ x.m.name }}</div>
+            <div class="s">{{ x.m.topReps }} reps in every set at {{ fmt.w(x.m.fromKg) }} {{ fmt.wu }} · next time <b class="fin-next">{{ next(x.m.toKg, x.m.reps) }}</b></div></div>
+          <span class="tg"><input type="checkbox" :checked="!d.skipMore.includes(x.m.workoutExerciseId)" @change="toggleMore(x.m.workoutExerciseId)" /></span></label>
+      </template>
     </div>
     <p v-if="more.length" class="tiny fin-note">You reached the top of the rep range ({{ more.length === 1 ? range(more[0]!) : "each one's" }}) in every set: up one weight step, reps back to the bottom. Switch off any you'd rather repeat.</p>
+    <p v-if="rules.length" class="tiny fin-note">Rules are each exercise's progression rule. Change one in the routine's editor.</p>
 
     <template v-if="changes.length">
       <div class="sh"><h2>Routine changes</h2></div>
-      <p class="tiny hgap">Today's layout differs from the routine. These stay in this workout unless you save them.</p>
-      <div class="card">
-        <div v-for="c in changes" :key="c.text" class="li"><Icon :name="CHANGE_ICON[c.kind]" :size="18" class="fin-i" /><div class="grow" style="min-width:0"><div class="t">{{ c.text }}</div></div></div>
-        <label class="tgl"><div class="grow"><div class="t">Save these changes to the routine</div><div class="s">{{ d.saveLayout ? "The routine changes as listed. Its weights and reps stay as set." : "Off: the routine stays as it is" }}</div></div>
-          <span class="tg"><input v-model="d.saveLayout" type="checkbox" /></span></label>
-      </div>
+      <RoutineChanges v-model="d.routineChanges" :changes="changes" />
     </template>
 
     <div class="sh"><h2>How it went</h2></div>

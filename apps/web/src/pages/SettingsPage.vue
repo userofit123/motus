@@ -15,6 +15,8 @@ import { askNotificationPermission, notificationState, isNativeApp, type Notific
 import Icon from "../components/Icon.vue";
 import RestPicker from "../components/RestPicker.vue";
 import AppSelect from "../components/AppSelect.vue";
+import PrefRow from "../components/PrefRow.vue";
+import { prefGroups } from "../core/workoutPrefs";
 import ChoiceTiles from "../components/ChoiceTiles.vue";
 import Menu from "../components/Menu.vue";
 import BackupSection from "../components/settings/BackupSection.vue";
@@ -68,14 +70,8 @@ async function editPlates() {
   const v = await prompt("Your plates", { value: (s.value[k] as number[]).join(", "), text: `In ${s.value.units.weight}, separated by commas.` });
   if (v) set({ [k]: v.split(/[ ,]+/).map(Number).filter((x) => x > 0) });
 }
-type Toggle = [keyof Settings["workout"], string, string];
-const TOGGLES: Record<"fill" | "timer" | "during", Toggle[]> = {
-  fill: [["prefillFromLast", "Start from what you did last time", "Weights and reps fill in from last time. Off: the routine's own numbers"], ["showPrevious", "Show last time's numbers", "Beside each set"]],
-  timer: [["autoRest", "Start the rest timer when a set is ticked", ""], ["restEndNext", "Go to the next set when the rest ends", "Otherwise it waits on \"Rest over\" until you tap Next set"], ["sound", "Sound when the rest ends", ""], ["vibrate", "Vibrate when the rest ends", ""],
-    ["warn10", "Warn 10 seconds before the rest ends", ""], ["countdown", "3-2-1 before timed sets", ""], ["lockScreen", "Rest timer on the lock screen", "Android app"]],
-  during: [["autoAdvance", "Go to the next exercise when one is done", ""], ["keepAwake", "Keep the screen on", ""], ["sessionNotice", "Show the workout as a notification", "Its name, the exercise and set you're on, and how far along you are"],
-    ["showReminders", "Show reminders and pinned notes", ""], ["confirmSkip", "Ask before skipping an exercise", ""]],
-};
+// the switches, in the same groups, order and words as the Workout settings popup (core/workoutPrefs.ts)
+const prefs = computed(() => prefGroups(s.value));
 // quick tags for notes: the list replaces as a whole (lists aren't merged), so every change sends all of it
 const tagsOf = () => s.value.noteTags ?? [];
 function setTags(list: string[], msg: string) { set({ noteTags: list }); toast(msg); }
@@ -173,14 +169,9 @@ await loaded(me);
                 <button class="qb acc" @click="kindRest = k">{{ w.restByKindS?.[k] == null ? sec2(w.restBetweenSetsS) : sec2(w.restByKindS[k]!) }}</button></div>
             </template>
           </div>
-          <div class="sh"><h2>Filling in sets</h2></div>
-          <div class="card">
-            <label v-for="[k, l, d] in TOGGLES.fill" :key="k" class="tgl"><div class="grow"><div class="t">{{ l }}</div><div v-if="d" class="s">{{ d }}</div></div><span class="tg"><input type="checkbox" :checked="w[k] as boolean" @change="set({ workout: { [k]: ($event.target as HTMLInputElement).checked } })" /></span></label>
-            <div class="li"><div class="grow"><div class="t">Last time's numbers come from</div></div><AppSelect :model-value="w.prefillScope" :options="[{ value: 'any', label: 'Any routine' }, { value: 'routine', label: 'The same routine' }]" title="Last time's numbers come from" style="width:auto" @update:model-value="(v) => set({ workout: { prefillScope: v } })" /></div>
-          </div>
-          <template v-for="[h, list] in [['Rest timer', TOGGLES.timer], ['During a workout', TOGGLES.during]] as const" :key="h">
-            <div class="sh"><h2>{{ h }}</h2></div>
-            <div class="card"><label v-for="[k, l, d] in list" :key="k" class="tgl"><div class="grow"><div class="t">{{ l }}</div><div v-if="d" class="s">{{ d }}</div></div><span class="tg"><input type="checkbox" :checked="w[k] as boolean" @change="set({ workout: { [k]: ($event.target as HTMLInputElement).checked } })" /></span></label></div>
+          <template v-for="g in prefs" :key="g.id">
+            <div class="sh"><h2>{{ g.title }}</h2></div>
+            <div class="card"><PrefRow v-for="r in g.rows" :key="r.key" :row="r" :value="w[r.key]" @set="set({ workout: { [r.key]: $event } })" /></div>
           </template>
           <div class="sh"><h2>Weights</h2></div>
           <div class="card">

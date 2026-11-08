@@ -6,7 +6,7 @@ import { startWorkout } from "../workout/start";
 import { goBack } from "../core/leave";
 import { computed, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { usesWeight, usesReps, muscleName } from "@motus/shared";
+import { usesWeight, usesReps, muscleName, structureChanges, type StructureChange } from "@motus/shared";
 import { useWorkoutQuery, useSettings, loaded } from "../api/queries";
 import { api, mediaUrl } from "../api/client";
 import { invalidate } from "../api/live";
@@ -22,6 +22,8 @@ import NoteItem from "../components/NoteItem.vue";
 import Menu from "../components/Menu.vue";
 import BodyMap from "../components/BodyMap.vue";
 import ExercisePicker from "../components/ExercisePicker.vue";
+import Sheet from "../components/Sheet.vue";
+import RoutineChanges from "../workout/RoutineChanges.vue";
 
 const route = useRoute(), router = useRouter();
 const id = computed(() => String(route.params.id));
@@ -68,9 +70,22 @@ async function saveAsRoutine() {
   if (!n) return;
   const r = await api.post("/routines", { fromWorkoutId: id.value, name: n }); invalidate(["routines"]); toast("Routine created"); router.push(`/routines/${r.id}`);
 }
+// the same list and the same save as the Finish screen's "Routine changes": each difference from the routine with its
+// own switch, structure only (never this session's weights and reps)
+const routineSheet = ref<{ changes: StructureChange[]; picked: string[] } | null>(null);
 async function updateRoutine() {
-  if (!(await confirm("Update the routine with this workout?", { text: "Its exercises and sets become this workout's. The previous version is kept.", ok: "Update" }))) return;
-  await api.post(`/routines/${w.value.routineId}/from-workout`, { workoutId: id.value }); invalidate(["routines"]); toast("Routine updated");
+  try {
+    const changes = structureChanges(await api.get(`/routines/${w.value.routineId}`), w.value);
+    if (!changes.length) return toast("This session matches the routine: nothing to change");
+    routineSheet.value = { changes, picked: [] };
+  } catch (e) { toastError(e); }
+}
+async function saveRoutineChanges() {
+  const r = routineSheet.value; if (!r?.picked.length) return;
+  try {
+    await api.post(`/routines/${w.value.routineId}/from-workout`, { workoutId: id.value, changes: r.picked });
+    routineSheet.value = null; invalidate(["routines"]); toast("Routine updated");
+  } catch (e) { toastError(e); }
 }
 async function repeat() {
   try {
@@ -183,6 +198,10 @@ await loaded(q);
       </div>
     </div>
     <ExercisePicker v-if="adding" multi @close="adding = false" @pick="addExercises" />
+    <Sheet v-if="routineSheet" title="Update the routine" @close="routineSheet = null">
+      <RoutineChanges v-model="routineSheet.picked" :changes="routineSheet.changes" />
+      <template #foot><button class="btn o" @click="routineSheet = null">Cancel</button><button class="btn" :disabled="!routineSheet.picked.length" @click="saveRoutineChanges">Save to the routine</button></template>
+    </Sheet>
   </div>
   <div v-else class="page"><div class="empty">{{ q.isError.value ? "Workout not found" : "Loading…" }}</div></div>
 </template>

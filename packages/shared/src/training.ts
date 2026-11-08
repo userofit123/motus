@@ -153,6 +153,16 @@ export function nextProgression(p: Progression, history: SessionResult[], repsTa
   return { action: "hold", weightKg: top, reason: "Not every set reached its reps yet" };
 }
 
+/** A routine exercise's progression rule against its sessions (newest first), its first working set giving the rep
+ * target. One call for both places that need it: a routine's start (buildPlan) and the Finish screen's "Next time",
+ * so what Finish says the rule will do is what the next start does. `reps` is next time's rep target. */
+export function routineProgression(p: Progression, sets: { kind: SetKind; reps: number | null; repsMax?: number | null }[], history: { sets: { kind: SetKind; weightKg: number | null; reps: number | null }[] }[]) {
+  const firstWork = sets.find((s) => s.kind !== "warmup");
+  const repsTarget = firstWork?.reps ?? null;
+  const res = nextProgression(p, history.map((h) => ({ sets: h.sets.map((s) => ({ ...s, targetReps: repsTarget })) })), repsTarget, firstWork?.repsMax ?? null);
+  return res && { ...res, reps: repsTarget };
+}
+
 // ----- quick text entry: "3x8 80", "80x8, 8, 7", "5x5@100" -----
 
 export function parseQuick(text: string): { weight: number | null; reps: number }[] | null {

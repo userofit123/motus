@@ -1,6 +1,6 @@
 // Workouts: starting one (from a routine or empty), logging sets, skipping, reordering and replacing exercises,
 // finishing, logging a past workout, editing and duplicating, and the full detail with records and improvements.
-import { e1rm, ymd, liftedKg, LIFTED_SQL, type Tracking, type HomeRecord, type Workout, type WorkoutSummary } from "@motus/shared";
+import { e1rm, ymd, liftedKg, LIFTED_SQL, routineProgression, structureChanges, type NextRule, type Tracking, type HomeRecord, type Workout, type WorkoutSummary } from "@motus/shared";
 import type { Router, Ctx } from "../router";
 import type { Sql } from "../db";
 import { camel, id, optId, str, intOrNull, numOrNull, bool, oneOf, isoTime, secondsBetween, visible } from "../util";
@@ -118,7 +118,7 @@ export async function recentRecords(q: Sql, since: string, limit = 6): Promise<H
   return out.map((x) => ({ ...x, name: names.get(x.exerciseId)?.name ?? "" }));
 }
 
-async function loadWorkout(q: Sql, workoutId: string, today: string): Promise<Workout | null> {
+export async function loadWorkout(q: Sql, workoutId: string, today: string): Promise<Workout | null> {
   const w = (await q.query("SELECT * FROM workouts WHERE id = $1", [workoutId])).rows[0];
   if (!w) return null;
   const wes = (await q.query("SELECT * FROM workout_exercises WHERE workout_id = $1 ORDER BY position", [workoutId])).rows;
@@ -361,7 +361,11 @@ export function workoutRoutes(r: Router) {
         b.clientId ? str(b.clientId, 80) : null, optId(b.scheduleId), b.scheduledDate ?? null]);
     if (b.programId) await ctx.q.query("UPDATE workouts SET program_id = $2 WHERE id = $1", [wid, b.programId]);
     if (routine || planned) {
-      const plan = await buildPlan(ctx.q, routine ?? planned, settings, ymd(ctx.now()));
+      // the start screen's Workout settings for this workout only count here too ("Start from what you did last time",
+      // "Last time's numbers come from"): until now the sets filled in from the saved defaults whatever was chosen
+      const own = Object.fromEntries(Object.entries(b.settings && typeof b.settings === "object" ? b.settings : {})
+        .filter(([k, v]) => k in settings.workout && typeof v === typeof (settings.workout as any)[k]));
+      const plan = await buildPlan(ctx.q, routine ?? planned, { ...settings, workout: { ...settings.workout, ...own } }, ymd(ctx.now()));
       // a deload week in a program: lighter working weights
       if (b.deloadPct) for (const e of plan.exercises) for (const s of e.sets) if (s.kind !== "warmup" && s.weightKg) { s.weightKg = Math.round((s.weightKg * (1 - Number(b.deloadPct) / 100)) / 1.25) * 1.25; s.adjusted = true; }
       const skip = new Set<string>(Array.isArray(b.skip) ? b.skip : []);
@@ -552,6 +556,33 @@ export function workoutRoutes(r: Router) {
     return { ok: true };
   });
 
+  // the Finish screen's "Next time": what each routine exercise's progression rule will do at the next start, with
+  // today's ticked sets as the newest session. The history is what the next start reads (this routine's sessions,
+  // today's among them) and the maths is the start's own (routineProgression), so the two can't disagree. A swapped
+  // exercise is left out: next time starts with the routine's one, which today says nothing about.
+  r.get("/workouts/:id/next-rules", async (ctx, p): Promise<NextRule[]> => {
+    const wid = id(p.id);
+    const w = (await ctx.q.query("SELECT routine_id FROM workouts WHERE id = $1", [wid])).rows[0];
+    if (!w) throw notFound("Workout not found");
+    if (!w.routine_id || !(await getSettings(ctx.q, ctx.userId)).features.progression) return [];
+    const routine = await loadRoutine(ctx.q, w.routine_id);
+    const res = new Map<string, any>((routine?.exercises ?? []).filter((e: any) => e.id && e.progression).map((e: any) => [e.id, e]));
+    if (!res.size) return [];
+    const wes = (await ctx.q.query("SELECT id, exercise_id, routine_exercise_id, status FROM workout_exercises WHERE workout_id = $1 ORDER BY position", [wid])).rows;
+    const out: NextRule[] = [];
+    for (const we of wes) {
+      const re = res.get(we.routine_exercise_id);
+      if (!re || re.exerciseId !== we.exercise_id || we.status === "skipped") continue;
+      const sets = (await ctx.q.query("SELECT kind, weight_kg, reps FROM workout_sets WHERE workout_exercise_id = $1 AND done ORDER BY position", [we.id])).rows
+        .map((s: any) => ({ kind: s.kind, weightKg: s.weight_kg == null ? null : Number(s.weight_kg), reps: s.reps }));
+      if (!sets.length) continue;
+      const before = (await exerciseSessions(ctx.q, re.exerciseId, 5, w.routine_id)).filter((s) => s.workoutId !== wid);
+      const r = routineProgression(re.progression, re.sets, [{ sets }, ...before]);
+      if (r && r.action !== "hold" && r.weightKg != null) out.push({ workoutExerciseId: we.id, exerciseId: re.exerciseId, name: re.exercise?.name ?? "", action: r.action, weightKg: r.weightKg, reps: r.reps });
+    }
+    return out;
+  });
+
   r.post("/workouts/:id/finish", async (ctx, p, b) => {
     const wid = id(p.id);
     const w = (await ctx.q.query("SELECT * FROM workouts WHERE id = $1", [wid])).rows[0];
@@ -601,14 +632,19 @@ export function workoutRoutes(r: Router) {
         [uuidv7(), ctx.userId, exId, w.routine_id, "Ready for more weight", JSON.stringify({ setWeightKg: kg, ...(reps ? { setReps: reps } : {}) }), wid]);
     }
     if (more.length) ctx.changed("reminder");
-    // the routine's layout (exercises added, removed, swapped, moved; sets added or left out) is only saved when ticked
-    // on the Finish screen, and then without today's numbers: those carry over to next time anyway (prefillFromLast).
-    // Older apps' updateRoutine is ignored on purpose: with "Always" they sent it on every finish, which would now save
-    // the layout without asking.
-    if (b?.saveLayout && w.routine_id) {
+    // the routine changes only as asked on the Finish screen: each listed change (exercises added, removed, swapped,
+    // moved, skipped; sets added or not done) has its own switch, and `routineChanges` names those switched on. Never
+    // today's numbers: they carry over to next time anyway (prefillFromLast). Older apps sent `saveLayout` for "save
+    // what's listed", which then listed neither skipped exercises nor their own updateRoutine (sent on every finish
+    // with "Always", so ignored): saveLayout saves today's list without the skipped ones.
+    if (w.routine_id) {
       const { updateRoutineFromWorkout } = await import("./routines");
-      await updateRoutineFromWorkout(ctx, w.routine_id, wid, { numbers: false });
-      ctx.changed("routine");
+      let accept: string[] = Array.isArray(b?.routineChanges) ? b.routineChanges.filter((x: unknown) => typeof x === "string") : [];
+      if (b?.saveLayout === true && !accept.length) {
+        const [routine, done] = [await loadRoutine(ctx.q, w.routine_id), await loadWorkout(ctx.q, wid, ymd(ctx.now()))];
+        if (routine && done) accept = structureChanges(routine, done).filter((c) => c.kind !== "skipped").map((c) => c.key);
+      }
+      if (accept.length) { await updateRoutineFromWorkout(ctx, w.routine_id, wid, accept); ctx.changed("routine"); }
     }
     ctx.changed("workout");
     return { ok: true };
