@@ -33,6 +33,9 @@ const f = ref({ rule: daily ? "daily" : s.rule ?? "weekly", days: [...(s.days ??
   timeOfDay: s.timeOfDay ?? "", remind: s.remindMin != null, remindMin: s.remindMin ?? 30 });
 // Sunday is 0, as Date.getDay() counts
 const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((label, value) => ({ value, label }));
+// Today / Tomorrow: a one-off plan for that day, saved in one tap (time and reminder as filled in)
+function ymdPlus(days: number) { const d = new Date(); d.setDate(d.getDate() + days); return localYmd(d); }
+async function planDay(days: number) { f.value.rule = "once"; f.value.startDate = ymdPlus(days); f.value.endDate = ""; await save(); }
 async function save() {
   try {
     const [k, v] = [what.value.slice(0, 1), what.value.slice(2)];
@@ -52,6 +55,7 @@ async function save() {
   <Sheet :title="pick ? 'Plan a workout' : 'Schedule'" @close="emit('close')">
     <div v-if="pick" class="fld"><label>What</label>
       <AppSelect v-model="what" :options="options" placeholder="Choose a routine or an activity" title="What to plan" /></div>
+    <div v-if="!s.id" class="fld"><label>Quick plan</label><div class="seg block"><button :disabled="!what" @click="planDay(0)">Today</button><button :disabled="!what" @click="planDay(1)">Tomorrow</button></div></div>
     <div class="fld"><label>Repeats</label><div class="seg block"><button :class="{ on: f.rule === 'daily' }" @click="f.rule = 'daily'">Every day</button><button :class="{ on: f.rule === 'weekly' }" @click="f.rule = 'weekly'">Weekdays</button><button :class="{ on: f.rule === 'interval' }" @click="f.rule = 'interval'">Every N days</button><button :class="{ on: f.rule === 'once' }" @click="f.rule = 'once'">Once</button></div></div>
     <div v-if="f.rule === 'weekly'" class="fld"><label>On</label><ChoiceTiles v-model="f.days" :options="DAYS" multiple compact :cols="7" label="On" /></div>
     <div v-if="f.rule === 'interval'" class="fld"><label>Every</label><div class="row"><input v-model.number="f.intervalDays" type="number" min="1" max="60" style="width:90px" /><span>days</span></div></div>
