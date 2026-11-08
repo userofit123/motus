@@ -79,7 +79,7 @@ const menu = computed(() => [
   { label: "Schedule", icon: "calendar", run: () => (editSchedule.value = { routineId: id.value }) },
   { label: "Earlier versions", icon: "history", run: () => (showVersions.value = true) },
   { label: "Send a copy to…", icon: "share", hidden: !settings.value.features.sharing, run: async () => { const u = await prompt("Send a copy to", { placeholder: "Their username on this server" }); if (u) { try { await api.post("/share/routine", { routineId: id.value, username: u }); toast(`Sent to ${u}`); } catch (e) { toastError(e); } } } },
-  { label: "Export", icon: "download", run: () => { const b = new Blob([JSON.stringify({ motusRoutine: 1, ...routine.value }, null, 2)], { type: "application/json" }); void saveFile(b, `${routine.value.name}.motusroutine`); } },
+  { label: "Export", icon: "download", run: () => { const b = new Blob([JSON.stringify({ motusRoutine: 1, ...routine.value }, null, 2)], { type: "application/json" }); saveFile(b, `${routine.value.name}.motusroutine`).catch(toastError); } },
   { label: "Delete", icon: "trash", danger: true, sep: true, run: del },
 ]);
 // show the page once its data is in, all at once

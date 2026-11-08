@@ -25,15 +25,16 @@ type Fs = {
   writeFile(o: { path: string; data: string; directory: string; recursive?: boolean }): Promise<unknown>;
 };
 // writes the file under the first free name in dir. Android 11+ hides files of other apps from stat, so a name that
-// looks free can still fail on write: that name is skipped and the next one tried (a few times, then the error stands)
+// looks free can still fail on write: that name is skipped and the next one tried. Names stat finds taken are stepped
+// past without limit; only failed writes count, and after 6 of them the error goes to the caller (which may fall back)
 async function writeFree(fs: Fs, dir: string, directory: string, name: string, data: string) {
   let err: unknown;
-  for (let i = 1; i <= 6; i++) {
+  for (let i = 1, fails = 0; fails < 6; i++) {
     const n = numbered(name, i);
     if (await fs.stat({ path: `${dir}/${n}`, directory }).then(() => true, () => false)) continue;
-    try { await fs.writeFile({ path: `${dir}/${n}`, data, directory, recursive: true }); return n; } catch (e) { err = e; }
+    try { await fs.writeFile({ path: `${dir}/${n}`, data, directory, recursive: true }); return n; } catch (e) { err = e; fails++; }
   }
-  throw err ?? new Error("No free file name");
+  throw err;
 }
 
 async function latestApk() {

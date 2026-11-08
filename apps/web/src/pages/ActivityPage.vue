@@ -9,7 +9,7 @@ import { invalidate } from "../api/live";
 import { useFmt } from "../core/format";
 import { confirm, prompt } from "../core/ask";
 import { noteSheet } from "../core/ui";
-import { toast } from "../core/toast";
+import { toast, toastError } from "../core/toast";
 import { saveFile } from "../core/saveFile";
 import Icon from "../components/Icon.vue";
 import Menu from "../components/Menu.vue";
@@ -26,7 +26,7 @@ async function edit(field: "name" | "notes") { const v = await prompt(field === 
 function gpx() {
   const pts = (a.value.route ?? []).map((p: number[]) => `<trkpt lat="${p[0]}" lon="${p[1]}">${p[3] != null ? `<ele>${p[3]}</ele>` : ""}${p[2] ? `<time>${new Date(p[2] * 1000).toISOString()}</time>` : ""}</trkpt>`).join("");
   const x = `<?xml version="1.0" encoding="UTF-8"?><gpx version="1.1" creator="Motus" xmlns="http://www.topografix.com/GPX/1/1"><trk><name>${a.value.name || a.value.type}</name><type>${a.value.type}</type><trkseg>${pts}</trkseg></trk></gpx>`;
-  void saveFile(new Blob([x], { type: "application/gpx+xml" }), `${a.value.type}-${a.value.startedAt.slice(0, 10)}.gpx`);
+  saveFile(new Blob([x], { type: "application/gpx+xml" }), `${a.value.type}-${a.value.startedAt.slice(0, 10)}.gpx`).catch(toastError);
 }
 // show the page once its data is in, all at once
 await loaded(q);

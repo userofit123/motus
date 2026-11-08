@@ -82,7 +82,7 @@ async function copyText() {
   const t = await api.get(`/workouts/${id.value}/text`);
   await navigator.clipboard?.writeText(t.text); toast("Copied. Paste it into Claude or any assistant.");
 }
-function exportJson() { const b = new Blob([JSON.stringify(w.value, null, 2)], { type: "application/json" }); void saveFile(b, `${w.value.name}-${w.value.startedAt.slice(0, 10)}.json`); }
+function exportJson() { const b = new Blob([JSON.stringify(w.value, null, 2)], { type: "application/json" }); saveFile(b, `${w.value.name}-${w.value.startedAt.slice(0, 10)}.json`).catch(toastError); }
 async function addExercises(ids: string[]) {
   adding.value = false;
   for (const ex of ids) await api.post(`/workouts/${id.value}/exercises`, { exerciseId: ex, sets: [{ kind: "normal", done: true }] });
