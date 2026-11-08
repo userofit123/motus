@@ -355,7 +355,7 @@ export interface Schedule {
   id: string;
   routineId: string | null;
   activityType: string | null;
-  rule: "once" | "weekly" | "interval";
+  rule: "once" | "weekly" | "interval" | "monthly";
   days: number[];
   intervalDays: number | null;
   startDate: string;

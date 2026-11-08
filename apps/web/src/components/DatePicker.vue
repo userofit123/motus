@@ -49,6 +49,8 @@ function show() {
   month.value = new Date(parse(s).getFullYear(), parse(s).getMonth(), 1); hi.value = s;
   open.value = true;
 }
+// a "Pick a date" choice beside it (WhenPicker) opens the calendar straight away
+defineExpose({ show });
 function close(refocus = true) { open.value = false; if (refocus && !isPhone.value) btn.value?.focus({ preventScroll: true }); }
 function pick(s: string) {
   if (s && !allowed(s)) return;

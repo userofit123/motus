@@ -27,6 +27,25 @@ describe("schedules", () => {
       .toEqual(["2026-11-01", "2026-11-05", "2026-11-11"]);
     expect(occurrences({ ...s, rule: "interval", intervalDays: 3 }, [], "2026-11-01", "2026-11-10")).toEqual(["2026-11-01", "2026-11-04", "2026-11-07", "2026-11-10"]);
   });
+
+  it("repeats monthly on the start date's day, or the last day of a shorter month", () => {
+    const s: any = { rule: "monthly", days: [], startDate: "2026-01-31", endDate: null, active: true, intervalDays: null };
+    expect(occurrences(s, [], "2026-01-01", "2026-06-30")).toEqual(["2026-01-31", "2026-02-28", "2026-03-31", "2026-04-30", "2026-05-31", "2026-06-30"]);
+    expect(occurrences(s, [], "2028-02-01", "2028-02-29")).toEqual(["2028-02-29"]); // a leap year
+    expect(occurrences({ ...s, startDate: "2026-11-08" }, [], "2026-11-01", "2027-01-31")).toEqual(["2026-11-08", "2026-12-08", "2027-01-08"]);
+    // never before it starts, never after it ends
+    expect(occurrences({ ...s, startDate: "2026-11-15", endDate: "2027-01-10" }, [], "2026-10-01", "2027-03-01")).toEqual(["2026-11-15", "2026-12-15"]);
+  });
+
+  it("saves a monthly plan and puts it on the calendar", async () => {
+    const r = (await call("POST", "/routines", { name: "Monthly test" })).id;
+    const sid = (await call("POST", "/schedules", { routineId: r, rule: "monthly", startDate: "2031-03-31" })).id;
+    const cal = await call("GET", "/calendar", undefined, { from: "2031-03-01", to: "2031-05-31", tz: "0" });
+    expect(cal.planned.filter((p: any) => p.scheduleId === sid).map((p: any) => p.date)).toEqual(["2031-03-31", "2031-04-30", "2031-05-31"]);
+    await call("PUT", `/schedules/${sid}`, { rule: "once", startDate: "2031-04-02" });
+    const after = await call("GET", "/calendar", undefined, { from: "2031-03-01", to: "2031-05-31", tz: "0" });
+    expect(after.planned.filter((p: any) => p.scheduleId === sid).map((p: any) => p.date)).toEqual(["2031-04-02"]);
+  });
 });
 
 describe("programs", () => {

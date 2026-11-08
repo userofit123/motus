@@ -4,7 +4,7 @@ import { goBack } from "../core/leave";
 import { computed, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useQuery } from "@tanstack/vue-query";
-import { routineTime, muscleName, muscleSets, musclesWorked } from "@motus/shared";
+import { routineTime, muscleName, muscleSets, musclesWorked, scheduleSummary } from "@motus/shared";
 import { useRoutine, useRoutines, useNotes, useReminders, useSchedules, useChange, loaded } from "../api/queries";
 import { api, mediaUrl } from "../api/client";
 import { useFmt, ago } from "../core/format";
@@ -48,8 +48,8 @@ const exItems = (e: any) => [
   { label: "Add a note", hint: "Shown with this exercise in your workouts", icon: "note", run: () => (noteSheet.value = { targets: [{ type: "routine_exercise", id: e.id, label: `${e.exercise.name} in ${routine.value.name}` }, { type: "exercise", id: e.exerciseId, label: `${e.exercise.name}, every time` }] }) },
   { label: "Remind me next time", hint: "Pops up when you reach this exercise", icon: "bell", run: () => (reminderSheet.value = { targetType: "exercise", targetId: e.exerciseId, label: e.exercise.name, scopeRoutineId: id.value, routineName: routine.value.name, routineFirst: true }) },
 ];
-const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-const schedLine = (s: any) => ((s.rule === "interval" && s.intervalDays === 1) || (s.rule === "weekly" && s.days.length === 7) ? "Every day" : s.rule === "weekly" ? s.days.map((d: number) => DAYS[d]).join(", ") : s.rule === "interval" ? `Every ${s.intervalDays} days` : fmt.value.date(s.startDate)) + (s.timeOfDay ? ` at ${s.timeOfDay}` : "");
+// the same wording as the schedule popup's summary, without when it started
+const schedLine = (s: any) => { const t = scheduleSummary(s, fmt.value.day, false); return t.charAt(0).toUpperCase() + t.slice(1); };
 const delSched = useChange(async (sid: string) => { await api.del(`/schedules/${sid}`); toast("Schedule removed"); }, ["schedules", "calendar", "home"]);
 const noteMenu = useNoteMenu();
 const remSet = useChange(async (mid: string, status: string) => { await api.put(`/reminders/${mid}`, { status }); toast(status === "done" ? "Reminder done" : "Reminder dismissed"); }, ["reminders", "routines"]);

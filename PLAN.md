@@ -408,7 +408,7 @@ switching units never corrupts data (a simplefitnessapp bug).
 - `personal_records(id, user_id, exercise_id, kind ['max_weight'|'e1rm'|'max_reps_at_weight'|'max_volume_set'|'max_session_volume'|'longest_duration'|'longest_distance'], value, workout_set_id, achieved_at, superseded_at)`
 
 ### 6.5 Scheduling
-- `schedules(id, user_id, routine_id or activity_type, rule ['once'|'weekly_days'|'every_n_days'], days_of_week, interval_days, start_date, end_date, time_of_day, remind_before_min, active)`
+- `schedules(id, user_id, routine_id or activity_type, rule ['once'|'weekly'|'interval'|'monthly' (start date's day, or the last day of a shorter month)], days_of_week, interval_days, start_date, end_date, time_of_day, remind_before_min, active)`
 - `schedule_exceptions(schedule_id, date, kind ['skipped'|'moved'], moved_to)`
 - Upcoming occurrences are **computed, not pre-generated**, which avoids simplefitnessapp's
   "deleted occurrences come back" bug. A workout started on a scheduled day links back through

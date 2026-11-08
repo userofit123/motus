@@ -1,6 +1,6 @@
 // Schedules ("Leg day every Sunday and Wednesday at 18:00") and the calendar.
 // Upcoming days are worked out from the rules each time, never stored ahead, so a skipped day stays skipped.
-import type { Schedule } from "@motus/shared";
+import { onMonthlyDay, type Schedule } from "@motus/shared";
 import type { Router } from "../router";
 import type { Sql } from "../db";
 import { camel, id, optId, str, intOrNull, oneOf, dateStr, visible, tzOf } from "../util";
@@ -22,6 +22,7 @@ export function occurrences(s: Schedule, exceptions: { date: string; kind: strin
     else for (let d = start; d <= end; d = addDays(d, 1)) {
       if (s.rule === "weekly" && s.days.includes(dow(d))) out.add(d);
       if (s.rule === "interval" && (s.intervalDays ?? 0) > 0 && daysBetween(s.startDate, d) % s.intervalDays! === 0) out.add(d);
+      if (s.rule === "monthly" && onMonthlyDay(s.startDate, d)) out.add(d);
     }
   }
   for (const e of exceptions) {
@@ -74,11 +75,13 @@ export async function plannedOpen(q: Sql, from: string, to: string, tzMin: numbe
   return planned.filter((p) => !planDone(p, workouts, activities, tzMin));
 }
 
+const RULES = ["once", "weekly", "interval", "monthly"];
+
 export function scheduleRoutes(r: Router) {
   r.get("/schedules", async ({ q }) => scheduleList(q));
   r.post("/schedules", async (ctx, _p, b) => {
     const sid = uuidv7();
-    const rule = oneOf(b.rule, ["once", "weekly", "interval"], "weekly");
+    const rule = oneOf(b.rule, RULES, "weekly");
     const days = Array.isArray(b.days) ? b.days.map(Number).filter((d: number) => d >= 0 && d <= 6) : [];
     if (rule === "weekly" && !days.length) throw bad("Pick at least one day");
     if (!b.routineId && !b.activityType) throw bad("Pick a routine or an activity");
@@ -95,7 +98,7 @@ export function scheduleRoutes(r: Router) {
     await ctx.q.query(
       `UPDATE schedules SET rule = coalesce($2, rule), days = coalesce($3, days), interval_days = $4, start_date = coalesce($5, start_date), end_date = $6,
          time_of_day = $7, remind_min = $8, active = coalesce($9, active) WHERE id = $1`,
-      [id(p.id), b.rule ? oneOf(b.rule, ["once", "weekly", "interval"], "weekly") : null, Array.isArray(b.days) ? b.days.map(Number) : null, intOrNull(b.intervalDays, 1, 365),
+      [id(p.id), b.rule ? oneOf(b.rule, RULES, "weekly") : null, Array.isArray(b.days) ? b.days.map(Number) : null, intOrNull(b.intervalDays, 1, 365),
         dateStr(b.startDate), dateStr(b.endDate), b.timeOfDay ? str(b.timeOfDay, 5) : null, intOrNull(b.remindMin, 0, 1440), typeof b.active === "boolean" ? b.active : null]);
     ctx.changed("schedule");
     return { ok: true };

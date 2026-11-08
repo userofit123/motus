@@ -9,7 +9,7 @@ import { toast, toastError } from "../core/toast";
 import { localYmd } from "../core/format";
 import Icon from "./Icon.vue";
 import Sheet from "./Sheet.vue";
-import DatePicker from "./DatePicker.vue";
+import WhenPicker from "./WhenPicker.vue";
 import AppSelect from "./AppSelect.vue";
 import Menu from "./Menu.vue";
 
@@ -35,10 +35,8 @@ async function save() {
   <Sheet :title="e.id ? 'Edit program' : 'New program'" size="wide" @close="emit('close')">
     <div class="fld"><label>Name</label><input v-model="e.name" placeholder="e.g. 8-week push/pull/legs" /></div>
     <div class="fld"><label>Description</label><input v-model="e.description" placeholder="Optional" /></div>
-    <div class="frow">
-      <div class="fld"><label>Starts</label><DatePicker v-model="e.startDate" title="Starts" /></div>
-      <div class="fld"><label>Deload weeks lighter by (%)</label><input v-model.number="e.deloadPct" type="number" min="0" max="90" /></div>
-    </div>
+    <div class="fld"><label>Starts</label><WhenPicker v-model="e.startDate" title="Starts" /></div>
+    <div class="fld"><label>Deload weeks lighter by (%)</label><input v-model.number="e.deloadPct" type="number" min="0" max="90" /></div>
     <p class="tiny hint">A deload week is a lighter week to let your body recover. In the weeks you mark as deload, working weights start {{ e.deloadPct || 0 }}% lower; warm-ups and reps stay the same.</p>
     <div class="flbl">Weeks</div>
     <p class="tiny hint">The routines to do each week, in order. Motus counts your workouts in this order, so a missed day never throws the plan off.</p>

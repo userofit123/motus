@@ -17,6 +17,7 @@ function keyOf(sg) {
   for (const o of document.querySelectorAll(".seg")) { if (o == sg) break; const ob = o.querySelector("button"); if (ob && (ob.dataset.a || ob.dataset.t || "x") == k) n++; }
   c = k + "#" + n; KC.set(sg, c); return c;
 }
+const named = (sg) => { const b = sg.querySelector("button"); return !!(sg.id || (b && (b.dataset.a || b.dataset.t))); };
 const ease = (t) => (t <= 0 ? 0 : t >= 1 ? 1 : t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 const rad = (R, M, L, Rt) => { const a = L ? R : M, b = Rt ? R : M; return a + "px " + b + "px " + b + "px " + a + "px"; };
 function put(p, g, l, r, rd, sy) {
@@ -40,7 +41,11 @@ function sync(sg) {
   let s = st.get(k);
   const e = pill.firstChild;
   const rest = () => { if (s.anim) { s.anim.cancel(); s.anim = null; } put(pill, g, g.l, g.r, rd); s.cur = { l: g.l, r: g.r, rd }; s.g = g; };
-  if (!s) { s = { idx, anim: null }; st.set(k, s); put(pill, g, g.l, g.r, rd); s.cur = { l: g.l, r: g.r, rd }; s.g = g; return; }
+  if (!s) { s = { idx, anim: null, el: sg }; st.set(k, s); put(pill, g, g.l, g.r, rd); s.cur = { l: g.l, r: g.r, rd }; s.g = g; return; }
+  // Motus: a row drawn anew (a popup opened again, another page) whose key is only its place among the unnamed rows
+  // ("x#2") is not the row that left that place behind: it starts on its own tab instead of gliding over from where
+  // that other row's pill was (the schedule popup's Repeats slid in from the right). Rows with a real name keep gliding.
+  if (s.el !== sg) { s.el = sg; if (!named(sg)) s.snap = true; }
   if (s.snap) { s.snap = false; s.idx = idx; rest(); return; }
   if (s.idx === idx) { if (!s.anim) put(pill, g, g.l, g.r, rd); s.cur = s.anim ? s.cur : { l: g.l, r: g.r, rd }; return; }
   s.idx = idx;

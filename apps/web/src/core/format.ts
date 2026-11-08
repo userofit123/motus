@@ -37,6 +37,8 @@ export function makeFmt(s: Settings) {
       return [kg, r, x.durationS ? clock(x.durationS) : "", x.distanceM ? dist(x.distanceM) : ""].filter(Boolean).join(" ");
     },
     date: (iso: string | null | undefined, o: Intl.DateTimeFormatOptions = { day: "numeric", month: "short" }) => (iso ? new Date(iso.length === 10 ? iso + "T12:00:00" : iso).toLocaleDateString(locale, o) : ""),
+    /** a planned day in words: "today", "tomorrow", else "Tue 10 Nov" */
+    day: (d: string) => { const t = new Date(); if (d === ymd(t)) return "today"; t.setDate(t.getDate() + 1); return d === ymd(t) ? "tomorrow" : new Date(d + "T12:00:00").toLocaleDateString(locale, { weekday: "short", day: "numeric", month: "short" }); },
     dateLong: (iso: string | null | undefined) => (iso ? new Date(iso.length === 10 ? iso + "T12:00:00" : iso).toLocaleDateString(locale, { weekday: "long", day: "numeric", month: "long", year: "numeric" }) : ""),
     time: (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleTimeString(locale, { hour: "numeric", minute: "2-digit", hour12 }) : ""),
     ago: (iso: string | null | undefined) => ago(iso),

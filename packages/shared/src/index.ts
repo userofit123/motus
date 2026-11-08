@@ -14,3 +14,4 @@ export * from "./version";
 export * from "./route";
 export * from "./goals";
 export * from "./summary";
+export * from "./schedule";
