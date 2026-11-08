@@ -2,6 +2,24 @@
 
 The top entry's version is the one the release workflow publishes. Add a new `## [x.y.z]` section to release.
 
+## [0.1.12] - 2026-11-09
+
+- Progression: a routine always has your current numbers. After each workout it takes what you did, and Progression decides whether the weight goes up or down next time: Suggest (asks you on Finish), Automatic or Off, with a weight step and "Lower the weight after" N missed workouts. Defaults are in Settings → Workout → Progression; any exercise can have its own. Exercises that had the old progression rules are now Automatic. "Start from what you did last time" is gone, as the routine is now always up to date.
+- Finishing a workout: the time is shown big, with how it went against the plan and against last time. "Next time" is a short summary that opens every change set by set ("Set 2  20 kg × 8 → 22.5 kg × 8"); suggestions apply only when you switch them on.
+- Routine changes on Finish list every way the workout differed from the routine (exercises added, removed, swapped, reordered, sets added, exercises skipped, sets not done), each with its own switch, all off: the routine only changes where you say so. A finished workout's "Update the routine from this" uses the same list.
+- History: every version of a routine is kept, after each workout and each edit, with no limit. See the routine as it was on any date, restore it, and follow each exercise's weight over time.
+- An active workout has a Summary tab after the last exercise, with a muscle figure, a sets ring and tiles.
+- Planning: Today and Tomorrow pick the day, plans can repeat every week on that day or every month, and the plan popup is split into What, When and Time, with routine and activity side by side.
+- Home's Today block lists all of today's plans; tapping a day in the week shows that day's plans, with a link to the calendar.
+- Reminders: tap one to see its details, then dismiss or keep it.
+- Every ⋮ menu is split into groups, and routines, programs and notes have the same menu wherever they appear.
+- The workout settings popup is grouped like Settings → Workout, with the same wording.
+- Workout time estimates count the time doing each set and changing exercises, and once a routine is done they show how long it usually takes you.
+- The Exercises page keeps its search and filters when you open an exercise and come back.
+- In a workout, the Previous column is off by default (Settings → Workout → "Show last time's numbers") and the bottom bar no longer shows last time's numbers.
+- After finishing, the workout page no longer shows a puzzling Done button.
+- Updating runs a few database changes on first start. Update every device: an older app can't sync plans that repeat monthly.
+
 ## [0.1.11] - 2026-11-08
 
 - Download works everywhere: exports, backups, CSVs, and exporting a workout, a route or a routine save a file and say where it went. On the phone the file goes to Downloads; the desktop app asks where to save it; a failed save shows an error instead of nothing.
