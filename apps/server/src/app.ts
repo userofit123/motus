@@ -139,8 +139,13 @@ export async function buildApp(o: Options): Promise<{ app: FastifyInstance; engi
     const b = req.body as any;
     const u = (await db.admin.query("SELECT password_hash, role FROM users WHERE id = $1", [req.user!.id])).rows[0];
     if (!(await recheck(req, reply, b?.password, u.password_hash))) return;
-    if (u.role === "admin" && Number((await db.admin.query("SELECT count(*) n FROM users WHERE role = 'admin'")).rows[0].n) === 1)
-      return reply.code(400).send({ error: "You are the only admin. Make someone else admin first." });
+    // the last admin may only leave when nobody else is left without one; alone on the server, the account just goes
+    // and the server is back to first-run setup
+    if (u.role === "admin") {
+      const n = (await db.admin.query("SELECT count(*) FILTER (WHERE role = 'admin') admins, count(*) everyone FROM users")).rows[0];
+      if (Number(n.admins) === 1 && Number(n.everyone) > 1)
+        return reply.code(400).send({ error: "Other people use this server and you are its only admin. Make one of them admin first." });
+    }
     await db.admin.query("DELETE FROM users WHERE id = $1", [req.user!.id]);
     reply.clearCookie(COOKIE, { path: "/" });
     return { ok: true };

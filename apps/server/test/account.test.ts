@@ -1,5 +1,6 @@
 // Deleting your own account asks for the password again: a wrong one is refused without signing you out,
 // too many wrong ones wait like sign-in does, and the right one deletes everything.
+// The only admin can delete their account when nobody else uses the server, never leaving others without an admin.
 // Also here: no way of choosing a password (first setup, invite sign-up, own change, admin) accepts the username.
 import fs from "node:fs";
 import os from "node:os";
@@ -53,6 +54,35 @@ describe("deleting your own account", () => {
     expect((await del(h, PW)).statusCode).toBe(429);
     expect((await db.admin.query("SELECT 1 FROM users WHERE username = 'bob'")).rows.length).toBe(1);
   });
+});
+
+describe("the only admin deleting their account", () => {
+  it("is refused while other people use the server", async () => {
+    // sessions made directly and a fresh address: the wrong passwords above have put the default address on the wait
+    const id = uuidv7();
+    await db.admin.query("INSERT INTO users (id, username, password_hash, role) VALUES ($1,'solo',$2,'admin')", [id, await hashPassword(PW)]);
+    const h = { authorization: `Bearer ${await createSession(db, id, "Browser", "web")}` };
+    await db.admin.query("UPDATE users SET role = 'user' WHERE username = 'boss'");
+    try {
+      const r = await app.inject({ method: "DELETE", url: "/api/auth/account", headers: h, payload: { password: PW }, remoteAddress: "10.1.2.3" });
+      expect(r.statusCode).toBe(400);
+      expect((await db.admin.query("SELECT 1 FROM users WHERE username = 'solo'")).rows.length).toBe(1);
+    } finally { await db.admin.query("UPDATE users SET role = 'admin' WHERE username = 'boss'"); }
+  });
+
+  it("goes through when they are the only person, and the server is back to first-run setup", async () => {
+    const d2 = fs.mkdtempSync(path.join(os.tmpdir(), "motus-server-test-"));
+    const db2 = await pgliteDb("memory://");
+    const { app: a2 } = await buildApp({ db: db2, dataDir: d2 });
+    try {
+      const id = uuidv7();
+      await db2.admin.query("INSERT INTO users (id, username, password_hash, role) VALUES ($1,'only',$2,'admin')", [id, await hashPassword(PW)]);
+      const t = await createSession(db2, id, "Browser", "web");
+      const r = await a2.inject({ method: "DELETE", url: "/api/auth/account", headers: { authorization: `Bearer ${t}` }, payload: { password: PW }, remoteAddress: "10.1.2.4" });
+      expect(r.statusCode).toBe(200);
+      expect((await a2.inject({ method: "GET", url: "/api/auth/status" })).json().setupNeeded).toBe(true);
+    } finally { await a2.close(); await db2.close(); fs.rmSync(d2, { recursive: true, force: true }); }
+  }, 120000);
 });
 
 describe("signing out the other devices", () => {
