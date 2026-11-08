@@ -144,8 +144,9 @@ async function finish() {
         <component :is="r.change?.mode === 'suggest' ? 'label' : 'div'" v-for="r in nextRows" :key="r.id" :class="r.change?.mode === 'suggest' ? 'tgl' : 'li'">
           <Icon :name="r.fixed ? 'lock' : r.diff && r.diff > 0 ? 'arrowUp' : r.diff && r.diff < 0 ? 'arrowDown' : 'check'" :size="18" class="fin-i" :class="{ pos: !r.fixed && (r.diff ?? 0) > 0, neg: !r.fixed && (r.diff ?? 0) < 0 }" />
           <div class="grow" style="min-width:0">
-            <div class="fin-row"><span class="t ellipsis">{{ r.name }}</span><span class="sep">·</span><span class="fin-next">next time {{ r.next }}</span></div>
-            <div v-if="r.change" class="s">{{ r.change.reason }}<template v-if="r.change.mode === 'auto'"><span class="sep">·</span>Automatic</template></div>
+            <!-- the name gets its own line; next time's numbers and the reason sit under it in the small line -->
+            <div class="t ellipsis">{{ r.name }}</div>
+            <div class="s">Next time {{ r.next }}<template v-if="r.change"> · {{ r.change.reason }}</template><template v-if="r.change?.mode === 'auto'"> · Automatic</template></div>
           </div>
           <span class="mchip fin-diff" :class="{ pos: !r.fixed && (r.diff ?? 0) > 0, neg: !r.fixed && (r.diff ?? 0) < 0 }">{{ diffText(r) }}</span>
           <span v-if="r.change?.mode === 'suggest'" class="tg"><input type="checkbox" :checked="r.on" :aria-label="`${r.change.direction === 'up' ? 'Raise' : 'Lower'} the weight for ${r.name}`" @change="toggleNext(r.id)" /></span>
@@ -168,16 +169,6 @@ async function finish() {
 </template>
 
 <style scoped>
-.fin-next { color: var(--tx2); white-space: nowrap; }
-.fin-row { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
-.fin-row .t { min-width: 0; }
-/* narrow phones: "next time …" on a line of its own, so the name never shrinks to nothing (the dot goes with it) */
-@media (max-width: 420px) {
-  .fin-row { flex-direction: column; align-items: flex-start; gap: 0; }
-  .fin-row .t { max-width: 100%; }
-  .fin-row .sep { display: none; }
-  .fin-next { white-space: normal; }
-}
 .fin-diff { flex: none; }
 .fin-diff.pos { color: var(--pos); }
 .fin-diff.neg { color: var(--neg); }
