@@ -139,14 +139,11 @@ export async function buildApp(o: Options): Promise<{ app: FastifyInstance; engi
     const b = req.body as any;
     const u = (await db.admin.query("SELECT password_hash, role FROM users WHERE id = $1", [req.user!.id])).rows[0];
     if (!(await recheck(req, reply, b?.password, u.password_hash))) return;
-    // the last admin may only leave when nobody else is left without one; alone on the server, the account just goes
-    // and the server is back to first-run setup
-    if (u.role === "admin") {
-      const n = (await db.admin.query("SELECT count(*) FILTER (WHERE role = 'admin') admins, count(*) everyone FROM users")).rows[0];
-      if (Number(n.admins) === 1 && Number(n.everyone) > 1)
-        return reply.code(400).send({ error: "Other people use this server and you are its only admin. Make one of them admin first." });
-    }
+    // anyone can always delete their own account. When the last admin leaves, the longest-standing active person
+    // left becomes admin, so the server is never left without one; alone on it, the server goes back to first-run setup
     await db.admin.query("DELETE FROM users WHERE id = $1", [req.user!.id]);
+    if (u.role === "admin" && !(await db.admin.query("SELECT 1 FROM users WHERE role = 'admin' AND disabled_at IS NULL")).rows.length)
+      await db.admin.query("UPDATE users SET role = 'admin' WHERE id = (SELECT id FROM users WHERE disabled_at IS NULL ORDER BY created_at LIMIT 1)");
     reply.clearCookie(COOKIE, { path: "/" });
     return { ok: true };
   });

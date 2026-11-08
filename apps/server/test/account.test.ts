@@ -1,6 +1,6 @@
 // Deleting your own account asks for the password again: a wrong one is refused without signing you out,
 // too many wrong ones wait like sign-in does, and the right one deletes everything.
-// The only admin can delete their account when nobody else uses the server, never leaving others without an admin.
+// The only admin can always delete their account; the longest-standing person left then becomes admin.
 // Also here: no way of choosing a password (first setup, invite sign-up, own change, admin) accepts the username.
 import fs from "node:fs";
 import os from "node:os";
@@ -57,7 +57,7 @@ describe("deleting your own account", () => {
 });
 
 describe("the only admin deleting their account", () => {
-  it("is refused while other people use the server", async () => {
+  it("goes through while other people use the server, and the longest-standing one becomes admin", async () => {
     // sessions made directly and a fresh address: the wrong passwords above have put the default address on the wait
     const id = uuidv7();
     await db.admin.query("INSERT INTO users (id, username, password_hash, role) VALUES ($1,'solo',$2,'admin')", [id, await hashPassword(PW)]);
@@ -65,8 +65,9 @@ describe("the only admin deleting their account", () => {
     await db.admin.query("UPDATE users SET role = 'user' WHERE username = 'boss'");
     try {
       const r = await app.inject({ method: "DELETE", url: "/api/auth/account", headers: h, payload: { password: PW }, remoteAddress: "10.1.2.3" });
-      expect(r.statusCode).toBe(400);
-      expect((await db.admin.query("SELECT 1 FROM users WHERE username = 'solo'")).rows.length).toBe(1);
+      expect(r.statusCode).toBe(200);
+      expect((await db.admin.query("SELECT 1 FROM users WHERE username = 'solo'")).rows.length).toBe(0);
+      expect((await db.admin.query("SELECT role FROM users WHERE username = 'boss'")).rows[0].role).toBe("admin");
     } finally { await db.admin.query("UPDATE users SET role = 'admin' WHERE username = 'boss'"); }
   });
 
