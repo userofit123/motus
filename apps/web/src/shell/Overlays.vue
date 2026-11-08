@@ -1,6 +1,8 @@
 <script setup lang="ts">
 // Panels any screen can open: Start, an exercise, a note, a reminder, an activity, body weight, Appearance.
-import { exerciseSheet, noteSheet, reminderSheet, activitySheet, bodySheet, dailySheet, startOpen } from "../core/ui";
+import { exerciseSheet, noteSheet, reminderSheet, activitySheet, bodySheet, dailySheet, startOpen, scheduleSheet, versionsSheet } from "../core/ui";
+import ScheduleEditor from "../components/ScheduleEditor.vue";
+import RoutineVersions from "./RoutineVersions.vue";
 import Sheet from "../components/Sheet.vue";
 import ExerciseView from "../components/ExerciseView.vue";
 import StartSheet from "./StartSheet.vue";
@@ -38,6 +40,8 @@ onBeforeUnmount(() => removeEventListener("keydown", key));
   <Sheet v-if="exerciseSheet" :title="ex.data.value?.name ?? 'Exercise'" size="wide" @close="exerciseSheet = null"><ExerciseView :id="exerciseSheet" in-sheet /></Sheet>
   <NoteSheet v-if="noteSheet" :o="noteSheet" @close="noteSheet = null" />
   <ReminderSheet v-if="reminderSheet" :o="reminderSheet" @close="reminderSheet = null" />
+  <ScheduleEditor v-if="scheduleSheet" :schedule="scheduleSheet" @close="scheduleSheet = null" />
+  <RoutineVersions v-if="versionsSheet" :id="versionsSheet" @close="versionsSheet = null" />
   <ActivitySheet v-if="activitySheet" :o="activitySheet" @close="activitySheet = null" />
   <BodySheet v-if="bodySheet" @close="bodySheet = false" />
   <DailySheet v-if="dailySheet" @close="dailySheet = false" />

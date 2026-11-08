@@ -9,10 +9,8 @@ import { useRoutine, useRoutines, useNotes, useReminders, useSchedules, useChang
 import { api, mediaUrl } from "../api/client";
 import { invalidate } from "../api/live";
 import { useFmt, ago } from "../core/format";
-import { noteSheet, reminderSheet, exerciseSheet } from "../core/ui";
-import { confirm, prompt } from "../core/ask";
-import { toast, toastError } from "../core/toast";
-import { saveFile } from "../core/saveFile";
+import { noteSheet, reminderSheet, exerciseSheet, scheduleSheet } from "../core/ui";
+import { toast } from "../core/toast";
 import Icon from "../components/Icon.vue";
 import MuscleFig from "../components/MuscleFig.vue";
 import Menu from "../components/Menu.vue";
@@ -20,8 +18,7 @@ import NoteItem from "../components/NoteItem.vue";
 import ReminderItem from "../components/ReminderItem.vue";
 import LineChart from "../components/LineChart.vue";
 import BodyMap from "../components/BodyMap.vue";
-import ScheduleEditor from "../components/ScheduleEditor.vue";
-import Sheet from "../components/Sheet.vue";
+import { useRoutineMenu } from "../core/routineMenu";
 
 const route = useRoute(), router = useRouter();
 const id = computed(() => String(route.params.id));
@@ -34,10 +31,7 @@ const schedules = useSchedules();
 const fmt = useFmt();
 const settings = useSettings();
 const history = useQuery({ queryKey: computed(() => ["workouts", "routine", id.value]), queryFn: () => api.get(`/routines/${id.value}/workouts`) });
-const versions = useQuery({ queryKey: computed(() => ["routines", "versions", id.value]), queryFn: () => api.get(`/routines/${id.value}/versions`) });
 const tab = ref("plan");
-const editSchedule = ref<any>(null);
-const showVersions = ref(false);
 const routine = computed<any>(() => r.data.value);
 const myRems = computed(() => (rems.data.value ?? []).filter((m: any) => (m.targetType === "routine" && m.targetId === id.value) || (m.targetType === "exercise" && routine.value?.exercises.some((e: any) => e.exerciseId === m.targetId) && (!m.scopeRoutineId || m.scopeRoutineId === id.value))));
 const mySchedules = computed(() => (schedules.data.value ?? []).filter((s: any) => s.routineId === id.value));
@@ -62,28 +56,10 @@ const delNote = useChange(async (nid: string) => { await api.del(`/notes/${nid}`
 const remSet = useChange(async (mid: string, status: string) => { await api.put(`/reminders/${mid}`, { status }); toast(status === "done" ? "Reminder done" : "Reminder dismissed"); }, ["reminders", "routines"]);
 // a note on one of the routine's exercises says which; notes on the routine itself need no label
 const noteWhere = (n: any) => (n.targetType === "routine_exercise" ? routine.value?.exercises.find((e: any) => e.id === n.targetId)?.exercise?.name ?? null : null);
-async function restore(v: any) {
-  if (!(await confirm("Restore this version?", { text: "The current version is kept in the history too.", ok: "Restore" }))) return;
-  await api.post(`/routines/${id.value}/versions/${v.id}/restore`); invalidate(["routines"]); showVersions.value = false; toast("Restored");
-}
-async function del() {
-  if (!(await confirm(`Delete ${routine.value.name}?`, { text: "Its past workouts stay in your history.", ok: "Delete", danger: true }))) return;
-  await api.del(`/routines/${id.value}`); invalidate(["routines", "home"]); toast("Routine deleted"); router.push("/routines");
-}
-const menu = computed(() => [
-  { label: "Edit", icon: "edit", run: () => router.push(`/routines/${id.value}/edit`) },
-  { label: "Duplicate", icon: "copy", run: async () => { const x = await api.post(`/routines/${id.value}/duplicate`); invalidate(["routines"]); toast("Routine duplicated"); router.push(`/routines/${x.id}`); } },
-  { label: "New routine based on this", icon: "layers", run: async () => { const n = await prompt("Name the new routine", { value: routine.value.name + " v2", ok: "Create", text: "A copy you can change; this one stays as it is." }); if (n) { const x = await api.post("/routines", { fromRoutineId: id.value, name: n }); invalidate(["routines"]); toast(`${n} created`); router.push(`/routines/${x.id}/edit`); } } },
-  { label: "Add a note", icon: "note", run: () => (noteSheet.value = { targets: [{ type: "routine", id: id.value, label: routine.value.name }] }) },
-  { label: "Remind me next time", icon: "bell", run: () => (reminderSheet.value = { targetType: "routine", targetId: id.value, label: routine.value.name }) },
-  { label: "Schedule", icon: "calendar", run: () => (editSchedule.value = { routineId: id.value }) },
-  { label: "Earlier versions", icon: "history", run: () => (showVersions.value = true) },
-  { label: "Send a copy to…", icon: "share", hidden: !settings.value.features.sharing, run: async () => { const u = await prompt("Send a copy to", { placeholder: "Their username on this server" }); if (u) { try { await api.post("/share/routine", { routineId: id.value, username: u }); toast(`Sent to ${u}`); } catch (e) { toastError(e); } } } },
-  { label: "Export", icon: "download", run: () => { const b = new Blob([JSON.stringify({ motusRoutine: 1, ...routine.value }, null, 2)], { type: "application/json" }); saveFile(b, `${routine.value.name}.motusroutine`).catch(toastError); } },
-  { label: "Delete", icon: "trash", danger: true, sep: true, run: del },
-]);
+const menuFor = useRoutineMenu();
+const menu = computed(() => menuFor({ id: id.value, name: routine.value.name, pinned: !!routine.value.pinned, archived: !!routine.value.archived }, true));
 // show the page once its data is in, all at once
-await loaded(r, summaries, notes, rems, schedules, history, versions);
+await loaded(r, summaries, notes, rems, schedules, history);
 </script>
 
 <template>
@@ -118,10 +94,10 @@ await loaded(r, summaries, notes, rems, schedules, history, versions);
       <div class="stack">
         <div class="card"><BodyMap :values="muscles" :highlight="worked.primary" :secondary="worked.secondary" :height="190" legend /><div class="chips" style="margin-top:8px;justify-content:center"><span v-for="m in [...worked.primary, ...worked.secondary]" :key="m" class="mchip">{{ muscleName(m) }}</span></div></div>
         <div class="card">
-          <div class="row hgap"><b class="grow">Schedule</b><button class="qb acc" style="padding:4px 6px" @click="editSchedule = { routineId: id }"><Icon name="plus" :size="16" /></button></div>
+          <div class="row hgap"><b class="grow">Schedule</b><button class="qb acc" style="padding:4px 6px" @click="scheduleSheet = { routineId: id }"><Icon name="plus" :size="16" /></button></div>
           <div v-if="!mySchedules.length" class="tiny">Not scheduled. Add days to see it in Up next and the calendar, with a reminder.</div>
           <div v-for="s in mySchedules" :key="s.id" class="li" style="min-height:0;padding:calc(var(--lpy) - 2px) 0"><Icon name="calendar" :size="16" class="muted" /><span class="grow">{{ schedLine(s) }}</span>
-            <Menu :items="[{ label: 'Edit', icon: 'edit', run: () => (editSchedule = s) }, { label: 'Remove', icon: 'trash', danger: true, run: () => delSched.run(s.id) }]" /></div>
+            <Menu :items="[{ label: 'Edit', icon: 'edit', run: () => (scheduleSheet = s) }, { label: 'Remove', icon: 'trash', danger: true, run: () => delSched.run(s.id) }]" /></div>
         </div>
       </div>
     </div>
@@ -148,11 +124,6 @@ await loaded(r, summaries, notes, rems, schedules, history, versions);
     </div>
 
     </Transition>
-    <ScheduleEditor v-if="editSchedule" :schedule="editSchedule" @close="editSchedule = null" />
-    <Sheet v-if="showVersions" title="Earlier versions" @close="showVersions = false">
-      <div v-if="!versions.data.value?.length" class="tiny">Each time you save changes, the version before is kept here.</div>
-      <div class="list"><div v-for="v in versions.data.value" :key="v.id" class="li"><div class="grow"><div class="t">{{ fmt.date(v.createdAt, { day: "numeric", month: "short", year: "numeric" }) }} {{ fmt.time(v.createdAt) }}</div><div class="s">{{ v.name }} · {{ v.exercises }} exercises</div></div><button class="btn o s" @click="restore(v)">Restore</button></div></div>
-    </Sheet>
   </div>
 </template>
 

@@ -14,3 +14,7 @@ export const activitySheet = ref<null | { id?: string; type?: string }>(null);
 export const bodySheet = ref<boolean | string>(false);
 /** The daily log sheet: steps, sleep, water, mood */
 export const dailySheet = ref(false);
+/** The schedule editor, opened from anywhere (a routine's ⋮ menu); an existing schedule to edit it, or just the routine to plan */
+export const scheduleSheet = ref<any>(null);
+/** The earlier versions of a routine (its id) */
+export const versionsSheet = ref<string | null>(null);

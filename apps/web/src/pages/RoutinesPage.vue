@@ -9,7 +9,7 @@ import { useRoutines, useFolders, useChange, usePrograms, loaded } from "../api/
 import { api } from "../api/client";
 import { ago } from "../core/format";
 import { readJson, writeJson } from "../core/prefs";
-import { confirm, prompt, choose } from "../core/ask";
+import { confirm, prompt } from "../core/ask";
 import { toast } from "../core/toast";
 import { invalidate } from "../api/live";
 import Icon from "../components/Icon.vue";
@@ -19,6 +19,7 @@ import Sheet from "../components/Sheet.vue";
 import ProgramsSection from "../components/ProgramsSection.vue";
 import TemplateList from "../components/TemplateList.vue";
 import { useSettings } from "../api/queries";
+import { useRoutineMenu } from "../core/routineMenu";
 
 const route = useRoute(), router = useRouter();
 const settings = useSettings();
@@ -50,26 +51,9 @@ const folded = ref<string[]>(readJson<string[]>("motusFolded", []));
 const fkey = (g: { id: string | null }) => g.id ?? "other";
 const isFolded = (g: { id: string | null }) => folded.value.includes(fkey(g));
 function fold(g: { id: string | null }) { const k = fkey(g); folded.value = isFolded(g) ? folded.value.filter((x) => x !== k) : [...folded.value, k]; writeJson("motusFolded", folded.value); }
-const upd = useChange((id: string, b: any) => api.put(`/routines/${id}`, b), ["routines"]);
-const dup = useChange(async (id: string) => { await api.post(`/routines/${id}/duplicate`); toast("Routine duplicated"); }, ["routines"]);
-async function del(r: RoutineSummary) {
-  if (!(await confirm(`Delete ${r.name}?`, { text: "Its past workouts stay in your history.", ok: "Delete", danger: true }))) return;
-  await api.del(`/routines/${r.id}`);
-  invalidate(["routines", "home"]);
-  toast("Routine deleted", { action: { label: "Undo", run: async () => { await api.post(`/routines/${r.id}/restore`); invalidate(["routines", "home"]); } } });
-}
 async function newFolder() {
   const name = await prompt("New folder", { placeholder: "e.g. Push / Pull / Legs" });
   if (name) { await api.post("/folders", { name }); invalidate(["routines"]); toast("Folder created"); }
-}
-async function moveTo(r: RoutineSummary) {
-  const fs = (folders.data.value ?? []) as any[];
-  const v = await choose(`Move ${r.name} to`, [...fs.map((f) => ({ label: f.name, value: f.id })), { label: "No folder", value: "" }, { label: "New folder…", value: "__new" }]);
-  if (v == null) return;
-  let fid: string | null = v || null;
-  if (v === "__new") { const name = await prompt("New folder"); if (!name) return; fid = (await api.post("/folders", { name })).id; }
-  await upd.run(r.id, { folderId: fid });
-  toast(fid ? "Routine moved" : "Routine taken out of its folder");
 }
 async function renameFolder(f: { id: string; name: string }) { const n = await prompt("Rename folder", { value: f.name }); if (n) { await api.put(`/folders/${f.id}`, { name: n }); invalidate(["routines"]); toast("Folder renamed"); } }
 async function delFolder(f: { id: string; name: string }) { if (await confirm(`Delete the folder ${f.name}?`, { text: "Its routines stay, without a folder.", ok: "Delete", danger: true })) { await api.del(`/folders/${f.id}`); invalidate(["routines"]); toast("Folder deleted"); } }
@@ -80,16 +64,8 @@ async function useTemplate(slug: string) {
   toast("Routine created");
   router.push(`/routines/${r.id}`);
 }
-const items = (r: RoutineSummary) => [
-  { label: "Start", icon: "play", run: () => router.push(`/routines/${r.id}/start`) },
-  { label: "Edit", icon: "edit", run: () => router.push(`/routines/${r.id}/edit`) },
-  { label: "Duplicate", icon: "copy", run: () => dup.run(r.id) },
-  { label: "New routine based on this", icon: "layers", run: async () => { const n = await prompt("Name the new routine", { value: r.name + " v2", ok: "Create", text: "A copy you can change; this one stays as it is." }); if (n) { const x = await api.post("/routines", { fromRoutineId: r.id, name: n }); invalidate(["routines"]); toast(`${n} created`); router.push(`/routines/${x.id}/edit`); } } },
-  { label: r.pinned ? "Unpin" : "Pin to top", icon: "pin", run: () => { const msg = r.pinned ? "Routine unpinned" : "Routine pinned to top"; upd.run(r.id, { pinned: !r.pinned }).then(() => toast(msg)); } },
-  { label: "Move to folder", icon: "folder", run: () => moveTo(r) },
-  { label: r.archived ? "Restore from archive" : "Archive", icon: "archive", run: () => upd.run(r.id, { archived: !r.archived }).then(() => toast(r.archived ? "Routine restored" : "Routine archived")) },
-  { label: "Delete", icon: "trash", danger: true, sep: true, run: () => del(r) },
-];
+const menuFor = useRoutineMenu();
+const items = (r: RoutineSummary) => menuFor(r);
 // show the page once its data is in, all at once
 // the programs below are read here too, so they arrive with the routines rather than after them
 await loaded(routines, folders, ...(settings.value.features.programs ? [programs] : []));
