@@ -1,6 +1,12 @@
+<script lang="ts">
+import { reactive } from "vue";
+// Search, muscle group, filters, sort and how far the list is opened. Kept for the session only; the exercise pickers have their own.
+export const exercisesView = reactive({ q: "", group: "", equip: "", only: "" as "" | "mine" | "done" | "fav", sort: "used" as "used" | "name" | "recent", shown: 60 });
+</script>
+
 <script setup lang="ts">
 // The exercise library: search, filter by muscle group and equipment, your own exercises, favourites and most used first.
-import { computed, ref } from "vue";
+import { computed, ref, toRefs } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { GROUPS, EQUIPMENT, muscleName, groupOf } from "@motus/shared";
 import { useExercises, loaded } from "../api/queries";
@@ -17,7 +23,10 @@ import FilterRow from "../components/FilterRow.vue";
 const router = useRouter(), route = useRoute();
 const all = useExercises();
 // ?muscle=biceps (from a Home suggestion) opens on that muscle's group
-const q = ref(""), group = ref(route.query.muscle ? groupOf(String(route.query.muscle)) : ""), equip = ref(""), only = ref<"" | "mine" | "done" | "fav">(""), sort = ref<"used" | "name" | "recent">("used");
+// the filters live outside the component (below) so they survive opening an exercise and coming back, or visiting another tab
+const view = exercisesView;
+if (route.query.muscle) { Object.assign(view, { group: groupOf(String(route.query.muscle)), shown: 60 }); }
+const { q, group, equip, only, sort, shown } = toRefs(view);
 const creating = ref(false);
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ");
 const list = computed(() => {
@@ -29,11 +38,10 @@ const list = computed(() => {
     .sort((a, b) => sort.value === "name" ? a.name.localeCompare(b.name) : sort.value === "recent" ? (b.lastDoneAt ?? "").localeCompare(a.lastDoneAt ?? "") || a.name.localeCompare(b.name)
       : Number(b.favourite) - Number(a.favourite) || (b.timesDone ?? 0) - (a.timesDone ?? 0) || a.name.localeCompare(b.name));
 });
-const shown = ref(60);
 // muscle groups stay one tap away; everything else lives behind Filters so the page stays calm
 const filtersOpen = ref(false);
 const filterCount = computed(() => Number(!!equip.value) + Number(!!only.value) + Number(sort.value !== "used"));
-const clearFilters = () => { equip.value = ""; only.value = ""; sort.value = "used"; };
+const clearFilters = () => { equip.value = ""; only.value = ""; sort.value = "used"; shown.value = 60; };
 const GROUP_OPTS = GROUPS.map((g) => ({ value: g.id, label: g.name }));
 // show the page once its data is in, all at once
 await loaded(all);
