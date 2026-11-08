@@ -502,7 +502,9 @@ Every block is a card with its own header row (icon, title, at most one link).
 
 **Today** leads, in the theme's primary container: the one thing to do now (a workout in progress, else today's plan, else
 the program's next workout, else a suggestion, else "Start a workout"), with this week's days as a strip (trained, planned,
-today). A new account gets a way to begin instead.
+today). Several plans for today show as a list of equal rows, each with its own Start or Log (only the earliest one's button
+is filled). Tapping a day in the strip shows that day in the block (its plans, or whether you trained) with "Open in
+calendar" to that date. A new account gets a way to begin instead.
 
 **Default blocks**, in order: Streak (weeks on the weekly target, five weeks of training days as a grid), This week
 (workouts, time, volume, distance against last week, eight-week bars), Steps (Steps feature), Pinned goals (one block per

@@ -25,8 +25,9 @@ const fmt = useFmt();
 const view = ref<"calendar" | "list">(route.query.view === "list" ? "list" : "calendar");
 watch(view, (v) => router.replace({ query: v === "list" ? { view: "list" } : {} }));
 // where you were (month, chosen day), so coming Back from something you opened from here lands on the same day;
-// kept for this visit of the app only
-const memo = kept.v;
+// kept for this visit of the app only. A link to a day (?date=YYYY-MM-DD, e.g. from Home's week) opens on that day instead
+const qd = typeof route.query.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(route.query.date) ? route.query.date : null;
+const memo = qd ? { month: new Date(Number(qd.slice(0, 4)), Number(qd.slice(5, 7)) - 1, 1).getTime(), sel: qd } : kept.v;
 const month = ref(memo ? new Date(memo.month) : new Date(new Date().getFullYear(), new Date().getMonth(), 1));
 const first = computed(() => s.value.firstDay);
 const grid = computed(() => {
