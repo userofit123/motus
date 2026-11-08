@@ -22,7 +22,13 @@ export const useRoutines = (archived = false) => useQuery({ queryKey: ["routines
 export const useRoutine = (id: MaybeRef<string>) => useQuery({ queryKey: computed(() => ["routines", unref(id)]), queryFn: () => api.get(`/routines/${unref(id)}`), enabled: computed(() => !!unref(id) && unref(id) !== "new") });
 export const useFolders = () => useQuery({ queryKey: ["routines", "folders"], queryFn: () => api.get("/folders") });
 export const usePrograms = () => useQuery({ queryKey: ["routines", "programs"], queryFn: () => api.get<Program[]>("/programs") });
-export const usePreview = (id: MaybeRef<string>) => useQuery({ queryKey: computed(() => ["routines", "preview", unref(id)]), queryFn: () => api.get(`/routines/${unref(id)}/preview`), enabled: computed(() => !!unref(id)) });
+// settings: the start screen's Workout settings for this workout only, so the numbers shown are the ones the start
+// fills in; the last answer stays on screen while a changed one loads
+export const usePreview = (id: MaybeRef<string>, settings?: MaybeRef<Record<string, unknown>>) => {
+  const own = computed(() => { const o = unref(settings) ?? {}; return Object.keys(o).length ? JSON.stringify(o) : ""; });
+  return useQuery({ queryKey: computed(() => ["routines", "preview", unref(id), own.value]), queryFn: () => api.get(`/routines/${unref(id)}/preview`, own.value ? { settings: own.value } : undefined),
+    enabled: computed(() => !!unref(id)), placeholderData: (prev: unknown) => prev });
+};
 // a workout finished or cancelled here whose news is still waiting to be sent is over, whatever the server says meanwhile
 // client: for watchers that outlive any one screen (they have no component to find the query client through)
 export const useActive = (client?: QueryClient) => useQuery({ queryKey: ["workouts", "active"], queryFn: () => api.get<any>("/workouts/active").then((w) => (w && endedHere(w.id) ? null : w)), staleTime: 5_000 }, client);

@@ -1,13 +1,13 @@
 // Workouts: starting one (from a routine or empty), logging sets, skipping, reordering and replacing exercises,
 // finishing, logging a past workout, editing and duplicating, and the full detail with records and improvements.
-import { e1rm, ymd, liftedKg, LIFTED_SQL, routineProgression, structureChanges, type NextRule, type Tracking, type HomeRecord, type Workout, type WorkoutSummary } from "@motus/shared";
+import { e1rm, ymd, liftedKg, LIFTED_SQL, applyStructure, routineProgression, structureChanges, type NextRule, type Tracking, type WorkoutExercise, type HomeRecord, type Workout, type WorkoutSummary } from "@motus/shared";
 import type { Router, Ctx } from "../router";
 import type { Sql } from "../db";
-import { camel, id, optId, str, intOrNull, numOrNull, bool, oneOf, isoTime, secondsBetween, visible } from "../util";
+import { camel, id, optId, str, strList, intOrNull, numOrNull, bool, oneOf, isoTime, secondsBetween, visible } from "../util";
 import { uuidv7 } from "../ids";
 import { notFound, bad, HttpError } from "../errors";
 import { getSettings } from "./settings";
-import { buildPlan, loadRoutine, pendingReminders } from "./plan";
+import { buildPlan, loadRoutine, pendingReminders, withWorkoutOverrides } from "./plan";
 import { getExercises, exerciseSessions } from "./library";
 
 const KINDS = ["warmup", "normal", "drop", "failure"] as const;
@@ -363,9 +363,7 @@ export function workoutRoutes(r: Router) {
     if (routine || planned) {
       // the start screen's Workout settings for this workout only count here too ("Start from what you did last time",
       // "Last time's numbers come from"): until now the sets filled in from the saved defaults whatever was chosen
-      const own = Object.fromEntries(Object.entries(b.settings && typeof b.settings === "object" ? b.settings : {})
-        .filter(([k, v]) => k in settings.workout && typeof v === typeof (settings.workout as any)[k]));
-      const plan = await buildPlan(ctx.q, routine ?? planned, { ...settings, workout: { ...settings.workout, ...own } }, ymd(ctx.now()));
+      const plan = await buildPlan(ctx.q, routine ?? planned, withWorkoutOverrides(settings, b.settings), ymd(ctx.now()));
       // a deload week in a program: lighter working weights
       if (b.deloadPct) for (const e of plan.exercises) for (const s of e.sets) if (s.kind !== "warmup" && s.weightKg) { s.weightKg = Math.round((s.weightKg * (1 - Number(b.deloadPct) / 100)) / 1.25) * 1.25; s.adjusted = true; }
       const skip = new Set<string>(Array.isArray(b.skip) ? b.skip : []);
@@ -558,27 +556,57 @@ export function workoutRoutes(r: Router) {
 
   // the Finish screen's "Next time": what each routine exercise's progression rule will do at the next start, with
   // today's ticked sets as the newest session. The history is what the next start reads (this routine's sessions,
-  // today's among them) and the maths is the start's own (routineProgression), so the two can't disagree. A swapped
-  // exercise is left out: next time starts with the routine's one, which today says nothing about.
-  r.get("/workouts/:id/next-rules", async (ctx, p): Promise<NextRule[]> => {
+  // today's among them) and the maths is the start's own (routineProgression), so the two can't disagree. `changes`
+  // are the Finish screen's "Routine changes" switched on (structureChanges keys): the rules run on the routine as it
+  // will be after saving them, so a swapped exercise counts only when its swap is saved (then the rule runs on the one
+  // swapped in); otherwise next time starts with the routine's one, which today says nothing about.
+  r.get("/workouts/:id/next-rules", async (ctx, p, _b, qs): Promise<NextRule[]> => {
     const wid = id(p.id);
     const w = (await ctx.q.query("SELECT routine_id FROM workouts WHERE id = $1", [wid])).rows[0];
     if (!w) throw notFound("Workout not found");
     if (!w.routine_id || !(await getSettings(ctx.q, ctx.userId)).features.progression) return [];
     const routine = await loadRoutine(ctx.q, w.routine_id);
-    const res = new Map<string, any>((routine?.exercises ?? []).filter((e: any) => e.id && e.progression).map((e: any) => [e.id, e]));
-    if (!res.size) return [];
-    const wes = (await ctx.q.query("SELECT id, exercise_id, routine_exercise_id, status FROM workout_exercises WHERE workout_id = $1 ORDER BY position", [wid])).rows;
+    if (!routine?.exercises.some((e: any) => e.progression)) return [];
+    // the session as structureChanges/applyStructure read it, light: its exercises, then all its ticked sets in one query
+    const exs = (await ctx.q.query(
+      `SELECT we.id, we.exercise_id, we.routine_exercise_id, we.status, e.name FROM workout_exercises we JOIN exercises e ON e.id = we.exercise_id
+       WHERE we.workout_id = $1 ORDER BY we.position`, [wid])).rows;
+    const ticked = (await ctx.q.query(
+      `SELECT s.workout_exercise_id, s.kind, s.weight_kg, s.reps, s.duration_s, s.distance_m FROM workout_sets s JOIN workout_exercises we ON we.id = s.workout_exercise_id
+       WHERE we.workout_id = $1 AND s.done ORDER BY s.position`, [wid])).rows;
+    const done = { exercises: exs.map((e: any) => ({
+      id: e.id, exerciseId: e.exercise_id, routineExerciseId: e.routine_exercise_id, status: e.status, exercise: { name: e.name },
+      sets: ticked.filter((s: any) => s.workout_exercise_id === e.id).map((s: any) => ({ kind: s.kind, weightKg: s.weight_kg == null ? null : Number(s.weight_kg), reps: s.reps, durationS: s.duration_s, distanceM: s.distance_m == null ? null : Number(s.distance_m), done: true })),
+    })) as unknown as WorkoutExercise[] };
+    const accept = strList(typeof qs.changes === "string" && qs.changes ? qs.changes.split(",") : []);
+    const after = (accept.length && applyStructure(routine, done, accept)) || routine.exercises;
+    const res = new Map<string, any>(after.filter((e: any) => e.id && e.progression).map((e: any) => [e.id, e]));
+    const wes = done.exercises.filter((we) => {
+      const re = we.routineExerciseId ? res.get(we.routineExerciseId) : null;
+      return re && re.exerciseId === we.exerciseId && we.status !== "skipped" && we.sets.some((s) => s.done);
+    });
+    if (!wes.length) return [];
+    // each exercise's last 5 sessions in this routine before today, in one query
+    const hist = new Map<string, { sets: { kind: any; weightKg: number | null; reps: number | null }[] }[]>();
+    const rows = (await ctx.q.query(
+      `SELECT exercise_id, sets FROM (
+         SELECT we.exercise_id, w.started_at, row_number() OVER (PARTITION BY we.exercise_id ORDER BY w.started_at DESC) AS n,
+           coalesce(json_agg(json_build_object('kind', s.kind, 'weightKg', s.weight_kg, 'reps', s.reps) ORDER BY s.position) FILTER (WHERE s.id IS NOT NULL AND s.done), '[]') AS sets
+         FROM workout_exercises we JOIN workouts w ON w.id = we.workout_id LEFT JOIN workout_sets s ON s.workout_exercise_id = we.id
+         WHERE we.exercise_id = ANY($1::uuid[]) AND w.status = 'completed' AND w.routine_id = $2 AND w.id <> $3
+         GROUP BY w.id, we.id) x
+       WHERE n <= 5 ORDER BY started_at DESC`, [[...new Set(wes.map((we) => we.exerciseId))], w.routine_id, wid])).rows;
+    for (const r of rows) {
+      const list = hist.get(r.exercise_id) ?? [];
+      list.push({ sets: (r.sets as any[]).map((s) => ({ kind: s.kind, weightKg: s.weightKg == null ? null : Number(s.weightKg), reps: s.reps })) });
+      hist.set(r.exercise_id, list);
+    }
     const out: NextRule[] = [];
     for (const we of wes) {
-      const re = res.get(we.routine_exercise_id);
-      if (!re || re.exerciseId !== we.exercise_id || we.status === "skipped") continue;
-      const sets = (await ctx.q.query("SELECT kind, weight_kg, reps FROM workout_sets WHERE workout_exercise_id = $1 AND done ORDER BY position", [we.id])).rows
-        .map((s: any) => ({ kind: s.kind, weightKg: s.weight_kg == null ? null : Number(s.weight_kg), reps: s.reps }));
-      if (!sets.length) continue;
-      const before = (await exerciseSessions(ctx.q, re.exerciseId, 5, w.routine_id)).filter((s) => s.workoutId !== wid);
-      const r = routineProgression(re.progression, re.sets, [{ sets }, ...before]);
-      if (r && r.action !== "hold" && r.weightKg != null) out.push({ workoutExerciseId: we.id, exerciseId: re.exerciseId, name: re.exercise?.name ?? "", action: r.action, weightKg: r.weightKg, reps: r.reps });
+      const re = res.get(we.routineExerciseId!);
+      const sets = we.sets.filter((s) => s.done).map((s) => ({ kind: s.kind, weightKg: s.weightKg, reps: s.reps }));
+      const r = routineProgression(re.progression, re.sets, [{ sets }, ...(hist.get(we.exerciseId) ?? [])]);
+      if (r && r.action !== "hold" && r.weightKg != null) out.push({ workoutExerciseId: we.id, exerciseId: we.exerciseId, name: we.exercise?.name ?? "", action: r.action, weightKg: r.weightKg, reps: r.reps, reason: r.reason });
     }
     return out;
   });
@@ -639,7 +667,7 @@ export function workoutRoutes(r: Router) {
     // with "Always", so ignored): saveLayout saves today's list without the skipped ones.
     if (w.routine_id) {
       const { updateRoutineFromWorkout } = await import("./routines");
-      let accept: string[] = Array.isArray(b?.routineChanges) ? b.routineChanges.filter((x: unknown) => typeof x === "string") : [];
+      let accept = strList(b?.routineChanges);
       if (b?.saveLayout === true && !accept.length) {
         const [routine, done] = [await loadRoutine(ctx.q, w.routine_id), await loadWorkout(ctx.q, wid, ymd(ctx.now()))];
         if (routine && done) accept = structureChanges(routine, done).filter((c) => c.kind !== "skipped").map((c) => c.key);

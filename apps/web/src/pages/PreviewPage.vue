@@ -27,12 +27,13 @@ import { replacingWorkout } from "../workout/useWorkout";
 
 const route = useRoute(), router = useRouter();
 const id = computed(() => String(route.params.id));
-const pv = usePreview(id);
+const overrides = ref<Record<string, unknown>>({});
+// with this workout's own settings, so the numbers shown are the ones it starts with
+const pv = usePreview(id, overrides);
 const s = useSettings();
 const fmt = useFmt();
 const p = computed<any>(() => pv.data.value);
 const skip = ref<string[]>([]), order = ref<string[]>([]);
-const overrides = ref<Record<string, unknown>>({});
 const showSettings = ref(false), busy = ref(false);
 watch(p, (v) => { if (v && !order.value.length) order.value = v.exercises.map((e: any) => e.routineExerciseId); }, { immediate: true });
 // which exercise a reminder or note is about; routine-wide ones need no label

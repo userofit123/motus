@@ -61,6 +61,8 @@ export interface NextRule {
   action: "add" | "deload";
   weightKg: number;
   reps: number | null;
+  /** why the rule moves the weight, e.g. "Missed reps 3 times in a row" */
+  reason: string;
 }
 
 /** One way a session differed from its routine, as the Finish screen and a finished workout's "Update the routine
@@ -101,11 +103,14 @@ export function structureChanges(routine: RoutineShape, w: SessionShape): Struct
       continue;
     }
     const rName = r.exercise?.name ?? "An exercise";
+    // set counts change the routine's exercise: name it, and what was done in its place when swapped, so the row is
+    // right whether the swap is saved or not
+    const label = r.exerciseId !== e.exerciseId ? `${rName} (today: ${name})` : rName;
     if (!wasDone(e)) { notDone.push({ key: `skipped:${r.id}`, kind: "skipped", group: "notDone", text: `Skipped: ${rName}`, action: "Remove from the routine" }); continue; }
     if (r.exerciseId !== e.exerciseId) changed.push({ key: `swapped:${r.id}`, kind: "swapped", group: "changed", text: `Swapped: ${rName} for ${name}`, action: `Use ${name} in the routine` });
     const done = e.sets.filter((s) => s.done).length, planned = r.sets.length;
-    if (done > planned) changed.push({ key: `more:${r.id}`, kind: "more", group: "changed", text: `${name}: ${done} sets instead of ${planned}`, action: `Add ${plural(done - planned, "set")} to the routine` });
-    if (done < planned) notDone.push({ key: `fewer:${r.id}`, kind: "fewer", group: "notDone", text: `${name}: ${done} of ${planned} sets done`, action: `Keep ${plural(done, "set")} in the routine` });
+    if (done > planned) changed.push({ key: `more:${r.id}`, kind: "more", group: "changed", text: `${label}: ${done} sets instead of ${planned}`, action: `Add ${plural(done - planned, "set")} to the routine` });
+    if (done < planned) notDone.push({ key: `fewer:${r.id}`, kind: "fewer", group: "notDone", text: `${label}: ${done} of ${planned} sets done`, action: `Keep ${plural(done, "set")} in the routine` });
   }
   for (const r of routine.exercises) if (r.id && !inWorkout.has(r.id)) changed.push({ key: `removed:${r.id}`, kind: "removed", group: "changed", text: `Removed: ${r.exercise?.name ?? "an exercise"}`, action: "Remove from the routine" });
   // order: the routine's own exercises done today, today's sequence against the routine's
@@ -120,34 +125,42 @@ const setBody = (s: WorkoutExercise["sets"][number]): SetBody => ({ kind: s.kind
 
 /** The routine's exercises after saving the changes whose keys are in `accept` (the rest stay as the routine has them).
  * Structure only: exercises the routine already had keep their own settings, weights and reps (a set added copies the
- * exercise's last one); only an exercise added or swapped in takes today's ticked sets, as the routine has none for
- * it. Returns null when nothing asked for applies. */
+ * exercise's last one); only an exercise added or swapped in takes today's ticked numbers, as the routine has none
+ * for it (one swapped in keeps the routine's set count unless its fewer/more row is on too). An added exercise carries
+ * `fromWorkoutExerciseId` so the saver can point the workout exercise at the routine exercise it became. Returns null
+ * when nothing asked for applies. */
 export function applyStructure<R extends RoutineShape["exercises"][number]>(routine: { exercises: R[] }, w: SessionShape, accept: Iterable<string>): (R | Record<string, unknown>)[] | null {
   const ok = new Set(accept);
   const keys = new Set(structureChanges(routine, w).map((c) => c.key).filter((k) => ok.has(k)));
   if (!keys.size) return null;
   const { slot } = routineOf(routine, w);
   const today = new Map(w.exercises.map((e) => [slot(e)?.id, e] as const).filter(([k]) => k));
-  const fresh = (e: WorkoutExercise) => ({ exerciseId: e.exerciseId, superset: e.superset, restS: e.restS, restAfterS: e.restAfterS, repRestS: e.repRestS, sets: e.sets.filter((s) => s.done).map(setBody) });
+  const fresh = (e: WorkoutExercise) => ({ fromWorkoutExerciseId: e.id, exerciseId: e.exerciseId, superset: e.superset, restS: e.restS, restAfterS: e.restAfterS, repRestS: e.repRestS, sets: e.sets.filter((s) => s.done).map(setBody) });
   const routineItem = (r: R): R | Record<string, unknown> | null => {
     const id = r.id!;
     if (keys.has(`removed:${id}`) || keys.has(`skipped:${id}`)) return null;
     const e = today.get(id);
     if (!e) return r;
     const done = e.sets.filter((s) => s.done);
-    if (keys.has(`swapped:${id}`)) return { ...r, exerciseId: e.exerciseId, sets: done.map(setBody) };
     const sets = r.sets as Record<string, unknown>[];
+    if (keys.has(`swapped:${id}`)) {
+      const n = keys.has(`fewer:${id}`) || keys.has(`more:${id}`) ? done.length : sets.length;
+      // past today's last ticked set: its numbers again, as the kind of set the routine has there
+      return { ...r, exerciseId: e.exerciseId, sets: Array.from({ length: n }, (_, i) => (done[i] ? setBody(done[i]) : { ...setBody(done.at(-1)!), kind: (sets[i]?.kind as string) ?? "normal" })) };
+    }
     if (keys.has(`fewer:${id}`)) return { ...r, sets: sets.slice(0, done.length) };
     if (keys.has(`more:${id}`)) return { ...r, sets: [...sets, ...done.slice(sets.length).map((s) => ({ ...(sets.at(-1) ?? {}), kind: s.kind }))] };
     return r;
   };
-  // the order to build in: today's when asked for (exercises not in the workout keep their place after the one before
-  // them in the routine), else the routine's (an added exercise goes after the one before it today)
+  // the order to build in: today's when asked for (exercises not done today, whether skipped, with nothing ticked or not
+  // in the workout, keep their place after the one before them in the routine, as structureChanges compares only the
+  // done ones), else the routine's (an added exercise goes after the one before it today)
   type Item = { r?: R; e?: WorkoutExercise };
   let seq: Item[];
   const added = (e: WorkoutExercise) => !slot(e) && keys.has(`added:${e.id}`);
   if (keys.has("order")) {
-    seq = w.exercises.filter((e) => slot(e) || added(e)).map((e) => (slot(e) ? { r: slot(e) as R } : { e }));
+    const doneSlot = (e: WorkoutExercise) => (wasDone(e) ? slot(e) : undefined);
+    seq = w.exercises.filter((e) => doneSlot(e) || added(e)).map((e) => (doneSlot(e) ? { r: doneSlot(e) as R } : { e }));
     routine.exercises.forEach((r, i) => {
       if (seq.some((x) => x.r === r)) return;
       const prev = routine.exercises[i - 1];

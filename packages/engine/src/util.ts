@@ -14,6 +14,9 @@ export function id(v: unknown, what = "id"): string {
   return v;
 }
 export const optId = (v: unknown) => (v == null || v === "" ? null : id(v));
+/** A list of short strings from a request (keys of changes asked for and the like), capped in length and count. */
+export const strList = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string").map((x) => x.slice(0, 80)).slice(0, 200) : []);
+
 export function str(v: unknown, max = 2000, fallback = ""): string {
   if (v == null) return fallback;
   if (typeof v !== "string") throw bad("Expected text");

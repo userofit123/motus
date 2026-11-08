@@ -4,15 +4,14 @@ import { TEMPLATES, applyStructure, estimate, usualDuration, restAfterSet, restD
 import { SOURCE } from "@motus/exercise-data/meta";
 import type { Router, Ctx } from "../router";
 import type { Sql } from "../db";
-import { camel, id, optId, str, intOrNull, numOrNull, bool, oneOf, visible } from "../util";
+import { camel, id, optId, str, strList, intOrNull, numOrNull, bool, oneOf, visible } from "../util";
 import { uuidv7 } from "../ids";
 import { notFound, bad } from "../errors";
 import { getSettings } from "./settings";
-import { buildPlan, loadRoutine } from "./plan";
+import { buildPlan, loadRoutine, withWorkoutOverrides } from "./plan";
 import { DURATION_SQL, loadWorkout } from "./workouts";
 
 // a list of short strings from a request (change keys), anything else dropped
-const strList = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string").map((x) => x.slice(0, 80)).slice(0, 200) : []);
 
 const KINDS = ["warmup", "normal", "drop", "failure"] as const;
 
@@ -128,15 +127,27 @@ async function bodyFromWorkout(q: Sql, workoutId: string) {
 /** Save a session's structure to its routine, only the changes asked for (their keys from structureChanges): the
  * Finish screen's "Routine changes" and a finished workout's ⋮ "Update the routine from this", the same list and the
  * same save in both places. What each change does, and that today's numbers never go in, is applyStructure's
- * (@motus/shared), which the screens list from too. The routine as it was is kept in its history. */
-export async function updateRoutineFromWorkout(ctx: Ctx, routineId: string, workoutId: string, accept: string[]) {
+ * (@motus/shared), which the screens list from too. The routine as it was is kept in its history. An exercise added
+ * to the routine becomes the workout exercise's own routine exercise, so the change isn't listed (or saved) again.
+ * True when the routine changed. */
+export async function updateRoutineFromWorkout(ctx: Ctx, routineId: string, workoutId: string, accept: string[]): Promise<boolean> {
   const routine = await loadRoutine(ctx.q, routineId);
   const w = await loadWorkout(ctx.q, workoutId, ymd(ctx.now()));
-  if (!routine || !w) return;
+  if (!routine || !w) return false;
   const body = applyStructure(routine, w, accept);
-  if (!body) return;
+  if (!body) return false;
+  const links: [string, string][] = [];
+  const items = body.map((x: any) => {
+    if (!x.fromWorkoutExerciseId) return x;
+    const { fromWorkoutExerciseId, ...rest } = x, reId = uuidv7();
+    links.push([fromWorkoutExerciseId, reId]);
+    return { ...rest, id: reId };
+  });
   await snapshot(ctx, routineId);
-  await writeRoutineBody(ctx, routineId, body);
+  await writeRoutineBody(ctx, routineId, items);
+  for (const [weId, reId] of links) await ctx.q.query("UPDATE workout_exercises SET routine_exercise_id = $2 WHERE id = $1 AND workout_id = $3", [weId, reId, workoutId]);
+  if (links.length) ctx.changed("workout");
+  return true;
 }
 
 export function routineRoutes(r: Router) {
@@ -148,10 +159,13 @@ export function routineRoutes(r: Router) {
     return routine;
   });
 
-  r.get("/routines/:id/preview", async (ctx, p) => {
+  // `settings`: the start screen's Workout settings for this workout only (JSON), as the start will apply them
+  r.get("/routines/:id/preview", async (ctx, p, _b, qs) => {
     const routine = await loadRoutine(ctx.q, id(p.id));
     if (!routine) throw notFound("Routine not found");
-    const settings = await getSettings(ctx.q, ctx.userId);
+    let own: unknown = null;
+    try { own = qs.settings ? JSON.parse(String(qs.settings).slice(0, 5000)) : null; } catch { throw bad("Unreadable settings"); }
+    const settings = withWorkoutOverrides(await getSettings(ctx.q, ctx.userId), own);
     const plan = await buildPlan(ctx.q, routine, settings, ymd(ctx.now()));
     const stats = (await ctx.q.query(
       `SELECT (SELECT count(*) FROM workouts w WHERE w.routine_id = r.id AND w.status = 'completed') AS n,
@@ -228,10 +242,15 @@ export function routineRoutes(r: Router) {
   // save a finished workout's structure to its routine (its ⋮ menu: "Update the routine from this"), never its numbers
   r.post("/routines/:id/from-workout", async (ctx, p, b) => {
     const rid = id(p.id);
+    // older apps sent no list (they saved everything): saying so beats an "ok" that changed nothing
+    if (!Array.isArray(b?.changes)) throw bad("Update the app to save routine changes");
     if (!(await ctx.q.query("SELECT 1 FROM routines WHERE id = $1", [rid])).rows.length) throw notFound("Routine not found");
-    await updateRoutineFromWorkout(ctx, rid, id(b.workoutId), strList(b.changes));
-    ctx.changed("routine");
-    return { ok: true };
+    const w = (await ctx.q.query("SELECT routine_id FROM workouts WHERE id = $1", [id(b.workoutId)])).rows[0];
+    if (!w) throw notFound("Workout not found");
+    if (w.routine_id !== rid) throw bad("This workout wasn't done from this routine");
+    const saved = await updateRoutineFromWorkout(ctx, rid, id(b.workoutId), strList(b.changes));
+    if (saved) ctx.changed("routine");
+    return { ok: true, saved };
   });
 
   r.del("/routines/:id", async (ctx, p) => {

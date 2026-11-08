@@ -4,7 +4,7 @@
 // weight change in one list: progression rules' own, and a step up where the top of the rep range was reached, each of
 // those can be switched off) and how this session differed from the routine (listed, each saved only when switched
 // on). Then how it felt, notes, body weight.
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { readyForMore, structureChanges, workoutScore, workoutSoFar, type MoreWeight, type NextRule, type Routine, type StructureChange, type WorkoutExercise } from "@motus/shared";
 import { useWorkout, endWorkout, finishDraft } from "./useWorkout";
@@ -58,10 +58,18 @@ const vsLast = computed(() => {
 const routine = useRoutine(computed(() => w.value.routineId ?? ""));
 const routineEx = computed(() => new Map(((routine.data.value as Routine | undefined)?.exercises ?? []).filter((r) => r.id).map((r) => [r.id!, r])));
 // what each progression rule will do at the next start, worked out by the engine as the start does (it needs the
-// routine's earlier sessions). Offline it stays empty: the rules still apply, they just aren't listed
+// routine's earlier sessions), on the routine as the switched-on "Routine changes" leave it: a swap saved puts the rule
+// on the exercise swapped in, set counts saved change its targets. Asked again when those switches change; offline it
+// stays empty: the rules still apply, they just aren't listed
 const rules = ref<NextRule[]>([]);
+const ruleKeys = computed(() => d.routineChanges.filter((k) => /^(swapped|more|fewer):/.test(k)).sort().join(","));
+let asked = 0;
 if (W.settings.value.features.progression && w.value.routineId) {
-  void settle().then(() => api.get(`/workouts/${w.value.id}/next-rules`)).then((r) => { rules.value = r as NextRule[]; }).catch(() => {});
+  watch(ruleKeys, (keys) => {
+    const n = ++asked;
+    void settle().then(() => api.get(`/workouts/${w.value.id}/next-rules`, keys ? { changes: keys } : undefined))
+      .then((r) => { if (n === asked) rules.value = r as NextRule[]; }).catch(() => {});
+  }, { immediate: true });
 }
 const ruled = computed(() => new Set(rules.value.map((r) => r.workoutExerciseId)));
 const names = (xs: string[]) => (xs.length > 3 ? `${xs.length} exercises` : xs.length > 1 ? `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}` : xs[0] ?? "");
@@ -70,27 +78,30 @@ const names = (xs: string[]) => (xs.length > 3 ? `${xs.length} exercises` : xs.l
 // its weight is left out here: its row below says what it starts with)
 const startsFrom = computed(() => {
   const wo = W.settings.value.workout;
+  // a routine fills in from its own last time first; another workout's only where it has none for the exercise
   if (!w.value.routineId) {
     if (!wo.prefillFromLast) return { t: "Routines start from their own numbers", s: "Today's numbers show beside each set next time" };
     return wo.prefillScope === "routine"
       ? { t: "Not used to fill in a routine", s: "Routines fill in from their own last time (Settings → Workout)" }
-      : { t: "Today's weights and reps fill in next time", s: "When you next do these exercises, in any routine" };
+      : { t: "Today's weights and reps fill in next time", s: "In a routine only where it hasn't done the exercise itself yet" };
   }
   if (!wo.prefillFromLast) return { t: "Starts from the routine's numbers", s: "Today's numbers show beside each set" };
   const done = w.value.exercises.filter((e) => e.status !== "skipped" && e.sets.some((x) => x.done) && !ruled.value.has(e.id))
     .map((e) => routineEx.value.get(e.routineExerciseId ?? "")).filter((r): r is NonNullable<typeof r> => !!r);
   const fixed = done.filter((r) => r.prefill === "target").map((r) => r.exercise?.name ?? "");
   if (fixed.length && fixed.length === done.length) return { t: "Starts from the routine's numbers", s: "Each of these exercises always starts with the routine's numbers" };
-  const sameRoutine = wo.prefillScope === "routine" || (done.length > 0 && done.every((r) => r.prefillScope === "routine"));
+  // today becomes this routine's own last time, which comes first whatever "Last time's numbers come from" says
   return {
     t: fixed.length ? `Starts from today's weights and reps, except ${names(fixed)} (always start${fixed.length === 1 ? "s" : ""} from the routine's numbers)` : "Starts from today's weights and reps",
-    s: sameRoutine ? "What you did fills in next time you do this routine" : "What you did fills in next time, unless another workout with these exercises comes first",
+    s: "What you did fills in next time you do this routine",
   };
 });
 // the weight step: the exercise's own (its settings), else the routine exercise's progression step, else Settings'.
-// Where a progression rule moves that routine exercise's weight next time, no suggestion: the rule decides
+// Where a progression rule moves that routine exercise's weight next time, no suggestion: the rule decides. An
+// exercise swapped in has the rule only when its swap is switched on (else next time starts with the routine's one)
 const stepFor = (e: WorkoutExercise): number | null => {
-  const re = e.routineExerciseId ? routineEx.value.get(e.routineExerciseId) : undefined;
+  const slot = e.routineExerciseId ? routineEx.value.get(e.routineExerciseId) : undefined;
+  const re = slot && (slot.exerciseId === e.exerciseId || d.routineChanges.includes(`swapped:${slot.id}`)) ? slot : undefined;
   if (re?.progression && W.settings.value.features.progression) return null;
   return e.exercise?.incrementKg || re?.progression?.incrementKg || W.incKg.value;
 };
@@ -108,6 +119,8 @@ function toggleMore(id: string) {
   const i = d.skipMore.indexOf(id);
   if (i >= 0) d.skipMore.splice(i, 1); else d.skipMore.push(id);
 }
+// why the rule moves the weight ("missed reps 3 times in a row"); an older server only says which way
+const ruleWhy = (r: NextRule) => (r.reason ? r.reason[0]!.toLowerCase() + r.reason.slice(1) : r.action === "add" ? "add weight" : "lower weight");
 const range = (m: { reps: number; topReps: number }) => m.reps === m.topReps ? `${m.topReps}` : `${m.reps}-${m.topReps}`;
 const next = (kg: number, reps: number | null) => `${fmt.value.w(kg)} ${fmt.value.wu}${reps ? ` × ${reps}` : ""}`;
 // how this session differed from the routine, each change saved only when switched on
@@ -155,7 +168,7 @@ async function finish() {
       <template v-for="x in nextRows" :key="x.id">
         <div v-if="x.rule" class="li"><Icon :name="x.rule.action === 'add' ? 'arrowUp' : 'arrowDown'" :size="18" class="fin-i" :class="x.rule.action === 'add' ? 'pos' : 'neg'" />
           <div class="grow" style="min-width:0"><div class="t ellipsis">{{ x.rule.name }}</div>
-            <div class="s">Rule: {{ x.rule.action === "add" ? "add weight" : "lower weight" }} · next time <b class="fin-next">{{ next(x.rule.weightKg, x.rule.reps) }}</b></div></div></div>
+            <div class="s">Rule: {{ ruleWhy(x.rule) }} · next time <b class="fin-next">{{ next(x.rule.weightKg, x.rule.reps) }}</b></div></div></div>
         <label v-else-if="x.m" class="tgl"><Icon name="arrowUp" :size="18" class="fin-i pos" />
           <div class="grow" style="min-width:0"><div class="t ellipsis">{{ x.m.name }}</div>
             <div class="s">{{ x.m.topReps }} reps in every set at {{ fmt.w(x.m.fromKg) }} {{ fmt.wu }} · next time <b class="fin-next">{{ next(x.m.toKg, x.m.reps) }}</b></div></div>

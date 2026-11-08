@@ -91,6 +91,29 @@ describe("applyStructure", () => {
     const out = applyStructure(routine, w2, ["more:rb", "order"])!;
     expect(out.map((e: any) => [e.exerciseId, e.sets.map((s: any) => s.weightKg)])).toEqual([["B", [140, 140]], ["A", [100, 100]]]);
   });
+  it("gives an exercise swapped in today's numbers but the routine's set count, unless fewer/more is on too", () => {
+    // A (2 sets) swapped for X with 1 set ticked; B (1 set) swapped for Y with 2 ticked
+    const w3 = { exercises: [
+      ex({ name: "X", exerciseId: "X", routineExerciseId: "ra", sets: [set({ weightKg: 40, reps: 8 })] }),
+      ex({ name: "Y", exerciseId: "Y", routineExerciseId: "rb", sets: [set({ weightKg: 60, reps: 6 }), set({ weightKg: 62, reps: 6 })] })] };
+    const sets = (out: any[]) => out.map((e) => [e.exerciseId, e.sets.map((s: any) => s.weightKg)]);
+    expect(sets(applyStructure(routine, w3, ["swapped:ra", "swapped:rb"])!)).toEqual([["X", [40, 40]], ["Y", [60]]]);
+    expect(sets(applyStructure(routine, w3, ["swapped:ra", "fewer:ra", "swapped:rb", "more:rb"])!)).toEqual([["X", [40]], ["Y", [60, 62]]]);
+    // the set-count rows name the routine's exercise, with what was done in its place
+    expect(structureChanges(routine, w3).filter((c) => c.kind === "fewer" || c.kind === "more").map((c) => c.text))
+      .toEqual(["B (today: Y): 2 sets instead of 1", "A (today: X): 1 of 2 sets done"]);
+  });
+  it("keeps exercises not done today in their routine place when following today's order", () => {
+    const r3 = { exercises: ["a", "b", "c", "d"].map((k) => ({ id: `r${k}`, exerciseId: k.toUpperCase(), exercise: { name: k.toUpperCase() }, sets: [{ kind: "normal" }] })) };
+    // today: B skipped but listed first, then D, A, C done
+    const w4 = { exercises: [
+      ex({ name: "B", exerciseId: "B", routineExerciseId: "rb", status: "skipped", sets: [set({ done: false })] }),
+      ex({ name: "D", exerciseId: "D", routineExerciseId: "rd", sets: [set({})] }),
+      ex({ name: "A", exerciseId: "A", routineExerciseId: "ra", sets: [set({})] }),
+      ex({ name: "C", exerciseId: "C", routineExerciseId: "rc", sets: [set({})] })] };
+    expect(structureChanges(r3, w4).map((c) => c.key)).toContain("order");
+    expect(applyStructure(r3, w4, ["order"])!.map((e: any) => e.exerciseId)).toEqual(["D", "A", "B", "C"]);
+  });
 });
 
 describe("the old routine update setting", () => {

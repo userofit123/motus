@@ -247,6 +247,10 @@ describe("updating a routine from a workout", () => {
     await call(C, "POST", `/routines/${r.id}/from-workout`, { workoutId: w.id, changes: [`fewer:${rid}`] });
     // one set ticked today: the routine keeps one, at its own 50, not today's 55
     expect((await call(C, "GET", `/routines/${r.id}`)).exercises[0].sets.map((s: any) => s.weightKg)).toEqual([50]);
+ 
+    // the start preview follows this workout's own "Start from what you did last time", as the start will
+    expect((await call(C, "GET", `/routines/${r.id}/preview`)).exercises[0].sets[0].weightKg).toBe(55);
+    expect((await call(C, "GET", `/routines/${r.id}/preview`, undefined, { settings: JSON.stringify({ prefillFromLast: false }) })).exercises[0].sets[0].weightKg).toBe(50);
   });
 
   it("gives a swapped exercise today's numbers, treats one with nothing ticked as skipped, and ignores the old updateRoutine", async () => {
@@ -277,7 +281,48 @@ describe("updating a routine from a workout", () => {
   });
 });
 
+describe("saving routine changes twice", () => {
+  it("adds an added exercise once: saved, it belongs to the routine and isn't listed again", async () => {
+    const C = uuidv7();
+    await eng.db.admin.query("INSERT INTO users (id, username, display_name) VALUES ($1,'twice-tester','C')", [C]);
+    const ex = await call(C, "GET", "/exercises");
+    const r = await call(C, "POST", "/routines", { name: "Twice", exercises: [{ exerciseId: ex[0].id, sets: [{ kind: "normal", reps: 5, weightKg: 50 }] }] });
+    const other = await call(C, "POST", "/routines", { name: "Other", exercises: [] });
+    const w = await call(C, "POST", "/workouts/start", { routineId: r.id });
+    await call(C, "PUT", `/workout-sets/${w.exercises[0].sets[0].id}`, { weightKg: 50, reps: 5, done: true });
+    await call(C, "POST", `/workouts/${w.id}/exercises`, { exerciseId: ex[1].id, sets: [{ kind: "normal", reps: 8, weightKg: 20, done: true }] });
+    await call(C, "POST", `/workouts/${w.id}/finish`, {});
+    const added = (await call(C, "GET", `/workouts/${w.id}`)).exercises[1].id;
+    const save = { workoutId: w.id, changes: [`added:${added}`] };
+    expect((await call(C, "POST", `/routines/${r.id}/from-workout`, save)).saved).toBe(true);
+    expect((await call(C, "POST", `/routines/${r.id}/from-workout`, save)).saved).toBe(false);
+    const after = await call(C, "GET", `/routines/${r.id}`);
+    expect(after.exercises.map((e: any) => e.exerciseId)).toEqual([ex[0].id, ex[1].id]);
+    expect((await call(C, "GET", `/workouts/${w.id}`)).exercises[1].routineExerciseId).toBe(after.exercises[1].id);
+    // an older app's request without a list, and a workout from another routine, are refused plainly
+    expect(await status(C, "POST", `/routines/${r.id}/from-workout`, { workoutId: w.id })).toBe(400);
+    expect(await status(C, "POST", `/routines/${other.id}/from-workout`, save)).toBe(400);
+  });
+});
+
 describe("next time's progression rules", () => {
+  it("counts a swapped exercise only when its swap is saved, with the rule's reason", async () => {
+    const C = uuidv7();
+    await eng.db.admin.query("INSERT INTO users (id, username, display_name) VALUES ($1,'swap-rule-tester','C')", [C]);
+    await call(C, "PUT", "/settings", { features: { progression: true } });
+    const ex = await call(C, "GET", "/exercises");
+    const r = await call(C, "POST", "/routines", { name: "SwapRule", exercises: [
+      { exerciseId: ex[0].id, progression: { kind: "linear", incrementKg: 2.5 }, sets: [{ kind: "normal", reps: 5, weightKg: 60 }] }] });
+    const w = await call(C, "POST", "/workouts/start", { routineId: r.id });
+    // swapped keeping its place in the routine (as structureChanges' "Swapped" rows are)
+    await eng.db.admin.query("UPDATE workout_exercises SET exercise_id = $2 WHERE id = $1", [w.exercises[0].id, ex[1].id]);
+    await call(C, "PUT", `/workout-sets/${w.exercises[0].sets[0].id}`, { weightKg: 40, reps: 5, done: true });
+    expect(await call(C, "GET", `/workouts/${w.id}/next-rules`)).toEqual([]);
+    const rid = (await call(C, "GET", `/routines/${r.id}`)).exercises[0].id;
+    const rules = await call(C, "GET", `/workouts/${w.id}/next-rules`, undefined, { changes: `swapped:${rid}` });
+    expect(rules.map((x: any) => [x.exerciseId, x.action, x.weightKg, x.reason])).toEqual([[ex[1].id, "add", 42.5, "All target reps done"]]);
+  });
+
   it("says on Finish what the rule will do at the next start, and the start does just that", async () => {
     const C = uuidv7();
     await eng.db.admin.query("INSERT INTO users (id, username, display_name) VALUES ($1,'rule-tester','C')", [C]);

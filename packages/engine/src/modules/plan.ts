@@ -83,6 +83,15 @@ function matchPrev(kinds: SetKind[], lastSets: any[]) {
   });
 }
 
+/** The saved settings with a workout's own Workout settings over them (the start screen's, for this workout only:
+ * "Start from what you did last time", "Last time's numbers come from" and the rest), only known keys of the right
+ * type. Used by the start and its preview alike, so the preview shows the numbers the workout will start with. */
+export function withWorkoutOverrides(settings: Settings, raw: unknown): Settings {
+  const own = Object.fromEntries(Object.entries(raw && typeof raw === "object" ? raw : {})
+    .filter(([k, v]) => k in settings.workout && typeof v === typeof (settings.workout as any)[k]));
+  return { ...settings, workout: { ...settings.workout, ...own } };
+}
+
 export async function buildPlan(q: Sql, routine: any, settings: Settings, today: string): Promise<{ exercises: PlannedExercise[]; reminders: Reminder[]; notes: Note[]; estimate: ReturnType<typeof estimate> }> {
   const exIds = routine.exercises.map((e: any) => e.exerciseId);
   const reminders = await pendingReminders(q, { routineId: routine.id, exerciseIds: exIds, today });

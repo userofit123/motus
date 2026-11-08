@@ -72,7 +72,7 @@ async function saveAsRoutine() {
 }
 // the same list and the same save as the Finish screen's "Routine changes": each difference from the routine with its
 // own switch, structure only (never this session's weights and reps)
-const routineSheet = ref<{ changes: StructureChange[]; picked: string[] } | null>(null);
+const routineSheet = ref<{ changes: StructureChange[]; picked: string[] } | null>(null), savingRoutine = ref(false);
 async function updateRoutine() {
   try {
     const changes = structureChanges(await api.get(`/routines/${w.value.routineId}`), w.value);
@@ -80,12 +80,14 @@ async function updateRoutine() {
     routineSheet.value = { changes, picked: [] };
   } catch (e) { toastError(e); }
 }
+// one save at a time: a second tap while the first is on its way would save the same changes again
 async function saveRoutineChanges() {
-  const r = routineSheet.value; if (!r?.picked.length) return;
+  const r = routineSheet.value; if (!r?.picked.length || savingRoutine.value) return;
+  savingRoutine.value = true;
   try {
     await api.post(`/routines/${w.value.routineId}/from-workout`, { workoutId: id.value, changes: r.picked });
-    routineSheet.value = null; invalidate(["routines"]); toast("Routine updated");
-  } catch (e) { toastError(e); }
+    routineSheet.value = null; invalidate(["routines", "workouts"]); toast("Routine updated");
+  } catch (e) { toastError(e); } finally { savingRoutine.value = false; }
 }
 async function repeat() {
   try {
@@ -200,7 +202,7 @@ await loaded(q);
     <ExercisePicker v-if="adding" multi @close="adding = false" @pick="addExercises" />
     <Sheet v-if="routineSheet" title="Update the routine" @close="routineSheet = null">
       <RoutineChanges v-model="routineSheet.picked" :changes="routineSheet.changes" />
-      <template #foot><button class="btn o" @click="routineSheet = null">Cancel</button><button class="btn" :disabled="!routineSheet.picked.length" @click="saveRoutineChanges">Save to the routine</button></template>
+      <template #foot><button class="btn o" @click="routineSheet = null">Cancel</button><button class="btn" :disabled="!routineSheet.picked.length || savingRoutine" @click="saveRoutineChanges">Save to the routine</button></template>
     </Sheet>
   </div>
   <div v-else class="page"><div class="empty">{{ q.isError.value ? "Workout not found" : "Loading…" }}</div></div>
