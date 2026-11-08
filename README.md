@@ -32,7 +32,7 @@ Log workouts, follow routines, watch your progress, and keep your data on your o
   Backups (optionally encrypted), export to JSON / CSV, and import from Strong, Hevy and FitNotes.
 - **Clean by default:** extras such as RPE, supersets, plate calculator, warm-up sets, body measurements, progress photos,
   achievements and more stay hidden until you switch them on in Settings → Features.
-- **Make it look like you:** dark and light themes, accent colours and density in the Appearance panel.
+- **Make it look like you:** light or dark, 18 colour sets or your own, backgrounds, corners, density and fonts ([see them](#screenshots)).
 
 ## Screenshots
 
@@ -61,6 +61,11 @@ On the phone:
   <img src="docs/screenshots/phone-activity.webp" width="15.5%" alt="A recorded walk">
   <img src="docs/screenshots/phone-goals.webp" width="15.5%" alt="Goals">
 </p>
+
+Make it yours: 18 colour sets or one built from any colour you pick, light or dark, and 10 backgrounds, plus corners,
+density and fonts in the Appearance panel.
+
+<img src="docs/screenshots/looks.webp" width="100%" alt="Home in eight different looks: Ocean, Forest, Aurora, Rose, Gold, Midnight, Mono and Candy">
 
 ## Install
 
