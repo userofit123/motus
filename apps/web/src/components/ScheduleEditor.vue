@@ -16,6 +16,7 @@ import DatePicker from "./DatePicker.vue";
 import TimePicker from "./TimePicker.vue";
 import ChoiceTiles from "./ChoiceTiles.vue";
 import WhenPicker from "./WhenPicker.vue";
+import Icon from "./Icon.vue";
 
 const props = defineProps<{ schedule: any }>();
 const emit = defineEmits<{ close: [] }>();
@@ -75,23 +76,34 @@ async function save() {
 
 <template>
   <Sheet :title="pick ? 'Plan a workout' : 'Schedule'" @close="emit('close')">
+    <!-- three sections, each a heading over its own card (as GoalSheet's sections), so the groups read at a glance:
+         what is planned, which days, and the optional time and reminder; the summary closes it as a banner -->
     <template v-if="pick">
-      <div v-if="showRoutine" class="fld"><label>Routine</label>
-        <AppSelect v-model="whatRoutine" :options="routineOpts" icon="dumbbell" placeholder="Choose a routine" title="Routine" /></div>
-      <div v-if="showRoutine && showActivity" class="or" aria-hidden="true">or</div>
-      <div v-if="showActivity" class="fld"><label>Activity</label>
-        <AppSelect v-model="whatActivity" :options="activityOpts" icon="walk" placeholder="Choose an activity" title="Activity" /></div>
+      <div class="sh"><h2>What</h2></div>
+      <div class="card">
+        <div v-if="showRoutine" class="fld"><label>Routine</label>
+          <AppSelect v-model="whatRoutine" :options="routineOpts" icon="dumbbell" placeholder="Choose a routine" title="Routine" /></div>
+        <div v-if="showRoutine && showActivity" class="or" aria-hidden="true">or</div>
+        <div v-if="showActivity" class="fld"><label>Activity</label>
+          <AppSelect v-model="whatActivity" :options="activityOpts" icon="walk" placeholder="Choose an activity" title="Activity" /></div>
+      </div>
     </template>
-    <div class="fld"><label>{{ repeats ? "Starting" : "When" }}</label><WhenPicker v-model="f.startDate" :title="repeats ? 'Starting' : 'When'" /></div>
-    <div class="fld"><label>Repeats</label><ChoiceTiles v-model="f.rule" :options="REPEATS" compact label="Repeats" /></div>
-    <div v-if="f.rule === 'weekly'" class="fld"><label>On</label><ChoiceTiles v-model="f.days" :options="DAYS" multiple compact :cols="7" label="On" /></div>
-    <div v-if="f.rule === 'interval'" class="fld"><label>Every</label><div class="row"><input v-model.number="f.intervalDays" type="number" min="1" max="60" style="width:90px" /><span>days</span></div></div>
-    <div v-if="repeats" class="fld"><label>Until (optional)</label><DatePicker v-model="f.endDate" :min="f.startDate" clearable placeholder="No end" title="Until" /></div>
-    <div class="fld"><label>Time (optional)</label><TimePicker v-model="f.timeOfDay" clearable placeholder="No time" /></div>
-    <!-- a reminder counts back from the time, so it's offered only once there is one -->
-    <label v-if="f.timeOfDay" class="tgl"><div class="grow"><div class="t">Remind me</div><div class="s">A notification before it starts</div></div><span class="tg"><input v-model="f.remind" type="checkbox" /></span></label>
-    <div v-if="f.timeOfDay && f.remind" class="fld"><label>How long before</label><AppSelect v-model="f.remindMin" :options="REMIND" title="How long before" /></div>
-    <p class="tiny" aria-live="polite">{{ summary }}</p>
+    <div class="sh"><h2>When</h2></div>
+    <div class="card">
+      <div class="fld"><label>{{ repeats ? "Starting" : "Day" }}</label><WhenPicker v-model="f.startDate" :title="repeats ? 'Starting' : 'Day'" /></div>
+      <div class="fld"><label>Repeats</label><ChoiceTiles v-model="f.rule" :options="REPEATS" compact label="Repeats" /></div>
+      <div v-if="f.rule === 'weekly'" class="fld"><label>On</label><ChoiceTiles v-model="f.days" :options="DAYS" multiple compact :cols="7" label="On" /></div>
+      <div v-if="f.rule === 'interval'" class="fld"><label>Every</label><div class="row"><input v-model.number="f.intervalDays" type="number" min="1" max="60" style="width:90px" /><span>days</span></div></div>
+      <div v-if="repeats" class="fld"><label>Until (optional)</label><DatePicker v-model="f.endDate" :min="f.startDate" clearable placeholder="No end" title="Until" /></div>
+    </div>
+    <div class="sh"><h2>Time and reminder</h2></div>
+    <div class="card">
+      <div class="fld"><label>Time (optional)</label><TimePicker v-model="f.timeOfDay" clearable placeholder="No time" /></div>
+      <!-- a reminder counts back from the time, so it's offered only once there is one -->
+      <label v-if="f.timeOfDay" class="tgl"><div class="grow"><div class="t">Remind me</div><div class="s">A notification before it starts</div></div><span class="tg"><input v-model="f.remind" type="checkbox" /></span></label>
+      <div v-if="f.timeOfDay && f.remind" class="fld"><label>How long before</label><AppSelect v-model="f.remindMin" :options="REMIND" title="How long before" /></div>
+    </div>
+    <div class="banner spt sum" aria-live="polite"><Icon name="calendar" :size="18" />{{ summary }}</div>
     <template #foot><button class="btn o" @click="emit('close')">Cancel</button><button class="btn" :disabled="!ready" @click="save">{{ pick ? "Plan" : "Save" }}</button></template>
   </Sheet>
 </template>
@@ -100,4 +112,6 @@ async function save() {
 /* "or" between the routine and the activity lists: a small muted word centred between two hairlines, plainly not a button */
 .or { display: flex; align-items: center; gap: 10px; margin: calc(var(--hg) * -.4) 0 var(--hg); font-size: var(--fs-xs); font-weight: 700; letter-spacing: .7px; text-transform: uppercase; color: var(--tx2); }
 .or::before, .or::after { content: ""; flex: 1; height: 1px; background: var(--ol); }
+/* the summary ends the sheet: the body's own bottom padding is the gap, not a banner's usual space below */
+.sum { margin-bottom: 0; }
 </style>
