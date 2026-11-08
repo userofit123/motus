@@ -101,7 +101,10 @@ function key(e: KeyboardEvent) {
 </template>
 
 <style scoped>
-.asg { padding: 8px 12px 4px; font-size: var(--fs-xs); font-weight: 700; letter-spacing: .7px; text-transform: uppercase; color: var(--tx2); }
+/* a heading is a label, not a row: small muted capitals, a rule and air above (except the first), options indented under it */
+.asg { padding: 10px 12px 4px; font-size: var(--fs-xs); font-weight: 700; letter-spacing: .7px; text-transform: uppercase; color: var(--tx2); cursor: default; user-select: none; }
+.asg:not(:first-child) { margin-top: 6px; border-top: 1px solid var(--ol); padding-top: 12px; border-radius: 0; }
+.asg ~ .aso { padding-left: 20px; }
 .aso { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 12px; border-radius: 10px; font-size: var(--fs); line-height: 1.3; color: var(--tx); cursor: pointer; }
 .aso.hi { background: var(--s2); }
 .aso.sel { color: var(--acc); font-weight: 600; }
@@ -115,4 +118,6 @@ function key(e: KeyboardEvent) {
 /* a sheet on the phone: rows big enough for a thumb */
 .sh_b .asl { margin: 0 -10px; }
 .sh_b .aso { min-height: var(--lmh); padding: var(--lpy) 12px; font-size: var(--fs-lg); border-radius: var(--r-sm); }
+.sh_b .asg ~ .aso { padding-left: 20px; }
+.sh_b .asg { padding-left: 12px; font-size: var(--fs-sm); }
 </style>
