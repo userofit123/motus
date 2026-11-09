@@ -7,7 +7,7 @@
 // and it is saved as a routine too only when asked.
 import { computed, nextTick, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { usesWeight, usesReps, usesDuration, usesDistance, musclesWorked, estimate, restAfterSet, dropWeightKg, restDefaultsOf, duration, muscleName, toM, fromM, muscleSets, type Progression } from "@motus/shared";
+import { usesWeight, usesReps, usesDuration, usesDistance, musclesWorked, estimate, restAfterSet, dropWeightKg, restDefaultsOf, clampStartReps, duration, muscleName, toM, fromM, muscleSets, type Progression } from "@motus/shared";
 import { useRoutine, useRoutines, useFolders, useExercises, useSettings, useTemplates, loaded } from "../api/queries";
 import { api, mediaUrl } from "../api/client";
 import { invalidate } from "../api/live";
@@ -175,9 +175,14 @@ function setSummary(e: any) {
   const drops = e.sets.length - work.length - warm;
   const t = tr(e), f = fmt.value;
   const same = (k: string) => work.length && work.every((x: any) => x[k] === work[0][k]);
-  const reps = (x: any) => (x.repsMax ? `${x.reps ?? "?"}-${x.repsMax}` : `${x.reps ?? "-"}`);
+  const range = (x: any) => (x.repsMax ? `${x.reps ?? "?"}-${x.repsMax}` : `${x.reps ?? "-"}`);
+  // reps done inside a range carry over as where next time starts: "3 × 8-12 · starts at 11", or per set when they differ
+  const start = (x: any) => clampStartReps(x);
+  const reps = (x: any) => (start(x) != null ? `${range(x)} (starts at ${start(x)})` : range(x));
+  const sameStart = work.length && work.every((x: any) => start(x) === start(work[0]));
   let what = "";
-  if (usesReps(t)) what = same("reps") && same("repsMax") ? `${work.length} × ${reps(work[0])}` : work.map(reps).join(", ");
+  if (usesReps(t)) what = same("reps") && same("repsMax") && sameStart
+    ? `${work.length} × ${range(work[0])}${start(work[0]) != null ? ` · starts at ${start(work[0])}` : ""}` : work.map(reps).join(", ");
   else if (usesDuration(t)) what = same("durationS") && work[0]?.durationS ? `${work.length} × ${f.clock(work[0].durationS)}` : `${work.length} sets`;
   else what = `${work.length} sets`;
   const w = usesWeight(t) && same("weightKg") && work[0]?.weightKg != null ? ` · ${f.w(work[0].weightKg)} ${f.wu}` : "";
@@ -308,6 +313,9 @@ async function startFrom(kind: "template" | "copy", v: string) {
   else { const x = await api.post("/routines", { template: v }); invalidate(["routines"]); router.replace(`/routines/${x.id}/edit`); }
   starter.value = false;
 }
+// sets that start inside their range (from reps done last time); clearing puts them back at the bottom
+const hasStart = (e: any) => usesReps(tr(e)) && e.sets.some((x: any) => clampStartReps(x) != null);
+function clearStart(e: any) { for (const x of e.sets) x.startReps = null; touch(); }
 // in groups: what it is, where it sits in the routine, how its numbers change, then Remove on its own
 const exMenu = (e: any, i: number) => [
   { label: "About this exercise", icon: "info", run: () => (exerciseSheet.value = e.exerciseId) },
@@ -317,8 +325,9 @@ const exMenu = (e: any, i: number) => [
   { label: "Superset with next", hint: "Do one set of each in turn, resting after the pair", icon: "link", run: () => superset(i), hidden: !s.value.features.supersets || i === r.value.exercises.length - 1 || inSupersetWithNext(i) },
   { label: "Remove from superset", icon: "link", run: () => unsuperset(i), hidden: !e.superset },
   { label: "Rep range", hint: "A bottom and a top, e.g. 8-12", sep: true, icon: "layers", checked: showRange(e), hidden: !rangeItem(e), run: () => toggleRange(e) },
-  { label: "Progression", hint: ownProg(e) ? modeLabel(e.progression.mode ?? s.value.progression.mode) : "Uses your default", sep: !rangeItem(e), icon: "arrowUp", hidden: e.fixed || !progUsable(e), run: () => (progFor.value = e) },
-  { label: "Keep these numbers fixed", hint: "The numbers don't update after workouts and Progression is off", sep: !rangeItem(e) && (!progUsable(e) || e.fixed), icon: "lock", checked: !!e.fixed, run: () => { e.fixed = !e.fixed; touch(); } },
+  { label: "Start at the bottom of the range", hint: "Next time starts each set at its lowest reps", sep: !rangeItem(e), icon: "down", hidden: !hasStart(e), run: () => clearStart(e) },
+  { label: "Progression", hint: ownProg(e) ? modeLabel(e.progression.mode ?? s.value.progression.mode) : "Uses your default", sep: !rangeItem(e) && !hasStart(e), icon: "arrowUp", hidden: e.fixed || !progUsable(e), run: () => (progFor.value = e) },
+  { label: "Keep these numbers fixed", hint: "The numbers don't update after workouts and Progression is off", sep: !rangeItem(e) && !hasStart(e) && (!progUsable(e) || e.fixed), icon: "lock", checked: !!e.fixed, run: () => { e.fixed = !e.fixed; touch(); } },
   { label: "Remove from routine", icon: "trash", danger: true, sep: true, run: () => removeEx(i) },
 ];
 const setMenu = (e: any, j: number) => e.sets[j].kind === "drop" ? [

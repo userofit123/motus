@@ -37,12 +37,27 @@ describe("planNext", () => {
     expect(planNext([same], done([range(10), range(10)]), D).numbersChanged).toBe(false);
     expect(planNext([slot({ sets: [rs({}), rs({})] })], done([range(10), range(10)]), D).numbersChanged).toBe(true);
   });
-  it("judges only the ticked working sets: an unticked one neither blocks nor misses", () => {
-    const r = planNext([slot()], done([warm(), range(12), set({ weightKg: 20, reps: 3, done: false })]), D);
-    expect(r.changes[0]).toMatchObject({ direction: "up", fromKg: 20, toKg: 22.5 });
+  it("goes up only when every working set was ticked at the top; an unticked one doesn't block a miss", () => {
+    const r = planNext([slot()], done([warm(), range(12), set({ weightKg: 20, reps: 12, done: false })]), D);
+    expect(r.changes).toEqual([]);
     const miss = planNext([slot({ missed: 2 })], done([warm(), range(7), set({ weightKg: 20, reps: null, done: false })]), D);
     expect(miss.changes[0]).toMatchObject({ direction: "down", reason: "Missed reps 3 workouts in a row" });
     expect(planNext([slot()], done([warm(), range(8), set({ done: false })]), D).exercises[0]).toMatchObject({ missed: 0 });
+  });
+  it("pairs routine sets by place, so an unticked middle set keeps its own numbers", () => {
+    const three = slot({ sets: [rs({ kind: "warmup", reps: 10, repsMax: null, weightKg: 10 }), rs({}), rs({}), rs({})] });
+    const r = planNext([three], done([warm(), range(10, 22.5), set({ weightKg: 30, reps: 3, done: false }), range(9, 25)]), D);
+    expect(r.exercises[0]!.sets.map((s: any) => [s.weightKg, s.startReps ?? null])).toEqual([[10, null], [22.5, 10], [20, null], [25, 9]]);
+  });
+  it("pairs drops with drops only: a ticked drop never gives a working set its weight", () => {
+    const withDrop = slot({ sets: [rs({ kind: "warmup", reps: 10, repsMax: null, weightKg: 10 }), rs({}), rs({ kind: "drop", repsMax: null, weightKg: 15 })] });
+    const r = planNext([withDrop], done([warm(), set({ weightKg: 20, reps: 8, done: false }), set({ kind: "drop", weightKg: 12, reps: 10 })]), D);
+    expect(r.exercises[0]!.sets.map((s: any) => [s.kind, s.weightKg])).toEqual([["warmup", 10], ["normal", 20], ["drop", 12]]);
+    expect(r.changes).toEqual([]);
+  });
+  it("shows the reps actually done on the set a change is about", () => {
+    expect(planNext([slot()], done([range(13), range(12)]), D).changes[0]).toMatchObject({ direction: "up", fromKg: 20, fromReps: 13, toKg: 22.5, reps: 8 });
+    expect(planNext([slot({ missed: 2 })], done([range(9), range(7)]), D).changes[0]).toMatchObject({ direction: "down", fromReps: 7, toKg: 17.5, reps: 8 });
   });
   it("going up resets the starting reps to the range bottom; a miss is only below the bottom", () => {
     const up = planNext([slot({ sets: [rs({ startReps: 11 }), rs({ startReps: 11 })] })], done([range(12), range(12)]), D, ["re1"]);

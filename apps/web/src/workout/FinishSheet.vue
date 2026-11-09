@@ -70,7 +70,8 @@ const shaped = computed<Shaped[]>(() => {
   return (applyStructure(r, w.value, d.routineChanges) ?? r.exercises) as Shaped[];
 });
 const plan = computed(() => planNext(shaped.value, w.value, { ...W.settings.value.progression, stepKg: W.incKg.value }, d.accepted));
-const FIELDS = ["kind", "weightKg", "reps", "repsMax", "startReps", "durationS", "distanceM"] as const;
+// the range itself (repsMax) is never shown here, so a change to it alone is not a row
+const FIELDS = ["kind", "weightKg", "reps", "startReps", "durationS", "distanceM"] as const;
 const sameSet = (a: RSet | undefined, b: RSet) => !!a && FIELDS.every((k) => (a[k] ?? null) === (b[k] ?? null));
 // a set's numbers as next time starts them: "20 kg × 10", "12 reps", "1:00"; "-" when it has none. The reps you'll do
 // (with a range, its starting reps), never the range: a change of reps inside it shows as one
@@ -125,8 +126,11 @@ const nextTime = computed(() => {
       const label = x.kind === "warmup" ? "Warm-up" : x.kind === "drop" ? "Drop" : `Set ${++k}`;
       const b = before[j];
       if (sameSet(b, x)) return [];
+      // from: where the routine started this set before; to: where next time starts it. A row only when they read differently
+      const from = b ? setText(b, t) : "-", to = setText(x, t);
+      if (from === to) return [];
       const delta = b?.weightKg != null && x.weightKg != null ? (x.weightKg - b.weightKg) * (t === "assisted" ? -1 : 1) : 0;
-      return [{ key: j, label, from: b ? setText(b, t) : "-", to: setText(x, t), trend: delta > 0 ? "up" : delta < 0 ? "down" : null }];
+      return [{ key: j, label, from, to, trend: delta > 0 ? "up" : delta < 0 ? "down" : null }];
     });
     const change = item.id ? plan.value.changes.find((c) => c.routineExerciseId === item.id) : undefined;
     const unticked = !!e && typedUnticked(e);
