@@ -2,6 +2,15 @@
 
 The top entry's version is the one the release workflow publishes. Add a new `## [x.y.z]` section to release.
 
+## [0.1.13] - 2026-11-09
+
+- Reps carry over: the reps you do inside a rep range become next time's starting reps (10 of 8-12 starts next time at 10), with the range kept as the goal. Before, only weight changes carried over.
+- Progression raises the weight only when every set was ticked and all reached the top of the range; next time starts back at the bottom. A ticked set below the range counts as a miss, and unticked sets are left out instead of stopping Progression for the whole exercise.
+- Each set is compared with the right one, so an unticked middle set or a drop set no longer mixes up the numbers.
+- Finish shows the reps you actually did, never the range: "Set 1  20 kg × 8 → 20 kg × 10", and suggestions like "20 kg × 12 → 22.5 kg × 8".
+- The routine editor shows where reps start ("3 × 8-12 · starts at 11"), and an exercise's ⋮ menu has "Start at the bottom of the range".
+- Updating adds one small database change on first start.
+
 ## [0.1.12] - 2026-11-09
 
 - Progression: a routine always has your current numbers. After each workout it takes what you did, and Progression decides whether the weight goes up or down next time: Suggest (asks you on Finish), Automatic or Off, with a weight step and "Lower the weight after" N missed workouts. Defaults are in Settings → Workout → Progression; any exercise can have its own. Exercises that had the old progression rules are now Automatic. "Start from what you did last time" is gone, as the routine is now always up to date.

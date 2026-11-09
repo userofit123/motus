@@ -8,5 +8,5 @@
     "dev:web": "pnpm --filter @motus/web dev",
     "typecheck": "pnpm -r typecheck"
   },
-  "version": "0.1.12"
+  "version": "0.1.13"
 }
