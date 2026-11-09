@@ -1,6 +1,6 @@
 // Turning a routine into today's plan: the sets to do with the routine's numbers (which are where you are now, PLAN.md
 // §8.7), last time's beside them, with reminders, pinned notes and an estimate of how long it takes. Used by the pre-start preview and by "Start".
-import { estimate, restAfterSet, restDefaultsOf, type Exercise, type Reminder, type Note, type Settings, type SetKind } from "@motus/shared";
+import { estimate, restAfterSet, restDefaultsOf, startRepsOf, type Exercise, type Reminder, type Note, type Settings, type SetKind } from "@motus/shared";
 import type { Sql } from "../db";
 import { camel } from "../util";
 import { exerciseSessions, getExercises } from "./library";
@@ -137,7 +137,8 @@ export async function buildPlan(q: Sql, routine: any, settings: Settings, today:
       const prev = prevs[i];
       const fromLast = useLast && prev && (prev.weightKg != null || prev.reps != null || prev.durationS != null);
       let weightKg = fromLast ? prev.weightKg : s.weightKg;
-      let reps = fromLast ? prev.reps : s.reps;
+      // a rep range starts where last time's reps left it inside the range (targetReps stays the range's bottom)
+      let reps = fromLast ? prev.reps : startRepsOf(s);
       let adjusted = false;
       if (s.kind !== "warmup") {
         if (s.kind === "drop") { if (parentShift && weightKg != null) { weightKg = Math.max(0, weightKg + parentShift); adjusted = true; } }

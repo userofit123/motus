@@ -15,20 +15,40 @@ describe("planNext", () => {
   const done = (sets: WorkoutSet[], p: Partial<WorkoutExercise> & { tracking?: string } = {}) => ({ exercises: [ex({ routineExerciseId: "re1", sets, ...p })] });
   const warm = () => set({ kind: "warmup", weightKg: 15, reps: 10 });
 
-  it("takes today's working numbers, keeps warm-ups and the rep range", () => {
+  it("takes today's working numbers, keeps warm-ups and the rep range, and starts next time at the reps done", () => {
     const r = planNext([slot()], done([warm(), range(10, 22.5), range(9, 22.5)]), D);
-    expect(r.exercises[0]!.sets.map((s: any) => [s.kind, s.weightKg, s.reps, s.repsMax])).toEqual([["warmup", 10, 10, null], ["normal", 22.5, 8, 12], ["normal", 22.5, 8, 12]]);
+    expect(r.exercises[0]!.sets.map((s: any) => [s.kind, s.weightKg, s.reps, s.repsMax, s.startReps ?? null])).toEqual([["warmup", 10, 10, null, null], ["normal", 22.5, 8, 12, 10], ["normal", 22.5, 8, 12, 9]]);
     expect(r.changes).toEqual([]);
     expect(r.numbersChanged).toBe(true);
   });
   it("goes up a step with reps at the bottom when every set reached the top; suggest applies only when accepted", () => {
     const r = planNext([slot()], done([warm(), range(12), range(12)]), D);
-    expect(r.changes[0]).toMatchObject({ mode: "suggest", direction: "up", fromKg: 20, toKg: 22.5, reps: 8, reason: "Every set reached 12 reps" });
+    expect(r.changes[0]).toMatchObject({ mode: "suggest", direction: "up", fromKg: 20, toKg: 22.5, fromReps: 12, reps: 8, reason: "Every set reached 12 reps, the top of 8-12" });
     expect(r.exercises[0]!.sets.map((s: any) => s.weightKg)).toEqual([10, 20, 20]);
     expect(planNext([slot()], done([warm(), range(12), range(12)]), D, ["re1"]).exercises[0]!.sets.map((s: any) => s.weightKg)).toEqual([10, 22.5, 22.5]);
     expect(planNext([slot()], done([warm(), range(12), range(12)]), D, ["other"]).exercises[0]!.sets.map((s: any) => s.weightKg)).toEqual([10, 20, 20]);
     expect(planNext([slot({ progression: { mode: "off", stepKg: null, lowerAfter: null } })], done([range(12), range(12)]), D).changes).toEqual([]);
     expect(planNext([slot({ progression: { mode: "auto", stepKg: null, lowerAfter: null } })], done([range(12), range(12)]), D).changes[0]!.mode).toBe("auto");
+  });
+  it("only changes the reps inside a range: the reps done are clamped into it, and the same as before is no change", () => {
+    const r = planNext([slot()], done([warm(), range(15), range(6)]), D);
+    expect(r.exercises[0]!.sets.map((s: any) => [s.reps, s.startReps ?? null])).toEqual([[10, null], [8, 12], [8, null]]);
+    const same = slot({ sets: [rs({ startReps: 10 }), rs({ startReps: 10 })] });
+    expect(planNext([same], done([range(10), range(10)]), D).numbersChanged).toBe(false);
+    expect(planNext([slot({ sets: [rs({}), rs({})] })], done([range(10), range(10)]), D).numbersChanged).toBe(true);
+  });
+  it("judges only the ticked working sets: an unticked one neither blocks nor misses", () => {
+    const r = planNext([slot()], done([warm(), range(12), set({ weightKg: 20, reps: 3, done: false })]), D);
+    expect(r.changes[0]).toMatchObject({ direction: "up", fromKg: 20, toKg: 22.5 });
+    const miss = planNext([slot({ missed: 2 })], done([warm(), range(7), set({ weightKg: 20, reps: null, done: false })]), D);
+    expect(miss.changes[0]).toMatchObject({ direction: "down", reason: "Missed reps 3 workouts in a row" });
+    expect(planNext([slot()], done([warm(), range(8), set({ done: false })]), D).exercises[0]).toMatchObject({ missed: 0 });
+  });
+  it("going up resets the starting reps to the range bottom; a miss is only below the bottom", () => {
+    const up = planNext([slot({ sets: [rs({ startReps: 11 }), rs({ startReps: 11 })] })], done([range(12), range(12)]), D, ["re1"]);
+    expect(up.exercises[0]!.sets.map((s: any) => [s.weightKg, s.reps, s.startReps ?? null])).toEqual([[22.5, 8, null], [22.5, 8, null]]);
+    expect(planNext([slot({ missed: 2 })], done([range(8), range(8)]), D).changes).toEqual([]);
+    expect(planNext([slot({ missed: 2 })], done([range(7), range(8)]), D).changes[0]).toMatchObject({ direction: "down" });
   });
   it("snaps to the step's grid, the exercise's own step before Settings'", () => {
     expect(stepUp(22.5, 2.5)).toBe(25);

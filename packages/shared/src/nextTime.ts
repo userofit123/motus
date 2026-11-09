@@ -54,24 +54,37 @@ export interface NextChange {
   /** the heaviest working weight before and after (for assisted exercises: the help taken off) */
   fromKg: number;
   toKg: number;
-  /** next time's reps on that set */
+  /** that set's reps before and after the change: what you did (next time's starting reps) and where it starts after */
+  fromReps: number | null;
   reps: number | null;
   /** why, in plain words: "Every set reached 10 reps", "Missed reps 3 workouts in a row" */
   reason: string;
 }
 
-type RoutineSetLike = { kind: string; reps: number | null; repsMax?: number | null; weightKg: number | null; durationS?: number | null; distanceM?: number | null };
+type RoutineSetLike = { kind: string; reps: number | null; repsMax?: number | null; startReps?: number | null; weightKg: number | null; durationS?: number | null; distanceM?: number | null };
 export type RoutineItemLike = { id?: string | null; exerciseId: string; fixed?: boolean; progression?: unknown; missed?: number; sets: unknown[] };
+
+/** A routine set's starting reps inside its rep range (`reps` is the range's bottom, `repsMax` its top): clamped into the
+ * range, and null when that is the bottom (or there is no range), so a set without one has nothing to keep in step. */
+export function clampStartReps(s: { reps?: number | null; repsMax?: number | null; startReps?: number | null }): number | null {
+  if (s.startReps == null || s.repsMax == null || s.reps == null) return null;
+  const v = Math.min(Math.max(s.startReps, s.reps), Math.max(s.repsMax, s.reps));
+  return v === s.reps ? null : v;
+}
+/** The reps a routine set starts at: the starting reps inside its range, else its reps. */
+export const startRepsOf = (s: { reps: number | null; repsMax?: number | null; startReps?: number | null }) => clampStartReps(s) ?? s.reps;
 
 // drop sets are lighter on purpose and warm-ups don't count: neither decides progression
 const deciding = (k: string) => k !== "warmup" && k !== "drop";
 
 /** The routine's exercises after a finished session: each one done (not skipped, something ticked, the same exercise
  * as its slot) takes today's working numbers, set by set in order (warm-ups never change, routine sets past today's
- * last keep theirs), then its Progression: a step up when every working set reached the top of its rep range (reps
- * back to the bottom), a step down after `lowerAfter` workouts in a row with missed reps. A rep range stays as set (the
- * reps move inside it); a single rep target takes today's reps when they reached it, and keeps its target when missed
- * (so misses count; not while Progression is Off, and a "lower" not applied starts the count again). "Keep these numbers fixed" exercises and skipped ones keep everything. `accepted`: routine
+ * last keep theirs), then its Progression, judged on the working sets you ticked (unticked ones neither help nor block):
+ * a step up when every one reached the top of its rep range (starting reps back to the bottom), a step down after
+ * `lowerAfter` workouts in a row with one below the bottom. A rep range stays as set, and the reps you did become next
+ * time's starting reps inside it (startReps); a single rep target takes today's reps when they reached it, and keeps its
+ * target when missed (so a miss stays a miss next time and counts; not while Progression is Off, and a "lower" not
+ * applied starts the count again). "Keep these numbers fixed" exercises and skipped ones keep everything. `accepted`: routine
  * exercise ids whose "suggest" change was switched on with Apply; the rest are not applied (their numbers still follow
  * today). Pure, for both the Finish screen and the engine. `missed` is each exercise's run of workouts with missed reps, carried to the next finish. */
 export function planNext<R extends RoutineItemLike>(exercises: R[], w: { exercises: WorkoutExercise[] }, d: ProgressionDefaults, accepted: Iterable<string> = []): { exercises: R[]; changes: NextChange[]; numbersChanged: boolean } {
@@ -90,16 +103,23 @@ export function planNext<R extends RoutineItemLike>(exercises: R[], w: { exercis
     let next: RoutineSetLike[] = sets.map((rs, i) => {
       const t = pairs[i];
       if (!t) return rs;
-      const reps = rs.repsMax != null || t.reps == null || (rs.reps != null && t.reps < rs.reps) ? rs.reps : t.reps;
-      return { ...rs, weightKg: num(t.weightKg, rs.weightKg), reps, durationS: num(t.durationS, rs.durationS), distanceM: num(t.distanceM, rs.distanceM) };
+      const base = { ...rs, weightKg: num(t.weightKg, rs.weightKg), durationS: num(t.durationS, rs.durationS), distanceM: num(t.distanceM, rs.distanceM) };
+      // a range: the range stays, the reps done are where next time starts (clamped into it)
+      if (rs.repsMax != null) {
+        const sr = t.reps == null ? clampStartReps(rs) : clampStartReps({ ...rs, startReps: t.reps });
+        return sr === (rs.startReps ?? null) ? base : { ...base, startReps: sr };
+      }
+      // one target: reached or beaten, it becomes today's reps; missed, the target stays (never lowered for a miss)
+      return { ...base, reps: t.reps == null || (rs.reps != null && t.reps < rs.reps) ? rs.reps : t.reps };
     });
     // Off counts nothing, so switching Progression back on never lowers the weight for misses from while it was off
     const p = progressionOf(re.progression, d, e.exercise?.incrementKg);
     let missed = p.mode === "off" ? 0 : re.missed ?? 0;
     const tr = e.exercise?.tracking ?? "weight_reps";
-    const dec = sets.map((rs, i) => ({ rs, t: pairs[i], i })).filter((x) => deciding(x.rs.kind));
+    // the working sets ticked today decide; one left unticked is ignored, not a reason to judge nothing
+    const dec = sets.map((rs, i) => ({ rs, t: pairs[i], i })).filter((x) => deciding(x.rs.kind) && x.t);
     const assisted = tr === "assisted";
-    const can = usesWeight(tr) && usesReps(tr) && dec.length > 0 && dec.every((x) => x.rs.reps != null && x.t && x.t.reps != null && x.t.weightKg != null && (assisted || x.t.weightKg > 0));
+    const can = usesWeight(tr) && usesReps(tr) && dec.length > 0 && dec.every((x) => x.rs.reps != null && x.t!.reps != null && x.t!.weightKg != null && (assisted || x.t!.weightKg > 0));
     if (can) {
       const top = (s: RoutineSetLike) => s.repsMax ?? s.reps!;
       const allTop = dec.every((x) => x.t!.reps! >= top(x.rs));
@@ -120,16 +140,18 @@ export function planNext<R extends RoutineItemLike>(exercises: R[], w: { exercis
           if (s.kind === "drop") return shift ? { ...s, weightKg: Math.max(0, Math.round((s.weightKg + shift) * 100) / 100) } : s;
           const to = move(s.weightKg);
           shift = to - s.weightKg;
-          // up: reps back to the bottom of the range (or the target); down: the target stays
-          return { ...s, weightKg: to, reps: sets[i]!.reps };
+          // up: starting reps back to the bottom of the range (or the target); down: the target stays
+          return { ...s, weightKg: to, reps: sets[i]!.reps, ...(s.startReps != null ? { startReps: null } : {}) };
         });
         const heaviest = (xs: RoutineSetLike[]) => Math.max(...xs.filter((s) => deciding(s.kind) && s.weightKg != null).map((s) => s.weightKg!));
         const mode = p.mode === "auto" ? "auto" : "suggest";
-        const firstDec = dec[0]!.rs;
+        const i0 = dec[0]!.i;
+        const topReps = Math.max(...dec.map((x) => top(x.rs)));
+        const range = dec.find((x) => x.rs.repsMax != null && top(x.rs) === topReps)?.rs;
         changes.push({
           routineExerciseId: re.id!, exerciseId: re.exerciseId, name: e.exercise?.name ?? "", mode, direction,
-          fromKg: heaviest(next), toKg: heaviest(moved), reps: firstDec.reps,
-          reason: direction === "up" ? `Every set reached ${Math.max(...dec.map((x) => top(x.rs)))} reps`
+          fromKg: heaviest(next), toKg: heaviest(moved), fromReps: startRepsOf(next[i0]!), reps: startRepsOf(moved[i0]!),
+          reason: direction === "up" ? `Every set reached ${topReps} reps${range ? `, the top of ${range.reps}-${range.repsMax}` : ""}`
             : p.lowerAfter === 1 ? "Missed reps last workout" : `Missed reps ${p.lowerAfter} workouts in a row`,
         });
         // applied, or a "lower" not applied on Finish: either way the run of misses starts again from 0, so a lower left

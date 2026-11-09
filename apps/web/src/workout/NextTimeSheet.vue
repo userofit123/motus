@@ -27,6 +27,9 @@ const fmt = useWorkout().fmt;
 const showSame = ref(false);
 const sameText = computed(() => `${props.unchanged.length} exercise${props.unchanged.length === 1 ? "" : "s"} unchanged`);
 function toggle(id: string, on: boolean) { accepted.value = on ? [...accepted.value, id] : accepted.value.filter((x) => x !== id); }
+// the set the change is about, before and after: "20 kg × 12 → 22.5 kg × 8" (the reps done, never the range)
+const numbers = (kg: number, reps: number | null) => `${fmt.value.wu_(kg)}${reps != null ? ` × ${reps}` : ""}`;
+const changeText = (c: NextChange) => `${numbers(c.fromKg, c.fromReps)} → ${numbers(c.toKg, c.reps)}`;
 const applyLabel = (c: NextChange, name: string) => `${c.direction === "up" ? "Raise" : "Lower"} the weight for ${name}`;
 </script>
 
@@ -51,7 +54,7 @@ const applyLabel = (c: NextChange, name: string) => `${c.direction === "up" ? "R
         <span class="bi sg"><Icon :name="g.change.direction === 'up' ? 'arrowUp' : 'arrowDown'" :size="16" /></span>
         <div class="grow" style="min-width:0">
           <div class="t">Apply</div>
-          <div class="s">{{ g.change.reason }} · {{ fmt.wu_(g.change.fromKg) }} to {{ fmt.wu_(g.change.toKg) }}</div>
+          <div class="s">{{ g.change.reason }} · {{ changeText(g.change) }}</div>
         </div>
         <span class="tg"><input type="checkbox" :checked="accepted.includes(g.id)" :aria-label="applyLabel(g.change, g.name)" @change="toggle(g.id, ($event.target as HTMLInputElement).checked)" /></span>
       </label>

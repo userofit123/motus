@@ -292,7 +292,7 @@ async function plannedRoutine(ctx: Ctx, exercises: unknown) {
       restS: intOrNull(e.restS, 0, 3600), restAfterS: intOrNull(e.restAfterS, 0, 3600), repRestS: intOrNull(e.repRestS, 0, 600), restByKind: byKind(e.restByKind),
       fixed: bool(e.fixed) || e.prefill === "target", progression: null, note: str(e.note, 2000),
       sets: (Array.isArray(e.sets) ? e.sets.slice(0, 50) : []).map((s: any) => ({
-        kind: oneOf(s?.kind, KINDS, "normal"), reps: intOrNull(s?.reps, 0, 1000), repsMax: intOrNull(s?.repsMax, 0, 1000), weightKg: numOrNull(s?.weightKg, -500, 2000),
+        kind: oneOf(s?.kind, KINDS, "normal"), reps: intOrNull(s?.reps, 0, 1000), repsMax: intOrNull(s?.repsMax, 0, 1000), startReps: intOrNull(s?.startReps, 0, 1000), weightKg: numOrNull(s?.weightKg, -500, 2000),
         durationS: intOrNull(s?.durationS, 0, 86400), distanceM: numOrNull(s?.distanceM, 0, 1e7), rpe: numOrNull(s?.rpe, 0, 10), restS: intOrNull(s?.restS, 0, 3600),
       })),
     })),

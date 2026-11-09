@@ -38,7 +38,7 @@ const muscles = computed(() => muscleSets((routine.value?.exercises ?? []).map((
 const worked = computed(() => musclesWorked((routine.value?.exercises ?? []).map((e: any) => ({ primary: e.exercise?.primaryMuscles ?? [], secondary: e.exercise?.secondaryMuscles ?? [] }))));
 const setLine = (e: any) => {
   const w = e.sets.filter((s: any) => s.kind !== "warmup");
-  const reps = w.map((s: any) => (s.repsMax ? `${s.reps}-${s.repsMax}` : s.durationS ? fmt.value.clock(s.durationS) : s.reps ?? "-"));
+  const reps = w.map((s: any) => (s.repsMax ? `${s.startReps != null ? `${s.startReps} (${s.reps}-${s.repsMax})` : `${s.reps}-${s.repsMax}`}` : s.durationS ? fmt.value.clock(s.durationS) : s.reps ?? "-"));
   const same = reps.every((x: any) => x === reps[0]);
   return `${w.length} × ${same ? reps[0] : reps.join(", ")}${w[0]?.weightKg ? " @ " + fmt.value.wu_(w[0].weightKg) : ""}`;
 };

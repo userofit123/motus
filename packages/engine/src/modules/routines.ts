@@ -1,6 +1,6 @@
 // Routines (saved plans) and their folders: list, open, create (from scratch, from another routine, from a workout,
 // from a template), edit, duplicate, version history, and the pre-start preview.
-import { TEMPLATES, applyStructure, cleanProgression, planNext, estimate, usualDuration, restAfterSet, restDefaultsOf, ymd, LIFTED_SQL, type RoutineItemLike, type RoutineSummary, type RoutineSnapshot, type RoutineSnapshotExercise, type RoutineVersionRow, type RoutineTrendPoint, type SetKind, type Tracking } from "@motus/shared";
+import { TEMPLATES, applyStructure, clampStartReps, cleanProgression, planNext, estimate, usualDuration, restAfterSet, restDefaultsOf, ymd, LIFTED_SQL, type RoutineItemLike, type RoutineSummary, type RoutineSnapshot, type RoutineSnapshotExercise, type RoutineVersionRow, type RoutineTrendPoint, type SetKind, type Tracking } from "@motus/shared";
 import { SOURCE } from "@motus/exercise-data/meta";
 import type { Router, Ctx } from "../router";
 import type { Sql } from "../db";
@@ -88,11 +88,14 @@ async function writeRoutineBody(ctx: Ctx, routineId: string, exercises: any[], w
     await ctx.q.query("DELETE FROM routine_sets WHERE routine_exercise_id = $1", [reId]);
     const sets = Array.isArray(e.sets) ? e.sets.slice(0, 50) : [];
     for (const [sp, s] of sets.entries()) {
+      const reps = intOrNull(s.reps, 0, 1000), repsMax = intOrNull(s.repsMax, 0, 1000);
       await ctx.q.query(
-        `INSERT INTO routine_sets (id, user_id, routine_exercise_id, position, kind, reps, reps_max, weight_kg, duration_s, distance_m, rpe, rest_s)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
-        [uuidv7(), ctx.userId, reId, sp, oneOf(s.kind, KINDS, "normal"), intOrNull(s.reps, 0, 1000), intOrNull(s.repsMax, 0, 1000), numOrNull(s.weightKg, -500, 2000),
-          intOrNull(s.durationS, 0, 86400), numOrNull(s.distanceM, 0, 1e7), numOrNull(s.rpe, 0, 10), intOrNull(s.restS, 0, 3600)]);
+        `INSERT INTO routine_sets (id, user_id, routine_exercise_id, position, kind, reps, reps_max, weight_kg, duration_s, distance_m, rpe, rest_s, start_reps)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+        [uuidv7(), ctx.userId, reId, sp, oneOf(s.kind, KINDS, "normal"), reps, repsMax, numOrNull(s.weightKg, -500, 2000),
+          intOrNull(s.durationS, 0, 86400), numOrNull(s.distanceM, 0, 1e7), numOrNull(s.rpe, 0, 10), intOrNull(s.restS, 0, 3600),
+          // the starting reps follow the range: clamped into it when it changes, gone without one
+          clampStartReps({ reps, repsMax, startReps: intOrNull(s.startReps, 0, 1000) })]);
     }
   }
   await ctx.q.query("DELETE FROM routine_exercises WHERE routine_id = $1 AND NOT (id = ANY($2::uuid[]))", [routineId, keep]);
@@ -116,7 +119,7 @@ function slimRoutine(r: Loose): RoutineSnapshot {
         restS: nOrNull(e?.restS), restAfterS: nOrNull(e?.restAfterS), repRestS: nOrNull(e?.repRestS),
         restByKind: e?.restByKind && typeof e.restByKind === "object" ? (e.restByKind as Record<string, number>) : null,
         fixed: e?.fixed === true || e?.prefill === "target", progression: cleanProgression(e?.progression), note: String(e?.note ?? ""),
-        sets: sets.map((t) => ({ kind: (t?.kind ?? "normal") as SetKind, reps: nOrNull(t?.reps), repsMax: nOrNull(t?.repsMax), weightKg: nOrNull(t?.weightKg),
+        sets: sets.map((t) => ({ kind: (t?.kind ?? "normal") as SetKind, reps: nOrNull(t?.reps), repsMax: nOrNull(t?.repsMax), startReps: nOrNull(t?.startReps), weightKg: nOrNull(t?.weightKg),
           durationS: nOrNull(t?.durationS), distanceM: nOrNull(t?.distanceM), rpe: nOrNull(t?.rpe), restS: nOrNull(t?.restS) })),
       };
     }),

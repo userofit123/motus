@@ -48,8 +48,11 @@ export interface Exercise {
 export interface RoutineSet {
   id?: string;
   kind: SetKind;
+  /** the reps, or with a range (repsMax set) the range's bottom */
   reps: number | null;
   repsMax: number | null;
+  /** with a range: where next time starts inside it (the reps last done, kept by Progression); null: the bottom */
+  startReps?: number | null;
   weightKg: number | null;
   durationS: number | null;
   distanceM: number | null;
@@ -460,7 +463,7 @@ export interface HomeData extends HomeToday {
 
 /** One version in a routine's History, kept slim: only what the History view shows and Restore needs (the exercise
  * itself is looked up again by `exerciseId` on restore). */
-export interface RoutineSnapshotSet { kind: SetKind; reps: number | null; repsMax: number | null; weightKg: number | null; durationS: number | null; distanceM: number | null; rpe: number | null; restS: number | null }
+export interface RoutineSnapshotSet { kind: SetKind; reps: number | null; repsMax: number | null; startReps?: number | null; weightKg: number | null; durationS: number | null; distanceM: number | null; rpe: number | null; restS: number | null }
 export interface RoutineSnapshotExercise {
   id: string | null; exerciseId: string; name: string; primary: string[]; secondary: string[]; tracking: Tracking;
   superset: string | null; restS: number | null; restAfterS: number | null; repRestS: number | null; restByKind: Record<string, number> | null;

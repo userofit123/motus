@@ -54,7 +54,7 @@ const snap = useQuery({ queryKey: computed(() => ["routines", "versions", props.
   queryFn: () => api.get<RoutineSnapshot>(`/routines/${props.id}/versions/${open.value!.id}`) });
 const setLine = (e: RoutineSnapshotExercise) => {
   const w = e.sets.filter((s) => s.kind !== "warmup");
-  const reps = w.map((s) => (s.repsMax ? `${s.reps}-${s.repsMax}` : s.durationS ? fmt.value.clock(s.durationS) : s.reps ?? "-"));
+  const reps = w.map((s) => (s.repsMax ? `${s.startReps != null ? `${s.startReps} (${s.reps}-${s.repsMax})` : `${s.reps}-${s.repsMax}`}` : s.durationS ? fmt.value.clock(s.durationS) : s.reps ?? "-"));
   const same = reps.every((x) => x === reps[0]);
   return `${w.length} × ${same ? reps[0] ?? "-" : reps.join(", ")}${w[0]?.weightKg ? " @ " + fmt.value.wu_(w[0].weightKg) : ""}`;
 };

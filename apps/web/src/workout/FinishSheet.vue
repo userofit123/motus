@@ -5,7 +5,7 @@
 // differed from the routine (listed, each saved only when switched on). Then how it felt, notes, body weight.
 import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
-import { applyStructure, planNext, structureChanges, usesReps, usesWeight, workoutScore, workoutSoFar, type Routine, type StructureChange, type Tracking, type Workout } from "@motus/shared";
+import { applyStructure, planNext, startRepsOf, structureChanges, usesReps, usesWeight, workoutScore, workoutSoFar, type Routine, type StructureChange, type Tracking, type Workout } from "@motus/shared";
 import { useWorkout, endWorkout, finishDraft } from "./useWorkout";
 import { api } from "../api/client";
 import { settle } from "../api/outbox";
@@ -70,13 +70,15 @@ const shaped = computed<Shaped[]>(() => {
   return (applyStructure(r, w.value, d.routineChanges) ?? r.exercises) as Shaped[];
 });
 const plan = computed(() => planNext(shaped.value, w.value, { ...W.settings.value.progression, stepKg: W.incKg.value }, d.accepted));
-const FIELDS = ["kind", "weightKg", "reps", "repsMax", "durationS", "distanceM"] as const;
+const FIELDS = ["kind", "weightKg", "reps", "repsMax", "startReps", "durationS", "distanceM"] as const;
 const sameSet = (a: RSet | undefined, b: RSet) => !!a && FIELDS.every((k) => (a[k] ?? null) === (b[k] ?? null));
-// a set's numbers as the routine lists them: "20 kg × 8-12", "12 reps", "1:00"; "-" when it has none
+// a set's numbers as next time starts them: "20 kg × 10", "12 reps", "1:00"; "-" when it has none. The reps you'll do
+// (with a range, its starting reps), never the range: a change of reps inside it shows as one
 function setText(x: RSet, t: Tracking) {
   const f = fmt.value;
   const kg = x.weightKg != null && usesWeight(t) ? f.wu_(x.weightKg) : "";
-  const reps = x.reps == null || !usesReps(t) ? "" : x.repsMax != null && x.repsMax !== x.reps ? `${x.reps}-${x.repsMax}` : String(x.reps);
+  const start = startRepsOf(x);
+  const reps = start == null || !usesReps(t) ? "" : String(start);
   const r = reps ? (kg ? `× ${reps}` : `${reps} rep${reps === "1" ? "" : "s"}`) : "";
   return [kg, r, x.durationS ? f.clock(x.durationS) : "", x.distanceM ? f.dist(x.distanceM) : ""].filter(Boolean).join(" ") || "-";
 }
