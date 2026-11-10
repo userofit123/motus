@@ -48,6 +48,9 @@ export async function startDrag(e: PointerEvent, o: Opts) {
   const slot = document.createElement("div");
   slot.className = "drag-slot";
   slot.style.height = `${h}px`;
+  // placed under the item before it is shown: the slot eases its transform, and if anything makes the browser style it
+  // first (a sheet's pull-down reads styles on touchstart) it would otherwise glide in from the top of the list
+  slot.style.transform = `translateY(${rects[o.index]!.top}px)`;
   o.list.classList.add("dragging");
   o.list.appendChild(slot);
   el.classList.add("lifted");

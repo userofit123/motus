@@ -1,5 +1,6 @@
 // Pull a phone bottom sheet down to close it (used by Sheet.vue and the Appearance panel). Decided on the first few
-// pixels; a pull only starts when whatever is under the finger is scrolled to the top. `scrim` is the dimmed layer
+// pixels; a pull only starts when whatever is under the finger is scrolled to the top (and not on a drag handle, which
+// reorders instead: core/drag.ts). `scrim` is the dimmed layer
 // behind the sheet, faded as it moves. `close` runs once the sheet has slid away. `pulledAway` is true after a pull
 // closed it, so the caller can skip its own closing animation.
 import { onMounted, onBeforeUnmount } from "vue";
@@ -19,7 +20,7 @@ export function usePullDown(sheet: () => HTMLElement | null, scrim: () => HTMLEl
     if (!isPhone.value || !enabled()) { mode = "no"; return; }
     const t = e.touches[0]!;
     x0 = t.clientX; y0 = t.clientY; t0 = Date.now(); dy = 0;
-    mode = e.touches.length > 1 || (e.target as HTMLElement).closest("input[type=range], textarea, .leaflet-container, [data-nopull]") ? "no" : "";
+    mode = e.touches.length > 1 || (e.target as HTMLElement).closest("input[type=range], textarea, .leaflet-container, .dragh, [data-nopull]") ? "no" : "";
     scroller = scrollParent(e.target);
   }
   function tmove(e: TouchEvent) {
