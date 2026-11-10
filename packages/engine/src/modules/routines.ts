@@ -296,7 +296,7 @@ export function routineRoutes(r: Router) {
 
   r.post("/routines/reorder", async (ctx, _p, b) => {
     const ids: string[] = (Array.isArray(b.ids) ? b.ids : []).map((x: unknown) => id(x));
-    for (const [i, rid] of ids.entries()) await ctx.q.query("UPDATE routines SET position = $2 WHERE id = $1", [rid, i]);
+    for (const [i, rid] of ids.entries()) await ctx.q.query("UPDATE routines SET position = $2, updated_at = $3 WHERE id = $1", [rid, i, ctx.now().toISOString()]);
     ctx.changed("routine");
     return { ok: true };
   });

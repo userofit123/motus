@@ -57,6 +57,16 @@ async function newFolder() {
 }
 async function renameFolder(f: { id: string; name: string }) { const n = await prompt("Rename folder", { value: f.name }); if (n) { await api.put(`/folders/${f.id}`, { name: n }); invalidate(["routines"]); toast("Folder renamed"); } }
 async function delFolder(f: { id: string; name: string }) { if (await confirm(`Delete the folder ${f.name}?`, { text: "Its routines stay, without a folder.", ok: "Delete", danger: true })) { await api.del(`/folders/${f.id}`); invalidate(["routines"]); toast("Folder deleted"); } }
+// ----- reorder: the routines of one group (folder, Pinned or Other), moved with arrows -----
+const reorderKey = ref<string | null>(null);
+const reorderGroup = computed(() => groups.value.find((g) => fkey(g) === reorderKey.value) ?? null);
+async function moveRoutine(rid: string, dir: -1 | 1) {
+  const ids = (reorderGroup.value?.items ?? []).map((r) => r.id), i = ids.indexOf(rid), j = i + dir;
+  if (i < 0 || j < 0 || j >= ids.length) return;
+  [ids[i], ids[j]] = [ids[j]!, ids[i]!];
+  await api.post("/routines/reorder", { ids });
+  invalidate(["routines"]);
+}
 async function useTemplate(slug: string) {
   const r = await api.post("/routines", { template: slug });
   invalidate(["routines"]);
@@ -102,7 +112,9 @@ await loaded(routines, folders, ...(settings.value.features.programs ? [programs
           <h2>{{ g.name }}</h2><span class="sep" aria-hidden="true">·</span><span class="fn">{{ g.items.length }}</span>
           <Icon name="down" :size="16" class="fc" :class="{ shut: isFolded(g) }" />
         </button>
-        <Menu v-if="g.id && g.id !== 'pinned'" :items="[{ label: 'Rename', icon: 'edit', run: () => renameFolder(g as any) }, { label: 'Delete folder', icon: 'trash', danger: true, sep: true, run: () => delFolder(g as any) }]" /></div>
+        <Menu v-if="(g.id && g.id !== 'pinned') || (g.items.length > 1 && !showArchived)" :items="[
+          ...(g.items.length > 1 && !showArchived ? [{ label: 'Reorder routines', icon: 'drag', run: () => (reorderKey = fkey(g)) }] : []),
+          ...(g.id && g.id !== 'pinned' ? [{ label: 'Rename', icon: 'edit', run: () => renameFolder(g as any) }, { label: 'Delete folder', icon: 'trash', danger: true, sep: true, run: () => delFolder(g as any) }] : [])]" /></div>
       <Collapse :open="!isFolded(g) || !!q">
       <div v-if="!g.items.length" class="tiny hgap">Empty. Move a routine here from its ⋮ menu.</div>
       <div class="grid gauto rgrid">
@@ -128,6 +140,17 @@ await loaded(routines, folders, ...(settings.value.features.programs ? [programs
     </div>
 </Transition>
 
+    <Sheet v-if="reorderGroup" :title="`Reorder ${reorderGroup.name || 'routines'}`" @close="reorderKey = null">
+      <p class="tiny hgap">The order of the routines in this list.</p>
+      <TransitionGroup name="mv" tag="div">
+        <div v-for="(r, i) in reorderGroup.items" :key="r.id" class="tgl">
+          <span class="dot" :style="{ background: r.color ?? undefined }" />
+          <div class="grow"><div class="t">{{ r.name }}</div><div class="s">{{ r.exerciseCount }} exercises</div></div>
+          <button class="ib sm plain" :class="{ end: i === 0 }" :aria-disabled="i === 0" :aria-label="`Move ${r.name} up`" :title="`Move ${r.name} up`" @click="moveRoutine(r.id, -1)"><Icon name="up" :size="18" /></button>
+          <button class="ib sm plain" :class="{ end: i === reorderGroup.items.length - 1 }" :aria-disabled="i === reorderGroup.items.length - 1" :aria-label="`Move ${r.name} down`" :title="`Move ${r.name} down`" @click="moveRoutine(r.id, 1)"><Icon name="down" :size="18" /></button>
+        </div>
+      </TransitionGroup>
+    </Sheet>
     <Sheet v-if="fromTemplate" title="Start from a template" size="wide" @close="fromTemplate = false">
       <p class="tiny hgap">A copy is added to your routines, ready to change.</p>
       <TemplateList @pick="useTemplate" />
