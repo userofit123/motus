@@ -2,6 +2,23 @@
 
 The top entry's version is the one the release workflow publishes. Add a new `## [x.y.z]` section to release.
 
+## [0.1.14] - 2026-11-10
+
+- Left and right sets: any exercise, in a routine or a workout, can mix normal sets with left and right sets (a set's ⋮ menu, or "Add a left + right set" in the exercise's ⋮ menu). "One side at a time" can be switched for any exercise, built-in ones included, and more one-sided exercises are recognised. A left and right set next to each other count as one round (3L, 3R) with no rest between the sides; weight is per side ("kg / side"); Previous and Progression compare left with left and right with right.
+- Opening a routine shows every exercise's planned sets, weights, reps and rests, laid out like the routine editor.
+- Routines in a folder can be reordered from the folder's ⋮ menu.
+- Rest times follow changes during a workout: changing a set to a warm-up, drop or failure set, adding a drop set, or changing an exercise's rest updates the rest straight away, including a timer already running. Warm-up, drop and failure sets without their own rest use Settings' rest for that kind, or the between-sets rest, as Settings shows.
+- The Summary tab keeps up with edits to finished sets, and edits made with a weak connection are no longer undone.
+- The rest timer beeps 3, 2, 1 in its last seconds, and sounds start reliably on phones.
+- In a workout: "Next" shows once, the Resting title is centred, tapping the workout name and time opens the Summary, and the offer to keep a changed rest says what it was planned at.
+- Drop sets move with their main set when Progression changes its weight, and their reps start again at the bottom of the range.
+- The Finish screen compares with the last time you actually did each exercise, so it no longer says "First time" after a workout where it was left empty.
+- Resuming a paused workout no longer makes the session time drop back later.
+- Home's Today card shows in full during a workout instead of a small dot.
+- A page that fails to open after a tab tap recovers by itself, and missing files after an update reload the page.
+- Note icons line up with their text, and clicking the app icon to change the look makes it wobble.
+- Updating adds a few small database changes on first start.
+
 ## [0.1.13] - 2026-11-09
 
 - Reps carry over: the reps you do inside a rep range become next time's starting reps (10 of 8-12 starts next time at 10), with the range kept as the goal. Before, only weight changes carried over.
