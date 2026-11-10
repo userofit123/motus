@@ -25,7 +25,7 @@ export const WORKOUT_PREF_GROUPS: PrefGroup[] = [
     { key: "vibrate", label: "Vibrate when the rest ends", hint: "" },
     { key: "warn10", label: "Warn 10 seconds before the rest ends", hint: "" },
     { key: "voice", label: "Voice cues", hint: "Says what's next when a rest ends", feature: "voice" },
-    { key: "countdown", label: "3-2-1 before timed sets", hint: "" },
+    { key: "countdown", label: "3-2-1 countdown", hint: "Before timed sets, and in the last seconds of a rest" },
     { key: "lockScreen", label: "Rest timer on the lock screen", hint: "Android app" },
   ] },
   { id: "during", title: "During a workout", rows: [

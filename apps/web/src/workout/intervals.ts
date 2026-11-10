@@ -4,7 +4,7 @@
 import { computed, reactive } from "vue";
 import { intervalPhases, intervalAt, intervalTotalS, cleanInterval, INTERVAL_DEFAULT, type IntervalConfig, type IntervalKind, type IntervalSound } from "@motus/shared";
 import { readJson, writeJson } from "../core/prefs";
-import { now, tone, SOFT, savedCues, vibrate, type Overtone } from "./runtime";
+import { now, tone, tick, SOFT, savedCues, vibrate, type Overtone } from "./runtime";
 import { keepAwake, scheduleIntervalCues, cancelIntervalCues, showIntervalNotice, clearIntervalNotice, onNoticeAction, INTERVAL_CUE_MAX, type IntervalCue } from "./native";
 
 interface IntervalRun {
@@ -49,10 +49,6 @@ export function playIntervalSound(sound: IntervalSound) {
   else if (sound === "gong") tone(C4, { dur: 2.2, vol: 0.4, partials: GONG, attack: 0.02 }); // long, so it sits under the next part's start
   else if (sound === "digital") [0, 0.1, 0.38, 0.48].forEach((d) => tone(E6, { delay: d, dur: 0.07, vol: 0.16, partials: PURE, attack: 0.004 })); // a watch's double chirp, quieter
   else if (sound === "wake") { tone(G5, { dur: 1.6, vol: 0.24, partials: SOFT, attack: 0.6 }); tone(C6, { delay: 0.35, dur: 1.4, vol: 0.16, partials: SOFT, attack: 0.6 }); } // fades in, no edge
-}
-/** The countdown in the last three seconds of a part: short soft blips, the last one higher so you know "now". */
-function playTick(last: boolean) {
-  tone(last ? E6 : E5, { dur: last ? 0.18 : 0.09, vol: last ? 0.22 : 0.16, partials: SOFT });
 }
 
 export const ivPhases = computed(() => intervalPhases(iv.cfg));
@@ -141,7 +137,7 @@ setInterval(() => {
     return;
   }
   const s = Math.ceil(leftMs / 1000);
-  if (index < ph.length && s <= 3 && s >= 1 && s !== lastSecond && ph[index]!.durS > 5) { lastSecond = s; if (inAppCues() && savedCues().sound) playTick(s === 1); }
+  if (index < ph.length && s <= 3 && s >= 1 && s !== lastSecond && ph[index]!.durS > 5) { lastSecond = s; if (inAppCues() && savedCues().sound) tick(s === 1); }
 }, 200);
 
 // In the background the app's own beeps may stop (a locked phone), so the coming changes are scheduled to come as the

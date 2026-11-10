@@ -24,8 +24,8 @@ export const rest = reactive<RestState>({ ...EMPTY, ...readJson("motusRest", {})
 export const now = ref(Date.now());
 const save = () => writeJson("motusRest", rest);
 
-export interface Cues { sound: boolean; vibrate: boolean; warn10: boolean; voice: boolean; next?: boolean }
-let cues: Cues = { sound: true, vibrate: true, warn10: true, voice: false, next: true };
+export interface Cues { sound: boolean; vibrate: boolean; warn10: boolean; voice: boolean; countdown: boolean; next?: boolean }
+let cues: Cues = { sound: true, vibrate: true, warn10: true, voice: false, countdown: true, next: true };
 export const setCues = (c: Cues) => { cues = c; };
 /** Sound and vibration as chosen in Settings → Workout, read from the settings the app has loaded, so they are right
  *  on any page (the cues above are only filled once a workout screen has been opened). */
@@ -36,11 +36,17 @@ export function savedCues(): { sound: boolean; vibrate: boolean } {
 export function vibrate(pattern: number | number[]) { try { navigator.vibrate?.(pattern); } catch { /* no vibration */ } }
 
 let warned = false;
+// the last second the 3-2-1 played, so each plays once however the timer's ticks fall (a hidden page ticks only once a
+// second, so a check like "left between 3 and 2.75" would miss some)
+let lastCount = 0;
 setInterval(() => {
   now.value = Date.now();
   if (rest.endAt && !rest.done && rest.pausedLeftS == null) {
     const left = (rest.endAt - now.value) / 1000;
     if (left <= 10 && left > 9 && !warned && cues.warn10) { warned = true; beep(1, 660); }
+    // 3-2-1 in the last seconds (not on rests too short for it to mean anything); the end's own beep is the "now"
+    const s = Math.ceil(left);
+    if (s >= 1 && s <= 3 && s !== lastCount && rest.totalS > 5 && cues.sound && cues.countdown) { lastCount = s; tick(false); }
     // over: the cues play either way; then straight on to the next set, or "Rest over" until you tap Next set
     if (left <= 0) { rest.done = true; save(); restEnded(); if (cues.next) finishRest(true); }
   }
@@ -113,6 +119,10 @@ function audio() {
   if (ctx.state === "suspended") void ctx.resume();
   return { ac: ctx, dest: out! };
 }
+// A browser (and Android's WebView) lets sound start only after a tap: a context first made by the timer, with no tap
+// behind it, can stay silent. So every tap opens it (or wakes it after the phone slept), and the cues the timer plays
+// later are heard.
+for (const ev of ["pointerdown", "keydown"]) addEventListener(ev, () => { if (!ctx || ctx.state !== "running") audio(); }, { capture: true, passive: true });
 /** [frequency ratio, loudness, how long it rings as a share of the note] */
 export type Overtone = readonly [number, number, number];
 /** A struck bell: slightly out-of-tune overtones that die away faster than the note itself. */
@@ -134,6 +144,11 @@ export function tone(freq: number, { delay = 0, dur = 0.5, vol = 0.3, partials =
       o.connect(g).connect(dest); o.start(t); o.stop(end + 0.02);
     }
   } catch { /* no sound */ }
+}
+/** The countdown in the last seconds of a rest or an interval part: a short soft blip, the last one higher so you
+ *  know "now". */
+export function tick(last: boolean) {
+  tone(last ? 1318.5 : 659.25, { dur: last ? 0.18 : 0.09, vol: last ? 0.22 : 0.16, partials: SOFT }); // E6, E5
 }
 /** The plain cue used by the rest timer and timed sets: `times` soft bell notes. */
 export function beep(times = 1, freq = 880) {
