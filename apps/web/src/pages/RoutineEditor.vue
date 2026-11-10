@@ -7,6 +7,7 @@
 // and it is saved as a routine too only when asked.
 import { computed, nextTick, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
+import { plannedRest as plannedRestOf } from "../core/plannedRest";
 import { usesWeight, usesReps, usesDuration, usesDistance, musclesWorked, estimate, restAfterSet, dropWeightKg, restDefaultsOf, clampStartReps, duration, muscleName, toM, fromM, muscleSets, type Progression } from "@motus/shared";
 import { useRoutine, useRoutines, useFolders, useExercises, useSettings, useTemplates, loaded } from "../api/queries";
 import { api, mediaUrl } from "../api/client";
@@ -157,7 +158,7 @@ function superset(i: number) {
 }
 const unsuperset = (i: number) => { r.value.exercises[i].superset = null; tidySupersets(); touch(); };
 const restDefaults = computed(() => restDefaultsOf(s.value.workout));
-const plannedRest = (e: any, x: any, j: number) => restAfterSet({ setRestS: x.restS, kind: x.kind, nextKind: e.sets[j + 1]?.kind, byKindS: e.restByKind, exRestS: e.restS, isLastSet: j === e.sets.length - 1, exRestAfterS: e.restAfterS }, restDefaults.value);
+const plannedRest = (e: any, x: any, j: number) => plannedRestOf(e, x, j, restDefaults.value);
 const est = computed(() => r.value ? estimate(r.value.exercises.map((e: any) => ({ sets: e.sets.map((x: any, j: number) => ({ ...x, restS: plannedRest(e, x, j) })) }))) : null);
 const setCount = computed(() => (r.value?.exercises ?? []).reduce((a: number, e: any) => a + e.sets.length, 0));
 const muscles = computed(() => muscleSets((r.value?.exercises ?? []).map((e: any) => { const x = e.exercise ?? exById.value.get(e.exerciseId); return { primary: x?.primaryMuscles ?? [], secondary: x?.secondaryMuscles ?? [], sets: e.sets.length }; })));
@@ -411,12 +412,12 @@ await loaded(src, all, folders, routines, templates);
           </div>
 
           <Collapse :open="isOpen(e)"><div class="exb">
-            <div class="sgrid shead" :style="cols(e)"><span>Set</span>
+            <div class="setgrid shead" :style="cols(e)"><span>Set</span>
               <span v-if="usesWeight(tr(e))">{{ fmt.wu }}</span><span v-if="usesReps(tr(e))">Reps</span><span v-if="usesReps(tr(e)) && showRange(e)">Up to</span>
               <span v-if="usesDuration(tr(e))">Sec</span><span v-if="usesDistance(tr(e))">{{ fmt.du }}</span><span v-if="s.features.rpe">RPE</span><span /></div>
             <div class="slist">
               <div v-for="(x, j) in e.sets" :key="x._k" data-drag class="sitem" :class="{ drop: x.kind === 'drop' }">
-                <div class="sgrid" :style="cols(e)">
+                <div class="setgrid" :style="cols(e)">
                   <button class="sk dragh" :class="{ w: x.kind === 'warmup', d: x.kind === 'drop', f: x.kind === 'failure' }" title="Drag to reorder" @pointerdown="dragSet($event, e, j)">{{ setLabel(e.sets, j) }}</button>
                   <input v-if="usesWeight(tr(e))" class="vin" inputmode="decimal" :value="wIn(x.weightKg)" placeholder="-" @change="x.weightKg = wOut(($event.target as HTMLInputElement).value); touch()" />
                   <input v-if="usesReps(tr(e))" class="vin" inputmode="numeric" :value="x.reps ?? ''" placeholder="-" @change="x.reps = nOut(($event.target as HTMLInputElement).value); touch()" />
@@ -426,7 +427,7 @@ await loaded(src, all, folders, routines, templates);
                   <input v-if="s.features.rpe" class="vin" inputmode="decimal" :value="x.rpe ?? ''" placeholder="-" @change="x.rpe = nOut(($event.target as HTMLInputElement).value); touch()" />
                   <Menu :items="setMenu(e, j)" icon="more" label="Set options" />
                 </div>
-                <div v-if="x.restS != null" class="sgrid rrow" :style="cols(e)">
+                <div v-if="x.restS != null" class="setgrid rrow" :style="cols(e)">
                   <button class="sk r" title="Custom rest after this set" @click="restFor = { ex: i, set: j, kind: 'set' }">R</button>
                   <button class="rpill" @click="restFor = { ex: i, set: j, kind: 'set' }"><Icon name="timer" :size="14" />{{ x.restS === 0 ? "No rest" : `${fmt.clock(x.restS)} rest` }}</button>
                   <button class="ib sm plain" aria-label="Remove this rest" @click="x.restS = null; touch()"><Icon name="close" :size="14" /></button>
@@ -548,7 +549,7 @@ html.he .chev svg { transform: rotate(90deg); }
 .chev.on svg { transform: none; }
 .exb { margin-top: 12px; }
 
-.sgrid > .vin { justify-self: center; }
+.setgrid > .vin { justify-self: center; }
 .sk.r { background: var(--accc); color: var(--onc); cursor: pointer; }
 .rrow .rpill { grid-column: 2 / -2; cursor: pointer; }
 .rpill:hover { color: var(--tx); border-color: var(--acc); }

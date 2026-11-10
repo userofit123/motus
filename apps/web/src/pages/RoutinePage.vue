@@ -4,9 +4,10 @@ import { goBack } from "../core/leave";
 import { computed, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useQuery } from "@tanstack/vue-query";
-import { routineTime, muscleName, muscleSets, musclesWorked, scheduleSummary } from "@motus/shared";
+import { restDefaultsOf, routineTime, muscleName, muscleSets, musclesWorked, scheduleSummary } from "@motus/shared";
 import { useRoutine, useRoutines, useNotes, useReminders, useSchedules, useSettings, useChange, loaded } from "../api/queries";
 import { api, mediaUrl } from "../api/client";
+import { restForKind } from "../core/plannedRest";
 import { useFmt, ago } from "../core/format";
 import { noteSheet, reminderSheet, exerciseSheet, scheduleSheet } from "../core/ui";
 import { toast } from "../core/toast";
@@ -44,7 +45,12 @@ const setCount = (e: any) => {
   return [`${work} set${work === 1 ? "" : "s"}`, warm ? `${warm} warm-up` : "", drops ? `${drops} drop${drops === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · ");
 };
 // the rests it plans, with your defaults where the exercise has none of its own (as the editor shows them)
-const restLine = (e: any) => [`${fmt.value.clock(e.restS ?? st.value.workout.restBetweenSetsS)} between sets`, `${fmt.value.clock(e.restAfterS ?? st.value.workout.restAfterExerciseS)} after the last one`, e.repRestS ? `beeps every ${e.repRestS}s` : ""].filter(Boolean).join(" · ");
+const restLine = (e: any) => {
+  const d = restDefaultsOf(st.value.workout), c = fmt.value.clock;
+  const kinds = (["warmup", "drop", "failure"] as const).filter((k) => e.sets.some((x: any, j: number) => x.kind === k && j < e.sets.length - 1 && e.sets[j + 1].kind !== "drop"));
+  const label = { warmup: "after warm-ups", drop: "after drops", failure: "after failure sets" };
+  return [`${c(restForKind(e, "normal", false, d))} between sets`, ...kinds.map((k) => `${c(restForKind(e, k, false, d))} ${label[k]}`), `${c(restForKind(e, "normal", true, d))} after the last one`, e.repRestS ? `beeps every ${e.repRestS}s` : ""].filter(Boolean).join(" · ");
+};
 const sided = (e: any) => !!st.value.features.unilateral && !!e.exercise?.unilateral;
 // notes and reminders for one exercise of this routine (they show under it during the workout)
 const exItems = (e: any) => [
@@ -144,4 +150,13 @@ await loaded(r, summaries, notes, rems, schedules, history);
 /* icon on the first line of its text, like notes elsewhere */
 .pexf { display: flex; align-items: flex-start; gap: 6px; }
 .pexf > svg { flex: none; margin-top: 1px; }
+</style>
+
+<style>
+/* phone: the figure and the exercise's header share the first row; the set grid and notes take the card's full width below,
+   so the columns never get squeezed beside the 92px figure */
+html.phone .pex { flex-wrap: wrap; row-gap: calc(var(--lpy) / 2); }
+html.phone .pex > .pexb { display: contents; }
+html.phone .pex > .pexb > .pexh { flex: 1 1 0; min-width: 0; align-self: center; }
+html.phone .pex > .pexb > :not(.pexh) { flex: 1 1 100%; min-width: 0; }
 </style>

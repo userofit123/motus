@@ -352,15 +352,15 @@ html.phone { --tabh: 64px; }
 /* an exercise's place in a routine (editor overview, routine page) */
 .ovn { width: 26px; height: 26px; border-radius: 8px; background: var(--s2); display: grid; place-items: center; font-size: 12.5px; font-weight: 600; color: var(--tx2); flex: none; }
 /* a routine's planned sets, one grid row per set: the editor (inputs) and the routine's page (values) share it */
-.sgrid { display: grid; align-items: center; gap: 6px; padding: calc(var(--tdy) / 2) 0; }
+.setgrid { display: grid; align-items: center; gap: 6px; padding: calc(var(--tdy) / 2) 0; }
 .shead { font-size: 11px; font-weight: 600; color: var(--tx2); text-transform: uppercase; letter-spacing: .6px; text-align: center; padding-bottom: 6px; }
 .shead > span:first-child { text-align: start; }
 .slist { display: flex; flex-direction: column; }
 .sitem { border-radius: var(--r-sm); }
-.sgrid .sk { display: inline-grid; place-items: center; min-width: 30px; height: 30px; padding: 0 6px; border-radius: 8px; background: var(--s2); color: var(--tx); font-size: 12.5px; font-weight: 600; border: 0; }
-.sgrid .sk.w { color: var(--c2); }
-.sgrid .sk.d { color: var(--c1); }
-.sgrid .sk.f { color: var(--neg); }
+.setgrid .sk { display: inline-grid; place-items: center; min-width: 30px; height: 30px; padding: 0 6px; border-radius: 8px; background: var(--s2); color: var(--tx); font-size: 12.5px; font-weight: 600; border: 0; }
+.setgrid .sk.w { color: var(--c2); }
+.setgrid .sk.d { color: var(--c1); }
+.setgrid .sk.f { color: var(--neg); }
 /* a drop hangs off the set above it */
 .sitem.drop .sk { translate: 8px 0; }
 /* a set's own rest, under it */
