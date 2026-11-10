@@ -204,10 +204,17 @@ function setSummary(e: any) {
   const reps = (x: any) => (start(x) != null ? `${range(x)} (starts at ${start(x)})` : range(x));
   const sameStart = work.length && work.every((x: any) => start(x) === start(work[0]));
   // counted by rounds and said as the routine page says it (setRounds): "3 × 8 · left and right"
+  // one entry per round: the second set of a left and right round joins its first ("10/8" when the sides differ)
+  const second: boolean[] = sidesOn.value ? sideRounds(e.sets) : [];
+  const rounds: any[][] = [];
+  e.sets.forEach((x: any, i: number) => {
+    if (x.kind === "warmup" || x.kind === "drop") return;
+    if (second[i - 1]) rounds[rounds.length - 1]!.push(x); else rounds.push([x]);
+  });
   const r = setRounds(e.sets, sidesOn.value), n = `${r.n} set${r.n === 1 ? "" : "s"}`;
   let what = "";
   if (usesReps(t)) what = same("reps") && same("repsMax") && sameStart
-    ? `${r.n} × ${range(work[0])}${start(work[0]) != null ? ` · starts at ${start(work[0])}` : ""}` : work.map(reps).join(", ");
+    ? `${r.n} × ${range(work[0])}${start(work[0]) != null ? ` · starts at ${start(work[0])}` : ""}` : rounds.map((g: any[]) => [...new Set(g.map(reps))].join("/")).join(", ");
   else if (usesDuration(t)) what = same("durationS") && work[0]?.durationS ? `${r.n} × ${f.clock(work[0].durationS)}` : n;
   else what = n;
   const w = usesWeight(t) && same("weightKg") && work[0]?.weightKg != null ? ` · ${f.w(work[0].weightKg)} ${f.wu}` : "";
@@ -259,7 +266,7 @@ function toggleRange(e: RangeEx) {
 const cols = (e: any) => {
   const t = tr(e);
   const n = [usesWeight(t), usesReps(t), usesReps(t) && showRange(e), usesDuration(t), usesDistance(t), s.value.features.rpe].filter(Boolean).length;
-  return { gridTemplateColumns: `36px repeat(${n}, minmax(0, 1fr)) 40px` };
+  return { gridTemplateColumns: `40px repeat(${n}, minmax(0, 1fr)) 40px` };
 };
 
 async function pickFolder(v: string) {

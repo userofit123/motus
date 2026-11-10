@@ -336,7 +336,7 @@ html.phone { --tabh: 64px; }
 /* rows apart from each other, each a rounded strip (the tint of a done or current set goes on its cells) */
 .sets { width: 100%; border-collapse: separate; border-spacing: 0 5px; margin-block: -5px; font-variant-numeric: tabular-nums; }
 .sets th { font-size: 11px; font-weight: 600; color: var(--tx2); text-transform: uppercase; letter-spacing: .6px; text-align: center; padding: 4px 4px 8px; }
-.sets th:first-child, .sets td:first-child { text-align: start; width: 34px; padding-inline-start: 8px; }
+.sets th:first-child, .sets td:first-child { text-align: start; width: 38px; padding-inline-start: 8px; }
 .sets td { padding: var(--tdy) 4px; text-align: center; }
 .sets td:last-child, .sets th:last-child { padding-inline-end: 6px; }
 .sets tr.done td { color: var(--tx); background: color-mix(in srgb, var(--pos) 9%, transparent); }

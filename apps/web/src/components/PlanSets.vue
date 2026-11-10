@@ -12,7 +12,7 @@ const s = useSettings();
 const fmt = useFmt();
 const t = computed(() => props.ex.exercise?.tracking ?? "weight_reps");
 const show = computed(() => ({ w: usesWeight(t.value), r: usesReps(t.value), d: usesDuration(t.value), dist: usesDistance(t.value), rpe: !!s.value.features.rpe }));
-const cols = computed(() => ({ gridTemplateColumns: `36px repeat(${Object.values(show.value).filter(Boolean).length}, minmax(0, 1fr))` }));
+const cols = computed(() => ({ gridTemplateColumns: `40px repeat(${Object.values(show.value).filter(Boolean).length}, minmax(0, 1fr))` }));
 const reps = (x: RoutineSet) => (x.repsMax && x.reps ? `${x.reps}-${x.repsMax}` : x.repsMax ?? x.reps ?? null);
 const dist = (m: number | null) => (m == null ? null : fmt.value.num(fromM(m, fmt.value.du), 2));
 // Left / right sides (optional feature): sets for one side are labelled 1L, 1R, and their weight is per side
