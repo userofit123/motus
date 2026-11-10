@@ -84,6 +84,8 @@ watch([r, asRoutine], ([v]) => { if (v && dirty.value) writeJson(draftKey.value,
 const touch = () => { dirty.value = true; };
 const isOpen = (e: any) => open.value.has(e._k);
 const toggle = (e: any) => { if (isOpen(e)) open.value.delete(e._k); else open.value.add(e._k); };
+// the whole header opens the exercise; its own controls (drag handle, picture, name, chevron, ⋮ menu) keep their job
+const headClick = (ev: MouseEvent, e: any) => { if (!(ev.target as Element).closest("button, a, input, .thumb, .mnu")) toggle(e); };
 const allOpen = computed(() => !!r.value?.exercises.length && r.value.exercises.every(isOpen));
 async function goTo(e: any) {
   tab.value = "exercises"; open.value.add(e._k);
@@ -434,7 +436,7 @@ await loaded(src, all, folders, routines, templates);
       </div>
       <div class="exlist">
         <div v-for="(e, i) in r.exercises" :key="e._k" data-drag :data-k="e._k" class="card ex" :class="{ sup: e.superset }">
-          <div class="exh">
+          <div class="exh" @click="headClick($event, e)">
             <button class="ib sm plain dragh" aria-label="Drag to reorder" @pointerdown="dragEx($event, i)"><Icon name="drag" :size="18" /></button>
             <MuscleFig sm :muscles="exOf(e)?.primaryMuscles" :helpers="exOf(e)?.secondaryMuscles" />
             <div class="thumb sm click" @click="exerciseSheet = e.exerciseId"><img v-if="exImg(e)" :src="mediaUrl(exImg(e))" alt="" /><Icon v-else name="dumbbell" :size="18" /></div>
@@ -613,7 +615,7 @@ html.phone .pgsum > .pgp:first-child > span { flex: 0 1 auto; min-width: 0; over
 .ex { text-align: start; }
 /* not .ss: that is the settings-section class in sections.css, whose padding: 0 !important emptied the card */
 .ex.sup { border-inline-start: 3px solid var(--acc); }
-.exh { display: flex; align-items: center; gap: 8px; margin: -4px; }
+.exh { display: flex; align-items: center; gap: 8px; margin: -4px; cursor: pointer; }
 .exh .dragh { color: var(--tx2); margin-inline-end: -4px; }
 .exn { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; border: 0; background: none; color: var(--tx); text-align: start; cursor: pointer; padding: 4px 0; }
 .exn .t { font-weight: 600; }
