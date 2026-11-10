@@ -207,7 +207,7 @@ const menu = computed(() => [
     <FinishSheet v-if="finishing" @close="finishing = false" @cancel="finishing = false; discard()" @open="(i) => { finishing = false; go(i); }" />
     <ExercisePicker v-if="adding" multi :exclude="w.exercises.map((e) => e.exerciseId)" @close="adding = false" @pick="(ids) => { adding = false; W.addExercises(ids); }" />
     <Sheet v-if="settingsOpen" title="Workout settings" @close="settingsOpen = false"><WorkoutSettings v-model="overrides" /></Sheet>
-    <ReorderSheet v-if="listOpen" title="Reorder exercises" hint="Drag to reorder, or use the arrows." :items="w.exercises.map((e) => ({ id: e.id, title: e.exercise.name, sub: `${e.sets.filter((s) => s.done).length}/${e.sets.length} sets` }))" @move="moveTo" @close="listOpen = false" />
+    <ReorderSheet v-if="listOpen" title="Reorder exercises" hint="Drag to reorder, or use the arrows." :items="w.exercises.map((e) => ({ id: e.id, title: e.exercise.name, sub: `${e.sets.filter((s) => s.done).length}/${e.sets.length} sets` }))" @move="moveTo" @select="(i) => { go(i); listOpen = false; }" @close="listOpen = false" />
   </div>
   <!-- only once we know: while the app opens, the workout may still be on its way -->
   <div v-else-if="W.active.isFetched.value && !W.active.isFetching.value" class="page"><div class="empty"><b>No workout in progress</b><button class="btn" @click="router.push('/')">Home</button></div></div>
