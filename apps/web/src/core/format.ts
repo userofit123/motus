@@ -89,12 +89,28 @@ export function goalLabel(g: { target: number; scope?: string; progress?: { curr
 /** The kinds a set can be switched to from its ⋮ menu, each with its own icon (a drop set is added, not switched to). */
 export const SET_KINDS = [["normal", "Normal", "dumbbell"], ["warmup", "Warm-up", "flame"], ["failure", "To failure", "target"]] as const;
 
-/** A set's short label in a list of sets: its number, W for a warm-up, F to failure, drops numbered within their set (D1, D2…). */
-export function setLabel(sets: { kind: string }[], j: number) {
-  const k = sets[j]?.kind;
-  if (k === "warmup") return "W";
-  if (k === "failure") return "F";
-  if (k !== "drop") return String(sets.slice(0, j + 1).filter((x) => x.kind !== "warmup" && x.kind !== "drop").length);
+type SetLike = { kind: string; side?: string | null };
+/** A working set's number in a list of sets (warm-ups and drops have none of their own). With sides shown (the
+ * feature is on), a left set and the right one straight after it (or right then left) are one round and share a
+ * number, "1L" "1R", as general sets beside them count on: 1, 2, 3L, 3R. */
+export function setNo(sets: SetLike[], j: number, sides = false) {
+  let n = 0, open: string | null = null;
+  for (let i = 0; i <= j && i < sets.length; i++) {
+    const x = sets[i]!;
+    if (x.kind === "warmup" || x.kind === "drop") continue;
+    const side = sides ? x.side ?? null : null;
+    if (side && open && open !== side) { open = null; continue; }
+    n++; open = side;
+  }
+  return n;
+}
+/** A set's short label in a list of sets: its number, W for a warm-up, F to failure, drops numbered within their set (D1,
+ * D2…); with sides shown, L or R after it ("1L"). */
+export function setLabel(sets: SetLike[], j: number, sides = false) {
+  const k = sets[j]?.kind, side = sides ? sets[j]?.side ?? "" : "";
+  if (k === "warmup") return "W" + side;
+  if (k === "failure") return "F" + side;
+  if (k !== "drop") return String(setNo(sets, j, sides)) + side;
   let n = 1; while (sets[j - n]?.kind === "drop") n++;
   return `D${n}`;
 }

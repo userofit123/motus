@@ -3,7 +3,7 @@
 // (Previous · kg · Reps · ✓). The routine's numbers are already filled in (last time's in an empty workout); tap Previous to copy it, tick to log the set.
 import { computed, ref, onBeforeUnmount } from "vue";
 import { usesWeight, usesReps, usesDuration, usesDistance, toM, fromM, parseQuick, warmups, muscleName, type WorkoutExercise, type WorkoutSet } from "@motus/shared";
-import { SET_KINDS } from "../core/format";
+import { SET_KINDS, setNo as setNoOf } from "../core/format";
 import { useWorkout } from "./useWorkout";
 import { mediaUrl, api } from "../api/client";
 import { exerciseSheet, noteSheet, reminderSheet } from "../core/ui";
@@ -26,11 +26,15 @@ const fmt = W.fmt, feat = computed(() => W.settings.value.features), prefs = W.p
 const tr = computed(() => props.e.exercise?.tracking ?? "weight_reps");
 const showW = computed(() => usesWeight(tr.value)), showR = computed(() => usesReps(tr.value)), showD = computed(() => usesDuration(tr.value)), showDist = computed(() => usesDistance(tr.value));
 const visibleSets = computed(() => props.e.sets.filter((s) => prefs.value.showWarmups || s.kind !== "warmup"));
-const setNo = (s: WorkoutSet) => props.e.sets.slice(0, props.e.sets.indexOf(s) + 1).filter((x) => x.kind !== "warmup" && x.kind !== "drop").length;
+// with sides shown, a left set and the right one after it share a number (1L, 1R)
+const setNo = (s: WorkoutSet) => setNoOf(props.e.sets, props.e.sets.indexOf(s), !!feat.value.unilateral);
 // drops are numbered within their set: D1, D2…
 const dropNo = (s: WorkoutSet) => { const a = props.e.sets; let i = a.indexOf(s), n = 0; while (a[i]?.kind === "drop") { n++; i--; } return n; };
-const kindShort = (s: WorkoutSet) => (s.kind === "warmup" ? "W" : s.kind === "drop" ? `D${dropNo(s)}` : s.kind === "failure" ? "F" : String(setNo(s))) + (s.side ? s.side : "");
+const kindShort = (s: WorkoutSet) => (s.kind === "warmup" ? "W" : s.kind === "drop" ? `D${dropNo(s)}` : s.kind === "failure" ? "F" : String(setNo(s))) + (s.kind !== "drop" && feat.value.unilateral && s.side ? s.side : "");
+// the exercise's own setting (left and right sets by default); any set of any exercise can still be made left or right
 const sided = computed(() => !!feat.value.unilateral && !!props.e.exercise?.unilateral);
+// the weight is per side wherever a set is for one side
+const perSide = computed(() => sided.value || (!!feat.value.unilateral && props.e.sets.some((s) => s.side)));
 const prevText = (s: WorkoutSet) => {
   const p = s.prev; if (!p) return "-";
   return [showW.value && p.weightKg != null ? fmt.value.w(p.weightKg) : "", showR.value && p.reps != null ? p.reps : "", showD.value && p.durationS ? fmt.value.clock(p.durationS) : "", showDist.value && p.distanceM ? fmt.value.num(fromM(p.distanceM, fmt.value.du), 2) : ""].filter((x) => x !== "").join(" × ") || "-";
@@ -84,8 +88,9 @@ async function quick() {
   invalidate(["workouts"]);
 }
 async function addPair() {
-  const last = props.e.sets.at(-1);
-  await api.post(`/workout-exercises/${props.e.id}/sets`, { sets: ["L", "R"].map((side) => ({ kind: "normal", side, weightKg: last?.weightKg ?? null, reps: last?.reps ?? null })) });
+  // the numbers of the last set of a side (else the last set), so a pair added after pairs carries on from them
+  const last = [...props.e.sets].reverse().find((s) => s.side && s.kind !== "warmup" && s.kind !== "drop") ?? props.e.sets.at(-1);
+  await api.post(`/workout-exercises/${props.e.id}/sets`, { sets: ["L", "R"].map((side) => ({ kind: "normal", side, weightKg: last?.weightKg ?? null, reps: last?.reps ?? null, durationS: last?.durationS ?? null, distanceM: last?.distanceM ?? null })) });
   invalidate(["workouts"]);
 }
 async function addWarmups() {
@@ -104,6 +109,8 @@ const menu = computed(() => [
   { label: "Swap for another exercise", icon: "swap", run: openReplace },
   // any exercise can be switched to left and right sets (the exercise's default is only a start)
   { ...sidesItem(props.e.exerciseId, sided.value, (on) => { if (props.e.exercise) props.e.exercise.unilateral = on; }), sep: true, hidden: !feat.value.unilateral },
+  // one-sided exercises have this as a button under the sets; any other exercise can still get a left and a right set
+  { label: "Add a left + right set", hint: "One set for each side, beside the others", icon: "plus", run: addPair, hidden: !feat.value.unilateral || sided.value },
   { label: "Rest between sets", sep: true, icon: "timer", run: () => (restEdit.value = "between") },
   { label: "Rest after this exercise", icon: "timer", run: () => (restEdit.value = "after") },
   { label: "Add warm-up sets", icon: "flame", run: addWarmups, hidden: !feat.value.warmupCalc || !showW.value },
@@ -116,7 +123,11 @@ const setMenu = (s: WorkoutSet) => [
   ...(feat.value.setTypes && s.kind !== "drop" ? SET_KINDS.map(([k, l, ic]) => ({ label: l, icon: ic, checked: s.kind === k, run: () => W.editSet(s, { kind: k }) })) : []),
   ...(feat.value.setTypes && s.kind !== "warmup" ? [{ label: s.kind === "drop" || props.e.sets[props.e.sets.indexOf(s) + 1]?.kind === "drop" ? "Add another drop" : "Add a drop set", hint: "Straight after this set: lower the weight and keep going", icon: "arrowDown", sep: s.kind !== "drop", run: () => W.addDrop(props.e, s) }] : []),
   ...(s.prev ? [{ label: "Copy last time", icon: "copy", run: () => copyPrev(s) }] : []),
-  ...(sided.value ? [{ label: "Left side", icon: "left", sep: true, checked: s.side === "L", run: () => W.editSet(s, { side: s.side === "L" ? null : "L" }) }, { label: "Right side", icon: "right", checked: s.side === "R", run: () => W.editSet(s, { side: s.side === "R" ? null : "R" }) }] : []),
+  // any set can be for one side, or both together, whatever the exercise's own setting (drops follow their set)
+  ...(feat.value.unilateral && s.kind !== "drop" ? [
+    { label: "Both sides", icon: "dumbbell", sep: true, checked: !s.side, run: () => W.editSet(s, { side: null }) },
+    { label: "Left side", icon: "left", checked: s.side === "L", run: () => W.editSet(s, { side: "L" }) },
+    { label: "Right side", icon: "right", checked: s.side === "R", run: () => W.editSet(s, { side: "R" }) }] : []),
   { label: "Remove set", icon: "trash", danger: true, sep: true, run: () => W.removeSet(props.e, s) },
 ];
 const isCur = computed(() => W.state.cur === props.index);
@@ -143,7 +154,7 @@ const nowId = computed(() => (W.state.active === props.index ? visibleSets.value
     </div>
 
     <table class="sets">
-      <thead><tr><th>Set</th><th v-if="prefs.showPrevious">Previous</th><th v-if="showW">{{ fmt.wu }}<span v-if="sided" class="thside"> / side</span></th><th v-if="showR">Reps</th><th v-if="showD">Time</th><th v-if="showDist">{{ fmt.du }}</th><th v-if="feat.rpe">RPE</th><th style="width:44px" /></tr></thead>
+      <thead><tr><th>Set</th><th v-if="prefs.showPrevious">Previous</th><th v-if="showW">{{ fmt.wu }}<span v-if="perSide" class="thside"> / side</span></th><th v-if="showR">Reps</th><th v-if="showD">Time</th><th v-if="showDist">{{ fmt.du }}</th><th v-if="feat.rpe">RPE</th><th style="width:44px" /></tr></thead>
       <tbody>
         <tr v-for="s in visibleSets" :key="s.id" :class="{ done: s.done, drop: s.kind === 'drop', now: s.id === nowId && e.status !== 'skipped' }" :aria-current="s.id === nowId ? 'step' : undefined">
           <td><button class="sk" :class="{ w: s.kind === 'warmup', d: s.kind === 'drop', f: s.kind === 'failure' }" @click.stop>{{ kindShort(s) }}</button></td>
@@ -182,7 +193,5 @@ const nowId = computed(() => (W.state.active === props.index ? visibleSets.value
 
 <style scoped>
 .exnotes { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--ol); }
-/* "kg / side": the weight one side moves, quieter than the unit itself */
-.thside { font-weight: 400; }
 .exrem { display: flex; flex-direction: column; gap: 8px; margin-bottom: var(--hg); }
 </style>

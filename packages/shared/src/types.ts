@@ -58,6 +58,8 @@ export interface RoutineSet {
   distanceM: number | null;
   rpe: number | null;
   restS: number | null;
+  /** "L" or "R": a set for one side (any exercise can have them, beside general sets); null or absent: both together */
+  side?: string | null;
 }
 
 /** How a routine exercise's weight moves after a workout (Settings → Workout → Progression): "suggest" asks on the
@@ -463,7 +465,7 @@ export interface HomeData extends HomeToday {
 
 /** One version in a routine's History, kept slim: only what the History view shows and Restore needs (the exercise
  * itself is looked up again by `exerciseId` on restore). */
-export interface RoutineSnapshotSet { kind: SetKind; reps: number | null; repsMax: number | null; startReps?: number | null; weightKg: number | null; durationS: number | null; distanceM: number | null; rpe: number | null; restS: number | null }
+export interface RoutineSnapshotSet { kind: SetKind; reps: number | null; repsMax: number | null; startReps?: number | null; weightKg: number | null; durationS: number | null; distanceM: number | null; rpe: number | null; restS: number | null; side?: string | null }
 export interface RoutineSnapshotExercise {
   id: string | null; exerciseId: string; name: string; primary: string[]; secondary: string[]; tracking: Tracking;
   superset: string | null; restS: number | null; restAfterS: number | null; repRestS: number | null; restByKind: Record<string, number> | null;

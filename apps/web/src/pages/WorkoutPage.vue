@@ -10,7 +10,7 @@ import { usesWeight, usesReps, muscleName, structureChanges, type StructureChang
 import { useWorkoutQuery, useSettings, loaded } from "../api/queries";
 import { api, mediaUrl } from "../api/client";
 import { invalidate } from "../api/live";
-import { useFmt, localYmd } from "../core/format";
+import { useFmt, localYmd, setLabel } from "../core/format";
 import { reminderText } from "../core/reminderText";
 import { exerciseSheet, noteSheet } from "../core/ui";
 import { confirm, prompt } from "../core/ask";
@@ -166,7 +166,7 @@ await loaded(q);
           <table v-if="e.sets.length" class="sets">
             <tbody>
               <tr v-for="(x, j) in e.sets" :key="x.id">
-                <td><span class="sk" :class="{ w: x.kind === 'warmup', d: x.kind === 'drop', f: x.kind === 'failure' }">{{ x.kind === "warmup" ? "W" : x.kind === "drop" ? "D" : x.kind === "failure" ? "F" : e.sets.slice(0, j + 1).filter((y: any) => y.kind !== "warmup").length }}{{ x.side ?? "" }}</span></td>
+                <td><span class="sk" :class="{ w: x.kind === 'warmup', d: x.kind === 'drop', f: x.kind === 'failure' }">{{ setLabel(e.sets, j, !!s.features.unilateral) }}</span></td>
                 <template v-if="!editing">
                   <td style="text-align:start;font-weight:500">{{ fmt.set(x, e.exercise?.tracking) }}<span v-if="x.rpe" class="tiny"> @ {{ x.rpe }}</span></td>
                   <td class="tiny" style="text-align:end;white-space:nowrap" :title="x.restPlannedS != null ? `Planned rest ${fmt.clock(x.restPlannedS)}` : undefined">{{ x.restActualS != null ? `Rest ${fmt.clock(x.restActualS)}` : "" }}</td>

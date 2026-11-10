@@ -58,6 +58,34 @@ describe("engine", () => {
     await call(A, "DELETE", `/exercises/${mine}`);
   });
 
+  it("routine sets can be left, right or both on any exercise; Start copies them, and last time and Progression go side by side", async () => {
+    const D = uuidv7();
+    await eng.db.admin.query("INSERT INTO users (id, username, display_name) VALUES ($1,'sides-tester','D')", [D]);
+    const squat = (await call(D, "GET", "/exercises")).find((e: any) => e.name === "Barbell Squat");
+    expect(squat.unilateral).toBe(false); // sides per set, whatever the exercise's own setting
+    const r = await call(D, "POST", "/routines", { name: "Sides", exercises: [{ exerciseId: squat.id, restS: 90, sets: [
+      { kind: "normal", reps: 10, weightKg: 20 }, { kind: "normal", reps: 12, weightKg: 16, side: "L" }, { kind: "normal", reps: 12, weightKg: 16, side: "R" }, { kind: "normal", reps: 8, side: "X" }] }] });
+    const full = await call(D, "GET", `/routines/${r.id}`);
+    expect(full.exercises[0].sets.map((x: any) => x.side)).toEqual([null, "L", "R", null]);
+    // no rest between a left set and its right one
+    const prev = await call(D, "GET", `/routines/${r.id}/preview`);
+    expect(prev.exercises[0].sets.map((x: any) => x.restS)).toEqual([90, 0, 90, expect.any(Number)]);
+    const w = await call(D, "POST", "/workouts/start", { routineId: r.id });
+    const ws = w.exercises[0].sets;
+    expect(ws.map((x: any) => x.side)).toEqual([null, "L", "R", null]);
+    // today the right side goes first: the sides swap, and each routine set still takes today's set of its own side
+    await call(D, "PUT", `/workout-sets/${ws[1].id}`, { side: "R" });
+    await call(D, "PUT", `/workout-sets/${ws[2].id}`, { side: "L" });
+    await call(D, "PUT", `/workout-sets/${ws[0].id}`, { weightKg: 20, reps: 10, done: true });
+    await call(D, "PUT", `/workout-sets/${ws[1].id}`, { weightKg: 18, reps: 12, done: true });
+    await call(D, "PUT", `/workout-sets/${ws[2].id}`, { weightKg: 16, reps: 12, done: true });
+    await call(D, "POST", `/workouts/${w.id}/finish`, {});
+    const after = (await call(D, "GET", `/routines/${r.id}`)).exercises[0].sets;
+    expect(after.map((x: any) => [x.side, x.weightKg])).toEqual([[null, 20], ["L", 16], ["R", 18], [null, null]]);
+    // next time: "Previous" pairs left with last time's left and right with right
+    const w2 = await call(D, "POST", "/workouts/start", { routineId: r.id });
+    expect(w2.exercises[0].sets.map((x: any) => [x.side, x.prev?.weightKg ?? null])).toEqual([[null, 20], ["L", 16], ["R", 18], [null, null]]);
+  });
   let routineId = "", benchId = "", workoutId = "";
   it("creates a routine from a template", async () => {
     const r = await call(A, "POST", "/routines", { template: "push" });

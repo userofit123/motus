@@ -1,6 +1,6 @@
 // Workouts: starting one (from a routine or empty), logging sets, skipping, reordering and replacing exercises,
 // finishing, logging a past workout, editing and duplicating, and the full detail with records and improvements.
-import { e1rm, ymd, restAfterSet, restDefaultsOf, liftedKg, LIFTED_SQL, structureChanges, type Tracking, type RoutineExercise, type ExerciseStatus, type SetKind, type WorkoutExercise, type HomeRecord, type Workout, type WorkoutSummary, type Routine } from "@motus/shared";
+import { e1rm, ymd, pairSets, restAfterSet, restDefaultsOf, liftedKg, LIFTED_SQL, structureChanges, type Tracking, type RoutineExercise, type ExerciseStatus, type SetKind, type WorkoutExercise, type HomeRecord, type Workout, type WorkoutSummary, type Routine } from "@motus/shared";
 import type { Router, Ctx } from "../router";
 import type { Sql } from "../db";
 import { camel, id, optId, str, strList, intOrNull, numOrNull, bool, oneOf, isoTime, secondsBetween, visible } from "../util";
@@ -145,15 +145,17 @@ export async function loadWorkout(q: Sql, workoutId: string, today: string): Pro
     x.swapped = !!e.routine_exercise_id && slotEx.has(e.routine_exercise_id) && slotEx.get(e.routine_exercise_id) !== e.exercise_id;
     x.exercise = exs.get(e.exercise_id);
     const prev = prevByEx.get(e.exercise_id) ?? [];
-    const warm = prev.filter((s) => s.kind === "warmup"), work = prev.filter((s) => s.kind !== "warmup");
+    const work = prev.filter((s) => s.kind !== "warmup");
     // the whole of last session's working sets too (prev pairs them by position, so a set fewer today has no pair):
     // the Finish screen compares sessions with it. Already loaded above, so no extra query.
     x.last = work.map((p) => ({ weightKg: p.weightKg, reps: p.reps, durationS: p.durationS, distanceM: p.distanceM }));
-    let wi = 0, ki = 0;
-    x.sets = sets.filter((s: any) => s.workout_exercise_id === e.id).map((s: any) => {
+    // each set with last time's in turn: warm-ups with warm-ups, a left set with last time's left ones (pairSets)
+    const mine = sets.filter((s: any) => s.workout_exercise_id === e.id);
+    const pairs = pairSets(mine, prev);
+    x.sets = mine.map((s: any, i: number) => {
       const c = camel<any>(s);
       delete c.userId; delete c.workoutExerciseId;
-      const p = c.kind === "warmup" ? warm[wi++] : work[ki++];
+      const p = pairs[i];
       c.prev = p ? { weightKg: p.weightKg, reps: p.reps, durationS: p.durationS, distanceM: p.distanceM } : null;
       return c;
     });
@@ -294,6 +296,7 @@ async function plannedRoutine(ctx: Ctx, exercises: unknown) {
       sets: (Array.isArray(e.sets) ? e.sets.slice(0, 50) : []).map((s: any) => ({
         kind: oneOf(s?.kind, KINDS, "normal"), reps: intOrNull(s?.reps, 0, 1000), repsMax: intOrNull(s?.repsMax, 0, 1000), startReps: intOrNull(s?.startReps, 0, 1000), weightKg: numOrNull(s?.weightKg, -500, 2000),
         durationS: intOrNull(s?.durationS, 0, 86400), distanceM: numOrNull(s?.distanceM, 0, 1e7), rpe: numOrNull(s?.rpe, 0, 10), restS: intOrNull(s?.restS, 0, 3600),
+        side: s?.side === "L" || s?.side === "R" ? s.side : null,
       })),
     })),
   };
@@ -314,9 +317,9 @@ async function workoutOfSet(q: Sql, setId: string): Promise<{ workoutId: string;
 }
 
 /** A workout set as replanRests reads it. */
-interface RestSetRow { id: string; kind: SetKind; done: boolean; rest_planned_s: number | null }
+interface RestSetRow { id: string; kind: SetKind; side: string | null; done: boolean; rest_planned_s: number | null }
 /** What a set's planned rest is worked out from that can change during a workout. */
-interface RestInputs { restS: number | null; restAfterS: number | null; kinds: SetKind[] }
+interface RestInputs { restS: number | null; restAfterS: number | null; kinds: SetKind[]; sides: (string | null)[] }
 
 /**
  * Plans the rest after some sets again, the way Start planned it (buildPlan): a set's planned rest is fixed at Start
@@ -332,7 +335,7 @@ async function replanRests(ctx: Ctx, weId: string, pick: (s: RestSetRow, i: numb
        (SELECT n.superset FROM workout_exercises n WHERE n.workout_id = we.workout_id AND n.position > we.position ORDER BY n.position LIMIT 1) AS next_superset
      FROM workout_exercises we JOIN workouts w ON w.id = we.workout_id WHERE we.id = $1 AND w.status = 'in_progress'`, [weId])).rows[0];
   if (!we) return;
-  const sets: RestSetRow[] = (await ctx.q.query("SELECT id, kind, done, rest_planned_s FROM workout_sets WHERE workout_exercise_id = $1 ORDER BY position", [weId])).rows;
+  const sets: RestSetRow[] = (await ctx.q.query("SELECT id, kind, side, done, rest_planned_s FROM workout_sets WHERE workout_exercise_id = $1 ORDER BY position", [weId])).rows;
   const d = restDefaultsOf(withWorkoutOverrides(await getSettings(ctx.q, ctx.userId), we.w_settings).workout);
   const pref = (await ctx.q.query("SELECT rest_s, rest_after_s FROM exercise_prefs WHERE exercise_id = $1", [we.exercise_id])).rows[0];
   const snap: Pick<Routine, "exercises"> | null = typeof we.routine_snapshot === "string" ? JSON.parse(we.routine_snapshot) : we.routine_snapshot;
@@ -344,9 +347,9 @@ async function replanRests(ctx: Ctx, weId: string, pick: (s: RestSetRow, i: numb
   const ownRest = (i: number, x: RestInputs) => re?.sets?.length === x.kinds.length ? re.sets[i]?.restS : undefined;
   // inside a superset round there is no rest (as at Start)
   const inRound = !!we.superset && we.next_superset === we.superset;
-  const plan = (i: number, x: RestInputs) => inRound ? 0 : restAfterSet({ setRestS: ownRest(i, x), kind: x.kinds[i], nextKind: x.kinds[i + 1],
+  const plan = (i: number, x: RestInputs) => inRound ? 0 : restAfterSet({ setRestS: ownRest(i, x), kind: x.kinds[i], nextKind: x.kinds[i + 1], side: x.sides[i], nextSide: x.sides[i + 1],
     byKindS: re?.restByKind, exRestS: x.restS, prefRestS: pref?.rest_s, isLastSet: i === x.kinds.length - 1, exRestAfterS: x.restAfterS, prefRestAfterS: pref?.rest_after_s }, d);
-  const now: RestInputs = { restS: we.rest_s, restAfterS: we.rest_after_s, kinds: sets.map((s) => s.kind) };
+  const now: RestInputs = { restS: we.rest_s, restAfterS: we.rest_after_s, kinds: sets.map((s) => s.kind), sides: sets.map((s) => s.side) };
   const was = before?.(now, sets);
   for (const [i, s] of sets.entries()) {
     if (!pick(s, i, sets)) continue;
@@ -562,7 +565,7 @@ export function workoutRoutes(r: Router) {
         const added = new Set((await ctx.q.query("SELECT id FROM workout_sets WHERE workout_exercise_id = $1 AND position >= $2 AND position < $3",
           [weId, at, at + list.length])).rows.map((x: any) => x.id));
         await replanRests(ctx, weId, (s, i, all) => s.id === b.afterId && !all[i + 1]?.done,
-          (now, all) => ({ ...now, kinds: all.filter((s) => !added.has(s.id)).map((s) => s.kind) }));
+          (now, all) => { const kept = all.filter((s) => !added.has(s.id)); return { ...now, kinds: kept.map((s) => s.kind), sides: kept.map((s) => s.side) }; });
       }
     } else await insertSets(ctx, weId, list, n);
     // a new set reopens the exercise during a workout; on a finished workout it is simply part of it
@@ -585,7 +588,7 @@ export function workoutRoutes(r: Router) {
     if ("distanceM" in b) put("distance_m", numOrNull(b.distanceM, 0, 1e7));
     if ("rpe" in b) put("rpe", numOrNull(b.rpe, 0, 10));
     if ("rir" in b) put("rir", numOrNull(b.rir, 0, 20));
-    if ("side" in b) put("side", b.side ? str(b.side, 5) : null);
+    if ("side" in b) put("side", b.side === "L" || b.side === "R" ? b.side : null);
     if ("restPlannedS" in b) put("rest_planned_s", intOrNull(b.restPlannedS, 0, 3600));
     if ("restActualS" in b) put("rest_actual_s", intOrNull(b.restActualS, 0, 86400));
     if ("done" in b) {
@@ -599,9 +602,17 @@ export function workoutRoutes(r: Router) {
     const was: SetKind | null = "kind" in b ? (await ctx.q.query("SELECT kind FROM workout_sets WHERE id = $1", [sid])).rows[0]?.kind ?? null : null;
     const kind = "kind" in b ? oneOf(b.kind, KINDS, "normal") : null;
     const kindChanged = kind != null && kind !== was;
+    // a set made left or right (or both again): no rest between a left set and the right one after it, so this set and
+    // the one before it are planned again (each only while its rest is still what the old sides gave it)
+    const oldSide: string | null | undefined = "side" in b ? (await ctx.q.query("SELECT side FROM workout_sets WHERE id = $1", [sid])).rows[0]?.side ?? null : undefined;
     const replan = "restPlannedS" in b ? b.restPlannedS == null : kindChanged;
     await ctx.q.query(`UPDATE workout_sets SET ${sets.join(", ")} WHERE id = $1`, vals);
     if (replan) await replanRests(ctx, weId, (s) => s.id === sid);
+    const newSide = b.side === "L" || b.side === "R" ? b.side : null;
+    if (oldSide !== undefined && oldSide !== newSide) {
+      await replanRests(ctx, weId, (s, i, all) => (s.id === sid || all[i + 1]?.id === sid) && !s.done,
+        (now, all) => ({ ...now, sides: all.map((s) => (s.id === sid ? oldSide : s.side)) }));
+    }
     // the set before rests by this one's kind too (none before a drop set). Only while that rest is still ahead or may be
     // running (this set not done yet), and only if it is still what the old kind gave it (a rest set on it stays)
     if (kindChanged && was && (was === "drop") !== (kind === "drop")) {

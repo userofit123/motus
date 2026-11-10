@@ -31,7 +31,9 @@ const setLabel = computed(() => {
   const x = s.value; if (!x) return "";
   if (x.kind === "warmup") return "Warm-up set";
   if (x.kind === "drop") return `Drop set · set ${work.value.indexOf(parentOf(x)) + 1} of ${work.value.length}`;
-  return `${x.kind === "failure" ? "Set to failure" : "Set"} ${work.value.indexOf(x) + 1} of ${work.value.length}`;
+  // a set for one side says which (the feature on): "Set 2 of 6 · left"
+  const side = W.settings.value.features.unilateral && x.side ? ` · ${x.side === "L" ? "left" : "right"}` : "";
+  return `${x.kind === "failure" ? "Set to failure" : "Set"} ${work.value.indexOf(x) + 1} of ${work.value.length}${side}`;
 });
 
 const resting = computed(() => restActive() || (rest.done && !!rest.endAt));

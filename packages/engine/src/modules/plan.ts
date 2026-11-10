@@ -1,6 +1,6 @@
 // Turning a routine into today's plan: the sets to do with the routine's numbers (which are where you are now, PLAN.md
 // §8.7), last time's beside them, with reminders, pinned notes and an estimate of how long it takes. Used by the pre-start preview and by "Start".
-import { estimate, restAfterSet, restDefaultsOf, startRepsOf, type Exercise, type Reminder, type Note, type Settings, type SetKind } from "@motus/shared";
+import { estimate, pairSets, restAfterSet, restDefaultsOf, startRepsOf, type Exercise, type Reminder, type Note, type Settings, type SetKind } from "@motus/shared";
 import type { Sql } from "../db";
 import { camel } from "../util";
 import { exerciseSessions, getExercises } from "./library";
@@ -12,6 +12,8 @@ export interface PlannedSet {
   durationS: number | null;
   distanceM: number | null;
   rpe: number | null;
+  /** "L" / "R": the routine set's side, copied into the workout; null: both together */
+  side: string | null;
   restS: number; // rest after this set
   targetReps: number | null;
   targetRepsMax: number | null;
@@ -72,16 +74,6 @@ async function pinnedNotes(q: Sql, targets: { type: string; id: string }[]): Pro
   return rows.map((r: any) => camel<Note>(r));
 }
 
-/** Pairs each planned set with the same set last time: warm-ups with warm-ups, working sets with working sets. */
-function matchPrev(kinds: SetKind[], lastSets: any[]) {
-  const warm = lastSets.filter((s) => s.kind === "warmup"), work = lastSets.filter((s) => s.kind !== "warmup");
-  let wi = 0, ki = 0;
-  return kinds.map((k) => {
-    if (k === "warmup") return warm[wi++] ?? null;
-    return work[ki++] ?? work.at(-1) ?? null; // more sets than last time: repeat the last working set
-  });
-}
-
 /** The saved settings with a workout's own Workout settings over them (the start screen's, for this workout only),
  * only known keys of the right type. Used by the start and its preview alike, so the preview matches the start. */
 export function withWorkoutOverrides(settings: Settings, raw: unknown): Settings {
@@ -123,8 +115,9 @@ export async function buildPlan(q: Sql, routine: any, settings: Settings, today:
     const last = hist[0] ?? null;
     const useLast = !routine.id && !re.fixed;
     const pref: any = prefs.get(re.exerciseId);
-    const kinds = re.sets.map((s: any) => s.kind as SetKind);
-    const prevs = matchPrev(kinds, last?.sets ?? []);
+    // each planned set with the same set last time: warm-ups with warm-ups, working sets with working sets, a left set
+    // with last time's left one; more sets than last time repeat the last working set
+    const prevs = pairSets(re.sets as { kind: SetKind; side?: string | null }[], (last?.sets ?? []) as any[], true);
     const exReminders = reminders.filter((r) => r.targetType === "exercise" && r.targetId === re.exerciseId);
     const delta = exReminders.reduce((a, r) => ({ w: a.w + (r.action?.weightKg ?? 0), r: a.r + (r.action?.reps ?? 0) }), { w: 0, r: 0 });
     // an older "Ready for more weight" reminder still pending: an exact weight and reps (the newest wins). None are made
@@ -155,8 +148,8 @@ export async function buildPlan(q: Sql, routine: any, settings: Settings, today:
         kind: s.kind, weightKg, reps,
         durationS: fromLast && prev.durationS != null ? prev.durationS : s.durationS,
         distanceM: fromLast && prev.distanceM != null ? prev.distanceM : s.distanceM,
-        rpe: s.rpe,
-        restS: restAfterSet({ setRestS: s.restS, kind: s.kind, nextKind: re.sets[i + 1]?.kind, byKindS: re.restByKind, exRestS: re.restS, prefRestS: pref?.rest_s, isLastSet, exRestAfterS: re.restAfterS, prefRestAfterS: pref?.rest_after_s }, d),
+        rpe: s.rpe, side: s.side ?? null,
+        restS: restAfterSet({ setRestS: s.restS, kind: s.kind, nextKind: re.sets[i + 1]?.kind, side: s.side, nextSide: re.sets[i + 1]?.side, byKindS: re.restByKind, exRestS: re.restS, prefRestS: pref?.rest_s, isLastSet, exRestAfterS: re.restAfterS, prefRestAfterS: pref?.rest_after_s }, d),
         targetReps: s.reps, targetRepsMax: s.repsMax, targetWeightKg: s.weightKg,
         prev: prev ? { weightKg: prev.weightKg, reps: prev.reps, durationS: prev.durationS, distanceM: prev.distanceM } : null,
         prefilled: !!fromLast, adjusted,

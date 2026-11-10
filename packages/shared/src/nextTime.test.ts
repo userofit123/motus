@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { applyStructure, cleanProgression, planNext, type RoutineSetLike, stepDown, stepUp, structureChanges } from "./nextTime";
+import { applyStructure, cleanProgression, pairSets, planNext, type RoutineSetLike, stepDown, stepUp, structureChanges } from "./nextTime";
 import { withDefaults } from "./settings";
+import { restAfterSet } from "./training";
 import type { WorkoutExercise, WorkoutSet } from "./types";
 
 const set = (p: Partial<WorkoutSet>): WorkoutSet => ({ id: Math.random().toString(36), position: 0, kind: "normal", weightKg: null, reps: null, durationS: null, distanceM: null, rpe: null, rir: null, side: null, done: true, doneAt: null, restPlannedS: null, restActualS: null, targetReps: null, targetWeightKg: null, prefilled: false, ...p });
@@ -248,5 +249,41 @@ describe("the old routine settings", () => {
   it("give Off to someone who had the old Progression feature switched off, unless they chose a mode since", () => {
     expect(withDefaults({ features: { progression: false } }).progression.mode).toBe("off");
     expect(withDefaults({ features: { progression: false }, progression: { mode: "auto" } }).progression.mode).toBe("auto");
+  });
+});
+
+describe("left and right sets", () => {
+  const S = (kind: string, side: string | null = null) => ({ kind, side });
+  it("pairs each side with the other's same side, general sets with general ones, warm-ups with warm-ups", () => {
+    const last = [S("warmup"), S("normal"), S("normal", "R"), S("normal", "L"), S("normal", "R"), S("normal", "L")].map((s, i) => ({ ...s, i }));
+    const p = pairSets([S("warmup"), S("normal", "L"), S("normal", "R"), S("normal"), S("normal", "L"), S("normal", "R")], last);
+    expect(p.map((x) => x?.i ?? null)).toEqual([0, 3, 2, 1, 5, 4]);
+  });
+  it("falls back to general sets for a side last time didn't have, and a general set to sided ones, as before sides", () => {
+    const general = [S("normal"), S("normal")].map((s, i) => ({ ...s, i }));
+    expect(pairSets([S("normal", "L"), S("normal", "R"), S("normal", "L"), S("normal", "R")], general).map((x) => x?.i ?? null)).toEqual([0, 0, 1, 1]);
+    const sided = [S("normal", "L"), S("normal", "R")].map((s, i) => ({ ...s, i }));
+    expect(pairSets([S("normal"), S("normal"), S("normal")], sided, true).map((x) => x?.i ?? null)).toEqual([0, 1, 1]);
+  });
+  it("no rest between a left set and the right one after it; a set's own rest still wins", () => {
+    const d = { betweenSetsS: 90, afterExerciseS: 120 };
+    expect(restAfterSet({ side: "L", nextSide: "R", isLastSet: false }, d)).toBe(0);
+    expect(restAfterSet({ side: "R", nextSide: "L", isLastSet: false }, d)).toBe(90);
+    expect(restAfterSet({ setRestS: 30, side: "L", nextSide: "R", isLastSet: false }, d)).toBe(30);
+  });
+  it("Progression takes each routine set's numbers from today's set of the same side, and the sides stay", () => {
+    const D = { mode: "suggest" as const, stepKg: 2.5, lowerAfter: 3 };
+    const rs = (side: string | null, weightKg: number) => ({ kind: "normal", reps: 10, repsMax: null, weightKg, durationS: null, distanceM: null, side });
+    const slot = { id: "re1", exerciseId: "x", fixed: false, progression: null, missed: 0, sets: [rs(null, 40), rs("L", 16), rs("R", 16)] };
+    // today the right side went first
+    const today = { exercises: [ex({ routineExerciseId: "re1", sets: [set({ weightKg: 40, reps: 10 }), set({ side: "R", weightKg: 18, reps: 10 }), set({ side: "L", weightKg: 16, reps: 10 })] })] };
+    const r = planNext([slot], today, D);
+    expect((r.exercises[0]!.sets as any[]).map((s) => [s.side, s.weightKg])).toEqual([[null, 40], ["L", 16], ["R", 18]]);
+  });
+  it("a swapped-in exercise's working sets take today's numbers side by side and keep the routine's sides", () => {
+    const routine = { exercises: [{ id: "ra", exerciseId: "A", exercise: { name: "A" }, sets: [{ kind: "normal", reps: 8, weightKg: 10, side: "L" }, { kind: "normal", reps: 8, weightKg: 10, side: "R" }] }] };
+    const w = { exercises: [ex({ name: "B", exerciseId: "B", routineExerciseId: "ra", sets: [set({ side: "R", weightKg: 14, reps: 8 }), set({ side: "L", weightKg: 12, reps: 8 })] })] };
+    const out = applyStructure(routine, w, ["swapped:ra"])!;
+    expect((out[0] as any).sets.map((s: any) => [s.side, s.weightKg])).toEqual([["L", 12], ["R", 14]]);
   });
 });

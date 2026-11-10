@@ -55,12 +55,15 @@ const restTiles = (e: any) => {
   return [
     { l: "Normal sets", v: c(restForKind(e, "normal", false, d)), dim: e.restS == null },
     ...kinds.map((k) => ({ l: label[k], v: c(restForKind(e, k, false, d)), dim: e.restByKind?.[k] == null })),
+    // a left set straight before its right one: you switch sides without a rest (unless that set has its own)
+    ...(sideRounds(e) ? [{ l: "Between sides", v: "No rest", dim: true }] : []),
     { l: "After the last set", v: c(restForKind(e, "normal", true, d)), dim: e.restAfterS == null },
   ];
 };
 // a figure only where there are muscles to show; without one the card keeps its plain column (Routines list rule)
 const hasMuscles = (e: any) => !!(e.exercise?.primaryMuscles?.length || e.exercise?.secondaryMuscles?.length);
-const sided = (e: any) => !!st.value.features.unilateral && !!e.exercise?.unilateral;
+const sided = (e: any) => !!st.value.features.unilateral && (!!e.exercise?.unilateral || e.sets.some((x: any) => x.side));
+const sideRounds = (e: any) => !!st.value.features.unilateral && e.sets.some((x: any, j: number) => x.side === "L" && e.sets[j + 1]?.side === "R");
 // notes and reminders for one exercise of this routine (they show under it during the workout)
 const exItems = (e: any) => [
   { label: "Add a note", hint: "Shown with this exercise in your workouts", icon: "note", run: () => (noteSheet.value = { targets: [{ type: "routine_exercise", id: e.id, label: `${e.exercise.name} in ${routine.value.name}` }, { type: "exercise", id: e.exerciseId, label: `${e.exercise.name}, every time` }] }) },

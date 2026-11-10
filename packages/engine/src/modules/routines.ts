@@ -35,14 +35,14 @@ export async function routineSummaries(q: Sql, userId: string, where = "r.delete
           OR (m.target_type = 'exercise' AND m.target_id IN (SELECT exercise_id FROM routine_exercises WHERE routine_id = r.id)
               AND (m.scope_routine_id IS NULL OR m.scope_routine_id = r.id)))) AS pending_reminders,
        coalesce((SELECT json_agg(json_build_object('name', e.name, 'primary', e.primary_muscles, 'secondary', e.secondary_muscles, 'restS', re.rest_s, 'restAfterS', re.rest_after_s, 'restByKind', re.rest_by_kind,
-          'sets', (SELECT coalesce(json_agg(json_build_object('kind', s.kind, 'reps', s.reps, 'durationS', s.duration_s, 'restS', s.rest_s) ORDER BY s.position), '[]')
+          'sets', (SELECT coalesce(json_agg(json_build_object('kind', s.kind, 'reps', s.reps, 'durationS', s.duration_s, 'restS', s.rest_s, 'side', s.side) ORDER BY s.position), '[]')
                    FROM routine_sets s WHERE s.routine_exercise_id = re.id)) ORDER BY re.position)
          FROM routine_exercises re JOIN exercises e ON e.id = re.exercise_id WHERE re.routine_id = r.id), '[]') AS exs
      FROM routines r WHERE ${where} ORDER BY r.pinned DESC, r.position, r.created_at`);
   return rows.map((r: any) => {
     const exs = r.exs as any[];
     const est = estimate(exs.map((e, i) => ({
-      sets: (e.sets as any[]).map((s, j) => ({ ...s, restS: restAfterSet({ setRestS: s.restS, kind: s.kind, nextKind: e.sets[j + 1]?.kind, byKindS: e.restByKind, exRestS: e.restS, isLastSet: j === e.sets.length - 1, exRestAfterS: e.restAfterS }, d) })),
+      sets: (e.sets as any[]).map((s, j) => ({ ...s, restS: restAfterSet({ setRestS: s.restS, kind: s.kind, nextKind: e.sets[j + 1]?.kind, side: s.side, nextSide: e.sets[j + 1]?.side, byKindS: e.restByKind, exRestS: e.restS, isLastSet: j === e.sets.length - 1, exRestAfterS: e.restAfterS }, d) })),
     })));
     const muscles = [...new Set(exs.flatMap((e) => e.primary as string[]))];
     // helpers that are nobody's main muscle here, for the little body on the routine card
@@ -90,16 +90,19 @@ async function writeRoutineBody(ctx: Ctx, routineId: string, exercises: any[], w
     for (const [sp, s] of sets.entries()) {
       const reps = intOrNull(s.reps, 0, 1000), repsMax = intOrNull(s.repsMax, 0, 1000);
       await ctx.q.query(
-        `INSERT INTO routine_sets (id, user_id, routine_exercise_id, position, kind, reps, reps_max, weight_kg, duration_s, distance_m, rpe, rest_s, start_reps)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
+        `INSERT INTO routine_sets (id, user_id, routine_exercise_id, position, kind, reps, reps_max, weight_kg, duration_s, distance_m, rpe, rest_s, start_reps, side)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
         [uuidv7(), ctx.userId, reId, sp, oneOf(s.kind, KINDS, "normal"), reps, repsMax, numOrNull(s.weightKg, -500, 2000),
           intOrNull(s.durationS, 0, 86400), numOrNull(s.distanceM, 0, 1e7), numOrNull(s.rpe, 0, 10), intOrNull(s.restS, 0, 3600),
           // the starting reps follow the range: clamped into it when it changes, gone without one
-          clampStartReps({ reps, repsMax, startReps: intOrNull(s.startReps, 0, 1000) })]);
+          clampStartReps({ reps, repsMax, startReps: intOrNull(s.startReps, 0, 1000) }), sideOf(s.side)]);
     }
   }
   await ctx.q.query("DELETE FROM routine_exercises WHERE routine_id = $1 AND NOT (id = ANY($2::uuid[]))", [routineId, keep]);
 }
+
+/** A set's side: "L" or "R", anything else is both together (null). */
+const sideOf = (v: unknown): "L" | "R" | null => (v === "L" || v === "R" ? v : null);
 
 type Loose = Record<string, unknown> | null | undefined;
 const nOrNull = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? v : null);
@@ -120,7 +123,7 @@ function slimRoutine(r: Loose): RoutineSnapshot {
         restByKind: e?.restByKind && typeof e.restByKind === "object" ? (e.restByKind as Record<string, number>) : null,
         fixed: e?.fixed === true || e?.prefill === "target", progression: cleanProgression(e?.progression), note: String(e?.note ?? ""),
         sets: sets.map((t) => ({ kind: (t?.kind ?? "normal") as SetKind, reps: nOrNull(t?.reps), repsMax: nOrNull(t?.repsMax), startReps: nOrNull(t?.startReps), weightKg: nOrNull(t?.weightKg),
-          durationS: nOrNull(t?.durationS), distanceM: nOrNull(t?.distanceM), rpe: nOrNull(t?.rpe), restS: nOrNull(t?.restS) })),
+          durationS: nOrNull(t?.durationS), distanceM: nOrNull(t?.distanceM), rpe: nOrNull(t?.rpe), restS: nOrNull(t?.restS), side: sideOf(t?.side) })),
       };
     }),
   };
@@ -169,7 +172,7 @@ async function bodyFromWorkout(q: Sql, workoutId: string) {
   return exs.map((e: any) => ({
     id: e.routine_exercise_id ?? undefined, exerciseId: e.exercise_id, superset: e.superset, restS: e.rest_s, restAfterS: e.rest_after_s, repRestS: e.rep_rest_s,
     sets: sets.filter((s: any) => s.workout_exercise_id === e.id && (s.done || !sets.some((x: any) => x.workout_exercise_id === e.id && x.done)))
-      .map((s: any) => ({ kind: s.kind, reps: s.reps, weightKg: s.weight_kg, durationS: s.duration_s, distanceM: s.distance_m })),
+      .map((s: any) => ({ kind: s.kind, reps: s.reps, weightKg: s.weight_kg, durationS: s.duration_s, distanceM: s.distance_m, side: s.side })),
   }));
 }
 

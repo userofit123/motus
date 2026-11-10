@@ -145,7 +145,7 @@ export function useWorkout() {
     const s = e.sets[si]!;
     const last = si === e.sets.length - 1 || e.sets.slice(si + 1).every((x) => x.done);
     const d = restDefaultsOf(prefs.value);
-    let secs = s.restPlannedS ?? restAfterSet({ kind: s.kind, nextKind: e.sets[si + 1]?.kind, exRestS: e.restS, isLastSet: last, exRestAfterS: e.restAfterS }, d);
+    let secs = s.restPlannedS ?? restAfterSet({ kind: s.kind, nextKind: e.sets[si + 1]?.kind, side: s.side, nextSide: e.sets[si + 1]?.side, exRestS: e.restS, isLastSet: last, exRestAfterS: e.restAfterS }, d);
     if (last && e.restAfterS != null) secs = e.restAfterS;
     // superset: no rest until the round is complete
     const nx = state.w!.exercises[state.w!.exercises.indexOf(e) + 1];
@@ -213,10 +213,11 @@ export function useWorkout() {
   async function addSet(e: WorkoutExercise) {
     const last = e.sets.at(-1);
     // the id is made here, so the new set can be ticked or changed straight away, even offline
-    const s = { ...(last ?? ({} as any)), id: crypto.randomUUID(), done: false, doneAt: null, kind: last?.kind === "warmup" || last?.kind === "drop" ? "normal" : last?.kind ?? "normal", position: e.sets.length, prefilled: true, pr: [] };
+    // a general set (both sides together); left and right ones come from "Left + right" or the set's menu
+    const s = { ...(last ?? ({} as any)), id: crypto.randomUUID(), done: false, doneAt: null, kind: last?.kind === "warmup" || last?.kind === "drop" ? "normal" : last?.kind ?? "normal", side: null, position: e.sets.length, prefilled: true, pr: [] };
     e.sets.push(s);
     if (e.status === "done") e.status = "pending";
-    await call("post", `/workout-exercises/${e.id}/sets`, { id: s.id, kind: s.kind, weightKg: s.weightKg ?? null, reps: s.reps ?? null, durationS: s.durationS ?? null, distanceM: s.distanceM ?? null, restPlannedS: s.restPlannedS ?? null, prefilled: true }, true);
+    await call("post", `/workout-exercises/${e.id}/sets`, { id: s.id, kind: s.kind, weightKg: s.weightKg ?? null, reps: s.reps ?? null, durationS: s.durationS ?? null, distanceM: s.distanceM ?? null, restPlannedS: s.restPlannedS ?? null, side: null, prefilled: true }, true);
   }
   /** A drop set: straight after this set (or its last drop), about 20% lighter, with no rest before it. */
   async function addDrop(e: WorkoutExercise, from: WorkoutSet) {
@@ -227,7 +228,7 @@ export function useWorkout() {
     e.sets.splice(at, 0, s);
     e.sets.forEach((x, i) => (x.position = i));
     if (e.status === "done") e.status = "pending";
-    await call("post", `/workout-exercises/${e.id}/sets`, { id: s.id, afterId: prev.id, kind: "drop", weightKg: s.weightKg ?? null, reps: s.reps ?? null, durationS: s.durationS ?? null, distanceM: s.distanceM ?? null, restPlannedS: s.restPlannedS ?? null, prefilled: true }, true);
+    await call("post", `/workout-exercises/${e.id}/sets`, { id: s.id, afterId: prev.id, kind: "drop", weightKg: s.weightKg ?? null, reps: s.reps ?? null, durationS: s.durationS ?? null, distanceM: s.distanceM ?? null, restPlannedS: s.restPlannedS ?? null, side: prev.side ?? null, prefilled: true }, true);
   }
   async function removeSet(e: WorkoutExercise, s: WorkoutSet) {
     e.sets.splice(e.sets.indexOf(s), 1);

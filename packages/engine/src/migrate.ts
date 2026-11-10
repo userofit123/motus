@@ -19,6 +19,7 @@ import m016 from "./migrations/016_history_now";
 import m017 from "./migrations/017_set_start";
 import m018 from "./migrations/018_set_start_reps";
 import m019 from "./migrations/019_exercise_sides";
+import m020 from "./migrations/020_routine_set_sides";
 
 const MIGRATIONS: [string, string][] = [
   ["001_init", m001],
@@ -40,6 +41,7 @@ const MIGRATIONS: [string, string][] = [
   ["017_set_start", m017],
   ["018_set_start_reps", m018],
   ["019_exercise_sides", m019],
+  ["020_routine_set_sides", m020],
 ];
 
 /** `until`: stop after that one (tests run a migration against rows written in the shape before it). */

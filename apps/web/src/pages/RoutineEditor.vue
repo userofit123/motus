@@ -19,6 +19,7 @@ import { prompt } from "../core/ask";
 import { useLeaveGuard, goBack } from "../core/leave";
 import { startWorkout } from "../workout/start";
 import { exerciseSheet } from "../core/ui";
+import { sidesItem } from "../core/sides";
 import { isPhone } from "../core/device";
 import { startDrag } from "../core/drag";
 import Icon from "../components/Icon.vue";
@@ -94,8 +95,20 @@ const toggleAll = () => { open.value = new Set(allOpen.value ? [] : r.value.exer
 
 const blankSet = (e: any) => {
   const last = e.sets.at(-1);
-  return { ...(last ? { ...last, id: undefined, kind: last.kind === "warmup" || last.kind === "drop" ? "normal" : last.kind, restS: null } : { kind: "normal", reps: 8, repsMax: null, weightKg: null, durationS: usesDuration(tr(e)) ? 30 : null, distanceM: null, rpe: null, restS: null }), _k: nk() };
+  return { ...(last ? { ...last, id: undefined, kind: last.kind === "warmup" || last.kind === "drop" ? "normal" : last.kind, restS: null } : { kind: "normal", reps: 8, repsMax: null, weightKg: null, durationS: usesDuration(tr(e)) ? 30 : null, distanceM: null, rpe: null, restS: null }), side: null, _k: nk() };
 };
+/** A left and a right set, from the last set of a side (else the last set), as in the workout. */
+function addPair(e: any) {
+  const from = [...e.sets].reverse().find((x: any) => x.side && x.kind !== "warmup" && x.kind !== "drop");
+  const base = from ? { ...from, id: undefined, kind: "normal", restS: null } : blankSet(e);
+  e.sets.push({ ...base, side: "L", _k: nk() }, { ...base, side: "R", _k: nk() });
+  touch();
+}
+// a set's side, and its drop sets' with it (they are the same side's set going on)
+function setSide(e: any, j: number, side: "L" | "R" | null) {
+  for (let i = j; i === j || e.sets[i]?.kind === "drop"; i++) e.sets[i].side = side;
+  touch();
+}
 function addExercises(ids: string[]) {
   if (picking.value?.replace != null) {
     const e = r.value.exercises[picking.value.replace];
@@ -103,8 +116,10 @@ function addExercises(ids: string[]) {
   } else for (const eid of ids) {
     const ex = exById.value.get(eid);
     const timed = usesDuration(ex?.tracking ?? "weight_reps") && !usesReps(ex?.tracking ?? "weight_reps");
+    // one side at a time: three rounds of a left and a right set; else three sets
+    const sides = sidesOn.value && ex?.unilateral ? ["L", "R"] : [null];
     const e = keyed({ exerciseId: eid, exercise: ex, superset: null, restS: null, restAfterS: null, restByKind: null, repRestS: null, fixed: false, progression: null, note: "",
-      sets: [0, 1, 2].map(() => ({ kind: "normal", reps: timed ? null : 8, repsMax: null, weightKg: null, durationS: timed ? 30 : null, distanceM: null, rpe: null, restS: null })) });
+      sets: [0, 1, 2].flatMap(() => sides.map((side) => ({ kind: "normal", reps: timed ? null : 8, repsMax: null, weightKg: null, durationS: timed ? 30 : null, distanceM: null, rpe: null, restS: null, side }))) });
     r.value.exercises.push(e);
     open.value.add(e._k);
   }
@@ -164,6 +179,12 @@ const setCount = computed(() => (r.value?.exercises ?? []).reduce((a: number, e:
 const muscles = computed(() => muscleSets((r.value?.exercises ?? []).map((e: any) => { const x = e.exercise ?? exById.value.get(e.exerciseId); return { primary: x?.primaryMuscles ?? [], secondary: x?.secondaryMuscles ?? [], sets: e.sets.length }; })));
 const worked = computed(() => musclesWorked((r.value?.exercises ?? []).map((e: any) => { const x = e.exercise ?? exById.value.get(e.exerciseId); return { primary: x?.primaryMuscles ?? [], secondary: x?.secondaryMuscles ?? [] }; })));
 const exOf = (e: any) => exById.value.get(e.exerciseId) ?? e.exercise;
+// Left / right sides (optional feature): an exercise done one side at a time starts with left and right sets and gets a
+// "Left + right" button; any set of any exercise can be made left, right or both from its menu, beside general sets
+const sidesOn = computed(() => !!s.value.features.unilateral);
+const sidedEx = (e: any) => sidesOn.value && !!exOf(e)?.unilateral;
+// the weight is per side wherever a set is for one side
+const perSide = (e: any) => sidedEx(e) || (sidesOn.value && e.sets.some((x: any) => x.side));
 const exName = (e: any) => exOf(e)?.name ?? "";
 const exImg = (e: any) => exOf(e)?.images?.[0];
 
@@ -184,7 +205,8 @@ function setSummary(e: any) {
   else if (usesDuration(t)) what = same("durationS") && work[0]?.durationS ? `${work.length} × ${f.clock(work[0].durationS)}` : `${work.length} sets`;
   else what = `${work.length} sets`;
   const w = usesWeight(t) && same("weightKg") && work[0]?.weightKg != null ? ` · ${f.w(work[0].weightKg)} ${f.wu}` : "";
-  return `${what}${w}${warm ? ` · ${warm} warm-up` : ""}${drops ? ` · ${drops} drop${drops === 1 ? "" : "s"}` : ""}`;
+  const sides = sidesOn.value && work.some((x: any) => x.side) ? " · left and right" : "";
+  return `${what}${w}${sides}${warm ? ` · ${warm} warm-up` : ""}${drops ? ` · ${drops} drop${drops === 1 ? "" : "s"}` : ""}`;
 }
 
 // rest after each kind of set; normal sets use the exercise's own rest, the others fall back to the person's default for the kind, then to it
@@ -322,6 +344,9 @@ const exMenu = (e: any, i: number) => [
   { label: "Move down", icon: "down", run: () => move(i, 1), hidden: i === r.value.exercises.length - 1 },
   { label: "Superset with next", hint: "Do one set of each in turn, resting after the pair", icon: "link", run: () => superset(i), hidden: !s.value.features.supersets || i === r.value.exercises.length - 1 || inSupersetWithNext(i) },
   { label: "Remove from superset", icon: "link", run: () => unsuperset(i), hidden: !e.superset },
+  // the exercise's own default, here too (it says what new sets start as); any exercise can get a left and a right set
+  { ...sidesItem(e.exerciseId, sidedEx(e)), sep: true, hidden: !sidesOn.value },
+  { label: "Add a left + right set", hint: "One set for each side, beside the others", icon: "plus", run: () => addPair(e), hidden: !sidesOn.value || sidedEx(e) },
   { label: "Rep range", hint: "A bottom and a top, e.g. 8-12", sep: true, icon: "layers", checked: showRange(e), hidden: !rangeItem(e), run: () => toggleRange(e) },
   { label: "Start at the bottom of the range", hint: "Next time starts each set at its lowest reps", sep: !rangeItem(e), icon: "down", hidden: !hasStart(e), run: () => clearStart(e) },
   { label: "Progression", hint: ownProg(e) ? modeLabel(e.progression.mode ?? s.value.progression.mode) : "Uses your default", sep: !rangeItem(e) && !hasStart(e), icon: "arrowUp", hidden: e.fixed || !progUsable(e), run: () => (progFor.value = e) },
@@ -334,6 +359,11 @@ const setMenu = (e: any, j: number) => e.sets[j].kind === "drop" ? [
 ] : [
   ...(s.value.features.setTypes ? SET_KINDS.map(([k, l, ic]) => ({ label: l, icon: ic, checked: e.sets[j].kind === k, run: () => { e.sets[j].kind = k; touch(); } })) : []),
   ...(s.value.features.setTypes && e.sets[j].kind !== "warmup" ? [{ label: dropsAfter(e, j) ? "Add another drop" : "Add a drop set", hint: "Straight after this set: lower the weight and keep going", icon: "arrowDown", sep: true, run: () => addDrop(e, j) }] : []),
+  // any set can be for one side, or both together, whatever the exercise's own setting
+  ...(sidesOn.value ? [
+    { label: "Both sides", icon: "dumbbell", sep: true, checked: !e.sets[j].side, run: () => setSide(e, j, null) },
+    { label: "Left side", icon: "left", checked: e.sets[j].side === "L", run: () => setSide(e, j, "L") },
+    { label: "Right side", icon: "right", checked: e.sets[j].side === "R", run: () => setSide(e, j, "R") }] : []),
   { label: e.sets[j].restS != null ? "Change the rest after this set" : "Custom rest after this set", icon: "timer", run: () => (restFor.value = { ex: r.value.exercises.indexOf(e), set: j, kind: "set" }), sep: true },
   { label: "Remove set", icon: "trash", danger: true, sep: true, run: () => removeSet(e, j) },
 ];
@@ -413,12 +443,12 @@ await loaded(src, all, folders, routines, templates);
 
           <Collapse :open="isOpen(e)"><div class="exb">
             <div class="setgrid shead" :style="cols(e)"><span>Set</span>
-              <span v-if="usesWeight(tr(e))">{{ fmt.wu }}</span><span v-if="usesReps(tr(e))">Reps</span><span v-if="usesReps(tr(e)) && showRange(e)">Up to</span>
+              <span v-if="usesWeight(tr(e))">{{ fmt.wu }}<span v-if="perSide(e)" class="thside"> / side</span></span><span v-if="usesReps(tr(e))">Reps</span><span v-if="usesReps(tr(e)) && showRange(e)">Up to</span>
               <span v-if="usesDuration(tr(e))">Sec</span><span v-if="usesDistance(tr(e))">{{ fmt.du }}</span><span v-if="s.features.rpe">RPE</span><span /></div>
             <div class="slist">
               <div v-for="(x, j) in e.sets" :key="x._k" data-drag class="sitem" :class="{ drop: x.kind === 'drop' }">
                 <div class="setgrid" :style="cols(e)">
-                  <button class="sk dragh" :class="{ w: x.kind === 'warmup', d: x.kind === 'drop', f: x.kind === 'failure' }" title="Drag to reorder" @pointerdown="dragSet($event, e, j)">{{ setLabel(e.sets, j) }}</button>
+                  <button class="sk dragh" :class="{ w: x.kind === 'warmup', d: x.kind === 'drop', f: x.kind === 'failure' }" title="Drag to reorder" @pointerdown="dragSet($event, e, j)">{{ setLabel(e.sets, j, sidesOn) }}</button>
                   <input v-if="usesWeight(tr(e))" class="vin" inputmode="decimal" :value="wIn(x.weightKg)" placeholder="-" @change="x.weightKg = wOut(($event.target as HTMLInputElement).value); touch()" />
                   <input v-if="usesReps(tr(e))" class="vin" inputmode="numeric" :value="x.reps ?? ''" placeholder="-" @change="x.reps = nOut(($event.target as HTMLInputElement).value); touch()" />
                   <input v-if="usesReps(tr(e)) && showRange(e)" class="vin" inputmode="numeric" :value="x.repsMax ?? ''" placeholder="-" title="Top of a rep range (optional)" @change="x.repsMax = nOut(($event.target as HTMLInputElement).value); touch()" />
@@ -434,7 +464,10 @@ await loaded(src, all, folders, routines, templates);
                 </div>
               </div>
             </div>
-            <button class="qb acc" style="margin-top:6px" @click="addSet(e)"><Icon name="plus" :size="16" />Add set</button>
+            <div class="row" style="margin-top:6px">
+              <button class="qb acc" @click="addSet(e)"><Icon name="plus" :size="16" />Add set</button>
+              <button v-if="sidedEx(e)" class="qb" title="Add a left and a right set" @click="addPair(e)"><Icon name="plus" :size="16" />Left + right</button>
+            </div>
 
             <details class="fold sect prog">
               <summary class="sect-h"><span class="si"><Icon name="timer" :size="16" /></span><span class="grow"><b>Rest after each set</b><span class="tiny">{{ restSummary(e) }}</span></span></summary>

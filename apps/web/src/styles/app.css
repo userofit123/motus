@@ -355,6 +355,8 @@ html.phone { --tabh: 64px; }
 .setgrid { display: grid; align-items: center; gap: 6px; padding: calc(var(--tdy) / 2) 0; }
 .shead { font-size: 11px; font-weight: 600; color: var(--tx2); text-transform: uppercase; letter-spacing: .6px; text-align: center; padding-bottom: 6px; }
 .shead > span:first-child { text-align: start; }
+/* "kg / side": the weight one side moves, quieter than the unit itself (routine editor, routine page, workout) */
+.thside { font-weight: 400; text-transform: none; letter-spacing: 0; }
 .slist { display: flex; flex-direction: column; }
 .sitem { border-radius: var(--r-sm); }
 .setgrid .sk { display: inline-grid; place-items: center; min-width: 30px; height: 30px; padding: 0 6px; border-radius: 8px; background: var(--s2); color: var(--tx); font-size: 12.5px; font-weight: 600; border: 0; }

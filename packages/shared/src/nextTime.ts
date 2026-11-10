@@ -61,7 +61,29 @@ export interface NextChange {
   reason: string;
 }
 
-export type RoutineSetLike = { kind: string; reps: number | null; repsMax?: number | null; startReps?: number | null; weightKg: number | null; durationS?: number | null; distanceM?: number | null };
+export type RoutineSetLike = { kind: string; reps: number | null; repsMax?: number | null; startReps?: number | null; weightKg: number | null; durationS?: number | null; distanceM?: number | null; side?: string | null };
+
+type Sided = { kind: string; side?: string | null };
+/** Pairs each of `sets` with the same set in `other` (last time's, or today's for the routine): warm-ups with warm-ups,
+ * the others in turn, and a left or right set with the other's sets of that side, so left follows left and right follows
+ * right. A side the other has none of takes its general sets in turn (a routine just split into sides still finds last
+ * time's numbers), and a general set facing only sided ones takes them all in turn, as before there were sides.
+ * `repeatLast`: a working set past the other's last one takes that one again. */
+export function pairSets<T extends Sided>(sets: Sided[], other: T[], repeatLast = false): (T | null)[] {
+  const group = (s: Sided) => (s.kind === "warmup" ? "w" : "k");
+  const pools = new Map<string, T[]>();
+  const add = (k: string, s: T) => pools.set(k, [...(pools.get(k) ?? []), s]);
+  for (const s of other) { add(group(s), s); add(group(s) + (s.side ?? "-"), s); }
+  const used = new Map<string, number>();
+  return sets.map((s) => {
+    const g = group(s), own = g + (s.side ?? "-");
+    const pool = [own, g + "-", g].map((k) => pools.get(k)).find((a) => a?.length);
+    if (!pool) return null;
+    const i = used.get(own) ?? 0;
+    used.set(own, i + 1);
+    return pool[i] ?? (repeatLast && g === "k" ? pool.at(-1)! : null);
+  });
+}
 export type RoutineItemLike = { id?: string | null; exerciseId: string; fixed?: boolean; progression?: unknown; missed?: number; sets: unknown[] };
 
 /** A routine set's starting reps inside its rep range (`reps` is the range's bottom, `repsMax` its top): clamped into the
@@ -97,13 +119,13 @@ export function planNext<R extends RoutineItemLike>(exercises: R[], w: { exercis
     if (!e || re.fixed) return re;
     const sets = re.sets as RoutineSetLike[];
     // each routine set with the workout set in the same place among the non-warm-ups, by position so an unticked set
-    // keeps its place (null: warm-up, past today's last, unticked, or a drop facing a working set or the other way round)
+    // keeps its place (null: warm-up, past today's last, unticked, or a drop facing a working set or the other way round);
+    // left and right sets each with today's of their own side (pairSets)
     const work = e.sets.filter((s) => s.kind !== "warmup");
     const isDrop = (k: string) => k === "drop";
-    let k = 0;
-    const pairs = sets.map((rs) => {
+    const pairs = pairSets(sets, work).map((t, i) => {
+      const rs = sets[i]!;
       if (rs.kind === "warmup") return null;
-      const t = work[k++];
       return t && t.done && isDrop(t.kind) === isDrop(rs.kind) ? t : null;
     });
     const num = (t: number | null | undefined, r: number | null | undefined) => (t ?? r ?? null);
@@ -234,8 +256,8 @@ export function structureChanges(routine: RoutineShape, w: SessionShape): Struct
   return [...changed, ...notDone];
 }
 
-type SetBody = { kind: string; reps: number | null; weightKg: number | null; durationS: number | null; distanceM: number | null };
-const setBody = (s: WorkoutExercise["sets"][number]): SetBody => ({ kind: s.kind, reps: s.reps, weightKg: s.weightKg, durationS: s.durationS, distanceM: s.distanceM });
+type SetBody = { kind: string; reps: number | null; weightKg: number | null; durationS: number | null; distanceM: number | null; side: string | null };
+const setBody = (s: WorkoutExercise["sets"][number]): SetBody => ({ kind: s.kind, reps: s.reps, weightKg: s.weightKg, durationS: s.durationS, distanceM: s.distanceM, side: s.side ?? null });
 
 /** The routine's exercises after saving the changes whose keys are in `accept` (the rest stay as the routine has them).
  * Structure only: exercises the routine already had keep their own settings, weights and reps (a set added copies the
@@ -262,16 +284,17 @@ export function applyStructure<R extends RoutineShape["exercises"][number]>(rout
       if (keys.has(`fewer:${id}`) || keys.has(`more:${id}`)) return { ...r, exerciseId: e.exerciseId, sets: done.map(setBody) };
       // the routine's sets matched by kind: its warm-ups stay as they are, each working set takes today's working
       // numbers in turn (past today's last one, that one again); with no working set ticked the routine's own stay
+      // (left and right sets each from today's of their side); each keeps the routine's own side
       const work = done.filter((s) => s.kind !== "warmup");
-      let k = 0;
-      return { ...r, exerciseId: e.exerciseId, sets: sets.map((rs) => {
+      const ts = pairSets(sets as Sided[], work, true);
+      return { ...r, exerciseId: e.exerciseId, sets: sets.map((rs, i) => {
         if (rs.kind === "warmup") return rs;
-        const t = work[k++] ?? work.at(-1);
-        return t ? { ...setBody(t), kind: (rs.kind as string) ?? "normal" } : rs;
+        const t = ts[i];
+        return t ? { ...setBody(t), kind: (rs.kind as string) ?? "normal", side: (rs.side as string | null | undefined) ?? null } : rs;
       }) };
     }
     if (keys.has(`fewer:${id}`)) return { ...r, sets: sets.slice(0, done.length) };
-    if (keys.has(`more:${id}`)) return { ...r, sets: [...sets, ...done.slice(sets.length).map((s) => ({ ...(sets.at(-1) ?? {}), kind: s.kind }))] };
+    if (keys.has(`more:${id}`)) return { ...r, sets: [...sets, ...done.slice(sets.length).map((s) => ({ ...(sets.at(-1) ?? {}), kind: s.kind, side: s.side ?? null }))] };
     return r;
   };
   // the order to build in: today's when asked for (exercises not done today, whether skipped, with nothing ticked or not

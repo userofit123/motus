@@ -15,16 +15,19 @@ const show = computed(() => ({ w: usesWeight(t.value), r: usesReps(t.value), d: 
 const cols = computed(() => ({ gridTemplateColumns: `36px repeat(${Object.values(show.value).filter(Boolean).length}, minmax(0, 1fr))` }));
 const reps = (x: RoutineSet) => (x.repsMax && x.reps ? `${x.reps}-${x.repsMax}` : x.repsMax ?? x.reps ?? null);
 const dist = (m: number | null) => (m == null ? null : fmt.value.num(fromM(m, fmt.value.du), 2));
+// Left / right sides (optional feature): sets for one side are labelled 1L, 1R, and their weight is per side
+const sides = computed(() => !!s.value.features.unilateral);
+const perSide = computed(() => sides.value && (!!props.ex.exercise?.unilateral || props.ex.sets.some((x) => x.side)));
 </script>
 
 <template>
   <div class="psets">
     <div class="setgrid shead" :style="cols"><span>Set</span>
-      <span v-if="show.w">{{ fmt.wu }}</span><span v-if="show.r">Reps</span><span v-if="show.d">Time</span><span v-if="show.dist">{{ fmt.du }}</span><span v-if="show.rpe">RPE</span></div>
+      <span v-if="show.w">{{ fmt.wu }}<span v-if="perSide" class="thside"> / side</span></span><span v-if="show.r">Reps</span><span v-if="show.d">Time</span><span v-if="show.dist">{{ fmt.du }}</span><span v-if="show.rpe">RPE</span></div>
     <div class="slist">
       <div v-for="(x, j) in ex.sets" :key="x.id ?? j" class="sitem" :class="{ drop: x.kind === 'drop' }">
         <div class="setgrid" :style="cols">
-          <span class="sk" :class="{ w: x.kind === 'warmup', d: x.kind === 'drop', f: x.kind === 'failure' }">{{ setLabel(ex.sets, j) }}</span>
+          <span class="sk" :class="{ w: x.kind === 'warmup', d: x.kind === 'drop', f: x.kind === 'failure' }">{{ setLabel(ex.sets, j, sides) }}</span>
           <span v-if="show.w" class="pv" :class="{ none: x.weightKg == null }">{{ x.weightKg != null ? fmt.w(x.weightKg) : "-" }}</span>
           <span v-if="show.r" class="pv" :class="{ none: reps(x) == null }">{{ reps(x) ?? "-" }}<small v-if="clampStartReps(x) != null">starts at {{ clampStartReps(x) }}</small></span>
           <span v-if="show.d" class="pv" :class="{ none: !x.durationS }">{{ x.durationS ? fmt.clock(x.durationS) : "-" }}</span>
