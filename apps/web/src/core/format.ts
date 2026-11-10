@@ -88,3 +88,13 @@ export function goalLabel(g: { target: number; scope?: string; progress?: { curr
 
 /** The kinds a set can be switched to from its ⋮ menu, each with its own icon (a drop set is added, not switched to). */
 export const SET_KINDS = [["normal", "Normal", "dumbbell"], ["warmup", "Warm-up", "flame"], ["failure", "To failure", "target"]] as const;
+
+/** A set's short label in a list of sets: its number, W for a warm-up, F to failure, drops numbered within their set (D1, D2…). */
+export function setLabel(sets: { kind: string }[], j: number) {
+  const k = sets[j]?.kind;
+  if (k === "warmup") return "W";
+  if (k === "failure") return "F";
+  if (k !== "drop") return String(sets.slice(0, j + 1).filter((x) => x.kind !== "warmup" && x.kind !== "drop").length);
+  let n = 1; while (sets[j - n]?.kind === "drop") n++;
+  return `D${n}`;
+}

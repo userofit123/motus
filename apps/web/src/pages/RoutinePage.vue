@@ -5,7 +5,7 @@ import { computed, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useQuery } from "@tanstack/vue-query";
 import { routineTime, muscleName, muscleSets, musclesWorked, scheduleSummary } from "@motus/shared";
-import { useRoutine, useRoutines, useNotes, useReminders, useSchedules, useChange, loaded } from "../api/queries";
+import { useRoutine, useRoutines, useNotes, useReminders, useSchedules, useSettings, useChange, loaded } from "../api/queries";
 import { api, mediaUrl } from "../api/client";
 import { useFmt, ago } from "../core/format";
 import { noteSheet, reminderSheet, exerciseSheet, scheduleSheet } from "../core/ui";
@@ -16,6 +16,7 @@ import Menu from "../components/Menu.vue";
 import NoteItem from "../components/NoteItem.vue";
 import ReminderItem from "../components/ReminderItem.vue";
 import LineChart from "../components/LineChart.vue";
+import PlanSets from "../components/PlanSets.vue";
 import BodyMap from "../components/BodyMap.vue";
 import { useRoutineMenu } from "../core/routineMenu";
 import { useNoteMenu } from "../core/noteMenu";
@@ -29,6 +30,7 @@ const notes = useNotes("routine", id);
 const rems = useReminders(computed(() => ({ status: "pending" })));
 const schedules = useSchedules();
 const fmt = useFmt();
+const st = useSettings();
 const history = useQuery({ queryKey: computed(() => ["workouts", "routine", id.value]), queryFn: () => api.get(`/routines/${id.value}/workouts`) });
 const tab = ref("plan");
 const routine = computed<any>(() => r.data.value);
@@ -36,13 +38,14 @@ const myRems = computed(() => (rems.data.value ?? []).filter((m: any) => (m.targ
 const mySchedules = computed(() => (schedules.data.value ?? []).filter((s: any) => s.routineId === id.value));
 const muscles = computed(() => muscleSets((routine.value?.exercises ?? []).map((e: any) => ({ primary: e.exercise?.primaryMuscles ?? [], secondary: e.exercise?.secondaryMuscles ?? [], sets: e.sets.length }))));
 const worked = computed(() => musclesWorked((routine.value?.exercises ?? []).map((e: any) => ({ primary: e.exercise?.primaryMuscles ?? [], secondary: e.exercise?.secondaryMuscles ?? [] }))));
-const setLine = (e: any) => {
-  const w = e.sets.filter((s: any) => s.kind !== "warmup");
-  const reps = w.map((s: any) => (s.repsMax ? `${s.startReps != null ? `${s.startReps} (${s.reps}-${s.repsMax})` : `${s.reps}-${s.repsMax}`}` : s.durationS ? fmt.value.clock(s.durationS) : s.reps ?? "-"));
-  const same = reps.every((x: any) => x === reps[0]);
-  return `${w.length} × ${same ? reps[0] : reps.join(", ")}${w[0]?.weightKg ? " @ " + fmt.value.wu_(w[0].weightKg) : ""}`;
+// under each exercise's name: its sets by kind ("3 sets · 1 warm-up"); the grid below has each set's numbers
+const setCount = (e: any) => {
+  const warm = e.sets.filter((x: any) => x.kind === "warmup").length, drops = e.sets.filter((x: any) => x.kind === "drop").length, work = e.sets.length - warm - drops;
+  return [`${work} set${work === 1 ? "" : "s"}`, warm ? `${warm} warm-up` : "", drops ? `${drops} drop${drops === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · ");
 };
-const restLine = (e: any) => [e.restS != null ? `${fmt.value.clock(e.restS)} between sets` : "", e.restAfterS != null ? `${fmt.value.clock(e.restAfterS)} after` : ""].filter(Boolean).join(" · ");
+// the rests it plans, with your defaults where the exercise has none of its own (as the editor shows them)
+const restLine = (e: any) => [`${fmt.value.clock(e.restS ?? st.value.workout.restBetweenSetsS)} between sets`, `${fmt.value.clock(e.restAfterS ?? st.value.workout.restAfterExerciseS)} after the last one`, e.repRestS ? `beeps every ${e.repRestS}s` : ""].filter(Boolean).join(" · ");
+const sided = (e: any) => !!st.value.features.unilateral && !!e.exercise?.unilateral;
 // notes and reminders for one exercise of this routine (they show under it during the workout)
 const exItems = (e: any) => [
   { label: "Add a note", hint: "Shown with this exercise in your workouts", icon: "note", run: () => (noteSheet.value = { targets: [{ type: "routine_exercise", id: e.id, label: `${e.exercise.name} in ${routine.value.name}` }, { type: "exercise", id: e.exerciseId, label: `${e.exercise.name}, every time` }] }) },
@@ -76,16 +79,22 @@ await loaded(r, summaries, notes, rems, schedules, history);
 
     <Transition name="sw" mode="out-in">
     <div v-if="tab === 'plan'" class="grid" style="grid-template-columns:minmax(0,1fr) 300px;align-items:start">
-      <div class="card">
-        <div v-if="!routine.exercises.length" class="empty"><b>No exercises yet</b><button class="btn tonal" @click="router.push(`/routines/${id}/edit`)">Add exercises</button></div>
-        <div class="list">
-          <div v-for="(e, i) in routine.exercises" :key="e.id" class="li click" @click="exerciseSheet = e.exerciseId">
-            <MuscleFig sm :muscles="e.exercise?.primaryMuscles" :helpers="e.exercise?.secondaryMuscles" />
-            <span class="tiny" style="width:18px">{{ i + 1 }}</span>
-            <div class="thumb"><img v-if="e.exercise?.images?.[0]" :src="mediaUrl(e.exercise.images[0])" alt="" loading="lazy" /><Icon v-else name="dumbbell" /></div>
-            <div class="grow"><div class="t">{{ e.exercise?.name }}<span v-if="e.superset" class="mchip" style="margin-inline-start:6px">Superset {{ e.superset }}</span></div><div class="s">{{ setLine(e) }}<template v-if="restLine(e)"> · {{ restLine(e) }}</template></div>
-              <div v-if="e.note" class="s" style="font-style:italic">{{ e.note }}</div></div>
-            <span @click.stop><Menu :items="exItems(e)" label="Exercise options" /></span>
+      <div class="pexlist">
+        <div v-if="!routine.exercises.length" class="card"><div class="empty"><b>No exercises yet</b><button class="btn tonal" @click="router.push(`/routines/${id}/edit`)">Add exercises</button></div></div>
+        <!-- each exercise with its planned sets, as in the editor but read-only; the body on the left (Routines list card rule) -->
+        <div v-for="(e, i) in routine.exercises" :key="e.id" class="card wbody pex" :class="{ sup: e.superset }">
+          <MuscleFig :muscles="e.exercise?.primaryMuscles" :helpers="e.exercise?.secondaryMuscles" />
+          <div class="grow pexb">
+            <div class="li click pexh" @click="exerciseSheet = e.exerciseId">
+              <span class="ovn">{{ i + 1 }}</span>
+              <div class="thumb"><img v-if="e.exercise?.images?.[0]" :src="mediaUrl(e.exercise.images[0])" alt="" loading="lazy" /><Icon v-else name="dumbbell" /></div>
+              <div class="grow" style="min-width:0"><div class="t">{{ e.exercise?.name }}</div>
+                <div class="s row pexs"><span>{{ setCount(e) }}</span><span v-if="e.superset" class="mchip">Superset {{ e.superset }}</span><span v-if="sided(e)" class="mchip">Each side</span></div></div>
+              <span @click.stop><Menu :items="exItems(e)" label="Exercise options" /></span>
+            </div>
+            <PlanSets :ex="e" />
+            <div class="tiny pexf"><Icon name="timer" :size="14" /><span>{{ restLine(e) }}</span></div>
+            <div v-if="e.note" class="tiny pexf" style="font-style:italic"><Icon name="note" :size="14" /><span>{{ e.note }}</span></div>
           </div>
         </div>
       </div>
@@ -127,4 +136,12 @@ await loaded(r, summaries, notes, rems, schedules, history);
 
 <style scoped>
 @media (max-width: 860px) { .grid[style*="300px"] { grid-template-columns: 1fr !important; } }
+.pexlist { display: flex; flex-direction: column; gap: var(--spg); min-width: 0; }
+.pex.sup { border-inline-start: 3px solid var(--acc); }
+.pexb { min-width: 0; display: flex; flex-direction: column; gap: calc(var(--lpy) / 2); }
+.pexh { border-bottom: 0; padding-block: 0; padding-inline: 0; min-height: 0; border-radius: var(--r-sm); }
+.pexs { gap: 6px; flex-wrap: wrap; }
+/* icon on the first line of its text, like notes elsewhere */
+.pexf { display: flex; align-items: flex-start; gap: 6px; }
+.pexf > svg { flex: none; margin-top: 1px; }
 </style>

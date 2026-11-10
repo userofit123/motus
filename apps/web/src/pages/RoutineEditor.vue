@@ -11,7 +11,7 @@ import { usesWeight, usesReps, usesDuration, usesDistance, musclesWorked, estima
 import { useRoutine, useRoutines, useFolders, useExercises, useSettings, useTemplates, loaded } from "../api/queries";
 import { api, mediaUrl } from "../api/client";
 import { invalidate } from "../api/live";
-import { useFmt, SET_KINDS } from "../core/format";
+import { useFmt, SET_KINDS, setLabel } from "../core/format";
 import { readJson, writeJson } from "../core/prefs";
 import { toast, toastError } from "../core/toast";
 import { prompt } from "../core/ask";
@@ -129,9 +129,6 @@ const dragEx = (ev: PointerEvent, i: number) =>
 const dragSet = (ev: PointerEvent, e: any, j: number) =>
   startDrag(ev, { list: (ev.currentTarget as HTMLElement).closest(".slist") as HTMLElement, index: j, move: (a, b) => reorder(e.sets, a, b) });
 
-// drops are numbered within their set: D1, D2…
-const kindShort = (e: any, j: number) => { const k = e.sets[j].kind; if (k !== "drop") return k === "warmup" ? "W" : k === "failure" ? "F" : String(setNo(e, j)); let n = 1; while (e.sets[j - n]?.kind === "drop") n++; return `D${n}`; };
-const setNo = (e: any, j: number) => e.sets.slice(0, j + 1).filter((x: any) => x.kind !== "warmup" && x.kind !== "drop").length;
 // a superset is a run of neighbouring exercises with the same letter
 const inSupersetWithNext = (i: number) => { const a = r.value.exercises; return !!a[i]?.superset && a[i].superset === a[i + 1]?.superset; };
 const freeTag = () => { const used = new Set(r.value.exercises.map((x: any) => x.superset)); for (let c = 65; c < 91; c++) if (!used.has(String.fromCharCode(c))) return String.fromCharCode(c); return "Z"; };
@@ -420,7 +417,7 @@ await loaded(src, all, folders, routines, templates);
             <div class="slist">
               <div v-for="(x, j) in e.sets" :key="x._k" data-drag class="sitem" :class="{ drop: x.kind === 'drop' }">
                 <div class="sgrid" :style="cols(e)">
-                  <button class="sk dragh" :class="{ w: x.kind === 'warmup', d: x.kind === 'drop', f: x.kind === 'failure' }" title="Drag to reorder" @pointerdown="dragSet($event, e, j)">{{ kindShort(e, j) }}</button>
+                  <button class="sk dragh" :class="{ w: x.kind === 'warmup', d: x.kind === 'drop', f: x.kind === 'failure' }" title="Drag to reorder" @pointerdown="dragSet($event, e, j)">{{ setLabel(e.sets, j) }}</button>
                   <input v-if="usesWeight(tr(e))" class="vin" inputmode="decimal" :value="wIn(x.weightKg)" placeholder="-" @change="x.weightKg = wOut(($event.target as HTMLInputElement).value); touch()" />
                   <input v-if="usesReps(tr(e))" class="vin" inputmode="numeric" :value="x.reps ?? ''" placeholder="-" @change="x.reps = nOut(($event.target as HTMLInputElement).value); touch()" />
                   <input v-if="usesReps(tr(e)) && showRange(e)" class="vin" inputmode="numeric" :value="x.repsMax ?? ''" placeholder="-" title="Top of a rep range (optional)" @change="x.repsMax = nOut(($event.target as HTMLInputElement).value); touch()" />
@@ -551,22 +548,9 @@ html.he .chev svg { transform: rotate(90deg); }
 .chev.on svg { transform: none; }
 .exb { margin-top: 12px; }
 
-.sgrid { display: grid; align-items: center; gap: 6px; padding: calc(var(--tdy) / 2) 0; }
 .sgrid > .vin { justify-self: center; }
-.shead { font-size: 11px; font-weight: 600; color: var(--tx2); text-transform: uppercase; letter-spacing: .6px; text-align: center; padding-bottom: 6px; }
-.shead > span:first-child { text-align: start; }
-.slist { display: flex; flex-direction: column; }
-.sitem { border-radius: var(--r-sm); }
-.sk { display: inline-grid; place-items: center; min-width: 30px; height: 30px; padding: 0 6px; border-radius: 8px; background: var(--s2); color: var(--tx); font-size: 12.5px; font-weight: 600; border: 0; }
-.sk.w { color: var(--c2); }
-.sk.d { color: var(--c1); }
-/* a drop hangs off the set above it */
-.sitem.drop .sk { translate: 8px 0; }
-.sk.f { color: var(--neg); }
 .sk.r { background: var(--accc); color: var(--onc); cursor: pointer; }
-.rrow { padding-top: 0; }
-.rrow .rpill { grid-column: 2 / -2; justify-self: start; }
-.rpill { display: inline-flex; align-items: center; gap: 6px; border: 1px dashed var(--ol); background: none; color: var(--tx2); border-radius: var(--pill); padding: 4px 12px; font-size: 12.5px; cursor: pointer; }
+.rrow .rpill { grid-column: 2 / -2; cursor: pointer; }
 .rpill:hover { color: var(--tx); border-color: var(--acc); }
 
 .sect { margin-top: calc(var(--cpy) - 1px); padding-top: calc(var(--cpy) - 1px); border-top: 1px solid var(--ol); text-align: start; }
@@ -584,5 +568,4 @@ html.he .chev svg { transform: rotate(90deg); }
 .seg.mini { margin: 0; flex: none; background: var(--s1); box-shadow: inset 0 0 0 1px var(--ol); }
 .seg.mini button { padding: 6px 14px; font-size: 13px; min-height: 32px; min-width: 44px; }
 .hint { display: inline-flex; align-items: center; gap: 4px; }
-.ovn { width: 26px; height: 26px; border-radius: 8px; background: var(--s2); display: grid; place-items: center; font-size: 12.5px; font-weight: 600; color: var(--tx2); flex: none; }
 </style>
