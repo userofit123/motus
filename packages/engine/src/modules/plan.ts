@@ -1,6 +1,6 @@
 // Turning a routine into today's plan: the sets to do with the routine's numbers (which are where you are now, PLAN.md
 // §8.7), last time's beside them, with reminders, pinned notes and an estimate of how long it takes. Used by the pre-start preview and by "Start".
-import { estimate, pairSets, restAfterSet, opensSideRound, restDefaultsOf, progressionOf, usesReps, usesWeight, type Exercise, type Reminder, type Note, type Settings, type SetKind } from "@motus/shared";
+import { estimate, pairSets, restAfterSet, opensSideRound, restDefaultsOf, progressionOf, progressionDefaultsOf, usesReps, usesWeight, type Exercise, type Reminder, type Note, type Settings, type SetKind } from "@motus/shared";
 import type { Sql } from "../db";
 import { camel } from "../util";
 import { exerciseSessions, getExercises } from "./library";
@@ -126,7 +126,7 @@ export async function buildPlan(q: Sql, routine: any, settings: Settings, today:
 
     // the top of the rep range the reps move in (the exercise's Progression), kept with each set of a routine's workout
     const tr = re.exercise?.tracking ?? "weight_reps";
-    const top = routine.id && usesWeight(tr) && usesReps(tr) ? progressionOf(re.progression, settings.progression).repsMax : null;
+    const top = routine.id && usesWeight(tr) && usesReps(tr) ? progressionOf(re.progression, progressionDefaultsOf(settings)).repsMax : null;
     // a drop set moves with the set it drops from: when a reminder sets that set's weight, the drop shifts by as much
     let parentShift = 0;
     const sets: PlannedSet[] = re.sets.map((s: any, i: number) => {

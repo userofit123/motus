@@ -3,7 +3,7 @@
 import { goBack } from "../core/leave";
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { READY_FEATURES, EQUIPMENT, NOTE_TAGS_DEFAULT, workdaysOf, fromKg, toKg, type Settings } from "@motus/shared";
+import { READY_FEATURES, EQUIPMENT, NOTE_TAGS_DEFAULT, workdaysOf, fromKg, toKg, progressionDefaultsOf, type Settings } from "@motus/shared";
 import { WEEKDAYS } from "../core/goals";
 import { useMe, useSettings, saveSettings, loaded } from "../api/queries";
 import { session, signOut } from "../core/session";
@@ -17,7 +17,7 @@ import RestPicker from "../components/RestPicker.vue";
 import AppSelect from "../components/AppSelect.vue";
 import NumStep from "../components/NumStep.vue";
 import RadioList from "../components/RadioList.vue";
-import { PROGRESSION_MODES, LOWER_AFTER, MISSED_HINT } from "../core/progression";
+import { PROGRESSION_MODES, LOWER_AFTER, MISSED_HINT, PROGRESSION_INTRO, RANGE_HINT } from "../core/progression";
 import PrefRow from "../components/PrefRow.vue";
 import { prefGroups } from "../core/workoutPrefs";
 import ChoiceTiles from "../components/ChoiceTiles.vue";
@@ -57,6 +57,8 @@ const set = (patch: Record<string, unknown>) => saveSettings(patch);
 // Progression's steps are kept in kg and shown in your weight unit
 const wIn = (kg: number) => Math.round(fromKg(kg, s.value.units.weight) * 100) / 100;
 const kgOf = (v: number) => toKg(v, s.value.units.weight);
+// the weight steps in use: a step not chosen shows the weight unit's default
+const steps = computed(() => progressionDefaultsOf(s.value));
 const w = computed(() => s.value.workout);
 
 // units
@@ -181,23 +183,25 @@ await loaded(me);
           </template>
           <div class="sh"><h2>Progression</h2></div>
           <div class="card">
-            <p class="tiny prog-intro">After each workout a routine has today's numbers. Progression decides whether the weight goes up or down next time. An exercise can have its own in the routine's editor.</p>
+            <p class="tiny prog-intro">{{ PROGRESSION_INTRO }}.</p>
             <RadioList :model-value="s.progression.mode" :options="PROGRESSION_MODES" @update:model-value="(v) => set({ progression: { mode: v } })" />
-            <div class="li"><div class="grow"><div class="t">Rep range</div><div class="s">The reps move inside it. At the top on every set, the weight goes up and the reps start again at the bottom</div></div>
-              <NumStep :value="s.progression.repsMin" :min="1" :max="100" label="bottom of the range" @set="(v) => set({ progression: { repsMin: v, repsMax: Math.max(v, s.progression.repsMax) } })" />
+            <div class="li stack"><div class="grow"><div class="t">Rep range</div><div class="s">{{ RANGE_HINT }}</div></div>
+              <div class="hrow"><NumStep :value="s.progression.repsMin" :min="1" :max="100" label="bottom of the range" @set="(v) => set({ progression: { repsMin: v, repsMax: Math.max(v, s.progression.repsMax) } })" />
               <span class="dash">-</span>
-              <NumStep :value="s.progression.repsMax" :min="1" :max="100" unit="reps" label="top of the range" @set="(v) => set({ progression: { repsMax: v, repsMin: Math.min(v, s.progression.repsMin) } })" /></div>
+              <NumStep :value="s.progression.repsMax" :min="1" :max="100" unit="reps" label="top of the range" @set="(v) => set({ progression: { repsMax: v, repsMin: Math.min(v, s.progression.repsMin) } })" /></div></div>
             <div class="li"><div class="grow"><div class="t">Weight step, both sides together</div><div class="s">Barbell, machine, both arms or legs at once</div></div>
-              <NumStep :value="wIn(s.progression.stepKg)" :step="s.units.weight === 'lb' ? 1 : 0.5" :min="s.units.weight === 'lb' ? 0.5 : 0.25" :max="100" :unit="s.units.weight" label="weight step, both sides" @set="(v) => set({ progression: { stepKg: kgOf(v) } })" /></div>
+              <NumStep :value="wIn(steps.stepKg)" :step="s.units.weight === 'lb' ? 1 : 0.5" :min="s.units.weight === 'lb' ? 0.5 : 0.25" :max="100" :unit="s.units.weight" label="weight step, both sides" @set="(v) => set({ progression: { stepKg: kgOf(v) } })" /></div>
             <div class="li"><div class="grow"><div class="t">Weight step, one side at a time</div><div class="s">Exercises with left and right sets, or one-sided ones</div></div>
-              <NumStep :value="wIn(s.progression.stepOneSideKg)" :step="s.units.weight === 'lb' ? 1 : 0.5" :min="s.units.weight === 'lb' ? 0.5 : 0.25" :max="100" :unit="s.units.weight" label="weight step, one side" @set="(v) => set({ progression: { stepOneSideKg: kgOf(v) } })" /></div>
+              <NumStep :value="wIn(steps.stepOneSideKg)" :step="s.units.weight === 'lb' ? 1 : 0.5" :min="s.units.weight === 'lb' ? 0.5 : 0.25" :max="100" :unit="s.units.weight" label="weight step, one side" @set="(v) => set({ progression: { stepOneSideKg: kgOf(v) } })" /></div>
             <div class="li"><div class="grow"><div class="t">Lower the weight after</div><div class="s">{{ MISSED_HINT }}</div></div>
               <AppSelect :model-value="s.progression.lowerAfter" :options="LOWER_AFTER" title="Lower the weight after" style="width:auto" @update:model-value="(v) => set({ progression: { lowerAfter: v } })" /></div>
           </div>
           <div class="sh"><h2>Weights</h2></div>
           <div class="card">
-            <div class="li"><div class="grow"><div class="t">Stepper step</div><div class="s">How much − and + change a weight during a workout</div></div><input type="number" step="0.25" min="0.25" :value="s.units.weight === 'kg' ? s.increments.kg : s.increments.lb" style="width:90px" @change="set({ increments: { [s.units.weight]: Number(($event.target as HTMLInputElement).value) || (s.units.weight === 'kg' ? 2.5 : 5) } })" /><span class="tiny">{{ s.units.weight }}</span></div>
-            <div v-if="s.features.plates || s.features.warmupCalc" class="li"><div class="grow"><div class="t">Bar weight</div></div><input type="number" step="0.5" :value="s.barKg" style="width:90px" @change="set({ barKg: Number(($event.target as HTMLInputElement).value) || 20 })" /><span class="tiny">kg</span></div>
+            <div class="li"><div class="grow"><div class="t">Stepper step</div><div class="s">How much − and + change a weight during a workout</div></div>
+              <NumStep :value="s.increments[s.units.weight]" :step="s.units.weight === 'lb' ? 0.5 : 0.25" :min="s.units.weight === 'lb' ? 0.5 : 0.25" :max="100" :unit="s.units.weight" label="stepper step" @set="(v) => set({ increments: { [s.units.weight]: v } })" /></div>
+            <div v-if="s.features.plates || s.features.warmupCalc" class="li"><div class="grow"><div class="t">Bar weight</div></div>
+              <NumStep :value="wIn(s.barKg)" :step="s.units.weight === 'lb' ? 1 : 0.5" :min="1" :max="100" :unit="s.units.weight" label="bar weight" @set="(v) => set({ barKg: kgOf(v) })" /></div>
             <div v-if="s.features.plates" class="li"><div class="grow"><div class="t">Your plates</div><div class="s">{{ (s.units.weight === "kg" ? s.platesKg : s.platesLb).join(", ") }} {{ s.units.weight }}</div></div><button class="qb acc" @click="editPlates">Edit</button></div>
           </div>
           <div class="sh"><h2>Note tags</h2><button class="lnk" @click="addNoteTag">Add</button></div>
@@ -265,7 +269,6 @@ await loaded(me);
 
 <style scoped>
 .prog-intro { margin: 0 0 var(--lpy); }
-.dash { color: var(--tx2); }
 /* the computer's section list: small group names over plain rows, the open one filled */
 .snav { position: sticky; top: calc(24px + var(--st)); padding: calc(var(--cpy) / 2); display: flex; flex-direction: column; gap: 1px; }
 /* the group names and rows share one side inset, and the first group name sits that far below the top too, so the

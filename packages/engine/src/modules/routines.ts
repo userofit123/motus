@@ -1,6 +1,6 @@
 // Routines (saved plans) and their folders: list, open, create (from scratch, from another routine, from a workout,
 // from a template), edit, duplicate, version history, and the pre-start preview.
-import { TEMPLATES, applyStructure, cleanProgression, planNext, estimate, usualDuration, restAfterSet, opensSideRound, restDefaultsOf, ymd, LIFTED_SQL, type RoutineItemLike, type RoutineSummary, type RoutineSnapshot, type RoutineSnapshotExercise, type RoutineVersionRow, type RoutineTrendPoint, type SetKind, type Tracking } from "@motus/shared";
+import { TEMPLATES, applyStructure, cleanProgression, planNext, progressionDefaultsOf, estimate, usualDuration, restAfterSet, opensSideRound, restDefaultsOf, ymd, LIFTED_SQL, type RoutineItemLike, type RoutineSummary, type RoutineSnapshot, type RoutineSnapshotExercise, type RoutineVersionRow, type RoutineTrendPoint, type SetKind, type Tracking } from "@motus/shared";
 import { SOURCE } from "@motus/exercise-data/meta";
 import type { Router, Ctx } from "../router";
 import type { Sql } from "../db";
@@ -191,7 +191,7 @@ export async function updateRoutineFromWorkout(ctx: Ctx, routineId: string, work
   let changed = !!shaped, missedMoved = false;
   if (numbers) {
     const s = await getSettings(ctx.q, ctx.userId);
-    const next = planNext(body, w, s.progression, numbers.accepted);
+    const next = planNext(body, w, progressionDefaultsOf(s), numbers.accepted);
     missedMoved = next.exercises.some((e, i) => (e.missed ?? 0) !== (body[i]!.missed ?? 0));
     changed ||= next.numbersChanged;
     body = next.exercises;

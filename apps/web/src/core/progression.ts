@@ -11,3 +11,6 @@ export const modeLabel = (m: ProgressionMode) => PROGRESSION_MODES.find((x) => x
 export const lowerAfterLabel = (n: number) => (n === 0 ? "Never" : n === 1 ? "1 missed workout" : `${n} missed workouts in a row`);
 export const LOWER_AFTER: { value: number; label: string }[] = Array.from({ length: 11 }, (_, n) => ({ value: n, label: lowerAfterLabel(n) }));
 export const MISSED_HINT = "A missed workout: a working set below the bottom of the rep range. Once or twice is part of training";
+/** What Progression does, at the top of Settings' Progression and of an exercise's own */
+export const PROGRESSION_INTRO = "After each workout the routine keeps the reps you did. The reps move inside the rep range; when every set reaches its top, the weight goes up and the reps start again at its bottom";
+export const RANGE_HINT = "The reps to aim for. At the top on every set, the weight goes up";

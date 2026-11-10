@@ -3,8 +3,11 @@ import type { WeightUnit, DistanceUnit, LengthUnit } from "./units";
 import { FEATURE_DEFAULTS } from "./features";
 import type { ProgressionMode, RestByKind } from "./types";
 
-/** Settings' Progression (see Settings.progression). */
-export interface ProgressionDefaults { mode: ProgressionMode; repsMin: number; repsMax: number; stepKg: number; stepOneSideKg: number; lowerAfter: number }
+/** Settings' Progression as saved (see Settings.progression): a weight step is null until chosen, so its default
+ * follows the weight unit (progressionDefaultsOf) instead of a kg default being kept after switching to pounds. */
+export interface ProgressionSettings { mode: ProgressionMode; repsMin: number; repsMax: number; stepKg: number | null; stepOneSideKg: number | null; lowerAfter: number }
+/** Settings' Progression with the weight steps worked out, what the maths and the screens use. */
+export interface ProgressionDefaults extends ProgressionSettings { stepKg: number; stepOneSideKg: number }
 import type { RestDefaults } from "./training";
 import { cleanIntervalPresets, type IntervalPreset } from "./intervals";
 
@@ -40,7 +43,7 @@ export interface Settings {
   /** Progression's defaults for every routine exercise without its own: the mode, the rep range, the weight step (kg)
    * for exercises done both sides together and for one side at a time, and missed workouts in a row before the weight
    * goes down a step (0: never) */
-  progression: ProgressionDefaults;
+  progression: ProgressionSettings;
   barKg: number;
   platesKg: number[];
   platesLb: number[];
@@ -124,7 +127,7 @@ export const DEFAULT_SETTINGS: Settings = {
     showPrevious: false, showReminders: true, confirmSkip: false,
   },
   increments: { kg: 2.5, lb: 5 },
-  progression: { mode: "suggest", repsMin: 6, repsMax: 12, stepKg: 5, stepOneSideKg: 2.5, lowerAfter: 3 },
+  progression: { mode: "suggest", repsMin: 6, repsMax: 12, stepKg: null, stepOneSideKg: null, lowerAfter: 3 },
   barKg: 20,
   platesKg: [25, 20, 15, 10, 5, 2.5, 1.25],
   platesLb: [45, 35, 25, 10, 5, 2.5],
@@ -180,20 +183,24 @@ export function withDefaults(saved: unknown): Settings {
   if (out.features.progression === false && savedMode === undefined) out.progression.mode = "off";
   delete out.features.progression;
   const pm = out.progression.mode;
-  const lb = out.units.weight === "lb", LB_KG = 0.45359237;
-  // the steps from what was saved, not the merged defaults, so an unsaved one takes the default of the weight unit
-  const SP = ((saved as { progression?: unknown } | null)?.progression ?? {}) as Partial<ProgressionDefaults>;
-  const P = out.progression as Partial<ProgressionDefaults>, D = DEFAULT_SETTINGS.progression;
+  const P = out.progression as Partial<ProgressionSettings>, D = DEFAULT_SETTINGS.progression;
   const int = (v: unknown, lo: number, hi: number, d: number) => (Number.isInteger(v) && (v as number) >= lo && (v as number) <= hi ? (v as number) : d);
-  const kg = (v: unknown, d: number) => (typeof v === "number" && Number.isFinite(v) && v > 0 && v <= 100 ? v : d);
+  // a step not chosen stays null (never the default saved in its place), so it keeps following the weight unit
+  const kg = (v: unknown) => (typeof v === "number" && Number.isFinite(v) && v > 0 && v <= 100 ? v : null);
   const repsMin = int(P.repsMin, 1, 100, D.repsMin), repsMax = int(P.repsMax, 1, 100, D.repsMax);
   out.progression = {
     mode: pm === "auto" || pm === "off" ? pm : "suggest",
     ...(repsMin <= repsMax ? { repsMin, repsMax } : { repsMin: D.repsMin, repsMax: D.repsMax }),
-    // pounds: the defaults are 10 lb and 5 lb, so a step lands on real plates
-    stepKg: kg(SP.stepKg, lb ? 10 * LB_KG : D.stepKg), stepOneSideKg: kg(SP.stepOneSideKg, lb ? 5 * LB_KG : D.stepOneSideKg), lowerAfter: int(P.lowerAfter, 0, 10, 3),
+    stepKg: kg(P.stepKg), stepOneSideKg: kg(P.stepOneSideKg), lowerAfter: int(P.lowerAfter, 0, 10, 3),
   };
   return out;
+}
+
+/** Settings' Progression with a step not chosen worked out for the weight unit: 5 kg / 2.5 kg, and in pounds 10 lb / 5 lb
+ * so a step lands on real plates. */
+export function progressionDefaultsOf(s: Pick<Settings, "progression" | "units">): ProgressionDefaults {
+  const lb = s.units.weight === "lb", LB_KG = 0.45359237, p = s.progression;
+  return { ...p, stepKg: p.stepKg ?? (lb ? 10 * LB_KG : 5), stepOneSideKg: p.stepOneSideKg ?? (lb ? 5 * LB_KG : 2.5) };
 }
 
 /** The work week: chosen in Settings, else Sunday to Thursday when weeks start on Sunday, Monday to Friday otherwise. */

@@ -5,7 +5,7 @@
 // differed from the routine (listed, each saved only when switched on). Then how it felt, notes, body weight.
 import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
-import { applyStructure, planNext, structureChanges, todaysSets, usesReps, usesWeight, workoutScore, workoutSoFar, type Routine, type StructureChange, type Tracking, type Workout } from "@motus/shared";
+import { applyStructure, planNext, progressionDefaultsOf, structureChanges, todaysSets, usesReps, usesWeight, workoutScore, workoutSoFar, type Routine, type StructureChange, type Tracking, type Workout } from "@motus/shared";
 import { useWorkout, endWorkout, finishDraft } from "./useWorkout";
 import { api } from "../api/client";
 import { settle } from "../api/outbox";
@@ -70,7 +70,7 @@ const shaped = computed<Shaped[]>(() => {
   if (!r) return [];
   return (applyStructure(r, w.value, d.routineChanges) ?? r.exercises) as Shaped[];
 });
-const plan = computed(() => planNext(shaped.value, w.value, W.settings.value.progression, d.accepted));
+const plan = computed(() => planNext(shaped.value, w.value, progressionDefaultsOf(W.settings.value), d.accepted));
 const FIELDS = ["kind", "weightKg", "reps", "durationS", "distanceM"] as const;
 const sameSet = (a: RSet | undefined, b: RSet) => !!a && FIELDS.every((k) => (a[k] ?? null) === (b[k] ?? null));
 // a set's numbers as next time starts them: "20 kg × 10", "12 reps", "1:00"; "-" when it has none

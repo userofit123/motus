@@ -109,6 +109,12 @@ hr.sep { border: 0; border-top: 1px solid var(--ol); margin: 14px 0; }
 .list { display: flex; flex-direction: column; }
 .li { display: flex; align-items: center; gap: 12px; padding: var(--lpy) 4px; border-bottom: 1px solid var(--ol); min-height: var(--lmh); }
 .li:last-child { border-bottom: 0; }
+/* a row whose controls don't fit beside the label on a phone (a rep range's two steppers): they wrap onto their own
+   line under it, like the profile's height */
+.li.stack { flex-wrap: wrap; }
+.li.stack > .grow { flex-basis: 100%; }
+.li.stack > .hrow { display: flex; align-items: center; gap: var(--hg); flex-wrap: wrap; }
+.li.stack > .hrow .dash { color: var(--tx2); }
 /* a row lights up edge to edge: across the whole card, and on the first and last row up to the card's own edge; the
    card's rounded corners clip it. Rows outside a card light up across their own width */
 .li.click:hover, .li.click:active { background: color-mix(in srgb, var(--tx) 3%, transparent); }
@@ -377,7 +383,7 @@ html.phone { --tabh: 64px; }
 button.rtile { cursor: pointer; }
 button.rtile:hover { background: color-mix(in srgb, var(--acc) 12%, var(--s2)); }
 .rtile b { font-variant-numeric: tabular-nums; }
-.rtile b.dim, .sect-h .rtile b.dim { color: var(--tx2); font-weight: 500; }
+.rtile b.dim, .sect-h .rtile b.dim, .rtile b .dim { color: var(--tx2); font-weight: 500; }
 .vin:focus { border-color: var(--acc); outline: 0; background: var(--bg); }
 .vin.pre { color: var(--tx2); font-weight: 500; }
 .vin.adj { color: var(--acc); }

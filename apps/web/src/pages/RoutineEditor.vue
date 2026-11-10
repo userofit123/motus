@@ -1,14 +1,14 @@
 <script setup lang="ts">
 // Creating and editing a routine (requirements 5, 6, 11): exercises, sets with targets, rest between sets (per kind of
 // set, and per set), after each exercise, supersets, "Keep these numbers fixed", and each exercise's own Progression
-// (its ⋮ menu; only one with its own setting shows a chip, the rest use your default). Two tabs: the
+// (the open block's Progression row: what applies, faded where it is your default). Two tabs: the
 // exercises (folding cards, dragged to reorder) and an overview. Drafts are kept on this device.
 // At /workout/plan the same editor plans a one-off workout ("Empty workout" in the + sheet): its one button starts it,
 // and it is saved as a routine too only when asked.
-import { computed, nextTick, reactive, ref, watch } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { plannedRest as plannedRestOf } from "../core/plannedRest";
-import { usesWeight, usesReps, usesDuration, usesDistance, musclesWorked, estimate, restAfterSet, dropWeightKg, restDefaultsOf, progressionOf, oneSideOf, duration, muscleName, sideRounds, toM, fromM, muscleSets, type Progression } from "@motus/shared";
+import { usesWeight, usesReps, usesDuration, usesDistance, musclesWorked, estimate, restAfterSet, dropWeightKg, restDefaultsOf, progressionOf, progressionDefaultsOf, oneSideOf, duration, muscleName, sideRounds, toM, fromM, muscleSets, type Progression } from "@motus/shared";
 import { useRoutine, useRoutines, useFolders, useExercises, useSettings, useTemplates, loaded } from "../api/queries";
 import { api, mediaUrl } from "../api/client";
 import { invalidate } from "../api/live";
@@ -20,7 +20,6 @@ import { useLeaveGuard, goBack } from "../core/leave";
 import { startWorkout } from "../workout/start";
 import { exerciseSheet } from "../core/ui";
 import { sidesItem } from "../core/sides";
-import { isPhone } from "../core/device";
 import { startDrag } from "../core/drag";
 import Icon from "../components/Icon.vue";
 import Menu from "../components/Menu.vue";
@@ -34,7 +33,7 @@ import MuscleFig from "../components/MuscleFig.vue";
 import TemplateList from "../components/TemplateList.vue";
 import RadioList from "../components/RadioList.vue";
 import Sheet from "../components/Sheet.vue";
-import { PROGRESSION_MODES, LOWER_AFTER, MISSED_HINT, modeLabel, lowerAfterLabel } from "../core/progression";
+import { PROGRESSION_MODES, LOWER_AFTER, MISSED_HINT, PROGRESSION_INTRO, RANGE_HINT, modeLabel, lowerAfterLabel } from "../core/progression";
 
 const route = useRoute(), router = useRouter();
 const planMode = computed(() => route.name === "workout-plan");
@@ -270,8 +269,8 @@ type ProgKey = "mode" | "repsMin" | "repsMax" | "stepKg" | "lowerAfter";
 const PROG_KEYS: ProgKey[] = ["mode", "repsMin", "repsMax", "stepKg", "lowerAfter"];
 const progFor = ref<{ exerciseId: string; sets: { side?: string | null }[]; progression?: Progression | null } | null>(null);
 // what applies to it: its own, else the exercise's own step, else Settings' (one side at a time or both together)
-const progOf = (e: any) => progressionOf(e.progression, s.value.progression, { incrementKg: exOf(e)?.incrementKg, oneSide: oneSideOf(e.sets, exOf(e)) });
-const defaultsOf = (e: any) => progressionOf(null, s.value.progression, { incrementKg: exOf(e)?.incrementKg, oneSide: oneSideOf(e.sets, exOf(e)) });
+const progOf = (e: any) => progressionOf(e.progression, progressionDefaultsOf(s.value), { incrementKg: exOf(e)?.incrementKg, oneSide: oneSideOf(e.sets, exOf(e)) });
+const defaultsOf = (e: any) => progressionOf(null, progressionDefaultsOf(s.value), { incrementKg: exOf(e)?.incrementKg, oneSide: oneSideOf(e.sets, exOf(e)) });
 const ownProg = (e: any) => !!e.progression && PROG_KEYS.some((k) => e.progression[k] != null);
 function setProg(e: any, patch: Partial<Record<ProgKey, unknown>>) {
   const p = { mode: null, repsMin: null, repsMax: null, stepKg: null, lowerAfter: null, ...(e.progression ?? {}), ...patch };
@@ -279,14 +278,14 @@ function setProg(e: any, patch: Partial<Record<ProgKey, unknown>>) {
   touch();
 }
 const rangeText = (lo: number, hi: number) => (lo === hi ? `${lo} reps` : `${lo}-${hi} reps`);
-// the block's row: "Automatic · 6-12 reps · +2.5 kg"
+// the block's tile: "Automatic · 6-12 reps · +2.5 kg", each part faded while it follows your default
 const progParts = (e: any) => {
-  const p = progOf(e);
-  return p.mode === "off" ? [modeLabel(p.mode), rangeText(p.repsMin, p.repsMax)] : [modeLabel(p.mode), rangeText(p.repsMin, p.repsMax), `+${fmt.value.wu_(p.stepKg)}`];
+  const p = progOf(e), own = e.progression ?? {};
+  const parts = [{ text: modeLabel(p.mode), dim: own.mode == null }, { text: rangeText(p.repsMin, p.repsMax), dim: own.repsMin == null }];
+  return p.mode === "off" ? parts : [...parts, { text: `+${fmt.value.wu_(p.stepKg)}`, dim: own.stepKg == null }];
 };
 // its own range: both ends move together, the bottom never above the top
 function setRange(e: any, lo: number, hi: number) { setProg(e, { repsMin: Math.min(lo, hi), repsMax: Math.max(lo, hi) }); }
-const progChip = (e: any) => `Progression: ${modeLabel(e.progression?.mode ?? s.value.progression.mode)}`;
 // Progression moves the weight by reps reached, so it's offered only where an exercise has both
 const progUsable = (e: any) => usesWeight(tr(e)) && usesReps(tr(e)) && (!planMode.value || asRoutine.value);
 const wNum = (kg: number | null) => (kg == null ? null : Math.round(fmt.value.fromKg(kg) * 100) / 100);
@@ -439,7 +438,7 @@ await loaded(src, all, folders, routines, templates);
             <button class="exn" :aria-expanded="isOpen(e)" @click="toggle(e)">
               <span class="t">{{ exName(e) }}</span>
               <span class="tiny">{{ e.superset ? `Superset ${e.superset} · ` : "" }}{{ setSummary(e) }}</span>
-              <span v-if="e.fixed || (ownProg(e) && progUsable(e))" class="exchips"><span v-if="e.fixed" class="mchip">Fixed numbers</span><span v-else class="mchip">{{ progChip(e) }}</span></span>
+              <span v-if="e.fixed" class="exchips"><span class="mchip">Fixed numbers</span></span>
             </button>
             <button class="ib sm plain chev" :class="{ on: isOpen(e) }" :aria-label="isOpen(e) ? 'Collapse' : 'Expand'" @click="toggle(e)"><Icon name="down" :size="18" /></button>
             <Menu :items="exMenu(e, i)" />
@@ -493,11 +492,10 @@ await loaded(src, all, folders, routines, templates);
                 <button class="rtile" style="flex:none" @click="restFor = { ex: i, kind: 'rep' }"><b :class="{ dim: !e.repRestS }">{{ e.repRestS ? `Every ${e.repRestS}s` : "Off" }}</b></button></div>
             </div>
 
-            <!-- Progression with its rep range: what applies, faded when it is all your default -->
+            <!-- Progression with its rep range, like the Timer between reps row: what applies in the tile, faded where it is your default -->
             <div v-if="progUsable(e) && !e.fixed" class="sect">
-              <div class="sect-h"><span class="si"><Icon name="arrowUp" :size="16" /></span><span class="grow"><b>Progression</b>
-                <span class="tiny pgsum"><template v-for="(x, k) in progParts(e)" :key="k"><span v-if="k" class="sep">·</span><span>{{ x }}</span></template></span></span>
-                <button class="rtile" style="flex:none" @click="progFor = e"><b :class="{ dim: !ownProg(e) }">{{ ownProg(e) ? "Its own" : "Default" }}</b></button></div>
+              <div class="sect-h"><span class="si"><Icon name="arrowUp" :size="16" /></span><span class="grow"><b>Progression</b><span class="tiny">How the reps and weight move after a workout. Faded values are your defaults</span></span>
+                <button class="rtile" style="flex:none" @click="progFor = e"><b class="pgsum"><template v-for="(x, k) in progParts(e)" :key="k"><span v-if="k" class="sep">·</span><span :class="{ dim: x.dim }">{{ x.text }}</span></template></b></button></div>
             </div>
 
             <div class="sect"><input v-model="e.note" class="in" placeholder="Note: seat height, grip…" style="font-size:13px" @input="touch" /></div>
@@ -547,24 +545,18 @@ await loaded(src, all, folders, routines, templates);
     <RestPicker v-if="restFor" :title="restTitle(restFor)" :value="restGet(restFor)" :default-label="restDefault(restFor)"
       :presets="restFor.kind === 'rep' ? [5, 10, 15, 20, 30, 45, 60] : undefined" @close="restFor = null" @pick="setRest" />
     <Sheet v-if="progFor" :title="`Progression · ${exName(progFor)}`" @close="progFor = null">
-      <p class="tiny pg-intro">The reps move inside the rep range. When every set reaches its top, the weight goes up and the reps start again at its bottom.</p>
-      <!-- what applies now, the same tiles as Next time: each faded while it follows your default -->
-      <div class="pg-now">
-        <div class="rtile"><span>Mode</span><b :class="{ dim: progFor.progression?.mode == null }">{{ modeLabel(progOf(progFor).mode) }}</b></div>
-        <div class="rtile"><span>Rep range</span><b :class="{ dim: progFor.progression?.repsMin == null }">{{ rangeText(progOf(progFor).repsMin, progOf(progFor).repsMax) }}</b></div>
-        <div class="rtile"><span>Weight step</span><b :class="{ dim: progFor.progression?.stepKg == null }">{{ fmt.wu_(progOf(progFor).stepKg) }}</b></div>
-      </div>
+      <p class="tiny pg-intro">{{ PROGRESSION_INTRO }}.</p>
       <div class="flbl">Mode</div>
       <RadioList :model-value="progFor.progression?.mode ?? null" :options="[{ value: null, label: `Your default (${modeLabel(s.progression.mode)})`, hint: 'From Settings → Workout → Progression' }, ...PROGRESSION_MODES]"
         @update:model-value="(v) => setProg(progFor, { mode: v })" />
       <div class="card pg-rows">
-        <div class="li"><div class="grow"><div class="t">Rep range</div><div class="s">The reps to aim for. At the top on every set, the weight goes up</div></div>
+        <div class="li"><div class="grow"><div class="t">Rep range</div><div class="s">{{ RANGE_HINT }}</div></div>
           <AppSelect :model-value="progFor.progression?.repsMin != null" :options="[{ value: false, label: `Your default (${rangeText(s.progression.repsMin, s.progression.repsMax)})` }, { value: true, label: 'Its own' }]" title="Rep range" style="width:auto"
             @update:model-value="(v) => (v ? setRange(progFor, s.progression.repsMin, s.progression.repsMax) : setProg(progFor, { repsMin: null, repsMax: null }))" /></div>
-        <div v-if="progFor.progression?.repsMin != null && progFor.progression?.repsMax != null" class="li pg-range"><div class="grow"><div class="t">Its own rep range</div></div>
-          <NumStep :value="progFor.progression.repsMin" :min="1" :max="100" label="bottom of the range" @set="(v) => setRange(progFor, v, Math.max(v, progFor!.progression!.repsMax!))" />
+        <div v-if="progFor.progression?.repsMin != null && progFor.progression?.repsMax != null" class="li stack"><div class="grow"><div class="t">Its own rep range</div></div>
+          <div class="hrow"><NumStep :value="progFor.progression.repsMin" :min="1" :max="100" label="bottom of the range" @set="(v) => setRange(progFor, v, Math.max(v, progFor!.progression!.repsMax!))" />
           <span class="dash">-</span>
-          <NumStep :value="progFor.progression.repsMax" :min="1" :max="100" unit="reps" label="top of the range" @set="(v) => setRange(progFor, Math.min(v, progFor!.progression!.repsMin!), v)" /></div>
+          <NumStep :value="progFor.progression.repsMax" :min="1" :max="100" unit="reps" label="top of the range" @set="(v) => setRange(progFor, Math.min(v, progFor!.progression!.repsMin!), v)" /></div></div>
         <div class="li"><div class="grow"><div class="t">Weight step</div><div class="s">The smallest change when the weight goes up or down</div></div>
           <!-- a picker like "Lower the weight after": the default's label is too long for a two-part toggle on a phone -->
           <AppSelect :model-value="progFor.progression?.stepKg != null" :options="[{ value: false, label: `Your default (${fmt.wu_(defaultsOf(progFor).stepKg)})` }, { value: true, label: 'Its own' }]" title="Weight step" style="width:auto"
@@ -593,11 +585,9 @@ await loaded(src, all, folders, routines, templates);
 .exchips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 2px; }
 .pg-intro { margin: 0 0 var(--hg); }
 .pg-rows { margin-top: var(--hg); }
-.pg-now { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--hg); margin-bottom: var(--hg); }
-.pg-now .rtile { cursor: default; }
-.pg-range .dash { color: var(--tx2); }
 .pg-reset { margin-top: var(--hg); }
-.sect-h .pgsum { display: flex; flex-wrap: wrap; align-items: center; gap: 0 6px; }
+/* the tile's parts in a row, the dots spaced by the gap; more specific than .sect-h b's display: block */
+.sect-h b.pgsum { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 0 6px; }
 .st-t { font-size: 17px; font-weight: 600; }
 
 .exlist { display: flex; flex-direction: column; gap: var(--spg); margin-bottom: var(--spg); }
