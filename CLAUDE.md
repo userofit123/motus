@@ -1,7 +1,7 @@
 # Motus: working notes
 
 ## Task queue
-The chat message "Work the queue" means: read and follow `workflow/RUNNER.md` (tasks from the Focus list "Motus", account "New Team"). Otherwise tasks come from the chat as usual.
+The chat message "Work the queue" means: read and follow `workflow/RUNNER.md` (tasks from the Focus list "Motus", account "Server"). Otherwise tasks come from the chat as usual.
 
 Self-hosted fitness tracker. Plan: PLAN.md (decisions in §16, anti-bloat rules in §10.0). Research: RESEARCH.md.
 
