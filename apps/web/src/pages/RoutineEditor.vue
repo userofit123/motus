@@ -33,7 +33,7 @@ import MuscleFig from "../components/MuscleFig.vue";
 import TemplateList from "../components/TemplateList.vue";
 import RadioList from "../components/RadioList.vue";
 import Sheet from "../components/Sheet.vue";
-import { PROGRESSION_MODES, LOWER_AFTER, MISSED_HINT, PROGRESSION_INTRO, RANGE_HINT, modeLabel, lowerAfterLabel } from "../core/progression";
+import { PROGRESSION_MODES, LOWER_AFTER, MISSED_HINT, PROGRESSION_INTRO, RANGE_HINT, modeLabel, lowerAfterLabel, rangeText } from "../core/progression";
 
 const route = useRoute(), router = useRouter();
 const planMode = computed(() => route.name === "workout-plan");
@@ -84,8 +84,16 @@ watch([r, asRoutine], ([v]) => { if (v && dirty.value) writeJson(draftKey.value,
 const touch = () => { dirty.value = true; };
 const isOpen = (e: any) => open.value.has(e._k);
 const toggle = (e: any) => { if (isOpen(e)) open.value.delete(e._k); else open.value.add(e._k); };
-// the whole header opens the exercise; its own controls (drag handle, picture, name, chevron, ⋮ menu) keep their job
-const headClick = (ev: MouseEvent, e: any) => { if (!(ev.target as Element).closest("button, a, input, .thumb, .mnu")) toggle(e); };
+// the whole card opens the exercise when closed, the band around its header closes it;
+// its own controls (drag handle, picture, name, chevron, ⋮ menu) keep their job
+const headClick = (ev: MouseEvent, e: any) => {
+  const t = ev.target as Element;
+  if (t.closest("button, a, input, select, textarea, .thumb, .mnu, .exb")) return;
+  // open: only the header band closes it, so a tap beside the sets never folds the exercise away
+  const head = (ev.currentTarget as Element).querySelector(".exh");
+  if (isOpen(e) && head && ev.clientY > head.getBoundingClientRect().bottom) return;
+  toggle(e);
+};
 const allOpen = computed(() => !!r.value?.exercises.length && r.value.exercises.every(isOpen));
 async function goTo(e: any) {
   tab.value = "exercises"; open.value.add(e._k);
@@ -279,7 +287,6 @@ function setProg(e: any, patch: Partial<Record<ProgKey, unknown>>) {
   e.progression = PROG_KEYS.every((k) => p[k] == null) ? null : p;
   touch();
 }
-const rangeText = (lo: number, hi: number) => (lo === hi ? `${lo} reps` : `${lo}-${hi} reps`);
 // the block's tile: "Automatic · 6-12 reps · +2.5 kg", each part faded while it follows your default
 const progParts = (e: any) => {
   const p = progOf(e), own = e.progression ?? {};
@@ -435,8 +442,8 @@ await loaded(src, all, folders, routines, templates);
         <button class="qb" style="padding:4px 8px;font-size:12.5px" @click="toggleAll">{{ allOpen ? "Collapse all" : "Expand all" }}</button>
       </div>
       <div class="exlist">
-        <div v-for="(e, i) in r.exercises" :key="e._k" data-drag :data-k="e._k" class="card ex" :class="{ sup: e.superset }">
-          <div class="exh" @click="headClick($event, e)">
+        <div v-for="(e, i) in r.exercises" :key="e._k" data-drag :data-k="e._k" class="card ex" :class="{ sup: e.superset }" @click="headClick($event, e)">
+          <div class="exh">
             <button class="ib sm plain dragh" aria-label="Drag to reorder" @pointerdown="dragEx($event, i)"><Icon name="drag" :size="18" /></button>
             <MuscleFig sm :muscles="exOf(e)?.primaryMuscles" :helpers="exOf(e)?.secondaryMuscles" />
             <div class="thumb sm click" @click="exerciseSheet = e.exerciseId"><img v-if="exImg(e)" :src="mediaUrl(exImg(e))" alt="" /><Icon v-else name="dumbbell" :size="18" /></div>
@@ -615,7 +622,9 @@ html.phone .pgsum > .pgp:first-child > span { flex: 0 1 auto; min-width: 0; over
 .ex { text-align: start; }
 /* not .ss: that is the settings-section class in sections.css, whose padding: 0 !important emptied the card */
 .ex.sup { border-inline-start: 3px solid var(--acc); }
-.exh { display: flex; align-items: center; gap: 8px; margin: -4px; cursor: pointer; }
+.exh { display: flex; align-items: center; gap: 8px; margin: -4px; }
+.card.ex { cursor: pointer; }
+.card.ex .exb { cursor: auto; }
 .exh .dragh { color: var(--tx2); margin-inline-end: -4px; }
 .exn { flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 2px; border: 0; background: none; color: var(--tx); text-align: start; cursor: pointer; padding: 4px 0; }
 .exn .t { font-weight: 600; }

@@ -9,6 +9,8 @@ export const PROGRESSION_MODES: { value: ProgressionMode; label: string; hint: s
 export const modeLabel = (m: ProgressionMode) => PROGRESSION_MODES.find((x) => x.value === m)?.label ?? "Suggest";
 /** "Never", "1 missed workout", "3 missed workouts in a row" */
 export const lowerAfterLabel = (n: number) => (n === 0 ? "Never" : n === 1 ? "1 missed workout" : `${n} missed workouts in a row`);
+/** "6-12 reps", or "8 reps" when both ends are the same */
+export const rangeText = (lo: number, hi: number) => (lo === hi ? `${lo} reps` : `${lo}-${hi} reps`);
 export const LOWER_AFTER: { value: number; label: string }[] = Array.from({ length: 11 }, (_, n) => ({ value: n, label: lowerAfterLabel(n) }));
 export const MISSED_HINT = "A missed workout: a working set below the bottom of the rep range. Once or twice is part of training";
 /** What Progression does, at the top of Settings' Progression and of an exercise's own */
