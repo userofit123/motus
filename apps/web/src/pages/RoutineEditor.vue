@@ -497,12 +497,12 @@ await loaded(src, all, folders, routines, templates);
 
             <!-- Progression with its rep range, like the Timer between reps row: what applies in the tile, faded where it is your default -->
             <div v-if="progUsable(e) && !e.fixed" class="sect">
-              <div class="sect-h"><span class="si"><Icon name="arrowUp" :size="16" /></span><span class="grow"><b>Progression</b><span class="tiny">How the reps and weight move after a workout. Faded values are your defaults</span></span>
+              <div class="sect-h"><span class="si"><Icon name="arrowUp" :size="16" /></span><span class="grow"><b>Progression</b><span class="tiny">How the reps and weight move after a workout. Faded values are your defaults from Settings</span></span>
                 <button class="rtile pg-t" @click="progFor = e"><b class="pgsum"><span v-for="(x, k) in progParts(e)" :key="k" class="pgp" :class="{ more: x.more }"><span v-if="k" class="sep">·</span><span :class="{ dim: x.dim }">{{ x.text }}</span></span></b></button></div>
             </div>
 
             <!-- part of the routine like its sets and rests: the page's Save keeps it, and leaving unsaved asks first -->
-            <div class="sect">
+            <div v-if="!planMode || asRoutine" class="sect">
               <div class="sect-h"><span class="si"><Icon name="note" :size="16" /></span><span class="grow"><b>Note</b><span class="tiny">Shows with this exercise on the routine's page. Saved when you save the routine</span></span></div>
               <input v-model="e.note" class="in" placeholder="Seat height, grip…" style="font-size:13px" @input="touch" />
             </div>
@@ -562,9 +562,9 @@ await loaded(src, all, folders, routines, templates);
             @update:model-value="(v) => (v ? setRange(progFor, s.progression.repsMin, s.progression.repsMax) : setProg(progFor, { repsMin: null, repsMax: null }))" /></div>
         <!-- its own range: one row per end with one stepper, like "Its own weight step" and Settings' two rows -->
         <template v-if="progFor.progression?.repsMin != null && progFor.progression?.repsMax != null">
-          <div class="li"><div class="grow"><div class="t">Its own range, bottom</div></div>
+          <div class="li"><div class="grow"><div class="t">Its own rep range, bottom</div></div>
             <NumStep :value="progFor.progression.repsMin" :min="1" :max="100" unit="reps" label="bottom of the rep range" @set="(v) => setRange(progFor, v, Math.max(v, progFor!.progression!.repsMax!))" /></div>
-          <div class="li"><div class="grow"><div class="t">Its own range, top</div></div>
+          <div class="li"><div class="grow"><div class="t">Its own rep range, top</div></div>
             <NumStep :value="progFor.progression.repsMax" :min="1" :max="100" unit="reps" label="top of the rep range" @set="(v) => setRange(progFor, Math.min(v, progFor!.progression!.repsMin!), v)" /></div>
         </template>
         <div class="li"><div class="grow"><div class="t">Weight step</div><div class="s">The smallest change when the weight goes up or down</div></div>
@@ -600,7 +600,9 @@ await loaded(src, all, folders, routines, templates);
 .pgp { display: contents; }
 html.phone .pgp.more { display: none; }
 .pgsum > .pgp > span { white-space: nowrap; flex: none; }
-.pgsum > .pgp:first-child > span { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.pgsum > .pgp:not(:first-child) > span:not(.sep) { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* the mode keeps its full word while the range and step parts give way; only on a phone, where it stands alone, may it be cut */
+html.phone .pgsum > .pgp:first-child > span { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .pg-rows { margin-top: var(--hg); }
 .pg-reset { margin-top: var(--hg); }
 /* the tile's parts in a row, the dots spaced by the gap; more specific than .sect-h b's display: block */
