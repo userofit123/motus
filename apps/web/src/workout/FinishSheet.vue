@@ -140,7 +140,7 @@ const nextTime = computed(() => {
       const planned = b ? numbersParts({ ...b, reps: startRepsOf(b) }, t) : ["-"], next = numbersParts({ ...x, reps: startRepsOf(x) }, t);
       const d0 = did[j], done = d0 ? numbersParts(d0, t) : ["-"];
       // the arrow says what changes in the routine: next time against the plan (today's only when nothing was planned)
-      const base = b ? b.weightKg : d0?.weightKg;
+      const base = b?.weightKg ?? d0?.weightKg;
       const delta = base != null && x.weightKg != null ? (x.weightKg - base) * (t === "assisted" ? -1 : 1) : 0;
       return [{ key: j, label: setLabel(aft, j, sides), kind: x.kind, side: sides ? x.side ?? null : null, planned, did: done, next, trend: delta > 0 ? "up" : delta < 0 ? "down" : null }];
     });
@@ -172,12 +172,17 @@ const nextTime = computed(() => {
 const nextSummary = computed(() => {
   const { groups } = nextTime.value, ch = plan.value.changes;
   const lines: { icon: string; text: string; tone?: "pos" | "neg" | "acc" }[] = [];
-  const auto = (dir: "up" | "down") => ch.filter((c) => c.mode === "auto" && c.direction === dir).length;
+  // assisted exercises: a higher weight goal means less assistance, so they're counted apart with that wording
+  const assistedIds = new Set(groups.filter((g) => g.assisted).map((g) => g.id));
+  const auto = (dir: "up" | "down", assisted: boolean) => ch.filter((c) => c.mode === "auto" && c.direction === dir && assistedIds.has(c.routineExerciseId) === assisted).length;
   const sug = ch.filter((c) => c.mode === "suggest"), on = sug.filter((c) => d.accepted.includes(c.routineExerciseId)).length;
   const fresh = groups.filter((g) => g.sets.length).length, unticked = groups.filter((g) => g.unticked).length;
   if (fresh) lines.push({ icon: "refresh", text: `${n(fresh, "exercise has", "exercises have")} new numbers` });
-  if (auto("up")) lines.push({ icon: "arrowUp", text: `${n(auto("up"), "weight goes", "weights go")} up automatically`, tone: "pos" });
-  if (auto("down")) lines.push({ icon: "arrowDown", text: `${n(auto("down"), "weight goes", "weights go")} down automatically`, tone: "neg" });
+  const up = auto("up", false), down = auto("down", false), less = auto("up", true), more = auto("down", true);
+  if (up) lines.push({ icon: "arrowUp", text: `${n(up, "weight goes", "weights go")} up next time, saved on finish`, tone: "pos" });
+  if (down) lines.push({ icon: "arrowDown", text: `${n(down, "weight goes", "weights go")} down next time, saved on finish`, tone: "neg" });
+  if (less) lines.push({ icon: "arrowUp", text: `${n(less, "exercise uses", "exercises use")} less assistance next time, saved on finish`, tone: "pos" });
+  if (more) lines.push({ icon: "arrowDown", text: `${n(more, "exercise uses", "exercises use")} more assistance next time, saved on finish`, tone: "neg" });
   // in the accent colour until every suggestion is switched on
   if (sug.length) lines.push({ icon: "sparkle", tone: on < sug.length ? "acc" : undefined,
     text: !on ? `${n(sug.length, "suggestion", "suggestions")} to review` : on === sug.length ? `${n(on, "suggestion", "suggestions")} applied` : `${on} of ${sug.length} suggestions applied` });

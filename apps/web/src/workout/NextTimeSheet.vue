@@ -111,7 +111,7 @@ const badge = (k: string) => ({ w: k === "warmup", d: k === "drop", f: k === "fa
    its parts a line each, never broken inside one; the change in next time's colour */
 .nt-tbl { margin-top: var(--tdy); }
 .nt-tbl th { white-space: nowrap; }
-.nt-tbl td { font-size: var(--fs-sm); }
+.nt-tbl td { font-size: var(--fs-sm); vertical-align: top; }
 .nt-v { display: block; white-space: nowrap; }
 .nt-tbl .sk { cursor: default; }
 .nt-pl { color: var(--tx2); }
