@@ -48,12 +48,15 @@ const subLine = (e: any) => [e.superset ? `Superset ${e.superset}` : "",
 // a rest row only where some rest is planned (between sets, after the last one, or a set's own)
 const restOn = (e: any) => (e.restS ?? st.value.workout.restBetweenSetsS) > 0 || (e.restAfterS ?? st.value.workout.restAfterExerciseS) > 0 || e.sets.some((x: any) => x.restS);
 // the editor's own summary lines, one per section: rest, timer between reps, progression
-const progLine = (e: any) => {
+const progLineOf = (e: any) => {
   const t = e.exercise?.tracking ?? "weight_reps";
   if (e.fixed || !usesWeight(t) || !usesReps(t)) return null;
   const p = progressionOf(e.progression, progressionDefaultsOf(st.value), { incrementKg: e.exercise?.incrementKg, oneSide: oneSideOf(e.sets, e.exercise) });
   return progPartsOf(p, e.progression, fmt.value.wu_, { lowerAfter: true });
 };
+// once per exercise per render, not once per use in the template
+const progLines = computed(() => new Map<string, ReturnType<typeof progLineOf>>((routine.value?.exercises ?? []).map((e: any) => [e.id, progLineOf(e)])));
+const progLine = (e: any) => progLines.value.get(e.id) ?? null;
 // the notes that show every time (as in the workout and its preview): the routine's at the top, each exercise's under it
 const shown = (type: string, tid: string) => (notes.data.value ?? []).filter((n: any) => n.pinned && n.targetType === type && n.targetId === tid);
 // a figure only where there are muscles to show; without one the card keeps its plain column (Routines list rule)
@@ -115,7 +118,7 @@ await loaded(r, summaries, notes, rems, schedules, history);
             <!-- the editor's sections in its order (rests, timer between reps, progression, note), read-only: the same headers,
                  the values as plain tiles that open nothing -->
             <div v-if="restOn(e)" class="sect">
-              <div class="sect-h"><span class="si"><Icon name="timer" :size="16" /></span><span class="grow"><b>Rest after each set</b><span class="tiny">{{ restSummary(e, fmt.clock, st?.workout, hasSideRounds(e)) }}</span></span></div>
+              <div class="sect-h"><span class="si"><Icon name="timer" :size="16" /></span><span class="grow"><b>Rest after each set</b><span class="tiny pgl"><template v-for="(x, k) in restSummary(e, fmt.clock, st?.workout, hasSideRounds(e))" :key="k"><span v-if="k" class="sep">·</span><span>{{ x }}</span></template></span></span></div>
             </div>
             <div v-if="e.repRestS" class="sect">
               <div class="sect-h"><span class="si"><Icon name="clock" :size="16" /></span><span class="grow"><b>Timer between reps</b><span class="tiny">Every {{ e.repRestS }}s</span></span></div>
@@ -181,9 +184,8 @@ await loaded(r, summaries, notes, rems, schedules, history);
 .pexs { gap: 6px; flex-wrap: wrap; }
 /* the column's gap already sits above a section's line, so its margin is the editor's less that gap: --cpy-1 on both sides of the line at every density */
 .pexb > .sect { margin-top: calc(var(--cpy) - 1px - var(--lpy)); }
-.pgl { display: flex; flex-wrap: wrap; gap: 6px; }
 .pnotes { display: flex; flex-direction: column; gap: var(--lpy); }
-.ntx { display: block; white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; }
+.ntx { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; }
 </style>
 
 <style>

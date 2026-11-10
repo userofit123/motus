@@ -164,10 +164,10 @@ const nowId = computed(() => (W.state.active === props.index ? visibleSets.value
       <tbody>
         <tr v-for="s in visibleSets" :key="s.id" :class="{ done: s.done, drop: s.kind === 'drop', now: s.id === nowId && e.status !== 'skipped', 'sr-a': rounds.open.has(s.id) }" :aria-current="s.id === nowId ? 'step' : undefined">
           <td :class="{ srl: rounds.open.has(s.id) }"><button class="sk" :class="{ w: s.kind === 'warmup', d: s.kind === 'drop', f: s.kind === 'failure' }" @click.stop>{{ kindShort(s) }}</button></td>
-          <td v-if="prefs.showPrevious" class="prev" @click="copyPrev(s)">{{ prevText(s) }}<span v-if="s.pr?.length" class="pr" style="margin-inline-start:6px">PR</span><span v-else-if="beat(s)" class="pos tiny" style="margin-inline-start:6px">{{ beat(s) }}</span></td>
+          <td v-if="prefs.showPrevious" class="prev" @click="copyPrev(s)">{{ prevText(s) }}<span v-if="s.pr?.length" class="pr pvx">PR</span><span v-else-if="beat(s)" class="pos tiny pvx">{{ beat(s) }}</span></td>
           <td v-if="showW"><input class="vin" :class="{ pre: s.prefilled && !s.done }" inputmode="decimal" :value="wIn(s.weightKg)" placeholder="-" @change="W.editSet(s, { weightKg: num(($event.target as HTMLInputElement).value) == null ? null : fmt.toKg(num(($event.target as HTMLInputElement).value)!) })" @focus="($event.target as HTMLInputElement).select()" /></td>
           <td v-if="showW && showR" class="sx" aria-hidden="true">×</td>
-          <td v-if="showR"><input class="vin" :class="{ pre: s.prefilled && !s.done }" inputmode="numeric" :value="s.reps ?? ''" :placeholder="s.targetReps != null ? String(s.targetReps) : '-'" @change="W.editSet(s, { reps: num(($event.target as HTMLInputElement).value) })" @focus="($event.target as HTMLInputElement).select()" /></td>
+          <td v-if="showR" class="rcell"><input class="vin" :class="{ pre: s.prefilled && !s.done }" inputmode="numeric" :value="s.reps ?? ''" :placeholder="s.targetReps != null ? String(s.targetReps) : '-'" @change="W.editSet(s, { reps: num(($event.target as HTMLInputElement).value) })" @focus="($event.target as HTMLInputElement).select()" /></td>
           <td v-if="showD">
             <button v-if="!s.done && timer?.set !== s && !showR" :disabled="!isActive" class="btn tonal s" style="min-width:76px" @click="startTimed(s)"><Icon name="play" :size="14" />{{ fmt.clock(s.durationS ?? 30) }}</button>
             <button v-else-if="timer?.set === s" class="btn s" style="min-width:76px" @click="stopTimed">{{ timer.lead > 0 ? timer.lead : fmt.clock(timer.left) }}</button>
@@ -176,7 +176,7 @@ const nowId = computed(() => (W.state.active === props.index ? visibleSets.value
           <td v-if="showDist"><input class="vin" inputmode="decimal" :value="s.distanceM != null ? Math.round(fromM(s.distanceM, fmt.du) * 100) / 100 : ''" placeholder="-" @change="W.editSet(s, { distanceM: num(($event.target as HTMLInputElement).value) == null ? null : toM(num(($event.target as HTMLInputElement).value)!, fmt.du) })" /></td>
           <td v-if="feat.rpe"><input class="vin" inputmode="decimal" :value="s.rpe ?? ''" placeholder="-" style="max-width:56px" @change="W.editSet(s, { rpe: num(($event.target as HTMLInputElement).value) })" /></td>
           <td><button class="tick" :class="{ on: s.done }" :disabled="!isActive" :aria-label="s.done ? 'Undo' : 'Done'" :title="isActive ? undefined : 'Make this the exercise you\'re doing to log it'" @click="W.tick(e, e.sets.indexOf(s))"><Icon v-if="s.done" name="check" :size="20" /></button></td>
-          <td style="width:30px;padding:0"><Menu :items="setMenu(s)" /></td>
+          <td style="width:36px;padding:0"><Menu :items="setMenu(s)" /></td>
         </tr>
       </tbody>
     </table>

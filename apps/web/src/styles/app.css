@@ -375,7 +375,11 @@ html.phone .sets td, html.phone .sets th { padding-inline: 2px; }
 html.phone .sets td:first-child, html.phone .sets th:first-child { padding-inline-start: 8px; }
 html.phone .sets td:last-child, html.phone .sets th:last-child { padding-inline-end: 6px; }
 html.phone .sets .sx { width: 10px; }
-html.phone .sets .vin { padding-inline: 2px; }
+html.phone .sets .vin { padding-inline: 0; font-size: 15px; }
+/* the PR badge and "+2.5 kg" sit under the previous value on a phone (beside it they ate the kg box's width); reps never need more than 3 digits, so the spare width goes to kg */
+.sets .pvx { margin-inline-start: 6px; }
+html.phone .sets .pvx { display: block; width: fit-content; margin: 2px auto 0; }
+html.phone .sets .rcell .vin { max-width: 44px; }
 /* a set's own rest, under it */
 .rrow { padding-top: 0; }
 .rrow .rpill { grid-column: 2 / -1; justify-self: start; }
@@ -401,6 +405,9 @@ button.rtile:hover { background: color-mix(in srgb, var(--acc) 12%, var(--s2)); 
 .sect-h .si { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; background: var(--s2); color: var(--acc); flex: none; }
 .sect-h b { display: block; font-size: 14px; font-weight: 600; }
 .sect-h .tiny { display: block; }
+/* a section's summary line: parts with a dot between each (progression, rest) */
+.pgl, .sect-h .pgl { display: flex; flex-wrap: wrap; gap: 0 6px; } /* beats ".sect-h .tiny { display: block }" so the row's gap spaces every dot */
+.pgl .dim { opacity: .65; } /* a part that follows your default from Settings */
 .sect .rgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 6px; } /* scoped to .sect: the Routines list has its own .rgrid */
 .sect-h > .rtile { flex: none; }
 /* chips on their own line under an exercise's set count ("Fixed numbers"): the routine editor's header and the routine page */

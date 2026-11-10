@@ -30,6 +30,18 @@ export function progParts(p: ProgShown, own: ProgOwn, weight: (kg: number) => st
   const o = own ?? {};
   const mode = { text: modeLabel(p.mode), dim: o.mode == null, more: false };
   if (p.mode === "off") return [mode];
-  return [mode, { text: rangeText(p.repsMin, p.repsMax), dim: o.repsMin == null, more: true }, { text: `+${weight(p.stepKg)}`, dim: o.stepKg == null, more: true },
-    ...(opts.lowerAfter ? [{ text: lowerAfterShort(p.lowerAfter), dim: o.lowerAfter == null, more: true }] : [])];
+  if (opts.lowerAfter) return progSentence(p, o, weight, mode);
+  return [mode, { text: rangeText(p.repsMin, p.repsMax), dim: o.repsMin == null, more: true }, { text: `+${weight(p.stepKg)}`, dim: o.stepKg == null, more: true }];
+}
+/** The routine page's full line in plain words: what to aim for, when the weight moves, when it goes down.
+ *  "Automatic · aim for 6-12 reps · at 12 on every set, +2.5 kg and back to 6 · lower after 3 missed"
+ *  "Automatic · 8 reps on every set, then +2.5 kg next time · lower after 3 missed"; Suggest says "suggests +2.5 kg" */
+function progSentence(p: ProgShown, o: NonNullable<ProgOwn>, weight: (kg: number) => string, mode: { text: string; dim: boolean; more: boolean }) {
+  const step = `${p.mode === "suggest" ? "suggests " : ""}+${weight(p.stepKg)}`;
+  const same = p.repsMin === p.repsMax;
+  return [mode,
+    same ? { text: `${p.repsMin} reps on every set, then ${step} next time`, dim: o.repsMin == null && o.stepKg == null, more: true }
+      : { text: `aim for ${p.repsMin}-${p.repsMax} reps`, dim: o.repsMin == null, more: true },
+    ...(same ? [] : [{ text: `at ${p.repsMax} on every set, ${step} and back to ${p.repsMin}`, dim: o.stepKg == null, more: true }]),
+    { text: lowerAfterShort(p.lowerAfter), dim: o.lowerAfter == null, more: true }];
 }

@@ -271,6 +271,8 @@ function setProg(e: any, patch: Partial<Record<ProgKey, unknown>>) {
 // core/progression, shared with the routine page). On a phone the tile shows only the mode (the sheet shows the range
 // and step), so it stays beside its label as short as the Timer between reps one
 const progParts = (e: any) => progPartsOf(progOf(e), e.progression, fmt.value.wu_);
+// the section header's full plain-words line (the routine page says the same), defaults faded
+const progLine = (e: any) => progPartsOf(progOf(e), e.progression, fmt.value.wu_, { lowerAfter: true });
 // its own range: both ends move together, the bottom never above the top
 function setRange(e: any, lo: number, hi: number) { setProg(e, { repsMin: Math.min(lo, hi), repsMax: Math.max(lo, hi) }); }
 // Progression moves the weight by reps reached, so it's offered only where an exercise has both
@@ -461,7 +463,7 @@ await loaded(src, all, folders, routines, templates);
             </div>
 
             <details class="fold sect prog">
-              <summary class="sect-h"><span class="si"><Icon name="timer" :size="16" /></span><span class="grow"><b>Rest after each set</b><span class="tiny">{{ restLine(e) }}</span></span></summary>
+              <summary class="sect-h"><span class="si"><Icon name="timer" :size="16" /></span><span class="grow"><b>Rest after each set</b><span class="tiny pgl"><template v-for="(x, k) in restLine(e)" :key="k"><span v-if="k" class="sep">·</span><span>{{ x }}</span></template></span></span></summary>
               <div class="tiny" style="margin:-2px 0 8px">Faded times are your defaults from Settings.</div>
               <div class="rgrid">
                 <button class="rtile" @click="restFor = { ex: i, kind: 'between' }"><span>Normal sets</span><b :class="{ dim: e.restS == null }">{{ fmt.clock(workRest(e)) }}</b></button>
@@ -482,7 +484,7 @@ await loaded(src, all, folders, routines, templates);
 
             <!-- Progression with its rep range, like the Timer between reps row: what applies in the tile, faded where it is your default -->
             <div v-if="progUsable(e) && !e.fixed" class="sect">
-              <div class="sect-h"><span class="si"><Icon name="arrowUp" :size="16" /></span><span class="grow"><b>Progression</b><span class="tiny">How the reps and weight move after a workout. Faded values are your defaults from Settings</span></span>
+              <div class="sect-h"><span class="si"><Icon name="arrowUp" :size="16" /></span><span class="grow"><b>Progression</b><span class="tiny pgl"><template v-for="(x, k) in progLine(e)" :key="k"><span v-if="k" class="sep">·</span><span :class="{ dim: x.dim }">{{ x.text }}</span></template></span></span>
                 <button class="rtile pg-t" @click="progFor = e"><b class="pgsum"><span v-for="(x, k) in progParts(e)" :key="k" class="pgp" :class="{ more: x.more }"><span v-if="k" class="sep">·</span><span :class="{ dim: x.dim }">{{ x.text }}</span></span></b></button></div>
             </div>
 
