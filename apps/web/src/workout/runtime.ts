@@ -59,7 +59,7 @@ export function startRest(seconds: number, o: { setId: string | null; label: str
   finishRest(false);
   if (seconds <= 0) return;
   Object.assign(rest, { ...EMPTY, endAt: Date.now() + seconds * 1000, startedAt: Date.now(), totalS: seconds, setId: o.setId, label: o.label, next: o.next, workoutId: o.workoutId });
-  warned = false;
+  warned = false; lastCount = 0;
   save();
   notifyRestEnd(rest.endAt!, o.next);
 }
@@ -69,12 +69,12 @@ export function adjustRest(deltaS: number) {
   else { rest.endAt = Math.max(Date.now(), rest.endAt + deltaS * 1000); notifyRestEnd(rest.endAt, rest.next); }
   rest.totalS = Math.max(1, rest.totalS + deltaS);
   rest.done = false;
-  warned = restLeft() <= 10;
+  warned = restLeft() <= 10; if (restLeft() > 3) lastCount = 0;
   save();
 }
 export function setRest(seconds: number) {
   if (!rest.endAt) return;
-  rest.endAt = Date.now() + seconds * 1000; rest.totalS = seconds; rest.pausedLeftS = null; rest.done = false; warned = seconds <= 10;
+  rest.endAt = Date.now() + seconds * 1000; rest.totalS = seconds; rest.pausedLeftS = null; rest.done = false; warned = seconds <= 10; lastCount = 0;
   save(); notifyRestEnd(rest.endAt, rest.next);
 }
 export function pauseRest() {
