@@ -351,7 +351,7 @@ export function useWorkout() {
    * next workout's rest comes from, the routine exercise in a workout from a routine, else the exercise's settings (the
    * server picks, sent through the outbox like any change). After the last set it is the rest after the exercise.
    * Returns what was saved, for the confirmation: the exercise is the one the rest follows, not the one on screen. */
-  function keepRest(): { name: string; secs: number; after: boolean; inRoutine: boolean } | null {
+  function keepRest(): { secs: number; after: boolean; inRoutine: boolean } | null {
     const f = restSet(); if (!f) return null;
     const secs = rest.totalS;
     const after = f.e.sets.indexOf(f.s) === f.e.sets.length - 1;
@@ -361,7 +361,7 @@ export function useWorkout() {
     void patchExercise(f.e, { ...(after ? { restAfterS: secs } : { restS: secs }), keep: true });
     for (const x of f.e.sets) if (!x.done) x.restPlannedS = null;
     keptRest.value = restKey();
-    return { name: f.e.exercise?.name ?? "this exercise", secs, after, inRoutine: !!state.w?.routineId && !!f.e.routineExerciseId && !f.e.swapped };
+    return { secs, after, inRoutine: !!state.w?.routineId && !!f.e.routineExerciseId && !f.e.swapped };
   }
   async function patchWorkout(patch: Record<string, unknown>) {
     Object.assign(state.w!, patch);

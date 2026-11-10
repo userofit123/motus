@@ -18,12 +18,12 @@ defineProps<{ paused: boolean }>();
 const emit = defineEmits<{ finish: []; pause: [] }>();
 const W = useWorkout();
 // the saved rest is confirmed in place of the offer for a moment, so a tap is never silent: what was saved as it was at
-// the tap, for the exercise the rest follows, and where (a routine's rest stays that routine's)
+// the tap, and whether it is the rest between sets or after the exercise
 const saved = ref("");
 let savedT: ReturnType<typeof setTimeout> | undefined;
 function keep() {
   const k = W.keepRest(); if (!k) return;
-  saved.value = `Saved: ${clock(k.secs)} rest ${k.after ? "after" : "for"} ${k.name}${k.inRoutine ? " in this routine" : ""} from now on`;
+  saved.value = `${clock(k.secs)} rest ${k.after ? "after" : "for"} this exercise from now on`;
   clearTimeout(savedT); savedT = setTimeout(() => (saved.value = ""), 2500);
 }
 // a new rest starts without the last one's confirmation
@@ -92,6 +92,7 @@ const RING = 2 * Math.PI * 58;
       <div class="ab-line">
         <span class="ab-k grow ellipsis ab-rtitle">{{ rest.done ? "Rest over" : rest.label === "Next exercise" ? "Rest before the next exercise" : "Resting" }}</span>
       </div>
+      <div class="ab-ringg">
       <div class="ab-rest" role="timer">
         <button class="btn o" @click="adjustRest(-15)">-15</button>
         <div class="ring">
@@ -101,7 +102,8 @@ const RING = 2 * Math.PI * 58;
         <button class="btn o" @click="adjustRest(15)">+15</button>
       </div>
       <div class="ab-k ellipsis ab-next">{{ rest.next }}</div>
-      <div v-if="saved" class="ab-saved" role="status"><Icon name="check" :size="14" />{{ saved }}</div>
+      </div>
+      <div v-if="saved" class="ab-saved" role="status"><span class="ab-sv"><Icon name="check" :size="14" />Saved</span><span class="ab-why">{{ saved }}</span></div>
       <button v-else-if="W.restChanged.value" class="qb ab-keep" @click="keep">
         <span class="ab-why">This rest was planned at {{ clock(W.restPlannedNow.value ?? 0) }}, now {{ clock(rest.totalS) }}</span>
         <span class="ab-act">Use {{ clock(rest.totalS) }} for this exercise from now on</span>
@@ -146,7 +148,7 @@ const RING = 2 * Math.PI * 58;
 
 <style scoped>
 /* a sheet: rounded at the top, on the page's second surface; on a computer it sits in the column as a card */
-.abar { position: relative; display: flex; flex-direction: column; gap: 12px; padding: 14px; background: var(--s1); border: 1px solid var(--ol); border-radius: var(--r-sheet); box-shadow: var(--shadow-pop); }
+.abar { position: relative; display: flex; flex-direction: column; gap: var(--spg); padding: 14px; background: var(--s1); border: 1px solid var(--ol); border-radius: var(--r-sheet); box-shadow: var(--shadow-pop); }
 .ab-line { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .ab-k { font-size: 12.5px; font-weight: 500; color: var(--tx2); }
 .ab-k b { color: var(--tx); font-weight: 600; font-size: 14px; }
@@ -160,7 +162,8 @@ const RING = 2 * Math.PI * 58;
 .ab-sm { min-height: 48px; padding-inline: 14px; }
 .ab-go { margin-inline-start: auto; flex: 1; max-width: 260px; min-height: 48px; font-size: 15px; }
 /* resting: the ring between -15 and +15 */
-.ab-rest { display: flex; align-items: center; justify-content: center; gap: 14px; }
+.ab-rest { display: flex; align-items: center; justify-content: center; gap: var(--hg); }
+.ab-ringg { display: flex; flex-direction: column; gap: var(--hg); }
 .ring { position: relative; width: 132px; height: 132px; display: grid; place-items: center; flex: none; }
 .ring svg { position: absolute; inset: 0; transform: rotate(-90deg); }
 html.he .ring svg { transform: rotate(-90deg) scaleY(-1); }
@@ -169,12 +172,11 @@ html.he .ring svg { transform: rotate(-90deg) scaleY(-1); }
 .ring .rf { stroke: var(--acc); stroke-linecap: round; transition: stroke-dashoffset 1s linear; }
 .ab-time { position: relative; font-size: 34px; font-weight: 600; letter-spacing: -1px; font-variant-numeric: tabular-nums; }
 .ab-time.over { color: var(--acc); }
-.ab-next { text-align: center; margin-top: -4px; }
+.ab-next { text-align: center; }
 .ab-rtitle { text-align: center; }
-.ab-keep { display: flex; flex-direction: column; align-items: center; gap: 0; line-height: 1.3; text-align: center; padding-block: var(--tdy); font-size: 12.5px; }
-/* same box as the offer it replaces (centred, 12.5px, 1.3 line height) so nothing jumps; the check sits inline before the text and wrapped lines stay centred */
-.ab-saved { text-align: center; line-height: 1.3; color: var(--pos); font-size: 12.5px; font-weight: 500; padding-block: var(--tdy); }
-.ab-saved :deep(svg) { display: inline-block; vertical-align: -3px; margin-inline-end: var(--hg); }
+/* the offer and its Saved confirmation share one two-line box (same padding, line height and min height) so nothing jumps */
+.ab-keep, .ab-saved { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0; line-height: 1.3; text-align: center; padding: var(--tdy) 10px; min-height: calc(2 * 1.3 * 12.5px + 2 * var(--tdy)); font-size: 12.5px; }
+.ab-sv { display: inline-flex; align-items: center; gap: 6px; color: var(--pos); font-weight: 500; }
 .ab-why { color: var(--tx2); }
 .ab-act { color: var(--acc); }
 </style>
