@@ -35,13 +35,13 @@ const kindShort = (s: WorkoutSet) => (s.kind === "warmup" ? "W" : s.kind === "dr
 // the exercise's own setting (left and right sets by default); any set of any exercise can still be made left or right
 const sided = computed(() => !!feat.value.unilateral && !!props.e.exercise?.unilateral);
 // a left set and its right one done with no rest between (the usual round, unless a rest was set on the first side)
-// are one split set: the table joins the two rows. Keyed by the first side's id; the second side is marked too.
+// are one split set: the table joins the two rows. Keyed by the first side's id. Warm-ups stay out (both badges say just "W").
 const rounds = computed(() => {
-  const open = new Set<string>(), close = new Set<string>();
-  if (!feat.value.unilateral) return { open, close };
+  const open = new Set<string>();
+  if (!feat.value.unilateral) return { open };
   const a = props.e.sets;
-  sideRounds(a).forEach((r, j) => { if (r && W.restFor(props.e, j).secs === 0) { open.add(a[j]!.id); close.add(a[j + 1]!.id); } });
-  return { open, close };
+  sideRounds(a).forEach((r, j) => { if (r && a[j]!.kind !== 'warmup' && a[j + 1]!.kind !== 'warmup' && W.restFor(props.e, j).secs === 0) open.add(a[j]!.id); });
+  return { open };
 });
 // the weight column says "/ side" only when every set that counts is for one side; in a mix the L and R badges say it
 const perSide = computed(() => { const w = props.e.sets.filter((s) => s.kind !== "warmup" && s.kind !== "drop"); return !!feat.value.unilateral && w.length > 0 && w.every((s) => s.side); });
@@ -122,7 +122,7 @@ const menu = computed(() => [
   // any exercise can be switched to left and right sets (the exercise's default is only a start)
   { ...sidesItem(props.e.exerciseId, sided.value, (on) => { if (props.e.exercise) props.e.exercise.unilateral = on; }), sep: true, hidden: !feat.value.unilateral },
   // one-sided exercises have this as a button under the sets; any other exercise can still get a left and a right set
-  { label: "Add a left + right set", hint: "One set for each side, beside the others", icon: "plus", run: addPair, hidden: !feat.value.unilateral || sided.value },
+  { label: "Add a left and right set", hint: "One set for each side, beside the others", icon: "plus", run: addPair, hidden: !feat.value.unilateral || sided.value },
   { label: "Rest between sets", sep: true, icon: "timer", run: () => (restEdit.value = "between") },
   { label: "Rest after this exercise", icon: "timer", run: () => (restEdit.value = "after") },
   { label: "Add warm-up sets", icon: "flame", run: addWarmups, hidden: !feat.value.warmupCalc || !showW.value },
@@ -168,7 +168,7 @@ const nowId = computed(() => (W.state.active === props.index ? visibleSets.value
     <table class="sets">
       <thead><tr><th>Set</th><th v-if="prefs.showPrevious">Previous</th><th v-if="showW">{{ fmt.wu }}<span v-if="perSide" class="thside"> / side</span></th><th v-if="showR">Reps</th><th v-if="showD">Time</th><th v-if="showDist">{{ fmt.du }}</th><th v-if="feat.rpe">RPE</th><th style="width:44px" /></tr></thead>
       <tbody>
-        <tr v-for="s in visibleSets" :key="s.id" :class="{ done: s.done, drop: s.kind === 'drop', now: s.id === nowId && e.status !== 'skipped', 'sr-a': rounds.open.has(s.id), 'sr-b': rounds.close.has(s.id) }" :aria-current="s.id === nowId ? 'step' : undefined">
+        <tr v-for="s in visibleSets" :key="s.id" :class="{ done: s.done, drop: s.kind === 'drop', now: s.id === nowId && e.status !== 'skipped', 'sr-a': rounds.open.has(s.id) }" :aria-current="s.id === nowId ? 'step' : undefined">
           <td :class="{ srl: rounds.open.has(s.id) }"><button class="sk" :class="{ w: s.kind === 'warmup', d: s.kind === 'drop', f: s.kind === 'failure' }" @click.stop>{{ kindShort(s) }}</button></td>
           <td v-if="prefs.showPrevious" class="prev" @click="copyPrev(s)">{{ prevText(s) }}<span v-if="s.pr?.length" class="pr" style="margin-inline-start:6px">PR</span><span v-else-if="beat(s)" class="pos tiny" style="margin-inline-start:6px">{{ beat(s) }}</span></td>
           <td v-if="showW"><input class="vin" :class="{ pre: s.prefilled && !s.done }" inputmode="decimal" :value="wIn(s.weightKg)" placeholder="-" @change="W.editSet(s, { weightKg: num(($event.target as HTMLInputElement).value) == null ? null : fmt.toKg(num(($event.target as HTMLInputElement).value)!) })" @focus="($event.target as HTMLInputElement).select()" /></td>
@@ -192,7 +192,7 @@ const nowId = computed(() => (W.state.active === props.index ? visibleSets.value
       <button class="fchip" :class="{ acc: !sided }" @click="W.addSet(e)"><Icon name="plus" :size="14" />Set</button>
       <button v-if="e.repRestS" class="fchip" :class="{ on: repTimer }" @click="toggleRepTimer"><Icon name="timer" :size="14" />{{ repTimer ? "Stop rep timer" : `Rep timer ${e.repRestS}s` }}</button>
       <div class="grow" />
-      <button class="qb" @click="noteSheet = { targets: [{ type: 'exercise', id: e.exerciseId, label: `${e.exercise.name}, every time` }, ...(e.routineExerciseId && !e.swapped ? [{ type: 'routine_exercise', id: e.routineExerciseId, label: `${e.exercise.name} in ${W.state.w?.name ?? 'this routine'}` }] : []), ...(W.state.w?.routineId ? [{ type: 'routine', id: W.state.w.routineId, label: `The whole routine` }] : []), { type: 'workout_exercise', id: e.id, label: 'Just today' }], workoutId: W.state.w?.id }"><Icon name="note" :size="16" />Note</button>
+      <button class="fchip" @click="noteSheet = { targets: [{ type: 'exercise', id: e.exerciseId, label: `${e.exercise.name}, every time` }, ...(e.routineExerciseId && !e.swapped ? [{ type: 'routine_exercise', id: e.routineExerciseId, label: `${e.exercise.name} in ${W.state.w?.name ?? 'this routine'}` }] : []), ...(W.state.w?.routineId ? [{ type: 'routine', id: W.state.w.routineId, label: `The whole routine` }] : []), { type: 'workout_exercise', id: e.id, label: 'Just today' }], workoutId: W.state.w?.id }"><Icon name="note" :size="14" />Note</button>
     </div>
     <!-- notes for this exercise: under it, where you look after a set -->
     <div v-if="prefs.showReminders && isCur && e.notes?.some((x) => x.pinned || x.workoutId === W.state.w?.id)" class="exnotes">
