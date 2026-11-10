@@ -59,7 +59,7 @@ const restTiles = (e: any) => {
     { l: "Normal sets", v: c(restForKind(e, "normal", false, d)), dim: e.restS == null },
     ...kinds.map((k) => ({ l: label[k], v: c(restForKind(e, k, false, d)), dim: e.restByKind?.[k] == null })),
     // inside a left and right round you switch sides without a rest (unless that set has its own)
-    ...(hasSideRounds(e) ? [{ l: "Between sides", v: "No rest", dim: true }] : []),
+    ...(hasSideRounds(e) ? [{ l: "Between sides", v: "No rest", dim: false }] : []),
     { l: "After the last set", v: c(restForKind(e, "normal", true, d)), dim: e.restAfterS == null },
   ];
 };
@@ -114,9 +114,11 @@ await loaded(r, summaries, notes, rems, schedules, history);
     <div class="tabs"><button v-for="[k, l] in [['plan', 'Plan'], ['history', `Workouts · ${sum?.timesDone ?? 0}`], ['notes', `Notes · ${notes.data.value?.length ?? 0}`]]" :key="k" :class="{ on: tab === k }" @click="tab = k as string">{{ l }}</button></div>
 
     <Transition name="sw" mode="out-in">
-    <div v-if="tab === 'plan'" class="grid" style="grid-template-columns:minmax(0,1fr) 300px;align-items:start">
+    <div v-if="tab === 'plan'">
+    <!-- above both columns, so the first card stays level with the side column's top -->
+    <div v-if="anyDim" class="tiny hgap">Faded values are your defaults from Settings.</div>
+    <div class="grid" style="grid-template-columns:minmax(0,1fr) 300px;align-items:start">
       <div class="pexlist">
-        <div v-if="anyDim" class="tiny">Faded values are your defaults from Settings</div>
         <div v-if="!routine.exercises.length" class="card"><div class="empty"><b>No exercises yet</b><button class="btn tonal" @click="router.push(`/routines/${id}/edit`)">Add exercises</button></div></div>
         <!-- each exercise with its planned sets, as in the editor but read-only; the body on the left (Routines list card rule) -->
         <div v-for="e in routine.exercises" :key="e.id" class="card pex" :class="{ wbody: hasMuscles(e), sup: e.superset }">
@@ -161,6 +163,7 @@ await loaded(r, summaries, notes, rems, schedules, history);
         </div>
       </div>
     </div>
+    </div>
 
     <div v-else-if="tab === 'history'">
       <div v-if="(history.data.value?.length ?? 0) > 1" class="grid g2 spb">
@@ -204,13 +207,14 @@ await loaded(r, summaries, notes, rems, schedules, history);
 /* a row of read-only tiles: the icon in its own column, the tiles wrapping in theirs so a second line starts under the first tile */
 .prest { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 8px; align-items: start; }
 /* the icon level with the first line of tiles: a tile's padding and one line of its text */
-.pri { display: flex; align-items: center; font-size: 13px; height: 1lh; padding-block: 9px; color: var(--tx2); }
+.pri { display: flex; align-items: center; font-size: 13px; box-sizing: content-box; height: 1lh; padding-block: 9px; color: var(--tx2); }
 .prt { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
 /* a tile keeps its words on one line where it fits and wraps inside itself on a narrow phone, never past the card */
 .prt > .rtile { flex: 0 1 auto; min-width: 0; }
 .prt > .rtile > b { text-align: end; }
 /* the progression tile's parts: each part stays whole with its dot after it, and the tile breaks between parts */
 .prest b.pgv { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; text-align: start; }
+.pgv .sep { font-weight: 400; }
 .pgp { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 </style>
 
