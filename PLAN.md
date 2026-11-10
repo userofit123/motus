@@ -712,10 +712,13 @@ This is the heart of the tracker. One simple model (M-74):
 **3. Finish: "Next time".** One compact card, "The routine's numbers", with a line only for what applies ("4
 exercises have new numbers", "1 weight goes up automatically", "2 suggestions to review" in the accent colour, "1
 exercise has sets you didn't tick"; else "The routine stays the same"). Tapping it opens the "Next time" sheet:
-each exercise whose routine numbers change, set by set, the routine before this workout (as the switched-on
-routine changes shape it) against next time ("Set 1  - → 20 kg × 10"). Automatic changes show "Automatic" and
-the reason ("Every set reached 10 reps", "Missed reps 3 workouts in a row"); Suggest changes have an "Apply"
-switch, off by default. Exercises with typed but unticked sets say "Sets you didn't tick won't be saved" with
+each exercise whose routine numbers change, set by set in a table with three labelled columns (M-107):
+"Planned" (the routine before this workout, as the switched-on routine changes shape it), "You did" (today's
+ticked set in its place) and "Next time" (bold, with an arrow in green/red when the weight moves); sets in a row
+reading the same fold into one row ("1-6"). A weight change has its own row: "Heavier/Lighter next time", "46 kg →
+47.5 kg · reps start again at 8" and the reason saying what you did against the plan ("You did 12 reps on every
+set, 4 more than the 8 planned", "You did 12 reps on every set, the top of 8-12", "You missed reps 3 workouts in a
+row"); Automatic ones carry an "Automatic" chip, Suggest ones an "Apply" switch, off by default. Exercises with typed but unticked sets say "Sets you didn't tick won't be saved" with
 "Go to exercise"; the rest fold into "N exercises unchanged". Finish sends the applied Suggest ones
 (`accepted`; none from older apps, whose `declined` is ignored); the engine applies the numbers, Progression and
 the switched-on routine changes in the finish's own transaction.

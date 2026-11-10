@@ -5,7 +5,7 @@
 // differed from the routine (listed, each saved only when switched on). Then how it felt, notes, body weight.
 import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
-import { applyStructure, planNext, startRepsOf, structureChanges, usesReps, usesWeight, workoutScore, workoutSoFar, type Routine, type StructureChange, type Tracking, type Workout } from "@motus/shared";
+import { applyStructure, planNext, startRepsOf, structureChanges, todaysSets, usesReps, usesWeight, workoutScore, workoutSoFar, type Routine, type StructureChange, type Tracking, type Workout } from "@motus/shared";
 import { useWorkout, endWorkout, finishDraft } from "./useWorkout";
 import { api } from "../api/client";
 import { settle } from "../api/outbox";
@@ -15,6 +15,7 @@ import { toast, toastError } from "../core/toast";
 import { elapsed, finishRest } from "./runtime";
 import { keepAwake } from "./native";
 import { maybeAutoBackup } from "../core/backup";
+import { setNo } from "../core/format";
 import Sheet from "../components/Sheet.vue";
 import Icon from "../components/Icon.vue";
 import WorkoutSoFar from "./WorkoutSoFar.vue";
@@ -75,11 +76,13 @@ const FIELDS = ["kind", "weightKg", "reps", "startReps", "durationS", "distanceM
 const sameSet = (a: RSet | undefined, b: RSet) => !!a && FIELDS.every((k) => (a[k] ?? null) === (b[k] ?? null));
 // a set's numbers as next time starts them: "20 kg × 10", "12 reps", "1:00"; "-" when it has none. The reps you'll do
 // (with a range, its starting reps), never the range: a change of reps inside it shows as one
-function setText(x: RSet, t: Tracking) {
+const setText = (x: RSet, t: Tracking) => numbersText({ ...x, reps: startRepsOf(x) }, t);
+// a set's numbers as text, "-" when it has none: next time's (setText) and what was done today
+type Nums = { weightKg: number | null; reps: number | null; durationS?: number | null; distanceM?: number | null };
+function numbersText(x: Nums, t: Tracking) {
   const f = fmt.value;
   const kg = x.weightKg != null && usesWeight(t) ? f.wu_(x.weightKg) : "";
-  const start = startRepsOf(x);
-  const reps = start == null || !usesReps(t) ? "" : String(start);
+  const reps = x.reps == null || !usesReps(t) ? "" : String(x.reps);
   const r = reps ? (kg ? `× ${reps}` : `${reps} rep${reps === "1" ? "" : "s"}`) : "";
   return [kg, r, x.durationS ? f.clock(x.durationS) : "", x.distanceM ? f.dist(x.distanceM) : ""].filter(Boolean).join(" ") || "-";
 }
@@ -121,17 +124,32 @@ const nextTime = computed(() => {
     const swapped = !!was && was.exerciseId !== item.exerciseId;
     const note = !was ? "New in the routine" : swapped ? `Was: ${was.exercise?.name ?? ""}` : undefined;
     const before = (was && !swapped ? was.sets : []) as RSet[];
-    let k = 0;
-    const sets = (after.sets as RSet[]).flatMap((x, j): NextSet[] => {
-      const label = x.kind === "warmup" ? "Warm-up" : x.kind === "drop" ? "Drop" : `Set ${++k}`;
+    // today's set in each place, the one its numbers came from (the routine before Progression pairs like the one after)
+    const did = e ? todaysSets(item.sets as RSet[], e) : [];
+    const aft = after.sets as RSet[], sides = !!W.settings.value.features.unilateral;
+    // the set's badge as the workout's set table has it: 1, 2, 3L, 3R, W, D
+    const badge = (x: RSet, j: number) => (x.kind === "warmup" ? "W" : x.kind === "drop" ? "D" : x.kind === "failure" ? "F" : String(setNo(aft, j, sides))) + (sides && x.side && x.kind !== "warmup" && x.kind !== "drop" ? x.side : "");
+    const rows = aft.flatMap((x, j): NextSet[] => {
       const b = before[j];
       if (sameSet(b, x)) return [];
-      // from: where the routine started this set before; to: where next time starts it. A row only when they read differently
-      const from = b ? setText(b, t) : "-", to = setText(x, t);
-      if (from === to) return [];
-      const delta = b?.weightKg != null && x.weightKg != null ? (x.weightKg - b.weightKg) * (t === "assisted" ? -1 : 1) : 0;
-      return [{ key: j, label, from, to, trend: delta > 0 ? "up" : delta < 0 ? "down" : null }];
+      // planned: where the routine started this set before; did: today's ticked set in its place; next: where next time
+      // starts it. A row only when planned and next read differently
+      const planned = b ? setText(b, t) : "-", next = setText(x, t);
+      if (planned === next) return [];
+      const d0 = did[j], doneText = d0 ? numbersText(d0, t) : "-";
+      // the trend is against what was done today (else the plan): 46 x 12 to 47.5 x 8 is a step up
+      const base = d0?.weightKg ?? b?.weightKg;
+      const delta = base != null && x.weightKg != null ? (x.weightKg - base) * (t === "assisted" ? -1 : 1) : 0;
+      return [{ key: j, label: badge(x, j), kind: x.kind, planned, did: doneText, next, trend: delta > 0 ? "up" : delta < 0 ? "down" : null }];
     });
+    // a run of sets in a row reading the same folds into one row, "1-6", like the routine's sets in short ("3 × 20 kg")
+    const sets: NextSet[] = [];
+    for (const r of rows) {
+      const last = sets.at(-1);
+      if (last && last.lastKey === r.key - 1 && last.kind === r.kind && r.kind !== "drop" && last.planned === r.planned && last.did === r.did && last.next === r.next && last.trend === r.trend) {
+        last.lastKey = r.key; last.label = `${last.label.split("-")[0]}-${r.label}`;
+      } else sets.push({ ...r, lastKey: r.key });
+    }
     const change = item.id ? plan.value.changes.find((c) => c.routineExerciseId === item.id) : undefined;
     const unticked = !!e && typedUnticked(e);
     if (e) listed.add(index);

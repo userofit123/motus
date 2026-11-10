@@ -25,7 +25,7 @@ describe("planNext", () => {
   });
   it("goes up a step with reps at the bottom when every set reached the top; suggest applies only when accepted", () => {
     const r = planNext([slot()], done([warm(), range(12), range(12)]), D);
-    expect(r.changes[0]).toMatchObject({ mode: "suggest", direction: "up", fromKg: 20, toKg: 22.5, fromReps: 12, reps: 8, reason: "Every set reached 12 reps, the top of 8-12" });
+    expect(r.changes[0]).toMatchObject({ mode: "suggest", direction: "up", fromKg: 20, toKg: 22.5, fromReps: 12, reps: 8, reason: "You did 12 reps on every set, the top of 8-12" });
     expect(r.exercises[0]!.sets.map((s: any) => s.weightKg)).toEqual([10, 20, 20]);
     expect(planNext([slot()], done([warm(), range(12), range(12)]), D, ["re1"]).exercises[0]!.sets.map((s: any) => s.weightKg)).toEqual([10, 22.5, 22.5]);
     expect(planNext([slot()], done([warm(), range(12), range(12)]), D, ["other"]).exercises[0]!.sets.map((s: any) => s.weightKg)).toEqual([10, 20, 20]);
@@ -43,7 +43,7 @@ describe("planNext", () => {
     const r = planNext([slot()], done([warm(), range(12), set({ weightKg: 20, reps: 12, done: false })]), D);
     expect(r.changes).toEqual([]);
     const miss = planNext([slot({ missed: 2 })], done([warm(), range(7), set({ weightKg: 20, reps: null, done: false })]), D);
-    expect(miss.changes[0]).toMatchObject({ direction: "down", reason: "Missed reps 3 workouts in a row" });
+    expect(miss.changes[0]).toMatchObject({ direction: "down", reason: "You missed reps 3 workouts in a row" });
     expect(planNext([slot()], done([warm(), range(8), set({ done: false })]), D).exercises[0]).toMatchObject({ missed: 0 });
   });
   it("pairs routine sets by place, so an unticked middle set keeps its own numbers", () => {
@@ -102,14 +102,33 @@ describe("planNext", () => {
   });
   it("uses the rep target when there is no range: reached, it becomes today's reps; missed, it stays", () => {
     const one = slot({ sets: [rs({ repsMax: null, reps: 5, weightKg: 100 })] });
-    expect(planNext([one], done([set({ weightKg: 100, reps: 5 })]), D).changes[0]).toMatchObject({ toKg: 102.5, reps: 5, reason: "Every set reached 5 reps" });
+    expect(planNext([one], done([set({ weightKg: 100, reps: 5 })]), D).changes[0]).toMatchObject({ toKg: 102.5, reps: 5, reason: "You did 5 reps on every set, as planned" });
     expect(planNext([one], done([set({ weightKg: 100, reps: 4 })]), D).exercises[0]!.sets[0]).toMatchObject({ reps: 5, weightKg: 100 });
+  });
+  // M-107: a first workout of a new routine (no weight, 8 reps planned), sets added, 46 kg x 12 on every one of a
+  // one-sided exercise. Today's numbers become the routine's (46 kg), Progression then goes a step up on the 2.5 kg grid
+  // (47.5) with reps back to the 8 planned; the reason says what was done against the plan
+  it("a first workout well past its rep target: up a grid step from what was done, reps back to the target, and says so", () => {
+    const blank = rs({ repsMax: null, reps: 8, weightKg: null });
+    const r0 = { id: "re1", exerciseId: "x", fixed: false, progression: { mode: "auto" }, missed: 0, sets: [blank, blank, blank] };
+    const today = [1, 2, 3].flatMap(() => [set({ side: "L", weightKg: 46, reps: 12 }), set({ side: "R", weightKg: 46, reps: 12 })]);
+    const w = done(today);
+    const shaped = applyStructure({ exercises: [r0] }, w, ["more:re1"]) as typeof r0[];
+    expect(shaped[0]!.sets).toHaveLength(6);
+    const r = planNext(shaped, w, D);
+    // the sides don't change the weight (it is the weight one side moves) nor how many sets count
+    expect(r.exercises[0]!.sets.map((s: any) => [s.weightKg, s.reps])).toEqual(Array(6).fill([47.5, 8]));
+    expect(r.changes[0]).toMatchObject({ mode: "auto", direction: "up", fromKg: 46, toKg: 47.5, fromReps: 12, reps: 8, reason: "You did 12 reps on every set, 4 more than the 8 planned" });
+    // reps that differ set by set, and sets planned differently
+    const mixed = done([set({ weightKg: 46, reps: 12 }), set({ weightKg: 46, reps: 10 })]);
+    expect(planNext([{ ...r0, sets: [blank, blank] }], mixed, D).changes[0]!.reason).toBe("You did 10 or more reps on every set, more than the 8 planned");
+    expect(planNext([{ ...r0, sets: [blank, { ...blank, reps: 6 }] }], mixed, D).changes[0]!.reason).toBe("Every set reached its target reps");
   });
   it("lowers a step after N missed workouts in a row, with the reason, and never when set so", () => {
     const miss = done([range(7), range(8)]);
     expect(planNext([slot({ missed: 1 })], miss, D)).toMatchObject({ changes: [], exercises: [{ missed: 2 }] });
     const r = planNext([slot({ missed: 2, progression: { mode: "auto", stepKg: null, lowerAfter: null } })], miss, D);
-    expect(r.changes[0]).toMatchObject({ direction: "down", toKg: 17.5, reason: "Missed reps 3 workouts in a row" });
+    expect(r.changes[0]).toMatchObject({ direction: "down", toKg: 17.5, reason: "You missed reps 3 workouts in a row" });
     expect(r.exercises[0]).toMatchObject({ missed: 0 });
     expect(planNext([slot({ missed: 9 })], miss, { ...D, lowerAfter: 0 }).changes).toEqual([]);
     expect(planNext([slot({ missed: 5 })], done([range(9), range(9)]), D).exercises[0]).toMatchObject({ missed: 0 });

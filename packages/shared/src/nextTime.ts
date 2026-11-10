@@ -57,7 +57,7 @@ export interface NextChange {
   /** that set's reps before and after the change: what you did on it today and where it starts after */
   fromReps: number | null;
   reps: number | null;
-  /** why, in plain words: "Every set reached 10 reps", "Missed reps 3 workouts in a row" */
+  /** why, in plain words: "You did 12 reps on every set, 4 more than the 8 planned", "You missed reps 3 workouts in a row" */
   reason: string;
 }
 
@@ -95,6 +95,18 @@ export function pairSets<T extends Sided>(sets: Sided[], other: T[], repeatLast 
   });
   return out;
 }
+/** Today's set in each routine set's place, the one planNext takes the numbers from (and the Next time sheet shows as
+ * "You did"): the workout set in the same place among the non-warm-ups, by position so an unticked set keeps its place;
+ * left and right sets each with today's of their own side (pairSets). Null: a warm-up, past today's last, unticked, or a
+ * drop facing a working set or the other way round. */
+export function todaysSets<T extends Sided & { done: boolean }>(sets: Sided[], e: { sets: T[] }): (T | null)[] {
+  const isDrop = (k: string) => k === "drop";
+  return pairSets(sets, e.sets.filter((s) => s.kind !== "warmup")).map((t, i) => {
+    const rs = sets[i]!;
+    if (rs.kind === "warmup") return null;
+    return t && t.done && isDrop(t.kind) === isDrop(rs.kind) ? t : null;
+  });
+}
 export type RoutineItemLike = { id?: string | null; exerciseId: string; fixed?: boolean; progression?: unknown; missed?: number; sets: unknown[] };
 
 /** A routine set's starting reps inside its rep range (`reps` is the range's bottom, `repsMax` its top): clamped into the
@@ -109,6 +121,22 @@ export const startRepsOf = (s: { reps: number | null; repsMax?: number | null; s
 
 // drop sets are lighter on purpose and warm-ups don't count: neither decides progression
 const deciding = (k: string) => k !== "warmup" && k !== "drop";
+
+/** Why the weight goes up, in plain words, saying what you did against what was planned: "You did 12 reps on every
+ * set, 4 more than the 8 planned", "You did 12 reps on every set, the top of 8-12". Sets planned differently get the
+ * general "Every set reached its target reps". */
+function upReason(xs: { rs: RoutineSetLike; reps: number }[]): string {
+  const least = Math.min(...xs.map((x) => x.reps));
+  const same = xs.every((x) => x.reps === least);
+  const plans = new Set(xs.map((x) => `${x.rs.reps}-${x.rs.repsMax ?? ""}`));
+  const anyRange = xs.some((x) => x.rs.repsMax != null);
+  if (plans.size > 1) return anyRange ? "Every set reached the top of its rep range" : "Every set reached its target reps";
+  const { reps: lo, repsMax: hi } = xs[0]!.rs, top = hi ?? lo!;
+  const did = same ? `You did ${least} reps on every set` : `You did ${least} or more reps on every set`;
+  if (hi != null) return `${did}, ${least === top ? "the top" : "above the top"} of ${lo}-${hi}`;
+  if (least === top) return `${did}, as planned`;
+  return `${did}, ${same ? `${least - top} more than` : "more than"} the ${top} planned`;
+}
 
 /** The routine's exercises after a finished session: each one done (not skipped, something ticked, the same exercise
  * as its slot) takes today's numbers set by set, each routine set from the workout set in its place among the non-warm-ups,
@@ -129,16 +157,7 @@ export function planNext<R extends RoutineItemLike>(exercises: R[], w: { exercis
     const e = re.id ? w.exercises.find((x) => x.routineExerciseId === re.id && x.exerciseId === re.exerciseId && x.status !== "skipped" && x.sets.some((s) => s.done)) : undefined;
     if (!e || re.fixed) return re;
     const sets = re.sets as RoutineSetLike[];
-    // each routine set with the workout set in the same place among the non-warm-ups, by position so an unticked set
-    // keeps its place (null: warm-up, past today's last, unticked, or a drop facing a working set or the other way round);
-    // left and right sets each with today's of their own side (pairSets)
-    const work = e.sets.filter((s) => s.kind !== "warmup");
-    const isDrop = (k: string) => k === "drop";
-    const pairs = pairSets(sets, work).map((t, i) => {
-      const rs = sets[i]!;
-      if (rs.kind === "warmup") return null;
-      return t && t.done && isDrop(t.kind) === isDrop(rs.kind) ? t : null;
-    });
+    const pairs = todaysSets(sets, e);
     const num = (t: number | null | undefined, r: number | null | undefined) => (t ?? r ?? null);
     let next: RoutineSetLike[] = sets.map((rs, i) => {
       const t = pairs[i];
@@ -193,13 +212,11 @@ export function planNext<R extends RoutineItemLike>(exercises: R[], w: { exercis
         const mode = p.mode === "auto" ? "auto" : "suggest";
         // the set the change is shown on: the first one missed for a lower, else the first working set
         const at = direction === "down" ? below! : dec[0]!, i0 = at.i;
-        const topReps = Math.max(...dec.map((x) => top(x.rs)));
-        const range = dec.find((x) => x.rs.repsMax != null && top(x.rs) === topReps)?.rs;
         changes.push({
           routineExerciseId: re.id!, exerciseId: re.exerciseId, name: e.exercise?.name ?? "", mode, direction,
           fromKg: heaviest(next), toKg: heaviest(moved), fromReps: at.t!.reps, reps: startRepsOf(moved[i0]!),
-          reason: direction === "up" ? `Every set reached ${topReps} reps${range ? `, the top of ${range.reps}-${range.repsMax}` : ""}`
-            : p.lowerAfter === 1 ? "Missed reps last workout" : `Missed reps ${p.lowerAfter} workouts in a row`,
+          reason: direction === "up" ? upReason(dec.map((x) => ({ rs: x.rs, reps: x.t!.reps! })))
+            : p.lowerAfter === 1 ? "You missed reps last workout" : `You missed reps ${p.lowerAfter} workouts in a row`,
         });
         // applied, or a "lower" not applied on Finish: either way the run of misses starts again from 0, so a lower left
         // off isn't asked again at the very next miss
