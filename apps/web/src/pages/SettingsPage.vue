@@ -44,7 +44,7 @@ const GROUPS = computed<[string, Section[]][]>(() => [
   ["You", [["account", "Account", "user", "Name, password, devices, sync"],
     // the apps keep several servers and on-device accounts; in a browser the server is the site, so this only names it
     (globalThis as any).motusNative?.accounts ? ["accounts", "Servers & accounts", "server", "Switch, add or remove a server"] : ["accounts", "Server", "server", location.host]]],
-  ["Training", [["workout", "Workout defaults", "dumbbell", "Rest times, timer, filling in sets"], ["activities", "Activity types", "walk", "Walk, run, ride and your own"], ["features", "Features", "sparkle", "Switch extras on or off"]]],
+  ["Training", [["workout", "Workout defaults", "dumbbell", "Rest times, timer, progression, filling in sets"], ["activities", "Activity types", "walk", "Walk, run, ride and your own"], ["features", "Features", "sparkle", "Switch extras on or off"]]],
   ["App", [["units", "Units & formats", "scale", "kg or lb, dates, work week"], ["appearance", "Appearance", "palette", "Colours, style, layout"], ["notifications", "Notifications", "bell", "Planned workouts"]]],
   ["Your data", [["backup", "Backup & restore", "download", "A copy of everything"], ["data", "Export & import", "upload", "Motus files, CSV, other apps"], ["log", "Activity log", "history", "Everything you changed"]]],
   ["About", [["versions", "App & Versions", "refresh", "Installed version, downloads"], ["changelog", "What's new", "sparkle", "Release notes"], ...(s.value.features.apiTokens || s.value.features.mcp ? [["integrations", "Integrations", "link", "API tokens, Ask Claude"] as Section] : []),
@@ -183,7 +183,7 @@ await loaded(me);
           </template>
           <div class="sh"><h2>Progression</h2></div>
           <div class="card">
-            <p class="tiny prog-intro">{{ PROGRESSION_INTRO }}.</p>
+            <p class="tiny prog-intro">{{ PROGRESSION_INTRO }}.<br />An exercise can have its own in the routine's editor.</p>
             <RadioList :model-value="s.progression.mode" :options="PROGRESSION_MODES" @update:model-value="(v) => set({ progression: { mode: v } })" />
             <div class="li stack"><div class="grow"><div class="t">Rep range</div><div class="s">{{ RANGE_HINT }}</div></div>
               <div class="hrow"><NumStep :value="s.progression.repsMin" :min="1" :max="100" label="bottom of the range" @set="(v) => set({ progression: { repsMin: v, repsMax: Math.max(v, s.progression.repsMax) } })" />
@@ -199,9 +199,9 @@ await loaded(me);
           <div class="sh"><h2>Weights</h2></div>
           <div class="card">
             <div class="li"><div class="grow"><div class="t">Stepper step</div><div class="s">How much − and + change a weight during a workout</div></div>
-              <NumStep :value="s.increments[s.units.weight]" :step="s.units.weight === 'lb' ? 0.5 : 0.25" :min="s.units.weight === 'lb' ? 0.5 : 0.25" :max="100" :unit="s.units.weight" label="stepper step" @set="(v) => set({ increments: { [s.units.weight]: v } })" /></div>
+              <NumStep :value="s.increments[s.units.weight]" :step="s.units.weight === 'lb' ? 1 : 0.5" :min="s.units.weight === 'lb' ? 0.5 : 0.25" :max="100" :unit="s.units.weight" label="stepper step" @set="(v) => set({ increments: { [s.units.weight]: v } })" /></div>
             <div v-if="s.features.plates || s.features.warmupCalc" class="li"><div class="grow"><div class="t">Bar weight</div></div>
-              <NumStep :value="wIn(s.barKg)" :step="s.units.weight === 'lb' ? 1 : 0.5" :min="1" :max="100" :unit="s.units.weight" label="bar weight" @set="(v) => set({ barKg: kgOf(v) })" /></div>
+              <NumStep :value="s.units.weight === 'lb' ? Math.round(wIn(s.barKg)) : wIn(s.barKg)" :step="s.units.weight === 'lb' ? 1 : 0.5" :min="1" :max="100" :unit="s.units.weight" label="bar weight" @set="(v) => set({ barKg: kgOf(v) })" /></div>
             <div v-if="s.features.plates" class="li"><div class="grow"><div class="t">Your plates</div><div class="s">{{ (s.units.weight === "kg" ? s.platesKg : s.platesLb).join(", ") }} {{ s.units.weight }}</div></div><button class="qb acc" @click="editPlates">Edit</button></div>
           </div>
           <div class="sh"><h2>Note tags</h2><button class="lnk" @click="addNoteTag">Add</button></div>
@@ -268,7 +268,7 @@ await loaded(me);
 </template>
 
 <style scoped>
-.prog-intro { margin: 0 0 var(--lpy); }
+.prog-intro { margin: 0 0 var(--hg); }
 /* the computer's section list: small group names over plain rows, the open one filled */
 .snav { position: sticky; top: calc(24px + var(--st)); padding: calc(var(--cpy) / 2); display: flex; flex-direction: column; gap: 1px; }
 /* the group names and rows share one side inset, and the first group name sits that far below the top too, so the

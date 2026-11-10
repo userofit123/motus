@@ -111,10 +111,10 @@ hr.sep { border: 0; border-top: 1px solid var(--ol); margin: 14px 0; }
 .li:last-child { border-bottom: 0; }
 /* a row whose controls don't fit beside the label on a phone (a rep range's two steppers): they wrap onto their own
    line under it, like the profile's height */
-.li.stack { flex-wrap: wrap; }
-.li.stack > .grow { flex-basis: 100%; }
-.li.stack > .hrow { display: flex; align-items: center; gap: var(--hg); flex-wrap: wrap; }
-.li.stack > .hrow .dash { color: var(--tx2); }
+html.phone .li.stack { flex-wrap: wrap; }
+html.phone .li.stack > .grow { flex-basis: 100%; }
+.hrow { display: flex; align-items: center; gap: var(--hg); flex-wrap: wrap; }
+.hrow .dash { color: var(--tx2); }
 /* a row lights up edge to edge: across the whole card, and on the first and last row up to the card's own edge; the
    card's rounded corners clip it. Rows outside a card light up across their own width */
 .li.click:hover, .li.click:active { background: color-mix(in srgb, var(--tx) 3%, transparent); }

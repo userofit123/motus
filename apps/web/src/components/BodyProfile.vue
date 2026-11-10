@@ -43,6 +43,4 @@ const setHeightImperial = (f: number | null, i: number | null) => setProfile({ h
   </div>
 </template>
 
-<style scoped>
-.hrow { display: flex; align-items: center; gap: var(--hg); flex-wrap: wrap; }
-</style>
+

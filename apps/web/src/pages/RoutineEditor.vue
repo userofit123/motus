@@ -262,7 +262,7 @@ async function pickFolder(v: string) {
 }
 function fromScratch() { starter.value = false; picking.value = {}; }
 
-// Progression for one exercise (the block's "Progression" row): each field null uses your default (Settings → Workout →
+// Progression for one exercise (the block's "Progression" row): each field null uses your default (Settings → Workout defaults →
 // Progression), so changing the default there moves every exercise without its own. The rep range is part of it: the
 // reps move inside it and every set at its top makes the weight go up.
 type ProgKey = "mode" | "repsMin" | "repsMax" | "stepKg" | "lowerAfter";
@@ -281,8 +281,9 @@ const rangeText = (lo: number, hi: number) => (lo === hi ? `${lo} reps` : `${lo}
 // the block's tile: "Automatic · 6-12 reps · +2.5 kg", each part faded while it follows your default
 const progParts = (e: any) => {
   const p = progOf(e), own = e.progression ?? {};
+  if (p.mode === "off") return [{ text: modeLabel(p.mode), dim: own.mode == null }];
   const parts = [{ text: modeLabel(p.mode), dim: own.mode == null }, { text: rangeText(p.repsMin, p.repsMax), dim: own.repsMin == null }];
-  return p.mode === "off" ? parts : [...parts, { text: `+${fmt.value.wu_(p.stepKg)}`, dim: own.stepKg == null }];
+  return [...parts, { text: `+${fmt.value.wu_(p.stepKg)}`, dim: own.stepKg == null }];
 };
 // its own range: both ends move together, the bottom never above the top
 function setRange(e: any, lo: number, hi: number) { setProg(e, { repsMin: Math.min(lo, hi), repsMax: Math.max(lo, hi) }); }
@@ -494,7 +495,7 @@ await loaded(src, all, folders, routines, templates);
 
             <!-- Progression with its rep range, like the Timer between reps row: what applies in the tile, faded where it is your default -->
             <div v-if="progUsable(e) && !e.fixed" class="sect">
-              <div class="sect-h"><span class="si"><Icon name="arrowUp" :size="16" /></span><span class="grow"><b>Progression</b><span class="tiny">How the reps and weight move after a workout. Faded values are your defaults</span></span>
+              <div class="sect-h pg-h"><span class="si"><Icon name="arrowUp" :size="16" /></span><span class="grow"><b>Progression</b><span class="tiny">How the reps and weight move after a workout. Faded values are your defaults from Settings.</span></span>
                 <button class="rtile" style="flex:none" @click="progFor = e"><b class="pgsum"><template v-for="(x, k) in progParts(e)" :key="k"><span v-if="k" class="sep">·</span><span :class="{ dim: x.dim }">{{ x.text }}</span></template></b></button></div>
             </div>
 
@@ -547,7 +548,7 @@ await loaded(src, all, folders, routines, templates);
     <Sheet v-if="progFor" :title="`Progression · ${exName(progFor)}`" @close="progFor = null">
       <p class="tiny pg-intro">{{ PROGRESSION_INTRO }}.</p>
       <div class="flbl">Mode</div>
-      <RadioList :model-value="progFor.progression?.mode ?? null" :options="[{ value: null, label: `Your default (${modeLabel(s.progression.mode)})`, hint: 'From Settings → Workout → Progression' }, ...PROGRESSION_MODES]"
+      <RadioList :model-value="progFor.progression?.mode ?? null" :options="[{ value: null, label: `Your default (${modeLabel(s.progression.mode)})`, hint: 'From Settings → Workout defaults → Progression' }, ...PROGRESSION_MODES]"
         @update:model-value="(v) => setProg(progFor, { mode: v })" />
       <div class="card pg-rows">
         <div class="li"><div class="grow"><div class="t">Rep range</div><div class="s">{{ RANGE_HINT }}</div></div>
@@ -584,6 +585,10 @@ await loaded(src, all, folders, routines, templates);
 .pl-k { margin-bottom: 2px; }
 .exchips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 2px; }
 .pg-intro { margin: 0 0 var(--hg); }
+/* phone: the tile (long, with the range and step) drops under the text, start-aligned past the icon (30px) and gap (10px) like .li.stack */
+html.phone .sect-h.pg-h { flex-wrap: wrap; }
+html.phone .sect-h.pg-h > .grow { flex-basis: calc(100% - 40px); }
+html.phone .sect-h.pg-h > .rtile { margin-inline-start: 40px; }
 .pg-rows { margin-top: var(--hg); }
 .pg-reset { margin-top: var(--hg); }
 /* the tile's parts in a row, the dots spaced by the gap; more specific than .sect-h b's display: block */
