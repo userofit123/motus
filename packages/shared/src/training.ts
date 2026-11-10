@@ -55,8 +55,10 @@ export function sideRounds(sets: SidedSet[]): boolean[] {
 /** Whether set `j` opens a left and right round with the next one (sideRounds). */
 export const opensSideRound = (sets: SidedSet[], j: number) => sideRounds(sets)[j] ?? false;
 
-/** The rest after a set: the set's own rest, else the routine's rest for that kind of set (warm-up, drop…), else the
- * person's default for that kind, else the exercise in the routine, else the person's exercise default, else the global default.
+/** The rest after a set: the set's own rest, else for a warm-up, drop or to-failure set the routine's rest for that kind,
+ * else the person's default for that kind as Settings shows it (unset: "Same as between sets", the between-sets default),
+ * never the exercise's working-set rest (a warm-up in a 2:00 exercise rested 2:00 while Settings said 1:30); a normal set
+ * takes the exercise in the routine, else the person's exercise default, else the global default.
  * None before a drop set, nor inside a left and right round (`sideRound`: this set opens one, see sideRounds). */
 export function restAfterSet(
   o: { setRestS?: number | null; kind?: SetKind; nextKind?: SetKind; sideRound?: boolean; byKindS?: RestByKind | null; exRestS?: number | null; prefRestS?: number | null; isLastSet: boolean; exRestAfterS?: number | null; prefRestAfterS?: number | null },
@@ -68,8 +70,8 @@ export function restAfterSet(
   // a left and right round: switch sides straight away, the rest comes after the second side
   if (o.sideRound) return 0;
   if (o.isLastSet) return o.exRestAfterS ?? o.prefRestAfterS ?? d.afterExerciseS;
-  const k = o.kind && o.kind !== "normal" ? o.byKindS?.[o.kind] ?? d.byKindS?.[o.kind] : null;
-  return k ?? o.exRestS ?? o.prefRestS ?? d.betweenSetsS;
+  if (o.kind && o.kind !== "normal") return o.byKindS?.[o.kind] ?? d.byKindS?.[o.kind] ?? d.betweenSetsS;
+  return o.exRestS ?? o.prefRestS ?? d.betweenSetsS;
 }
 
 /** What a workout exercise's planned rests are worked out from: the exercise's rests as they are now, and from the

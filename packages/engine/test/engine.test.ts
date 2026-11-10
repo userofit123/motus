@@ -105,7 +105,9 @@ describe("engine", () => {
     const full = await call(A, "GET", `/routines/${r.id}`);
     expect(full.exercises[0].restByKind).toEqual({ warmup: 45, drop: 0 });
     const prev = await call(A, "GET", `/routines/${r.id}/preview`);
-    expect(prev.exercises[0].sets.map((s: any) => s.restS)).toEqual([45, 75, 0, 0, 120, 200]); // no rest before a drop set
+    // no rest before a drop set; the set to failure (no rest for its kind anywhere) rests Settings' between-sets 1:30,
+    // as Settings says ("Same as between sets"), not the exercise's 2:00
+    expect(prev.exercises[0].sets.map((s: any) => s.restS)).toEqual([45, 75, 0, 0, 90, 200]);
     // the person's default for a kind comes before the exercise's working-set rest
     await call(A, "PUT", "/settings", { workout: { restByKindS: { failure: 30, warmup: 99 } } });
     const prev2 = await call(A, "GET", `/routines/${r.id}/preview`);

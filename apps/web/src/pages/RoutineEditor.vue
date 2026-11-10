@@ -222,10 +222,12 @@ function setSummary(e: any) {
   return `${what}${w}${sides}${warm ? ` · ${warm} warm-up` : ""}${drops ? ` · ${drops} drop${drops === 1 ? "" : "s"}` : ""}`;
 }
 
-// rest after each kind of set; normal sets use the exercise's own rest, the others fall back to the person's default for the kind, then to it
+// rest after each kind of set; normal sets use the exercise's own rest, the others the person's default for the kind as
+// Settings shows it (unset: the between-sets default), the same rule as the workout (restAfterSet)
 const KIND_REST: [k: "warmup" | "drop" | "failure", label: string][] = [["warmup", "Warm-up sets"], ["drop", "Drop sets"], ["failure", "To-failure sets"]];
 const workRest = (e: any) => e.restS ?? s.value.workout.restBetweenSetsS;
-const kindRest = (e: any, k: "warmup" | "drop" | "failure") => e.restByKind?.[k] ?? s.value.workout.restByKindS?.[k] ?? workRest(e);
+const kindDefault = (k: "warmup" | "drop" | "failure") => s.value.workout.restByKindS?.[k] ?? s.value.workout.restBetweenSetsS;
+const kindRest = (e: any, k: "warmup" | "drop" | "failure") => e.restByKind?.[k] ?? kindDefault(k);
 function restGet(t: RestTarget): number | null {
   const e = r.value.exercises[t.ex];
   if (t.kind === "between") return e.restS;
@@ -244,12 +246,12 @@ function setRest(v: number | null) {
 const restTitle = (t: RestTarget) => ({ between: "Rest after a normal set", after: "Rest after the last set", rep: "Timer between reps", set: `Rest after set ${t.set! + 1}`,
   warmup: "Rest after a warm-up set", drop: "Rest after a drop set", failure: "Rest after a set to failure" })[t.kind];
 function restDefault(t: RestTarget) {
-  const e = r.value.exercises[t.ex], c = fmt.value.clock, w = s.value.workout;
+  const c = fmt.value.clock, w = s.value.workout;
   if (t.kind === "between") return `Default (${c(w.restBetweenSetsS)})`;
   if (t.kind === "after") return `Default (${c(w.restAfterExerciseS)})`;
   if (t.kind === "rep") return "Off";
   if (t.kind === "set") return "No custom rest";
-  return w.restByKindS?.[t.kind] != null ? `Default (${c(w.restByKindS[t.kind]!)})` : `Same as normal sets (${c(workRest(e))})`;
+  return `Default (${c(kindDefault(t.kind))})`;
 }
 // the top of a rep range is hidden on phones to save room, unless the exercise uses one or its ⋮ "Rep range" is on
 const rangeOn = reactive(new WeakSet<object>());

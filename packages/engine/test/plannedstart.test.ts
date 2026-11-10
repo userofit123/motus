@@ -69,7 +69,7 @@ describe("starting a planned workout", () => {
     await call("PUT", `/workout-sets/${a.id}`, { kind: "warmup" });
     expect(await rests()).toEqual([45, 120, 200]);
     // the workout carries what the rests are planned from, so the screen works out the same rest before the server's
-    // copy is back: the set made to failure (no rest by kind for it) rests as normal sets, made a warm-up as warm-ups
+    // copy is back: a set made a warm-up rests as warm-ups do
     const ae = (await call("GET", "/workouts/active")).exercises[0];
     expect(ae.restByKind).toEqual({ warmup: 45 });
     expect(ae.routineSetRests).toEqual([null, null, null]);
@@ -85,6 +85,30 @@ describe("starting a planned workout", () => {
     // a new rest between sets counts for the sets still to do, not the one done
     await call("PUT", `/workout-exercises/${w.exercises[0].id}`, { restS: 60 });
     expect(await rests()).toEqual([45, 60, 200]);
+    await call("POST", `/workouts/${w.id}/discard`, {});
+    await call("DELETE", `/routines/${r.id}`);
+  });
+
+  it("a set made a warm-up rests as Settings says for warm-ups, not the exercise's 2:00 (M-88)", async () => {
+    // the developer's case: Settings' between-sets rest 1:30 and no warm-up rest of its own (Settings shows "Same as
+    // between sets 1:30"), the routine exercise rests 2:00 between sets
+    await call("PUT", "/settings", { workout: { restBetweenSetsS: 90, restByKindS: { warmup: null } } });
+    const r = await call("POST", "/routines", { name: "Warm", exercises: [{ exerciseId: bench, restS: 120, sets: [
+      { kind: "normal", reps: 8 }, { kind: "normal", reps: 8 }, { kind: "normal", reps: 8 }] }] });
+    const w = await call("POST", "/workouts/start", { routineId: r.id });
+    const rests = async () => (await call("GET", "/workouts/active")).exercises[0].sets.map((s: any) => s.restPlannedS);
+    expect((await rests()).slice(0, 2)).toEqual([120, 120]);
+    await call("PUT", `/workout-sets/${w.exercises[0].sets[0].id}`, { kind: "warmup" });
+    expect((await rests()).slice(0, 2)).toEqual([90, 120]);
+    // the screen works out the same rest at once
+    const ae = (await call("GET", "/workouts/active")).exercises[0];
+    const d = restDefaultsOf((await call("GET", "/me")).settings.workout);
+    expect(planSetRest(ae.sets, 0, ae, d)).toBe(90);
+    // a warm-up rest set in Settings counts the same way
+    await call("PUT", "/settings", { workout: { restByKindS: { warmup: 75 } } });
+    await call("PUT", `/workout-sets/${w.exercises[0].sets[1].id}`, { kind: "warmup" });
+    expect((await rests()).slice(0, 2)).toEqual([90, 75]);
+    await call("PUT", "/settings", { workout: { restByKindS: { warmup: null } } });
     await call("POST", `/workouts/${w.id}/discard`, {});
     await call("DELETE", `/routines/${r.id}`);
   });

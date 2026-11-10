@@ -317,6 +317,17 @@ describe("planSetRest", () => {
     expect(planSetRest(kinds("normal", "drop", "normal"), 0, x, d)).toBe(0);
     expect(planSetRest(kinds("normal", "warmup", "normal"), 1, x, d)).toBe(75);
   });
+  it("rests a set made a warm-up as Settings does for warm-ups, not as the exercise's working sets (M-88)", () => {
+    // the developer's case: exercise rest 2:00, Settings' warm-up rest 1:30, set or left at "Same as between sets 1:30"
+    const ex2 = { restS: 120, restAfterS: null, restByKind: null, routineSetRests: [null, null, null] };
+    for (const byKindS of [{ warmup: 90 }, {}]) {
+      const d2 = { betweenSetsS: 90, afterExerciseS: 150, byKindS };
+      expect(planSetRest(kinds("normal", "normal", "normal"), 0, ex2, d2)).toBe(120);
+      expect(planSetRest(kinds("warmup", "normal", "normal"), 0, ex2, d2)).toBe(90);
+    }
+    // the routine's own warm-up rest still comes first
+    expect(planSetRest(kinds("warmup", "normal", "normal"), 0, { ...ex2, restByKind: { warmup: 45 } }, { betweenSetsS: 90, afterExerciseS: 150, byKindS: {} })).toBe(45);
+  });
   it("leaves the routine sets' own rests once a set was added, and takes the exercise's settings last", () => {
     expect(planSetRest(kinds("normal", "normal", "normal", "normal"), 1, x, d)).toBe(120);
     expect(planSetRest(kinds("normal", "normal"), 0, { prefRestS: 100 }, d)).toBe(100);
