@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyStructure, cleanProgression, planNext, stepDown, stepUp, structureChanges } from "./nextTime";
+import { applyStructure, cleanProgression, planNext, type RoutineSetLike, stepDown, stepUp, structureChanges } from "./nextTime";
 import { withDefaults } from "./settings";
 import type { WorkoutExercise, WorkoutSet } from "./types";
 
@@ -13,6 +13,7 @@ describe("planNext", () => {
   const rs = (p: Record<string, unknown>) => ({ kind: "normal", reps: 8, repsMax: 12, weightKg: 20, durationS: null, distanceM: null, ...p });
   const slot = (p: Record<string, unknown> = {}) => ({ id: "re1", exerciseId: "x", fixed: false, progression: null, missed: 0, sets: [rs({ kind: "warmup", reps: 10, repsMax: null, weightKg: 10 }), rs({}), rs({})], ...p });
   const done = (sets: WorkoutSet[], p: Partial<WorkoutExercise> & { tracking?: string } = {}) => ({ exercises: [ex({ routineExerciseId: "re1", sets, ...p })] });
+  const view = (sets: unknown[]) => (sets as RoutineSetLike[]).map((s) => [s.kind, s.weightKg, s.reps, s.startReps ?? null]);
   const warm = () => set({ kind: "warmup", weightKg: 15, reps: 10 });
 
   it("takes today's working numbers, keeps warm-ups and the rep range, and starts next time at the reps done", () => {
@@ -60,16 +61,23 @@ describe("planNext", () => {
     const drop = (reps: number | null, weightKg: number, p: Partial<WorkoutSet> = {}) => set({ kind: "drop", weightKg, reps, ...p });
     // no change: the drops simply take today's weight and reps (a range keeps it, the reps done are where it starts)
     const same = planNext([withDrop], done([range(10), drop(12, 16), range(10), drop(11, 14)]), D);
-    expect(same.exercises[0]!.sets.map((s: any) => [s.kind, s.weightKg, s.reps, s.startReps ?? null])).toEqual([["normal", 20, 8, 10], ["drop", 16, 10, 12], ["normal", 20, 8, 10], ["drop", 14, 11, null]]);
+    expect(view(same.exercises[0]!.sets)).toEqual([["normal", 20, 8, 10], ["drop", 16, 10, 12], ["normal", 20, 8, 10], ["drop", 14, 11, null]]);
     // a missed or unticked drop doesn't stop the working sets from going up, and a drop at the top doesn't count
     const up = planNext([withDrop], done([range(12), drop(3, 16), range(12), drop(11, 14, { done: false })]), D, ["re1"]);
     expect(up.changes[0]).toMatchObject({ direction: "up", fromKg: 20, toKg: 22.5 });
     // each drop goes up by its own set's step and starts again at the bottom like it
-    expect(up.exercises[0]!.sets.map((s: any) => [s.kind, s.weightKg, s.reps, s.startReps ?? null])).toEqual([["normal", 22.5, 8, null], ["drop", 18.5, 10, null], ["normal", 22.5, 8, null], ["drop", 16.5, 10, null]]);
+    expect(view(up.exercises[0]!.sets)).toEqual([["normal", 22.5, 8, null], ["drop", 18.5, 10, null], ["normal", 22.5, 8, null], ["drop", 16.5, 10, null]]);
+    // reps done above the bottom (a range) or beating the target were done at the old weight: they start again too
+    const high = planNext([withDrop], done([range(12), drop(13, 16), range(12), drop(12, 14)]), D, ["re1"]);
+    expect(view(high.exercises[0]!.sets)).toEqual([["normal", 22.5, 8, null], ["drop", 18.5, 10, null], ["normal", 22.5, 8, null], ["drop", 16.5, 10, null]]);
     expect(planNext([withDrop], done([range(10), drop(15, 16), range(10), drop(15, 14)]), D).changes).toEqual([]);
-    // lowered after missed workouts: the drops come down with their sets
-    const down = planNext([{ ...withDrop, missed: 2, progression: { mode: "auto", stepKg: null, lowerAfter: null } }], done([range(7), drop(10, 15), range(7), drop(10, 14)]), D);
-    expect(down.exercises[0]!.sets.map((s: any) => s.weightKg)).toEqual([17.5, 12.5, 17.5, 11.5]);
+    // lowered after missed workouts: the drops come down with their sets and start again at the bottom / target
+    const down = planNext([{ ...withDrop, missed: 2, progression: { mode: "auto", stepKg: null, lowerAfter: null } }], done([range(7), drop(13, 15), range(7), drop(12, 14)]), D);
+    expect(view(down.exercises[0]!.sets)).toEqual([["normal", 17.5, 8, null], ["drop", 12.5, 10, null], ["normal", 17.5, 8, null], ["drop", 11.5, 10, null]]);
+    // a working set without a weight moves nothing: the drop after it stays put instead of following the set before
+    const bare = slot({ missed: 2, sets: [rs({}), rs({ weightKg: null }), rs({ kind: "drop", reps: 10, repsMax: null, weightKg: 14 })] });
+    const nw = planNext([bare], done([range(7), set({ reps: null, weightKg: null, done: false }), drop(12, 14)]), D, ["re1"]);
+    expect(view(nw.exercises[0]!.sets).map((r) => r[1])).toEqual([17.5, null, 14]);
   });
   it("shows the reps actually done on the set a change is about", () => {
     expect(planNext([slot()], done([range(13), range(12)]), D).changes[0]).toMatchObject({ direction: "up", fromKg: 20, fromReps: 13, toKg: 22.5, reps: 8 });

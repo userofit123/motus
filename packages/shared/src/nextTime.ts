@@ -61,7 +61,7 @@ export interface NextChange {
   reason: string;
 }
 
-type RoutineSetLike = { kind: string; reps: number | null; repsMax?: number | null; startReps?: number | null; weightKg: number | null; durationS?: number | null; distanceM?: number | null };
+export type RoutineSetLike = { kind: string; reps: number | null; repsMax?: number | null; startReps?: number | null; weightKg: number | null; durationS?: number | null; distanceM?: number | null };
 export type RoutineItemLike = { id?: string | null; exerciseId: string; fixed?: boolean; progression?: unknown; missed?: number; sets: unknown[] };
 
 /** A routine set's starting reps inside its rep range (`reps` is the range's bottom, `repsMax` its top): clamped into the
@@ -144,9 +144,12 @@ export function planNext<R extends RoutineItemLike>(exercises: R[], w: { exercis
         const move = (kg: number) => ((direction === "up") !== assisted ? stepUp(kg, p.stepKg) : stepDown(kg, p.stepKg));
         let shift = 0;
         const moved = next.map((s, i) => {
-          if (s.kind === "warmup" || s.weightKg == null) return s;
+          if (s.kind === "warmup") return s;
+          // a working set without a weight moves nothing, so a drop after it must not follow the set before
+          if (s.kind !== "drop") shift = 0;
+          if (s.weightKg == null) return s;
           // a drop set moves with the set it drops from, by the same amount (so the gap between them stays), and its
-          // reps start again like that set's: today's drop reps were done at the old, lighter weight
+          // reps start again like that set's: the weight moved, so the reps done at the old weight no longer apply
           if (s.kind === "drop") return shift ? { ...s, weightKg: Math.max(0, Math.round((s.weightKg + shift) * 100) / 100), reps: sets[i]!.reps, ...(s.startReps != null ? { startReps: null } : {}) } : s;
           const to = move(s.weightKg);
           shift = to - s.weightKg;
