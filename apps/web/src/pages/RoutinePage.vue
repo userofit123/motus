@@ -96,7 +96,7 @@ await loaded(r, summaries, notes, rems, schedules, history);
       <ReminderItem v-for="m in myRems" :key="m.id" :reminder="m" :where="m.targetType === 'exercise' ? m.targetName : null" :routine-name="routine.name" when />
     </div>
 
-    <div class="tabs"><button v-for="[k, l] in [['plan', 'Plan'], ['history', `Workouts · ${sum?.timesDone ?? 0}`], ['notes', `Notes · ${notes.data.value?.length ?? 0}`]]" :key="k" :class="{ on: tab === k }" @click="tab = k as string">{{ l }}</button></div>
+    <div class="tabs"><button v-for="[k, l] in [['plan', 'Plan'], ['history', `History · ${sum?.timesDone ?? 0}`], ['notes', `Notes · ${notes.data.value?.length ?? 0}`]]" :key="k" :class="{ on: tab === k }" @click="tab = k as string">{{ l }}</button></div>
 
     <Transition name="sw" mode="out-in">
     <div v-if="tab === 'plan'">
