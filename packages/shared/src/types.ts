@@ -1,7 +1,7 @@
 // The shapes the API sends and receives. Weights are always kg and distances metres; the apps convert for display.
 
 export type SetKind = "warmup" | "normal" | "drop" | "failure";
-/** Rest after each kind of set other than working sets (those use the exercise's own rest), in seconds; null = as working sets. */
+/** Rest after each kind of set other than working sets (those use the exercise's own rest), in seconds; null = the rest set for that kind in Settings, else the between-sets rest. */
 export type RestByKind = Partial<Record<Exclude<SetKind, "normal">, number | null>>;
 export type Tracking =
   | "weight_reps" // 80 kg × 8
