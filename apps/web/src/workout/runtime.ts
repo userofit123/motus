@@ -43,10 +43,12 @@ setInterval(() => {
   now.value = Date.now();
   if (rest.endAt && !rest.done && rest.pausedLeftS == null) {
     const left = (rest.endAt - now.value) / 1000;
-    if (left <= 10 && left > 9 && !warned && cues.warn10) { warned = true; beep(1, 660); }
+    // in the background with the alarm set, the alarm alone announces the end: no warning or 3-2-1 leading up to it
+    const quiet = alarmCovers();
+    if (left <= 10 && left > 9 && !warned && cues.warn10) { warned = true; if (!quiet) beep(1, 660); }
     // 3-2-1 in the last seconds (not on rests too short for it to mean anything); the end's own beep is the "now"
     const s = Math.ceil(left);
-    if (s >= 1 && s <= 3 && s !== lastCount && rest.totalS > 5 && cues.sound && cues.countdown) { lastCount = s; tick(false); }
+    if (s >= 1 && s <= 3 && s !== lastCount && rest.totalS > 5 && cues.sound && cues.countdown) { lastCount = s; if (!quiet) tick(false); }
     // over: the cues play either way; then straight on to the next set, or "Rest over" until you tap Next set
     if (left <= 0) { rest.done = true; save(); restEnded(); if (cues.next) finishRest(true, true); }
   }
@@ -102,7 +104,7 @@ export function finishRest(record = true, ranOut = false) {
 function restEnded() {
   // in the background the Android app's alarm is the alert (it sounds with the phone asleep); the in-app cues too would
   // only double it
-  if (alarmOn && hidden()) return;
+  if (alarmCovers()) return;
   if (cues.sound) beep(3, 880);
   if (cues.vibrate) vibrate([300, 150, 300]);
   if (cues.voice && rest.next) speak(`Rest over. ${rest.next}`);
@@ -117,11 +119,13 @@ function restEnded() {
 // (+/- time, pause, skip, a new rest, the workout ending) while in the background schedules it again or takes it off.
 let alarmOn = false;
 const hidden = () => typeof document !== "undefined" && document.hidden;
+const alarmCovers = () => alarmOn && hidden();
 const resting = () => !!rest.endAt && !rest.done && rest.pausedLeftS == null && rest.endAt > Date.now();
 function planAlarm() {
   if (!isNativeApp()) return;
   if (!resting()) { dropAlarm(); return; }
-  void scheduleRestAlarm(rest.endAt!, rest.next, { sound: cues.sound, vibrate: cues.vibrate }); alarmOn = true;
+  // savedCues: the cues above are only filled once the workout screen has been opened
+  void scheduleRestAlarm(rest.endAt!, rest.next, savedCues()); alarmOn = true;
 }
 function dropAlarm() {
   if (!alarmOn) return;

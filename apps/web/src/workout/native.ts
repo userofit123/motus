@@ -112,24 +112,32 @@ const REST_ALARM = 7001;
 // replaces the one scheduled before. With sound and vibration both off (Settings → Workout) it goes on the quiet
 // "running" channel of the workout's own notification (MotusWorkoutPlugin, made by the countdown shown first):
 // in the shade, no heads-up, no sound (a channel's sound is fixed once made, and Capacitor can't make a silent one).
-export async function scheduleRestAlarm(endAt: number, body: string, o: { sound: boolean; vibrate: boolean }) {
+// Scheduling and taking off run one after the other, in the order asked (each waits on the bridge): back on screen
+// right after going to the background, the cancel then comes after the schedule, never before it, so no alarm is left
+// behind to ring after a skip or on top of the in-app beeps.
+export function scheduleRestAlarm(endAt: number, body: string, o: { sound: boolean; vibrate: boolean }) {
   const ln = plugin("LocalNotifications");
-  if (!ln) return;
-  try {
-    await restChannel();
-    await ln.cancel({ notifications: [{ id: REST_ALARM }] });
-    await ln.schedule({ notifications: [{ id: REST_ALARM, title: "Rest over", body: body || "Time for the next set", schedule: { at: new Date(endAt), allowWhileIdle: true }, channelId: o.sound || o.vibrate ? "rest" : "running", smallIcon: "ic_stat_motus", actionTypeId: logFromNotification ? "rest" : undefined }] });
-  } catch { /* the in-app timer still runs */ }
+  if (!ln) return Promise.resolve();
+  return inOrder("rest-alarm", async () => {
+    try {
+      // the channel is made when a workout starts (askNotificationsOnce), but not on this device when the workout was
+      // started on another one; without it Android drops the alarm. Made once per app run.
+      await restChannel();
+      await ln.schedule({ notifications: [{ id: REST_ALARM, title: "Rest over", body: body || "Time for the next set", schedule: { at: new Date(endAt), allowWhileIdle: true }, channelId: o.sound || o.vibrate ? "rest" : "running", smallIcon: "ic_stat_motus", actionTypeId: logFromNotification ? "rest" : undefined }] });
+    } catch { /* the in-app timer still runs */ }
+  });
 }
 /** Takes the rest-over alarm off: the coming one, and the "Rest over" already shown. */
-export async function cancelRestAlarm() {
-  try { await plugin("LocalNotifications")?.cancel({ notifications: [{ id: REST_ALARM }] }); } catch { /* nothing scheduled */ }
+export function cancelRestAlarm() {
+  return inOrder("rest-alarm", async () => {
+    try { await plugin("LocalNotifications")?.cancel({ notifications: [{ id: REST_ALARM }] }); } catch { /* nothing scheduled */ }
+  });
 }
 // The rest is over, in a browser or the desktop app with Motus in the background (the Android app has its alarm
 // above): in a browser "+30s" rests a little longer; the desktop app has no service worker, so its own notification
 // (apps/desktop, without buttons). Background timers are slowed down, so this can come a second or so late.
 export function notifyRestOverWeb(body: string) {
-  const desk = (globalThis as any).motusNative?.notify;
+  const desk = (globalThis as { motusNative?: { notify?: (title: string, body: string, page: string) => Promise<void> | void } }).motusNative?.notify;
   if (desk) return Promise.resolve(desk("Rest over", body || "Time for the next set", "/workout")).catch(() => {});
   return webNotice("Rest over", { body: body || "Time for the next set", tag: "motus-rest", url: "/workout", buttons: [REST_BUTTONS[0]!], silent: false, sticky: false });
 }
@@ -196,8 +204,11 @@ export async function askNotificationsOnce() {
   if (yes) await askNotificationPermission();
 }
 // High importance, so the rest-over notification comes heads-up, with the phone's notification sound and a vibration
+let channelMade = false;
 async function restChannel() {
-  try { await plugin("LocalNotifications")?.createChannel?.({ id: "rest", name: "Rest timer", importance: 5, vibration: true }); } catch { /* made next time */ }
+  const ln = plugin("LocalNotifications");
+  if (channelMade || !ln?.createChannel) return;
+  try { await ln.createChannel({ id: "rest", name: "Rest timer", importance: 5, vibration: true }); channelMade = true; } catch { /* made next time */ }
 }
 export async function askNotificationPermission() {
   const ln = plugin("LocalNotifications");
