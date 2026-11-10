@@ -42,5 +42,3 @@ const setHeightImperial = (f: number | null, i: number | null) => setProfile({ h
     <p class="tiny">All optional. Sex and your latest weight set the strength standards; height and age are kept for you.</p>
   </div>
 </template>
-
-

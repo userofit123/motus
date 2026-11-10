@@ -167,7 +167,7 @@ await loaded(me);
         </template>
 
         <template v-else-if="sec === 'workout'">
-          <p class="muted" style="margin:0">How every workout starts out. A routine or an exercise can set its own rest, numbers and timer; these apply wherever it doesn't.</p>
+          <p class="muted" style="margin:0">How every workout starts out. A routine or an exercise can set its own rest, numbers, timer and progression; these apply wherever it doesn't.</p>
           <div class="sh"><h2>Rest</h2></div>
           <div class="card">
             <div class="li"><div class="grow"><div class="t">Rest between sets</div><div class="s">When an exercise has no rest of its own</div></div><button class="qb acc" @click="editRest('restBetweenSetsS')">{{ sec2(w.restBetweenSetsS) }}</button></div>
@@ -183,7 +183,7 @@ await loaded(me);
           </template>
           <div class="sh"><h2>Progression</h2></div>
           <div class="card">
-            <p class="tiny prog-intro">{{ PROGRESSION_INTRO }}.<br />An exercise can have its own in the routine's editor.</p>
+            <p class="tiny prog-intro">{{ PROGRESSION_INTRO }}.<br />An exercise can have its own progression in the routine's editor.</p>
             <RadioList :model-value="s.progression.mode" :options="PROGRESSION_MODES" @update:model-value="(v) => set({ progression: { mode: v } })" />
             <div class="li stack"><div class="grow"><div class="t">Rep range</div><div class="s">{{ RANGE_HINT }}</div></div>
               <div class="hrow"><NumStep :value="s.progression.repsMin" :min="1" :max="100" label="bottom of the range" @set="(v) => set({ progression: { repsMin: v, repsMax: Math.max(v, s.progression.repsMax) } })" />

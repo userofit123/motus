@@ -495,7 +495,7 @@ await loaded(src, all, folders, routines, templates);
 
             <!-- Progression with its rep range, like the Timer between reps row: what applies in the tile, faded where it is your default -->
             <div v-if="progUsable(e) && !e.fixed" class="sect">
-              <div class="sect-h pg-h"><span class="si"><Icon name="arrowUp" :size="16" /></span><span class="grow"><b>Progression</b><span class="tiny">How the reps and weight move after a workout. Faded values are your defaults from Settings.</span></span>
+              <div class="sect-h pg-h"><span class="si"><Icon name="arrowUp" :size="16" /></span><span class="grow"><b>Progression</b><span class="tiny">How the reps and weight move after a workout. Faded values are your defaults from Settings</span></span>
                 <button class="rtile" style="flex:none" @click="progFor = e"><b class="pgsum"><template v-for="(x, k) in progParts(e)" :key="k"><span v-if="k" class="sep">·</span><span :class="{ dim: x.dim }">{{ x.text }}</span></template></b></button></div>
             </div>
 
