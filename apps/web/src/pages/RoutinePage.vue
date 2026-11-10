@@ -4,10 +4,11 @@ import { goBack } from "../core/leave";
 import { computed, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useQuery } from "@tanstack/vue-query";
-import { restDefaultsOf, routineTime, muscleName, muscleSets, musclesWorked, scheduleSummary, sideRounds } from "@motus/shared";
+import { restDefaultsOf, progressionOf, progressionDefaultsOf, oneSideOf, usesWeight, usesReps, routineTime, muscleName, muscleSets, musclesWorked, scheduleSummary, sideRounds } from "@motus/shared";
 import { useRoutine, useRoutines, useNotes, useReminders, useSchedules, useSettings, useChange, loaded } from "../api/queries";
 import { api, mediaUrl } from "../api/client";
 import { restForKind } from "../core/plannedRest";
+import { modeLabel, lowerAfterLabel, rangeText } from "../core/progression";
 import { isPhone } from "../core/device";
 import { useFmt, ago, setRounds } from "../core/format";
 import { noteSheet, reminderSheet, exerciseSheet, scheduleSheet } from "../core/ui";
@@ -62,6 +63,19 @@ const restTiles = (e: any) => {
     { l: "After the last set", v: c(restForKind(e, "normal", true, d)), dim: e.restAfterS == null },
   ];
 };
+// its Progression as the editor's tile shows it (same resolver), split into tiles like the rests; faded where it follows
+// your defaults. Only where the editor offers it: weight and reps, and numbers not kept fixed
+const progTiles = (e: any) => {
+  const t = e.exercise?.tracking ?? "weight_reps";
+  if (e.fixed || !usesWeight(t) || !usesReps(t)) return [];
+  const p = progressionOf(e.progression, progressionDefaultsOf(st.value), { incrementKg: e.exercise?.incrementKg, oneSide: oneSideOf(e.sets, e.exercise) }), own = e.progression ?? {};
+  const mode = { l: "Progression", v: modeLabel(p.mode), dim: own.mode == null };
+  if (p.mode === "off") return [mode];
+  return [mode, { l: "Rep range", v: rangeText(p.repsMin, p.repsMax), dim: own.repsMin == null }, { l: "Weight step", v: `+${fmt.value.wu_(p.stepKg)}`, dim: own.stepKg == null },
+    { l: "Lower the weight after", v: lowerAfterLabel(p.lowerAfter), dim: own.lowerAfter == null }];
+};
+// the notes that show every time (as in the workout and its preview): the routine's at the top, each exercise's under it
+const shown = (type: string, tid: string) => (notes.data.value ?? []).filter((n: any) => n.pinned && n.targetType === type && n.targetId === tid);
 // a figure only where there are muscles to show; without one the card keeps its plain column (Routines list rule)
 const hasMuscles = (e: any) => !!(e.exercise?.primaryMuscles?.length || e.exercise?.secondaryMuscles?.length);
 // a left and right round (either order, see sideRounds in shared): no rest between its two sets
@@ -90,8 +104,10 @@ await loaded(r, summaries, notes, rems, schedules, history);
       <div><h1>{{ routine.name }}</h1><div class="sub">{{ routine.exercises.length }} exercises · {{ routineTime(sum?.estimateS ?? 0, sum?.usual) }} · {{ sum?.lastDoneAt ? `last done ${ago(sum.lastDoneAt)}` : "not done yet" }}</div></div>
       <div class="acts"><Menu :items="menu" /><button class="btn keep" @click="router.push(`/routines/${id}/start`)"><Icon name="play" :size="16" />Start</button></div>
     </div>
-    <p v-if="routine.description" class="muted" style="margin:calc(var(--hg) * -0.5) 0 var(--spg);max-width:680px">{{ routine.description }}</p>
-    <div v-if="myRems.length" class="stack spb">
+    <!-- its description and the notes that show every time, as notes read on a workout's page -->
+    <div v-if="routine.description || shown('routine', id).length || myRems.length" class="stack spb">
+      <div v-if="routine.description" class="banner note"><Icon name="note" :size="18" class="note-ic" /><div class="ntx">{{ routine.description }}</div></div>
+      <NoteItem v-for="n in shown('routine', id)" :key="n.id" :note="n" :menu="noteMenu(n, routine.name)" />
       <ReminderItem v-for="m in myRems" :key="m.id" :reminder="m" :where="m.targetType === 'exercise' ? m.targetName : null" :routine-name="routine.name" when />
     </div>
 
@@ -109,15 +125,20 @@ await loaded(r, summaries, notes, rems, schedules, history);
             <div class="li click pexh" @click="exerciseSheet = e.exerciseId">
               <div class="thumb sm"><img v-if="e.exercise?.images?.[0]" :src="mediaUrl(e.exercise.images[0])" alt="" loading="lazy" /><Icon v-else name="dumbbell" :size="18" /></div>
               <div class="grow" style="min-width:0"><div class="t">{{ e.exercise?.name }}</div>
-                <div class="s row pexs"><template v-for="(x, i) in subLine(e)" :key="i"><span v-if="i" class="sep">·</span><span>{{ x }}</span></template></div></div>
+                <div class="s row pexs"><template v-for="(x, i) in subLine(e)" :key="i"><span v-if="i" class="sep">·</span><span>{{ x }}</span></template><span v-if="e.fixed" class="mchip">Fixed numbers</span></div></div>
               <span @click.stop><Menu :items="exItems(e)" label="Exercise options" /></span>
             </div>
-            <div v-if="e.note" class="pnote"><Icon name="note" :size="18" class="note-ic" /><span>{{ e.note }}</span></div>
+            <div v-if="e.note" class="banner note"><Icon name="note" :size="18" class="note-ic" /><div class="ntx">{{ e.note }}</div></div>
+            <NoteItem v-for="n in shown('routine_exercise', e.id)" :key="n.id" :note="n" :menu="noteMenu(n, e.exercise?.name ?? routine.name)" />
             <PlanSets :ex="e" />
             <div class="prest">
               <Icon name="timer" :size="16" class="muted" />
               <div v-for="x in restTiles(e)" :key="x.l" class="rtile"><span>{{ x.l }}</span><b :class="{ dim: x.dim }">{{ x.v }}</b></div>
-              <div v-if="e.repRestS" class="rtile"><Icon name="clock" :size="14" class="muted" /><span>Beeps every</span><b>{{ e.repRestS }}s</b></div>
+              <div v-if="e.repRestS" class="rtile"><Icon name="clock" :size="14" class="muted" /><span>Timer between reps</span><b>Every {{ e.repRestS }}s</b></div>
+            </div>
+            <div v-if="progTiles(e).length" class="prest">
+              <Icon name="arrowUp" :size="16" class="muted" />
+              <div v-for="x in progTiles(e)" :key="x.l" class="rtile"><span>{{ x.l }}</span><b :class="{ dim: x.dim }">{{ x.v }}</b></div>
             </div>
           </div>
         </div>
@@ -169,12 +190,15 @@ await loaded(r, summaries, notes, rems, schedules, history);
 .pexh { border-bottom: 0; padding: var(--tdy); margin: calc(-1 * var(--tdy)); min-height: 0; border-radius: var(--r-sm); }
 .pexh .t { font-weight: 600; }
 .pexs { gap: 6px; flex-wrap: wrap; }
-/* the note as notes read elsewhere: icon on its first line, normal text */
-.pnote { display: flex; align-items: flex-start; gap: 10px; font-size: 13.5px; color: var(--tx); }
+/* notes as a workout's page shows them (.banner.note); the card's column gap spaces them, so no banner margin */
+.pexb > .banner { margin-bottom: 0; }
+.ntx { white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; }
 /* the rests as read-only tiles, wrapping */
 .prest { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .prest > svg { flex: none; }
-.prest .rtile { flex: none; }
+/* a tile keeps its words on one line where it fits and wraps inside itself on a narrow phone, never past the card */
+.prest .rtile { flex: 0 1 auto; min-width: 0; }
+.prest .rtile > b { text-align: end; }
 .prest .rtile > span { color: var(--tx2); }
 </style>
 
