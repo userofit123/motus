@@ -88,11 +88,10 @@ await loaded(r, summaries, notes, rems, schedules, history);
       <div class="pexlist">
         <div v-if="!routine.exercises.length" class="card"><div class="empty"><b>No exercises yet</b><button class="btn tonal" @click="router.push(`/routines/${id}/edit`)">Add exercises</button></div></div>
         <!-- each exercise with its planned sets, as in the editor but read-only; the body on the left (Routines list card rule) -->
-        <div v-for="(e, i) in routine.exercises" :key="e.id" class="card wbody pex" :class="{ sup: e.superset }">
+        <div v-for="e in routine.exercises" :key="e.id" class="card wbody pex" :class="{ sup: e.superset }">
           <MuscleFig :muscles="e.exercise?.primaryMuscles" :helpers="e.exercise?.secondaryMuscles" />
           <div class="grow pexb">
             <div class="li click pexh" @click="exerciseSheet = e.exerciseId">
-              <span class="ovn">{{ i + 1 }}</span>
               <div class="thumb"><img v-if="e.exercise?.images?.[0]" :src="mediaUrl(e.exercise.images[0])" alt="" loading="lazy" /><Icon v-else name="dumbbell" /></div>
               <div class="grow" style="min-width:0"><div class="t">{{ e.exercise?.name }}</div>
                 <div class="s row pexs"><span>{{ setCount(e) }}</span><span v-if="e.superset" class="mchip">Superset {{ e.superset }}</span><span v-if="sided(e)" class="mchip">Each side</span></div></div>
