@@ -1,7 +1,7 @@
 // The running workout, as one shared object: a local copy that every change updates at once (so typing and ticking never
 // wait for the network), with each change sent to the server (or kept for later when offline).
 import { computed, effectScope, nextTick, reactive, watch } from "vue";
-import { restAfterSet, opensSideRound, restDefaultsOf, dropWeightKg, toKg, type Workout, type WorkoutExercise, type WorkoutSet, type WorkoutPrefs } from "@motus/shared";
+import { planSetRest, restDefaultsOf, dropWeightKg, toKg, type Workout, type WorkoutExercise, type WorkoutSet, type WorkoutPrefs } from "@motus/shared";
 import { useActive, useSettings } from "../api/queries";
 import { send, endedHere, markEnded, waiting } from "../api/outbox";
 import { api } from "../api/client";
@@ -145,7 +145,9 @@ export function useWorkout() {
     const s = e.sets[si]!;
     const last = si === e.sets.length - 1 || e.sets.slice(si + 1).every((x) => x.done);
     const d = restDefaultsOf(prefs.value);
-    let secs = s.restPlannedS ?? restAfterSet({ kind: s.kind, nextKind: e.sets[si + 1]?.kind, sideRound: opensSideRound(e.sets, si), exRestS: e.restS, isLastSet: last, exRestAfterS: e.restAfterS }, d);
+    // no rest of its own yet (a new kind, "As planned"): the server's rule (planSetRest) with the server's inputs, so the
+    // bottom bar shows the new rest at once and the server's copy, when back, agrees
+    let secs = s.restPlannedS ?? planSetRest(e.sets, si, e, d, last);
     if (last && e.restAfterS != null) secs = e.restAfterS;
     // superset: no rest until the round is complete
     const nx = state.w!.exercises[state.w!.exercises.indexOf(e) + 1];
@@ -204,10 +206,28 @@ export function useWorkout() {
       if (nxt && nxt[0] !== e) setTimeout(() => activate(nxt[1]), 450);
     }
   }
+  /** Makes a change that the planned rests follow, as the server plans them again (replanRests): the sets `pick`s whose
+   * planned rest is still what the plan gave them before the change lose it, so restFor works out the new one by the
+   * same rule (planSetRest) at once, instead of the old rest showing until the server's copy is back. A rest set on
+   * one set (no longer what the plan gives) stays. */
+  function followPlan(e: WorkoutExercise, change: () => void, pick: (x: WorkoutSet, i: number) => boolean) {
+    const d = restDefaultsOf(prefs.value);
+    const planned = e.sets.map((x, i) => x.restPlannedS == null || x.restPlannedS === planSetRest(e.sets, i, e, d));
+    change();
+    e.sets.forEach((x, i) => { if (planned[i] && pick(x, i)) x.restPlannedS = null; });
+  }
   async function editSet(s: WorkoutSet, patch: Partial<WorkoutSet>) {
-    // a new kind rests as that kind does: until the server's plan for it is back, the rest by kind worked out here
-    const replan = "kind" in patch && patch.kind !== s.kind && !("restPlannedS" in patch);
-    Object.assign(s, patch, { prefilled: false }, replan ? { restPlannedS: null } : {});
+    const e = state.w?.exercises.find((x) => x.sets.includes(s));
+    const kindChanged = "kind" in patch && patch.kind !== s.kind, sideChanged = "side" in patch && (patch.side ?? null) !== (s.side ?? null);
+    const apply = () => Object.assign(s, patch, { prefilled: false });
+    if (!e || "restPlannedS" in patch || (!kindChanged && !sideChanged)) apply();
+    else {
+      // a new kind rests as that kind does (whatever its rest was); a new side, or a set becoming or no longer being a
+      // drop set, also plans the set before it again (no rest inside a left and right round, none before a drop set)
+      const at = e.sets.indexOf(s), drop = kindChanged && (s.kind === "drop") !== (patch.kind === "drop");
+      if (kindChanged) s.restPlannedS = null;
+      followPlan(e, apply, (x, i) => (i === at && !x.done) || (i === at - 1 && (sideChanged ? !x.done : drop && (!x.done || !s.done))));
+    }
     await call("put", `/workout-sets/${s.id}`, patch);
   }
   async function addSet(e: WorkoutExercise) {
@@ -248,7 +268,9 @@ export function useWorkout() {
     await call("post", `/workouts/${w.id}/reorder`, { ids });
   }
   async function patchExercise(e: WorkoutExercise, patch: Record<string, unknown>, refresh = false) {
-    Object.assign(e, patch);
+    // a new rest between sets or after the exercise counts for the sets still to do, as the server plans them again
+    if ("restS" in patch || "restAfterS" in patch) followPlan(e, () => Object.assign(e, patch), (x) => !x.done);
+    else Object.assign(e, patch);
     await call("put", `/workout-exercises/${e.id}`, patch, refresh);
   }
   async function addExercises(ids: string[]) {

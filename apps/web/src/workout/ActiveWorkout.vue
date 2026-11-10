@@ -57,7 +57,8 @@ const onSummary = computed(() => !!w.value && W.state.cur >= w.value.exercises.l
 const remainingS = computed(() => {
   // a rough "time left": undone sets × (their own time + their rest)
   let t = 0;
-  for (const e of w.value?.exercises ?? []) if (e.status !== "skipped") for (const s of e.sets) if (!s.done) t += (s.durationS ?? (s.reps ?? 8) * 3 + 10) + (s.restPlannedS ?? W.prefs.value.restBetweenSetsS);
+  // each rest as the bottom bar shows it (restFor), so a set just made a warm-up counts its new rest straight away
+  for (const e of w.value?.exercises ?? []) if (e.status !== "skipped") e.sets.forEach((s, i) => { if (!s.done) t += (s.durationS ?? (s.reps ?? 8) * 3 + 10) + W.restFor(e, i).secs; });
   return t;
 });
 const paused = computed(() => !!w.value?.pauseStartedAt);

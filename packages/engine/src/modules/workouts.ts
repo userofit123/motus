@@ -1,6 +1,6 @@
 // Workouts: starting one (from a routine or empty), logging sets, skipping, reordering and replacing exercises,
 // finishing, logging a past workout, editing and duplicating, and the full detail with records and improvements.
-import { e1rm, ymd, pairSets, restAfterSet, opensSideRound, restDefaultsOf, liftedKg, LIFTED_SQL, structureChanges, type Tracking, type RoutineExercise, type ExerciseStatus, type SetKind, type WorkoutExercise, type HomeRecord, type Workout, type WorkoutSummary, type Routine } from "@motus/shared";
+import { e1rm, ymd, pairSets, planSetRest, restDefaultsOf, liftedKg, LIFTED_SQL, structureChanges, type Tracking, type RoutineExercise, type ExerciseStatus, type SetKind, type WorkoutExercise, type HomeRecord, type Workout, type WorkoutSummary, type Routine } from "@motus/shared";
 import type { Router, Ctx } from "../router";
 import type { Sql } from "../db";
 import { camel, id, optId, str, strList, intOrNull, numOrNull, bool, oneOf, isoTime, secondsBetween, visible } from "../util";
@@ -139,9 +139,18 @@ export async function loadWorkout(q: Sql, workoutId: string, today: string): Pro
     const fallback = hist.length ? hist : await exerciseSessions(q, e.exercise_id, 3);
     prevByEx.set(e.exercise_id, (fallback.find((h) => h.workoutId !== w.id && h.startedAt < w.started_at)?.sets) ?? []);
   }
+  // what the server plans a set's rest from (replanRests), so the workout screen can show a set's new rest at once
+  const snap: Pick<Routine, "exercises"> | null = typeof w.routine_snapshot === "string" ? JSON.parse(w.routine_snapshot) : w.routine_snapshot;
+  const prefs = new Map<string, { rest_s: number | null; rest_after_s: number | null }>(wes.length ? (await q.query("SELECT exercise_id, rest_s, rest_after_s FROM exercise_prefs WHERE exercise_id = ANY($1::uuid[])",
+    [wes.map((e: any) => e.exercise_id)])).rows.map((r: any) => [r.exercise_id, r]) : []);
   workout.exercises = wes.map((e: any) => {
     const x = camel<any>(e);
     delete x.userId; delete x.workoutId;
+    const re = e.routine_exercise_id ? snap?.exercises?.find((r) => r.id === e.routine_exercise_id) : undefined;
+    x.restByKind = re?.restByKind ?? null;
+    x.routineSetRests = re?.sets?.map((r) => r.restS ?? null) ?? null;
+    x.prefRestS = prefs.get(e.exercise_id)?.rest_s ?? null;
+    x.prefRestAfterS = prefs.get(e.exercise_id)?.rest_after_s ?? null;
     x.swapped = !!e.routine_exercise_id && slotEx.has(e.routine_exercise_id) && slotEx.get(e.routine_exercise_id) !== e.exercise_id;
     x.exercise = exs.get(e.exercise_id);
     const prev = prevByEx.get(e.exercise_id) ?? [];
@@ -340,15 +349,13 @@ async function replanRests(ctx: Ctx, weId: string, pick: (s: RestSetRow, i: numb
   const pref = (await ctx.q.query("SELECT rest_s, rest_after_s FROM exercise_prefs WHERE exercise_id = $1", [we.exercise_id])).rows[0];
   const snap: Pick<Routine, "exercises"> | null = typeof we.routine_snapshot === "string" ? JSON.parse(we.routine_snapshot) : we.routine_snapshot;
   const re = we.routine_exercise_id ? snap?.exercises?.find((x) => x.id === we.routine_exercise_id) : undefined;
-  // Workout sets carry no link to their routine set, so they match the snapshot by position, which holds only while
-  // no set was added or removed during the workout (a drop added after set 1 would take routine set 2's rest). Once
-  // the count differs, sets rest by kind and the exercise's rests. A change of kind keeps the match: the routine set's
-  // own rest stays through it, as it does at Start.
-  const ownRest = (i: number, x: RestInputs) => re?.sets?.length === x.kinds.length ? re.sets[i]?.restS : undefined;
+  // the routine set's own rest by position (planSetRest); a change of kind keeps the match: the routine set's own
+  // rest stays through it, as it does at Start
+  const routineSetRests = re?.sets?.map((x) => x.restS ?? null) ?? null;
   // inside a superset round there is no rest (as at Start)
   const inRound = !!we.superset && we.next_superset === we.superset;
-  const plan = (i: number, x: RestInputs) => inRound ? 0 : restAfterSet({ setRestS: ownRest(i, x), kind: x.kinds[i], nextKind: x.kinds[i + 1], sideRound: opensSideRound(x.kinds.map((kind, n) => ({ kind, side: x.sides[n] })), i),
-    byKindS: re?.restByKind, exRestS: x.restS, prefRestS: pref?.rest_s, isLastSet: i === x.kinds.length - 1, exRestAfterS: x.restAfterS, prefRestAfterS: pref?.rest_after_s }, d);
+  const plan = (i: number, x: RestInputs) => inRound ? 0 : planSetRest(x.kinds.map((kind, n) => ({ kind, side: x.sides[n] })), i,
+    { restS: x.restS, restAfterS: x.restAfterS, prefRestS: pref?.rest_s, prefRestAfterS: pref?.rest_after_s, restByKind: re?.restByKind, routineSetRests }, d);
   const now: RestInputs = { restS: we.rest_s, restAfterS: we.rest_after_s, kinds: sets.map((s) => s.kind), sides: sets.map((s) => s.side) };
   const was = before?.(now, sets);
   for (const [i, s] of sets.entries()) {

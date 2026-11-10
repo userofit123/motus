@@ -217,6 +217,12 @@ export interface WorkoutExercise {
   restS: number | null;
   restAfterS: number | null;
   repRestS: number | null;
+  /** the rest of the server's rest plan (planSetRest), so a set's new kind shows its rest at once: the routine slot's
+   * rests by kind and each routine set's own rest, as at Start, and the exercise's own rests from its settings */
+  restByKind?: RestByKind | null;
+  routineSetRests?: (number | null)[] | null;
+  prefRestS?: number | null;
+  prefRestAfterS?: number | null;
   startedAt: string | null;
   endedAt: string | null;
   sets: WorkoutSet[];

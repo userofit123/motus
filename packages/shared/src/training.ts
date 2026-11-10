@@ -72,6 +72,23 @@ export function restAfterSet(
   return k ?? o.exRestS ?? o.prefRestS ?? d.betweenSetsS;
 }
 
+/** What a workout exercise's planned rests are worked out from: the exercise's rests as they are now, and from the
+ * routine as it was at Start its rests by kind and each set's own rest (by position). */
+export interface SetRestInputs {
+  restS?: number | null; restAfterS?: number | null; prefRestS?: number | null; prefRestAfterS?: number | null;
+  restByKind?: RestByKind | null; routineSetRests?: (number | null)[] | null;
+}
+/** The rest planned after set `i` of a workout exercise, as Start plans it and as the server plans it again when a set
+ * changes kind or side: one rule for both, so the workout screen shows the new rest before the server's copy is back.
+ * Workout sets carry no link to their routine set, so they match the routine's by position, which holds only while no
+ * set was added or removed (a drop added after set 1 would take routine set 2's rest); once the count differs, sets
+ * rest by kind and the exercise's rests. */
+export function planSetRest(sets: SidedSet[], i: number, x: SetRestInputs, d: RestDefaults, isLastSet = i === sets.length - 1): number {
+  const own = x.routineSetRests?.length === sets.length ? x.routineSetRests[i] : undefined;
+  return restAfterSet({ setRestS: own, kind: (sets[i]?.kind ?? undefined) as SetKind | undefined, nextKind: (sets[i + 1]?.kind ?? undefined) as SetKind | undefined,
+    sideRound: opensSideRound(sets, i), byKindS: x.restByKind, exRestS: x.restS, prefRestS: x.prefRestS, isLastSet, exRestAfterS: x.restAfterS, prefRestAfterS: x.prefRestAfterS }, d);
+}
+
 /** A drop set's starting weight: about 20% lighter than the set before it, on a weight a gym has (2.5 kg or 5 lb steps). */
 export function dropWeightKg(kg: number | null | undefined, unit: "kg" | "lb"): number | null {
   if (!kg) return kg ?? null;

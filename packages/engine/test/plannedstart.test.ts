@@ -4,6 +4,7 @@ import { describe, it, expect, beforeAll } from "vitest";
 import { createEngine, type Engine } from "../src/index";
 import { pgliteDb } from "../src/adapters/pglite";
 import { uuidv7 } from "../src/ids";
+import { planSetRest, restDefaultsOf, withDefaults } from "@motus/shared";
 
 let eng: Engine, U: string;
 const call = async (method: string, path: string, body?: unknown) => {
@@ -67,6 +68,13 @@ describe("starting a planned workout", () => {
     await call("PUT", `/workout-sets/${a.id}`, { done: true, kind: "normal" });
     await call("PUT", `/workout-sets/${a.id}`, { kind: "warmup" });
     expect(await rests()).toEqual([45, 120, 200]);
+    // the workout carries what the rests are planned from, so the screen works out the same rest before the server's
+    // copy is back: the set made to failure (no rest by kind for it) rests as normal sets, made a warm-up as warm-ups
+    const ae = (await call("GET", "/workouts/active")).exercises[0];
+    expect(ae.restByKind).toEqual({ warmup: 45 });
+    expect(ae.routineSetRests).toEqual([null, null, null]);
+    const d = restDefaultsOf(withDefaults({}).workout);
+    expect(ae.sets.map((_: any, i: number) => planSetRest(ae.sets, i, ae, d))).toEqual([45, 120, 200]);
     // ticking sends the kind again: nothing changes
     await call("PUT", `/workout-sets/${b.id}`, { restPlannedS: 33 });
     await call("PUT", `/workout-sets/${b.id}`, { done: false, kind: "normal" });

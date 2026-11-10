@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { applyStructure, cleanProgression, pairSets, planNext, type RoutineSetLike, stepDown, stepUp, structureChanges } from "./nextTime";
 import { withDefaults } from "./settings";
-import { opensSideRound, restAfterSet, sideRounds } from "./training";
+import { opensSideRound, planSetRest, restAfterSet, sideRounds } from "./training";
 import type { WorkoutExercise, WorkoutSet } from "./types";
 
 const set = (p: Partial<WorkoutSet>): WorkoutSet => ({ id: Math.random().toString(36), position: 0, kind: "normal", weightKg: null, reps: null, durationS: null, distanceM: null, rpe: null, rir: null, side: null, done: true, doneAt: null, restPlannedS: null, restActualS: null, targetReps: null, targetWeightKg: null, prefilled: false, ...p });
@@ -302,5 +302,25 @@ describe("left and right sets", () => {
     const w = { exercises: [ex({ name: "B", exerciseId: "B", routineExerciseId: "ra", sets: [set({ side: "R", weightKg: 14, reps: 8 }), set({ side: "L", weightKg: 12, reps: 8 })] })] };
     const out = applyStructure(routine, w, ["swapped:ra"])!;
     expect((out[0] as any).sets.map((s: any) => [s.side, s.weightKg])).toEqual([["L", 12], ["R", 14]]);
+  });
+});
+
+describe("planSetRest", () => {
+  const d = { betweenSetsS: 90, afterExerciseS: 150, byKindS: { failure: 150 } };
+  const x = { restS: 120, restAfterS: 200, restByKind: { warmup: 45 }, routineSetRests: [null, 75, null] };
+  const kinds = (...k: string[]) => k.map((kind) => ({ kind, side: null }));
+  it("rests a set by its kind as it is now, so a set made a warm-up or to failure shows its new rest", () => {
+    expect([0, 1, 2].map((i) => planSetRest(kinds("normal", "normal", "normal"), i, x, d))).toEqual([120, 75, 200]);
+    expect(planSetRest(kinds("warmup", "normal", "normal"), 0, x, d)).toBe(45);
+    expect(planSetRest(kinds("failure", "normal", "normal"), 0, x, d)).toBe(150);
+    // none before a drop set, and the routine set's own rest stays through a change of kind
+    expect(planSetRest(kinds("normal", "drop", "normal"), 0, x, d)).toBe(0);
+    expect(planSetRest(kinds("normal", "warmup", "normal"), 1, x, d)).toBe(75);
+  });
+  it("leaves the routine sets' own rests once a set was added, and takes the exercise's settings last", () => {
+    expect(planSetRest(kinds("normal", "normal", "normal", "normal"), 1, x, d)).toBe(120);
+    expect(planSetRest(kinds("normal", "normal"), 0, { prefRestS: 100 }, d)).toBe(100);
+    expect(planSetRest(kinds("normal", "normal"), 0, {}, d, true)).toBe(150);
+    expect(planSetRest([{ kind: "normal", side: "L" }, { kind: "normal", side: "R" }, { kind: "normal", side: null }], 0, x, d)).toBe(0);
   });
 });
