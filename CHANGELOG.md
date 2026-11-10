@@ -2,6 +2,22 @@
 
 The top entry's version is the one the release workflow publishes. Add a new `## [x.y.z]` section to release.
 
+## [0.1.15] - 2026-11-11
+
+- Progression now holds the rep range. Settings → Workout defaults → Progression has the defaults: rep range (6-12), weight step for both-sides exercises (5 kg) and for one-side-at-a-time exercises (2.5 kg, or 10 lb and 5 lb), and how many missed workouts in a row before the weight goes down. Each exercise in a routine has a Progression row, after the timer between reps, to give it its own. The old Rep range and Progression menu items are gone.
+- Double progression: when every set reaches the top of the range, next time goes back to the bottom with a heavier weight worked out from what you lifted (50 kg × 12 at 6-12 becomes 60 kg × 6). Below the top the weight stays and your reps become the target. Only missing the bottom of the range several workouts in a row lowers the weight. Existing routines keep their behaviour: a fixed 5 × 5 becomes its own 5-5 range.
+- The Next time sheet after a workout shows each set as Planned, You did and Next, with a plain reason ("You did 12 reps on every set, the top of 6-12").
+- A routine's page shows everything set in it, in one short line each: rest for every set type, timer between reps, progression in plain words ("aims for 6-12 reps · when every set reaches 12, adds 2.5 kg and goes back to 6 reps") and notes. Only what is on is shown, and the line under each exercise says sets and reps, as in the editor. The Workouts tab is now called History.
+- Keeping a changed rest in a workout ("Use 3:30 for this exercise from now on") now saves it for future workouts, into the routine or the exercise, and confirms it in place.
+- When a rest ends while the phone is locked or you are in another app, a Rest over alert nudges you. The desktop app shows a notice when its window is not in front.
+- Drag to reorder in the Reorder routines, Reorder goals and a workout's Reorder exercises popups.
+- A left and right set with no rest between them are joined by a line, and "Left and right" adds its sets as fast as "Set", also offline. The add buttons under an exercise are matching pills.
+- A × sits between weight and reps in the set tables, empty values keep their box, and the workout table fits heavy weights on a phone.
+- In the routine editor, tapping an exercise's card opens it, the exercise note says how it is saved, and sections are evenly spaced.
+- The workout summary shows Records and Rep targets as two labelled tiles.
+- The one-side-at-a-time icon shows an L and an R split by a slash.
+- Updating adds a small database change on first start, and the Android app asks for permission to sound the rest alert on time.
+
 ## [0.1.14] - 2026-11-10
 
 - Left and right sets: any exercise, in a routine or a workout, can mix normal sets with left and right sets (a set's ⋮ menu, or "Add a left + right set" in the exercise's ⋮ menu). "One side at a time" can be switched for any exercise, built-in ones included, and more one-sided exercises are recognised. A left and right set next to each other count as one round (3L, 3R) with no rest between the sides; weight is per side ("kg / side"); Previous and Progression compare left with left and right with right.
