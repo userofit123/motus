@@ -288,6 +288,8 @@ export function useWorkout() {
   // the rest running now was changed (±15 s…): offer to make it this exercise's rest from now on
   const restSet = () => { for (const e of state.w?.exercises ?? []) { const s = e.sets.find((x) => x.id === rest.setId); if (s) return { e, s }; } return null; };
   const restChanged = computed(() => { const f = rest.setId ? restSet() : null; return !!f && Math.abs(rest.totalS - (f.s.restPlannedS ?? rest.totalS)) >= 1; });
+  // what this rest was planned at, so the offer can say what was changed
+  const restPlannedNow = computed(() => { const f = rest.setId ? restSet() : null; return f?.s.restPlannedS ?? null; });
   // A rest running after a set follows what that set's rest now comes to: the set made a warm-up, the exercise given a
   // new rest, reps changed with "longer rest after a missed target". By the difference, so a -15 / +15 already pressed
   // stays. Once for the app (the first copy to get here, as with the notification buttons).
@@ -318,7 +320,7 @@ export function useWorkout() {
     if (p) pauseRest(); else resumeRest();
     patchWorkout({ pause: p, pauseStartedAt: p ? new Date().toISOString() : null });
   }
-  return { state, prefs, settings, fmt, incKg, ex, activate, restChanged, keepRest, skipExercise, tick, editSet, addSet, addDrop, removeSet, setStatus, reorder, patchExercise, addExercises, removeExercise, patchWorkout, togglePause, restFor, call, active };
+  return { state, prefs, settings, fmt, incKg, ex, activate, restChanged, restPlannedNow, keepRest, skipExercise, tick, editSet, addSet, addDrop, removeSet, setStatus, reorder, patchExercise, addExercises, removeExercise, patchWorkout, togglePause, restFor, call, active };
 }
 
 /**
