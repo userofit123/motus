@@ -374,7 +374,7 @@ html.phone { --tabh: 64px; }
 button.rtile { cursor: pointer; }
 button.rtile:hover { background: color-mix(in srgb, var(--acc) 12%, var(--s2)); }
 .rtile b { font-variant-numeric: tabular-nums; }
-.rtile b.dim { color: var(--tx2); font-weight: 500; }
+.rtile b.dim, .sect-h .rtile b.dim { color: var(--tx2); font-weight: 500; }
 .vin:focus { border-color: var(--acc); outline: 0; background: var(--bg); }
 .vin.pre { color: var(--tx2); font-weight: 500; }
 .vin.adj { color: var(--acc); }

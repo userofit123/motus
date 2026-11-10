@@ -176,8 +176,8 @@ await loaded(r, summaries, notes, rems, schedules, history);
 <style>
 /* phone: the figure and the exercise's header share the first row; the set grid and notes take the card's full width below,
    so the columns never get squeezed beside the figure (the small one here) */
-html.phone .pex { flex-wrap: wrap; row-gap: var(--lpy); }
-html.phone .pex > .pexb { display: contents; }
-html.phone .pex > .pexb > .pexh { flex: 1 1 0; min-width: 0; align-self: center; }
-html.phone .pex > .pexb > :not(.pexh) { flex: 1 1 100%; min-width: 0; }
+html.phone .pex.wbody { flex-wrap: wrap; row-gap: var(--lpy); }
+html.phone .pex.wbody > .pexb { display: contents; }
+html.phone .pex.wbody > .pexb > .pexh { flex: 1 1 0; min-width: 0; align-self: center; }
+html.phone .pex.wbody > .pexb > :not(.pexh) { flex: 1 1 100%; min-width: 0; }
 </style>
