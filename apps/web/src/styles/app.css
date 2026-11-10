@@ -405,6 +405,8 @@ button.rtile:hover { background: color-mix(in srgb, var(--acc) 12%, var(--s2)); 
    gap below is the next one's tokens alone. A folded <details> keeps an empty content box after its summary that stops
    the summary's margin collapsing into that gap, which left Rest after each set 10px more below it than the others */
 .sect > .sect-h:last-child, details.sect:not([open]) > summary.sect-h { margin-bottom: 0; }
+/* a header that is one button (Progression): opens its sheet, chevron like a closed fold */
+button.sect-h.go { width: 100%; padding: 0; border: 0; background: none; font: inherit; text-align: start; cursor: pointer; }
 .sect-h .si { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; background: var(--s2); color: var(--acc); flex: none; }
 .sect-h b { display: block; font-size: 14px; font-weight: 600; }
 .sect-h .tiny { display: block; }

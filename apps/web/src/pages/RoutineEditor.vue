@@ -270,7 +270,6 @@ function setProg(e: any, patch: Partial<Record<ProgKey, unknown>>) {
 // the section header's plain-words line, the routine page's own (worded in core/progression), defaults faded; the
 // tile beside it shows only the mode, as the header already says the range and step
 const progLine = (e: any) => progPartsOf(progOf(e), e.progression, fmt.value.wu_, { assisted: tr(e) === "assisted" });
-const progTile = (e: any) => progLine(e)[0]!;
 // its own range: both ends move together, the bottom never above the top
 function setRange(e: any, lo: number, hi: number) { setProg(e, { repsMin: Math.min(lo, hi), repsMax: Math.max(lo, hi) }); }
 // Progression moves the weight by reps reached, so it's offered only where an exercise has both
@@ -482,8 +481,7 @@ await loaded(src, all, folders, routines, templates);
 
             <!-- Progression with its rep range, like the Timer between reps row: what applies in the tile, faded where it is your default -->
             <div v-if="progUsable(e) && !e.fixed" class="sect">
-              <div class="sect-h"><span class="si"><Icon name="arrowUp" :size="16" /></span><span class="grow"><b>Progression</b><span class="tiny pgl"><template v-for="(x, k) in progLine(e)" :key="k"><span v-if="k" class="sep">·</span><span :class="{ dim: x.dim }">{{ x.text }}</span></template></span></span>
-                <button class="rtile pg-t" @click="progFor = e"><b :class="{ dim: progTile(e).dim }">{{ progTile(e).text }}</b></button></div>
+              <button class="sect-h go" :aria-label="'Progression: ' + progLine(e).map((x: any) => x.text).join(', ')" @click="progFor = e"><span class="si"><Icon name="arrowUp" :size="16" /></span><span class="grow"><b>Progression</b><span class="tiny pgl"><template v-for="(x, k) in progLine(e)" :key="k"><span v-if="k" class="sep">·</span><span :class="{ dim: x.dim }">{{ x.text }}</span></template></span></span></button>
             </div>
 
             <!-- part of the routine like its sets and rests: the page's Save keeps it, and leaving unsaved asks first -->
@@ -579,8 +577,6 @@ await loaded(src, all, folders, routines, templates);
 .pl-k { margin-bottom: 2px; }
 .pg-intro { margin: 0 0 var(--hg); }
 /* the Progression tile sits on the right like the Timer between reps one: just the mode, cut only if the row is very narrow */
-.sect-h .pg-t { flex: 0 1 auto; min-width: 0; max-width: 55%; }
-.sect-h .pg-t b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pg-rows { margin-top: var(--hg); }
 .pg-reset { margin-top: var(--hg); }
 .st-t { font-size: 17px; font-weight: 600; }

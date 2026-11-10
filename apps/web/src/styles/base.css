@@ -217,7 +217,8 @@ details > *:not(summary) {
   display: none;
 }
 
-.fold > summary::after {
+.fold > summary::after,
+.sect-h.go::after {
   content: "";
   width: 18px;
   height: 18px;
@@ -228,11 +229,13 @@ details > *:not(summary) {
   transition: transform .2s;
 }
 
+.sect-h.go::after,
 .fold:not([open]) > summary::after,
 .fold.closing > summary::after {
   transform: rotate(-90deg);
 }
 
+html.he .sect-h.go::after,
 html.he .fold:not([open]) > summary::after,
 html.he .fold.closing > summary::after {
   transform: rotate(90deg);
