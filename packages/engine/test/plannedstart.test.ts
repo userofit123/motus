@@ -124,13 +124,30 @@ describe("starting a planned workout", () => {
     // without keep, only this workout
     await call("PUT", `/workout-exercises/${w.exercises[0].id}`, { restAfterS: 99 });
     await call("POST", `/workouts/${w.id}/discard`, {});
-    w = await call("POST", "/workouts/start", { exerciseIds: [row] });
+    w = await call("POST", "/workouts/start", { exercises: [{ exerciseId: row, sets: [{ reps: 8 }, { reps: 8 }, { reps: 8 }] }] });
     expect(w.exercises[0].prefRestS).toBe(75);
     expect(w.exercises[0].prefRestAfterS ?? null).toBeNull();
     const sets = w.exercises[0].sets;
-    if (sets.length > 1) expect(sets[0].restPlannedS).toBe(75);
+    expect(sets.length).toBe(3);
+    expect(sets[0].restPlannedS).toBe(75);
     await call("POST", `/workouts/${w.id}/discard`, {});
     await call("PUT", `/exercises/${row}/prefs`, { restS: null });
+  });
+
+  it("a rest kept on an exercise swapped in for the routine's goes to the exercise's settings, not the routine (M-106)", async () => {
+    const r = await call("POST", "/routines", { name: "KeepSwap", exercises: [{ exerciseId: bench, restS: 120, sets: [
+      { kind: "normal", reps: 8 }, { kind: "normal", reps: 8 }, { kind: "normal", reps: 8 }] }] });
+    const w = await call("POST", "/workouts/start", { routineId: r.id });
+    const we = w.exercises[0];
+    await call("PUT", `/workout-exercises/${we.id}`, { exerciseId: row });
+    await call("PUT", `/workout-exercises/${we.id}`, { restS: 66, keep: true });
+    expect((await call("GET", `/routines/${r.id}`)).exercises[0].restS).toBe(120);
+    await call("POST", `/workouts/${w.id}/discard`, {});
+    const w2 = await call("POST", "/workouts/start", { exercises: [{ exerciseId: row, sets: [{ reps: 8 }, { reps: 8 }] }] });
+    expect(w2.exercises[0].prefRestS).toBe(66);
+    await call("POST", `/workouts/${w2.id}/discard`, {});
+    await call("PUT", `/exercises/${row}/prefs`, { restS: null });
+    await call("DELETE", `/routines/${r.id}`);
   });
 
   it("a set made a warm-up rests as Settings says for warm-ups, not the exercise's 2:00 (M-88)", async () => {

@@ -317,7 +317,8 @@ export function useWorkout() {
   // the rest running now was changed (±15 s…): offer to make it this exercise's rest from now on
   const restSet = () => { for (const e of state.w?.exercises ?? []) { const s = e.sets.find((x) => x.id === rest.setId); if (s) return { e, s }; } return null; };
   const restKey = () => `${rest.setId}:${rest.totalS}`;
-  const restChanged = computed(() => { const f = rest.setId ? restSet() : null; return !!f && keptRest.value !== restKey() && Math.abs(rest.totalS - (f.s.restPlannedS ?? rest.totalS)) >= 1; });
+  // only where keeping saves something: working sets share the between-sets rest, the last set the rest after the exercise
+  const restChanged = computed(() => { const f = rest.setId ? restSet() : null; return !!f && (f.s.kind === "normal" || f.e.sets.indexOf(f.s) === f.e.sets.length - 1) && keptRest.value !== restKey() && Math.abs(rest.totalS - (f.s.restPlannedS ?? rest.totalS)) >= 1; });
   // what this rest was planned at, so the offer can say what was changed
   const restPlannedNow = computed(() => { const f = rest.setId ? restSet() : null; return f?.s.restPlannedS ?? null; });
   // A rest running after a set follows what that set's rest now comes to: the set made a warm-up, the exercise given a
