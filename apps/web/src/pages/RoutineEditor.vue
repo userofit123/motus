@@ -440,18 +440,18 @@ await loaded(src, all, folders, routines, templates);
               <summary class="sect-h"><span class="si"><Icon name="timer" :size="16" /></span><span class="grow"><b>Rest after each set</b><span class="tiny">{{ restSummary(e) }}</span></span></summary>
               <div class="tiny" style="margin:-2px 0 8px">Faded times are your defaults from Settings.</div>
               <div class="rgrid">
-                <button class="ritem" @click="restFor = { ex: i, kind: 'between' }"><span>Normal sets</span><b :class="{ dim: e.restS == null }">{{ fmt.clock(workRest(e)) }}</b></button>
+                <button class="rtile" @click="restFor = { ex: i, kind: 'between' }"><span>Normal sets</span><b :class="{ dim: e.restS == null }">{{ fmt.clock(workRest(e)) }}</b></button>
                 <template v-if="s.features.setTypes">
-                  <button v-for="[k, l] in KIND_REST" :key="k" class="ritem" @click="restFor = { ex: i, kind: k }"><span>{{ l }}</span><b :class="{ dim: e.restByKind?.[k] == null }">{{ fmt.clock(kindRest(e, k)) }}</b></button>
+                  <button v-for="[k, l] in KIND_REST" :key="k" class="rtile" @click="restFor = { ex: i, kind: k }"><span>{{ l }}</span><b :class="{ dim: e.restByKind?.[k] == null }">{{ fmt.clock(kindRest(e, k)) }}</b></button>
                 </template>
-                <button class="ritem" @click="restFor = { ex: i, kind: 'after' }"><span>After the last set</span><b :class="{ dim: e.restAfterS == null }">{{ fmt.clock(e.restAfterS ?? s.workout.restAfterExerciseS) }}</b></button>
+                <button class="rtile" @click="restFor = { ex: i, kind: 'after' }"><span>After the last set</span><b :class="{ dim: e.restAfterS == null }">{{ fmt.clock(e.restAfterS ?? s.workout.restAfterExerciseS) }}</b></button>
               </div>
               <div class="tiny" style="margin-top:6px">For a different rest after one set, use that set's ⋮ menu; it shows as <b>R</b>.</div>
             </details>
 
             <div class="sect">
               <div class="sect-h"><span class="si"><Icon name="clock" :size="16" /></span><span class="grow"><b>Timer between reps</b><span class="tiny">Beeps every few seconds during a set, for slow or paused reps</span></span>
-                <button class="ritem" style="flex:none" @click="restFor = { ex: i, kind: 'rep' }"><b :class="{ dim: !e.repRestS }">{{ e.repRestS ? `Every ${e.repRestS}s` : "Off" }}</b></button></div>
+                <button class="rtile" style="flex:none" @click="restFor = { ex: i, kind: 'rep' }"><b :class="{ dim: !e.repRestS }">{{ e.repRestS ? `Every ${e.repRestS}s` : "Off" }}</b></button></div>
             </div>
 
             <div class="sect"><input v-model="e.note" class="in" placeholder="Note: seat height, grip…" style="font-size:13px" @input="touch" /></div>
@@ -561,10 +561,6 @@ html.he .chev svg { transform: rotate(90deg); }
 .sect-h b { display: block; font-size: 14px; font-weight: 600; }
 .sect-h .tiny { display: block; }
 .rgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 6px; }
-.ritem { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 9px 12px; border-radius: var(--r-sm); border: 0; background: var(--s2); color: var(--tx); font-size: 13px; cursor: pointer; text-align: start; }
-.ritem:hover { background: color-mix(in srgb, var(--acc) 12%, var(--s2)); }
-.ritem b { font-variant-numeric: tabular-nums; }
-.ritem b.dim { color: var(--tx2); font-weight: 500; }
 /* on the shaded panel a plain .seg would vanish: give it its own outline so it reads as a switch */
 .seg.mini { margin: 0; flex: none; background: var(--s1); box-shadow: inset 0 0 0 1px var(--ol); }
 .seg.mini button { padding: 6px 14px; font-size: 13px; min-height: 32px; min-width: 44px; }

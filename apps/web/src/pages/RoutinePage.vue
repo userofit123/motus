@@ -8,6 +8,7 @@ import { restDefaultsOf, routineTime, muscleName, muscleSets, musclesWorked, sch
 import { useRoutine, useRoutines, useNotes, useReminders, useSchedules, useSettings, useChange, loaded } from "../api/queries";
 import { api, mediaUrl } from "../api/client";
 import { restForKind } from "../core/plannedRest";
+import { isPhone } from "../core/device";
 import { useFmt, ago } from "../core/format";
 import { noteSheet, reminderSheet, exerciseSheet, scheduleSheet } from "../core/ui";
 import { toast } from "../core/toast";
@@ -39,18 +40,26 @@ const myRems = computed(() => (rems.data.value ?? []).filter((m: any) => (m.targ
 const mySchedules = computed(() => (schedules.data.value ?? []).filter((s: any) => s.routineId === id.value));
 const muscles = computed(() => muscleSets((routine.value?.exercises ?? []).map((e: any) => ({ primary: e.exercise?.primaryMuscles ?? [], secondary: e.exercise?.secondaryMuscles ?? [], sets: e.sets.length }))));
 const worked = computed(() => musclesWorked((routine.value?.exercises ?? []).map((e: any) => ({ primary: e.exercise?.primaryMuscles ?? [], secondary: e.exercise?.secondaryMuscles ?? [] }))));
-// under each exercise's name: its sets by kind ("3 sets · 1 warm-up"); the grid below has each set's numbers
-const setCount = (e: any) => {
+// under each exercise's name: its sets by kind ("3 sets", "1 warm-up"), then superset and side; the grid below has each set's numbers
+const subLine = (e: any) => {
   const warm = e.sets.filter((x: any) => x.kind === "warmup").length, drops = e.sets.filter((x: any) => x.kind === "drop").length, work = e.sets.length - warm - drops;
-  return [`${work} set${work === 1 ? "" : "s"}`, warm ? `${warm} warm-up` : "", drops ? `${drops} drop${drops === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · ");
+  return [`${work} set${work === 1 ? "" : "s"}`, warm ? `${warm} warm-up` : "", drops ? `${drops} drop${drops === 1 ? "" : "s"}` : "",
+    e.superset ? `Superset ${e.superset}` : "", sided(e) ? "Each side" : ""].filter(Boolean);
 };
-// the rests it plans, with your defaults where the exercise has none of its own (as the editor shows them)
-const restLine = (e: any) => {
+// the rests it plans as the editor's tiles, with your defaults (faded) where the exercise has none of its own;
+// a kind only shows when such a set is followed by a rest of its own
+const restTiles = (e: any) => {
   const d = restDefaultsOf(st.value.workout), c = fmt.value.clock;
   const kinds = (["warmup", "drop", "failure"] as const).filter((k) => e.sets.some((x: any, j: number) => x.kind === k && j < e.sets.length - 1 && e.sets[j + 1].kind !== "drop"));
-  const label = { warmup: "after warm-ups", drop: "after drops", failure: "after failure sets" };
-  return [`${c(restForKind(e, "normal", false, d))} between sets`, ...kinds.map((k) => `${c(restForKind(e, k, false, d))} ${label[k]}`), `${c(restForKind(e, "normal", true, d))} after the last one`, e.repRestS ? `beeps every ${e.repRestS}s` : ""].filter(Boolean).join(" · ");
+  const label = { warmup: "Warm-up sets", drop: "Drop sets", failure: "To-failure sets" };
+  return [
+    { l: "Normal sets", v: c(restForKind(e, "normal", false, d)), dim: e.restS == null },
+    ...kinds.map((k) => ({ l: label[k], v: c(restForKind(e, k, false, d)), dim: e.restByKind?.[k] == null })),
+    { l: "After the last set", v: c(restForKind(e, "normal", true, d)), dim: e.restAfterS == null },
+  ];
 };
+// a figure only where there are muscles to show; without one the card keeps its plain column (Routines list rule)
+const hasMuscles = (e: any) => !!(e.exercise?.primaryMuscles?.length || e.exercise?.secondaryMuscles?.length);
 const sided = (e: any) => !!st.value.features.unilateral && !!e.exercise?.unilateral;
 // notes and reminders for one exercise of this routine (they show under it during the workout)
 const exItems = (e: any) => [
@@ -88,18 +97,23 @@ await loaded(r, summaries, notes, rems, schedules, history);
       <div class="pexlist">
         <div v-if="!routine.exercises.length" class="card"><div class="empty"><b>No exercises yet</b><button class="btn tonal" @click="router.push(`/routines/${id}/edit`)">Add exercises</button></div></div>
         <!-- each exercise with its planned sets, as in the editor but read-only; the body on the left (Routines list card rule) -->
-        <div v-for="e in routine.exercises" :key="e.id" class="card wbody pex" :class="{ sup: e.superset }">
-          <MuscleFig :muscles="e.exercise?.primaryMuscles" :helpers="e.exercise?.secondaryMuscles" />
+        <div v-for="e in routine.exercises" :key="e.id" class="card pex" :class="{ wbody: hasMuscles(e), sup: e.superset }">
+          <!-- the small figure on phone so it doesn't make the header row 112px tall -->
+          <MuscleFig :sm="isPhone" :muscles="e.exercise?.primaryMuscles" :helpers="e.exercise?.secondaryMuscles" />
           <div class="grow pexb">
             <div class="li click pexh" @click="exerciseSheet = e.exerciseId">
-              <div class="thumb"><img v-if="e.exercise?.images?.[0]" :src="mediaUrl(e.exercise.images[0])" alt="" loading="lazy" /><Icon v-else name="dumbbell" /></div>
+              <div class="thumb sm"><img v-if="e.exercise?.images?.[0]" :src="mediaUrl(e.exercise.images[0])" alt="" loading="lazy" /><Icon v-else name="dumbbell" :size="18" /></div>
               <div class="grow" style="min-width:0"><div class="t">{{ e.exercise?.name }}</div>
-                <div class="s row pexs"><span>{{ setCount(e) }}</span><span v-if="e.superset" class="mchip">Superset {{ e.superset }}</span><span v-if="sided(e)" class="mchip">Each side</span></div></div>
+                <div class="s row pexs"><template v-for="(x, i) in subLine(e)" :key="i"><span v-if="i" class="sep">·</span><span>{{ x }}</span></template></div></div>
               <span @click.stop><Menu :items="exItems(e)" label="Exercise options" /></span>
             </div>
+            <div v-if="e.note" class="pnote"><Icon name="note" :size="18" class="note-ic" /><span>{{ e.note }}</span></div>
             <PlanSets :ex="e" />
-            <div class="tiny pexf"><Icon name="timer" :size="14" /><span>{{ restLine(e) }}</span></div>
-            <div v-if="e.note" class="tiny pexf" style="font-style:italic"><Icon name="note" :size="14" /><span>{{ e.note }}</span></div>
+            <div class="prest">
+              <Icon name="timer" :size="16" class="muted" />
+              <div v-for="x in restTiles(e)" :key="x.l" class="rtile"><span>{{ x.l }}</span><b :class="{ dim: x.dim }">{{ x.v }}</b></div>
+              <div v-if="e.repRestS" class="rtile"><Icon name="clock" :size="14" class="muted" /><span>Beeps every</span><b>{{ e.repRestS }}s</b></div>
+            </div>
           </div>
         </div>
       </div>
@@ -143,18 +157,26 @@ await loaded(r, summaries, notes, rems, schedules, history);
 @media (max-width: 860px) { .grid[style*="300px"] { grid-template-columns: 1fr !important; } }
 .pexlist { display: flex; flex-direction: column; gap: var(--spg); min-width: 0; }
 .pex.sup { border-inline-start: 3px solid var(--acc); }
-.pexb { min-width: 0; display: flex; flex-direction: column; gap: calc(var(--lpy) / 2); }
-.pexh { border-bottom: 0; padding-block: 0; padding-inline: 0; min-height: 0; border-radius: var(--r-sm); }
+/* the figure sits level with the exercise's name instead of centring in a tall card (only here; the Routines list keeps its own) */
+.pex > .rbody { align-self: flex-start; }
+.pexb { min-width: 0; display: flex; flex-direction: column; gap: var(--lpy); }
+/* a small inset so the tap tint is the same rounded patch on desktop and phone */
+.pexh { border-bottom: 0; padding: var(--tdy); margin: calc(-1 * var(--tdy)); min-height: 0; border-radius: var(--r-sm); }
+.pexh .t { font-weight: 600; }
 .pexs { gap: 6px; flex-wrap: wrap; }
-/* icon on the first line of its text, like notes elsewhere */
-.pexf { display: flex; align-items: flex-start; gap: 6px; }
-.pexf > svg { flex: none; margin-top: 1px; }
+/* the note as notes read elsewhere: icon on its first line, normal text */
+.pnote { display: flex; align-items: flex-start; gap: 10px; font-size: 13.5px; color: var(--tx); }
+/* the rests as read-only tiles, wrapping */
+.prest { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.prest > svg { flex: none; }
+.prest .rtile { flex: none; }
+.prest .rtile > span { color: var(--tx2); }
 </style>
 
 <style>
 /* phone: the figure and the exercise's header share the first row; the set grid and notes take the card's full width below,
-   so the columns never get squeezed beside the 92px figure */
-html.phone .pex { flex-wrap: wrap; row-gap: calc(var(--lpy) / 2); }
+   so the columns never get squeezed beside the figure (the small one here) */
+html.phone .pex { flex-wrap: wrap; row-gap: var(--lpy); }
 html.phone .pex > .pexb { display: contents; }
 html.phone .pex > .pexb > .pexh { flex: 1 1 0; min-width: 0; align-self: center; }
 html.phone .pex > .pexb > :not(.pexh) { flex: 1 1 100%; min-width: 0; }

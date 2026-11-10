@@ -41,9 +41,11 @@ const dist = (m: number | null) => (m == null ? null : fmt.value.num(fromM(m, fm
 </template>
 
 <style scoped>
-/* the editor's input boxes, as plain values: same place, size and weight, no field around them */
-.pv { display: flex; flex-direction: column; align-items: center; text-align: center; font-variant-numeric: tabular-nums; font-size: 16px; font-weight: 600; color: var(--tx); padding: calc(var(--tdy) / 2) 4px; border-radius: 10px; background: color-mix(in srgb, var(--s2) 55%, transparent); }
-.pv.none { color: var(--tx2); font-weight: 500; }
+/* the editor's input boxes, as plain values: same place, size and weight as its .vin (capped, centred), no field around them;
+   every cell of a row stretches to the tallest so "starts at" under the reps doesn't leave the kg box shorter */
+.pv { display: flex; flex-direction: column; align-items: center; justify-content: center; justify-self: center; align-self: stretch; width: 100%; max-width: 92px; text-align: center; font-variant-numeric: tabular-nums; font-size: 16px; font-weight: 600; color: var(--tx); padding: calc(var(--tdy) / 2) 4px; border-radius: 10px; background: color-mix(in srgb, var(--s2) 55%, transparent); }
+/* nothing planned: just a quiet dash, no box */
+.pv.none { color: var(--tx2); font-weight: 500; background: none; }
 .pv small { font-size: 11px; font-weight: 500; color: var(--tx2); }
 .sk.r { background: var(--accc); color: var(--onc); }
 </style>
