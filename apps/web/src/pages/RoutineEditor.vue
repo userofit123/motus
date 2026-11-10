@@ -7,7 +7,7 @@
 // and it is saved as a routine too only when asked.
 import { computed, nextTick, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { plannedRest as plannedRestOf } from "../core/plannedRest";
+import { plannedRest as plannedRestOf, restSummary } from "../core/plannedRest";
 import { usesWeight, usesReps, usesDuration, usesDistance, musclesWorked, estimate, restAfterSet, dropWeightKg, restDefaultsOf, progressionOf, progressionDefaultsOf, oneSideOf, duration, muscleName, sideRounds, toM, fromM, muscleSets, type Progression } from "@motus/shared";
 import { useRoutine, useRoutines, useFolders, useExercises, useSettings, useTemplates, loaded } from "../api/queries";
 import { api, mediaUrl } from "../api/client";
@@ -276,7 +276,7 @@ function setRange(e: any, lo: number, hi: number) { setProg(e, { repsMin: Math.m
 // Progression moves the weight by reps reached, so it's offered only where an exercise has both
 const progUsable = (e: any) => usesWeight(tr(e)) && usesReps(tr(e)) && (!planMode.value || asRoutine.value);
 const wNum = (kg: number | null) => (kg == null ? null : Math.round(fmt.value.fromKg(kg) * 100) / 100);
-const restSummary = (e: any) => `${fmt.value.clock(workRest(e))} between sets${hasSideRounds(e) ? ", none between sides" : ""}, ${fmt.value.clock(e.restAfterS ?? s.value.workout.restAfterExerciseS)} after the last one${e.sets.some((x: any) => x.restS != null) ? ", some sets their own" : ""}`;
+const restLine = (e: any) => restSummary(e, fmt.value.clock, s.value.workout, hasSideRounds(e));
 const wIn = (kg: number | null) => (kg == null ? "" : String(Math.round(fmt.value.fromKg(kg) * 100) / 100));
 const wOut = (v: string) => (v === "" ? null : fmt.value.toKg(Number(v)));
 const dIn = (m: number | null) => (m == null ? "" : String(Math.round(fromM(m, fmt.value.du) * 100) / 100));
@@ -461,7 +461,7 @@ await loaded(src, all, folders, routines, templates);
             </div>
 
             <details class="fold sect prog">
-              <summary class="sect-h"><span class="si"><Icon name="timer" :size="16" /></span><span class="grow"><b>Rest after each set</b><span class="tiny">{{ restSummary(e) }}</span></span></summary>
+              <summary class="sect-h"><span class="si"><Icon name="timer" :size="16" /></span><span class="grow"><b>Rest after each set</b><span class="tiny">{{ restLine(e) }}</span></span></summary>
               <div class="tiny" style="margin:-2px 0 8px">Faded times are your defaults from Settings.</div>
               <div class="rgrid">
                 <button class="rtile" @click="restFor = { ex: i, kind: 'between' }"><span>Normal sets</span><b :class="{ dim: e.restS == null }">{{ fmt.clock(workRest(e)) }}</b></button>

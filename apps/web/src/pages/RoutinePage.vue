@@ -7,8 +7,8 @@ import { useQuery } from "@tanstack/vue-query";
 import { restDefaultsOf, progressionOf, progressionDefaultsOf, oneSideOf, usesWeight, usesReps, routineTime, muscleName, muscleSets, musclesWorked, scheduleSummary, sideRounds } from "@motus/shared";
 import { useRoutine, useRoutines, useNotes, useReminders, useSchedules, useSettings, useChange, loaded } from "../api/queries";
 import { api, mediaUrl } from "../api/client";
-import { restForKind } from "../core/plannedRest";
-import { PROGRESSION_MODES, modeLabel, rangeText } from "../core/progression";
+import { progParts as progPartsOf } from "../core/progression";
+import { restSummary } from "../core/plannedRest";
 import { isPhone } from "../core/device";
 import { useFmt, ago, setSummary } from "../core/format";
 import { noteSheet, reminderSheet, exerciseSheet, scheduleSheet } from "../core/ui";
@@ -45,42 +45,15 @@ const worked = computed(() => musclesWorked((routine.value?.exercises ?? []).map
 // separate items so the row's gap spaces the dots
 const subLine = (e: any) => [e.superset ? `Superset ${e.superset}` : "",
   ...setSummary(e.sets, e.exercise?.tracking ?? "weight_reps", fmt.value, !!st.value.features.unilateral).split(" · ")].filter(Boolean);
-// the rests it plans as the editor's tiles, with your defaults (faded) where the exercise has none of its own;
-// a kind only shows when such a set is followed by a rest of its own
-const restTiles = (e: any) => {
-  const d = restDefaultsOf(st.value.workout), c = fmt.value.clock;
-  const kinds = (["warmup", "drop", "failure"] as const).filter((k) => e.sets.some((x: any, j: number) => x.kind === k && j < e.sets.length - 1 && e.sets[j + 1].kind !== "drop"));
-  const label = { warmup: "Warm-up sets", drop: "Drop sets", failure: "To-failure sets" };
-  return [
-    { l: "Normal sets", v: c(restForKind(e, "normal", false, d)), dim: e.restS == null },
-    ...kinds.map((k) => ({ l: label[k], v: c(restForKind(e, k, false, d)), dim: e.restByKind?.[k] == null })),
-    // inside a left and right round you switch sides without a rest (unless that set has its own)
-    ...(hasSideRounds(e) ? [{ l: "Between sides", v: "No rest", dim: false }] : []),
-    { l: "After the last set", v: c(restForKind(e, "normal", true, d)), dim: e.restAfterS == null },
-  ];
-};
-// the editor's Progression section, read-only: the mode in the header's tile, what it does as the line under the title,
-// and its rep range, weight step and when the weight goes down as tiles, faded where they follow your defaults. Only where
-// the editor offers it: weight and reps, and numbers not kept fixed
-const progView = (e: any) => {
+// a rest row only where some rest is planned (between sets, after the last one, or a set's own)
+const restOn = (e: any) => (e.restS ?? st.value.workout.restBetweenSetsS) > 0 || (e.restAfterS ?? st.value.workout.restAfterExerciseS) > 0 || e.sets.some((x: any) => x.restS);
+// the editor's own summary lines, one per section: rest, timer between reps, progression
+const progLine = (e: any) => {
   const t = e.exercise?.tracking ?? "weight_reps";
   if (e.fixed || !usesWeight(t) || !usesReps(t)) return null;
   const p = progressionOf(e.progression, progressionDefaultsOf(st.value), { incrementKg: e.exercise?.incrementKg, oneSide: oneSideOf(e.sets, e.exercise) });
-  const o = e.progression ?? {};
-  return {
-    mode: { text: modeLabel(p.mode), dim: o.mode == null },
-    hint: PROGRESSION_MODES.find((m) => m.value === p.mode)?.hint ?? "",
-    tiles: p.mode === "off" ? [] : [
-      { l: "Rep range", v: rangeText(p.repsMin, p.repsMax), dim: o.repsMin == null },
-      { l: "Weight step", v: fmt.value.wu_(p.stepKg), dim: o.stepKg == null },
-      { l: "Lower the weight after", v: p.lowerAfter === 0 ? "Never" : `${p.lowerAfter} missed`, dim: o.lowerAfter == null },
-    ],
-  };
+  return progPartsOf(p, e.progression, fmt.value.wu_, { lowerAfter: true });
 };
-// what the rest section is, and where a set has its own (the R rows in the set table)
-const restLine = (e: any) => `The countdown after a set, before the next one${e.sets.some((x: any) => x.restS != null) ? ". Sets marked R have their own" : ""}`;
-// the hint about faded values, once, where any tile shows one
-const anyDim = computed(() => (routine.value?.exercises ?? []).some((e: any) => restTiles(e).some((x) => x.dim) || !!progView(e)?.mode.dim || !!progView(e)?.tiles.some((x) => x.dim)));
 // the notes that show every time (as in the workout and its preview): the routine's at the top, each exercise's under it
 const shown = (type: string, tid: string) => (notes.data.value ?? []).filter((n: any) => n.pinned && n.targetType === type && n.targetId === tid);
 // a figure only where there are muscles to show; without one the card keeps its plain column (Routines list rule)
@@ -123,7 +96,6 @@ await loaded(r, summaries, notes, rems, schedules, history);
     <Transition name="sw" mode="out-in">
     <div v-if="tab === 'plan'">
     <!-- above both columns, so the first card stays level with the side column's top -->
-    <div v-if="anyDim" class="tiny hgap">Faded values are your defaults from Settings.</div>
     <div class="grid" style="grid-template-columns:minmax(0,1fr) 300px;align-items:start">
       <div class="pexlist">
         <div v-if="!routine.exercises.length" class="card"><div class="empty"><b>No exercises yet</b><button class="btn tonal" @click="router.push(`/routines/${id}/edit`)">Add exercises</button></div></div>
@@ -135,35 +107,26 @@ await loaded(r, summaries, notes, rems, schedules, history);
             <div class="li click pexh" @click="exerciseSheet = e.exerciseId">
               <div class="thumb sm"><img v-if="e.exercise?.images?.[0]" :src="mediaUrl(e.exercise.images[0])" alt="" loading="lazy" /><Icon v-else name="dumbbell" :size="18" /></div>
               <div class="grow" style="min-width:0"><div class="t">{{ e.exercise?.name }}</div>
-                <div class="s row pexs"><template v-for="(x, i) in subLine(e)" :key="i"><span v-if="i" class="sep">·</span><span>{{ x }}</span></template></div>
+                <div class="tiny row pexs"><template v-for="(x, i) in subLine(e)" :key="i"><span v-if="i" class="sep">·</span><span>{{ x }}</span></template></div>
                 <span v-if="e.fixed" class="exchips"><span class="mchip">Fixed numbers</span></span></div>
               <span @click.stop><Menu :items="exItems(e)" label="Exercise options" /></span>
             </div>
             <PlanSets :ex="e" />
             <!-- the editor's sections in its order (rests, timer between reps, progression, note), read-only: the same headers,
                  the values as plain tiles that open nothing -->
-            <div class="sect">
-              <div class="sect-h"><span class="si"><Icon name="timer" :size="16" /></span><span class="grow"><b>Rest after each set</b><span class="tiny">{{ restLine(e) }}</span></span></div>
-              <div class="rgrid"><div v-for="x in restTiles(e)" :key="x.l" class="rtile"><span>{{ x.l }}</span><b :class="{ dim: x.dim }">{{ x.v }}</b></div></div>
+            <div v-if="restOn(e)" class="sect">
+              <div class="sect-h"><span class="si"><Icon name="timer" :size="16" /></span><span class="grow"><b>Rest after each set</b><span class="tiny">{{ restSummary(e, fmt.clock, st?.workout, hasSideRounds(e)) }}</span></span></div>
             </div>
-            <div class="sect">
-              <div class="sect-h"><span class="si"><Icon name="clock" :size="16" /></span><span class="grow"><b>Timer between reps</b><span class="tiny">{{ e.repRestS ? `Beeps every ${e.repRestS} seconds during a set, for slow or paused reps` : "No beeps during a set. When on, it beeps every few seconds, for slow or paused reps" }}</span></span>
-                <div class="rtile"><b :class="{ dim: !e.repRestS }">{{ e.repRestS ? `Every ${e.repRestS}s` : "Off" }}</b></div></div>
+            <div v-if="e.repRestS" class="sect">
+              <div class="sect-h"><span class="si"><Icon name="clock" :size="16" /></span><span class="grow"><b>Timer between reps</b><span class="tiny">Every {{ e.repRestS }}s</span></span></div>
             </div>
-            <template v-for="pv in [progView(e)]" :key="'p'">
-              <div v-if="pv" class="sect">
-                <div class="sect-h"><span class="si"><Icon name="arrowUp" :size="16" /></span><span class="grow"><b>Progression</b><span class="tiny">{{ pv.hint }}</span></span>
-                  <div class="rtile"><b :class="{ dim: pv.mode.dim }">{{ pv.mode.text }}</b></div></div>
-                <div v-if="pv.tiles.length" class="rgrid"><div v-for="x in pv.tiles" :key="x.l" class="rtile"><span>{{ x.l }}</span><b :class="{ dim: x.dim }">{{ x.v }}</b></div></div>
-              </div>
-            </template>
-            <!-- its note and the notes that show every time; no ⋮ here: notes are edited on the Notes tab -->
+            <div v-if="progLine(e)?.[0]?.text !== undefined && progLine(e)?.[0]?.text !== 'Off'" class="sect">
+              <div class="sect-h"><span class="si"><Icon name="arrowUp" :size="16" /></span><span class="grow"><b>Progression</b><span class="tiny pgl"><template v-for="(x, k) in progLine(e)" :key="k"><span v-if="k" class="sep">·</span><span>{{ x.text }}</span></template></span></span></div>
+            </div>
+            <!-- its note and the notes that show every time; no menu here: notes are edited on the Notes tab -->
             <div v-if="e.note || shown('routine_exercise', e.id).length" class="sect">
-              <div class="sect-h"><span class="si"><Icon name="note" :size="16" /></span><span class="grow"><b>Note</b><span class="tiny">Shows with this exercise in your workouts</span></span></div>
-              <div class="pnotes">
-                <div v-if="e.note" class="rtile ntx">{{ e.note }}</div>
-                <NoteItem v-for="n in shown('routine_exercise', e.id)" :key="n.id" :note="n" />
-              </div>
+              <div class="sect-h"><span class="si"><Icon name="note" :size="16" /></span><span class="grow"><b>Note</b><span v-if="e.note" class="tiny ntx">{{ e.note }}</span></span></div>
+              <div v-if="shown('routine_exercise', e.id).length" class="pnotes"><NoteItem v-for="n in shown('routine_exercise', e.id)" :key="n.id" :note="n" /></div>
             </div>
           </div>
         </div>
@@ -216,8 +179,9 @@ await loaded(r, summaries, notes, rems, schedules, history);
 .pexh { border-bottom: 0; padding: var(--tdy); margin: calc(-1 * var(--tdy)); min-height: 0; border-radius: var(--r-sm); }
 .pexh .t { font-weight: 600; }
 .pexs { gap: 6px; flex-wrap: wrap; }
-/* the sections follow the set table with the column's gap above their line, not the editor's margin as well */
-.pexb > .sect { margin-top: 0; }
+/* the column's gap already sits above a section's line, so its margin is the editor's less that gap: --cpy-1 on both sides of the line at every density */
+.pexb > .sect { margin-top: calc(var(--cpy) - 1px - var(--lpy)); }
+.pgl { display: flex; flex-wrap: wrap; gap: 6px; }
 .pnotes { display: flex; flex-direction: column; gap: var(--lpy); }
 .ntx { display: block; white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; }
 </style>

@@ -370,6 +370,12 @@ html.phone { --tabh: 64px; }
 /* the "×" between weight and reps: its own narrow column, quiet, centred on the boxes (routine editor and routine page) */
 .setgrid > .sx, .shead > .sx, .sets .sx { text-align: center; color: var(--tx2); font-size: 14px; font-weight: 400; line-height: 1; text-transform: none; letter-spacing: 0; user-select: none; }
 .sets .sx { width: 14px; padding-inline: 0; }
+/* phone: a 360px screen with Previous (and its PR badge or "beat" text) or RPE on has little left for the kg box, so the cells and the × tighten */
+html.phone .sets td, html.phone .sets th { padding-inline: 2px; }
+html.phone .sets td:first-child, html.phone .sets th:first-child { padding-inline-start: 8px; }
+html.phone .sets td:last-child, html.phone .sets th:last-child { padding-inline-end: 6px; }
+html.phone .sets .sx { width: 10px; }
+html.phone .sets .vin { padding-inline: 2px; }
 /* a set's own rest, under it */
 .rrow { padding-top: 0; }
 .rrow .rpill { grid-column: 2 / -1; justify-self: start; }
