@@ -120,6 +120,18 @@ describe("engine", () => {
     expect(hist.sessions[0].position).toBe(1);
   });
 
+  it("compares with the last session the exercise was done in, skipping one finished without it, the same day too", async () => {
+    // finished with nothing ticked: its sets are dropped, so it has nothing to compare with and must not hide the one before
+    const empty = await call(A, "POST", "/workouts/start", { routineId });
+    await call(A, "POST", `/workouts/${empty.id}/finish`, {});
+    const w = await call(A, "POST", "/workouts/start", { routineId });
+    expect(w.exercises[0].last.length).toBeGreaterThan(0);
+    expect(w.exercises[0].last[0].weightKg).toBe(85);
+    expect((await call(A, "GET", `/exercises/${benchId}/history`)).sessions.length).toBe(2);
+    await call(A, "POST", `/workouts/${w.id}/discard`, {});
+    await call(A, "DELETE", `/workouts/${empty.id}`); // the tests below count workouts
+  });
+
   it("tracks goals", async () => {
     await call(A, "POST", "/goals", { metric: "max_weight", scopeId: benchId, target: 100 });
     await call(A, "POST", "/goals", { metric: "workouts", period: "week", target: 3 });

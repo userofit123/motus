@@ -31,7 +31,9 @@ export async function getExercises(q: Sql, ids: string[]): Promise<Map<string, E
   return new Map(rows.map((r: any) => [r.id, exerciseFromRow(r)]));
 }
 
-/** Per completed workout: the working sets of one exercise, newest first. */
+/** Per completed workout: the working sets of one exercise, newest first. Only sessions where it was done (a set
+ * ticked): one skipped or left unticked keeps no sets after the finish, and as "last time" it would hide the session
+ * before it (the Finish screen then said "First time"). */
 export async function exerciseSessions(q: Sql, exerciseId: string, limit = 200, routineId?: string | null) {
   const { rows } = await q.query(
     `SELECT w.id AS workout_id, w.name AS workout_name, w.routine_id, w.started_at, we.id AS we_id, we.position, we.status,
@@ -43,6 +45,7 @@ export async function exerciseSessions(q: Sql, exerciseId: string, limit = 200, 
      FROM workout_exercises we JOIN workouts w ON w.id = we.workout_id
      LEFT JOIN workout_sets s ON s.workout_exercise_id = we.id
      WHERE we.exercise_id = $1 AND w.status = 'completed' ${routineId ? "AND w.routine_id = $3" : ""}
+       AND EXISTS (SELECT 1 FROM workout_sets d WHERE d.workout_exercise_id = we.id AND d.done)
      GROUP BY w.id, we.id ORDER BY w.started_at DESC LIMIT $2`,
     routineId ? [exerciseId, limit, routineId] : [exerciseId, limit]);
   return rows.map((r: any) => {
