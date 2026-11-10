@@ -21,6 +21,7 @@ import m018 from "./migrations/018_set_start_reps";
 import m019 from "./migrations/019_exercise_sides";
 import m020 from "./migrations/020_routine_set_sides";
 import m021 from "./migrations/021_routine_set_side_check";
+import m022 from "./migrations/022_progression_rep_range";
 
 const MIGRATIONS: [string, string][] = [
   ["001_init", m001],
@@ -44,6 +45,7 @@ const MIGRATIONS: [string, string][] = [
   ["019_exercise_sides", m019],
   ["020_routine_set_sides", m020],
   ["021_routine_set_side_check", m021],
+  ["022_progression_rep_range", m022],
 ];
 
 /** `until`: stop after that one (tests run a migration against rows written in the shape before it). */

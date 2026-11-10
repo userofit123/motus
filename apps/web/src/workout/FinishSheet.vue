@@ -5,7 +5,7 @@
 // differed from the routine (listed, each saved only when switched on). Then how it felt, notes, body weight.
 import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
-import { applyStructure, planNext, startRepsOf, structureChanges, todaysSets, usesReps, usesWeight, workoutScore, workoutSoFar, type Routine, type StructureChange, type Tracking, type Workout } from "@motus/shared";
+import { applyStructure, planNext, structureChanges, todaysSets, usesReps, usesWeight, workoutScore, workoutSoFar, type Routine, type StructureChange, type Tracking, type Workout } from "@motus/shared";
 import { useWorkout, endWorkout, finishDraft } from "./useWorkout";
 import { api } from "../api/client";
 import { settle } from "../api/outbox";
@@ -70,13 +70,11 @@ const shaped = computed<Shaped[]>(() => {
   if (!r) return [];
   return (applyStructure(r, w.value, d.routineChanges) ?? r.exercises) as Shaped[];
 });
-const plan = computed(() => planNext(shaped.value, w.value, { ...W.settings.value.progression, stepKg: W.incKg.value }, d.accepted));
-// the range itself (repsMax) is never shown here, so a change to it alone is not a row
-const FIELDS = ["kind", "weightKg", "reps", "startReps", "durationS", "distanceM"] as const;
+const plan = computed(() => planNext(shaped.value, w.value, W.settings.value.progression, d.accepted));
+const FIELDS = ["kind", "weightKg", "reps", "durationS", "distanceM"] as const;
 const sameSet = (a: RSet | undefined, b: RSet) => !!a && FIELDS.every((k) => (a[k] ?? null) === (b[k] ?? null));
-// a set's numbers as next time starts them: "20 kg × 10", "12 reps", "1:00"; "-" when it has none. The reps you'll do
-// (with a range, its starting reps), never the range: a change of reps inside it shows as one
-const setText = (x: RSet, t: Tracking) => numbersText({ ...x, reps: startRepsOf(x) }, t);
+// a set's numbers as next time starts them: "20 kg × 10", "12 reps", "1:00"; "-" when it has none
+const setText = (x: RSet, t: Tracking) => numbersText(x, t);
 // a set's numbers as text, "-" when it has none: next time's (setText) and what was done today
 type Nums = { weightKg: number | null; reps: number | null; durationS?: number | null; distanceM?: number | null };
 const numbersText = (x: Nums, t: Tracking) => numbersParts(x, t).join(" ");
@@ -137,7 +135,7 @@ const nextTime = computed(() => {
       // planned: where the routine started this set before; did: today's ticked set in its place; next: where next time
       // starts it. A row only when planned and next read differently
       if ((b ? setText(b, t) : "-") === setText(x, t)) return [];
-      const planned = b ? numbersParts({ ...b, reps: startRepsOf(b) }, t) : ["-"], next = numbersParts({ ...x, reps: startRepsOf(x) }, t);
+      const planned = b ? numbersParts(b, t) : ["-"], next = numbersParts(x, t);
       const d0 = did[j], done = d0 ? numbersParts(d0, t) : ["-"];
       // the arrow says what changes in the routine: next time against the plan (today's only when nothing was planned)
       const base = b?.weightKg ?? d0?.weightKg;

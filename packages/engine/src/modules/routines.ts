@@ -1,6 +1,6 @@
 // Routines (saved plans) and their folders: list, open, create (from scratch, from another routine, from a workout,
 // from a template), edit, duplicate, version history, and the pre-start preview.
-import { TEMPLATES, applyStructure, clampStartReps, cleanProgression, planNext, estimate, usualDuration, restAfterSet, opensSideRound, restDefaultsOf, ymd, LIFTED_SQL, type RoutineItemLike, type RoutineSummary, type RoutineSnapshot, type RoutineSnapshotExercise, type RoutineVersionRow, type RoutineTrendPoint, type SetKind, type Tracking } from "@motus/shared";
+import { TEMPLATES, applyStructure, cleanProgression, planNext, estimate, usualDuration, restAfterSet, opensSideRound, restDefaultsOf, ymd, LIFTED_SQL, type RoutineItemLike, type RoutineSummary, type RoutineSnapshot, type RoutineSnapshotExercise, type RoutineVersionRow, type RoutineTrendPoint, type SetKind, type Tracking } from "@motus/shared";
 import { SOURCE } from "@motus/exercise-data/meta";
 import type { Router, Ctx } from "../router";
 import type { Sql } from "../db";
@@ -88,14 +88,12 @@ async function writeRoutineBody(ctx: Ctx, routineId: string, exercises: any[], w
     await ctx.q.query("DELETE FROM routine_sets WHERE routine_exercise_id = $1", [reId]);
     const sets = Array.isArray(e.sets) ? e.sets.slice(0, 50) : [];
     for (const [sp, s] of sets.entries()) {
-      const reps = intOrNull(s.reps, 0, 1000), repsMax = intOrNull(s.repsMax, 0, 1000);
+      // the rep range is the exercise's Progression's (022_progression_rep_range): reps_max and start_reps stay empty
       await ctx.q.query(
-        `INSERT INTO routine_sets (id, user_id, routine_exercise_id, position, kind, reps, reps_max, weight_kg, duration_s, distance_m, rpe, rest_s, start_reps, side)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
-        [uuidv7(), ctx.userId, reId, sp, oneOf(s.kind, KINDS, "normal"), reps, repsMax, numOrNull(s.weightKg, -500, 2000),
-          intOrNull(s.durationS, 0, 86400), numOrNull(s.distanceM, 0, 1e7), numOrNull(s.rpe, 0, 10), intOrNull(s.restS, 0, 3600),
-          // the starting reps follow the range: clamped into it when it changes, gone without one
-          clampStartReps({ reps, repsMax, startReps: intOrNull(s.startReps, 0, 1000) }), sideOf(s.side)]);
+        `INSERT INTO routine_sets (id, user_id, routine_exercise_id, position, kind, reps, weight_kg, duration_s, distance_m, rpe, rest_s, side)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+        [uuidv7(), ctx.userId, reId, sp, oneOf(s.kind, KINDS, "normal"), intOrNull(s.reps, 0, 1000), numOrNull(s.weightKg, -500, 2000),
+          intOrNull(s.durationS, 0, 86400), numOrNull(s.distanceM, 0, 1e7), numOrNull(s.rpe, 0, 10), intOrNull(s.restS, 0, 3600), sideOf(s.side)]);
     }
   }
   await ctx.q.query("DELETE FROM routine_exercises WHERE routine_id = $1 AND NOT (id = ANY($2::uuid[]))", [routineId, keep]);
@@ -193,9 +191,7 @@ export async function updateRoutineFromWorkout(ctx: Ctx, routineId: string, work
   let changed = !!shaped, missedMoved = false;
   if (numbers) {
     const s = await getSettings(ctx.q, ctx.userId);
-    const stepKg = s.units.weight === "lb" ? s.increments.lb * 0.45359237 : s.increments.kg;
-    const d = { ...s.progression, stepKg };
-    const next = planNext(body, w, d, numbers.accepted);
+    const next = planNext(body, w, s.progression, numbers.accepted);
     missedMoved = next.exercises.some((e, i) => (e.missed ?? 0) !== (body[i]!.missed ?? 0));
     changed ||= next.numbersChanged;
     body = next.exercises;
@@ -284,7 +280,9 @@ export function routineRoutes(r: Router) {
         name: t.name, description: t.description, folderId: b.folderId,
         exercises: t.exercises.filter((e) => ids.has(e.id)).map((e) => ({
           exerciseId: ids.get(e.id), restS: e.restS ?? null, restAfterS: e.restAfterS ?? null,
-          sets: Array.from({ length: e.sets }, () => ({ kind: "normal", reps: e.durationS ? null : e.reps, repsMax: e.repsMax ?? null, durationS: e.durationS ?? null })),
+          // a template's "8-12" becomes the exercise's own rep range, its sets starting at the bottom
+          progression: e.repsMax && !e.durationS ? { mode: null, repsMin: e.reps, repsMax: e.repsMax, stepKg: null, lowerAfter: null } : null,
+          sets: Array.from({ length: e.sets }, () => ({ kind: "normal", reps: e.durationS ? null : e.reps, durationS: e.durationS ?? null })),
         })),
       };
     }

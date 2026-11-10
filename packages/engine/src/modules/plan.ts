@@ -1,6 +1,6 @@
 // Turning a routine into today's plan: the sets to do with the routine's numbers (which are where you are now, PLAN.md
 // §8.7), last time's beside them, with reminders, pinned notes and an estimate of how long it takes. Used by the pre-start preview and by "Start".
-import { estimate, pairSets, restAfterSet, opensSideRound, restDefaultsOf, startRepsOf, type Exercise, type Reminder, type Note, type Settings, type SetKind } from "@motus/shared";
+import { estimate, pairSets, restAfterSet, opensSideRound, restDefaultsOf, progressionOf, usesReps, usesWeight, type Exercise, type Reminder, type Note, type Settings, type SetKind } from "@motus/shared";
 import type { Sql } from "../db";
 import { camel } from "../util";
 import { exerciseSessions, getExercises } from "./library";
@@ -124,14 +124,16 @@ export async function buildPlan(q: Sql, routine: any, settings: Settings, today:
     // any more (Progression writes into the routine at the finish)
     const exact = exReminders.filter((r) => r.action?.setWeightKg != null).at(-1)?.action ?? null;
 
+    // the top of the rep range the reps move in (the exercise's Progression), kept with each set of a routine's workout
+    const tr = re.exercise?.tracking ?? "weight_reps";
+    const top = routine.id && usesWeight(tr) && usesReps(tr) ? progressionOf(re.progression, settings.progression).repsMax : null;
     // a drop set moves with the set it drops from: when a reminder sets that set's weight, the drop shifts by as much
     let parentShift = 0;
     const sets: PlannedSet[] = re.sets.map((s: any, i: number) => {
       const prev = prevs[i];
       const fromLast = useLast && prev && (prev.weightKg != null || prev.reps != null || prev.durationS != null);
       let weightKg = fromLast ? prev.weightKg : s.weightKg;
-      // a rep range starts where last time's reps left it inside the range (targetReps stays the range's bottom)
-      let reps = fromLast ? prev.reps : startRepsOf(s);
+      let reps = fromLast ? prev.reps : s.reps;
       let adjusted = false;
       if (s.kind !== "warmup") {
         if (s.kind === "drop") { if (parentShift && weightKg != null) { weightKg = Math.max(0, weightKg + parentShift); adjusted = true; } }
@@ -150,7 +152,7 @@ export async function buildPlan(q: Sql, routine: any, settings: Settings, today:
         distanceM: fromLast && prev.distanceM != null ? prev.distanceM : s.distanceM,
         rpe: s.rpe, side: s.side ?? null,
         restS: restAfterSet({ setRestS: s.restS, kind: s.kind, nextKind: re.sets[i + 1]?.kind, sideRound: opensSideRound(re.sets, i), byKindS: re.restByKind, exRestS: re.restS, prefRestS: pref?.rest_s, isLastSet, exRestAfterS: re.restAfterS, prefRestAfterS: pref?.rest_after_s }, d),
-        targetReps: s.reps, targetRepsMax: s.repsMax, targetWeightKg: s.weightKg,
+        targetReps: s.reps, targetRepsMax: top, targetWeightKg: s.weightKg,
         prev: prev ? { weightKg: prev.weightKg, reps: prev.reps, durationS: prev.durationS, distanceM: prev.distanceM } : null,
         prefilled: !!fromLast, adjusted,
       };

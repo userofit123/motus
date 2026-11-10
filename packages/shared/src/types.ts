@@ -48,11 +48,8 @@ export interface Exercise {
 export interface RoutineSet {
   id?: string;
   kind: SetKind;
-  /** the reps, or with a range (repsMax set) the range's bottom */
+  /** the reps planned for next time (the rep range they move in is the exercise's Progression) */
   reps: number | null;
-  repsMax: number | null;
-  /** with a range: where next time starts inside it (the reps last done, kept by Progression); null: the bottom */
-  startReps?: number | null;
   weightKg: number | null;
   durationS: number | null;
   distanceM: number | null;
@@ -65,9 +62,13 @@ export interface RoutineSet {
 /** How a routine exercise's weight moves after a workout (Settings → Workout → Progression): "suggest" asks on the
  * Finish screen, "auto" just does it, "off" never. */
 export type ProgressionMode = "suggest" | "auto" | "off";
-/** A routine exercise's own Progression; each field null follows Settings. */
+/** A routine exercise's own Progression; each field null follows Settings. The rep range is what the reps move in:
+ * every working set at its top makes the weight go up and the reps start again at its bottom. */
 export interface Progression {
   mode: ProgressionMode | null;
+  /** the rep range, both or neither */
+  repsMin: number | null;
+  repsMax: number | null;
   stepKg: number | null;
   /** missed workouts in a row before lowering a step (0: never) */
   lowerAfter: number | null;
@@ -190,7 +191,7 @@ export interface WorkoutSet {
   restPlannedS: number | null;
   restActualS: number | null;
   targetReps: number | null;
-  /** the top of the rep range when the routine gives one ("8-12": 8 and 12) */
+  /** the top of the exercise's rep range (its Progression's) when it came from a routine */
   targetRepsMax?: number | null;
   targetWeightKg: number | null;
   /** the numbers the workout started this set with (the plan's, after a lighter week or a reminder); null on sets added

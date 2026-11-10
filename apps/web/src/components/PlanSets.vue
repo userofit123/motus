@@ -2,7 +2,7 @@
 // One routine exercise's planned sets, read-only: the routine editor's set grid (same columns, same set labels) with the
 // numbers shown as values instead of inputs, so opening a routine shows exactly what each set asks for.
 import { computed } from "vue";
-import { type RoutineExercise, type RoutineSet, usesWeight, usesReps, usesDuration, usesDistance, clampStartReps, fromM } from "@motus/shared";
+import { type RoutineExercise, type RoutineSet, usesWeight, usesReps, usesDuration, usesDistance, fromM } from "@motus/shared";
 import { useSettings } from "../api/queries";
 import { useFmt, setLabel } from "../core/format";
 import Icon from "./Icon.vue";
@@ -13,7 +13,7 @@ const fmt = useFmt();
 const t = computed(() => props.ex.exercise?.tracking ?? "weight_reps");
 const show = computed(() => ({ w: usesWeight(t.value), r: usesReps(t.value), d: usesDuration(t.value), dist: usesDistance(t.value), rpe: !!s.value.features.rpe }));
 const cols = computed(() => ({ gridTemplateColumns: `40px repeat(${Object.values(show.value).filter(Boolean).length}, minmax(0, 1fr))` }));
-const reps = (x: RoutineSet) => (x.repsMax && x.reps ? `${x.reps}-${x.repsMax}` : x.repsMax ?? x.reps ?? null);
+const reps = (x: RoutineSet) => x.reps ?? null;
 const dist = (m: number | null) => (m == null ? null : fmt.value.num(fromM(m, fmt.value.du), 2));
 // Left / right sides (optional feature): sets for one side are labelled 1L, 1R, and their weight is per side
 const sides = computed(() => !!s.value.features.unilateral);
@@ -30,7 +30,7 @@ const perSide = computed(() => { const w = props.ex.sets.filter((x) => x.kind !=
         <div class="setgrid" :style="cols">
           <span class="sk" :class="{ w: x.kind === 'warmup', d: x.kind === 'drop', f: x.kind === 'failure' }">{{ setLabel(ex.sets, j, sides) }}</span>
           <span v-if="show.w" class="pv" :class="{ none: x.weightKg == null }">{{ x.weightKg != null ? fmt.w(x.weightKg) : "-" }}</span>
-          <span v-if="show.r" class="pv" :class="{ none: reps(x) == null }">{{ reps(x) ?? "-" }}<small v-if="clampStartReps(x) != null">starts at {{ clampStartReps(x) }}</small></span>
+          <span v-if="show.r" class="pv" :class="{ none: reps(x) == null }">{{ reps(x) ?? "-" }}</span>
           <span v-if="show.d" class="pv" :class="{ none: !x.durationS }">{{ x.durationS ? fmt.clock(x.durationS) : "-" }}</span>
           <span v-if="show.dist" class="pv" :class="{ none: x.distanceM == null }">{{ dist(x.distanceM) ?? "-" }}</span>
           <span v-if="show.rpe" class="pv" :class="{ none: x.rpe == null }">{{ x.rpe ?? "-" }}</span>

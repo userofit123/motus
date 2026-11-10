@@ -681,8 +681,9 @@ This is the heart of the tracker. One simple model (M-74):
 - After each finished workout, every routine exercise that was done (not skipped, something ticked, the
   same exercise as its slot) takes today's working numbers: working sets are matched in order (warm-ups
   never change; routine sets past today's last keep theirs). Weight, duration and distance become what you
-  did. A rep range ("8-12") stays as set, the reps move inside it; a single rep target takes today's reps
-  when they reached it and keeps its target when missed (so misses count). Skipped exercises keep everything.
+  did. Reps move inside the exercise's rep range (Progression's, below): reps done in it become next time's
+  (above its top: the top), reps below its bottom keep the planned ones (so misses count). Exercises without
+  both weight and reps: a rep target takes today's reps when reached. Skipped exercises keep everything.
 - "Keep these numbers fixed" (per exercise, ⋮ menu; hint "The numbers don't update after workouts and
   progression is off"): workouts never change its numbers.
 - Structure (exercises, sets, order) changes only through the Finish screen's "Routine changes" switches
@@ -694,18 +695,24 @@ This is the heart of the tracker. One simple model (M-74):
 **2. Progression decides whether the weight goes up or down next time.**
 - Modes: **Suggest** ("Asks you after a workout before changing the weight"), **Automatic** ("Changes the
   weight without asking"), **Off** ("The weight only changes when you edit it").
-- Settings → Workout → Progression: the mode (default Suggest), **Weight step** (how much the weight goes up
-  or down) and **Lower the weight after** (Never / 1 missed workout / N missed workouts in a row, default 3).
-  A missed workout: not every working set reached its target reps.
-- Per routine exercise (⋮ → Progression, a small sheet): each field "Your default (…)" (hint "From Settings →
-  Workout → Progression") or its own. Only an exercise with its own setting shows a chip ("Progression:
-  Automatic"); the rest use your default, so changing it in Settings moves them all. The step: its own, else
-  the exercise's own increment, else Settings'.
-- Going up: every working set (warm-ups and drop sets don't decide) reached the top of its rep range (or its
-  target when there is no range): next time one step up, snapped to the step's grid, reps back to the bottom.
-  A drop set moves with the set it drops from, by the same amount, and starts again at the bottom like it.
-  Going down: N workouts in a row with missed reps: one step down. Assisted exercises move the help the
-  other way. Exercises without weight or reps (bodyweight, timed, distance) only take today's numbers.
+- Progression is double progression, and the rep range is part of it (M-107: a range does nothing on its own, so
+  there is no separate rep range per set any more; 022 moved old per-set ranges into the exercise's own).
+- Settings → Workout → Progression: the mode (default Suggest), **Rep range** (default 6-12), **Weight step, both
+  sides together** (default 5 kg / 10 lb) and **one side at a time** (left and right sets, or a one-sided exercise;
+  default 2.5 kg / 5 lb), **Lower the weight after** (Never / 1 / N missed workouts in a row, default 3). A missed
+  workout: a working set below the range's bottom; once or twice is part of training, so nothing changes until N.
+  Stored in kg, shown in your unit. "Stepper step" (Settings → Weights) is only the workout's −/+.
+- Per routine exercise: a "Progression" row at the bottom of its block in the routine editor (after "Timer between
+  reps") shows what applies ("Automatic · 6-12 reps · +2.5 kg"; the tile says "Default" or "Its own") and opens a
+  sheet: mode, rep range, weight step, lower after, each "Your default (…)" or its own, and "Use your defaults".
+  Stored in routine_exercises.progression ({mode, repsMin, repsMax, stepKg, lowerAfter}, null = Settings'). The
+  step: its own, else the exercise's own increment, else Settings' one-side or both-sides step.
+- Going up: every working set (warm-ups and drop sets don't decide) ticked and at the top of the range: next time
+  the weight today's numbers say you can lift for the bottom reps (estimated one-rep max, Epley), on the step's grid
+  and at least one step heavier (50 kg × 12 at 6-12 → 60 kg × 6), reps back to the bottom. Below the top: same
+  weight, the reps you did to beat. A drop set moves with the set it drops from, by the same amount. Going down: N
+  workouts in a row with a set below the bottom: one step down. Assisted exercises move the help the other way, one
+  step. Exercises without weight or reps (bodyweight, timed, distance) only take today's numbers.
 - One pure function, `planNext` (@motus/shared), lists it on the Finish screen and saves it in the engine at
   the finish, so the two can't disagree. Old "Progression rules" became each exercise's own Automatic.
 
@@ -715,10 +722,10 @@ exercise has sets you didn't tick"; else "The routine stays the same"). Tapping 
 each exercise whose routine numbers change, set by set in a table with three labelled columns (M-107):
 "Planned" (the routine before this workout, as the switched-on routine changes shape it), "You did" (today's
 ticked set in its place) and "Next time" (bold, with an arrow in green/red when the weight moves); sets in a row
-reading the same fold into one row ("1-6"). A weight change has its own row: "Heavier/Lighter next time", "46 kg →
-47.5 kg · reps start again at 8" and the reason saying what you did against the plan ("You did 12 reps on every
-set, 4 more than the 8 planned", "You did 12 reps on every set, the top of 8-12", "You missed reps 3 workouts in a
-row"); Automatic ones carry an "Automatic" chip, Suggest ones an "Apply" switch, off by default. Exercises with typed but unticked sets say "Sets you didn't tick won't be saved" with
+reading the same fold into one row ("1-6"). A weight change has its own row: "Heavier/Lighter next time", "50 kg →
+60 kg · reps start again at 6" and the reason in plain words ("You did 12 reps on every set, the top of 6-12. Next
+time: heavier, starting again at 6 reps", "Below 6 reps, the bottom of 6-12, 3 workouts in a row. Next time:
+lighter"); Automatic ones carry an "Automatic" chip, Suggest ones an "Apply" switch, off by default. Exercises with typed but unticked sets say "Sets you didn't tick won't be saved" with
 "Go to exercise"; the rest fold into "N exercises unchanged". Finish sends the applied Suggest ones
 (`accepted`; none from older apps, whose `declined` is ignored); the engine applies the numbers, Progression and
 the switched-on routine changes in the finish's own transaction.
@@ -890,11 +897,11 @@ switches between **Calendar** (default) and **List** (a chronological, searchabl
 - Name, description, folder, colour, icon.
 - Add exercises from the library picker: search, filters, multi-select, recently used.
 - Per exercise:
-  - sets, with each set's type, target reps (or a rep range), target weight, duration/distance for
+  - sets, with each set's type, target reps, target weight, duration/distance for
     timed/cardio exercises, and optional RPE
   - rest between sets, rest after exercise, rest between reps
   - per-set rest overrides
-  - Keep these numbers fixed, and its own Progression (⋮ menu, §8.7)
+  - Keep these numbers fixed (⋮ menu), and its own Progression with its rep range (the block's last row, §8.7)
   - pinned note
   - superset grouping
 - Drag to reorder (with an explicit `position` column, never re-insert hacks).
@@ -1359,6 +1366,7 @@ Research items (IDs from §18) are placed in the phase they belong to.
 | 2026-11-01 | Overriding design rule: extremely clean, no clutter (§10.0) |
 | 2026-11-03 | The everyday optional features (set types, supersets, plates, warm-ups, sides, programs, body, steps, daily log, achievements, reports, standards…) start **on** for new accounts; the rest stay off (§10.0) |
 | 2026-11-09 | One model for next time's numbers (M-74, §8.7): the routine always has the current numbers (today's after each finish), Progression (Suggest / Automatic / Off) moves the weight, History keeps every version. "Start from what you did last time", its scope, the "Progression rules" feature and more-weight reminders are gone |
+| 2026-11-10 | Rep range merged into Progression (M-107, §8.7): one range per exercise (default 6-12 in Settings, its own in the routine editor's Progression row), double progression (top of the range on every set → heavier from the estimated one-rep max, back to the bottom), steps for one side (2.5 kg) and both sides (5 kg), lowering only after N missed workouts |
 
 Still open, not blocking: server port/domain for your deployment (default `127.0.0.1:8790`).
 

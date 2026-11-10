@@ -10,4 +10,4 @@ export const modeLabel = (m: ProgressionMode) => PROGRESSION_MODES.find((x) => x
 /** "Never", "1 missed workout", "3 missed workouts in a row" */
 export const lowerAfterLabel = (n: number) => (n === 0 ? "Never" : n === 1 ? "1 missed workout" : `${n} missed workouts in a row`);
 export const LOWER_AFTER: { value: number; label: string }[] = Array.from({ length: 11 }, (_, n) => ({ value: n, label: lowerAfterLabel(n) }));
-export const MISSED_HINT = "A missed workout: not every working set reached the routine's reps";
+export const MISSED_HINT = "A missed workout: a working set below the bottom of the rep range. Once or twice is part of training";

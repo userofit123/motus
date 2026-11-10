@@ -2,6 +2,9 @@
 import type { WeightUnit, DistanceUnit, LengthUnit } from "./units";
 import { FEATURE_DEFAULTS } from "./features";
 import type { ProgressionMode, RestByKind } from "./types";
+
+/** Settings' Progression (see Settings.progression). */
+export interface ProgressionDefaults { mode: ProgressionMode; repsMin: number; repsMax: number; stepKg: number; stepOneSideKg: number; lowerAfter: number }
 import type { RestDefaults } from "./training";
 import { cleanIntervalPresets, type IntervalPreset } from "./intervals";
 
@@ -32,11 +35,12 @@ export interface Settings {
   dateFormat: "dmy" | "mdy" | "ymd";
   clock: "24" | "12";
   workout: WorkoutPrefs;
-  /** the weight step, also Progression's default step */
+  /** the weight step of the steppers */
   increments: { kg: number; lb: number };
-  /** Progression's defaults for every routine exercise without its own: the mode, and missed workouts in a row before
-   * the weight goes down a step (0: never) */
-  progression: { mode: ProgressionMode; lowerAfter: number };
+  /** Progression's defaults for every routine exercise without its own: the mode, the rep range, the weight step (kg)
+   * for exercises done both sides together and for one side at a time, and missed workouts in a row before the weight
+   * goes down a step (0: never) */
+  progression: ProgressionDefaults;
   barKg: number;
   platesKg: number[];
   platesLb: number[];
@@ -120,7 +124,7 @@ export const DEFAULT_SETTINGS: Settings = {
     showPrevious: false, showReminders: true, confirmSkip: false,
   },
   increments: { kg: 2.5, lb: 5 },
-  progression: { mode: "suggest", lowerAfter: 3 },
+  progression: { mode: "suggest", repsMin: 6, repsMax: 12, stepKg: 5, stepOneSideKg: 2.5, lowerAfter: 3 },
   barKg: 20,
   platesKg: [25, 20, 15, 10, 5, 2.5, 1.25],
   platesLb: [45, 35, 25, 10, 5, 2.5],
@@ -176,7 +180,19 @@ export function withDefaults(saved: unknown): Settings {
   if (out.features.progression === false && savedMode === undefined) out.progression.mode = "off";
   delete out.features.progression;
   const pm = out.progression.mode;
-  out.progression = { mode: pm === "auto" || pm === "off" ? pm : "suggest", lowerAfter: Number.isInteger(out.progression.lowerAfter) ? Math.min(10, Math.max(0, out.progression.lowerAfter)) : 3 };
+  const lb = out.units.weight === "lb", LB_KG = 0.45359237;
+  // the steps from what was saved, not the merged defaults, so an unsaved one takes the default of the weight unit
+  const SP = ((saved as { progression?: unknown } | null)?.progression ?? {}) as Partial<ProgressionDefaults>;
+  const P = out.progression as Partial<ProgressionDefaults>, D = DEFAULT_SETTINGS.progression;
+  const int = (v: unknown, lo: number, hi: number, d: number) => (Number.isInteger(v) && (v as number) >= lo && (v as number) <= hi ? (v as number) : d);
+  const kg = (v: unknown, d: number) => (typeof v === "number" && Number.isFinite(v) && v > 0 && v <= 100 ? v : d);
+  const repsMin = int(P.repsMin, 1, 100, D.repsMin), repsMax = int(P.repsMax, 1, 100, D.repsMax);
+  out.progression = {
+    mode: pm === "auto" || pm === "off" ? pm : "suggest",
+    ...(repsMin <= repsMax ? { repsMin, repsMax } : { repsMin: D.repsMin, repsMax: D.repsMax }),
+    // pounds: the defaults are 10 lb and 5 lb, so a step lands on real plates
+    stepKg: kg(SP.stepKg, lb ? 10 * LB_KG : D.stepKg), stepOneSideKg: kg(SP.stepOneSideKg, lb ? 5 * LB_KG : D.stepOneSideKg), lowerAfter: int(P.lowerAfter, 0, 10, 3),
+  };
   return out;
 }
 

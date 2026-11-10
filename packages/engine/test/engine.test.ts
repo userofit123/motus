@@ -5,6 +5,7 @@ import { createEngine, type Engine } from "../src/index";
 import { pgliteDb } from "../src/adapters/pglite";
 import { uuidv7 } from "../src/ids";
 import { structureChanges } from "@motus/shared";
+import m022 from "../src/migrations/022_progression_rep_range";
 
 let eng: Engine;
 let A: string, B: string;
@@ -156,8 +157,8 @@ describe("engine", () => {
     const prev = await call(A, "GET", `/routines/${routineId}/preview`);
     const bench = prev.exercises[0];
     expect(bench.sets[0].weightKg).toBe(82.5); // 80 + reminder
-    // the rep range stays as set (its bottom, 6) and next time starts at the reps done inside it, 7
-    expect([bench.sets[1].reps, bench.sets[1].targetReps]).toEqual([7, 6]);
+    // the reps done inside the rep range are next time's reps (and its target), 7
+    expect([bench.sets[1].reps, bench.sets[1].targetReps]).toEqual([7, 7]);
     expect(bench.sets[0].prev.weightKg).toBe(80);
     expect(bench.reminders.length).toBe(1);
     expect(bench.notes[0].body).toBe("Felt strong");
@@ -307,8 +308,8 @@ describe("updating a routine from a workout", () => {
     await call(C, "POST", `/workouts/${w.id}/finish`, { routineChanges: [`added:${plank}`], accepted: [ra] });
     const after = await call(C, "GET", `/routines/${r.id}`);
     expect(after.exercises.map((e: any) => e.exerciseId)).toEqual([a, b, c]);
-    // today's 105 × 5 in every set: the routine takes it, then Progression (Suggest by default, applied) a step up
-    expect(after.exercises[0].sets.map((s: any) => s.weightKg)).toEqual([107.5, 107.5]);
+    // today's 105 × 5 in every set: the routine takes it; 5 reps is below the default 6-12, so no step up yet
+    expect(after.exercises[0].sets.map((s: any) => [s.weightKg, s.reps])).toEqual([[105, 5], [105, 5]]);
     expect(after.exercises[1].sets[0].weightKg).toBe(140);
     expect(after.exercises[2].sets[0].durationS).toBe(60);
     // asked for later from the ⋮ menu: the skipped one leaves the routine
@@ -403,8 +404,8 @@ describe("the routine's numbers and Progression", () => {
     await eng.db.admin.query("INSERT INTO users (id, username, display_name) VALUES ($1,'prog-tester','C')", [C]);
     const ex = await call(C, "GET", "/exercises");
     const r = await call(C, "POST", "/routines", { name: "Prog", exercises: [
-      { exerciseId: ex[0].id, progression: { mode: "auto" }, sets: [{ kind: "warmup", reps: 10, weightKg: 20 }, { kind: "normal", reps: 5, weightKg: 60 }, { kind: "normal", reps: 5, weightKg: 60 }] },
-      { exerciseId: ex[1].id, sets: [{ kind: "normal", reps: 8, repsMax: 10, weightKg: 40 }] },
+      { exerciseId: ex[0].id, progression: { mode: "auto", repsMin: 5, repsMax: 5, stepKg: 2.5 }, sets: [{ kind: "warmup", reps: 10, weightKg: 20 }, { kind: "normal", reps: 5, weightKg: 60 }, { kind: "normal", reps: 5, weightKg: 60 }] },
+      { exerciseId: ex[1].id, progression: { repsMin: 8, repsMax: 10 }, sets: [{ kind: "normal", reps: 8, weightKg: 40 }] },
       { exerciseId: ex[2].id, sets: [{ kind: "normal", reps: 8, weightKg: 30 }] },
       { exerciseId: ex[3].id, fixed: true, sets: [{ kind: "normal", reps: 8, weightKg: 10 }] }] });
     const w = await call(C, "POST", "/workouts/start", { routineId: r.id });
@@ -412,13 +413,14 @@ describe("the routine's numbers and Progression", () => {
     await call(C, "PUT", `/workout-sets/${w.exercises[0].sets[0].id}`, { weightKg: 25, reps: 10, done: true });
     for (const s of w.exercises[0].sets.slice(1)) await call(C, "PUT", `/workout-sets/${s.id}`, { weightKg: 60, reps: 5, done: true });
     await call(C, "PUT", `/workout-sets/${w.exercises[1].sets[0].id}`, { weightKg: 40, reps: 10, done: true });
-    await call(C, "PUT", `/workout-sets/${w.exercises[2].sets[0].id}`, { weightKg: 32.5, reps: 6, done: true });
+    await call(C, "PUT", `/workout-sets/${w.exercises[2].sets[0].id}`, { weightKg: 32.5, reps: 5, done: true });
     await call(C, "PUT", `/workout-sets/${w.exercises[3].sets[0].id}`, { weightKg: 15, reps: 8, done: true });
     // an older app's `declined` is ignored: a Suggest change not in `accepted` is not applied
     await call(C, "POST", `/workouts/${w.id}/finish`, { accepted: [], declined: [] });
     const after = (await call(C, "GET", `/routines/${r.id}`)).exercises;
-    // warm-up untouched, Automatic up a step; Suggest not applied keeps today's; a miss keeps the rep target; fixed stays
-    expect(after.map((e: any) => e.sets.map((s: any) => [s.weightKg, s.reps]))).toEqual([[[20, 10], [62.5, 5], [62.5, 5]], [[40, 8]], [[32.5, 8]], [[10, 8]]]);
+    // warm-up untouched, Automatic up a step; Suggest not applied keeps today's (10, the top of 8-10); below the
+    // default 6-12 a miss keeps the planned reps; fixed stays
+    expect(after.map((e: any) => e.sets.map((s: any) => [s.weightKg, s.reps]))).toEqual([[[20, 10], [62.5, 5], [62.5, 5]], [[40, 10]], [[32.5, 8]], [[10, 8]]]);
     expect(after[2].missed).toBe(1);
     const next = await call(C, "POST", "/workouts/start", { routineId: r.id, force: true });
     expect(next.exercises[0].sets.map((s: any) => s.weightKg)).toEqual([20, 62.5, 62.5]);
@@ -447,7 +449,7 @@ describe("the routine's numbers and Progression", () => {
     const C = uuidv7();
     await eng.db.admin.query("INSERT INTO users (id, username, display_name) VALUES ($1,'more-tester','C')", [C]);
     const ex = await call(C, "GET", "/exercises");
-    const r = await call(C, "POST", "/routines", { name: "Arms", exercises: [{ exerciseId: ex[0].id, sets: [{ kind: "normal", reps: 8, repsMax: 12, weightKg: 20 }, { kind: "normal", reps: 8, repsMax: 12, weightKg: 20 }] }] });
+    const r = await call(C, "POST", "/routines", { name: "Arms", exercises: [{ exerciseId: ex[0].id, progression: { repsMin: 8, repsMax: 12, stepKg: 2.5 }, sets: [{ kind: "normal", reps: 8, weightKg: 20 }, { kind: "normal", reps: 8, weightKg: 20 }] }] });
     const w = await call(C, "POST", "/workouts/start", { routineId: r.id });
     expect(w.exercises[0].sets[0].targetRepsMax).toBe(12);
     for (const s of w.exercises[0].sets) await call(C, "PUT", `/workout-sets/${s.id}`, { weightKg: 20, reps: 12, done: true });
@@ -457,19 +459,19 @@ describe("the routine's numbers and Progression", () => {
     // reps done are where next time starts
     const next = await call(C, "POST", "/workouts/start", { routineId: r.id });
     expect(next.exercises[0].sets.map((s: any) => [s.weightKg, s.reps])).toEqual([[20, 12], [20, 12]]);
-    // the same with Apply switched on (accepted): next time one step more, reps at the bottom
+    // the same with Apply switched on (accepted): next time heavier (20 × 12 says 22.1 kg for 8, on the 2.5 kg grid), reps at the bottom
     for (const s of next.exercises[0].sets) await call(C, "PUT", `/workout-sets/${s.id}`, { weightKg: 20, reps: 12, done: true });
     await call(C, "POST", `/workouts/${next.id}/finish`, { accepted: [next.exercises[0].routineExerciseId] });
     const third = await call(C, "POST", "/workouts/start", { routineId: r.id });
     expect(third.exercises[0].sets.map((s: any) => [s.weightKg, s.reps])).toEqual([[22.5, 8], [22.5, 8]]);
   });
 
-  it("keeps a rep range and starts next time at the reps done inside it, an unticked set aside", async () => {
+  it("moves the reps inside the exercise's rep range: the reps done are next time's, an unticked set aside", async () => {
     const C = uuidv7();
     await eng.db.admin.query("INSERT INTO users (id, username, display_name) VALUES ($1,'range-tester','C')", [C]);
     const ex = await call(C, "GET", "/exercises");
-    const set = { kind: "normal", reps: 8, repsMax: 12, weightKg: 20 };
-    const r = await call(C, "POST", "/routines", { name: "Range", exercises: [{ exerciseId: ex[0].id, sets: [set, set, set] }] });
+    const set = { kind: "normal", reps: 8, weightKg: 20 };
+    const r = await call(C, "POST", "/routines", { name: "Range", exercises: [{ exerciseId: ex[0].id, progression: { repsMin: 8, repsMax: 12 }, sets: [set, set, set] }] });
     const w = await call(C, "POST", "/workouts/start", { routineId: r.id });
     const [a, b, c] = w.exercises[0].sets;
     await call(C, "PUT", `/workout-sets/${a.id}`, { weightKg: 20, reps: 10, done: true });
@@ -477,14 +479,29 @@ describe("the routine's numbers and Progression", () => {
     await call(C, "PUT", `/workout-sets/${c.id}`, { weightKg: 20, reps: 4 });
     await call(C, "POST", `/workouts/${w.id}/finish`, { accepted: [] });
     const after = (await call(C, "GET", `/routines/${r.id}`)).exercises[0];
-    // the range stays; the reps done start next time, clamped into it; the set not done keeps its own; no miss counted
-    expect(after.sets.map((s: any) => [s.reps, s.repsMax, s.startReps])).toEqual([[8, 12, 10], [8, 12, 12], [8, 12, null]]);
+    // the range stays with the exercise; the reps done (above the top: the top) are next time's; the set not done keeps its own
+    expect(after.progression).toMatchObject({ repsMin: 8, repsMax: 12 });
+    expect(after.sets.map((s: any) => s.reps)).toEqual([10, 12, 8]);
     expect(after.missed).toBe(0);
     const next = await call(C, "POST", "/workouts/start", { routineId: r.id, force: true });
-    expect(next.exercises[0].sets.map((s: any) => [s.reps, s.targetReps, s.targetRepsMax])).toEqual([[10, 8, 12], [12, 8, 12], [8, 8, 12]]);
-    // editing the range takes the starting reps with it: clamped into the new one, gone with it
-    await call(C, "PUT", `/routines/${r.id}`, { exercises: [{ ...after, sets: [{ ...after.sets[0], reps: 11 }, { ...after.sets[1], repsMax: null }, after.sets[2]] }] });
-    expect((await call(C, "GET", `/routines/${r.id}`)).exercises[0].sets.map((s: any) => s.startReps)).toEqual([null, null, null]);
+    expect(next.exercises[0].sets.map((s: any) => [s.reps, s.targetReps, s.targetRepsMax])).toEqual([[10, 10, 12], [12, 12, 12], [8, 8, 12]]);
+  });
+
+  it("moves an old per-set rep range into the exercise's Progression, each set at its starting reps (022)", async () => {
+    const C = uuidv7();
+    await eng.db.admin.query("INSERT INTO users (id, username, display_name) VALUES ($1,'oldrange-tester','C')", [C]);
+    const ex = await call(C, "GET", "/exercises");
+    const set = { kind: "normal", reps: 8, weightKg: 20 };
+    const r = await call(C, "POST", "/routines", { name: "Old", exercises: [{ exerciseId: ex[0].id, progression: { mode: "auto" }, sets: [set, set, { ...set, kind: "warmup" }] }, { exerciseId: ex[1].id, sets: [set] }] });
+    const [a, b] = (await call(C, "GET", `/routines/${r.id}`)).exercises;
+    // as an older app left them: a range on each working set, one starting at 10
+    await eng.db.admin.query("UPDATE routine_sets SET reps_max = 12 WHERE routine_exercise_id = $1 AND kind = 'normal'", [a.id]);
+    await eng.db.admin.query("UPDATE routine_sets SET start_reps = 10 WHERE id = $1", [a.sets[0].id]);
+    await eng.db.admin.exec(m022);
+    const [a2, b2] = (await call(C, "GET", `/routines/${r.id}`)).exercises;
+    expect(a2.progression).toMatchObject({ mode: "auto", repsMin: 8, repsMax: 12 });
+    expect(a2.sets.map((s: any) => [s.reps, s.repsMax ?? null, s.startReps ?? null])).toEqual([[10, null, null], [8, null, null], [8, null, null]]);
+    expect(b2.progression).toBe(b.progression);
   });
 
   it("keeps the rep target and range on a set added during the workout", async () => {
