@@ -318,6 +318,10 @@ export function useWorkout() {
   function togglePause() {
     const p = !state.w!.pauseStartedAt;
     if (p) pauseRest(); else resumeRest();
+    // resuming counts the pause into pausedS here too, as the server does: otherwise this copy's clock runs on with the
+    // pause in it until the server's copy replaces it, and then drops back by the length of the pause (seen as the time
+    // "going down" at the next reload, e.g. after removing an exercise). pausedS stays local: the server works it out.
+    if (!p) state.w!.pausedS = (state.w!.pausedS ?? 0) + Math.max(0, Math.round((Date.now() - new Date(state.w!.pauseStartedAt!).getTime()) / 1000));
     patchWorkout({ pause: p, pauseStartedAt: p ? new Date().toISOString() : null });
   }
   return { state, prefs, settings, fmt, incKg, ex, activate, restChanged, restPlannedNow, keepRest, skipExercise, tick, editSet, addSet, addDrop, removeSet, setStatus, reorder, patchExercise, addExercises, removeExercise, patchWorkout, togglePause, restFor, call, active };
