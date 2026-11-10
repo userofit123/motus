@@ -11,6 +11,7 @@ import { prompt } from "../core/ask";
 import { toast } from "../core/toast";
 import { invalidate } from "../api/live";
 import { beep } from "./runtime";
+import { sidesItem } from "../core/sides";
 import Icon from "../components/Icon.vue";
 import Menu from "../components/Menu.vue";
 import NoteItem from "../components/NoteItem.vue";
@@ -101,6 +102,8 @@ const menu = computed(() => [
   { label: "Skip", sep: true, icon: "skip", run: skip, hidden: props.e.status === "skipped" },
   { label: "Bring it back", icon: "refresh", run: () => W.setStatus(props.e, props.e.sets.every((s) => s.done) && props.e.sets.length ? "done" : "pending"), hidden: props.e.status !== "skipped" },
   { label: "Swap for another exercise", icon: "swap", run: openReplace },
+  // any exercise can be switched to left and right sets (the exercise's default is only a start)
+  { ...sidesItem(props.e.exerciseId, sided.value, (on) => { if (props.e.exercise) props.e.exercise.unilateral = on; }), sep: true, hidden: !feat.value.unilateral },
   { label: "Rest between sets", sep: true, icon: "timer", run: () => (restEdit.value = "between") },
   { label: "Rest after this exercise", icon: "timer", run: () => (restEdit.value = "after") },
   { label: "Add warm-up sets", icon: "flame", run: addWarmups, hidden: !feat.value.warmupCalc || !showW.value },
@@ -129,7 +132,7 @@ const nowId = computed(() => (W.state.active === props.index ? visibleSets.value
       <div class="thumb lg click" @click="exerciseSheet = e.exerciseId"><img v-if="e.exercise?.images?.[0]" :src="mediaUrl(e.exercise.images[0])" alt="" /><Icon v-else name="dumbbell" /></div>
       <div class="grow">
         <h3 @click="exerciseSheet = e.exerciseId">{{ e.exercise?.name }}</h3>
-        <div class="tiny" style="margin-top:3px">{{ e.exercise?.primaryMuscles.map(muscleName).join(", ") }}{{ e.superset ? ` · superset ${e.superset}` : "" }}{{ e.status === "skipped" ? ` · skipped${e.skipReason ? " (" + e.skipReason + ")" : ""}` : "" }}</div>
+        <div class="tiny" style="margin-top:3px">{{ e.exercise?.primaryMuscles.map(muscleName).join(", ") }}{{ sided ? " · one side at a time" : "" }}{{ e.superset ? ` · superset ${e.superset}` : "" }}{{ e.status === "skipped" ? ` · skipped${e.skipReason ? " (" + e.skipReason + ")" : ""}` : "" }}</div>
       </div>
       <Menu :items="menu" />
     </div>
@@ -140,7 +143,7 @@ const nowId = computed(() => (W.state.active === props.index ? visibleSets.value
     </div>
 
     <table class="sets">
-      <thead><tr><th>Set</th><th v-if="prefs.showPrevious">Previous</th><th v-if="showW">{{ fmt.wu }}</th><th v-if="showR">Reps</th><th v-if="showD">Time</th><th v-if="showDist">{{ fmt.du }}</th><th v-if="feat.rpe">RPE</th><th style="width:44px" /></tr></thead>
+      <thead><tr><th>Set</th><th v-if="prefs.showPrevious">Previous</th><th v-if="showW">{{ fmt.wu }}<span v-if="sided" class="thside"> / side</span></th><th v-if="showR">Reps</th><th v-if="showD">Time</th><th v-if="showDist">{{ fmt.du }}</th><th v-if="feat.rpe">RPE</th><th style="width:44px" /></tr></thead>
       <tbody>
         <tr v-for="s in visibleSets" :key="s.id" :class="{ done: s.done, drop: s.kind === 'drop', now: s.id === nowId && e.status !== 'skipped' }" :aria-current="s.id === nowId ? 'step' : undefined">
           <td><button class="sk" :class="{ w: s.kind === 'warmup', d: s.kind === 'drop', f: s.kind === 'failure' }" @click.stop>{{ kindShort(s) }}</button></td>
@@ -179,5 +182,7 @@ const nowId = computed(() => (W.state.active === props.index ? visibleSets.value
 
 <style scoped>
 .exnotes { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--ol); }
+/* "kg / side": the weight one side moves, quieter than the unit itself */
+.thside { font-weight: 400; }
 .exrem { display: flex; flex-direction: column; gap: 8px; margin-bottom: var(--hg); }
 </style>

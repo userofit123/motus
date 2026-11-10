@@ -11,6 +11,7 @@ import { useFmt, ago, type SetFigures } from "../core/format";
 import { noteSheet, reminderSheet, exerciseSheet } from "../core/ui";
 import { confirm } from "../core/ask";
 import { useNoteMenu } from "../core/noteMenu";
+import { sidesItem, SIDES_HINT } from "../core/sides";
 import { toast, savedToast } from "../core/toast";
 import Icon from "./Icon.vue";
 import BodyMap from "./BodyMap.vue";
@@ -61,6 +62,8 @@ const recVal = (k: string, v: number) => (["maxWeight", "e1rm", "setVolume", "se
 const fav = useChange(async (v: boolean) => { await api.put(`/exercises/${props.id}/prefs`, { ...(e.value?.prefs ?? {}), favourite: v }); savedToast(v ? "Added to favourites" : "Removed from favourites"); }, ["exercises"]);
 const noteMenu = useNoteMenu();
 const own = computed(() => !!e.value?.ownerId);
+// left and right sets are an optional feature (Settings → Features)
+const sidesOn = computed(() => !!settings.value?.features?.unilateral);
 // strength standards (optional feature): needs a body weight
 const bodyQ = useBody("weight");
 const standard = computed(() => {
@@ -80,6 +83,8 @@ const menu = computed<MenuItem[]>(() => [
   { label: "Add a note", icon: "note", run: () => (noteSheet.value = { targets: [{ type: "exercise", id: props.id, label: e.value.name }] }) },
   { label: "Remind me next time", icon: "bell", run: () => (reminderSheet.value = { targetType: "exercise", targetId: props.id, label: e.value.name }) },
   { label: e.value?.favourite ? "Remove from favourites" : "Add to favourites", icon: "star", sep: true, run: () => fav.run(!e.value?.favourite) },
+  // built-in exercises too: whether you do it one side at a time is yours to say
+  { ...sidesItem(props.id, !!e.value?.unilateral), hidden: !sidesOn.value },
   { label: "Edit", icon: "edit", sep: true, run: () => (editing.value = true), hidden: !own.value },
   { label: "Make my own copy", icon: "copy", run: async () => { const r = await api.post("/exercises", { ...e.value, name: e.value.name + " (mine)" }); invalidate(["exercises"]); toast("Copy created"); exerciseSheet.value = null; router.push(`/exercises/${r.id}`); }, hidden: own.value },
   { label: "Open as a page", icon: "right", run: () => { exerciseSheet.value = null; router.push(`/exercises/${props.id}`); }, hidden: !props.inSheet },
@@ -96,6 +101,7 @@ const menu = computed<MenuItem[]>(() => [
           <span v-for="m in e.primaryMuscles" :key="m" class="mchip" style="color:var(--tx)">{{ muscleName(m) }}</span>
           <span v-for="m in e.secondaryMuscles" :key="m" class="mchip">{{ muscleName(m) }}</span>
           <span v-if="e.equipment" class="mchip" style="text-transform:capitalize">{{ e.equipment }}</span>
+          <span v-if="sidesOn && e.unilateral" class="mchip" :title="SIDES_HINT">One side at a time</span>
           <Icon v-if="e.favourite" name="star" :size="16" style="color:var(--acc)" />
         </div>
       </div>
@@ -130,6 +136,7 @@ const menu = computed<MenuItem[]>(() => [
           <template v-if="e.mechanic"><dt>Type</dt><dd>{{ e.mechanic }}</dd></template>
           <template v-if="e.force"><dt>Force</dt><dd>{{ e.force }}</dd></template>
           <dt>Category</dt><dd>{{ e.category }}</dd>
+          <template v-if="sidesOn"><dt>Sides</dt><dd style="text-transform:none">{{ e.unilateral ? "One at a time: left and right sets, weight for one side" : "Both together: weight is the total moved" }}</dd></template>
           <template v-if="e.routines?.length"><dt>In routines</dt><dd style="text-transform:none">{{ e.routines.map((r: any) => r.name).join(", ") }}</dd></template>
         </dl>
         <p v-if="e.license" class="tiny" style="margin-top:16px">From {{ e.author }} · {{ e.license }}</p>

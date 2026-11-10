@@ -9,7 +9,7 @@ export const FEATURES: FeatureDef[] = [
   { id: "supersets", group: "Logging", name: "Supersets", desc: "Group exercises so you alternate between them, resting after each round.", on: true },
   { id: "plates", group: "Logging", name: "Plate calculator", desc: "See which plates to load for a weight.", on: true },
   { id: "warmupCalc", group: "Logging", name: "Warm-up sets", desc: "Add a ramp of warm-up sets to an exercise in one tap.", on: true },
-  { id: "unilateral", group: "Logging", name: "Left / right sides", desc: "Log single-arm and single-leg exercises per side.", on: true },
+  { id: "unilateral", group: "Logging", name: "Left / right sides", desc: "Left and right sets for exercises done one side at a time, with the weight one side moves. Switch it for any exercise from its menu.", on: true },
   { id: "quickEntry", group: "Logging", name: "Quick entry", desc: 'Type "3x8 80" to fill sets.', on: false },
   { id: "voice", group: "Logging", name: "Voice cues", desc: "Hear what's next when a rest ends.", on: false },
   { id: "adaptiveRest", group: "Logging", name: "Longer rest after a missed set", desc: "Adds 30s to the rest when a set falls short of its target.", on: true },

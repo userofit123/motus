@@ -9,7 +9,10 @@ import { notFound, bad } from "../errors";
 
 const TRACKING: Tracking[] = ["weight_reps", "bodyweight_reps", "assisted", "reps_only", "duration", "weight_duration", "distance_duration", "distance_weight"];
 
-const EX_COLS = `e.id, e.owner_id, e.source, e.name, e.aliases, e.category, e.equipment, e.mechanic, e.force, e.level, e.tracking, e.unilateral,
+// one side at a time: the person's own choice for this exercise (exercise_prefs) wins over the exercise's default, so
+// queries that join the prefs as p use SIDES; the rest take the default
+const SIDES = "coalesce(p.unilateral, e.unilateral) AS unilateral";
+const EX_COLS = `e.id, e.owner_id, e.source, e.name, e.aliases, e.category, e.equipment, e.mechanic, e.force, e.level, e.tracking,
   e.primary_muscles, e.secondary_muscles, e.instructions, e.images, e.video_url, e.license, e.author, e.archived`;
 
 const exerciseFromRow = (r: any): Exercise => {
@@ -26,7 +29,7 @@ const exerciseFromRow = (r: any): Exercise => {
 export async function getExercises(q: Sql, ids: string[]): Promise<Map<string, Exercise>> {
   if (!ids.length) return new Map();
   const { rows } = await q.query(
-    `SELECT ${EX_COLS}, p.favourite, p.hidden, p.rest_s, p.rest_after_s, p.increment_kg FROM exercises e
+    `SELECT ${EX_COLS}, ${SIDES}, p.favourite, p.hidden, p.rest_s, p.rest_after_s, p.increment_kg FROM exercises e
      LEFT JOIN exercise_prefs p ON p.exercise_id = e.id WHERE e.id = ANY($1::uuid[])`, [ids]);
   return new Map(rows.map((r: any) => [r.id, exerciseFromRow(r)]));
 }
@@ -87,7 +90,7 @@ function recordsOf(sessions: Awaited<ReturnType<typeof exerciseSessions>>) {
 export function libraryRoutes(r: Router) {
   r.get("/exercises", async ({ q }) => {
     const { rows } = await q.query(
-      `SELECT ${EX_COLS}, p.favourite, p.hidden, u.times_done, u.last_done_at FROM exercises e
+      `SELECT ${EX_COLS}, ${SIDES}, p.favourite, p.hidden, u.times_done, u.last_done_at FROM exercises e
        LEFT JOIN exercise_prefs p ON p.exercise_id = e.id
        LEFT JOIN (SELECT we.exercise_id, count(DISTINCT w.id) AS times_done, max(w.started_at) AS last_done_at
                   FROM workout_exercises we JOIN workouts w ON w.id = we.workout_id
@@ -143,13 +146,18 @@ export function libraryRoutes(r: Router) {
     ctx.changed("exercise");
     return { ok: true, archived: !!used };
   });
-  r.put("/exercises/:id/prefs", async (ctx, p, b) => {
+  r.put("/exercises/:id/prefs", async (ctx, p, body) => {
     const exId = id(p.id);
+    // only what is sent changes: one switch (favourite, one side at a time) doesn't need every other setting with it
+    const had = (await ctx.q.query("SELECT * FROM exercise_prefs WHERE exercise_id = $1", [exId])).rows[0];
+    const b = { ...(had ? camel<any>(had) : {}), ...body };
     await ctx.q.query(
-      `INSERT INTO exercise_prefs (user_id, exercise_id, rest_s, rest_after_s, favourite, hidden, bar_kg, increment_kg)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-       ON CONFLICT (user_id, exercise_id) DO UPDATE SET rest_s = $3, rest_after_s = $4, favourite = $5, hidden = $6, bar_kg = $7, increment_kg = $8`,
-      [ctx.userId, exId, intOrNull(b.restS, 0, 3600), intOrNull(b.restAfterS, 0, 3600), bool(b.favourite), bool(b.hidden), numOrNull(b.barKg, 0, 100), numOrNull(b.incrementKg, 0, 50)]);
+      `INSERT INTO exercise_prefs (user_id, exercise_id, rest_s, rest_after_s, favourite, hidden, bar_kg, increment_kg, unilateral)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+       ON CONFLICT (user_id, exercise_id) DO UPDATE SET rest_s = $3, rest_after_s = $4, favourite = $5, hidden = $6, bar_kg = $7, increment_kg = $8, unilateral = $9`,
+      // unilateral: null goes back to the exercise's own default
+      [ctx.userId, exId, intOrNull(b.restS, 0, 3600), intOrNull(b.restAfterS, 0, 3600), bool(b.favourite), bool(b.hidden), numOrNull(b.barKg, 0, 100), numOrNull(b.incrementKg, 0, 50),
+        b.unilateral == null ? null : bool(b.unilateral)]);
     ctx.changed("exercise");
     return { ok: true };
   });
@@ -171,7 +179,7 @@ export function libraryRoutes(r: Router) {
     const ex = (await getExercises(q, [id(p.id)])).get(p.id!);
     if (!ex) throw notFound();
     const { rows } = await q.query(
-      `SELECT ${EX_COLS}, coalesce(u.n, 0) AS times_done FROM exercises e
+      `SELECT ${EX_COLS}, e.unilateral, coalesce(u.n, 0) AS times_done FROM exercises e
        LEFT JOIN (SELECT exercise_id, count(*) n FROM workout_exercises GROUP BY 1) u ON u.exercise_id = e.id
        WHERE NOT e.archived AND e.id <> $1 AND e.primary_muscles && $2::text[] AND e.category = $3
        ORDER BY coalesce(u.n, 0) DESC, (e.equipment IS NOT DISTINCT FROM $4) DESC, e.name LIMIT 30`,
@@ -195,5 +203,7 @@ async function saveCustom(ctx: Ctx, exId: string, b: any, isNew: boolean) {
       `UPDATE exercises SET name=$3, aliases=$4, category=$5, equipment=$6, tracking=$7, unilateral=$8, primary_muscles=$9, secondary_muscles=$10,
          instructions=$11, images=$12, video_url=$13, updated_at=now() WHERE id=$1 AND owner_id=$2 RETURNING id`, vals);
     if (!rows.length) throw notFound("Only your own exercises can be edited");
+    // the editor shows the side setting in effect and saves it onto the exercise, so an earlier per-person choice would hide it
+    await ctx.q.query("UPDATE exercise_prefs SET unilateral = NULL WHERE exercise_id = $1 AND unilateral IS NOT NULL", [exId]);
   }
 }

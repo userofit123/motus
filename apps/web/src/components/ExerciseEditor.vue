@@ -9,6 +9,7 @@ import Sheet from "./Sheet.vue";
 import AppSelect from "./AppSelect.vue";
 import ChoiceTiles from "./ChoiceTiles.vue";
 import Icon from "./Icon.vue";
+import { SIDES_HINT } from "../core/sides";
 
 const props = defineProps<{ exercise?: any; name?: string }>();
 const emit = defineEmits<{ close: []; saved: [id: string] }>();
@@ -66,7 +67,7 @@ async function save() {
       </div>
     </div>
     <div class="fld"><label>Video link (optional)</label><input v-model="f.videoUrl" placeholder="https://…" /></div>
-    <label class="tgl"><div class="grow"><div class="t">One side at a time</div><div class="s">Single-arm or single-leg</div></div><span class="tg"><input v-model="f.unilateral" type="checkbox" /></span></label>
+    <label class="tgl"><div class="grow"><div class="t">One side at a time</div><div class="s">Single-arm or single-leg: {{ SIDES_HINT.toLowerCase() }}</div></div><span class="tg"><input v-model="f.unilateral" type="checkbox" /></span></label>
     <template #foot><button class="btn o" @click="emit('close')">Cancel</button><button class="btn" :disabled="busy" @click="save">Save</button></template>
   </Sheet>
 </template>

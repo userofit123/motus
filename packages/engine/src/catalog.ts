@@ -5,7 +5,9 @@ import type { Tracking } from "@motus/shared";
 import type { Db } from "./db";
 import { uuidv7 } from "./ids";
 
-const ONE_SIDE = /\b(one[- ]arm|single[- ]arm|one[- ]leg|single[- ]leg|one[- ]handed|alternating)\b/i;
+// exercises done one side at a time by default (left and right sets); anyone can change it per exercise.
+// Migration 019 applies the same names to catalogs added before.
+const ONE_SIDE = /\b(one[- ]arm(ed)?|single[- ]arm(ed)?|one[- ]leg(ged)?|single[- ]leg(ged)?|one[- ]handed|single[- ]handed|alternat(e|ing)|unilateral|split squats?|lunges?|step[- ]?ups?|pistol|bulgarian)\b/i;
 
 function trackingOf(e: RawExercise): Tracking {
   if (e.category === "stretching") return "duration";

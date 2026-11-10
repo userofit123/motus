@@ -28,6 +28,36 @@ describe("engine", () => {
     expect(list.find((e: any) => e.name === "Barbell Squat")).toBeTruthy();
   });
 
+  it("knows one-sided exercises, and each person can change it for any exercise", async () => {
+    const byName = async (u: string) => new Map<string, any>((await call(u, "GET", "/exercises")).map((e: any) => [e.name, e]));
+    let a = await byName(A);
+    for (const n of ["One-Arm Dumbbell Row", "Kettlebell One-Legged Deadlift", "Dumbbell Lunges", "Split Squats", "Dumbbell Step Ups"]) expect(a.get(n)?.unilateral, n).toBe(true);
+    for (const n of ["Barbell Squat", "Side-Lying Floor Stretch"]) expect(a.get(n)?.unilateral, n).toBe(false);
+    // migration 019's SQL marks the same names in a catalog added before
+    const old = a.get("Kettlebell One-Legged Deadlift").id;
+    await eng.db.admin.query("UPDATE exercises SET unilateral = false WHERE id = $1", [old]);
+    const sql = (await import("../src/migrations/019_exercise_sides")).default;
+    await eng.db.tx((q) => q.exec(sql));
+    expect((await eng.db.admin.query("SELECT unilateral FROM exercises WHERE id = $1", [old])).rows[0].unilateral).toBe(true);
+    // a person's choice wins over the default, for them only, and is kept when favourites change
+    const squat = a.get("Barbell Squat").id;
+    await call(A, "PUT", `/exercises/${squat}/prefs`, { unilateral: true });
+    expect((await call(A, "GET", `/exercises/${squat}`)).unilateral).toBe(true);
+    expect((await byName(B)).get("Barbell Squat").unilateral).toBe(false);
+    await call(A, "PUT", `/exercises/${squat}/prefs`, { favourite: true });
+    expect((await call(A, "GET", `/exercises/${squat}`)).unilateral).toBe(true);
+    await call(A, "PUT", `/exercises/${squat}/prefs`, { unilateral: null });
+    const back = await call(A, "GET", `/exercises/${squat}`);
+    expect([back.unilateral, back.favourite]).toEqual([false, true]);
+    await call(A, "PUT", `/exercises/${squat}/prefs`, { favourite: false });
+    // editing your own exercise saves the setting onto it, so an earlier choice doesn't hide the edit
+    const mine = (await call(A, "POST", "/exercises", { name: "Sided test", unilateral: false })).id;
+    await call(A, "PUT", `/exercises/${mine}/prefs`, { unilateral: true });
+    await call(A, "PUT", `/exercises/${mine}`, { name: "Sided test", unilateral: false });
+    expect((await call(A, "GET", `/exercises/${mine}`)).unilateral).toBe(false);
+    await call(A, "DELETE", `/exercises/${mine}`);
+  });
+
   let routineId = "", benchId = "", workoutId = "";
   it("creates a routine from a template", async () => {
     const r = await call(A, "POST", "/routines", { template: "push" });
