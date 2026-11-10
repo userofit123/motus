@@ -89,10 +89,10 @@ const RING = 2 * Math.PI * 58;
         <button class="btn o" @click="adjustRest(15)">+15</button>
       </div>
       <div class="ab-k ellipsis ab-next">{{ rest.next }}</div>
-      <div v-if="W.restChanged.value" class="ab-offer">
-        <div class="ab-k ab-why">This rest was planned at {{ clock(W.restPlannedNow.value ?? 0) }}, now {{ clock(rest.totalS) }}</div>
-        <button class="qb acc ab-keep" @click="W.keepRest">Use {{ clock(rest.totalS) }} for this exercise from now on</button>
-      </div>
+      <button v-if="W.restChanged.value" class="qb ab-keep" @click="W.keepRest">
+        <span class="ab-why">This rest was planned at {{ clock(W.restPlannedNow.value ?? 0) }}, now {{ clock(rest.totalS) }}</span>
+        <span class="ab-act">Use {{ clock(rest.totalS) }} for this exercise from now on</span>
+      </button>
       <div class="ab-row">
         <button class="ib ab-pause" :class="{ on: paused }" :aria-label="paused ? 'Resume the workout' : 'Pause the workout'" :aria-pressed="paused" @click="emit('pause')"><Icon :name="paused ? 'play' : 'pause'" /></button>
         <button class="btn ab-go" @click="finishRest(true)">{{ rest.done ? "Next set" : "Skip rest" }}</button>
@@ -158,7 +158,7 @@ html.he .ring svg { transform: rotate(-90deg) scaleY(-1); }
 .ab-time.over { color: var(--acc); }
 .ab-next { text-align: center; margin-top: -4px; }
 .ab-rtitle { text-align: center; }
-.ab-offer { display: flex; flex-direction: column; align-items: center; gap: 0; }
-.ab-why { text-align: center; }
-.ab-keep { font-size: 12.5px; min-height: var(--lmh); padding-block: 0; }
+.ab-keep { display: flex; flex-direction: column; align-items: center; gap: 0; line-height: 1.3; text-align: center; padding-block: var(--tdy); font-size: 12.5px; }
+.ab-why { color: var(--tx2); }
+.ab-act { color: var(--acc); }
 </style>
