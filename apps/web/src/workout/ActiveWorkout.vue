@@ -124,8 +124,8 @@ const menu = computed(() => [
   <div v-if="w" class="page wide aw" :class="{ phone: isPhone }" @touchstart.passive="isPhone && ts($event)" @touchend.passive="isPhone && te($event)">
     <div class="aw-top">
       <button class="ib sm plain" aria-label="Minimise" @click="router.push('/')"><Icon name="down" /></button>
-      <div class="grow" style="min-width:0">
-        <div class="aw-name ellipsis" @click="rename">{{ w.name }}</div>
+      <div class="grow" style="min-width:0;cursor:pointer" role="button" tabindex="0" @click="go(w.exercises.length)" @keydown.enter="go(w.exercises.length)">
+        <div class="aw-name ellipsis">{{ w.name }}</div>
         <div class="aw-clock"><b>{{ clock(elapsed(w)) }}</b><span v-if="paused" class="aw-paused">Paused</span><span>{{ done }} of {{ total }} sets</span><span v-if="waiting.length">{{ waiting.length }} waiting to sync</span></div>
       </div>
       <Menu :items="menu" align="start" />

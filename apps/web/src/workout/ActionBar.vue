@@ -71,7 +71,7 @@ const RING = 2 * Math.PI * 58;
     <!-- resting -->
     <template v-if="resting">
       <div class="ab-line">
-        <span class="ab-k grow ellipsis">{{ rest.done ? "Rest over" : rest.label === "Next exercise" ? "Rest before the next exercise" : "Resting" }}</span>
+        <span class="ab-k grow ellipsis ab-rtitle">{{ rest.done ? "Rest over" : rest.label === "Next exercise" ? "Rest before the next exercise" : "Resting" }}</span>
       </div>
       <div class="ab-rest" role="timer">
         <button class="btn o" @click="adjustRest(-15)">-15</button>
@@ -81,7 +81,7 @@ const RING = 2 * Math.PI * 58;
         </div>
         <button class="btn o" @click="adjustRest(15)">+15</button>
       </div>
-      <div class="ab-k ellipsis ab-next">Next: {{ rest.next }}</div>
+      <div class="ab-k ellipsis ab-next">{{ rest.next }}</div>
       <template v-if="W.restChanged.value">
         <div class="ab-k ab-why">This rest was planned at {{ clock(W.restPlannedNow.value ?? 0) }}, now {{ clock(rest.totalS) }}</div>
         <button class="qb ab-keep" @click="W.keepRest">Use {{ clock(rest.totalS) }} for this exercise from now on</button>
@@ -150,6 +150,7 @@ html.he .ring svg { transform: rotate(-90deg) scaleY(-1); }
 .ab-time { position: relative; font-size: 34px; font-weight: 600; letter-spacing: -1px; font-variant-numeric: tabular-nums; }
 .ab-time.over { color: var(--acc); }
 .ab-next { text-align: center; margin-top: -4px; }
+.ab-rtitle { text-align: center; }
 .ab-why { text-align: center; margin-top: -6px; }
 .ab-keep { align-self: center; font-size: 12.5px; padding: 2px 8px; }
 </style>
