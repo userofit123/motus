@@ -136,8 +136,8 @@ const menu = computed<MenuItem[]>(() => [
           <template v-if="e.mechanic"><dt>Type</dt><dd>{{ e.mechanic }}</dd></template>
           <template v-if="e.force"><dt>Force</dt><dd>{{ e.force }}</dd></template>
           <dt>Category</dt><dd>{{ e.category }}</dd>
-          <template v-if="sidesOn"><dt>Sides</dt><dd style="text-transform:none">{{ e.unilateral ? "One at a time: left and right sets, weight for one side" : "Both together: weight is the total moved" }}</dd></template>
-          <template v-if="e.routines?.length"><dt>In routines</dt><dd style="text-transform:none">{{ e.routines.map((r: any) => r.name).join(", ") }}</dd></template>
+          <template v-if="sidesOn"><dt>Sides</dt><dd class="plain">{{ e.unilateral ? "One at a time: left and right sets, weight for one side" : "Both together: weight is the total moved" }}</dd></template>
+          <template v-if="e.routines?.length"><dt>In routines</dt><dd class="plain">{{ e.routines.map((r: any) => r.name).join(", ") }}</dd></template>
         </dl>
         <p v-if="e.license" class="tiny" style="margin-top:16px">From {{ e.author }} · {{ e.license }}</p>
       </div>

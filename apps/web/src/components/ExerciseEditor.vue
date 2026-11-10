@@ -1,9 +1,10 @@
 <script setup lang="ts">
 // Your own exercise: name, how it is tracked, muscles, equipment, steps, and photos or a video link.
-import { ref } from "vue";
+import { ref, computed } from "vue";
 import { MUSCLES, EQUIPMENT, CATEGORIES, muscleName } from "@motus/shared";
 import { api, mediaUrl } from "../api/client";
 import { invalidate } from "../api/live";
+import { useSettings } from "../api/queries";
 import { toast, toastError } from "../core/toast";
 import Sheet from "./Sheet.vue";
 import AppSelect from "./AppSelect.vue";
@@ -14,6 +15,8 @@ import { SIDES_HINT } from "../core/sides";
 const props = defineProps<{ exercise?: any; name?: string }>();
 const emit = defineEmits<{ close: []; saved: [id: string] }>();
 const e = props.exercise;
+const settings = useSettings();
+const sidesOn = computed(() => !!settings.value?.features?.unilateral);
 const f = ref({
   name: e?.name ?? props.name ?? "", tracking: e?.tracking ?? "weight_reps", category: e?.category ?? "strength", equipment: e?.equipment ?? "",
   primaryMuscles: [...(e?.primaryMuscles ?? [])] as string[], secondaryMuscles: [...(e?.secondaryMuscles ?? [])] as string[],
@@ -67,7 +70,7 @@ async function save() {
       </div>
     </div>
     <div class="fld"><label>Video link (optional)</label><input v-model="f.videoUrl" placeholder="https://…" /></div>
-    <label class="tgl"><div class="grow"><div class="t">One side at a time</div><div class="s">Single-arm or single-leg: {{ SIDES_HINT.toLowerCase() }}</div></div><span class="tg"><input v-model="f.unilateral" type="checkbox" /></span></label>
+    <label v-if="sidesOn" class="tgl"><div class="grow"><div class="t">One side at a time</div><div class="s">Single-arm or single-leg: {{ SIDES_HINT.toLowerCase() }}</div></div><span class="tg"><input v-model="f.unilateral" type="checkbox" /></span></label>
     <template #foot><button class="btn o" @click="emit('close')">Cancel</button><button class="btn" :disabled="busy" @click="save">Save</button></template>
   </Sheet>
 </template>

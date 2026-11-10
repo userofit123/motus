@@ -7,7 +7,10 @@ import { uuidv7 } from "./ids";
 
 // exercises done one side at a time by default (left and right sets); anyone can change it per exercise.
 // Migration 019 applies the same names to catalogs added before.
-const ONE_SIDE = /\b(one[- ]arm(ed)?|single[- ]arm(ed)?|one[- ]leg(ged)?|single[- ]leg(ged)?|one[- ]handed|single[- ]handed|alternat(e|ing)|unilateral|split squats?|lunges?|step[- ]?ups?|pistol|bulgarian)\b/i;
+// Names the pattern catches but that are not one-sided: alternating both-leg moves and a sprint.
+const NOT_ONE_SIDE = /\b(heel touchers?|leg diagonal bound|lunge sprint)\b/i;
+const ONE_SIDE_NAME = /\b(one[- ]arm(ed)?|single[- ]arm(ed)?|one[- ]leg(ged)?|single[- ]leg(ged)?|one[- ]handed|single[- ]handed|alternat(e|ing)|unilateral|split squats?|lunges?|step[- ]?ups?|pistol|bulgarian)\b/i;
+const isOneSided = (name: string) => ONE_SIDE_NAME.test(name) && !NOT_ONE_SIDE.test(name);
 
 function trackingOf(e: RawExercise): Tracking {
   if (e.category === "stretching") return "duration";
@@ -24,6 +27,8 @@ export async function seedCatalog(db: Db): Promise<number> {
   const have = new Set((await db.admin.query<{ source_id: string }>("SELECT source_id FROM exercises WHERE owner_id IS NULL AND source = $1", [SOURCE])).rows.map((r) => r.source_id));
   // loaded only here: the data is large, and the web app's copy of a server account takes the server's catalog instead
   const { exercises } = await import("@motus/exercise-data");
+  // Migration 019 once flagged these by mistake; clear the default (a no-op once cleared, and personal overrides live in exercise_prefs).
+  await db.admin.query(`UPDATE exercises SET unilateral = false, updated_at = now() WHERE owner_id IS NULL AND source = $1 AND unilateral AND name ~* '\\y(heel touchers?|leg diagonal bound|lunge sprint)\\y'`, [SOURCE]);
   const missing = exercises.filter((e) => !have.has(e.id));
   if (!missing.length) return 0;
   await db.tx(async (q) => {
@@ -32,7 +37,7 @@ export async function seedCatalog(db: Db): Promise<number> {
       const vals: unknown[] = [];
       const rows = chunk.map((e, j) => {
         const b = j * 16;
-        vals.push(uuidv7(), SOURCE, e.id, e.name, e.category, e.equipment, e.mechanic, e.force, e.level, trackingOf(e), ONE_SIDE.test(e.name),
+        vals.push(uuidv7(), SOURCE, e.id, e.name, e.category, e.equipment, e.mechanic, e.force, e.level, trackingOf(e), isOneSided(e.name),
           e.primaryMuscles, e.secondaryMuscles, e.instructions, e.images.map((p) => "lib:" + p), LICENSE);
         return `($${b + 1},NULL,$${b + 2},$${b + 3},$${b + 4},$${b + 5},$${b + 6},$${b + 7},$${b + 8},$${b + 9},$${b + 10},$${b + 11},$${b + 12},$${b + 13},$${b + 14},$${b + 15},$${b + 16},'${AUTHOR}')`;
       });
