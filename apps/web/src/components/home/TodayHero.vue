@@ -96,7 +96,7 @@ const doneCount = computed(() => week.value.filter((d) => d.done).length);
       <button class="btn tonal" @click="startOpen = true"><Icon name="play" :size="16" />Start a workout</button>
     </div>
   </div>
-  <div v-else class="card hero today" :class="{ live: !!h.active && sel === today }">
+  <div v-else class="card hero today">
     <div class="ch"><span class="bi"><Icon name="play" :size="15" /></span><span class="t grow">{{ sel === today ? "Today" : dayLabel }}</span>
       <button v-if="sel !== today" class="tlnk" @click="openDay">Open in calendar<Icon name="right" :size="14" /></button></div>
 
