@@ -703,6 +703,7 @@ This is the heart of the tracker. One simple model (M-74):
   the exercise's own increment, else Settings'.
 - Going up: every working set (warm-ups and drop sets don't decide) reached the top of its rep range (or its
   target when there is no range): next time one step up, snapped to the step's grid, reps back to the bottom.
+  A drop set moves with the set it drops from, by the same amount, and starts again at the bottom like it.
   Going down: N workouts in a row with missed reps: one step down. Assisted exercises move the help the
   other way. Exercises without weight or reps (bodyweight, timed, distance) only take today's numbers.
 - One pure function, `planNext` (@motus/shared), lists it on the Finish screen and saves it in the engine at

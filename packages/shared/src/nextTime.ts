@@ -145,8 +145,9 @@ export function planNext<R extends RoutineItemLike>(exercises: R[], w: { exercis
         let shift = 0;
         const moved = next.map((s, i) => {
           if (s.kind === "warmup" || s.weightKg == null) return s;
-          // a drop set moves with the set it drops from
-          if (s.kind === "drop") return shift ? { ...s, weightKg: Math.max(0, Math.round((s.weightKg + shift) * 100) / 100) } : s;
+          // a drop set moves with the set it drops from, by the same amount (so the gap between them stays), and its
+          // reps start again like that set's: today's drop reps were done at the old, lighter weight
+          if (s.kind === "drop") return shift ? { ...s, weightKg: Math.max(0, Math.round((s.weightKg + shift) * 100) / 100), reps: sets[i]!.reps, ...(s.startReps != null ? { startReps: null } : {}) } : s;
           const to = move(s.weightKg);
           shift = to - s.weightKg;
           // up: starting reps back to the bottom of the range (or the target); down: the target stays
