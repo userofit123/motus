@@ -166,7 +166,7 @@ await loaded(routines, folders, ...(settings.value.features.programs ? [programs
     </div>
 </Transition>
 
-    <ReorderSheet v-if="reorderGroup" :title="`Reorder ${reorderGroup.name || 'routines'}`" hint="The order of the routines in this list." show-color
+    <ReorderSheet v-if="reorderGroup" :title="`Reorder ${reorderGroup.name || 'routines'}`" hint="Drag to reorder the routines in this list." show-color
       :items="reorderGroup.items.map((r) => ({ id: r.id, title: r.name, sub: exercises(r.exerciseCount), color: r.color }))" @move="moveRoutine" @close="reorderKey = null" />
     <Sheet v-if="fromTemplate" title="Start from a template" size="wide" @close="fromTemplate = false">
       <p class="tiny hgap">A copy is added to your routines, ready to change.</p>

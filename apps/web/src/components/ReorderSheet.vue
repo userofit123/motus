@@ -26,3 +26,8 @@ const drag = (ev: PointerEvent, i: number) =>
     </TransitionGroup>
   </Sheet>
 </template>
+
+<style scoped>
+/* muted like the routine editor's handle */
+.dragh { color: var(--tx2); }
+</style>

@@ -222,7 +222,7 @@ await loaded(goals, metrics, routines, exercises, types, body);
     <div class="grid g3"><GoalCard v-for="g in list" :key="g.id" :goal="g" @click="open = g.id" /></div>
 
     <GoalSheet v-if="open" :id="open" @close="open = null" @edit="startEdit" @status="(g, st) => { setStatus.run(g.id, st); open = null; }" @delete="del" />
-    <ReorderSheet v-if="reordering" title="Reorder goals" hint="The order of your active goals, here and in Home's Goals."
+    <ReorderSheet v-if="reordering" title="Reorder goals" hint="Drag to reorder your active goals, here and in Home's Goals."
       :items="activeGoals.map((g) => ({ id: g.id, title: g.title, sub: periodLabel(g, settings) }))" @move="moveGoal" @close="reordering = false" />
     <Sheet v-if="creating || editId" :title="editId ? 'Edit goal' : 'New goal'" @close="closeForm">
       <div class="fld"><label>What is it about?</label><ChoiceTiles v-model="f.scope" :options="SCOPE_TILES" label="What is it about?" />

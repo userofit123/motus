@@ -17,6 +17,7 @@ import { toastError } from "../core/toast";
 import Icon from "../components/Icon.vue";
 import Menu from "../components/Menu.vue";
 import Sheet from "../components/Sheet.vue";
+import ReorderSheet from "../components/ReorderSheet.vue";
 import NoteItem from "../components/NoteItem.vue";
 import ReminderItem from "../components/ReminderItem.vue";
 import ExerciseCard from "./ExerciseCard.vue";
@@ -107,6 +108,7 @@ async function discard() {
   endWorkout(id);
 }
 async function rename() { const n = await prompt("Workout name", { value: w.value!.name }); if (n) W.patchWorkout({ name: n }); }
+const moveTo = (from: number, to: number) => { const ids = w.value!.exercises.map((e) => e.id); if (to < 0 || to >= ids.length || from === to) return; ids.splice(to, 0, ids.splice(from, 1)[0]!); W.reorder(ids); };
 const move = (i: number, d: number) => { const ids = w.value!.exercises.map((e) => e.id); const j = i + d; if (j < 0 || j >= ids.length) return; [ids[i], ids[j]] = [ids[j]!, ids[i]!]; W.reorder(ids); };
 const togglePause = () => W.togglePause();
 // in groups: its exercises, notes and reminders, its settings, then Cancel on its own
@@ -205,11 +207,7 @@ const menu = computed(() => [
     <FinishSheet v-if="finishing" @close="finishing = false" @cancel="finishing = false; discard()" @open="(i) => { finishing = false; go(i); }" />
     <ExercisePicker v-if="adding" multi :exclude="w.exercises.map((e) => e.exerciseId)" @close="adding = false" @pick="(ids) => { adding = false; W.addExercises(ids); }" />
     <Sheet v-if="settingsOpen" title="Workout settings" @close="settingsOpen = false"><WorkoutSettings v-model="overrides" /></Sheet>
-    <Sheet v-if="listOpen" title="Exercises" @close="listOpen = false">
-      <TransitionGroup tag="div" name="mv" class="list aw-list"><div v-for="(e, i) in w.exercises" :key="e.id" class="li" :class="{ cur: i === W.state.cur, skip: e.status === 'skipped' }">
-        <div class="grow" @click="go(i); listOpen = false"><div class="t">{{ e.exercise.name }}</div><div class="s">{{ e.sets.filter((s) => s.done).length }}/{{ e.sets.length }} sets</div></div>
-        <button class="ib sm plain" :disabled="i === 0" @click="move(i, -1)"><Icon name="up" :size="16" /></button><button class="ib sm plain" :disabled="i === w.exercises.length - 1" @click="move(i, 1)"><Icon name="down" :size="16" /></button></div></TransitionGroup>
-    </Sheet>
+    <ReorderSheet v-if="listOpen" title="Reorder exercises" hint="Drag to reorder, or use the arrows." :items="w.exercises.map((e) => ({ id: e.id, title: e.exercise.name, sub: `${e.sets.filter((s) => s.done).length}/${e.sets.length} sets` }))" @move="moveTo" @close="listOpen = false" />
   </div>
   <!-- only once we know: while the app opens, the workout may still be on its way -->
   <div v-else-if="W.active.isFetched.value && !W.active.isFetching.value" class="page"><div class="empty"><b>No workout in progress</b><button class="btn" @click="router.push('/')">Home</button></div></div>
