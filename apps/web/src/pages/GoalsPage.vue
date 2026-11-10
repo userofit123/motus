@@ -12,6 +12,7 @@ import { confirm } from "../core/ask";
 import { toastError, toast } from "../core/toast";
 import Icon from "../components/Icon.vue";
 import Sheet from "../components/Sheet.vue";
+import ReorderSheet from "../components/ReorderSheet.vue";
 import AppSelect from "../components/AppSelect.vue";
 import { WEEKDAYS, daysShort, periodLabel } from "../core/goals";
 import ChoiceTiles from "../components/ChoiceTiles.vue";
@@ -219,16 +220,8 @@ await loaded(goals, metrics, routines, exercises, types, body);
     <div class="grid g3"><GoalCard v-for="g in list" :key="g.id" :goal="g" @click="open = g.id" /></div>
 
     <GoalSheet v-if="open" :id="open" @close="open = null" @edit="startEdit" @status="(g, st) => { setStatus.run(g.id, st); open = null; }" @delete="del" />
-    <Sheet v-if="reordering" title="Reorder goals" @close="reordering = false">
-      <p class="tiny hgap">The order of your active goals, here and in Home's Goals.</p>
-      <TransitionGroup name="mv" tag="div">
-        <div v-for="(g, i) in activeGoals" :key="g.id" class="tgl">
-          <div class="grow"><div class="t">{{ g.title }}</div><div class="s">{{ periodLabel(g, settings) }}</div></div>
-          <button class="ib sm plain" :class="{ end: i === 0 }" :aria-disabled="i === 0" :aria-label="`Move ${g.title} up`" :title="`Move ${g.title} up`" @click="moveGoal(g.id, -1)"><Icon name="up" :size="18" /></button>
-          <button class="ib sm plain" :class="{ end: i === activeGoals.length - 1 }" :aria-disabled="i === activeGoals.length - 1" :aria-label="`Move ${g.title} down`" :title="`Move ${g.title} down`" @click="moveGoal(g.id, 1)"><Icon name="down" :size="18" /></button>
-        </div>
-      </TransitionGroup>
-    </Sheet>
+    <ReorderSheet v-if="reordering" title="Reorder goals" hint="The order of your active goals, here and in Home's Goals."
+      :items="activeGoals.map((g) => ({ id: g.id, title: g.title, sub: periodLabel(g, settings) }))" @move="moveGoal" @close="reordering = false" />
     <Sheet v-if="creating || editId" :title="editId ? 'Edit goal' : 'New goal'" @close="closeForm">
       <div class="fld"><label>What is it about?</label><ChoiceTiles v-model="f.scope" :options="SCOPE_TILES" label="What is it about?" />
         <p v-if="SCOPE_HELP[f.scope]" class="tiny" style="margin-top:8px">{{ SCOPE_HELP[f.scope] }}</p></div>

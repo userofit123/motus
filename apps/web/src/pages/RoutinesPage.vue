@@ -10,12 +10,13 @@ import { api } from "../api/client";
 import { ago } from "../core/format";
 import { readJson, writeJson } from "../core/prefs";
 import { confirm, prompt } from "../core/ask";
-import { toast } from "../core/toast";
+import { toast, toastError } from "../core/toast";
 import { invalidate } from "../api/live";
 import Icon from "../components/Icon.vue";
 import Menu from "../components/Menu.vue";
 import Collapse from "../components/Collapse.vue";
 import Sheet from "../components/Sheet.vue";
+import ReorderSheet from "../components/ReorderSheet.vue";
 import ProgramsSection from "../components/ProgramsSection.vue";
 import TemplateList from "../components/TemplateList.vue";
 import { useSettings } from "../api/queries";
@@ -35,7 +36,10 @@ const archived = useRoutines(true);
 const folders = useFolders();
 const q = ref("");
 const fromTemplate = ref(route.query.template === "1"); // Home's first-run card opens the templates straight away
-const list = computed(() => (showArchived.value ? archived.data.value ?? [] : (routines.data.value ?? []).filter((r) => !r.archived)).filter((r) => r.name.toLowerCase().includes(q.value.toLowerCase())));
+// a reorder in flight shows its new order straight away, before the server has it
+const localOrder = ref<string[] | null>(null);
+const byLocal = (rs: RoutineSummary[]) => { const o = localOrder.value; return o ? [...rs].sort((a, b) => o.indexOf(a.id) - o.indexOf(b.id)) : rs; };
+const list = computed(() => byLocal((showArchived.value ? archived.data.value ?? [] : (routines.data.value ?? []).filter((r) => !r.archived)).filter((r) => r.name.toLowerCase().includes(q.value.toLowerCase()))));
 const groups = computed(() => {
   const fs = (folders.data.value ?? []) as any[];
   const out: { id: string | null; name: string; items: RoutineSummary[] }[] = [];
@@ -60,12 +64,30 @@ async function delFolder(f: { id: string; name: string }) { if (await confirm(`D
 // ----- reorder: the routines of one group (folder, Pinned or Other), moved with arrows -----
 const reorderKey = ref<string | null>(null);
 const reorderGroup = computed(() => groups.value.find((g) => fkey(g) === reorderKey.value) ?? null);
-async function moveRoutine(rid: string, dir: -1 | 1) {
+let pending = 0, gen = 0, queue: Promise<unknown> = Promise.resolve();
+function moveRoutine(rid: string, dir: -1 | 1) {
   const ids = (reorderGroup.value?.items ?? []).map((r) => r.id), i = ids.indexOf(rid), j = i + dir;
   if (i < 0 || j < 0 || j >= ids.length) return;
-  [ids[i], ids[j]] = [ids[j]!, ids[i]!];
-  await api.post("/routines/reorder", { ids });
-  invalidate(["routines"]);
+  // swap the two within the full saved order (every routine by position, archived and pinned ones too), so routines
+  // of other groups, hidden or archived ones keep their place; the server numbers the list it gets 0..n-1.
+  // Pinned is ordered by position too, so a move there only swaps those two and leaves the folders' orders alone.
+  const full = localOrder.value ?? [...(routines.data.value ?? [])].sort((x, y) => x.position - y.position).map((r) => r.id), a = full.indexOf(rid), b = full.indexOf(ids[j]!);
+  if (a < 0 || b < 0) return;
+  const next = [...full];
+  [next[a], next[b]] = [next[b]!, next[a]!];
+  localOrder.value = next;
+  // one save at a time, so quick presses arrive in order and the last one wins
+  pending++;
+  const g = gen;
+  queue = queue.then(async () => {
+    if (g !== gen) return; // an earlier save failed: the presses queued behind it are dropped with it
+    try {
+      await api.post("/routines/reorder", { ids: next });
+      if (--pending === 0) { await routines.refetch(); if (pending === 0 && g === gen) localOrder.value = null; }
+    } catch (e) {
+      gen++; pending = 0; localOrder.value = null; invalidate(["routines"]); toastError(e);
+    }
+  });
 }
 async function useTemplate(slug: string) {
   const r = await api.post("/routines", { template: slug });
@@ -74,6 +96,7 @@ async function useTemplate(slug: string) {
   toast("Routine created");
   router.push(`/routines/${r.id}`);
 }
+const exercises = (n: number) => `${n} exercise${n === 1 ? "" : "s"}`;
 const menuFor = useRoutineMenu();
 const items = (r: RoutineSummary) => menuFor(r);
 // show the page once its data is in, all at once
@@ -112,8 +135,8 @@ await loaded(routines, folders, ...(settings.value.features.programs ? [programs
           <h2>{{ g.name }}</h2><span class="sep" aria-hidden="true">·</span><span class="fn">{{ g.items.length }}</span>
           <Icon name="down" :size="16" class="fc" :class="{ shut: isFolded(g) }" />
         </button>
-        <Menu v-if="(g.id && g.id !== 'pinned') || (g.items.length > 1 && !showArchived)" :items="[
-          ...(g.items.length > 1 && !showArchived ? [{ label: 'Reorder routines', icon: 'drag', run: () => (reorderKey = fkey(g)) }] : []),
+        <Menu v-if="(g.id && g.id !== 'pinned') || (g.items.length > 1 && !showArchived && !q)" :items="[
+          ...(g.items.length > 1 && !showArchived && !q ? [{ label: 'Reorder routines', icon: 'drag', run: () => (reorderKey = fkey(g)) }] : []),
           ...(g.id && g.id !== 'pinned' ? [{ label: 'Rename', icon: 'edit', run: () => renameFolder(g as any) }, { label: 'Delete folder', icon: 'trash', danger: true, sep: true, run: () => delFolder(g as any) }] : [])]" /></div>
       <Collapse :open="!isFolded(g) || !!q">
       <div v-if="!g.items.length" class="tiny hgap">Empty. Move a routine here from its ⋮ menu.</div>
@@ -123,7 +146,7 @@ await loaded(routines, folders, ...(settings.value.features.programs ? [programs
           <MuscleFig :muscles="r.muscles" :helpers="r.helpers" />
           <div class="rmain">
             <div class="row" style="align-items:flex-start">
-              <div class="grow" style="min-width:0"><div class="row" style="gap:8px"><span class="dot" :style="{ background: r.color ?? undefined }" /><span class="ellipsis" style="font-weight:600;font-size:15.5px">{{ r.name }}</span></div><div class="tiny" style="margin-top:2px">{{ r.exerciseCount }} exercises · {{ routineTime(r.estimateS, r.usual) }}</div></div>
+              <div class="grow" style="min-width:0"><div class="row" style="gap:8px"><span class="dot" :style="{ background: r.color ?? undefined }" /><span class="ellipsis" style="font-weight:600;font-size:15.5px">{{ r.name }}</span></div><div class="tiny" style="margin-top:2px">{{ exercises(r.exerciseCount) }} · {{ routineTime(r.estimateS, r.usual) }}</div></div>
               <span @click.stop><Menu :items="items(r)" /></span>
             </div>
             <div class="tiny ellipsis" style="margin:10px 0 0">{{ r.exerciseNames.join(" · ") || "No exercises yet" }}</div>
@@ -140,17 +163,8 @@ await loaded(routines, folders, ...(settings.value.features.programs ? [programs
     </div>
 </Transition>
 
-    <Sheet v-if="reorderGroup" :title="`Reorder ${reorderGroup.name || 'routines'}`" @close="reorderKey = null">
-      <p class="tiny hgap">The order of the routines in this list.</p>
-      <TransitionGroup name="mv" tag="div">
-        <div v-for="(r, i) in reorderGroup.items" :key="r.id" class="tgl">
-          <span class="dot" :style="{ background: r.color ?? undefined }" />
-          <div class="grow"><div class="t">{{ r.name }}</div><div class="s">{{ r.exerciseCount }} exercises</div></div>
-          <button class="ib sm plain" :class="{ end: i === 0 }" :aria-disabled="i === 0" :aria-label="`Move ${r.name} up`" :title="`Move ${r.name} up`" @click="moveRoutine(r.id, -1)"><Icon name="up" :size="18" /></button>
-          <button class="ib sm plain" :class="{ end: i === reorderGroup.items.length - 1 }" :aria-disabled="i === reorderGroup.items.length - 1" :aria-label="`Move ${r.name} down`" :title="`Move ${r.name} down`" @click="moveRoutine(r.id, 1)"><Icon name="down" :size="18" /></button>
-        </div>
-      </TransitionGroup>
-    </Sheet>
+    <ReorderSheet v-if="reorderGroup" :title="`Reorder ${reorderGroup.name || 'routines'}`" hint="The order of the routines in this list." show-color
+      :items="reorderGroup.items.map((r) => ({ id: r.id, title: r.name, sub: exercises(r.exerciseCount), color: r.color }))" @move="moveRoutine" @close="reorderKey = null" />
     <Sheet v-if="fromTemplate" title="Start from a template" size="wide" @close="fromTemplate = false">
       <p class="tiny hgap">A copy is added to your routines, ready to change.</p>
       <TemplateList @pick="useTemplate" />
