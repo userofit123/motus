@@ -131,9 +131,11 @@ describe("engine", () => {
     const sess = (await call(A, "GET", `/exercises/${benchId}/history`)).sessions;
     expect(sess.length).toBe(3);
     expect(sess[0].status).toBe("skipped");
-    // the Finish screen compares with that session too, not "first"
+    // ...but the summary only counts sessions where it was done
+    expect((await call(A, "GET", `/exercises/${benchId}/history`)).summary.timesDone).toBe(2);
+    // the Finish screen compares with the earlier 85 kg session, not the empty one
     const rep = (await call(A, "GET", `/workouts/${w.id}`)).report;
-    expect(rep.perExercise.find((x: any) => x.exerciseId === benchId).verdict).not.toBe("first");
+    expect(rep.perExercise.find((x: any) => x.exerciseId === benchId).last.maxWeightKg).toBe(85);
     await call(A, "POST", `/workouts/${w.id}/discard`, {});
     await call(A, "DELETE", `/workouts/${empty.id}`); // the tests below count workouts
   });

@@ -109,15 +109,17 @@ export function libraryRoutes(r: Router) {
   r.get("/exercises/:id/history", async ({ q }, p, _b, qs) => {
     const sessions = await exerciseSessions(q, id(p.id), Math.min(500, Number(qs.limit) || 200), null, true);
     const { best, repMax } = recordsOf(sessions);
-    const positions = sessions.map((s) => s.position);
-    const hours = sessions.map((s) => new Date(s.startedAt).getHours());
+    // the list keeps skipped sessions, but the summary only counts sessions where it was done
+    const done = sessions.filter((s) => s.sets.length);
+    const positions = done.map((s) => s.position);
+    const hours = done.map((s) => new Date(s.startedAt).getHours());
     const mode = (a: number[]) => { const m = new Map<number, number>(); a.forEach((x) => m.set(x, (m.get(x) ?? 0) + 1)); return [...m].sort((x, y) => y[1] - x[1])[0]?.[0] ?? null; };
     return {
       sessions, records: best, repMax,
       summary: {
-        timesDone: sessions.length, firstAt: sessions.at(-1)?.startedAt ?? null, lastAt: sessions[0]?.startedAt ?? null,
+        timesDone: done.length, firstAt: done.at(-1)?.startedAt ?? null, lastAt: done[0]?.startedAt ?? null,
         usualPosition: mode(positions), usualHour: mode(hours),
-        firstPositionShare: sessions.length ? sessions.filter((s) => s.position === 1).length / sessions.length : 0,
+        firstPositionShare: done.length ? done.filter((s) => s.position === 1).length / done.length : 0,
       },
     };
   });
