@@ -49,7 +49,8 @@ const perSide = computed(() => { const w = props.ex.sets.filter((x) => x.kind !=
    every cell of a row stretches to the tallest so "starts at" under the reps doesn't leave the kg box shorter */
 .pv { display: flex; flex-direction: column; align-items: center; justify-content: center; justify-self: center; align-self: stretch; width: 100%; max-width: 92px; text-align: center; font-variant-numeric: tabular-nums; font-size: 16px; font-weight: 600; color: var(--tx); padding: calc(var(--tdy) / 2) 4px; border-radius: 10px; background: color-mix(in srgb, var(--s2) 55%, transparent); }
 /* nothing planned: just a quiet dash, no box */
-.pv.none { color: var(--tx2); font-weight: 500; background: none; }
+/* an empty value keeps its box, so the columns read as one grid; only the "-" is muted */
+.pv.none { color: var(--tx2); font-weight: 500; }
 .pv small { font-size: 11px; font-weight: 500; color: var(--tx2); }
 .sk.r { background: var(--accc); color: var(--onc); }
 </style>
