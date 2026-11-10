@@ -23,7 +23,7 @@ const ICONS: Record<string, string> = {
   check: "M5 12.5 10 17 19 7",
   left: "M15 18l-6-6 6-6",
   right: "M9 18l6-6-6-6",
-  split: "M15 3 9 21M3.5 3.5v6h4M16.5 21v-7h2.5a1.75 1.75 0 0 1 0 3.5h-2.5M19 17.5l2 3.5",
+  split: "M15 3 9 21M3 3v7h4.5M16.5 21v-7h2.25a2 2 0 0 1 0 4h-2.25M18.75 18 21 21",
   expand: "M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7",
   shrink: "M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7",
   down: "M6 9l6 6 6-6",
