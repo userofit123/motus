@@ -99,12 +99,6 @@ async function quick() {
   }
   invalidate(["workouts"]);
 }
-async function addPair() {
-  // the numbers of the last set of a side (else the last set), so a pair added after pairs carries on from them
-  const last = [...props.e.sets].reverse().find((s) => s.side && s.kind !== "warmup" && s.kind !== "drop") ?? props.e.sets.at(-1);
-  await api.post(`/workout-exercises/${props.e.id}/sets`, { sets: ["L", "R"].map((side) => ({ kind: "normal", side, weightKg: last?.weightKg ?? null, reps: last?.reps ?? null, durationS: last?.durationS ?? null, distanceM: last?.distanceM ?? null })) });
-  invalidate(["workouts"]);
-}
 async function addWarmups() {
   const work = props.e.sets.find((s) => s.kind !== "warmup" && s.weightKg);
   if (!work?.weightKg) { toast("Set a working weight first", { kind: "err" }); return; }
@@ -122,7 +116,7 @@ const menu = computed(() => [
   // any exercise can be switched to left and right sets (the exercise's default is only a start)
   { ...sidesItem(props.e.exerciseId, sided.value, (on) => { if (props.e.exercise) props.e.exercise.unilateral = on; }), sep: true, hidden: !feat.value.unilateral },
   // one-sided exercises have this as a button under the sets; any other exercise can still get a left and a right set
-  { label: "Add a left and right set", hint: "One set for each side, beside the others", icon: "plus", run: addPair, hidden: !feat.value.unilateral || sided.value },
+  { label: "Add a left and right set", hint: "One set for each side, beside the others", icon: "plus", run: () => W.addPair(props.e), hidden: !feat.value.unilateral || sided.value },
   { label: "Rest between sets", sep: true, icon: "timer", run: () => (restEdit.value = "between") },
   { label: "Rest after this exercise", icon: "timer", run: () => (restEdit.value = "after") },
   { label: "Add warm-up sets", icon: "flame", run: addWarmups, hidden: !feat.value.warmupCalc || !showW.value },
@@ -188,7 +182,7 @@ const nowId = computed(() => (W.state.active === props.index ? visibleSets.value
     <div class="row aw-add">
       <!-- secondary pills (the bottom bar has the one main button); a one-sided exercise adds both sides as its main
            step, the others add one set. "and", not a second "+": a text plus beside the icon read as a smaller icon -->
-      <button v-if="sided" class="fchip acc" title="Add a left and a right set" @click="addPair"><Icon name="plus" :size="14" />Left and right</button>
+      <button v-if="sided" class="fchip acc" title="Add a left and a right set" @click="W.addPair(e)"><Icon name="plus" :size="14" />Left and right</button>
       <button class="fchip" :class="{ acc: !sided }" @click="W.addSet(e)"><Icon name="plus" :size="14" />Set</button>
       <button v-if="e.repRestS" class="fchip" :class="{ on: repTimer }" @click="toggleRepTimer"><Icon name="timer" :size="14" />{{ repTimer ? "Stop rep timer" : `Rep timer ${e.repRestS}s` }}</button>
       <div class="grow" />

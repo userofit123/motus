@@ -237,11 +237,23 @@ export function useWorkout() {
   async function addSet(e: WorkoutExercise) {
     const last = e.sets.at(-1);
     // the id is made here, so the new set can be ticked or changed straight away, even offline
-    // a general set (both sides together); left and right ones come from "Left + right" or the set's menu
+    // a general set (both sides together); left and right ones come from addPair or the set's menu
     const s = { ...(last ?? ({} as any)), id: crypto.randomUUID(), done: false, doneAt: null, kind: last?.kind === "warmup" || last?.kind === "drop" ? "normal" : last?.kind ?? "normal", side: null, position: e.sets.length, prefilled: true, pr: [] };
     e.sets.push(s);
     if (e.status === "done") e.status = "pending";
     await call("post", `/workout-exercises/${e.id}/sets`, { id: s.id, kind: s.kind, weightKg: s.weightKg ?? null, reps: s.reps ?? null, durationS: s.durationS ?? null, distanceM: s.distanceM ?? null, restPlannedS: s.restPlannedS ?? null, side: null, prefilled: true }, true);
+  }
+  /** A left and a right set at the end, shown at once like addSet (ids made here, one send through the outbox), with
+   * the numbers of the last set of a side (else the last set), so a pair added after pairs carries on from them.
+   * No rest of their own: the plan gives none between the left and the right one. */
+  async function addPair(e: WorkoutExercise) {
+    const last = [...e.sets].reverse().find((s) => s.side && s.kind !== "warmup" && s.kind !== "drop") ?? e.sets.at(-1);
+    const pair = (["L", "R"] as const).map((side, i) => ({ ...(last ?? ({} as any)), id: crypto.randomUUID(), done: false, doneAt: null, kind: "normal", side,
+      restPlannedS: null, restActualS: null, position: e.sets.length + i, prefilled: true, pr: [] }) as WorkoutSet);
+    e.sets.push(...pair);
+    if (e.status === "done") e.status = "pending";
+    await call("post", `/workout-exercises/${e.id}/sets`, { sets: pair.map((s) => ({ id: s.id, kind: "normal", side: s.side, weightKg: s.weightKg ?? null, reps: s.reps ?? null,
+      durationS: s.durationS ?? null, distanceM: s.distanceM ?? null, restPlannedS: null, prefilled: true })) }, true);
   }
   /** A drop set: straight after this set (or its last drop), about 20% lighter, with no rest before it. */
   async function addDrop(e: WorkoutExercise, from: WorkoutSet) {
@@ -365,7 +377,7 @@ export function useWorkout() {
     if (!p) state.w!.pausedS = (state.w!.pausedS ?? 0) + Math.max(0, Math.round((Date.now() - new Date(state.w!.pauseStartedAt!).getTime()) / 1000));
     patchWorkout({ pause: p, pauseStartedAt: p ? new Date().toISOString() : null });
   }
-  return { state, prefs, settings, fmt, incKg, ex, activate, restChanged, restPlannedNow, keptRest, keepRest, skipExercise, tick, editSet, addSet, addDrop, removeSet, setStatus, reorder, patchExercise, addExercises, removeExercise, patchWorkout, togglePause, restFor, call, active };
+  return { state, prefs, settings, fmt, incKg, ex, activate, restChanged, restPlannedNow, keptRest, keepRest, skipExercise, tick, editSet, addSet, addPair, addDrop, removeSet, setStatus, reorder, patchExercise, addExercises, removeExercise, patchWorkout, togglePause, restFor, call, active };
 }
 
 /**
