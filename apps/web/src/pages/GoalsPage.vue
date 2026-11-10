@@ -67,16 +67,18 @@ const scopeOpts = computed(() => SCOPES.map(([k, l, ic]) => ({ value: k, label: 
 function clearFilters() { filter.value = "active"; scopeFilter.value = ""; }
 const open = ref<string | null>(null);
 
-// ----- reorder: the active goals, moved with arrows; achieved and archived ones keep their own lists -----
+// ----- reorder: the active goals, dragged or moved with arrows; achieved and archived ones keep their own lists -----
 const reordering = ref(false);
 const activeGoals = computed(() => ordered.value.filter((g) => g.status === "active"));
-function moveGoal(id: string, dir: -1 | 1) {
-  const ids = activeGoals.value.map((g) => g.id), i = ids.indexOf(id), j = i + dir;
-  if (i < 0 || j < 0 || j >= ids.length) return;
-  // swap the two active goals within the full saved order, so achieved and archived goals keep their place
-  // in between and one made active again comes back where it was
-  const full = ordered.value.map((g) => g.id), a = full.indexOf(id), b = full.indexOf(ids[j]!);
-  [full[a], full[b]] = [full[b]!, full[a]!];
+function moveGoal(from: number, to: number) {
+  const ids = activeGoals.value.map((g) => g.id);
+  if (from < 0 || to < 0 || from >= ids.length || to >= ids.length || from === to) return;
+  // put the goal at its new place among the active goals' own slots within the full saved order, so achieved and
+  // archived goals keep their place in between and one made active again comes back where it was
+  const full = ordered.value.map((g) => g.id), slots = ids.map((id) => full.indexOf(id));
+  const grp = [...ids];
+  grp.splice(to, 0, grp.splice(from, 1)[0]!);
+  slots.slice().sort((x, y) => x - y).forEach((k, n) => { full[k] = grp[n]!; });
   saveSettings({ goalsOrder: full }, { quiet: true });
 }
 

@@ -61,20 +61,23 @@ async function newFolder() {
 }
 async function renameFolder(f: { id: string; name: string }) { const n = await prompt("Rename folder", { value: f.name }); if (n) { await api.put(`/folders/${f.id}`, { name: n }); invalidate(["routines"]); toast("Folder renamed"); } }
 async function delFolder(f: { id: string; name: string }) { if (await confirm(`Delete the folder ${f.name}?`, { text: "Its routines stay, without a folder.", ok: "Delete", danger: true })) { await api.del(`/folders/${f.id}`); invalidate(["routines"]); toast("Folder deleted"); } }
-// ----- reorder: the routines of one group (folder, Pinned or Other), moved with arrows -----
+// ----- reorder: the routines of one group (folder, Pinned or Other), dragged or moved with arrows -----
 const reorderKey = ref<string | null>(null);
 const reorderGroup = computed(() => groups.value.find((g) => fkey(g) === reorderKey.value) ?? null);
 let pending = 0, gen = 0, queue: Promise<unknown> = Promise.resolve();
-function moveRoutine(rid: string, dir: -1 | 1) {
-  const ids = (reorderGroup.value?.items ?? []).map((r) => r.id), i = ids.indexOf(rid), j = i + dir;
-  if (i < 0 || j < 0 || j >= ids.length) return;
-  // swap the two within the full saved order (every routine by position, archived and pinned ones too), so routines
-  // of other groups, hidden or archived ones keep their place; the server numbers the list it gets 0..n-1.
-  // Pinned is ordered by position too, so a move there only swaps those two and leaves the folders' orders alone.
-  const full = localOrder.value ?? [...(routines.data.value ?? [])].sort((x, y) => x.position - y.position).map((r) => r.id), a = full.indexOf(rid), b = full.indexOf(ids[j]!);
-  if (a < 0 || b < 0) return;
+function moveRoutine(from: number, to: number) {
+  const ids = (reorderGroup.value?.items ?? []).map((r) => r.id);
+  if (from < 0 || to < 0 || from >= ids.length || to >= ids.length || from === to) return;
+  // put the moved routine at its new place among the group's own slots within the full saved order (every routine by
+  // position, archived and pinned ones too), so routines of other groups, hidden or archived ones keep their place;
+  // the server numbers the list it gets 0..n-1. Pinned is ordered by position too, so only its own slots change.
+  const full = localOrder.value ?? [...(routines.data.value ?? [])].sort((x, y) => x.position - y.position).map((r) => r.id);
+  const slots = ids.map((id) => full.indexOf(id));
+  if (slots.some((k) => k < 0)) return;
+  const grp = [...ids];
+  grp.splice(to, 0, grp.splice(from, 1)[0]!);
   const next = [...full];
-  [next[a], next[b]] = [next[b]!, next[a]!];
+  slots.slice().sort((x, y) => x - y).forEach((k, n) => { next[k] = grp[n]!; });
   localOrder.value = next;
   // one save at a time, so quick presses arrive in order and the last one wins
   pending++;
