@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // The workout so far, in the app's own look: a hero with the muscles worked so far (the routine card's figure, left)
-// and a ring for sets done of planned, stat tiles (time, volume, records), then a row per exercise with its done state,
+// and a ring for sets done of planned, stat tiles (time, volume, records, rep targets), then a row per exercise with its done state,
 // best set (the least help, for assisted ones), PR badge and a small bar for its sets. The last tab of the running
 // workout; the numbers come from workoutSoFar (shared), so the Finish screen shows the same. There (`final`) the time
 // leaves the tiles (Finish shows it larger) and each row says how the exercise compares with last time.
@@ -72,9 +72,9 @@ const rows = computed(() => r.value.perExercise.map((p, i) => {
         <div class="val">{{ fmt.vol(r.volumeKg) }}</div><div class="sub">{{ plural(r.reps, "rep") }}</div></div>
       <div class="card stat wsf-tile" :class="{ rec: r.records }"><div class="lbl"><span class="bi"><Icon name="trophy" :size="15" /></span>Records</div>
         <div class="val">{{ r.records }}</div><div class="sub">{{ recordsSub }}</div></div>
-      <div v-if="r.targets" class="card stat wsf-tile"><div class="lbl"><span class="bi"><Icon name="check" :size="15" /></span>Rep targets</div>
+      <div v-if="r.targets" class="card stat wsf-tile" :class="{ hit: r.targetsHit >= r.targets }"><div class="lbl"><span class="bi"><Icon name="check" :size="15" /></span>Rep targets</div>
         <div class="val">{{ r.targetsHit }}<small>/{{ r.targets }}</small></div>
-        <div class="pbar" :class="{ ok: r.targetsHit >= r.targets }"><i :style="{ width: `${(r.targetsHit / r.targets) * 100}%` }" /></div>
+        <div class="sub">Sets on target</div>
         <div class="sub">Sets that reached their reps</div></div>
     </div>
 
@@ -125,8 +125,9 @@ const rows = computed(() => r.value.perExercise.map((p, i) => {
 .wsf-tile .lbl { font-size: var(--fs-sm); gap: 6px; }
 .wsf-tile .val { font-size: clamp(var(--fs-lg), 5.2cqi, var(--fs-val)); margin-top: var(--tdy); }
 .wsf-tile.rec { border-color: color-mix(in srgb, var(--acc) 45%, var(--ol)); background: color-mix(in srgb, var(--acc) 7%, var(--s1)); }
-.wsf-tile .val small { font-size: var(--fs-sm); font-weight: 500; color: var(--tx2); }
-.wsf-tile .pbar { height: 5px; margin-top: var(--tdy); }
+.wsf-tile .val small { font-size: var(--fs-sm); font-weight: 500; color: var(--tx2); margin-inline-start: 0; } /* "19/19" like the exercise rows */
+.wsf-tile.hit .val { color: var(--pos); }
+.wsf-tile.hit .bi { background: var(--pos); color: var(--on); }
 .wsf-tile.rec .bi { background: var(--acc); color: var(--on); }
 
 /* exercise rows: done state on the left, best set in full colour, sets as a small bar on the right */
