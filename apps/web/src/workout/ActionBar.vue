@@ -148,7 +148,7 @@ const RING = 2 * Math.PI * 58;
 
 <style scoped>
 /* a sheet: rounded at the top, on the page's second surface; on a computer it sits in the column as a card */
-.abar { position: relative; display: flex; flex-direction: column; gap: var(--spg); padding: 14px; background: var(--s1); border: 1px solid var(--ol); border-radius: var(--r-sheet); box-shadow: var(--shadow-pop); }
+.abar { position: relative; display: flex; flex-direction: column; gap: clamp(12px, var(--spg), 16px); padding: 14px; background: var(--s1); border: 1px solid var(--ol); border-radius: var(--r-sheet); box-shadow: var(--shadow-pop); }
 .ab-line { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .ab-k { font-size: 12.5px; font-weight: 500; color: var(--tx2); }
 .ab-k b { color: var(--tx); font-weight: 600; font-size: 14px; }
@@ -175,8 +175,9 @@ html.he .ring svg { transform: rotate(-90deg) scaleY(-1); }
 .ab-next { text-align: center; }
 .ab-rtitle { text-align: center; }
 /* the offer and its Saved confirmation share one two-line box (same padding, line height and min height) so nothing jumps */
-.ab-keep, .ab-saved { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0; line-height: 1.3; text-align: center; padding: var(--tdy) 10px; min-height: calc(2 * 1.3 * 12.5px + 2 * var(--tdy)); font-size: 12.5px; }
-.ab-sv { display: inline-flex; align-items: center; gap: 6px; color: var(--pos); font-weight: 500; }
+.ab-keep, .ab-saved { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0; line-height: 1.3; text-align: center; padding: var(--tdy) 10px; min-height: calc(2 * 1.3 * 12.5px + 2 * var(--tdy)); font-size: 12.5px; font-weight: 500; }
+.ab-keep > span, .ab-saved > span { max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ab-sv { display: inline-flex; align-items: center; gap: 6px; color: var(--pos); }
 .ab-why { color: var(--tx2); }
 .ab-act { color: var(--acc); }
 </style>
