@@ -1,9 +1,8 @@
 // Moving to another page must never leave the old one on screen. The shells swap pages in two steps: the old page
-// plays its way out, then the new one comes in. That way-out waits on the browser's animation frames, which a phone
-// can hold back (the app was in the background, the screen went off), and an error part-way through a swap can leave
-// the view half-built; either way the address and the tabs move on but the old page stays, and every later move
-// queues behind it. So after each move, check that the page on screen is the one asked for, and if an old one is
-// still there, build the view afresh (without the animation, in case that is what hung).
+// plays its way out, then the new one comes in. Sometimes the way out never finishes (cause not found yet): the address
+// and the tabs move on but the old page stays, and every later move queues behind it. So after each move, check that
+// the page on screen is the one asked for, and if an old one is still there, build the view afresh (without the
+// animation, in case that is what hung). The console.warn is there to help find the cause.
 import { nextTick, onBeforeUnmount, ref } from "vue";
 import { useRoute, useRouter, type RouteLocationNormalizedLoaded } from "vue-router";
 
@@ -23,9 +22,14 @@ export function usePageWatch(keyOf: (r: RouteLocationNormalizedLoaded) => string
     const left = [...document.querySelectorAll<HTMLElement>("[data-page]")].filter((el) => el.dataset.page !== want);
     if (!left.length) return;
     console.warn(`The page for ${route.fullPath} did not replace ${left.map((el) => el.dataset.page).join(", ")}; rebuilding the view`);
-    still.value = true; view.value++;
-    // a page caught half-way out is no longer part of the view, so rebuilding it doesn't take that page away
-    void nextTick(() => document.querySelectorAll<HTMLElement>("[data-page]").forEach((el) => el.dataset.page !== want && el.remove()));
+    // pages on screen now are all stale; whatever of them survives the rebuild is stuck and is taken out by hand
+    const stale = [...document.querySelectorAll<HTMLElement>("[data-page]")];
+    // switch the animation off first and rebuild on the next tick, so the old view leaves without a transition
+    still.value = true;
+    void nextTick(() => {
+      view.value++;
+      void nextTick(() => stale.forEach((el) => el.isConnected && el.remove()));
+    });
     clearTimeout(calm); calm = setTimeout(() => (still.value = false), GRACE);
   };
   const stop = router.afterEach((_to, _from, failure) => {
