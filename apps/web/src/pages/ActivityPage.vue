@@ -45,7 +45,7 @@ await loaded(q);
       <div class="card stat"><div class="lbl">{{ a.steps ? "Steps" : "Climb" }}</div><div class="val">{{ a.steps ? fmt.num(a.steps, 0) : a.elevationM != null ? Math.round(a.elevationM) : "-" }}<small v-if="!a.steps && a.elevationM != null">m</small></div></div>
     </div>
     <div v-if="a.splits?.length" class="card spt"><div class="lbl hgap">Splits (min per km)</div><BarChart :bars="a.splits.map((s: any) => ({ label: String(s.km), value: Math.round((s.s / 60) * 10) / 10 }))" :height="140" /></div>
-    <div v-if="a.notes" class="banner note spt"><Icon name="note" />{{ a.notes }}</div>
+    <div v-if="a.notes" class="banner note spt"><Icon name="note" :size="18" class="note-ic" />{{ a.notes }}</div>
   </div>
   <div v-else class="page"><div class="empty">Loading…</div></div>
 </template>

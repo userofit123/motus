@@ -26,7 +26,7 @@ const meta = computed(() => [
 
 <template>
   <div class="nitem" :class="{ flat }">
-    <Icon name="note" :size="18" class="ic" />
+    <Icon name="note" :size="18" class="note-ic" />
     <div class="b">
       <div v-if="note.body" class="tx">{{ note.body }}</div>
       <div v-if="meta.length || note.tags?.length" class="m">
@@ -42,7 +42,6 @@ const meta = computed(() => [
 .nitem { display: flex; align-items: flex-start; gap: 10px; text-align: start; padding: calc(var(--cpy) - 4px) calc(var(--cpx) - 3px); border-radius: var(--r-sm); background: var(--s2); font-size: 13.5px; color: var(--tx); }
 .nitem.flat { background: none; border-radius: 0; padding: var(--lpy) 4px; border-bottom: 1px solid var(--ol); font-size: 14px; }
 .nitem.flat:last-child { border-bottom: 0; }
-.ic { color: var(--tx2); flex: none; margin-top: 1px; }
 .b { flex: 1; min-width: 0; }
 .tx { white-space: pre-wrap; overflow-wrap: anywhere; }
 .m { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin-top: 4px; font-size: var(--fs-xs); color: var(--tx2); }

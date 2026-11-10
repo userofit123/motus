@@ -149,7 +149,7 @@ await loaded(q);
       <div class="card stat"><div class="lbl"><span class="bi"><Icon name="trophy" :size="15" /></span>Records</div><div class="val">{{ rep.totals.records }}</div><div class="sub">{{ rep.compared ? `Beat last time on ${rep.beat} of ${rep.compared}` : "First time for these" }}</div></div>
     </div>
 
-    <div v-if="w.notes" class="banner note spt"><Icon name="note" /><div style="white-space:pre-wrap">{{ w.notes }}</div></div>
+    <div v-if="w.notes" class="banner note spt"><Icon name="note" :size="18" class="note-ic" /><div style="white-space:pre-wrap">{{ w.notes }}</div></div>
     <NoteItem v-for="n in w.routineNotes?.filter((x: any) => x.workoutId === w.id)" :key="n.id" :note="n" />
 
     <div class="grid spt" style="grid-template-columns:minmax(0,1fr) 300px;align-items:start">
