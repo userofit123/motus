@@ -29,7 +29,10 @@ const muscleLine = computed(() => {
   return m.length > 3 ? `${m.slice(0, 3).join(" · ")} · ${m.length - 3} more` : m.join(" · ");
 });
 const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
-const recordsSub = computed(() => r.value.targets ? `${r.value.targetsHit} of ${r.value.targets} rep targets` : r.value.records ? "Best sets beaten" : props.final ? "None this time" : "None yet");
+// Records = sets that beat a personal best; Rep targets = sets that reached the reps the routine asked for. Two tiles, so
+// each label says what its number counts
+const recordsSub = computed(() => r.value.records ? "New personal bests" : props.final ? "No new records" : "None yet");
+const tileCount = computed(() => (props.final ? 2 : 3) + (r.value.targets ? 1 : 0));
 
 const rows = computed(() => r.value.perExercise.map((p, i) => {
   const e = props.w.exercises[i]!;
@@ -62,13 +65,17 @@ const rows = computed(() => r.value.perExercise.map((p, i) => {
       </div>
     </div>
 
-    <div class="wsf-tiles" :class="{ two: final }">
+    <div class="wsf-tiles" :class="{ two: tileCount !== 3 }">
       <div v-if="!final" class="card stat wsf-tile"><div class="lbl"><span class="bi"><Icon name="clock" :size="15" /></span>Time</div>
         <div class="val">{{ fmt.clock(secs) }}</div><div class="sub">Since {{ fmt.time(w.startedAt) }}</div></div>
       <div class="card stat wsf-tile"><div class="lbl"><span class="bi"><Icon name="layers" :size="15" /></span>Volume</div>
         <div class="val">{{ fmt.vol(r.volumeKg) }}</div><div class="sub">{{ plural(r.reps, "rep") }}</div></div>
       <div class="card stat wsf-tile" :class="{ rec: r.records }"><div class="lbl"><span class="bi"><Icon name="trophy" :size="15" /></span>Records</div>
         <div class="val">{{ r.records }}</div><div class="sub">{{ recordsSub }}</div></div>
+      <div v-if="r.targets" class="card stat wsf-tile"><div class="lbl"><span class="bi"><Icon name="check" :size="15" /></span>Rep targets</div>
+        <div class="val">{{ r.targetsHit }}<small>/{{ r.targets }}</small></div>
+        <div class="pbar" :class="{ ok: r.targetsHit >= r.targets }"><i :style="{ width: `${(r.targetsHit / r.targets) * 100}%` }" /></div>
+        <div class="sub">Sets that reached their reps</div></div>
     </div>
 
     <div>
@@ -110,7 +117,7 @@ const rows = computed(() => r.value.perExercise.map((p, i) => {
 .wsf-big { font-size: var(--fs-h1); font-weight: 700; letter-spacing: -.5px; line-height: 1.1; font-variant-numeric: tabular-nums; }
 .wsf-big small { font-size: var(--fs); font-weight: 500; letter-spacing: 0; color: color-mix(in srgb, var(--onc) 70%, transparent); }
 
-/* stat tiles: the app's .card.stat, always three across (two when the time leaves on Finish); the value shrinks with the
+/* stat tiles: the app's .card.stat, three across, or two across when there are two or four tiles; the value shrinks with the
    row like the phone stat cards (app.css) instead of being cut off, measured on the row so it also fits the desktop column */
 .wsf-tiles { display: grid; gap: var(--hg); grid-template-columns: repeat(3, minmax(0, 1fr)); container-type: inline-size; }
 .wsf-tiles.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -118,6 +125,8 @@ const rows = computed(() => r.value.perExercise.map((p, i) => {
 .wsf-tile .lbl { font-size: var(--fs-sm); gap: 6px; }
 .wsf-tile .val { font-size: clamp(var(--fs-lg), 5.2cqi, var(--fs-val)); margin-top: var(--tdy); }
 .wsf-tile.rec { border-color: color-mix(in srgb, var(--acc) 45%, var(--ol)); background: color-mix(in srgb, var(--acc) 7%, var(--s1)); }
+.wsf-tile .val small { font-size: var(--fs-sm); font-weight: 500; color: var(--tx2); }
+.wsf-tile .pbar { height: 5px; margin-top: var(--tdy); }
 .wsf-tile.rec .bi { background: var(--acc); color: var(--on); }
 
 /* exercise rows: done state on the left, best set in full colour, sets as a small bar on the right */
