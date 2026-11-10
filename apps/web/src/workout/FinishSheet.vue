@@ -15,7 +15,7 @@ import { toast, toastError } from "../core/toast";
 import { elapsed, finishRest } from "./runtime";
 import { keepAwake } from "./native";
 import { maybeAutoBackup } from "../core/backup";
-import { setNo } from "../core/format";
+import { setLabel } from "../core/format";
 import Sheet from "../components/Sheet.vue";
 import Icon from "../components/Icon.vue";
 import WorkoutSoFar from "./WorkoutSoFar.vue";
@@ -79,12 +79,16 @@ const sameSet = (a: RSet | undefined, b: RSet) => !!a && FIELDS.every((k) => (a[
 const setText = (x: RSet, t: Tracking) => numbersText({ ...x, reps: startRepsOf(x) }, t);
 // a set's numbers as text, "-" when it has none: next time's (setText) and what was done today
 type Nums = { weightKg: number | null; reps: number | null; durationS?: number | null; distanceM?: number | null };
-function numbersText(x: Nums, t: Tracking) {
+const numbersText = (x: Nums, t: Tracking) => numbersParts(x, t).join(" ");
+// the same numbers in parts ("47.5 kg", "× 12"): the Next time table puts each on its own line, as a phone has no room
+// for three "47.5 kg × 12" side by side
+function numbersParts(x: Nums, t: Tracking) {
   const f = fmt.value;
   const kg = x.weightKg != null && usesWeight(t) ? f.wu_(x.weightKg) : "";
   const reps = x.reps == null || !usesReps(t) ? "" : String(x.reps);
   const r = reps ? (kg ? `× ${reps}` : `${reps} rep${reps === "1" ? "" : "s"}`) : "";
-  return [kg, r, x.durationS ? f.clock(x.durationS) : "", x.distanceM ? f.dist(x.distanceM) : ""].filter(Boolean).join(" ") || "-";
+  const parts = [kg, r, x.durationS ? f.clock(x.durationS) : "", x.distanceM ? f.dist(x.distanceM) : ""].filter(Boolean);
+  return parts.length ? parts : ["-"];
 }
 // an exercise's working sets in short, runs of the same numbers counted: "3 × 20 kg × 10", "2 × 20 kg × 10, 25 kg × 8"
 function setsText(sets: RSet[], t: Tracking) {
@@ -127,26 +131,27 @@ const nextTime = computed(() => {
     // today's set in each place, the one its numbers came from (the routine before Progression pairs like the one after)
     const did = e ? todaysSets(item.sets as RSet[], e) : [];
     const aft = after.sets as RSet[], sides = !!W.settings.value.features.unilateral;
-    // the set's badge as the workout's set table has it: 1, 2, 3L, 3R, W, D
-    const badge = (x: RSet, j: number) => (x.kind === "warmup" ? "W" : x.kind === "drop" ? "D" : x.kind === "failure" ? "F" : String(setNo(aft, j, sides))) + (sides && x.side && x.kind !== "warmup" && x.kind !== "drop" ? x.side : "");
     const rows = aft.flatMap((x, j): NextSet[] => {
       const b = before[j];
       if (sameSet(b, x)) return [];
       // planned: where the routine started this set before; did: today's ticked set in its place; next: where next time
       // starts it. A row only when planned and next read differently
-      const planned = b ? setText(b, t) : "-", next = setText(x, t);
-      if (planned === next) return [];
-      const d0 = did[j], doneText = d0 ? numbersText(d0, t) : "-";
-      // the trend is against what was done today (else the plan): 46 x 12 to 47.5 x 8 is a step up
-      const base = d0?.weightKg ?? b?.weightKg;
+      if ((b ? setText(b, t) : "-") === setText(x, t)) return [];
+      const planned = b ? numbersParts({ ...b, reps: startRepsOf(b) }, t) : ["-"], next = numbersParts({ ...x, reps: startRepsOf(x) }, t);
+      const d0 = did[j], done = d0 ? numbersParts(d0, t) : ["-"];
+      // the arrow says what changes in the routine: next time against the plan (today's only when nothing was planned)
+      const base = b ? b.weightKg : d0?.weightKg;
       const delta = base != null && x.weightKg != null ? (x.weightKg - base) * (t === "assisted" ? -1 : 1) : 0;
-      return [{ key: j, label: badge(x, j), kind: x.kind, planned, did: doneText, next, trend: delta > 0 ? "up" : delta < 0 ? "down" : null }];
+      return [{ key: j, label: setLabel(aft, j, sides), kind: x.kind, side: sides ? x.side ?? null : null, planned, did: done, next, trend: delta > 0 ? "up" : delta < 0 ? "down" : null }];
     });
-    // a run of sets in a row reading the same folds into one row, "1-6", like the routine's sets in short ("3 × 20 kg")
+    // a run of numbered working sets in a row reading the same folds into one row, "1-6", like the routine's sets in
+    // short ("3 × 20 kg"). Warm-ups, drops and to-failure sets have no number to make a range of ("W-W"), and left and
+    // right sets keep a row each: "1L-1R" would hide which side the range is
     const sets: NextSet[] = [];
+    const same = (a: string[], b: string[]) => a.join(" ") === b.join(" ");
     for (const r of rows) {
       const last = sets.at(-1);
-      if (last && last.lastKey === r.key - 1 && last.kind === r.kind && r.kind !== "drop" && last.planned === r.planned && last.did === r.did && last.next === r.next && last.trend === r.trend) {
+      if (last && last.lastKey === r.key - 1 && r.kind === "normal" && last.kind === "normal" && !r.side && !last.side && same(last.planned, r.planned) && same(last.did, r.did) && same(last.next, r.next) && last.trend === r.trend) {
         last.lastKey = r.key; last.label = `${last.label.split("-")[0]}-${r.label}`;
       } else sets.push({ ...r, lastKey: r.key });
     }
@@ -154,12 +159,12 @@ const nextTime = computed(() => {
     const unticked = !!e && typedUnticked(e);
     if (e) listed.add(index);
     const id = item.id ?? e?.id ?? `new-${i}`;
-    if (sets.length || change || unticked || note) groups.push({ id, index, name, note, sets, change, unticked });
+    if (sets.length || change || unticked || note) groups.push({ id, index, name, note, sets, change, unticked, assisted: t === "assisted" });
     else unchanged.push({ id, name, fixed: !!item.fixed, sets: setsText(after.sets as RSet[], t) });
   });
   // exercises outside the routine lose their unticked sets too
   w.value.exercises.forEach((e, index) => {
-    if (!listed.has(index) && typedUnticked(e)) groups.push({ id: e.id, index, name: e.exercise?.name ?? "", sets: [], unticked: true });
+    if (!listed.has(index) && typedUnticked(e)) groups.push({ id: e.id, index, name: e.exercise?.name ?? "", sets: [], unticked: true, assisted: e.exercise?.tracking === "assisted" });
   });
   return { groups, unchanged };
 });

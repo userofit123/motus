@@ -1,13 +1,14 @@
 <script lang="ts">
 import type { NextChange } from "@motus/shared";
-/** one set (or a run of sets in a row reading the same, `label` "1-6") whose numbers change, as text ("-" when empty):
- * what the routine planned before this workout, what was done today in its place, and where next time starts it.
- * `label` is the set's badge (1, 3L, W, D), `trend` the weight against today's (else the plan's) */
-export interface NextSet { key: number; lastKey?: number; label: string; kind: string; planned: string; did: string; next: string; trend: "up" | "down" | null }
+/** one set (or a run of numbered sets in a row reading the same, `label` "1-6") whose numbers change, each value in
+ * parts shown a line each (["47.5 kg", "× 12"], ["-"] when empty): what the routine planned before this workout, what
+ * was done today in its place, and where next time starts it. `label` is the set's badge (1, 3L, W, D1), `side` its
+ * side when left and right are shown, `trend` next time's weight against the plan's (today's when nothing was planned) */
+export interface NextSet { key: number; lastKey?: number; label: string; kind: string; side: string | null; planned: string[]; did: string[]; next: string[]; trend: "up" | "down" | null }
 /** a routine exercise whose numbers change next time (or that has a Progression change, or sets left unticked with
  * numbers typed in); `index` is its place in the workout, for "Go to exercise"; `note` says when the slot is new or
- * holds another exercise now ("Was: Bench press") */
-export interface NextGroup { id: string; index: number; name: string; note?: string; sets: NextSet[]; change?: NextChange; unticked: boolean }
+ * holds another exercise now ("Was: Bench press"); `assisted`: the weight is help, so up means less of it */
+export interface NextGroup { id: string; index: number; name: string; note?: string; sets: NextSet[]; change?: NextChange; unticked: boolean; assisted: boolean }
 /** an exercise that stays as it is, with the routine's numbers in short ("3 × 20 kg × 10") */
 export interface NextSame { id: string; name: string; fixed: boolean; sets: string }
 </script>
@@ -30,13 +31,17 @@ const fmt = useWorkout().fmt;
 const showSame = ref(false);
 const sameText = computed(() => `${props.unchanged.length} exercise${props.unchanged.length === 1 ? "" : "s"} unchanged`);
 function toggle(id: string, on: boolean) { accepted.value = on ? [...accepted.value, id] : accepted.value.filter((x) => x !== id); }
-// the change in a line: "46 kg → 47.5 kg · reps start again at 8" (the reps done, never the range)
-const changeText = (c: NextChange) => {
-  const kg = `${fmt.value.wu_(c.fromKg)} → ${fmt.value.wu_(c.toKg)}`;
-  return c.reps != null && c.fromReps != null && c.reps !== c.fromReps ? `${kg} · reps start again at ${c.reps}` : kg;
-};
-const changeTitle = (c: NextChange) => (c.direction === "up" ? "Heavier next time" : "Lighter next time");
-const applyLabel = (c: NextChange, name: string) => `${c.direction === "up" ? "Raise" : "Lower"} the weight for ${name}`;
+// the weight change, "46 kg → 47.5 kg", and when the reps start again lower, that on a line of its own (the reps done,
+// never the range)
+const changeKg = (c: NextChange) => `${fmt.value.wu_(c.fromKg)} → ${fmt.value.wu_(c.toKg)}`;
+const repsAgain = (c: NextChange) => (c.reps != null && c.fromReps != null && c.reps !== c.fromReps ? `Reps start again at ${c.reps}` : "");
+// for an assisted exercise "up" is less help, so the weight goes down: the words follow the help, never "Heavier"
+const changeTitle = (c: NextChange, assisted: boolean) => assisted
+  ? (c.direction === "up" ? "Less assistance next time" : "More assistance next time")
+  : (c.direction === "up" ? "Heavier next time" : "Lighter next time");
+const applyLabel = (c: NextChange, g: NextGroup) => g.assisted
+  ? `${c.direction === "up" ? "Use less" : "Use more"} assistance for ${g.name}`
+  : `${c.direction === "up" ? "Raise" : "Lower"} the weight for ${g.name}`;
 const badge = (k: string) => ({ w: k === "warmup", d: k === "drop", f: k === "failure" });
 </script>
 
@@ -48,25 +53,29 @@ const badge = (k: string) => ({ w: k === "warmup", d: k === "drop", f: k === "fa
       <div class="nt-name">{{ g.name }}</div>
       <div v-if="g.note" class="nt-was"><Icon :name="g.note.startsWith('Was') ? 'swap' : 'plus'" :size="14" />{{ g.note }}</div>
       <table v-if="g.sets.length" class="sets nt-tbl">
-        <thead><tr><th>Set</th><th>Planned</th><th>You did</th><th>Next time</th></tr></thead>
+        <thead><tr><th>Set</th><th>Planned</th><th>You did</th><th>Next</th></tr></thead>
         <tbody>
-          <tr v-for="x in g.sets" :key="x.key">
+          <!-- each value a line per part (weight, then "× reps"), in every cell alike, so nothing wraps mid-value -->
+          <tr v-for="x in g.sets" :key="x.key" :class="{ drop: x.kind === 'drop' }">
             <td><span class="sk" :class="badge(x.kind)">{{ x.label }}</span></td>
-            <td class="nt-pl">{{ x.planned }}</td>
-            <td class="nt-did">{{ x.did }}</td>
-            <td class="nt-nx" :class="x.trend === 'up' ? 'pos' : x.trend === 'down' ? 'neg' : ''"><Icon v-if="x.trend" :name="x.trend === 'up' ? 'arrowUp' : 'arrowDown'" :size="12" />{{ x.next }}</td>
+            <td class="nt-pl"><span v-for="(p, k) in x.planned" :key="k" class="nt-v">{{ p }}</span></td>
+            <td class="nt-did"><span v-for="(p, k) in x.did" :key="k" class="nt-v">{{ p }}</span></td>
+            <td class="nt-nx" :class="x.trend === 'up' ? 'pos' : x.trend === 'down' ? 'neg' : ''">
+              <span v-for="(p, k) in x.next" :key="k" class="nt-v"><Icon v-if="x.trend && !k" :name="x.trend === 'up' ? 'arrowUp' : 'arrowDown'" :size="12" />{{ p }}</span>
+            </td>
           </tr>
         </tbody>
       </table>
       <component :is="g.change?.mode === 'auto' ? 'div' : 'label'" v-if="g.change" class="tgl nt-chg">
         <span class="bi sg" :class="g.change.direction === 'up' ? 'pos' : 'neg'"><Icon :name="g.change.direction === 'up' ? 'arrowUp' : 'arrowDown'" :size="16" /></span>
         <div class="grow" style="min-width:0">
-          <div class="t">{{ changeTitle(g.change) }}</div>
-          <div class="s nt-kg">{{ changeText(g.change) }}</div>
+          <div class="t">{{ changeTitle(g.change, g.assisted) }}</div>
+          <div class="s nt-kg">{{ changeKg(g.change) }}</div>
+          <div v-if="repsAgain(g.change)" class="s">{{ repsAgain(g.change) }}</div>
           <div class="s">{{ g.change.reason }}</div>
         </div>
-        <span v-if="g.change.mode === 'auto'" class="mchip" :class="g.change.direction === 'up' ? 'pos' : 'neg'">Automatic</span>
-        <span v-else class="nt-ap"><span class="tiny">Apply</span><span class="tg"><input type="checkbox" :checked="accepted.includes(g.id)" :aria-label="applyLabel(g.change, g.name)" @change="toggle(g.id, ($event.target as HTMLInputElement).checked)" /></span></span>
+        <span v-if="g.change.mode === 'auto'" class="mchip" :class="g.change.direction === 'up' ? 'pos' : 'neg'">Saved on finish</span>
+        <span v-else class="nt-ap"><span class="tiny">Apply</span><span class="tg"><input type="checkbox" :checked="accepted.includes(g.id)" :aria-label="applyLabel(g.change, g)" @change="toggle(g.id, ($event.target as HTMLInputElement).checked)" /></span></span>
       </component>
       <div v-if="g.unticked" class="nt-note">
         <Icon name="info" :size="16" />
@@ -98,9 +107,12 @@ const badge = (k: string) => ({ w: k === "warmup", d: k === "drop", f: k === "fa
 .nt-was { display: flex; align-items: center; gap: var(--tdy); margin-top: var(--tdy); font-size: var(--fs-sm); color: var(--tx2); }
 .nt-was .ico { flex: none; }
 .nt-name { font-weight: 600; font-size: var(--fs-lg); overflow-wrap: anywhere; }
-/* the set table's look (badges, strips), three value columns that may wrap on a phone; the change in next time's colour */
+/* the set table's look (badges, strips). Three "47.5 kg × 12" side by side don't fit a 360px phone, so every value is
+   its parts a line each, never broken inside one; the change in next time's colour */
 .nt-tbl { margin-top: var(--tdy); }
+.nt-tbl th { white-space: nowrap; }
 .nt-tbl td { font-size: var(--fs-sm); }
+.nt-v { display: block; white-space: nowrap; }
 .nt-tbl .sk { cursor: default; }
 .nt-pl { color: var(--tx2); }
 .nt-nx { font-weight: 600; }
