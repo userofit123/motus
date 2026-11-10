@@ -4,7 +4,7 @@
 // weight and reps with - and + for thumbs, the rest after it, then Pause, Skip and Done. Resting: a ring counting down,
 // with -15 and +15 either side. When an exercise is finished: on to the next, or Finish. The workout's Pause is always
 // the first button of the bottom row.
-import { computed, ref, onBeforeUnmount } from "vue";
+import { computed, ref, watch, onBeforeUnmount } from "vue";
 import { clock, usesWeight, usesReps, usesDuration, type WorkoutSet } from "@motus/shared";
 import { useWorkout } from "./useWorkout";
 import { setNo } from "../core/format";
@@ -17,10 +17,17 @@ import RestPicker from "../components/RestPicker.vue";
 defineProps<{ paused: boolean }>();
 const emit = defineEmits<{ finish: []; pause: [] }>();
 const W = useWorkout();
-// the saved rest is confirmed in place of the offer for a moment, so a tap is never silent
-const saved = ref(false);
+// the saved rest is confirmed in place of the offer for a moment, so a tap is never silent: what was saved as it was at
+// the tap, for the exercise the rest follows, and where (a routine's rest stays that routine's)
+const saved = ref("");
 let savedT: ReturnType<typeof setTimeout> | undefined;
-function keep() { W.keepRest(); saved.value = true; clearTimeout(savedT); savedT = setTimeout(() => (saved.value = false), 2500); }
+function keep() {
+  const k = W.keepRest(); if (!k) return;
+  saved.value = `Saved: ${clock(k.secs)} rest ${k.after ? "after" : "for"} ${k.name}${k.inRoutine ? " in this routine" : ""} from now on`;
+  clearTimeout(savedT); savedT = setTimeout(() => (saved.value = ""), 2500);
+}
+// a new rest starts without the last one's confirmation
+watch(() => rest.setId, () => { saved.value = ""; clearTimeout(savedT); });
 onBeforeUnmount(() => clearTimeout(savedT));
 const fmt = W.fmt;
 const w = computed(() => W.state.w);
@@ -94,7 +101,7 @@ const RING = 2 * Math.PI * 58;
         <button class="btn o" @click="adjustRest(15)">+15</button>
       </div>
       <div class="ab-k ellipsis ab-next">{{ rest.next }}</div>
-      <div v-if="saved" class="ab-saved" role="status"><Icon name="check" :size="16" />Saved: {{ clock(rest.totalS) }} for {{ e.exercise?.name }} from now on</div>
+      <div v-if="saved" class="ab-saved" role="status"><Icon name="check" :size="16" />{{ saved }}</div>
       <button v-else-if="W.restChanged.value" class="qb ab-keep" @click="keep">
         <span class="ab-why">This rest was planned at {{ clock(W.restPlannedNow.value ?? 0) }}, now {{ clock(rest.totalS) }}</span>
         <span class="ab-act">Use {{ clock(rest.totalS) }} for this exercise from now on</span>

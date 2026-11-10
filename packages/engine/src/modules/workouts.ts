@@ -8,7 +8,7 @@ import { uuidv7 } from "../ids";
 import { notFound, bad, HttpError } from "../errors";
 import { getSettings } from "./settings";
 import { buildPlan, loadRoutine, pendingReminders, withWorkoutOverrides } from "./plan";
-import { getExercises, exerciseSessions } from "./library";
+import { getExercises, exerciseSessions, savePrefs } from "./library";
 
 const KINDS = ["warmup", "normal", "drop", "failure"] as const;
 const EX_STATUS = ["pending", "done", "skipped", "partial"] as const;
@@ -338,7 +338,8 @@ interface RestInputs { restS: number | null; restAfterS: number | null; kinds: S
  * person's defaults. With `before` (the inputs as they were before the change), a set is planned again only while its
  * rest is still what the old plan gave it: a rest the person set on that one set stays theirs.
  */
-async function replanRests(ctx: Ctx, weId: string, pick: (s: RestSetRow, i: number, sets: RestSetRow[]) => boolean, before?: (now: RestInputs, sets: RestSetRow[]) => RestInputs) {
+async function replanRests(ctx: Ctx, weId: string, pick: (s: RestSetRow, i: number, sets: RestSetRow[]) => boolean, before?: (now: RestInputs, sets: RestSetRow[]) => RestInputs,
+  keptOwn?: (i: number, sets: RestSetRow[]) => boolean) {
   const we = (await ctx.q.query(
     `SELECT we.*, w.routine_snapshot, w.settings AS w_settings,
        (SELECT n.superset FROM workout_exercises n WHERE n.workout_id = we.workout_id AND n.position > we.position ORDER BY n.position LIMIT 1) AS next_superset
@@ -352,17 +353,24 @@ async function replanRests(ctx: Ctx, weId: string, pick: (s: RestSetRow, i: numb
   // the routine set's own rest by position (planSetRest); a change of kind keeps the match: the routine set's own
   // rest stays through it, as it does at Start
   const routineSetRests = re?.sets?.map((x) => x.restS ?? null) ?? null;
+  // `keptOwn`: a rest kept from now on (keepRest) takes the place of the routine sets' own rests it covers, in this
+  // workout too: dropped from its copy of the routine, so the plan below and every later one rest by the kept rest
+  const nowSetRests = keptOwn && routineSetRests ? routineSetRests.map((x, i) => (keptOwn(i, sets) ? null : x)) : routineSetRests;
+  if (re?.sets && nowSetRests !== routineSetRests) {
+    re.sets.forEach((x, i) => { x.restS = nowSetRests![i] ?? null; });
+    await ctx.q.query("UPDATE workouts SET routine_snapshot = $2 WHERE id = $1", [we.workout_id, JSON.stringify(snap)]);
+  }
   // inside a superset round there is no rest (as at Start)
   const inRound = !!we.superset && we.next_superset === we.superset;
-  const plan = (i: number, x: RestInputs) => inRound ? 0 : planSetRest(x.kinds.map((kind, n) => ({ kind, side: x.sides[n] })), i,
-    { restS: x.restS, restAfterS: x.restAfterS, prefRestS: pref?.rest_s, prefRestAfterS: pref?.rest_after_s, restByKind: re?.restByKind, routineSetRests }, d);
+  const plan = (i: number, x: RestInputs, own = nowSetRests) => inRound ? 0 : planSetRest(x.kinds.map((kind, n) => ({ kind, side: x.sides[n] })), i,
+    { restS: x.restS, restAfterS: x.restAfterS, prefRestS: pref?.rest_s, prefRestAfterS: pref?.rest_after_s, restByKind: re?.restByKind, routineSetRests: own }, d);
   const now: RestInputs = { restS: we.rest_s, restAfterS: we.rest_after_s, kinds: sets.map((s) => s.kind), sides: sets.map((s) => s.side) };
   const was = before?.(now, sets);
   for (const [i, s] of sets.entries()) {
     if (!pick(s, i, sets)) continue;
     // no rest of its own (null) follows the plan too. The old plan uses today's settings: had the defaults changed
     // since Start, the rest no longer matches and is left as it is, which errs on the side of keeping it
-    if (was && s.rest_planned_s != null && s.rest_planned_s !== plan(i, was)) continue;
+    if (was && s.rest_planned_s != null && s.rest_planned_s !== plan(i, was, routineSetRests)) continue;
     const secs = plan(i, now);
     if (secs !== s.rest_planned_s) await ctx.q.query("UPDATE workout_sets SET rest_planned_s = $2 WHERE id = $1", [s.id, secs]);
   }
@@ -525,7 +533,19 @@ export function workoutRoutes(r: Router) {
     await ctx.q.query(`UPDATE workout_exercises SET ${sets.join(", ")} WHERE id = $1`, vals);
     // a new rest between sets or after the exercise counts for the sets still to do, except one whose rest differs from
     // what the old rests gave it: that rest was set on that one set (-15 / +15, "Rest" on the set) and stays
-    if (restsWere) await replanRests(ctx, weId, (s) => !s.done, (now) => ({ ...now, restS: restsWere.rest_s, restAfterS: restsWere.rest_after_s }));
+    // "Use 3:30 for this exercise from now on" (`keep`): the sets it covers, as keepRoutineRest picks them in the routine
+    const field = "restAfterS" in b ? "restAfterS" : "restS";
+    const covers = b.keep === true ? (i: number, all: { kind: string }[]) => (field === "restAfterS" ? i === all.length - 1 : i < all.length - 1 && all[i]!.kind === "normal") : undefined;
+    if (restsWere) await replanRests(ctx, weId, (s) => !s.done, (now) => ({ ...now, restS: restsWere.rest_s, restAfterS: restsWere.rest_after_s }), covers);
+    // this workout alone would forget it, so it also goes where the next workout's rest comes from: the routine exercise
+    // in a workout from a routine (it wins over the exercise's own settings), else the exercise's settings
+    if (b.keep === true && restsWere) {
+      const secs = intOrNull(b[field], 0, 3600);
+      const we = (await ctx.q.query("SELECT exercise_id, routine_exercise_id FROM workout_exercises WHERE id = $1", [weId])).rows[0];
+      const { keepRoutineRest } = await import("./routines");
+      const inRoutine = secs != null && !!we.routine_exercise_id && await keepRoutineRest(ctx, we.routine_exercise_id, we.exercise_id, field, secs, wid);
+      if (!inRoutine) { await savePrefs(ctx, we.exercise_id, { [field]: secs }); ctx.changed("exercise"); }
+    }
     await touch(ctx, wid);
     ctx.changed("workout");
     return { ok: true };

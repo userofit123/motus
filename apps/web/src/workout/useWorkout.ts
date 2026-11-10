@@ -24,6 +24,10 @@ let goNew: { workoutId: string; had: Set<string> } | null = null;
 let wired = false;
 let actionsWired = false;
 let restWired = false;
+// The set this rest follows is already done, so saving the rest leaves its own planned value as it was: without this the
+// offer stayed up after being tapped. What was saved (set and length), so the offer hides until the rest changes again;
+// one for the app, as the rest is (every screen's copy of useWorkout sees the same)
+const keptRest = ref("");
 // settled once the active workout has been asked for the first time (and state.w taken from it): a notification tap
 // that opened the app waits for this, or Pause and Set done would find no workout yet
 let activeLoaded!: () => void;
@@ -269,8 +273,10 @@ export function useWorkout() {
   }
   async function patchExercise(e: WorkoutExercise, patch: Record<string, unknown>, refresh = false) {
     // a new rest between sets or after the exercise counts for the sets still to do, as the server plans them again
-    if ("restS" in patch || "restAfterS" in patch) followPlan(e, () => Object.assign(e, patch), (x) => !x.done);
-    else Object.assign(e, patch);
+    // `keep` is only for the server (keepRest), not a field of the exercise
+    const { keep: _keep, ...own } = patch;
+    if ("restS" in own || "restAfterS" in own) followPlan(e, () => Object.assign(e, own), (x) => !x.done);
+    else Object.assign(e, own);
     await call("put", `/workout-exercises/${e.id}`, patch, refresh);
   }
   async function addExercises(ids: string[]) {
@@ -310,9 +316,6 @@ export function useWorkout() {
   }
   // the rest running now was changed (±15 s…): offer to make it this exercise's rest from now on
   const restSet = () => { for (const e of state.w?.exercises ?? []) { const s = e.sets.find((x) => x.id === rest.setId); if (s) return { e, s }; } return null; };
-  // The set this rest follows is already done, so saving the rest leaves its own planned value as it was: without this the
-  // offer stayed up after being tapped. Remember what was saved (set and length) so it hides until the rest changes again.
-  const keptRest = ref("");
   const restKey = () => `${rest.setId}:${rest.totalS}`;
   const restChanged = computed(() => { const f = rest.setId ? restSet() : null; return !!f && keptRest.value !== restKey() && Math.abs(rest.totalS - (f.s.restPlannedS ?? rest.totalS)) >= 1; });
   // what this rest was planned at, so the offer can say what was changed
@@ -331,12 +334,21 @@ export function useWorkout() {
       was = now;
     }, { immediate: true });
   }
-  function keepRest() {
-    const f = restSet(); if (!f) return;
-    const last = f.e.sets.indexOf(f.s) === f.e.sets.length - 1;
-    patchExercise(f.e, last ? { restAfterS: rest.totalS } : { restS: rest.totalS });
+  /** Makes the rest running now this exercise's rest from now on: for the sets still to do here, and (`keep`) where the
+   * next workout's rest comes from, the routine exercise in a workout from a routine, else the exercise's settings (the
+   * server picks, sent through the outbox like any change). After the last set it is the rest after the exercise.
+   * Returns what was saved, for the confirmation: the exercise is the one the rest follows, not the one on screen. */
+  function keepRest(): { name: string; secs: number; after: boolean; inRoutine: boolean } | null {
+    const f = restSet(); if (!f) return null;
+    const secs = rest.totalS;
+    const after = f.e.sets.indexOf(f.s) === f.e.sets.length - 1;
+    // the routine sets' own rests it covers give way to it, as the server does (replanRests), so the screen agrees at once
+    const covers = (i: number) => (after ? i === f.e.sets.length - 1 : i < f.e.sets.length - 1 && f.e.sets[i]!.kind === "normal");
+    if (f.e.routineSetRests) f.e.routineSetRests = f.e.routineSetRests.map((x, i) => (covers(i) ? null : x));
+    void patchExercise(f.e, { ...(after ? { restAfterS: secs } : { restS: secs }), keep: true });
     for (const x of f.e.sets) if (!x.done) x.restPlannedS = null;
     keptRest.value = restKey();
+    return { name: f.e.exercise?.name ?? "this exercise", secs, after, inRoutine: !!state.w?.routineId && !!f.e.routineExerciseId && !f.e.swapped };
   }
   async function patchWorkout(patch: Record<string, unknown>) {
     Object.assign(state.w!, patch);

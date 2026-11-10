@@ -147,17 +147,7 @@ export function libraryRoutes(r: Router) {
     return { ok: true, archived: !!used };
   });
   r.put("/exercises/:id/prefs", async (ctx, p, body) => {
-    const exId = id(p.id);
-    // only what is sent changes: one switch (favourite, one side at a time) doesn't need every other setting with it
-    const had = (await ctx.q.query("SELECT * FROM exercise_prefs WHERE exercise_id = $1", [exId])).rows[0];
-    const b = { ...(had ? camel<any>(had) : {}), ...body };
-    await ctx.q.query(
-      `INSERT INTO exercise_prefs (user_id, exercise_id, rest_s, rest_after_s, favourite, hidden, bar_kg, increment_kg, unilateral)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-       ON CONFLICT (user_id, exercise_id) DO UPDATE SET rest_s = $3, rest_after_s = $4, favourite = $5, hidden = $6, bar_kg = $7, increment_kg = $8, unilateral = $9`,
-      // unilateral: null goes back to the exercise's own default
-      [ctx.userId, exId, intOrNull(b.restS, 0, 3600), intOrNull(b.restAfterS, 0, 3600), bool(b.favourite), bool(b.hidden), numOrNull(b.barKg, 0, 100), numOrNull(b.incrementKg, 0, 50),
-        b.unilateral == null ? null : bool(b.unilateral)]);
+    await savePrefs(ctx, id(p.id), body);
     ctx.changed("exercise");
     return { ok: true };
   });
@@ -186,6 +176,20 @@ export function libraryRoutes(r: Router) {
       [ex.id, ex.primaryMuscles, ex.category, ex.equipment]);
     return rows.map(exerciseFromRow);
   });
+}
+
+/** Saves the person's settings for one exercise. Only what is sent changes: one switch (favourite, one side at a time)
+ * doesn't need every other setting with it. Also "Use 3:30 for this exercise from now on" in a workout without a routine. */
+export async function savePrefs(ctx: Ctx, exId: string, body: Record<string, unknown>) {
+  const had = (await ctx.q.query("SELECT * FROM exercise_prefs WHERE exercise_id = $1", [exId])).rows[0];
+  const b: any = { ...(had ? camel<any>(had) : {}), ...body };
+  await ctx.q.query(
+    `INSERT INTO exercise_prefs (user_id, exercise_id, rest_s, rest_after_s, favourite, hidden, bar_kg, increment_kg, unilateral)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+     ON CONFLICT (user_id, exercise_id) DO UPDATE SET rest_s = $3, rest_after_s = $4, favourite = $5, hidden = $6, bar_kg = $7, increment_kg = $8, unilateral = $9`,
+    // unilateral: null goes back to the exercise's own default
+    [ctx.userId, exId, intOrNull(b.restS, 0, 3600), intOrNull(b.restAfterS, 0, 3600), bool(b.favourite), bool(b.hidden), numOrNull(b.barKg, 0, 100), numOrNull(b.incrementKg, 0, 50),
+      b.unilateral == null ? null : bool(b.unilateral)]);
 }
 
 async function saveCustom(ctx: Ctx, exId: string, b: any, isNew: boolean) {

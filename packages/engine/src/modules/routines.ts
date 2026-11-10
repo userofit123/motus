@@ -220,6 +220,27 @@ export async function updateRoutineFromWorkout(ctx: Ctx, routineId: string, work
   return changed;
 }
 
+/** "Use 3:30 for this exercise from now on" in a workout from this routine: the routine exercise's rest between sets
+ * (`restS`) or after its last set (`restAfterS`) becomes it, as that is what the next workout from the routine rests by.
+ * A routine set's own rest wins over the exercise's (restAfterSet), so the sets it stands for lose theirs: the working
+ * sets but the last for a rest between sets, the last set for the rest after. Kept in History with the workout, as a
+ * finish's changes are. False when the slot is gone or holds another exercise (swapped): the rest isn't the routine's. */
+export async function keepRoutineRest(ctx: Ctx, reId: string, exerciseId: string, field: "restS" | "restAfterS", secs: number, workoutId: string): Promise<boolean> {
+  const re = (await ctx.q.query(
+    "SELECT re.routine_id FROM routine_exercises re JOIN routines r ON r.id = re.routine_id WHERE re.id = $1 AND re.exercise_id = $2 AND r.deleted_at IS NULL",
+    [reId, exerciseId])).rows[0];
+  if (!re) return false;
+  await keepCurrent(ctx, re.routine_id);
+  await ctx.q.query(`UPDATE routine_exercises SET ${field === "restS" ? "rest_s" : "rest_after_s"} = $2 WHERE id = $1`, [reId, secs]);
+  const sets: { id: string; kind: string }[] = (await ctx.q.query("SELECT id, kind FROM routine_sets WHERE routine_exercise_id = $1 ORDER BY position", [reId])).rows;
+  const own = sets.filter((x, i) => (field === "restAfterS" ? i === sets.length - 1 : i < sets.length - 1 && x.kind === "normal")).map((x) => x.id);
+  if (own.length) await ctx.q.query("UPDATE routine_sets SET rest_s = NULL WHERE id = ANY($1::uuid[])", [own]);
+  await ctx.q.query("UPDATE routines SET updated_at = $2 WHERE id = $1", [re.routine_id, ctx.now().toISOString()]);
+  await snapshot(ctx, re.routine_id, "workout", workoutId);
+  ctx.changed("routine");
+  return true;
+}
+
 export function routineRoutes(r: Router) {
   r.get("/routines", async ({ q, userId }, _p, _b, qs) => routineSummaries(q, userId, qs.archived === "1" ? "r.deleted_at IS NULL AND r.archived" : "r.deleted_at IS NULL"));
 

@@ -89,6 +89,50 @@ describe("starting a planned workout", () => {
     await call("DELETE", `/routines/${r.id}`);
   });
 
+  it("a rest kept for this exercise from now on lasts: the routine's next workout rests by it (M-106)", async () => {
+    // set 2 rests 1:30 of its own in the routine, which would win over the exercise's rest
+    const r = await call("POST", "/routines", { name: "Keep", exercises: [{ exerciseId: bench, restS: 120, restAfterS: 200, sets: [
+      { kind: "normal", reps: 8 }, { kind: "normal", reps: 8, restS: 90 }, { kind: "normal", reps: 8 }] }] });
+    const versions = (await call("GET", `/routines/${r.id}/versions`)).items.length;
+    let w = await call("POST", "/workouts/start", { routineId: r.id });
+    const we = w.exercises[0];
+    await call("PUT", `/workout-sets/${we.sets[0].id}`, { done: true });
+    await call("PUT", `/workout-exercises/${we.id}`, { restS: 210, keep: true });
+    // this workout's sets still to do, set 2's own 1:30 from the routine too (also when it is planned again later)
+    expect((await call("GET", "/workouts/active")).exercises[0].sets.map((s: any) => s.restPlannedS)).toEqual([120, 210, 200]);
+    await call("PUT", `/workout-sets/${we.sets[1].id}`, { kind: "normal" });
+    expect((await call("GET", "/workouts/active")).exercises[0].routineSetRests).toEqual([null, null, null]);
+    // and the routine, where the next workout's rest comes from, kept in its History with the workout
+    const re = (await call("GET", `/routines/${r.id}`)).exercises[0];
+    expect([re.restS, re.restAfterS, re.sets.map((s: any) => s.restS)]).toEqual([210, 200, [null, null, null]]);
+    const hist = (await call("GET", `/routines/${r.id}/versions`)).items;
+    expect(hist.length).toBe(versions + 1);
+    expect(hist[0]).toMatchObject({ reason: "workout", workoutId: w.id });
+    // after the last set: the rest after the exercise
+    await call("PUT", `/workout-exercises/${we.id}`, { restAfterS: 150, keep: true });
+    expect((await call("GET", `/routines/${r.id}`)).exercises[0].restAfterS).toBe(150);
+    await call("POST", `/workouts/${w.id}/finish`, {});
+    w = await call("POST", "/workouts/start", { routineId: r.id });
+    expect(w.exercises[0].sets.map((s: any) => s.restPlannedS)).toEqual([210, 210, 150]);
+    await call("POST", `/workouts/${w.id}/discard`, {});
+    await call("DELETE", `/routines/${r.id}`);
+  });
+
+  it("a rest kept from now on in a workout without a routine goes to the exercise's own settings (M-106)", async () => {
+    let w = await call("POST", "/workouts/start", { exerciseIds: [row] });
+    await call("PUT", `/workout-exercises/${w.exercises[0].id}`, { restS: 75, keep: true });
+    // without keep, only this workout
+    await call("PUT", `/workout-exercises/${w.exercises[0].id}`, { restAfterS: 99 });
+    await call("POST", `/workouts/${w.id}/discard`, {});
+    w = await call("POST", "/workouts/start", { exerciseIds: [row] });
+    expect(w.exercises[0].prefRestS).toBe(75);
+    expect(w.exercises[0].prefRestAfterS ?? null).toBeNull();
+    const sets = w.exercises[0].sets;
+    if (sets.length > 1) expect(sets[0].restPlannedS).toBe(75);
+    await call("POST", `/workouts/${w.id}/discard`, {});
+    await call("PUT", `/exercises/${row}/prefs`, { restS: null });
+  });
+
   it("a set made a warm-up rests as Settings says for warm-ups, not the exercise's 2:00 (M-88)", async () => {
     // the developer's case: Settings' between-sets rest 1:30 and no warm-up rest of its own (Settings shows "Same as
     // between sets 1:30"), the routine exercise rests 2:00 between sets
