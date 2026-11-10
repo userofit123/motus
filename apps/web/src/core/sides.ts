@@ -9,7 +9,7 @@ export const SIDES_HINT = "Left and right sets, weight for one side";
 
 /** The ⋮ menu item that switches it; `then` lets a screen show the change before the refetch. */
 export const sidesItem = (exerciseId: string, on: boolean, then?: (on: boolean) => void) => ({
-  label: "One side at a time", hint: SIDES_HINT, icon: "left", checked: on,
+  label: "One side at a time", hint: SIDES_HINT, icon: "split", checked: on,
   run: async () => {
     try {
       await api.put(`/exercises/${exerciseId}/prefs`, { unilateral: !on });
