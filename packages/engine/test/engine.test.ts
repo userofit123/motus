@@ -127,7 +127,13 @@ describe("engine", () => {
     const w = await call(A, "POST", "/workouts/start", { routineId });
     expect(w.exercises[0].last.length).toBeGreaterThan(0);
     expect(w.exercises[0].last[0].weightKg).toBe(85);
-    expect((await call(A, "GET", `/exercises/${benchId}/history`)).sessions.length).toBe(2);
+    // History still lists the skipped one, labelled as such
+    const sess = (await call(A, "GET", `/exercises/${benchId}/history`)).sessions;
+    expect(sess.length).toBe(3);
+    expect(sess[0].status).toBe("skipped");
+    // the Finish screen compares with that session too, not "first"
+    const rep = (await call(A, "GET", `/workouts/${w.id}`)).report;
+    expect(rep.perExercise.find((x: any) => x.exerciseId === benchId).verdict).not.toBe("first");
     await call(A, "POST", `/workouts/${w.id}/discard`, {});
     await call(A, "DELETE", `/workouts/${empty.id}`); // the tests below count workouts
   });

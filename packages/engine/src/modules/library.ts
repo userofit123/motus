@@ -33,8 +33,8 @@ export async function getExercises(q: Sql, ids: string[]): Promise<Map<string, E
 
 /** Per completed workout: the working sets of one exercise, newest first. Only sessions where it was done (a set
  * ticked): one skipped or left unticked keeps no sets after the finish, and as "last time" it would hide the session
- * before it (the Finish screen then said "First time"). */
-export async function exerciseSessions(q: Sql, exerciseId: string, limit = 200, routineId?: string | null) {
+ * before it (the Finish screen then said "First time"). `withSkipped` keeps explicitly skipped ones too, for History. */
+export async function exerciseSessions(q: Sql, exerciseId: string, limit = 200, routineId?: string | null, withSkipped = false) {
   const { rows } = await q.query(
     `SELECT w.id AS workout_id, w.name AS workout_name, w.routine_id, w.started_at, we.id AS we_id, we.position, we.status,
        (SELECT tracking FROM exercises e WHERE e.id = we.exercise_id) AS tracking,
@@ -45,8 +45,7 @@ export async function exerciseSessions(q: Sql, exerciseId: string, limit = 200, 
      FROM workout_exercises we JOIN workouts w ON w.id = we.workout_id
      LEFT JOIN workout_sets s ON s.workout_exercise_id = we.id
      WHERE we.exercise_id = $1 AND w.status = 'completed' ${routineId ? "AND w.routine_id = $3" : ""}
-       AND EXISTS (SELECT 1 FROM workout_sets d WHERE d.workout_exercise_id = we.id AND d.done)
-     GROUP BY w.id, we.id ORDER BY w.started_at DESC LIMIT $2`,
+     GROUP BY w.id, we.id HAVING bool_or(s.done) ${withSkipped ? "OR we.status = 'skipped'" : ""} ORDER BY w.started_at DESC LIMIT $2`,
     routineId ? [exerciseId, limit, routineId] : [exerciseId, limit]);
   return rows.map((r: any) => {
     const sets = (r.sets as any[]).map((s) => ({ ...s, weightKg: s.weightKg == null ? null : Number(s.weightKg), distanceM: s.distanceM == null ? null : Number(s.distanceM) }));
@@ -108,7 +107,7 @@ export function libraryRoutes(r: Router) {
   });
 
   r.get("/exercises/:id/history", async ({ q }, p, _b, qs) => {
-    const sessions = await exerciseSessions(q, id(p.id), Math.min(500, Number(qs.limit) || 200));
+    const sessions = await exerciseSessions(q, id(p.id), Math.min(500, Number(qs.limit) || 200), null, true);
     const { best, repMax } = recordsOf(sessions);
     const positions = sessions.map((s) => s.position);
     const hours = sessions.map((s) => new Date(s.startedAt).getHours());
