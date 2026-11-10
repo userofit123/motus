@@ -4,7 +4,7 @@
 // weight and reps with - and + for thumbs, the rest after it, then Pause, Skip and Done. Resting: a ring counting down,
 // with -15 and +15 either side. When an exercise is finished: on to the next, or Finish. The workout's Pause is always
 // the first button of the bottom row.
-import { computed, ref } from "vue";
+import { computed, ref, onBeforeUnmount } from "vue";
 import { clock, usesWeight, usesReps, usesDuration, type WorkoutSet } from "@motus/shared";
 import { useWorkout } from "./useWorkout";
 import { setNo } from "../core/format";
@@ -17,6 +17,11 @@ import RestPicker from "../components/RestPicker.vue";
 defineProps<{ paused: boolean }>();
 const emit = defineEmits<{ finish: []; pause: [] }>();
 const W = useWorkout();
+// the saved rest is confirmed in place of the offer for a moment, so a tap is never silent
+const saved = ref(false);
+let savedT: ReturnType<typeof setTimeout> | undefined;
+function keep() { W.keepRest(); saved.value = true; clearTimeout(savedT); savedT = setTimeout(() => (saved.value = false), 2500); }
+onBeforeUnmount(() => clearTimeout(savedT));
 const fmt = W.fmt;
 const w = computed(() => W.state.w);
 const e = computed(() => w.value?.exercises[W.state.active] ?? null);
@@ -89,7 +94,8 @@ const RING = 2 * Math.PI * 58;
         <button class="btn o" @click="adjustRest(15)">+15</button>
       </div>
       <div class="ab-k ellipsis ab-next">{{ rest.next }}</div>
-      <button v-if="W.restChanged.value" class="qb ab-keep" @click="W.keepRest">
+      <div v-if="saved" class="ab-saved" role="status"><Icon name="check" :size="16" />Saved: {{ clock(rest.totalS) }} for {{ e.exercise?.name }} from now on</div>
+      <button v-else-if="W.restChanged.value" class="qb ab-keep" @click="keep">
         <span class="ab-why">This rest was planned at {{ clock(W.restPlannedNow.value ?? 0) }}, now {{ clock(rest.totalS) }}</span>
         <span class="ab-act">Use {{ clock(rest.totalS) }} for this exercise from now on</span>
       </button>
@@ -159,6 +165,7 @@ html.he .ring svg { transform: rotate(-90deg) scaleY(-1); }
 .ab-next { text-align: center; margin-top: -4px; }
 .ab-rtitle { text-align: center; }
 .ab-keep { display: flex; flex-direction: column; align-items: center; gap: 0; line-height: 1.3; text-align: center; padding-block: var(--tdy); font-size: 12.5px; }
+.ab-saved { display: flex; align-items: center; justify-content: center; gap: var(--hg); color: var(--pos); font-size: 12.5px; font-weight: 600; padding-block: var(--tdy); }
 .ab-why { color: var(--tx2); }
 .ab-act { color: var(--acc); }
 </style>

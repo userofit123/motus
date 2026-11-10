@@ -1,6 +1,6 @@
 // The running workout, as one shared object: a local copy that every change updates at once (so typing and ticking never
 // wait for the network), with each change sent to the server (or kept for later when offline).
-import { computed, effectScope, nextTick, reactive, watch } from "vue";
+import { computed, effectScope, nextTick, reactive, ref, watch } from "vue";
 import { planSetRest, restDefaultsOf, dropWeightKg, toKg, type Workout, type WorkoutExercise, type WorkoutSet, type WorkoutPrefs } from "@motus/shared";
 import { useActive, useSettings } from "../api/queries";
 import { send, endedHere, markEnded, waiting } from "../api/outbox";
@@ -310,7 +310,11 @@ export function useWorkout() {
   }
   // the rest running now was changed (±15 s…): offer to make it this exercise's rest from now on
   const restSet = () => { for (const e of state.w?.exercises ?? []) { const s = e.sets.find((x) => x.id === rest.setId); if (s) return { e, s }; } return null; };
-  const restChanged = computed(() => { const f = rest.setId ? restSet() : null; return !!f && Math.abs(rest.totalS - (f.s.restPlannedS ?? rest.totalS)) >= 1; });
+  // The set this rest follows is already done, so saving the rest leaves its own planned value as it was: without this the
+  // offer stayed up after being tapped. Remember what was saved (set and length) so it hides until the rest changes again.
+  const keptRest = ref("");
+  const restKey = () => `${rest.setId}:${rest.totalS}`;
+  const restChanged = computed(() => { const f = rest.setId ? restSet() : null; return !!f && keptRest.value !== restKey() && Math.abs(rest.totalS - (f.s.restPlannedS ?? rest.totalS)) >= 1; });
   // what this rest was planned at, so the offer can say what was changed
   const restPlannedNow = computed(() => { const f = rest.setId ? restSet() : null; return f?.s.restPlannedS ?? null; });
   // A rest running after a set follows what that set's rest now comes to: the set made a warm-up, the exercise given a
@@ -332,6 +336,7 @@ export function useWorkout() {
     const last = f.e.sets.indexOf(f.s) === f.e.sets.length - 1;
     patchExercise(f.e, last ? { restAfterS: rest.totalS } : { restS: rest.totalS });
     for (const x of f.e.sets) if (!x.done) x.restPlannedS = null;
+    keptRest.value = restKey();
   }
   async function patchWorkout(patch: Record<string, unknown>) {
     Object.assign(state.w!, patch);
@@ -347,7 +352,7 @@ export function useWorkout() {
     if (!p) state.w!.pausedS = (state.w!.pausedS ?? 0) + Math.max(0, Math.round((Date.now() - new Date(state.w!.pauseStartedAt!).getTime()) / 1000));
     patchWorkout({ pause: p, pauseStartedAt: p ? new Date().toISOString() : null });
   }
-  return { state, prefs, settings, fmt, incKg, ex, activate, restChanged, restPlannedNow, keepRest, skipExercise, tick, editSet, addSet, addDrop, removeSet, setStatus, reorder, patchExercise, addExercises, removeExercise, patchWorkout, togglePause, restFor, call, active };
+  return { state, prefs, settings, fmt, incKg, ex, activate, restChanged, restPlannedNow, keptRest, keepRest, skipExercise, tick, editSet, addSet, addDrop, removeSet, setStatus, reorder, patchExercise, addExercises, removeExercise, patchWorkout, togglePause, restFor, call, active };
 }
 
 /**
