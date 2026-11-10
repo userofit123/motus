@@ -3,7 +3,7 @@
 import { computed, effectScope, nextTick, reactive, watch } from "vue";
 import { restAfterSet, restDefaultsOf, dropWeightKg, toKg, type Workout, type WorkoutExercise, type WorkoutSet, type WorkoutPrefs } from "@motus/shared";
 import { useActive, useSettings } from "../api/queries";
-import { send, endedHere, markEnded } from "../api/outbox";
+import { send, endedHere, markEnded, waiting } from "../api/outbox";
 import { api } from "../api/client";
 import { invalidate, queryClient } from "../api/live";
 import { toastError } from "../core/toast";
@@ -23,6 +23,7 @@ const curKey = () => (state.w && state.cur >= state.w.exercises.length ? SUMMARY
 let goNew: { workoutId: string; had: Set<string> } | null = null;
 let wired = false;
 let actionsWired = false;
+let restWired = false;
 // settled once the active workout has been asked for the first time (and state.w taken from it): a notification tap
 // that opened the app waits for this, or Pause and Set done would find no workout yet
 let activeLoaded!: () => void;
@@ -41,10 +42,17 @@ export function useWorkout() {
     const active = useActive(queryClient);
     // take the server's copy whenever nothing of ours is still on its way
     // also when the copy here was dropped (another workout started in its place) while the server's is already the new one
-    watch([() => active.data.value, () => state.w === null], ([v]) => {
-      // changes still on their way hold back the server's copy of the same workout; a different workout (one started in
-      // its place) is taken at once
-      if (state.pending > 0 && v?.id === state.w?.id) return;
+    // After a copy was held back (below), the next answer is taken even when it is the same: the held-back one is then
+    // the query's data, and the reload once the change is in comes back equal to it, so it would never be taken,
+    // leaving what only the server works out (records, the rests planned for a new kind of set) as before the change.
+    // Otherwise only a different answer replaces the copy here (a timed set holds on to its set).
+    let heldBack = false;
+    watch([() => active.data.value, () => active.dataUpdatedAt.value, () => state.w === null], ([v, , gone], old) => {
+      // changes still on their way (or kept on the device until the server can be reached) hold back the server's copy
+      // of the same workout, which doesn't have them yet; a different workout (one started in its place) is taken at once
+      if ((state.pending > 0 || waiting.value.length > 0) && v?.id === state.w?.id) { heldBack = true; return; }
+      if (old && v === old[0] && gone === old[2] && !heldBack) return;
+      heldBack = false;
       // finished or cancelled here, but the server hasn't heard yet (offline): it's over all the same
       if (v && endedHere(v.id)) v = null;
       state.w = v ? JSON.parse(JSON.stringify(v)) : null;
@@ -197,7 +205,9 @@ export function useWorkout() {
     }
   }
   async function editSet(s: WorkoutSet, patch: Partial<WorkoutSet>) {
-    Object.assign(s, patch, { prefilled: false });
+    // a new kind rests as that kind does: until the server's plan for it is back, the rest by kind worked out here
+    const replan = "kind" in patch && patch.kind !== s.kind && !("restPlannedS" in patch);
+    Object.assign(s, patch, { prefilled: false }, replan ? { restPlannedS: null } : {});
     await call("put", `/workout-sets/${s.id}`, patch);
   }
   async function addSet(e: WorkoutExercise) {
@@ -278,6 +288,20 @@ export function useWorkout() {
   // the rest running now was changed (±15 s…): offer to make it this exercise's rest from now on
   const restSet = () => { for (const e of state.w?.exercises ?? []) { const s = e.sets.find((x) => x.id === rest.setId); if (s) return { e, s }; } return null; };
   const restChanged = computed(() => { const f = rest.setId ? restSet() : null; return !!f && Math.abs(rest.totalS - (f.s.restPlannedS ?? rest.totalS)) >= 1; });
+  // A rest running after a set follows what that set's rest now comes to: the set made a warm-up, the exercise given a
+  // new rest, reps changed with "longer rest after a missed target". By the difference, so a -15 / +15 already pressed
+  // stays. Once for the app (the first copy to get here, as with the notification buttons).
+  if (!restWired) {
+    restWired = true;
+    let was: { setId: string; secs: number } | null = null;
+    watch(() => {
+      const f = rest.setId ? restSet() : null;
+      return f ? { setId: f.s.id, secs: restFor(f.e, f.e.sets.indexOf(f.s)).secs } : null;
+    }, (now) => {
+      if (now && was?.setId === now.setId && now.secs !== was.secs && restActive()) adjustRest(now.secs - was.secs);
+      was = now;
+    }, { immediate: true });
+  }
   function keepRest() {
     const f = restSet(); if (!f) return;
     const last = f.e.sets.indexOf(f.s) === f.e.sets.length - 1;

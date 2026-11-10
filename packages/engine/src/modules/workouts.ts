@@ -1,6 +1,6 @@
 // Workouts: starting one (from a routine or empty), logging sets, skipping, reordering and replacing exercises,
 // finishing, logging a past workout, editing and duplicating, and the full detail with records and improvements.
-import { e1rm, ymd, liftedKg, LIFTED_SQL, structureChanges, type Tracking, type RoutineExercise, type ExerciseStatus, type SetKind, type WorkoutExercise, type HomeRecord, type Workout, type WorkoutSummary } from "@motus/shared";
+import { e1rm, ymd, restAfterSet, restDefaultsOf, liftedKg, LIFTED_SQL, structureChanges, type Tracking, type RoutineExercise, type ExerciseStatus, type SetKind, type WorkoutExercise, type HomeRecord, type Workout, type WorkoutSummary } from "@motus/shared";
 import type { Router, Ctx } from "../router";
 import type { Sql } from "../db";
 import { camel, id, optId, str, strList, intOrNull, numOrNull, bool, oneOf, isoTime, secondsBetween, visible } from "../util";
@@ -313,6 +313,34 @@ async function workoutOfSet(q: Sql, setId: string): Promise<{ workoutId: string;
   return { workoutId: r.workout_id, weId: r.id };
 }
 
+/**
+ * Plans the rest after sets still to do again, the way Start planned it (buildPlan): a set's planned rest is fixed at
+ * Start from its kind and the exercise's rests, so a set made a warm-up during the workout, or an exercise given a new
+ * rest between sets, would otherwise keep resting as before. By kind from the routine as it was at Start (its
+ * snapshot), the exercise's rests as they are now, then the exercise's and the person's defaults.
+ */
+async function replanRests(ctx: Ctx, weId: string, only?: string) {
+  const we = (await ctx.q.query(
+    `SELECT we.*, w.routine_snapshot, w.settings AS w_settings,
+       (SELECT n.superset FROM workout_exercises n WHERE n.workout_id = we.workout_id AND n.position > we.position ORDER BY n.position LIMIT 1) AS next_superset
+     FROM workout_exercises we JOIN workouts w ON w.id = we.workout_id WHERE we.id = $1 AND w.status = 'in_progress'`, [weId])).rows[0];
+  if (!we) return;
+  const sets = (await ctx.q.query("SELECT id, kind, done FROM workout_sets WHERE workout_exercise_id = $1 ORDER BY position", [weId])).rows;
+  const d = restDefaultsOf(withWorkoutOverrides(await getSettings(ctx.q, ctx.userId), we.w_settings).workout);
+  const pref = (await ctx.q.query("SELECT rest_s, rest_after_s FROM exercise_prefs WHERE exercise_id = $1", [we.exercise_id])).rows[0];
+  const snap = typeof we.routine_snapshot === "string" ? JSON.parse(we.routine_snapshot) : we.routine_snapshot;
+  const re = we.routine_exercise_id ? snap?.exercises?.find((x: any) => x.id === we.routine_exercise_id) : null;
+  // inside a superset round there is no rest (as at Start)
+  const inRound = !!we.superset && we.next_superset === we.superset;
+  for (const [i, s] of sets.entries()) {
+    // the one set asked for even when done (a rest may be running after it); otherwise only the sets still to do
+    if (only ? s.id !== only : s.done) continue;
+    const secs = inRound ? 0 : restAfterSet({ kind: s.kind, nextKind: sets[i + 1]?.kind, byKindS: re?.restByKind, exRestS: we.rest_s, prefRestS: pref?.rest_s,
+      isLastSet: i === sets.length - 1, exRestAfterS: we.rest_after_s, prefRestAfterS: pref?.rest_after_s }, d);
+    await ctx.q.query("UPDATE workout_sets SET rest_planned_s = $2 WHERE id = $1", [s.id, secs]);
+  }
+}
+
 export function workoutRoutes(r: Router) {
   r.get("/workouts", async ({ q }, _p, _b, qs) => {
     const conds = ["w.status = 'completed'"], params: unknown[] = [];
@@ -466,6 +494,8 @@ export function workoutRoutes(r: Router) {
     }
     if (!sets.length) return { ok: true };
     await ctx.q.query(`UPDATE workout_exercises SET ${sets.join(", ")} WHERE id = $1`, vals);
+    // a new rest between sets or after the exercise counts for the sets still to do
+    if ("restS" in b || "restAfterS" in b) await replanRests(ctx, weId);
     await touch(ctx, wid);
     ctx.changed("workout");
     return { ok: true };
@@ -536,7 +566,12 @@ export function workoutRoutes(r: Router) {
     }
     if (["weightKg", "reps", "durationS", "distanceM"].some((k) => k in b)) put("prefilled", false);
     if (!sets.length) return { ok: true };
+    // a new kind rests as that kind does (a set made a warm-up rests as warm-ups do), unless a rest comes with it; and
+    // "as planned" (no rest of its own) is planned again. Every tick sends the kind, so only a change counts.
+    const was = "kind" in b ? (await ctx.q.query("SELECT kind FROM workout_sets WHERE id = $1", [sid])).rows[0]?.kind : null;
+    const replan = ("restPlannedS" in b ? b.restPlannedS == null : "kind" in b && oneOf(b.kind, KINDS, "normal") !== was);
     await ctx.q.query(`UPDATE workout_sets SET ${sets.join(", ")} WHERE id = $1`, vals);
+    if (replan) await replanRests(ctx, weId, sid);
     // the exercise is done when every set is done; it gets its start time from the first set
     if ("done" in b) {
       const st = (await ctx.q.query("SELECT count(*) FILTER (WHERE done) AS d, count(*) AS n, min(done_at) AS first FROM workout_sets WHERE workout_exercise_id = $1", [weId])).rows[0];

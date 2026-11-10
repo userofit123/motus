@@ -56,6 +56,31 @@ describe("starting a planned workout", () => {
     await call("POST", `/workouts/${w.id}/discard`, {});
   });
 
+  it("plans the rest again when a set changes kind or the exercise gets a new rest", async () => {
+    const r = await call("POST", "/routines", { name: "Kinds", exercises: [{ exerciseId: bench, restS: 120, restAfterS: 200, restByKind: { warmup: 45 }, sets: [
+      { kind: "normal", reps: 8 }, { kind: "normal", reps: 8 }, { kind: "normal", reps: 8 }] }] });
+    const w = await call("POST", "/workouts/start", { routineId: r.id });
+    const rests = async () => (await call("GET", "/workouts/active")).exercises[0].sets.map((s: any) => s.restPlannedS);
+    const [a, b] = w.exercises[0].sets;
+    expect(await rests()).toEqual([120, 120, 200]);
+    // made a warm-up after it was done: it rests as the routine's warm-ups do (a rest may be running after it)
+    await call("PUT", `/workout-sets/${a.id}`, { done: true, kind: "normal" });
+    await call("PUT", `/workout-sets/${a.id}`, { kind: "warmup" });
+    expect(await rests()).toEqual([45, 120, 200]);
+    // ticking sends the kind again: nothing changes
+    await call("PUT", `/workout-sets/${b.id}`, { restPlannedS: 33 });
+    await call("PUT", `/workout-sets/${b.id}`, { done: false, kind: "normal" });
+    expect(await rests()).toEqual([45, 33, 200]);
+    // back to "as planned"
+    await call("PUT", `/workout-sets/${b.id}`, { restPlannedS: null });
+    expect(await rests()).toEqual([45, 120, 200]);
+    // a new rest between sets counts for the sets still to do, not the one done
+    await call("PUT", `/workout-exercises/${w.exercises[0].id}`, { restS: 60 });
+    expect(await rests()).toEqual([45, 60, 200]);
+    await call("POST", `/workouts/${w.id}/discard`, {});
+    await call("DELETE", `/routines/${r.id}`);
+  });
+
   it("refuses an exercise that isn't there", async () => {
     expect(await status("POST", "/workouts/start", { exercises: [{ exerciseId: uuidv7(), sets: [] }] })).toBe(400);
     expect(await status("POST", "/workouts/start", { exercises: [{ exerciseId: "nope", sets: [] }] })).toBe(400);
