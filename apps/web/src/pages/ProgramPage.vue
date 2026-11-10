@@ -125,8 +125,6 @@ await loaded(q);
 </template>
 
 <style scoped>
-/* the description belongs to the title: a heading gap under it, not the header's full block gap */
-.desc { max-width: 680px; margin: calc(var(--hg) - var(--spg) - 6px) 0 var(--spg); }
 /* the next card's lines (what's next, deload note, behind note) are spaced by one gap, so no line leaves extra space at the bottom */
 .nx { display: flex; flex-direction: column; gap: var(--hg); }
 .nx .lbl { font-size: 12.5px; color: var(--tx2); }

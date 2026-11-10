@@ -379,6 +379,10 @@ button.rtile { cursor: pointer; }
 button.rtile:hover { background: color-mix(in srgb, var(--acc) 12%, var(--s2)); }
 .rtile b { font-variant-numeric: tabular-nums; }
 .rtile b.dim, .sect-h .rtile b.dim, .rtile b .dim { color: var(--tx2); font-weight: 500; }
+/* chips on their own line under an exercise's set count ("Fixed numbers"): the routine editor's header and the routine page */
+.exchips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 2px; }
+/* a page's description under its title (program, routine): a heading gap under it, not the header's full block gap */
+.desc { max-width: 680px; margin: calc(var(--hg) - var(--spg) - 6px) 0 var(--spg); }
 .vin:focus { border-color: var(--acc); outline: 0; background: var(--bg); }
 .vin.pre { color: var(--tx2); font-weight: 500; }
 .vin.adj { color: var(--acc); }

@@ -19,3 +19,17 @@ export const RANGE_HINT = "The reps to aim for. At the top on every set, the wei
 /** Settings' two rep range rows, one end each, like the two weight step rows */
 export const RANGE_BOTTOM_HINT = "Where the reps start again after the weight goes up";
 export const RANGE_TOP_HINT = "At the top on every set, the weight goes up";
+/** The short lower-after part of a summary: "lower after 3 missed", "never lower" */
+export const lowerAfterShort = (n: number) => (n === 0 ? "never lower" : `lower after ${n} missed`);
+type ProgShown = { mode: ProgressionMode; repsMin: number; repsMax: number; stepKg: number; lowerAfter: number };
+type ProgOwn = { mode?: unknown; repsMin?: unknown; stepKg?: unknown; lowerAfter?: unknown } | null | undefined;
+/** One exercise's Progression in a few words, as the routine editor's tile and the routine page say it:
+ *  "Automatic · 6-12 reps · +2.5 kg" (+ "lower after 3 missed" with `lowerAfter`), each part faded (`dim`) while it
+ *  follows your default; Off is only "Off". `more` marks the parts after the mode (a phone tile may hide them). */
+export function progParts(p: ProgShown, own: ProgOwn, weight: (kg: number) => string, opts: { lowerAfter?: boolean } = {}) {
+  const o = own ?? {};
+  const mode = { text: modeLabel(p.mode), dim: o.mode == null, more: false };
+  if (p.mode === "off") return [mode];
+  return [mode, { text: rangeText(p.repsMin, p.repsMax), dim: o.repsMin == null, more: true }, { text: `+${weight(p.stepKg)}`, dim: o.stepKg == null, more: true },
+    ...(opts.lowerAfter ? [{ text: lowerAfterShort(p.lowerAfter), dim: o.lowerAfter == null, more: true }] : [])];
+}

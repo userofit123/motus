@@ -33,7 +33,7 @@ import MuscleFig from "../components/MuscleFig.vue";
 import TemplateList from "../components/TemplateList.vue";
 import RadioList from "../components/RadioList.vue";
 import Sheet from "../components/Sheet.vue";
-import { PROGRESSION_MODES, LOWER_AFTER, MISSED_HINT, PROGRESSION_INTRO, RANGE_HINT, modeLabel, lowerAfterLabel, rangeText } from "../core/progression";
+import { PROGRESSION_MODES, LOWER_AFTER, MISSED_HINT, PROGRESSION_INTRO, RANGE_HINT, modeLabel, lowerAfterLabel, rangeText, progParts as progPartsOf } from "../core/progression";
 
 const route = useRoute(), router = useRouter();
 const planMode = computed(() => route.name === "workout-plan");
@@ -287,15 +287,10 @@ function setProg(e: any, patch: Partial<Record<ProgKey, unknown>>) {
   e.progression = PROG_KEYS.every((k) => p[k] == null) ? null : p;
   touch();
 }
-// the block's tile: "Automatic · 6-12 reps · +2.5 kg", each part faded while it follows your default
-const progParts = (e: any) => {
-  const p = progOf(e), own = e.progression ?? {};
-  if (p.mode === "off") return [{ text: modeLabel(p.mode), dim: own.mode == null, more: false }];
-  const parts = [{ text: modeLabel(p.mode), dim: own.mode == null, more: false }, { text: rangeText(p.repsMin, p.repsMax), dim: own.repsMin == null, more: true }];
-  // on a phone the tile shows only the mode (the sheet shows the range and step), so it stays beside its label as
-  // short as the Timer between reps one
-  return [...parts, { text: `+${fmt.value.wu_(p.stepKg)}`, dim: own.stepKg == null, more: true }];
-};
+// the block's tile: "Automatic · 6-12 reps · +2.5 kg", each part faded while it follows your default (worded in
+// core/progression, shared with the routine page). On a phone the tile shows only the mode (the sheet shows the range
+// and step), so it stays beside its label as short as the Timer between reps one
+const progParts = (e: any) => progPartsOf(progOf(e), e.progression, fmt.value.wu_);
 // its own range: both ends move together, the bottom never above the top
 function setRange(e: any, lo: number, hi: number) { setProg(e, { repsMin: Math.min(lo, hi), repsMax: Math.max(lo, hi) }); }
 // Progression moves the weight by reps reached, so it's offered only where an exercise has both
@@ -601,7 +596,6 @@ await loaded(src, all, folders, routines, templates);
 .body { max-width: 860px; }
 .starter, .plan-opt { margin-bottom: var(--spg); }
 .pl-k { margin-bottom: 2px; }
-.exchips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 2px; }
 .pg-intro { margin: 0 0 var(--hg); }
 /* the Progression tile sits on the right like the Timer between reps one; it may shrink (to at most about half the row,
    so the label keeps its room): on a phone just the mode, and at the very narrowest the mode shortened */
