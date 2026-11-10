@@ -380,6 +380,9 @@ html.phone .sets .vin { padding-inline: 0; font-size: 15px; }
 .sets .pvx { margin-inline-start: 6px; }
 html.phone .sets .pvx { display: block; width: fit-content; margin: 2px auto 0; }
 html.phone .sets .rcell .vin { max-width: 44px; }
+/* RPE is at most "9.5": narrow, so a phone's kg box keeps room for "102.5" with RPE on */
+.sets .rpecell .vin { max-width: 56px; }
+html.phone .sets .rpecell .vin { max-width: 36px; }
 /* a set's own rest, under it */
 .rrow { padding-top: 0; }
 .rrow .rpill { grid-column: 2 / -1; justify-self: start; }

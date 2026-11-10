@@ -267,12 +267,10 @@ function setProg(e: any, patch: Partial<Record<ProgKey, unknown>>) {
   e.progression = PROG_KEYS.every((k) => p[k] == null) ? null : p;
   touch();
 }
-// the block's tile: "Automatic · 6-12 reps · +2.5 kg", each part faded while it follows your default (worded in
-// core/progression, shared with the routine page). On a phone the tile shows only the mode (the sheet shows the range
-// and step), so it stays beside its label as short as the Timer between reps one
-const progParts = (e: any) => progPartsOf(progOf(e), e.progression, fmt.value.wu_);
-// the section header's full plain-words line (the routine page says the same), defaults faded
-const progLine = (e: any) => progPartsOf(progOf(e), e.progression, fmt.value.wu_, { lowerAfter: true });
+// the section header's plain-words line, the routine page's own (worded in core/progression), defaults faded; the
+// tile beside it shows only the mode, as the header already says the range and step
+const progLine = (e: any) => progPartsOf(progOf(e), e.progression, fmt.value.wu_, { assisted: tr(e) === "assisted" });
+const progTile = (e: any) => progLine(e)[0]!;
 // its own range: both ends move together, the bottom never above the top
 function setRange(e: any, lo: number, hi: number) { setProg(e, { repsMin: Math.min(lo, hi), repsMax: Math.max(lo, hi) }); }
 // Progression moves the weight by reps reached, so it's offered only where an exercise has both
@@ -485,7 +483,7 @@ await loaded(src, all, folders, routines, templates);
             <!-- Progression with its rep range, like the Timer between reps row: what applies in the tile, faded where it is your default -->
             <div v-if="progUsable(e) && !e.fixed" class="sect">
               <div class="sect-h"><span class="si"><Icon name="arrowUp" :size="16" /></span><span class="grow"><b>Progression</b><span class="tiny pgl"><template v-for="(x, k) in progLine(e)" :key="k"><span v-if="k" class="sep">·</span><span :class="{ dim: x.dim }">{{ x.text }}</span></template></span></span>
-                <button class="rtile pg-t" @click="progFor = e"><b class="pgsum"><span v-for="(x, k) in progParts(e)" :key="k" class="pgp" :class="{ more: x.more }"><span v-if="k" class="sep">·</span><span :class="{ dim: x.dim }">{{ x.text }}</span></span></b></button></div>
+                <button class="rtile pg-t" @click="progFor = e"><b :class="{ dim: progTile(e).dim }">{{ progTile(e).text }}</b></button></div>
             </div>
 
             <!-- part of the routine like its sets and rests: the page's Save keeps it, and leaving unsaved asks first -->
@@ -580,19 +578,11 @@ await loaded(src, all, folders, routines, templates);
 .starter, .plan-opt { margin-bottom: var(--spg); }
 .pl-k { margin-bottom: 2px; }
 .pg-intro { margin: 0 0 var(--hg); }
-/* the Progression tile sits on the right like the Timer between reps one; it may shrink (to at most about half the row,
-   so the label keeps its room): on a phone just the mode, and at the very narrowest the mode shortened */
+/* the Progression tile sits on the right like the Timer between reps one: just the mode, cut only if the row is very narrow */
 .sect-h .pg-t { flex: 0 1 auto; min-width: 0; max-width: 55%; }
-.pgp { display: contents; }
-html.phone .pgp.more { display: none; }
-.pgsum > .pgp > span { white-space: nowrap; flex: none; }
-.pgsum > .pgp:not(:first-child) > span:not(.sep) { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-/* the mode keeps its full word while the range and step parts give way; only on a phone, where it stands alone, may it be cut */
-html.phone .pgsum > .pgp:first-child > span { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.sect-h .pg-t b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pg-rows { margin-top: var(--hg); }
 .pg-reset { margin-top: var(--hg); }
-/* the tile's parts in a row, the dots spaced by the gap; more specific than .sect-h b's display: block */
-.sect-h b.pgsum { display: flex; align-items: center; gap: 0 6px; min-width: 0; }
 .st-t { font-size: 17px; font-weight: 600; }
 
 .exlist { display: flex; flex-direction: column; gap: var(--spg); margin-bottom: var(--spg); }

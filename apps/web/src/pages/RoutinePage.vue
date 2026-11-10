@@ -45,18 +45,20 @@ const worked = computed(() => musclesWorked((routine.value?.exercises ?? []).map
 // separate items so the row's gap spaces the dots
 const subLine = (e: any) => [e.superset ? `Superset ${e.superset}` : "",
   ...setSummary(e.sets, e.exercise?.tracking ?? "weight_reps", fmt.value, !!st.value.features.unilateral).split(" · ")].filter(Boolean);
-// a rest row only where some rest is planned (between sets, after the last one, or a set's own)
-const restOn = (e: any) => (e.restS ?? st.value.workout.restBetweenSetsS) > 0 || (e.restAfterS ?? st.value.workout.restAfterExerciseS) > 0 || e.sets.some((x: any) => x.restS);
+// a rest row only where its summary has something to say (any rest planned, per set type too)
+const restOn = (e: any) => restSummary(e, fmt.value.clock, st.value.workout, hasSideRounds(e)).length > 0;
 // the editor's own summary lines, one per section: rest, timer between reps, progression
 const progLineOf = (e: any) => {
   const t = e.exercise?.tracking ?? "weight_reps";
   if (e.fixed || !usesWeight(t) || !usesReps(t)) return null;
   const p = progressionOf(e.progression, progressionDefaultsOf(st.value), { incrementKg: e.exercise?.incrementKg, oneSide: oneSideOf(e.sets, e.exercise) });
-  return progPartsOf(p, e.progression, fmt.value.wu_, { lowerAfter: true });
+  return { mode: p.mode, parts: progPartsOf(p, e.progression, fmt.value.wu_, { assisted: t === "assisted" }) };
 };
 // once per exercise per render, not once per use in the template
 const progLines = computed(() => new Map<string, ReturnType<typeof progLineOf>>((routine.value?.exercises ?? []).map((e: any) => [e.id, progLineOf(e)])));
-const progLine = (e: any) => progLines.value.get(e.id) ?? null;
+const progLine = (e: any) => progLines.value.get(e.id)?.parts ?? null;
+// no Progression row where it is off (checked by the mode, not the wording)
+const progMode = (e: any) => progLines.value.get(e.id)?.mode ?? "off";
 // the notes that show every time (as in the workout and its preview): the routine's at the top, each exercise's under it
 const shown = (type: string, tid: string) => (notes.data.value ?? []).filter((n: any) => n.pinned && n.targetType === type && n.targetId === tid);
 // a figure only where there are muscles to show; without one the card keeps its plain column (Routines list rule)
@@ -123,8 +125,8 @@ await loaded(r, summaries, notes, rems, schedules, history);
             <div v-if="e.repRestS" class="sect">
               <div class="sect-h"><span class="si"><Icon name="clock" :size="16" /></span><span class="grow"><b>Timer between reps</b><span class="tiny">Every {{ e.repRestS }}s</span></span></div>
             </div>
-            <div v-if="progLine(e)?.[0]?.text !== undefined && progLine(e)?.[0]?.text !== 'Off'" class="sect">
-              <div class="sect-h"><span class="si"><Icon name="arrowUp" :size="16" /></span><span class="grow"><b>Progression</b><span class="tiny pgl"><template v-for="(x, k) in progLine(e)" :key="k"><span v-if="k" class="sep">·</span><span>{{ x.text }}</span></template></span></span></div>
+            <div v-if="progMode(e) !== 'off'" class="sect">
+              <div class="sect-h"><span class="si"><Icon name="arrowUp" :size="16" /></span><span class="grow"><b>Progression</b><span class="tiny pgl"><template v-for="(x, k) in progLine(e)" :key="k"><span v-if="k" class="sep">·</span><span :class="{ dim: x.dim }">{{ x.text }}</span></template></span></span></div>
             </div>
             <!-- its note and the notes that show every time; no menu here: notes are edited on the Notes tab -->
             <div v-if="e.note || shown('routine_exercise', e.id).length" class="sect">

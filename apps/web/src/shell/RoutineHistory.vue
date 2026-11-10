@@ -77,7 +77,7 @@ async function restore() {
       <div v-else class="card"><div class="list">
         <button v-for="v in list" :key="v.id" type="button" class="li click rh-row" @click="open = v">
           <Icon :name="v.reason === 'workout' ? 'dumbbell' : 'edit'" :size="18" class="rh-i" />
-          <div class="grow" style="min-width:0"><div class="t ellipsis">{{ title(v) }}</div><div class="s">{{ fmt.time(v.createdAt) }}<span class="sep">·</span>{{ v.exercises }} exercise{{ v.exercises === 1 ? "" : "s" }}</div></div>
+          <div class="grow" style="min-width:0"><div class="t ellipsis">{{ title(v) }}</div><div class="s rh-s"><span>{{ fmt.time(v.createdAt) }}</span><span class="sep">·</span><span>{{ v.exercises }} exercise{{ v.exercises === 1 ? "" : "s" }}</span></div></div>
           <span v-if="v.current" class="mchip">Current</span>
           <Icon name="right" class="muted" />
         </button>
@@ -101,4 +101,6 @@ async function restore() {
 <style scoped>
 .rh-row { width: 100%; border: 0; background: none; color: inherit; text-align: start; font: inherit; }
 .rh-i { flex: none; color: var(--tx2); }
+/* the date and the count as their own items, so the row's gap spaces the dot evenly */
+.rh-s { display: flex; flex-wrap: wrap; gap: 0 6px; }
 </style>

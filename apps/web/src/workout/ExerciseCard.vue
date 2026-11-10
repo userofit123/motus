@@ -174,7 +174,7 @@ const nowId = computed(() => (W.state.active === props.index ? visibleSets.value
             <input v-else class="vin" inputmode="numeric" :value="s.durationS ?? ''" placeholder="sec" @change="W.editSet(s, { durationS: num(($event.target as HTMLInputElement).value) })" />
           </td>
           <td v-if="showDist"><input class="vin" inputmode="decimal" :value="s.distanceM != null ? Math.round(fromM(s.distanceM, fmt.du) * 100) / 100 : ''" placeholder="-" @change="W.editSet(s, { distanceM: num(($event.target as HTMLInputElement).value) == null ? null : toM(num(($event.target as HTMLInputElement).value)!, fmt.du) })" /></td>
-          <td v-if="feat.rpe"><input class="vin" inputmode="decimal" :value="s.rpe ?? ''" placeholder="-" style="max-width:56px" @change="W.editSet(s, { rpe: num(($event.target as HTMLInputElement).value) })" /></td>
+          <td v-if="feat.rpe" class="rpecell"><input class="vin" inputmode="decimal" :value="s.rpe ?? ''" placeholder="-" @change="W.editSet(s, { rpe: num(($event.target as HTMLInputElement).value) })" /></td>
           <td><button class="tick" :class="{ on: s.done }" :disabled="!isActive" :aria-label="s.done ? 'Undo' : 'Done'" :title="isActive ? undefined : 'Make this the exercise you\'re doing to log it'" @click="W.tick(e, e.sets.indexOf(s))"><Icon v-if="s.done" name="check" :size="20" /></button></td>
           <td style="width:36px;padding:0"><Menu :items="setMenu(s)" /></td>
         </tr>

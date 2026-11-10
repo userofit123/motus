@@ -9,20 +9,21 @@ export const restForKind = (e: Ex, kind: SetKind, isLastSet: boolean, d: RestDef
 export const plannedRest = (e: Ex & { sets: RoutineSet[] }, x: RoutineSet, j: number, d: RestDefaults): number =>
   restForKind(e, x.kind, j === e.sets.length - 1, d, x.restS, e.sets[j + 1]?.kind, opensSideRound(e.sets, j));
 
-const KIND_LABEL: Partial<Record<SetKind, string>> = { warmup: "after warm-ups", failure: "after to failure", drop: "after drops" };
+const KIND_LABEL: Partial<Record<SetKind, string>> = { warmup: "after warm-ups", failure: "after failure sets", drop: "after drops" };
 /** ["1:00 after warm-ups", "1:45 between sets", "2:30 after the last one"]: the routine editor's and the routine page's rest
  *  summary, as parts so the views join them with the same dot as every other summary line. Only the set types the exercise
  *  has, and only rests above 0 (0 is off); the numbers come from restForKind, the rule the workout and server use. */
 export const restSummary = (e: Ex & { sets: (RoutineSet | { kind?: SetKind | null; restS?: number | null })[] }, clock: (s: number) => string, w: WorkoutPrefs, sides: boolean): string[] => {
   const d = restDefaultsOf(w), last = e.sets.length - 1;
   const kinds = (k: SetKind) => e.sets.some((x, j) => x.kind === k && j < last);
+  const between = restForKind(e, "normal", false, d), after = restForKind(e, "normal", true, d);
   const kindPart = (k: SetKind) => {
     const r = kinds(k) ? restForKind(e, k, false, d) : 0;
     return r > 0 ? `${clock(r)} ${KIND_LABEL[k]}` : "";
   };
-  const between = restForKind(e, "normal", false, d), after = restForKind(e, "normal", true, d);
   return [
-    kindPart("warmup"),
+    // warm-ups resting like every other set need no part of their own
+    kinds("warmup") && restForKind(e, "warmup", false, d) === between ? "" : kindPart("warmup"),
     between > 0 ? `${clock(between)} between sets` : "",
     kindPart("failure"),
     kindPart("drop"),

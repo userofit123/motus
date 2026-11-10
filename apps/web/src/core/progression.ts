@@ -19,29 +19,25 @@ export const RANGE_HINT = "The reps to aim for. At the top on every set, the wei
 /** Settings' two rep range rows, one end each, like the two weight step rows */
 export const RANGE_BOTTOM_HINT = "Where the reps start again after the weight goes up";
 export const RANGE_TOP_HINT = "At the top on every set, the weight goes up";
-/** The short lower-after part of a summary: "lower after 3 missed", "never lower" */
-export const lowerAfterShort = (n: number) => (n === 0 ? "never lower" : `lower after ${n} missed`);
 type ProgShown = { mode: ProgressionMode; repsMin: number; repsMax: number; stepKg: number; lowerAfter: number };
 type ProgOwn = { mode?: unknown; repsMin?: unknown; stepKg?: unknown; lowerAfter?: unknown } | null | undefined;
-/** One exercise's Progression in a few words, as the routine editor's tile and the routine page say it:
- *  "Automatic · 6-12 reps · +2.5 kg" (+ "lower after 3 missed" with `lowerAfter`), each part faded (`dim`) while it
- *  follows your default; Off is only "Off". `more` marks the parts after the mode (a phone tile may hide them). */
-export function progParts(p: ProgShown, own: ProgOwn, weight: (kg: number) => string, opts: { lowerAfter?: boolean } = {}) {
+/** One exercise's Progression in plain words, as the routine page and the routine editor's Progression header say it:
+ *  "Automatic · aims for 6-12 reps · when every set reaches 12, adds 2.5 kg and goes back to 6 reps · lowers the weight
+ *  after 3 missed workouts"; one target: "aims for 8 reps · when every set reaches 8, adds 2.5 kg next time"; Suggest
+ *  "suggests adding ..."; assisted exercises move the help the other way (nextTime: up = less help, down = more help).
+ *  Each part is faded (`dim`) while it follows your default; Off is only "Off". */
+export function progParts(p: ProgShown, own: ProgOwn, weight: (kg: number) => string, opts: { assisted?: boolean } = {}) {
   const o = own ?? {};
-  const mode = { text: modeLabel(p.mode), dim: o.mode == null, more: false };
+  const mode = { text: modeLabel(p.mode), dim: o.mode == null };
   if (p.mode === "off") return [mode];
-  if (opts.lowerAfter) return progSentence(p, o, weight, mode);
-  return [mode, { text: rangeText(p.repsMin, p.repsMax), dim: o.repsMin == null, more: true }, { text: `+${weight(p.stepKg)}`, dim: o.stepKg == null, more: true }];
-}
-/** The routine page's full line in plain words: what to aim for, when the weight moves, when it goes down.
- *  "Automatic · aim for 6-12 reps · at 12 on every set, +2.5 kg and back to 6 · lower after 3 missed"
- *  "Automatic · 8 reps on every set, then +2.5 kg next time · lower after 3 missed"; Suggest says "suggests +2.5 kg" */
-function progSentence(p: ProgShown, o: NonNullable<ProgOwn>, weight: (kg: number) => string, mode: { text: string; dim: boolean; more: boolean }) {
-  const step = `${p.mode === "suggest" ? "suggests " : ""}+${weight(p.stepKg)}`;
-  const same = p.repsMin === p.repsMax;
+  const ask = p.mode === "suggest", w = weight(p.stepKg), same = p.repsMin === p.repsMax;
+  // the weight's move as a verb: "adds 2.5 kg", "suggests adding 2.5 kg", "takes 2.5 kg off the help"
+  const up = opts.assisted ? (ask ? `suggests taking ${w} off the help` : `takes ${w} off the help`) : (ask ? `suggests adding ${w}` : `adds ${w}`);
+  const back = same ? " next time" : ask ? ` and going back to ${p.repsMin} reps` : ` and goes back to ${p.repsMin} reps`;
+  const n = p.lowerAfter, missed = n === 1 ? "1 missed workout" : `${n} missed workouts`;
+  const down = opts.assisted ? (ask ? "suggests more help" : "adds help") : (ask ? "suggests lowering the weight" : "lowers the weight");
   return [mode,
-    same ? { text: `${p.repsMin} reps on every set, then ${step} next time`, dim: o.repsMin == null && o.stepKg == null, more: true }
-      : { text: `aim for ${p.repsMin}-${p.repsMax} reps`, dim: o.repsMin == null, more: true },
-    ...(same ? [] : [{ text: `at ${p.repsMax} on every set, ${step} and back to ${p.repsMin}`, dim: o.stepKg == null, more: true }]),
-    { text: lowerAfterShort(p.lowerAfter), dim: o.lowerAfter == null, more: true }];
+    { text: `aims for ${rangeText(p.repsMin, p.repsMax)}`, dim: o.repsMin == null },
+    { text: `when every set reaches ${p.repsMax}, ${up}${back}`, dim: o.repsMin == null && o.stepKg == null },
+    { text: n === 0 ? (opts.assisted ? "never adds help" : "never lowers the weight") : `${down} after ${missed}`, dim: o.lowerAfter == null }];
 }
