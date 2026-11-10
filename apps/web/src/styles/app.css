@@ -367,6 +367,8 @@ html.phone { --tabh: 64px; }
 .setgrid .sk.f { color: var(--neg); }
 /* a drop hangs off the set above it */
 .sitem.drop .sk { translate: 8px 0; }
+/* the "×" between weight and reps: its own narrow column, quiet, centred on the boxes (routine editor and routine page) */
+.setgrid > .sx, .shead > .sx { text-align: center; color: var(--tx2); font-size: 14px; font-weight: 400; line-height: 1; text-transform: none; letter-spacing: 0; user-select: none; }
 /* a set's own rest, under it */
 .rrow { padding-top: 0; }
 .rrow .rpill { grid-column: 2 / -1; justify-self: start; }

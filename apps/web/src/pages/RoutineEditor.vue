@@ -260,7 +260,9 @@ function restDefault(t: RestTarget) {
 const cols = (e: any) => {
   const t = tr(e);
   const n = [usesWeight(t), usesReps(t), usesDuration(t), usesDistance(t), s.value.features.rpe].filter(Boolean).length;
-  return { gridTemplateColumns: `40px repeat(${n}, minmax(0, 1fr)) 40px` };
+  // a narrow column of its own for the "×" between weight and reps
+  const mid = usesWeight(t) && usesReps(t);
+  return { gridTemplateColumns: mid ? `40px minmax(0, 1fr) 14px repeat(${n - 1}, minmax(0, 1fr)) 40px` : `40px repeat(${n}, minmax(0, 1fr)) 40px` };
 };
 
 async function pickFolder(v: string) {
@@ -453,13 +455,14 @@ await loaded(src, all, folders, routines, templates);
 
           <Collapse :open="isOpen(e)"><div class="exb">
             <div class="setgrid shead" :style="cols(e)"><span>Set</span>
-              <span v-if="usesWeight(tr(e))">{{ fmt.wu }}<span v-if="perSide(e)" class="thside"> / side</span></span><span v-if="usesReps(tr(e))">Reps</span>
+              <span v-if="usesWeight(tr(e))">{{ fmt.wu }}<span v-if="perSide(e)" class="thside"> / side</span></span><span v-if="usesWeight(tr(e)) && usesReps(tr(e))" class="sx" /><span v-if="usesReps(tr(e))">Reps</span>
               <span v-if="usesDuration(tr(e))">Sec</span><span v-if="usesDistance(tr(e))">{{ fmt.du }}</span><span v-if="s.features.rpe">RPE</span><span /></div>
             <div class="slist">
               <div v-for="(x, j) in e.sets" :key="x._k" data-drag class="sitem" :class="{ drop: x.kind === 'drop' }">
                 <div class="setgrid" :style="cols(e)">
                   <button class="sk dragh" :class="{ w: x.kind === 'warmup', d: x.kind === 'drop', f: x.kind === 'failure' }" title="Drag to reorder" @pointerdown="dragSet($event, e, j)">{{ setLabel(e.sets, j, sidesOn) }}</button>
                   <input v-if="usesWeight(tr(e))" class="vin" inputmode="decimal" :value="wIn(x.weightKg)" placeholder="-" @change="x.weightKg = wOut(($event.target as HTMLInputElement).value); touch()" />
+                  <span v-if="usesWeight(tr(e)) && usesReps(tr(e))" class="sx" aria-hidden="true">×</span>
                   <input v-if="usesReps(tr(e))" class="vin" inputmode="numeric" :value="x.reps ?? ''" placeholder="-" @change="x.reps = nOut(($event.target as HTMLInputElement).value); touch()" />
                   <input v-if="usesDuration(tr(e))" class="vin" inputmode="numeric" :value="x.durationS ?? ''" placeholder="-" @change="x.durationS = nOut(($event.target as HTMLInputElement).value); touch()" />
                   <input v-if="usesDistance(tr(e))" class="vin" inputmode="decimal" :value="dIn(x.distanceM)" placeholder="-" @change="x.distanceM = dOut(($event.target as HTMLInputElement).value); touch()" />
