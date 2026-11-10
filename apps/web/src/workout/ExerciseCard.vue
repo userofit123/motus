@@ -26,15 +26,18 @@ const fmt = W.fmt, feat = computed(() => W.settings.value.features), prefs = W.p
 const tr = computed(() => props.e.exercise?.tracking ?? "weight_reps");
 const showW = computed(() => usesWeight(tr.value)), showR = computed(() => usesReps(tr.value)), showD = computed(() => usesDuration(tr.value)), showDist = computed(() => usesDistance(tr.value));
 const visibleSets = computed(() => props.e.sets.filter((s) => prefs.value.showWarmups || s.kind !== "warmup"));
-// with sides shown, a left set and the right one after it share a number (1L, 1R)
+// with sides shown, a left and right round (either order) shares a number (1L, 1R)
 const setNo = (s: WorkoutSet) => setNoOf(props.e.sets, props.e.sets.indexOf(s), !!feat.value.unilateral);
 // drops are numbered within their set: D1, D2…
 const dropNo = (s: WorkoutSet) => { const a = props.e.sets; let i = a.indexOf(s), n = 0; while (a[i]?.kind === "drop") { n++; i--; } return n; };
-const kindShort = (s: WorkoutSet) => (s.kind === "warmup" ? "W" : s.kind === "drop" ? `D${dropNo(s)}` : s.kind === "failure" ? "F" : String(setNo(s))) + (s.kind !== "drop" && feat.value.unilateral && s.side ? s.side : "");
+// warm-ups keep a plain "W": the side letter is for the sets that count
+const kindShort = (s: WorkoutSet) => (s.kind === "warmup" ? "W" : s.kind === "drop" ? `D${dropNo(s)}` : s.kind === "failure" ? "F" : String(setNo(s))) + (s.kind !== "drop" && s.kind !== "warmup" && feat.value.unilateral && s.side ? s.side : "");
 // the exercise's own setting (left and right sets by default); any set of any exercise can still be made left or right
 const sided = computed(() => !!feat.value.unilateral && !!props.e.exercise?.unilateral);
-// the weight is per side wherever a set is for one side
-const perSide = computed(() => sided.value || (!!feat.value.unilateral && props.e.sets.some((s) => s.side)));
+// the weight column says "/ side" only when every set that counts is for one side; in a mix the L and R badges say it
+const perSide = computed(() => { const w = props.e.sets.filter((s) => s.kind !== "warmup" && s.kind !== "drop"); return !!feat.value.unilateral && w.length > 0 && w.every((s) => s.side); });
+// the set menu's side items: always on a one-sided exercise, else once it has a side set (the exercise menu adds the first)
+const sideItems = computed(() => sided.value || (!!feat.value.unilateral && props.e.sets.some((s) => s.side)));
 const prevText = (s: WorkoutSet) => {
   const p = s.prev; if (!p) return "-";
   return [showW.value && p.weightKg != null ? fmt.value.w(p.weightKg) : "", showR.value && p.reps != null ? p.reps : "", showD.value && p.durationS ? fmt.value.clock(p.durationS) : "", showDist.value && p.distanceM ? fmt.value.num(fromM(p.distanceM, fmt.value.du), 2) : ""].filter((x) => x !== "").join(" × ") || "-";
@@ -124,7 +127,7 @@ const setMenu = (s: WorkoutSet) => [
   ...(feat.value.setTypes && s.kind !== "warmup" ? [{ label: s.kind === "drop" || props.e.sets[props.e.sets.indexOf(s) + 1]?.kind === "drop" ? "Add another drop" : "Add a drop set", hint: "Straight after this set: lower the weight and keep going", icon: "arrowDown", sep: s.kind !== "drop", run: () => W.addDrop(props.e, s) }] : []),
   ...(s.prev ? [{ label: "Copy last time", icon: "copy", run: () => copyPrev(s) }] : []),
   // any set can be for one side, or both together, whatever the exercise's own setting (drops follow their set)
-  ...(feat.value.unilateral && s.kind !== "drop" ? [
+  ...(sideItems.value && s.kind !== "drop" ? [
     { label: "Both sides", icon: "dumbbell", sep: true, checked: !s.side, run: () => W.editSet(s, { side: null }) },
     { label: "Left side", icon: "left", checked: s.side === "L", run: () => W.editSet(s, { side: "L" }) },
     { label: "Right side", icon: "right", checked: s.side === "R", run: () => W.editSet(s, { side: "R" }) }] : []),
@@ -174,8 +177,9 @@ const nowId = computed(() => (W.state.active === props.index ? visibleSets.value
       </tbody>
     </table>
     <div class="row" style="margin-top:8px">
-      <button class="qb acc" @click="W.addSet(e)"><Icon name="plus" :size="16" />Add set</button>
-      <button v-if="sided" class="qb" title="Add a left and a right set" @click="addPair"><Icon name="plus" :size="16" />Left + right</button>
+      <!-- a one-sided exercise adds both sides as its main step; the others add one set -->
+      <button v-if="sided" class="qb acc" title="Add a left and a right set" @click="addPair"><Icon name="plus" :size="16" />Left + right</button>
+      <button class="qb" :class="{ acc: !sided }" @click="W.addSet(e)"><Icon name="plus" :size="16" />Add set</button>
       <button v-if="e.repRestS" class="qb" :class="{ acc: repTimer }" @click="toggleRepTimer"><Icon name="timer" :size="16" />{{ repTimer ? "Stop rep timer" : `Rep timer ${e.repRestS}s` }}</button>
       <div class="grow" />
       <button class="qb" @click="noteSheet = { targets: [{ type: 'exercise', id: e.exerciseId, label: `${e.exercise.name}, every time` }, ...(e.routineExerciseId && !e.swapped ? [{ type: 'routine_exercise', id: e.routineExerciseId, label: `${e.exercise.name} in ${W.state.w?.name ?? 'this routine'}` }] : []), ...(W.state.w?.routineId ? [{ type: 'routine', id: W.state.w.routineId, label: `The whole routine` }] : []), { type: 'workout_exercise', id: e.id, label: 'Just today' }], workoutId: W.state.w?.id }"><Icon name="note" :size="16" />Note</button>

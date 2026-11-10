@@ -85,6 +85,8 @@ describe("engine", () => {
     // next time: "Previous" pairs left with last time's left and right with right
     const w2 = await call(D, "POST", "/workouts/start", { routineId: r.id });
     expect(w2.exercises[0].sets.map((x: any) => [x.side, x.prev?.weightKg ?? null])).toEqual([[null, 20], ["L", 16], ["R", 18], [null, null]]);
+    // the database itself keeps a side to L, R or none (a data import writes routine_sets directly)
+    await expect(eng.db.admin.query("UPDATE routine_sets SET side = 'X' WHERE id = $1", [after[0].id])).rejects.toThrow();
   });
   let routineId = "", benchId = "", workoutId = "";
   it("creates a routine from a template", async () => {

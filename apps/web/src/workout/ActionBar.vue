@@ -7,6 +7,7 @@
 import { computed, ref } from "vue";
 import { clock, usesWeight, usesReps, usesDuration, type WorkoutSet } from "@motus/shared";
 import { useWorkout } from "./useWorkout";
+import { setNo } from "../core/format";
 import { rest, restLeft, restActive, adjustRest, finishRest } from "./runtime";
 import { choose } from "../core/ask";
 import Icon from "../components/Icon.vue";
@@ -27,13 +28,17 @@ const si = computed(() => (s.value ? e.value!.sets.indexOf(s.value) : -1));
 // the sets that count: a drop belongs to the set before it
 const work = computed(() => e.value?.sets.filter((x) => x.kind !== "warmup" && x.kind !== "drop") ?? []);
 const parentOf = (x: WorkoutSet) => { const a = e.value!.sets; let i = a.indexOf(x); while (i > 0 && a[i]!.kind === "drop") i--; return a[i]!; };
+// counted as the badges are (setNo): a left and right round is one set, so "Set 2 of 3 · left" beside the badge "2L"
+const sidesOn = computed(() => !!W.settings.value.features.unilateral);
+const noOf = (x: WorkoutSet) => setNo(e.value!.sets, e.value!.sets.indexOf(x), sidesOn.value);
+const total = computed(() => { const l = work.value.at(-1); return l ? noOf(l) : 0; });
 const setLabel = computed(() => {
   const x = s.value; if (!x) return "";
   if (x.kind === "warmup") return "Warm-up set";
-  if (x.kind === "drop") return `Drop set · set ${work.value.indexOf(parentOf(x)) + 1} of ${work.value.length}`;
-  // a set for one side says which (the feature on): "Set 2 of 6 · left"
-  const side = W.settings.value.features.unilateral && x.side ? ` · ${x.side === "L" ? "left" : "right"}` : "";
-  return `${x.kind === "failure" ? "Set to failure" : "Set"} ${work.value.indexOf(x) + 1} of ${work.value.length}${side}`;
+  if (x.kind === "drop") return `Drop set · set ${noOf(parentOf(x))} of ${total.value}`;
+  // a set for one side says which (the feature on): "Set 2 of 3 · left"
+  const side = sidesOn.value && x.side ? ` · ${x.side === "L" ? "left" : "right"}` : "";
+  return `${x.kind === "failure" ? "Set to failure" : "Set"} ${noOf(x)} of ${total.value}${side}`;
 });
 
 const resting = computed(() => restActive() || (rest.done && !!rest.endAt));

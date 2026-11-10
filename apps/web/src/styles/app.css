@@ -343,7 +343,8 @@ html.phone { --tabh: 64px; }
 .sets tr td:first-child { border-start-start-radius: 10px; border-end-start-radius: 10px; }
 .sets tr td:last-child { border-start-end-radius: 10px; border-end-end-radius: 10px; }
 .sets .prev { color: var(--tx2); font-size: 13px; cursor: pointer; white-space: nowrap; }
-.sets .sk { display: inline-grid; place-items: center; min-width: 26px; height: 26px; padding: 0 6px; border-radius: 8px; background: var(--s2); font-size: 12.5px; font-weight: 600; cursor: pointer; border: 0; }
+/* set badges are as wide as "10L" (left and right sets) so the column lines up whatever the label */
+.sets .sk { display: inline-grid; place-items: center; min-width: 36px; height: 26px; padding: 0 6px; border-radius: 8px; background: var(--s2); font-size: 12.5px; font-weight: 600; cursor: pointer; border: 0; }
 .sets .sk.w { color: var(--c2); }
 .sets .sk.d { color: var(--c1); }
 /* a drop hangs off the set above it */
@@ -359,7 +360,7 @@ html.phone { --tabh: 64px; }
 .thside { font-weight: 400; text-transform: none; letter-spacing: 0; }
 .slist { display: flex; flex-direction: column; }
 .sitem { border-radius: var(--r-sm); }
-.setgrid .sk { display: inline-grid; place-items: center; min-width: 30px; height: 30px; padding: 0 6px; border-radius: 8px; background: var(--s2); color: var(--tx); font-size: 12.5px; font-weight: 600; border: 0; }
+.setgrid .sk { display: inline-grid; place-items: center; min-width: 36px; height: 30px; padding: 0 6px; border-radius: 8px; background: var(--s2); color: var(--tx); font-size: 12.5px; font-weight: 600; border: 0; }
 .setgrid .sk.w { color: var(--c2); }
 .setgrid .sk.d { color: var(--c1); }
 .setgrid .sk.f { color: var(--neg); }

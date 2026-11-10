@@ -40,18 +40,33 @@ export interface RestDefaults {
   afterExerciseS: number;
   byKindS?: RestByKind; // the person's defaults after warm-up, drop and to-failure sets
 }
+type SidedSet = { kind?: string | null; side?: string | null };
+/** For each set, whether it opens a round with the set straight after it: a left set and a right one next to each other
+ * (either order) of the same kind are one round, sharing a number with no rest between them; L R L R is two rounds.
+ * Drops never pair (they follow their own set). */
+export function sideRounds(sets: SidedSet[]): boolean[] {
+  const out = sets.map(() => false);
+  for (let i = 0; i + 1 < sets.length; i++) {
+    const a = sets[i]!, b = sets[i + 1]!;
+    if (a.kind !== "drop" && a.kind === b.kind && ((a.side === "L" && b.side === "R") || (a.side === "R" && b.side === "L"))) { out[i] = true; i++; }
+  }
+  return out;
+}
+/** Whether set `j` opens a left and right round with the next one (sideRounds). */
+export const opensSideRound = (sets: SidedSet[], j: number) => sideRounds(sets)[j] ?? false;
+
 /** The rest after a set: the set's own rest, else the routine's rest for that kind of set (warm-up, drop…), else the
  * person's default for that kind, else the exercise in the routine, else the person's exercise default, else the global default.
- * None before a drop set, nor between a left set and the right one after it. */
+ * None before a drop set, nor inside a left and right round (`sideRound`: this set opens one, see sideRounds). */
 export function restAfterSet(
-  o: { setRestS?: number | null; kind?: SetKind; nextKind?: SetKind; side?: string | null; nextSide?: string | null; byKindS?: RestByKind | null; exRestS?: number | null; prefRestS?: number | null; isLastSet: boolean; exRestAfterS?: number | null; prefRestAfterS?: number | null },
+  o: { setRestS?: number | null; kind?: SetKind; nextKind?: SetKind; sideRound?: boolean; byKindS?: RestByKind | null; exRestS?: number | null; prefRestS?: number | null; isLastSet: boolean; exRestAfterS?: number | null; prefRestAfterS?: number | null },
   d: RestDefaults,
 ): number {
   if (o.setRestS != null) return o.setRestS;
   // a drop set follows straight on: lower the weight and keep going
   if (o.nextKind === "drop") return 0;
-  // a left set followed by a right one is one round: switch sides straight away, the rest comes after the right side
-  if (o.side === "L" && o.nextSide === "R") return 0;
+  // a left and right round: switch sides straight away, the rest comes after the second side
+  if (o.sideRound) return 0;
   if (o.isLastSet) return o.exRestAfterS ?? o.prefRestAfterS ?? d.afterExerciseS;
   const k = o.kind && o.kind !== "normal" ? o.byKindS?.[o.kind] ?? d.byKindS?.[o.kind] : null;
   return k ?? o.exRestS ?? o.prefRestS ?? d.betweenSetsS;

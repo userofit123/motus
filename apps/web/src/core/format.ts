@@ -1,6 +1,6 @@
 // Numbers, units and dates as the person likes them (Settings → Units & formats).
 import { computed } from "vue";
-import { fromKg, toKg, fromM, fromCm, toCm, num, clock, duration as dur, ymd, usesWeight, usesReps, type Settings, type Tracking } from "@motus/shared";
+import { fromKg, toKg, fromM, fromCm, toCm, num, clock, duration as dur, ymd, usesWeight, usesReps, sideRounds, type Settings, type Tracking } from "@motus/shared";
 import { useSettings } from "../api/queries";
 
 export function useFmt() {
@@ -91,24 +91,37 @@ export const SET_KINDS = [["normal", "Normal", "dumbbell"], ["warmup", "Warm-up"
 
 type SetLike = { kind: string; side?: string | null };
 /** A working set's number in a list of sets (warm-ups and drops have none of their own). With sides shown (the
- * feature is on), a left set and the right one straight after it (or right then left) are one round and share a
- * number, "1L" "1R", as general sets beside them count on: 1, 2, 3L, 3R. */
+ * feature is on), a left and right round (a left set and a right one next to each other, either order, of the same
+ * kind: sideRounds) shares a number, "1L" "1R", as general sets beside them count on: 1, 2, 3L, 3R. */
 export function setNo(sets: SetLike[], j: number, sides = false) {
-  let n = 0, open: string | null = null;
+  const second = sides ? sideRounds(sets) : [];
+  let n = 0;
   for (let i = 0; i <= j && i < sets.length; i++) {
     const x = sets[i]!;
-    if (x.kind === "warmup" || x.kind === "drop") continue;
-    const side = sides ? x.side ?? null : null;
-    if (side && open && open !== side) { open = null; continue; }
-    n++; open = side;
+    if (x.kind === "warmup" || x.kind === "drop" || second[i - 1]) continue;
+    n++;
   }
   return n;
+}
+/** The working sets counted by rounds (a left and right round is one set, as setNo numbers them), and how many of
+ * those rounds are for one side, said the same on the routine page and in the editor: "3 sets · left and right", or
+ * "4 sets · 1 left and right" in a mix. `sides`: the feature is on. */
+export function setRounds(sets: SetLike[], sides: boolean): { n: number; sides: string } {
+  const second = sides ? sideRounds(sets) : [];
+  let n = 0, sided = 0;
+  sets.forEach((x, i) => {
+    if (x.kind === "warmup" || x.kind === "drop" || second[i - 1]) return;
+    n++;
+    if (sides && x.side) sided++;
+  });
+  return { n, sides: !sided ? "" : sided === n ? "left and right" : `${sided} left and right` };
 }
 /** A set's short label in a list of sets: its number, W for a warm-up, F to failure, drops numbered within their set (D1,
  * D2…); with sides shown, L or R after it ("1L"). */
 export function setLabel(sets: SetLike[], j: number, sides = false) {
   const k = sets[j]?.kind, side = sides ? sets[j]?.side ?? "" : "";
-  if (k === "warmup") return "W" + side;
+  // warm-ups keep a plain "W": the side letter is for the sets that count
+  if (k === "warmup") return "W";
   if (k === "failure") return "F" + side;
   if (k !== "drop") return String(setNo(sets, j, sides)) + side;
   let n = 1; while (sets[j - n]?.kind === "drop") n++;

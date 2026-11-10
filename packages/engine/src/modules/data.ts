@@ -149,6 +149,8 @@ export async function importAll(ctx: Ctx, data: any, mode: "replace" | "merge") 
       const row: Record<string, unknown> = {};
       for (const [k, v] of Object.entries(raw)) if (/^[a-z_0-9]+$/.test(k)) row[k] = fix(v);
       if (t === "routines") row.based_on_id = null;
+      // a set's side is "L", "R" or both together (null), as writeRoutineBody keeps it (021_routine_set_side_check)
+      if ((t === "routine_sets" || t === "workout_sets") && "side" in row) row.side = row.side === "L" || row.side === "R" ? row.side : null;
       // a backup from before "Keep these numbers fixed" and Progression (015_routine_now): carried over the same way
       if (t === "routine_exercises") {
         if (!("fixed" in row)) row.fixed = row.prefill === "target";

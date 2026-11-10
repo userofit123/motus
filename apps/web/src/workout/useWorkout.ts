@@ -1,7 +1,7 @@
 // The running workout, as one shared object: a local copy that every change updates at once (so typing and ticking never
 // wait for the network), with each change sent to the server (or kept for later when offline).
 import { computed, effectScope, nextTick, reactive, watch } from "vue";
-import { restAfterSet, restDefaultsOf, dropWeightKg, toKg, type Workout, type WorkoutExercise, type WorkoutSet, type WorkoutPrefs } from "@motus/shared";
+import { restAfterSet, opensSideRound, restDefaultsOf, dropWeightKg, toKg, type Workout, type WorkoutExercise, type WorkoutSet, type WorkoutPrefs } from "@motus/shared";
 import { useActive, useSettings } from "../api/queries";
 import { send, endedHere, markEnded, waiting } from "../api/outbox";
 import { api } from "../api/client";
@@ -145,7 +145,7 @@ export function useWorkout() {
     const s = e.sets[si]!;
     const last = si === e.sets.length - 1 || e.sets.slice(si + 1).every((x) => x.done);
     const d = restDefaultsOf(prefs.value);
-    let secs = s.restPlannedS ?? restAfterSet({ kind: s.kind, nextKind: e.sets[si + 1]?.kind, side: s.side, nextSide: e.sets[si + 1]?.side, exRestS: e.restS, isLastSet: last, exRestAfterS: e.restAfterS }, d);
+    let secs = s.restPlannedS ?? restAfterSet({ kind: s.kind, nextKind: e.sets[si + 1]?.kind, sideRound: opensSideRound(e.sets, si), exRestS: e.restS, isLastSet: last, exRestAfterS: e.restAfterS }, d);
     if (last && e.restAfterS != null) secs = e.restAfterS;
     // superset: no rest until the round is complete
     const nx = state.w!.exercises[state.w!.exercises.indexOf(e) + 1];

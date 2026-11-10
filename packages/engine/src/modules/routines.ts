@@ -1,6 +1,6 @@
 // Routines (saved plans) and their folders: list, open, create (from scratch, from another routine, from a workout,
 // from a template), edit, duplicate, version history, and the pre-start preview.
-import { TEMPLATES, applyStructure, clampStartReps, cleanProgression, planNext, estimate, usualDuration, restAfterSet, restDefaultsOf, ymd, LIFTED_SQL, type RoutineItemLike, type RoutineSummary, type RoutineSnapshot, type RoutineSnapshotExercise, type RoutineVersionRow, type RoutineTrendPoint, type SetKind, type Tracking } from "@motus/shared";
+import { TEMPLATES, applyStructure, clampStartReps, cleanProgression, planNext, estimate, usualDuration, restAfterSet, opensSideRound, restDefaultsOf, ymd, LIFTED_SQL, type RoutineItemLike, type RoutineSummary, type RoutineSnapshot, type RoutineSnapshotExercise, type RoutineVersionRow, type RoutineTrendPoint, type SetKind, type Tracking } from "@motus/shared";
 import { SOURCE } from "@motus/exercise-data/meta";
 import type { Router, Ctx } from "../router";
 import type { Sql } from "../db";
@@ -42,7 +42,7 @@ export async function routineSummaries(q: Sql, userId: string, where = "r.delete
   return rows.map((r: any) => {
     const exs = r.exs as any[];
     const est = estimate(exs.map((e, i) => ({
-      sets: (e.sets as any[]).map((s, j) => ({ ...s, restS: restAfterSet({ setRestS: s.restS, kind: s.kind, nextKind: e.sets[j + 1]?.kind, side: s.side, nextSide: e.sets[j + 1]?.side, byKindS: e.restByKind, exRestS: e.restS, isLastSet: j === e.sets.length - 1, exRestAfterS: e.restAfterS }, d) })),
+      sets: (e.sets as any[]).map((s, j) => ({ ...s, restS: restAfterSet({ setRestS: s.restS, kind: s.kind, nextKind: e.sets[j + 1]?.kind, sideRound: opensSideRound(e.sets, j), byKindS: e.restByKind, exRestS: e.restS, isLastSet: j === e.sets.length - 1, exRestAfterS: e.restAfterS }, d) })),
     })));
     const muscles = [...new Set(exs.flatMap((e) => e.primary as string[]))];
     // helpers that are nobody's main muscle here, for the little body on the routine card

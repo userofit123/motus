@@ -8,11 +8,11 @@
 import { computed, nextTick, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { plannedRest as plannedRestOf } from "../core/plannedRest";
-import { usesWeight, usesReps, usesDuration, usesDistance, musclesWorked, estimate, restAfterSet, dropWeightKg, restDefaultsOf, clampStartReps, duration, muscleName, toM, fromM, muscleSets, type Progression } from "@motus/shared";
+import { usesWeight, usesReps, usesDuration, usesDistance, musclesWorked, estimate, restAfterSet, dropWeightKg, restDefaultsOf, clampStartReps, duration, muscleName, sideRounds, toM, fromM, muscleSets, type Progression } from "@motus/shared";
 import { useRoutine, useRoutines, useFolders, useExercises, useSettings, useTemplates, loaded } from "../api/queries";
 import { api, mediaUrl } from "../api/client";
 import { invalidate } from "../api/live";
-import { useFmt, SET_KINDS, setLabel } from "../core/format";
+import { useFmt, SET_KINDS, setLabel, setRounds } from "../core/format";
 import { readJson, writeJson } from "../core/prefs";
 import { toast, toastError } from "../core/toast";
 import { prompt } from "../core/ask";
@@ -183,8 +183,12 @@ const exOf = (e: any) => exById.value.get(e.exerciseId) ?? e.exercise;
 // "Left + right" button; any set of any exercise can be made left, right or both from its menu, beside general sets
 const sidesOn = computed(() => !!s.value.features.unilateral);
 const sidedEx = (e: any) => sidesOn.value && !!exOf(e)?.unilateral;
-// the weight is per side wherever a set is for one side
-const perSide = (e: any) => sidedEx(e) || (sidesOn.value && e.sets.some((x: any) => x.side));
+// "/ side" only when every set that counts is for one side; in a mix the L and R badges say it
+const perSide = (e: any) => { const w = e.sets.filter((x: any) => x.kind !== "warmup" && x.kind !== "drop"); return sidesOn.value && w.length > 0 && w.every((x: any) => x.side); };
+// the set menu's side items: always on a one-sided exercise, else once it has a side set (the exercise menu adds the first)
+const sideItems = (e: any) => sidedEx(e) || (sidesOn.value && e.sets.some((x: any) => x.side));
+// a left and right round (either order, see sideRounds): no rest between its two sets
+const hasSideRounds = (e: any) => sidesOn.value && sideRounds(e.sets).some(Boolean);
 const exName = (e: any) => exOf(e)?.name ?? "";
 const exImg = (e: any) => exOf(e)?.images?.[0];
 
@@ -199,13 +203,15 @@ function setSummary(e: any) {
   const start = (x: any) => clampStartReps(x);
   const reps = (x: any) => (start(x) != null ? `${range(x)} (starts at ${start(x)})` : range(x));
   const sameStart = work.length && work.every((x: any) => start(x) === start(work[0]));
+  // counted by rounds and said as the routine page says it (setRounds): "3 × 8 · left and right"
+  const r = setRounds(e.sets, sidesOn.value), n = `${r.n} set${r.n === 1 ? "" : "s"}`;
   let what = "";
   if (usesReps(t)) what = same("reps") && same("repsMax") && sameStart
-    ? `${work.length} × ${range(work[0])}${start(work[0]) != null ? ` · starts at ${start(work[0])}` : ""}` : work.map(reps).join(", ");
-  else if (usesDuration(t)) what = same("durationS") && work[0]?.durationS ? `${work.length} × ${f.clock(work[0].durationS)}` : `${work.length} sets`;
-  else what = `${work.length} sets`;
+    ? `${r.n} × ${range(work[0])}${start(work[0]) != null ? ` · starts at ${start(work[0])}` : ""}` : work.map(reps).join(", ");
+  else if (usesDuration(t)) what = same("durationS") && work[0]?.durationS ? `${r.n} × ${f.clock(work[0].durationS)}` : n;
+  else what = n;
   const w = usesWeight(t) && same("weightKg") && work[0]?.weightKg != null ? ` · ${f.w(work[0].weightKg)} ${f.wu}` : "";
-  const sides = sidesOn.value && work.some((x: any) => x.side) ? " · left and right" : "";
+  const sides = r.sides ? ` · ${r.sides}` : "";
   return `${what}${w}${sides}${warm ? ` · ${warm} warm-up` : ""}${drops ? ` · ${drops} drop${drops === 1 ? "" : "s"}` : ""}`;
 }
 
@@ -280,7 +286,7 @@ const progChip = (e: any) => `Progression: ${modeLabel(e.progression?.mode ?? s.
 // Progression moves the weight by reps reached, so it's offered only where an exercise has both
 const progUsable = (e: any) => usesWeight(tr(e)) && usesReps(tr(e)) && (!planMode.value || asRoutine.value);
 const wNum = (kg: number | null) => (kg == null ? null : Math.round(fmt.value.fromKg(kg) * 100) / 100);
-const restSummary = (e: any) => `${fmt.value.clock(workRest(e))} between sets, ${fmt.value.clock(e.restAfterS ?? s.value.workout.restAfterExerciseS)} after the last one${e.sets.some((x: any) => x.restS != null) ? ", some sets their own" : ""}`;
+const restSummary = (e: any) => `${fmt.value.clock(workRest(e))} between sets${hasSideRounds(e) ? ", none between sides" : ""}, ${fmt.value.clock(e.restAfterS ?? s.value.workout.restAfterExerciseS)} after the last one${e.sets.some((x: any) => x.restS != null) ? ", some sets their own" : ""}`;
 const wIn = (kg: number | null) => (kg == null ? "" : String(Math.round(fmt.value.fromKg(kg) * 100) / 100));
 const wOut = (v: string) => (v === "" ? null : fmt.value.toKg(Number(v)));
 const dIn = (m: number | null) => (m == null ? "" : String(Math.round(fromM(m, fmt.value.du) * 100) / 100));
@@ -360,7 +366,7 @@ const setMenu = (e: any, j: number) => e.sets[j].kind === "drop" ? [
   ...(s.value.features.setTypes ? SET_KINDS.map(([k, l, ic]) => ({ label: l, icon: ic, checked: e.sets[j].kind === k, run: () => { e.sets[j].kind = k; touch(); } })) : []),
   ...(s.value.features.setTypes && e.sets[j].kind !== "warmup" ? [{ label: dropsAfter(e, j) ? "Add another drop" : "Add a drop set", hint: "Straight after this set: lower the weight and keep going", icon: "arrowDown", sep: true, run: () => addDrop(e, j) }] : []),
   // any set can be for one side, or both together, whatever the exercise's own setting
-  ...(sidesOn.value ? [
+  ...(sideItems(e) ? [
     { label: "Both sides", icon: "dumbbell", sep: true, checked: !e.sets[j].side, run: () => setSide(e, j, null) },
     { label: "Left side", icon: "left", checked: e.sets[j].side === "L", run: () => setSide(e, j, "L") },
     { label: "Right side", icon: "right", checked: e.sets[j].side === "R", run: () => setSide(e, j, "R") }] : []),
@@ -465,8 +471,9 @@ await loaded(src, all, folders, routines, templates);
               </div>
             </div>
             <div class="row" style="margin-top:6px">
-              <button class="qb acc" @click="addSet(e)"><Icon name="plus" :size="16" />Add set</button>
-              <button v-if="sidedEx(e)" class="qb" title="Add a left and a right set" @click="addPair(e)"><Icon name="plus" :size="16" />Left + right</button>
+              <!-- a one-sided exercise adds both sides as its main step; the others add one set -->
+              <button v-if="sidedEx(e)" class="qb acc" title="Add a left and a right set" @click="addPair(e)"><Icon name="plus" :size="16" />Left + right</button>
+              <button class="qb" :class="{ acc: !sidedEx(e) }" @click="addSet(e)"><Icon name="plus" :size="16" />Add set</button>
             </div>
 
             <details class="fold sect prog">
@@ -477,6 +484,8 @@ await loaded(src, all, folders, routines, templates);
                 <template v-if="s.features.setTypes">
                   <button v-for="[k, l] in KIND_REST" :key="k" class="rtile" @click="restFor = { ex: i, kind: k }"><span>{{ l }}</span><b :class="{ dim: e.restByKind?.[k] == null }">{{ fmt.clock(kindRest(e, k)) }}</b></button>
                 </template>
+                <!-- inside a left and right round you switch sides straight away: shown, not set here -->
+                <div v-if="hasSideRounds(e)" class="rtile" title="A left set and its right one are one round: you switch sides straight away"><span>Between sides</span><b class="dim">No rest</b></div>
                 <button class="rtile" @click="restFor = { ex: i, kind: 'after' }"><span>After the last set</span><b :class="{ dim: e.restAfterS == null }">{{ fmt.clock(e.restAfterS ?? s.workout.restAfterExerciseS) }}</b></button>
               </div>
               <div class="tiny" style="margin-top:6px">For a different rest after one set, use that set's ⋮ menu; it shows as <b>R</b>.</div>

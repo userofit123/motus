@@ -17,7 +17,8 @@ const reps = (x: RoutineSet) => (x.repsMax && x.reps ? `${x.reps}-${x.repsMax}` 
 const dist = (m: number | null) => (m == null ? null : fmt.value.num(fromM(m, fmt.value.du), 2));
 // Left / right sides (optional feature): sets for one side are labelled 1L, 1R, and their weight is per side
 const sides = computed(() => !!s.value.features.unilateral);
-const perSide = computed(() => sides.value && (!!props.ex.exercise?.unilateral || props.ex.sets.some((x) => x.side)));
+// "/ side" only when every set that counts is for one side; in a mix the L and R badges say it
+const perSide = computed(() => { const w = props.ex.sets.filter((x) => x.kind !== "warmup" && x.kind !== "drop"); return sides.value && w.length > 0 && w.every((x) => x.side); });
 </script>
 
 <template>

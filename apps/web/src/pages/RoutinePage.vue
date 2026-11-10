@@ -4,12 +4,12 @@ import { goBack } from "../core/leave";
 import { computed, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useQuery } from "@tanstack/vue-query";
-import { restDefaultsOf, routineTime, muscleName, muscleSets, musclesWorked, scheduleSummary } from "@motus/shared";
+import { restDefaultsOf, routineTime, muscleName, muscleSets, musclesWorked, scheduleSummary, sideRounds } from "@motus/shared";
 import { useRoutine, useRoutines, useNotes, useReminders, useSchedules, useSettings, useChange, loaded } from "../api/queries";
 import { api, mediaUrl } from "../api/client";
 import { restForKind } from "../core/plannedRest";
 import { isPhone } from "../core/device";
-import { useFmt, ago } from "../core/format";
+import { useFmt, ago, setRounds } from "../core/format";
 import { noteSheet, reminderSheet, exerciseSheet, scheduleSheet } from "../core/ui";
 import { toast } from "../core/toast";
 import Icon from "../components/Icon.vue";
@@ -42,9 +42,11 @@ const muscles = computed(() => muscleSets((routine.value?.exercises ?? []).map((
 const worked = computed(() => musclesWorked((routine.value?.exercises ?? []).map((e: any) => ({ primary: e.exercise?.primaryMuscles ?? [], secondary: e.exercise?.secondaryMuscles ?? [] }))));
 // under each exercise's name: its sets by kind ("3 sets", "1 warm-up"), then superset and side; the grid below has each set's numbers
 const subLine = (e: any) => {
-  const warm = e.sets.filter((x: any) => x.kind === "warmup").length, drops = e.sets.filter((x: any) => x.kind === "drop").length, work = e.sets.length - warm - drops;
-  return [`${work} set${work === 1 ? "" : "s"}`, warm ? `${warm} warm-up` : "", drops ? `${drops} drop${drops === 1 ? "" : "s"}` : "",
-    e.superset ? `Superset ${e.superset}` : "", sided(e) ? "Each side" : ""].filter(Boolean);
+  const warm = e.sets.filter((x: any) => x.kind === "warmup").length, drops = e.sets.filter((x: any) => x.kind === "drop").length;
+  // counted by rounds, said as the editor says it (setRounds)
+  const r = setRounds(e.sets, !!st.value.features.unilateral);
+  return [`${r.n} set${r.n === 1 ? "" : "s"}`, r.sides, warm ? `${warm} warm-up` : "", drops ? `${drops} drop${drops === 1 ? "" : "s"}` : "",
+    e.superset ? `Superset ${e.superset}` : ""].filter(Boolean);
 };
 // the rests it plans as the editor's tiles, with your defaults (faded) where the exercise has none of its own;
 // a kind only shows when such a set is followed by a rest of its own
@@ -55,15 +57,15 @@ const restTiles = (e: any) => {
   return [
     { l: "Normal sets", v: c(restForKind(e, "normal", false, d)), dim: e.restS == null },
     ...kinds.map((k) => ({ l: label[k], v: c(restForKind(e, k, false, d)), dim: e.restByKind?.[k] == null })),
-    // a left set straight before its right one: you switch sides without a rest (unless that set has its own)
-    ...(sideRounds(e) ? [{ l: "Between sides", v: "No rest", dim: true }] : []),
+    // inside a left and right round you switch sides without a rest (unless that set has its own)
+    ...(hasSideRounds(e) ? [{ l: "Between sides", v: "No rest", dim: true }] : []),
     { l: "After the last set", v: c(restForKind(e, "normal", true, d)), dim: e.restAfterS == null },
   ];
 };
 // a figure only where there are muscles to show; without one the card keeps its plain column (Routines list rule)
 const hasMuscles = (e: any) => !!(e.exercise?.primaryMuscles?.length || e.exercise?.secondaryMuscles?.length);
-const sided = (e: any) => !!st.value.features.unilateral && (!!e.exercise?.unilateral || e.sets.some((x: any) => x.side));
-const sideRounds = (e: any) => !!st.value.features.unilateral && e.sets.some((x: any, j: number) => x.side === "L" && e.sets[j + 1]?.side === "R");
+// a left and right round (either order, see sideRounds in shared): no rest between its two sets
+const hasSideRounds = (e: any) => !!st.value.features.unilateral && sideRounds(e.sets).some(Boolean);
 // notes and reminders for one exercise of this routine (they show under it during the workout)
 const exItems = (e: any) => [
   { label: "Add a note", hint: "Shown with this exercise in your workouts", icon: "note", run: () => (noteSheet.value = { targets: [{ type: "routine_exercise", id: e.id, label: `${e.exercise.name} in ${routine.value.name}` }, { type: "exercise", id: e.exerciseId, label: `${e.exercise.name}, every time` }] }) },

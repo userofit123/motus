@@ -64,25 +64,36 @@ export interface NextChange {
 export type RoutineSetLike = { kind: string; reps: number | null; repsMax?: number | null; startReps?: number | null; weightKg: number | null; durationS?: number | null; distanceM?: number | null; side?: string | null };
 
 type Sided = { kind: string; side?: string | null };
-/** Pairs each of `sets` with the same set in `other` (last time's, or today's for the routine): warm-ups with warm-ups,
- * the others in turn, and a left or right set with the other's sets of that side, so left follows left and right follows
- * right. A side the other has none of takes its general sets in turn (a routine just split into sides still finds last
- * time's numbers), and a general set facing only sided ones takes them all in turn, as before there were sides.
- * `repeatLast`: a working set past the other's last one takes that one again. */
+/** Pairs each of `sets` with the same set in `other` (last time's, or today's for the routine), warm-ups only with
+ * warm-ups, never giving one set twice: first each set with the next of the same side (general with general, left with
+ * left), then a left or right set still without one takes a general set (a general set is both sides together, so it can
+ * give one left and one right: a routine just split into sides still finds last time's numbers), then any set still
+ * without one takes the next one nobody took, in order. `repeatLast`: a working set left over takes the other's last one
+ * again (of its side if there is one). */
 export function pairSets<T extends Sided>(sets: Sided[], other: T[], repeatLast = false): (T | null)[] {
   const group = (s: Sided) => (s.kind === "warmup" ? "w" : "k");
-  const pools = new Map<string, T[]>();
-  const add = (k: string, s: T) => pools.set(k, [...(pools.get(k) ?? []), s]);
-  for (const s of other) { add(group(s), s); add(group(s) + (s.side ?? "-"), s); }
-  const used = new Map<string, number>();
-  return sets.map((s) => {
-    const g = group(s), own = g + (s.side ?? "-");
-    const pool = [own, g + "-", g].map((k) => pools.get(k)).find((a) => a?.length);
-    if (!pool) return null;
-    const i = used.get(own) ?? 0;
-    used.set(own, i + 1);
-    return pool[i] ?? (repeatLast && g === "k" ? pool.at(-1)! : null);
+  const sideOf = (s: Sided) => (s.side === "L" || s.side === "R" ? s.side : null);
+  // who took each of `other`: "G" for a general set, else the side
+  const takers = other.map(() => new Set<string>());
+  const free = (j: number, t: string) => {
+    const by = takers[j]!;
+    return by.size === 0 || (!sideOf(other[j]!) && t !== "G" && !by.has("G") && !by.has(t));
+  };
+  const out: (T | null)[] = sets.map(() => null);
+  const pick = (i: number, fits: (o: T) => boolean) => {
+    const s = sets[i]!, t = sideOf(s) ?? "G";
+    const j = other.findIndex((o, j) => group(o) === group(s) && fits(o) && free(j, t));
+    if (j >= 0) { takers[j]!.add(t); out[i] = other[j]!; }
+  };
+  sets.forEach((s, i) => pick(i, (o) => sideOf(o) === sideOf(s)));
+  sets.forEach((s, i) => { if (!out[i] && sideOf(s)) pick(i, (o) => !sideOf(o)); });
+  sets.forEach((s, i) => { if (!out[i]) pick(i, () => true); });
+  if (repeatLast) sets.forEach((s, i) => {
+    if (out[i] || group(s) !== "k") return;
+    const k = other.filter((o) => group(o) === "k").reverse();
+    out[i] = k.find((o) => sideOf(o) === sideOf(s)) ?? k.find((o) => !sideOf(o)) ?? k[0] ?? null;
   });
+  return out;
 }
 export type RoutineItemLike = { id?: string | null; exerciseId: string; fixed?: boolean; progression?: unknown; missed?: number; sets: unknown[] };
 

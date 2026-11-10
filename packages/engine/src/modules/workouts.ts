@@ -1,6 +1,6 @@
 // Workouts: starting one (from a routine or empty), logging sets, skipping, reordering and replacing exercises,
 // finishing, logging a past workout, editing and duplicating, and the full detail with records and improvements.
-import { e1rm, ymd, pairSets, restAfterSet, restDefaultsOf, liftedKg, LIFTED_SQL, structureChanges, type Tracking, type RoutineExercise, type ExerciseStatus, type SetKind, type WorkoutExercise, type HomeRecord, type Workout, type WorkoutSummary, type Routine } from "@motus/shared";
+import { e1rm, ymd, pairSets, restAfterSet, opensSideRound, restDefaultsOf, liftedKg, LIFTED_SQL, structureChanges, type Tracking, type RoutineExercise, type ExerciseStatus, type SetKind, type WorkoutExercise, type HomeRecord, type Workout, type WorkoutSummary, type Routine } from "@motus/shared";
 import type { Router, Ctx } from "../router";
 import type { Sql } from "../db";
 import { camel, id, optId, str, strList, intOrNull, numOrNull, bool, oneOf, isoTime, secondsBetween, visible } from "../util";
@@ -347,7 +347,7 @@ async function replanRests(ctx: Ctx, weId: string, pick: (s: RestSetRow, i: numb
   const ownRest = (i: number, x: RestInputs) => re?.sets?.length === x.kinds.length ? re.sets[i]?.restS : undefined;
   // inside a superset round there is no rest (as at Start)
   const inRound = !!we.superset && we.next_superset === we.superset;
-  const plan = (i: number, x: RestInputs) => inRound ? 0 : restAfterSet({ setRestS: ownRest(i, x), kind: x.kinds[i], nextKind: x.kinds[i + 1], side: x.sides[i], nextSide: x.sides[i + 1],
+  const plan = (i: number, x: RestInputs) => inRound ? 0 : restAfterSet({ setRestS: ownRest(i, x), kind: x.kinds[i], nextKind: x.kinds[i + 1], sideRound: opensSideRound(x.kinds.map((kind, n) => ({ kind, side: x.sides[n] })), i),
     byKindS: re?.restByKind, exRestS: x.restS, prefRestS: pref?.rest_s, isLastSet: i === x.kinds.length - 1, exRestAfterS: x.restAfterS, prefRestAfterS: pref?.rest_after_s }, d);
   const now: RestInputs = { restS: we.rest_s, restAfterS: we.rest_after_s, kinds: sets.map((s) => s.kind), sides: sets.map((s) => s.side) };
   const was = before?.(now, sets);

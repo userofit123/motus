@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { applyStructure, cleanProgression, pairSets, planNext, type RoutineSetLike, stepDown, stepUp, structureChanges } from "./nextTime";
 import { withDefaults } from "./settings";
-import { restAfterSet } from "./training";
+import { opensSideRound, restAfterSet, sideRounds } from "./training";
 import type { WorkoutExercise, WorkoutSet } from "./types";
 
 const set = (p: Partial<WorkoutSet>): WorkoutSet => ({ id: Math.random().toString(36), position: 0, kind: "normal", weightKg: null, reps: null, durationS: null, distanceM: null, rpe: null, rir: null, side: null, done: true, doneAt: null, restPlannedS: null, restActualS: null, targetReps: null, targetWeightKg: null, prefilled: false, ...p });
@@ -265,11 +265,28 @@ describe("left and right sets", () => {
     const sided = [S("normal", "L"), S("normal", "R")].map((s, i) => ({ ...s, i }));
     expect(pairSets([S("normal"), S("normal"), S("normal")], sided, true).map((x) => x?.i ?? null)).toEqual([0, 1, 1]);
   });
-  it("no rest between a left set and the right one after it; a set's own rest still wins", () => {
+  it("never gives one set twice: general sets past last time's general ones take its unmatched sided sets", () => {
+    const last = [S("normal"), S("normal", "L"), S("normal", "R")].map((s, i) => ({ ...s, i }));
+    expect(pairSets([S("normal"), S("normal"), S("normal")], last).map((x) => x?.i ?? null)).toEqual([0, 1, 2]);
+  });
+  it("a side falling back to general sets skips one a general set already took", () => {
+    const last = [S("normal")].map((s, i) => ({ ...s, i }));
+    expect(pairSets([S("normal"), S("normal", "L")], last).map((x) => x?.i ?? null)).toEqual([0, null]);
+    const two = [S("normal"), S("normal")].map((s, i) => ({ ...s, i }));
+    expect(pairSets([S("normal"), S("normal", "L"), S("normal", "R")], two).map((x) => x?.i ?? null)).toEqual([0, 1, 1]);
+  });
+  it("a left and a right set next to each other of the same kind are one round, in either order; L R L R is two", () => {
+    expect(sideRounds([S("normal", "L"), S("normal", "R"), S("normal", "L"), S("normal", "R")])).toEqual([true, false, true, false]);
+    expect(sideRounds([S("normal", "R"), S("normal", "L"), S("normal")])).toEqual([true, false, false]);
+    expect(sideRounds([S("normal", "L"), S("failure", "R"), S("normal", "L"), S("drop", "R")])).toEqual([false, false, false, false]);
+    expect(sideRounds([S("normal", "L"), S("normal", "L"), S("normal", "R")])).toEqual([false, true, false]);
+  });
+  it("no rest inside a left and right round, either order; a set's own rest still wins", () => {
     const d = { betweenSetsS: 90, afterExerciseS: 120 };
-    expect(restAfterSet({ side: "L", nextSide: "R", isLastSet: false }, d)).toBe(0);
-    expect(restAfterSet({ side: "R", nextSide: "L", isLastSet: false }, d)).toBe(90);
-    expect(restAfterSet({ setRestS: 30, side: "L", nextSide: "R", isLastSet: false }, d)).toBe(30);
+    const sets = [S("normal", "R"), S("normal", "L"), S("normal", "L"), S("normal", "R")];
+    const rest = (j: number, own?: number) => restAfterSet({ setRestS: own, sideRound: opensSideRound(sets, j), isLastSet: j === sets.length - 1 }, d);
+    expect([0, 1, 2, 3].map((j) => rest(j))).toEqual([0, 90, 0, 120]);
+    expect(rest(0, 30)).toBe(30);
   });
   it("Progression takes each routine set's numbers from today's set of the same side, and the sides stay", () => {
     const D = { mode: "suggest" as const, stepKg: 2.5, lowerAfter: 3 };
