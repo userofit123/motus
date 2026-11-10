@@ -213,6 +213,16 @@ function updateDone(title: string, body: string) {
   updateNotice.on("click", () => { if (!win) return; if (win.isMinimized()) win.restore(); win.show(); win.focus(); win.webContents.send("app:open", "/settings/versions"); });
   updateNotice.show();
 }
+// A nudge from the screens (the rest is over) while you're in another window or app: a system notification, with the
+// system's sound; a click brings Motus back on `page`. In front, the screen's own cues are enough.
+let screenNotice: Notification | null = null;
+ipcMain.handle("notice:show", (_e, title: string, body: string, page: string) => {
+  if (!Notification.isSupported() || win?.isFocused()) return;
+  screenNotice?.close();
+  screenNotice = new Notification({ title, body, icon: path.join(__dirname, "icon.png") });
+  screenNotice.on("click", () => { if (!win) return; if (win.isMinimized()) win.restore(); win.show(); win.focus(); win.webContents.send("app:open", page); });
+  screenNotice.show();
+});
 ipcMain.handle("update:version", () => app.getVersion());
 ipcMain.handle("update:check", async () => { try { const r = await autoUpdater.checkForUpdates(); return r?.updateInfo?.version ?? null; } catch { return null; } });
 ipcMain.handle("update:download", async () => {

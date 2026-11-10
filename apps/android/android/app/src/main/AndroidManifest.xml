@@ -50,9 +50,12 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- whether the connection is metered, for updates' "Only on Wi-Fi" (granted without asking) -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <!-- rest timer and planned-workout notifications, on time even when the phone sleeps -->
+    <!-- rest timer and planned-workout notifications, on time even when the phone sleeps. Exact alarms: up to Android 12
+         the one the user can take away; from 13 the one granted at install (an app's timer is what it is for), since
+         Android 14 no longer grants the first by default and the rest-over alarm would then come minutes late -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- recording walks -->

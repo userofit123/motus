@@ -98,18 +98,39 @@ function closeWebNotice(tag: string) {
 // the rest countdown's buttons (Android): the same as the workout screen's +15 and Skip rest, a bit more at a time
 const REST_BUTTONS: NoticeButton[] = [{ id: "rest-more", title: "+30s" }, { id: "rest-skip", title: "Skip rest" }];
 
-export async function notifyRestEnd(endAt: number, body: string) {
+// The rest countdown in the notification shade (Android app), in place of the workout's while the rest runs.
+export function showRestCountdown(endAt: number, body: string) {
+  plugin("MotusWorkout")?.showRest?.({ endAt, body, actions: REST_BUTTONS }).catch?.(() => {});
+}
+export function clearRestCountdown() {
+  plugin("MotusWorkout")?.clearRest?.().catch?.(() => {});
+}
+const REST_ALARM = 7001;
+// The rest-over nudge in the Android app: an alarm at the rest's end that shows "Rest over" heads-up, with the rest
+// channel's sound and vibration, also with the phone asleep and the app's own timers stopped. Scheduled only while
+// the app is in the background (workout/runtime.ts), so on screen the in-app cues are the only alert. Each call
+// replaces the one scheduled before. With sound and vibration both off (Settings → Workout) it goes on the quiet
+// "running" channel of the workout's own notification (MotusWorkoutPlugin, made by the countdown shown first):
+// in the shade, no heads-up, no sound (a channel's sound is fixed once made, and Capacitor can't make a silent one).
+export async function scheduleRestAlarm(endAt: number, body: string, o: { sound: boolean; vibrate: boolean }) {
   const ln = plugin("LocalNotifications");
   if (!ln) return;
   try {
-    await ln.cancel({ notifications: [{ id: 7001 }] });
-    await ln.schedule({ notifications: [{ id: 7001, title: "Rest over", body: body || "Time for the next set", schedule: { at: new Date(endAt), allowWhileIdle: true }, channelId: "rest", smallIcon: "ic_stat_motus", actionTypeId: logFromNotification ? "rest" : undefined }] });
+    await restChannel();
+    await ln.cancel({ notifications: [{ id: REST_ALARM }] });
+    await ln.schedule({ notifications: [{ id: REST_ALARM, title: "Rest over", body: body || "Time for the next set", schedule: { at: new Date(endAt), allowWhileIdle: true }, channelId: o.sound || o.vibrate ? "rest" : "running", smallIcon: "ic_stat_motus", actionTypeId: logFromNotification ? "rest" : undefined }] });
   } catch { /* the in-app timer still runs */ }
-  plugin("MotusWorkout")?.showRest?.({ endAt, body, actions: REST_BUTTONS }).catch?.(() => {});
 }
-// The rest is over, in a browser with the app in the background (the Android app has its alarm above): "+30s" rests a
-// little longer. The page's timers are slowed down in the background, so this can come a few seconds late.
+/** Takes the rest-over alarm off: the coming one, and the "Rest over" already shown. */
+export async function cancelRestAlarm() {
+  try { await plugin("LocalNotifications")?.cancel({ notifications: [{ id: REST_ALARM }] }); } catch { /* nothing scheduled */ }
+}
+// The rest is over, in a browser or the desktop app with Motus in the background (the Android app has its alarm
+// above): in a browser "+30s" rests a little longer; the desktop app has no service worker, so its own notification
+// (apps/desktop, without buttons). Background timers are slowed down, so this can come a second or so late.
 export function notifyRestOverWeb(body: string) {
+  const desk = (globalThis as any).motusNative?.notify;
+  if (desk) return Promise.resolve(desk("Rest over", body || "Time for the next set", "/workout")).catch(() => {});
   return webNotice("Rest over", { body: body || "Time for the next set", tag: "motus-rest", url: "/workout", buttons: [REST_BUTTONS[0]!], silent: false, sticky: false });
 }
 // The workout in progress as a notification (setting "sessionNotice"): its name, the exercise and set you're on, and
@@ -138,10 +159,6 @@ export async function clearRecording() {
   await closeWebNotice("motus-recording");
 }
 export const isNativeApp = () => !!cap()?.isNativePlatform?.();
-export async function cancelRestNotification() {
-  try { await plugin("LocalNotifications")?.cancel({ notifications: [{ id: 7001 }] }); } catch { /* nothing scheduled */ }
-  plugin("MotusWorkout")?.clearRest?.().catch?.(() => {});
-}
 // the screen stays on while a workout or a recording wants it; one ending doesn't let the screen sleep under the other.
 // In a browser the lock is let go when the page is hidden, so asking again on return takes it back.
 const awake = new Set<string>();
@@ -178,6 +195,7 @@ export async function askNotificationsOnce() {
   const yes = await confirm("Show a notification while it runs?", { text: "The time, where you are and buttons to pause or skip, in the notification shade and on the lock screen. You can change this later in Settings → Notifications.", ok: "Turn on", no: "Not now" });
   if (yes) await askNotificationPermission();
 }
+// High importance, so the rest-over notification comes heads-up, with the phone's notification sound and a vibration
 async function restChannel() {
   try { await plugin("LocalNotifications")?.createChannel?.({ id: "rest", name: "Rest timer", importance: 5, vibration: true }); } catch { /* made next time */ }
 }

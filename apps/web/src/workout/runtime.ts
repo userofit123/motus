@@ -6,7 +6,7 @@ import { readJson, writeJson } from "../core/prefs";
 import { withDefaults } from "@motus/shared";
 import { api } from "../api/client";
 import { queryClient } from "../api/live";
-import { notifyRestEnd, cancelRestNotification, notifyRestOverWeb } from "./native";
+import { showRestCountdown, clearRestCountdown, scheduleRestAlarm, cancelRestAlarm, notifyRestOverWeb, isNativeApp } from "./native";
 
 export interface RestState {
   endAt: number | null; // ms
@@ -48,7 +48,7 @@ setInterval(() => {
     const s = Math.ceil(left);
     if (s >= 1 && s <= 3 && s !== lastCount && rest.totalS > 5 && cues.sound && cues.countdown) { lastCount = s; tick(false); }
     // over: the cues play either way; then straight on to the next set, or "Rest over" until you tap Next set
-    if (left <= 0) { rest.done = true; save(); restEnded(); if (cues.next) finishRest(true); }
+    if (left <= 0) { rest.done = true; save(); restEnded(); if (cues.next) finishRest(true, true); }
   }
 }, 250);
 
@@ -61,12 +61,12 @@ export function startRest(seconds: number, o: { setId: string | null; label: str
   Object.assign(rest, { ...EMPTY, endAt: Date.now() + seconds * 1000, startedAt: Date.now(), totalS: seconds, setId: o.setId, label: o.label, next: o.next, workoutId: o.workoutId });
   warned = false; lastCount = 0;
   save();
-  notifyRestEnd(rest.endAt!, o.next);
+  restTimeSet();
 }
 export function adjustRest(deltaS: number) {
   if (!rest.endAt) return;
   if (rest.pausedLeftS != null) rest.pausedLeftS = Math.max(0, rest.pausedLeftS + deltaS);
-  else { rest.endAt = Math.max(Date.now(), rest.endAt + deltaS * 1000); notifyRestEnd(rest.endAt, rest.next); }
+  else { rest.endAt = Math.max(Date.now(), rest.endAt + deltaS * 1000); restTimeSet(); }
   rest.totalS = Math.max(1, rest.totalS + deltaS);
   rest.done = false;
   warned = restLeft() <= 10; if (restLeft() > 3) lastCount = 0;
@@ -75,36 +75,66 @@ export function adjustRest(deltaS: number) {
 export function setRest(seconds: number) {
   if (!rest.endAt) return;
   rest.endAt = Date.now() + seconds * 1000; rest.totalS = seconds; rest.pausedLeftS = null; rest.done = false; warned = seconds <= 10; lastCount = 0;
-  save(); notifyRestEnd(rest.endAt, rest.next);
+  save(); restTimeSet();
 }
 export function pauseRest() {
   if (!rest.endAt || rest.pausedLeftS != null) return;
-  rest.pausedLeftS = restLeft(); save(); cancelRestNotification();
+  rest.pausedLeftS = restLeft(); save(); clearRestCountdown(); dropAlarm();
 }
 export function resumeRest() {
   if (rest.pausedLeftS == null) return;
-  rest.endAt = Date.now() + rest.pausedLeftS * 1000; rest.pausedLeftS = null; save(); notifyRestEnd(rest.endAt, rest.next);
+  rest.endAt = Date.now() + rest.pausedLeftS * 1000; rest.pausedLeftS = null; save(); restTimeSet();
 }
-/** Ends the rest (skipped, or the next set was ticked) and saves how long it really was. */
-export function finishRest(record = true) {
+/** Ends the rest (skipped, or the next set was ticked) and saves how long it really was. `ranOut`: it ended by itself
+ *  (straight on to the next set), which in the background leaves its "Rest over" standing until the app is back. */
+export function finishRest(record = true, ranOut = false) {
   if (!rest.endAt) return;
   if (record && rest.setId) {
     const actual = Math.round((Date.now() - rest.startedAt) / 1000);
     api.put(`/workout-sets/${rest.setId}`, { restActualS: Math.min(actual, 3 * 3600) }).catch(() => {});
   }
-  cancelRestNotification();
+  clearRestCountdown();
+  if (!(ranOut && hidden())) dropAlarm();
   Object.assign(rest, EMPTY);
   save();
 }
 
 function restEnded() {
+  // in the background the Android app's alarm is the alert (it sounds with the phone asleep); the in-app cues too would
+  // only double it
+  if (alarmOn && hidden()) return;
   if (cues.sound) beep(3, 880);
   if (cues.vibrate) vibrate([300, 150, 300]);
   if (cues.voice && rest.next) speak(`Rest over. ${rest.next}`);
-  // a browser's own notification (the Android app has its alarm, native.ts); a phone's browser allows only the service
-  // worker's kind, which also carries a "+30s" button
-  if (document.hidden) void notifyRestOverWeb(rest.next);
+  // A browser's or the desktop app's own notification, when you're in another tab, window or app (the Android app has
+  // its alarm); a phone's browser allows only the service worker's kind, which also carries a "+30s" button.
+  if (hidden() || !document.hasFocus()) void notifyRestOverWeb(rest.next);
 }
+
+// The rest-over alarm (Android app, native.ts): scheduled for the rest's end only while the app is in the background,
+// since a locked phone stops the app's own timers and beeps; back on screen it is taken off (with a "Rest over" it
+// already showed) and the in-app cues carry on, so the end is never announced twice. Every change to the rest's end
+// (+/- time, pause, skip, a new rest, the workout ending) while in the background schedules it again or takes it off.
+let alarmOn = false;
+const hidden = () => typeof document !== "undefined" && document.hidden;
+const resting = () => !!rest.endAt && !rest.done && rest.pausedLeftS == null && rest.endAt > Date.now();
+function planAlarm() {
+  if (!isNativeApp()) return;
+  if (!resting()) { dropAlarm(); return; }
+  void scheduleRestAlarm(rest.endAt!, rest.next, { sound: cues.sound, vibrate: cues.vibrate }); alarmOn = true;
+}
+function dropAlarm() {
+  if (!alarmOn) return;
+  void cancelRestAlarm(); alarmOn = false;
+}
+// a new end time: the countdown in the shade shows it, and in the background the alarm moves with it
+function restTimeSet() {
+  showRestCountdown(rest.endAt!, rest.next);
+  if (hidden()) planAlarm();
+}
+if (typeof document !== "undefined") document.addEventListener("visibilitychange", () => { if (hidden()) planAlarm(); else dropAlarm(); });
+// one left from before the app was closed in the background would still sound with the app open again
+if (isNativeApp() && !hidden()) void cancelRestAlarm();
 
 // Sounds are made here rather than shipped as files. Each note is a few sine partials with a quick (but not instant)
 // attack and an exponential fade, so it rings like a small bell instead of clicking on and off like a raw square
