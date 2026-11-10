@@ -146,6 +146,40 @@ describe("starting a planned workout", () => {
     await call("DELETE", `/routines/${r.id}`);
   });
 
+  it("stops matching the routine's own set rests by position once a set is added", async () => {
+    const r = await call("POST", "/routines", { name: "Shifted", exercises: [{ exerciseId: bench, restS: 120, restAfterS: 200, sets: [
+      { kind: "normal", reps: 8 }, { kind: "normal", reps: 8 }, { kind: "normal", reps: 8, restS: 90 }] }] });
+    const w = await call("POST", "/workouts/start", { routineId: r.id });
+    const rests = async () => (await call("GET", "/workouts/active")).exercises[0].sets.map((s: any) => s.restPlannedS);
+    const [a, b] = w.exercises[0].sets;
+    expect(await rests()).toEqual([120, 120, 90]);
+    await call("POST", `/workout-exercises/${w.exercises[0].id}/sets`, { id: uuidv7(), afterId: a.id, kind: "drop", reps: 8, restPlannedS: 120 });
+    // the old set 2 is now third: "as planned" must not give it routine set 3's own rest
+    await call("PUT", `/workout-sets/${b.id}`, { restPlannedS: 33 });
+    await call("PUT", `/workout-sets/${b.id}`, { restPlannedS: null });
+    expect((await rests())[2]).toBe(120);
+    await call("POST", `/workouts/${w.id}/discard`, {});
+    await call("DELETE", `/routines/${r.id}`);
+  });
+
+  it("gives the set before a drop set added during the workout no rest, unless a rest was set on it", async () => {
+    const r = await call("POST", "/routines", { name: "Added drop", exercises: [{ exerciseId: bench, restS: 120, restAfterS: 200, sets: [
+      { kind: "normal", reps: 8 }, { kind: "normal", reps: 8 }] }] });
+    const w = await call("POST", "/workouts/start", { routineId: r.id });
+    const rests = async () => (await call("GET", "/workouts/active")).exercises[0].sets.map((s: any) => s.restPlannedS);
+    const [a, b] = w.exercises[0].sets;
+    // done, its rest may be running: the drop set comes straight after
+    await call("PUT", `/workout-sets/${a.id}`, { done: true });
+    await call("POST", `/workout-exercises/${w.exercises[0].id}/sets`, { id: uuidv7(), afterId: a.id, kind: "drop", reps: 8, restPlannedS: 120 });
+    expect(await rests()).toEqual([0, 120, 200]);
+    // the last set, rest set on it by hand: it keeps that rest
+    await call("PUT", `/workout-sets/${b.id}`, { restPlannedS: 50 });
+    await call("POST", `/workout-exercises/${w.exercises[0].id}/sets`, { id: uuidv7(), afterId: b.id, kind: "drop", reps: 8, restPlannedS: 50 });
+    expect((await rests())[2]).toBe(50);
+    await call("POST", `/workouts/${w.id}/discard`, {});
+    await call("DELETE", `/routines/${r.id}`);
+  });
+
   it("refuses an exercise that isn't there", async () => {
     expect(await status("POST", "/workouts/start", { exercises: [{ exerciseId: uuidv7(), sets: [] }] })).toBe(400);
     expect(await status("POST", "/workouts/start", { exercises: [{ exerciseId: "nope", sets: [] }] })).toBe(400);

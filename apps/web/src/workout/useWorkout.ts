@@ -151,8 +151,8 @@ export function useWorkout() {
     const nx = state.w!.exercises[state.w!.exercises.indexOf(e) + 1];
     if (e.superset && nx?.superset === e.superset) secs = 0;
     if (settings.value.features.adaptiveRest && s.targetReps && (s.reps ?? 0) < s.targetReps) secs += 30;
-    // a drop set follows straight on, even one added during the workout
-    if (e.sets[si + 1]?.kind === "drop" && !e.sets[si + 1]!.done) secs = 0;
+    // no rest before a drop set comes from the server's plan (restPlannedS), which it plans again when a set becomes or
+    // stops being a drop set or a drop set is added, so a rest of the set's own or the routine set's own rest stays
     return { secs, last };
   }
   function describeNext(after: WorkoutExercise, si: number): string {

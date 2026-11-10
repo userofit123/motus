@@ -337,15 +337,21 @@ async function replanRests(ctx: Ctx, weId: string, pick: (s: RestSetRow, i: numb
   const pref = (await ctx.q.query("SELECT rest_s, rest_after_s FROM exercise_prefs WHERE exercise_id = $1", [we.exercise_id])).rows[0];
   const snap: Pick<Routine, "exercises"> | null = typeof we.routine_snapshot === "string" ? JSON.parse(we.routine_snapshot) : we.routine_snapshot;
   const re = we.routine_exercise_id ? snap?.exercises?.find((x) => x.id === we.routine_exercise_id) : undefined;
+  // Workout sets carry no link to their routine set, so they match the snapshot by position, which holds only while
+  // no set was added or removed during the workout (a drop added after set 1 would take routine set 2's rest). Once
+  // the count differs, sets rest by kind and the exercise's rests. A change of kind keeps the match: the routine set's
+  // own rest stays through it, as it does at Start.
+  const ownRest = (i: number, x: RestInputs) => re?.sets?.length === x.kinds.length ? re.sets[i]?.restS : undefined;
   // inside a superset round there is no rest (as at Start)
   const inRound = !!we.superset && we.next_superset === we.superset;
-  const plan = (i: number, x: RestInputs) => inRound ? 0 : restAfterSet({ setRestS: re?.sets?.[i]?.restS, kind: x.kinds[i], nextKind: x.kinds[i + 1],
-    byKindS: re?.restByKind, exRestS: x.restS, prefRestS: pref?.rest_s, isLastSet: i === sets.length - 1, exRestAfterS: x.restAfterS, prefRestAfterS: pref?.rest_after_s }, d);
+  const plan = (i: number, x: RestInputs) => inRound ? 0 : restAfterSet({ setRestS: ownRest(i, x), kind: x.kinds[i], nextKind: x.kinds[i + 1],
+    byKindS: re?.restByKind, exRestS: x.restS, prefRestS: pref?.rest_s, isLastSet: i === x.kinds.length - 1, exRestAfterS: x.restAfterS, prefRestAfterS: pref?.rest_after_s }, d);
   const now: RestInputs = { restS: we.rest_s, restAfterS: we.rest_after_s, kinds: sets.map((s) => s.kind) };
   const was = before?.(now, sets);
   for (const [i, s] of sets.entries()) {
     if (!pick(s, i, sets)) continue;
-    // no rest of its own (null) follows the plan too
+    // no rest of its own (null) follows the plan too. The old plan uses today's settings: had the defaults changed
+    // since Start, the rest no longer matches and is left as it is, which errs on the side of keeping it
     if (was && s.rest_planned_s != null && s.rest_planned_s !== plan(i, was)) continue;
     const secs = plan(i, now);
     if (secs !== s.rest_planned_s) await ctx.q.query("UPDATE workout_sets SET rest_planned_s = $2 WHERE id = $1", [s.id, secs]);
@@ -550,6 +556,14 @@ export function workoutRoutes(r: Router) {
       const at = after ? after.position + 1 : 0;
       await ctx.q.query("UPDATE workout_sets SET position = position + $2 WHERE workout_exercise_id = $1 AND position >= $3", [weId, list.length, at]);
       await insertSets(ctx, weId, list, at);
+      // the set before a drop set rests none (as when a set is made a drop set); only while that rest is still what the
+      // plan without the drop gave it: a rest set on it stays
+      if (after && list.some((s) => s?.kind === "drop")) {
+        const added = new Set((await ctx.q.query("SELECT id FROM workout_sets WHERE workout_exercise_id = $1 AND position >= $2 AND position < $3",
+          [weId, at, at + list.length])).rows.map((x: any) => x.id));
+        await replanRests(ctx, weId, (s, i, all) => s.id === b.afterId && !all[i + 1]?.done,
+          (now, all) => ({ ...now, kinds: all.filter((s) => !added.has(s.id)).map((s) => s.kind) }));
+      }
     } else await insertSets(ctx, weId, list, n);
     // a new set reopens the exercise during a workout; on a finished workout it is simply part of it
     await ctx.q.query(`UPDATE workout_exercises SET status = CASE WHEN (SELECT status FROM workouts WHERE id = $2) = 'completed' THEN 'done'
