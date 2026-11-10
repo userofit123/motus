@@ -38,3 +38,16 @@ export const router = createRouter({
     { path: "/:rest(.*)", redirect: "/" },
   ],
 });
+
+// A page's code is fetched the first time it is opened. After an update the files of the old version are gone, so a
+// copy of the app still running the old version can't fetch them and the move would just not happen. Open the page
+// with a full load instead, which brings the new version; but only once a minute, so a server that is away can't
+// keep reloading the app (the move then fails as before and the error stays in the console).
+router.onError((err, to) => {
+  if (!/dynamically imported module|module script failed|Loading chunk|Unable to preload CSS/i.test(String((err as Error)?.message ?? err))) return;
+  try {
+    if (Date.now() - Number(sessionStorage.getItem("motus.pageReload") ?? 0) < 60_000) return;
+    sessionStorage.setItem("motus.pageReload", String(Date.now()));
+  } catch { return; /* storage blocked: no way to tell a first try from a loop, so leave it */ }
+  location.assign(to.fullPath);
+});

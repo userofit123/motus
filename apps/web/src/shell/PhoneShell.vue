@@ -13,6 +13,7 @@ import { recording } from "../workout/recording";
 import { ivRunning } from "../workout/intervals";
 import { useWorkout } from "../workout/useWorkout";
 import { useAutoUpdate } from "../core/updater";
+import { usePageWatch } from "./pageWatch";
 // the apps check for (and, if chosen, download) updates on their own while someone is signed in
 useAutoUpdate();
 
@@ -38,6 +39,8 @@ useWorkout();
 const bars = computed(() => hideBar.value ? 0 : (active.data.value ? 1 : 0) + (recording.value && route.name !== "record" ? 1 : 0) + (ivRunning.value && route.name !== "timer" ? 1 : 0));
 // one key per page, so moving between pages animates; pages wait for their data inside <Suspense> (see loaded() in api/queries) and fade in whole
 const pageKey = (r: any) => r.path;
+// a page that fails to replace the one before it gets the view rebuilt (see pageWatch)
+const { view, still } = usePageWatch(pageKey);
 // once a page has moved in, anything that appears on it later rises in by itself (see app.css)
 const arrived = (el: Element) => el.classList?.add("in");
 
@@ -73,7 +76,7 @@ function te(e: TouchEvent) {
 <template>
   <div class="pshell" @touchstart.passive="ts" @touchend.passive="te" :class="{ withbar: bars > 0, withbar2: bars > 1, withbar3: bars > 2, withstrip: hideBar && (!!recording || ivRunning) }" :style="hideBar ? { paddingBottom: 0 } : undefined">
     <MiniBar v-if="hideBar" strip />
-    <div class="pmain"><router-view v-slot="{ Component, route: r }"><Suspense><Transition :name="motion" mode="out-in" appear @after-enter="arrived"><component :is="Component" :key="pageKey(r)" /></Transition></Suspense></router-view></div>
+    <div class="pmain"><router-view v-slot="{ Component, route: r }"><Suspense :key="view"><Transition :name="motion" :css="!still" mode="out-in" appear @after-enter="arrived"><component :is="Component" :key="pageKey(r)" :data-page="pageKey(r)" /></Transition></Suspense></router-view></div>
     <div v-if="!hideBar" class="dock">
       <MiniBar />
       <div class="tabbar">
