@@ -34,8 +34,8 @@ export function progParts(p: ProgShown, own: ProgOwn, weight: (kg: number) => st
   // the weight's move as a verb: "adds 2.5 kg", "suggests adding 2.5 kg", "takes 2.5 kg off the help"
   const up = opts.assisted ? (ask ? `suggests taking ${w} off the help` : `takes ${w} off the help`) : (ask ? `suggests adding ${w}` : `adds ${w}`);
   const back = same ? " next time" : ask ? ` and going back to ${p.repsMin} reps` : ` and goes back to ${p.repsMin} reps`;
-  const n = p.lowerAfter, missed = n === 1 ? "1 missed workout" : `${n} missed workouts`;
-  const down = opts.assisted ? (ask ? "suggests more help" : "adds help") : (ask ? "suggests lowering the weight" : "lowers the weight");
+  const n = p.lowerAfter, missed = n === 1 ? "1 missed workout" : `${n} missed workouts in a row`;
+  const down = opts.assisted ? (ask ? "suggests more help" : "adds more help") : (ask ? "suggests lowering the weight" : "lowers the weight");
   return [mode,
     { text: `aims for ${rangeText(p.repsMin, p.repsMax)}`, dim: o.repsMin == null },
     { text: `when every set reaches ${p.repsMax}, ${up}${back}`, dim: o.repsMin == null && o.stepKg == null },

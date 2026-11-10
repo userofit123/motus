@@ -267,8 +267,8 @@ function setProg(e: any, patch: Partial<Record<ProgKey, unknown>>) {
   e.progression = PROG_KEYS.every((k) => p[k] == null) ? null : p;
   touch();
 }
-// the section header's plain-words line, the routine page's own (worded in core/progression), defaults faded; the
-// tile beside it shows only the mode, as the header already says the range and step
+// the section header's plain-words line, the routine page's own (worded in core/progression), defaults faded;
+// the header is a button that opens the progression sheet, like the Rest header opens its fold
 const progLine = (e: any) => progPartsOf(progOf(e), e.progression, fmt.value.wu_, { assisted: tr(e) === "assisted" });
 // its own range: both ends move together, the bottom never above the top
 function setRange(e: any, lo: number, hi: number) { setProg(e, { repsMin: Math.min(lo, hi), repsMax: Math.max(lo, hi) }); }
@@ -460,7 +460,7 @@ await loaded(src, all, folders, routines, templates);
             </div>
 
             <details class="fold sect prog">
-              <summary class="sect-h"><span class="si"><Icon name="timer" :size="16" /></span><span class="grow"><b>Rest after each set</b><span class="tiny pgl"><template v-for="(x, k) in restLine(e)" :key="k"><span v-if="k" class="sep">·</span><span>{{ x }}</span></template></span></span></summary>
+              <summary class="sect-h"><span class="si"><Icon name="timer" :size="16" /></span><span class="grow"><b>Rest after each set</b><span class="tiny pgl"><template v-for="(x, k) in restLine(e)" :key="k"><span v-if="k" class="sep">&nbsp;· </span><span>{{ x }}</span></template></span></span></summary>
               <div class="tiny" style="margin:-2px 0 8px">Faded times are your defaults from Settings.</div>
               <div class="rgrid">
                 <button class="rtile" @click="restFor = { ex: i, kind: 'between' }"><span>Normal sets</span><b :class="{ dim: e.restS == null }">{{ fmt.clock(workRest(e)) }}</b></button>
@@ -479,9 +479,9 @@ await loaded(src, all, folders, routines, templates);
                 <button class="rtile" @click="restFor = { ex: i, kind: 'rep' }"><b :class="{ dim: !e.repRestS }">{{ e.repRestS ? `Every ${e.repRestS}s` : "Off" }}</b></button></div>
             </div>
 
-            <!-- Progression with its rep range, like the Timer between reps row: what applies in the tile, faded where it is your default -->
+            <!-- Progression: the header opens the sheet like the Rest header, its line says what applies, faded where it is your default -->
             <div v-if="progUsable(e) && !e.fixed" class="sect">
-              <button class="sect-h go" :aria-label="'Progression: ' + progLine(e).map((x: any) => x.text).join(', ')" @click="progFor = e"><span class="si"><Icon name="arrowUp" :size="16" /></span><span class="grow"><b>Progression</b><span class="tiny pgl"><template v-for="(x, k) in progLine(e)" :key="k"><span v-if="k" class="sep">·</span><span :class="{ dim: x.dim }">{{ x.text }}</span></template></span></span></button>
+              <button class="sect-h go" :aria-label="'Progression: ' + progLine(e).map((x: any) => x.text).join(', ')" @click="progFor = e"><span class="si"><Icon name="arrowUp" :size="16" /></span><span class="grow"><b>Progression</b><span class="tiny pgl"><template v-for="(x, k) in progLine(e)" :key="k"><span v-if="k" class="sep">&nbsp;· </span><span :class="{ dim: x.dim }">{{ x.text }}</span></template></span></span></button>
             </div>
 
             <!-- part of the routine like its sets and rests: the page's Save keeps it, and leaving unsaved asks first -->
@@ -576,7 +576,6 @@ await loaded(src, all, folders, routines, templates);
 .starter, .plan-opt { margin-bottom: var(--spg); }
 .pl-k { margin-bottom: 2px; }
 .pg-intro { margin: 0 0 var(--hg); }
-/* the Progression tile sits on the right like the Timer between reps one: just the mode, cut only if the row is very narrow */
 .pg-rows { margin-top: var(--hg); }
 .pg-reset { margin-top: var(--hg); }
 .st-t { font-size: 17px; font-weight: 600; }

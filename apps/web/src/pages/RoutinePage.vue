@@ -120,13 +120,13 @@ await loaded(r, summaries, notes, rems, schedules, history);
             <!-- the editor's sections in its order (rests, timer between reps, progression, note), read-only: the same headers,
                  the values as plain tiles that open nothing -->
             <div v-if="restOn(e)" class="sect">
-              <div class="sect-h"><span class="si"><Icon name="timer" :size="16" /></span><span class="grow"><b>Rest after each set</b><span class="tiny pgl"><template v-for="(x, k) in restSummary(e, fmt.clock, st?.workout, hasSideRounds(e))" :key="k"><span v-if="k" class="sep">·</span><span>{{ x }}</span></template></span></span></div>
+              <div class="sect-h"><span class="si"><Icon name="timer" :size="16" /></span><span class="grow"><b>Rest after each set</b><span class="tiny pgl"><template v-for="(x, k) in restSummary(e, fmt.clock, st?.workout, hasSideRounds(e))" :key="k"><span v-if="k" class="sep">&nbsp;· </span><span>{{ x }}</span></template></span></span></div>
             </div>
             <div v-if="e.repRestS" class="sect">
               <div class="sect-h"><span class="si"><Icon name="clock" :size="16" /></span><span class="grow"><b>Timer between reps</b><span class="tiny">Every {{ e.repRestS }}s</span></span></div>
             </div>
             <div v-if="progMode(e) !== 'off'" class="sect">
-              <div class="sect-h"><span class="si"><Icon name="arrowUp" :size="16" /></span><span class="grow"><b>Progression</b><span class="tiny pgl"><template v-for="(x, k) in progLine(e)" :key="k"><span v-if="k" class="sep">·</span><span :class="{ dim: x.dim }">{{ x.text }}</span></template></span></span></div>
+              <div class="sect-h"><span class="si"><Icon name="arrowUp" :size="16" /></span><span class="grow"><b>Progression</b><span class="tiny pgl"><template v-for="(x, k) in progLine(e)" :key="k"><span v-if="k" class="sep">&nbsp;· </span><span :class="{ dim: x.dim }">{{ x.text }}</span></template></span></span></div>
             </div>
             <!-- its note and the notes that show every time; no menu here: notes are edited on the Notes tab -->
             <div v-if="e.note || shown('routine_exercise', e.id).length" class="sect">

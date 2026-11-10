@@ -211,6 +211,7 @@ details > *:not(summary) {
    Each fold places it (for example margin-inline-start: auto) and may change its size. */
 .fold > summary {
   list-style: none;
+  cursor: pointer;
 }
 
 .fold > summary::-webkit-details-marker {

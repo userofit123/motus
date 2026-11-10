@@ -411,7 +411,9 @@ button.sect-h.go { width: 100%; padding: 0; border: 0; background: none; font: i
 .sect-h b { display: block; font-size: 14px; font-weight: 600; }
 .sect-h .tiny { display: block; }
 /* a section's summary line: parts with a dot between each (progression, rest) */
-.pgl, .sect-h .pgl { display: flex; flex-wrap: wrap; gap: 0 6px; } /* beats ".sect-h .tiny { display: block }" so the row's gap spaces every dot */
+/* long summary lines flow as text: the dot keeps a no-break space before it and a space after,
+   so it stays at the end of its part and never starts a line or stands alone */
+.pgl, .sect-h .pgl { display: block; }
 .pgl .dim { opacity: .65; } /* a part that follows your default from Settings */
 .sect .rgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 6px; } /* scoped to .sect: the Routines list has its own .rgrid */
 .sect-h > .rtile { flex: none; }
