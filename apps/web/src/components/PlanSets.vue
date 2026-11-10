@@ -52,7 +52,7 @@ const perSide = computed(() => { const w = props.ex.sets.filter((x) => x.kind !=
 
 <style scoped>
 /* the editor's input boxes, as plain values: same place, size and weight as its .vin (capped, centred), no field around them;
-   every cell of a row stretches to the tallest so "starts at" under the reps doesn't leave the kg box shorter */
+   every cell of a row stretches to the tallest so the kg box is never shorter than the reps box */
 .pv { display: flex; flex-direction: column; align-items: center; justify-content: center; justify-self: center; align-self: stretch; width: 100%; max-width: 92px; text-align: center; font-variant-numeric: tabular-nums; font-size: 16px; font-weight: 600; color: var(--tx); padding: calc(var(--tdy) / 2) 4px; border-radius: 10px; background: color-mix(in srgb, var(--s2) 55%, transparent); }
 /* an empty value keeps its box, so the columns read as one grid; only the "-" is muted */
 .pv.none { color: var(--tx2); font-weight: 500; }

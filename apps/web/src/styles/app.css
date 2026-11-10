@@ -358,7 +358,7 @@ html.phone { --tabh: 64px; }
 .shead { font-size: 11px; font-weight: 600; color: var(--tx2); text-transform: uppercase; letter-spacing: .6px; text-align: center; padding-bottom: 6px; }
 .shead > span:first-child { text-align: start; }
 /* "kg / side": the weight one side moves, quieter than the unit itself (routine editor, routine page, workout) */
-.thside { font-weight: 400; text-transform: none; letter-spacing: 0; }
+.thside { display: block; font-size: 10px; font-weight: 400; text-transform: none; letter-spacing: 0; line-height: 1.1; }
 .slist { display: flex; flex-direction: column; }
 .sitem { border-radius: var(--r-sm); }
 .setgrid .sk { display: inline-grid; place-items: center; min-width: 36px; height: 30px; padding: 0 6px; border-radius: 8px; background: var(--s2); color: var(--tx); font-size: 12.5px; font-weight: 600; border: 0; }
@@ -368,7 +368,8 @@ html.phone { --tabh: 64px; }
 /* a drop hangs off the set above it */
 .sitem.drop .sk { translate: 8px 0; }
 /* the "×" between weight and reps: its own narrow column, quiet, centred on the boxes (routine editor and routine page) */
-.setgrid > .sx, .shead > .sx { text-align: center; color: var(--tx2); font-size: 14px; font-weight: 400; line-height: 1; text-transform: none; letter-spacing: 0; user-select: none; }
+.setgrid > .sx, .shead > .sx, .sets .sx { text-align: center; color: var(--tx2); font-size: 14px; font-weight: 400; line-height: 1; text-transform: none; letter-spacing: 0; user-select: none; }
+.sets .sx { width: 14px; padding-inline: 0; }
 /* a set's own rest, under it */
 .rrow { padding-top: 0; }
 .rrow .rpill { grid-column: 2 / -1; justify-self: start; }
@@ -382,6 +383,20 @@ button.rtile:hover { background: color-mix(in srgb, var(--acc) 12%, var(--s2)); 
 .rtile b { font-variant-numeric: tabular-nums; }
 .rtile b.dim, .sect-h .rtile b.dim, .rtile b .dim { color: var(--tx2); font-weight: 500; }
 .rtile b .sep { font-weight: 400; } /* dots between bold parts stay as light as the sub-line dots */
+/* an exercise's sections (rest, timer between reps, progression, note): the routine editor's open exercise, and read-only on
+   the routine page; a tile on the header's right is its value */
+.sect { margin-top: calc(var(--cpy) - 1px); padding-top: calc(var(--cpy) - 1px); border-top: 1px solid var(--ol); text-align: start; }
+/* the sections of an open exercise share one header: icon tile, title, a line saying what it is or how it's set */
+.sect-h { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; color: var(--tx); }
+/* a header with nothing under it (Timer between reps, Progression, a folded Rest) ends its section, so every section's
+   gap below is the next one's tokens alone. A folded <details> keeps an empty content box after its summary that stops
+   the summary's margin collapsing into that gap, which left Rest after each set 10px more below it than the others */
+.sect > .sect-h:last-child, details.sect:not([open]) > summary.sect-h { margin-bottom: 0; }
+.sect-h .si { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; background: var(--s2); color: var(--acc); flex: none; }
+.sect-h b { display: block; font-size: 14px; font-weight: 600; }
+.sect-h .tiny { display: block; }
+.sect .rgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 6px; } /* scoped to .sect: the Routines list has its own .rgrid */
+.sect-h > .rtile { flex: none; }
 /* chips on their own line under an exercise's set count ("Fixed numbers"): the routine editor's header and the routine page */
 .exchips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 2px; }
 /* a page's description under its title (program, routine): a heading gap under it, not the header's full block gap */

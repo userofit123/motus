@@ -1,6 +1,6 @@
 // Numbers, units and dates as the person likes them (Settings → Units & formats).
 import { computed } from "vue";
-import { fromKg, toKg, fromM, fromCm, toCm, num, clock, duration as dur, ymd, usesWeight, usesReps, sideRounds, type Settings, type Tracking } from "@motus/shared";
+import { fromKg, toKg, fromM, fromCm, toCm, num, clock, duration as dur, ymd, usesWeight, usesReps, usesDuration, sideRounds, type Settings, type Tracking } from "@motus/shared";
 import { useSettings } from "../api/queries";
 
 export function useFmt() {
@@ -115,6 +115,29 @@ export function setRounds(sets: SetLike[], sides: boolean): { n: number; sides: 
     if (sides && x.side) sided++;
   });
   return { n, sides: !sided ? "" : sided === n ? "left and right" : `${sided} left and right` };
+}
+/** "3 × 8-12 · 60 kg": an exercise's working sets in one line, counted by rounds (setRounds); the routine editor's
+ *  folded cards and overview and the routine page's exercise cards, so both say the same */
+export function setSummary(sets: any[], t: Tracking, f: { clock: (s: number) => string; w: (kg: number) => string; wu: string }, sides: boolean) {
+  const work = sets.filter((x: any) => x.kind !== "warmup" && x.kind !== "drop"), warm = sets.filter((x: any) => x.kind === "warmup").length;
+  const drops = sets.length - work.length - warm;
+  const same = (k: string) => work.length && work.every((x: any) => x[k] === work[0][k]);
+  const reps = (x: any) => `${x.reps ?? "-"}`;
+  // one entry per round: the second set of a left and right round joins its first ("10/8" when the sides differ)
+  const second: boolean[] = sides ? sideRounds(sets) : [];
+  const rounds: any[][] = [];
+  sets.forEach((x: any, i: number) => {
+    if (x.kind === "warmup" || x.kind === "drop") return;
+    if (second[i - 1]) rounds[rounds.length - 1]!.push(x); else rounds.push([x]);
+  });
+  const r = setRounds(sets, sides), n = `${r.n} set${r.n === 1 ? "" : "s"}`;
+  let what = "";
+  if (usesReps(t)) what = same("reps") ? `${r.n} × ${reps(work[0])}` : rounds.map((g: any[]) => [...new Set(g.map(reps))].join("/")).join(", ");
+  else if (usesDuration(t)) what = same("durationS") && work[0]?.durationS ? `${r.n} × ${f.clock(work[0].durationS)}` : n;
+  else what = n;
+  const w = usesWeight(t) && same("weightKg") && work[0]?.weightKg != null ? ` · ${f.w(work[0].weightKg)} ${f.wu}` : "";
+  const sd = r.sides ? ` · ${r.sides}` : "";
+  return `${what}${w}${sd}${warm ? ` · ${warm} warm-up` : ""}${drops ? ` · ${drops} drop${drops === 1 ? "" : "s"}` : ""}`;
 }
 /** A set's short label in a list of sets: its number, W for a warm-up, F to failure, drops numbered within their set (D1,
  * D2…); with sides shown, L or R after it ("1L"). */

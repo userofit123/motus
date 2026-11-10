@@ -12,7 +12,7 @@ import { usesWeight, usesReps, usesDuration, usesDistance, musclesWorked, estima
 import { useRoutine, useRoutines, useFolders, useExercises, useSettings, useTemplates, loaded } from "../api/queries";
 import { api, mediaUrl } from "../api/client";
 import { invalidate } from "../api/live";
-import { useFmt, SET_KINDS, setLabel, setRounds } from "../core/format";
+import { useFmt, SET_KINDS, setLabel, setSummary as setSummaryOf } from "../core/format";
 import { readJson, writeJson } from "../core/prefs";
 import { toast, toastError } from "../core/toast";
 import { prompt } from "../core/ask";
@@ -201,30 +201,8 @@ const hasSideRounds = (e: any) => sidesOn.value && sideRounds(e.sets).some(Boole
 const exName = (e: any) => exOf(e)?.name ?? "";
 const exImg = (e: any) => exOf(e)?.images?.[0];
 
-/** "3 × 8-12 · 60 kg": the working sets in one line, for folded cards and the overview */
-function setSummary(e: any) {
-  const work = e.sets.filter((x: any) => x.kind !== "warmup" && x.kind !== "drop"), warm = e.sets.filter((x: any) => x.kind === "warmup").length;
-  const drops = e.sets.length - work.length - warm;
-  const t = tr(e), f = fmt.value;
-  const same = (k: string) => work.length && work.every((x: any) => x[k] === work[0][k]);
-  const reps = (x: any) => `${x.reps ?? "-"}`;
-  // counted by rounds and said as the routine page says it (setRounds): "3 × 8 · left and right"
-  // one entry per round: the second set of a left and right round joins its first ("10/8" when the sides differ)
-  const second: boolean[] = sidesOn.value ? sideRounds(e.sets) : [];
-  const rounds: any[][] = [];
-  e.sets.forEach((x: any, i: number) => {
-    if (x.kind === "warmup" || x.kind === "drop") return;
-    if (second[i - 1]) rounds[rounds.length - 1]!.push(x); else rounds.push([x]);
-  });
-  const r = setRounds(e.sets, sidesOn.value), n = `${r.n} set${r.n === 1 ? "" : "s"}`;
-  let what = "";
-  if (usesReps(t)) what = same("reps") ? `${r.n} × ${reps(work[0])}` : rounds.map((g: any[]) => [...new Set(g.map(reps))].join("/")).join(", ");
-  else if (usesDuration(t)) what = same("durationS") && work[0]?.durationS ? `${r.n} × ${f.clock(work[0].durationS)}` : n;
-  else what = n;
-  const w = usesWeight(t) && same("weightKg") && work[0]?.weightKg != null ? ` · ${f.w(work[0].weightKg)} ${f.wu}` : "";
-  const sides = r.sides ? ` · ${r.sides}` : "";
-  return `${what}${w}${sides}${warm ? ` · ${warm} warm-up` : ""}${drops ? ` · ${drops} drop${drops === 1 ? "" : "s"}` : ""}`;
-}
+// "3 × 8-12 · 60 kg", shared with the routine page so both say the same (setSummary in core/format)
+const setSummary = (e: any) => setSummaryOf(e.sets, tr(e), fmt.value, sidesOn.value);
 
 // rest after each kind of set; normal sets use the exercise's own rest, the others the person's default for the kind as
 // Settings shows it (unset: the between-sets default), the same rule as the workout (restAfterSet)
@@ -499,7 +477,7 @@ await loaded(src, all, folders, routines, templates);
 
             <div class="sect">
               <div class="sect-h"><span class="si"><Icon name="clock" :size="16" /></span><span class="grow"><b>Timer between reps</b><span class="tiny">Beeps every few seconds during a set, for slow or paused reps</span></span>
-                <button class="rtile" style="flex:none" @click="restFor = { ex: i, kind: 'rep' }"><b :class="{ dim: !e.repRestS }">{{ e.repRestS ? `Every ${e.repRestS}s` : "Off" }}</b></button></div>
+                <button class="rtile" @click="restFor = { ex: i, kind: 'rep' }"><b :class="{ dim: !e.repRestS }">{{ e.repRestS ? `Every ${e.repRestS}s` : "Off" }}</b></button></div>
             </div>
 
             <!-- Progression with its rep range, like the Timer between reps row: what applies in the tile, faded where it is your default -->
@@ -636,17 +614,6 @@ html.he .chev svg { transform: rotate(90deg); }
 .rrow .rpill { grid-column: 2 / -2; cursor: pointer; }
 .rpill:hover { color: var(--tx); border-color: var(--acc); }
 
-.sect { margin-top: calc(var(--cpy) - 1px); padding-top: calc(var(--cpy) - 1px); border-top: 1px solid var(--ol); text-align: start; }
-/* the sections of an open exercise share one header: icon tile, title, a line saying what it is or how it's set */
-.sect-h { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; color: var(--tx); }
-/* a header with nothing under it (Timer between reps, Progression, a folded Rest) ends its section, so every section's
-   gap below is the next one's tokens alone. A folded <details> keeps an empty content box after its summary that stops
-   the summary's margin collapsing into that gap, which left Rest after each set 10px more below it than the others */
-.sect > .sect-h:last-child, details.sect:not([open]) > summary.sect-h { margin-bottom: 0; }
-.sect-h .si { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; background: var(--s2); color: var(--acc); flex: none; }
-.sect-h b { display: block; font-size: 14px; font-weight: 600; }
-.sect-h .tiny { display: block; }
-.rgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 6px; }
 /* on the shaded panel a plain .seg would vanish: give it its own outline so it reads as a switch */
 .seg.mini { margin: 0; flex: none; background: var(--s1); box-shadow: inset 0 0 0 1px var(--ol); }
 .seg.mini button { padding: 6px 14px; font-size: 13px; min-height: 32px; min-width: 44px; }
