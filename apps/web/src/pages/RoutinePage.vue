@@ -214,7 +214,6 @@ await loaded(r, summaries, notes, rems, schedules, history);
 .prt > .rtile > b { text-align: end; }
 /* the progression tile's parts: each part stays whole with its dot after it, and the tile breaks between parts */
 .prest b.pgv { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 6px; text-align: start; }
-.pgv .sep { font-weight: 400; }
 .pgp { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 </style>
 

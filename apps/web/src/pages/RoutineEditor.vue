@@ -488,7 +488,7 @@ await loaded(src, all, folders, routines, templates);
                   <button v-for="[k, l] in KIND_REST" :key="k" class="rtile" @click="restFor = { ex: i, kind: k }"><span>{{ l }}</span><b :class="{ dim: e.restByKind?.[k] == null }">{{ fmt.clock(kindRest(e, k)) }}</b></button>
                 </template>
                 <!-- inside a left and right round you switch sides straight away: shown, not set here -->
-                <div v-if="hasSideRounds(e)" class="rtile" title="A left set and its right one are one round: you switch sides straight away"><span>Between sides</span><b class="dim">No rest</b></div>
+                <div v-if="hasSideRounds(e)" class="rtile" title="A left set and its right one are one round: you switch sides straight away"><span>Between sides</span><b>No rest</b></div>
                 <button class="rtile" @click="restFor = { ex: i, kind: 'after' }"><span>After the last set</span><b :class="{ dim: e.restAfterS == null }">{{ fmt.clock(e.restAfterS ?? s.workout.restAfterExerciseS) }}</b></button>
               </div>
               <div class="tiny" style="margin-top:6px">For a different rest after one set, use that set's ⋮ menu; it shows as <b>R</b>.</div>
