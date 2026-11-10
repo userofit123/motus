@@ -17,7 +17,7 @@ import RestPicker from "../components/RestPicker.vue";
 import AppSelect from "../components/AppSelect.vue";
 import NumStep from "../components/NumStep.vue";
 import RadioList from "../components/RadioList.vue";
-import { PROGRESSION_MODES, LOWER_AFTER, MISSED_HINT, PROGRESSION_INTRO, RANGE_HINT } from "../core/progression";
+import { PROGRESSION_MODES, LOWER_AFTER, MISSED_HINT, PROGRESSION_INTRO, RANGE_BOTTOM_HINT, RANGE_TOP_HINT } from "../core/progression";
 import PrefRow from "../components/PrefRow.vue";
 import { prefGroups } from "../core/workoutPrefs";
 import ChoiceTiles from "../components/ChoiceTiles.vue";
@@ -185,10 +185,12 @@ await loaded(me);
           <div class="card">
             <p class="tiny prog-intro">{{ PROGRESSION_INTRO }}.<br />An exercise can have its own progression in the routine's editor.</p>
             <RadioList :model-value="s.progression.mode" :options="PROGRESSION_MODES" @update:model-value="(v) => set({ progression: { mode: v } })" />
-            <div class="li stack"><div class="grow"><div class="t">Rep range</div><div class="s">{{ RANGE_HINT }}</div></div>
-              <div class="hrow"><NumStep :value="s.progression.repsMin" :min="1" :max="100" label="bottom of the range" @set="(v) => set({ progression: { repsMin: v, repsMax: Math.max(v, s.progression.repsMax) } })" />
-              <span class="dash">-</span>
-              <NumStep :value="s.progression.repsMax" :min="1" :max="100" unit="reps" label="top of the range" @set="(v) => set({ progression: { repsMax: v, repsMin: Math.min(v, s.progression.repsMin) } })" /></div></div>
+            <!-- one row per end of the range, each with one stepper like the weight step rows: two steppers side by side
+                 don't fit beside a label on a phone -->
+            <div class="li"><div class="grow"><div class="t">Rep range, bottom</div><div class="s">{{ RANGE_BOTTOM_HINT }}</div></div>
+              <NumStep :value="s.progression.repsMin" :min="1" :max="100" unit="reps" label="bottom of the rep range" @set="(v) => set({ progression: { repsMin: v, repsMax: Math.max(v, s.progression.repsMax) } })" /></div>
+            <div class="li"><div class="grow"><div class="t">Rep range, top</div><div class="s">{{ RANGE_TOP_HINT }}</div></div>
+              <NumStep :value="s.progression.repsMax" :min="1" :max="100" unit="reps" label="top of the rep range" @set="(v) => set({ progression: { repsMax: v, repsMin: Math.min(v, s.progression.repsMin) } })" /></div>
             <div class="li"><div class="grow"><div class="t">Weight step, both sides together</div><div class="s">Barbell, machine, both arms or legs at once</div></div>
               <NumStep :value="wIn(steps.stepKg)" :step="s.units.weight === 'lb' ? 1 : 0.5" :min="s.units.weight === 'lb' ? 0.5 : 0.25" :max="100" :unit="s.units.weight" label="weight step, both sides" @set="(v) => set({ progression: { stepKg: kgOf(v) } })" /></div>
             <div class="li"><div class="grow"><div class="t">Weight step, one side at a time</div><div class="s">Exercises with left and right sets, or one-sided ones</div></div>

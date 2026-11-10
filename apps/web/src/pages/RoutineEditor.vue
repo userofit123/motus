@@ -281,9 +281,11 @@ const rangeText = (lo: number, hi: number) => (lo === hi ? `${lo} reps` : `${lo}
 // the block's tile: "Automatic · 6-12 reps · +2.5 kg", each part faded while it follows your default
 const progParts = (e: any) => {
   const p = progOf(e), own = e.progression ?? {};
-  if (p.mode === "off") return [{ text: modeLabel(p.mode), dim: own.mode == null }];
-  const parts = [{ text: modeLabel(p.mode), dim: own.mode == null }, { text: rangeText(p.repsMin, p.repsMax), dim: own.repsMin == null }];
-  return [...parts, { text: `+${fmt.value.wu_(p.stepKg)}`, dim: own.stepKg == null }];
+  if (p.mode === "off") return [{ text: modeLabel(p.mode), dim: own.mode == null, more: false }];
+  const parts = [{ text: modeLabel(p.mode), dim: own.mode == null, more: false }, { text: rangeText(p.repsMin, p.repsMax), dim: own.repsMin == null, more: true }];
+  // on a phone the tile shows only the mode (the sheet shows the range and step), so it stays beside its label as
+  // short as the Timer between reps one
+  return [...parts, { text: `+${fmt.value.wu_(p.stepKg)}`, dim: own.stepKg == null, more: true }];
 };
 // its own range: both ends move together, the bottom never above the top
 function setRange(e: any, lo: number, hi: number) { setProg(e, { repsMin: Math.min(lo, hi), repsMax: Math.max(lo, hi) }); }
@@ -495,11 +497,15 @@ await loaded(src, all, folders, routines, templates);
 
             <!-- Progression with its rep range, like the Timer between reps row: what applies in the tile, faded where it is your default -->
             <div v-if="progUsable(e) && !e.fixed" class="sect">
-              <div class="sect-h pg-h"><span class="si"><Icon name="arrowUp" :size="16" /></span><span class="grow"><b>Progression</b><span class="tiny">How the reps and weight move after a workout. Faded values are your defaults from Settings</span></span>
-                <button class="rtile" style="flex:none" @click="progFor = e"><b class="pgsum"><template v-for="(x, k) in progParts(e)" :key="k"><span v-if="k" class="sep">·</span><span :class="{ dim: x.dim }">{{ x.text }}</span></template></b></button></div>
+              <div class="sect-h"><span class="si"><Icon name="arrowUp" :size="16" /></span><span class="grow"><b>Progression</b><span class="tiny">How the reps and weight move after a workout. Faded values are your defaults</span></span>
+                <button class="rtile pg-t" @click="progFor = e"><b class="pgsum"><span v-for="(x, k) in progParts(e)" :key="k" class="pgp" :class="{ more: x.more }"><span v-if="k" class="sep">·</span><span :class="{ dim: x.dim }">{{ x.text }}</span></span></b></button></div>
             </div>
 
-            <div class="sect"><input v-model="e.note" class="in" placeholder="Note: seat height, grip…" style="font-size:13px" @input="touch" /></div>
+            <!-- part of the routine like its sets and rests: the page's Save keeps it, and leaving unsaved asks first -->
+            <div class="sect">
+              <div class="sect-h"><span class="si"><Icon name="note" :size="16" /></span><span class="grow"><b>Note</b><span class="tiny">Shows with this exercise on the routine's page. Saved when you save the routine</span></span></div>
+              <input v-model="e.note" class="in" placeholder="Seat height, grip…" style="font-size:13px" @input="touch" />
+            </div>
           </div></Collapse>
         </div>
       </div>
@@ -554,10 +560,13 @@ await loaded(src, all, folders, routines, templates);
         <div class="li"><div class="grow"><div class="t">Rep range</div><div class="s">{{ RANGE_HINT }}</div></div>
           <AppSelect :model-value="progFor.progression?.repsMin != null" :options="[{ value: false, label: `Your default (${rangeText(s.progression.repsMin, s.progression.repsMax)})` }, { value: true, label: 'Its own' }]" title="Rep range" style="width:auto"
             @update:model-value="(v) => (v ? setRange(progFor, s.progression.repsMin, s.progression.repsMax) : setProg(progFor, { repsMin: null, repsMax: null }))" /></div>
-        <div v-if="progFor.progression?.repsMin != null && progFor.progression?.repsMax != null" class="li stack"><div class="grow"><div class="t">Its own rep range</div></div>
-          <div class="hrow"><NumStep :value="progFor.progression.repsMin" :min="1" :max="100" label="bottom of the range" @set="(v) => setRange(progFor, v, Math.max(v, progFor!.progression!.repsMax!))" />
-          <span class="dash">-</span>
-          <NumStep :value="progFor.progression.repsMax" :min="1" :max="100" unit="reps" label="top of the range" @set="(v) => setRange(progFor, Math.min(v, progFor!.progression!.repsMin!), v)" /></div></div>
+        <!-- its own range: one row per end with one stepper, like "Its own weight step" and Settings' two rows -->
+        <template v-if="progFor.progression?.repsMin != null && progFor.progression?.repsMax != null">
+          <div class="li"><div class="grow"><div class="t">Its own range, bottom</div></div>
+            <NumStep :value="progFor.progression.repsMin" :min="1" :max="100" unit="reps" label="bottom of the rep range" @set="(v) => setRange(progFor, v, Math.max(v, progFor!.progression!.repsMax!))" /></div>
+          <div class="li"><div class="grow"><div class="t">Its own range, top</div></div>
+            <NumStep :value="progFor.progression.repsMax" :min="1" :max="100" unit="reps" label="top of the rep range" @set="(v) => setRange(progFor, Math.min(v, progFor!.progression!.repsMin!), v)" /></div>
+        </template>
         <div class="li"><div class="grow"><div class="t">Weight step</div><div class="s">The smallest change when the weight goes up or down</div></div>
           <!-- a picker like "Lower the weight after": the default's label is too long for a two-part toggle on a phone -->
           <AppSelect :model-value="progFor.progression?.stepKg != null" :options="[{ value: false, label: `Your default (${fmt.wu_(defaultsOf(progFor).stepKg)})` }, { value: true, label: 'Its own' }]" title="Weight step" style="width:auto"
@@ -585,14 +594,17 @@ await loaded(src, all, folders, routines, templates);
 .pl-k { margin-bottom: 2px; }
 .exchips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 2px; }
 .pg-intro { margin: 0 0 var(--hg); }
-/* phone: the tile (long, with the range and step) drops under the text, start-aligned past the icon (30px) and gap (10px) like .li.stack */
-html.phone .sect-h.pg-h { flex-wrap: wrap; }
-html.phone .sect-h.pg-h > .grow { flex-basis: calc(100% - 40px); }
-html.phone .sect-h.pg-h > .rtile { margin-inline-start: 40px; }
+/* the Progression tile sits on the right like the Timer between reps one; it may shrink (to at most about half the row,
+   so the label keeps its room): on a phone just the mode, and at the very narrowest the mode shortened */
+.sect-h .pg-t { flex: 0 1 auto; min-width: 0; max-width: 55%; }
+.pgp { display: contents; }
+html.phone .pgp.more { display: none; }
+.pgsum > .pgp > span { white-space: nowrap; flex: none; }
+.pgsum > .pgp:first-child > span { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .pg-rows { margin-top: var(--hg); }
 .pg-reset { margin-top: var(--hg); }
 /* the tile's parts in a row, the dots spaced by the gap; more specific than .sect-h b's display: block */
-.sect-h b.pgsum { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 0 6px; }
+.sect-h b.pgsum { display: flex; align-items: center; gap: 0 6px; min-width: 0; }
 .st-t { font-size: 17px; font-weight: 600; }
 
 .exlist { display: flex; flex-direction: column; gap: var(--spg); margin-bottom: var(--spg); }
@@ -617,6 +629,10 @@ html.he .chev svg { transform: rotate(90deg); }
 .sect { margin-top: calc(var(--cpy) - 1px); padding-top: calc(var(--cpy) - 1px); border-top: 1px solid var(--ol); text-align: start; }
 /* the sections of an open exercise share one header: icon tile, title, a line saying what it is or how it's set */
 .sect-h { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; color: var(--tx); }
+/* a header with nothing under it (Timer between reps, Progression, a folded Rest) ends its section, so every section's
+   gap below is the next one's tokens alone. A folded <details> keeps an empty content box after its summary that stops
+   the summary's margin collapsing into that gap, which left Rest after each set 10px more below it than the others */
+.sect > .sect-h:last-child, details.sect:not([open]) > summary.sect-h { margin-bottom: 0; }
 .sect-h .si { width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center; background: var(--s2); color: var(--acc); flex: none; }
 .sect-h b { display: block; font-size: 14px; font-weight: 600; }
 .sect-h .tiny { display: block; }

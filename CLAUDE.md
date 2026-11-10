@@ -13,6 +13,7 @@ Self-hosted fitness tracker. Plan: PLAN.md (decisions in §16, anti-bloat rules 
 - `apps/desktop`: Electron (local accounts run the server inside the app). `apps/android`: Capacitor.
 
 ## Rules
+- **Consistency first (top rule, the developer rejects any break).** Every visible element looks and behaves like its siblings and the app's existing equivalents: same row layout (label left, control right), same left edge and indents, same control type for the same kind of value, same spacing between equal blocks, same alignment (centred blocks stay centred), same wording style. Before finishing UI work, compare it element by element with its neighbours on the same screen and the most similar existing screen, at phone (360px) and desktop width. Every visual change gets a separate design review before it is done; an inconsistency is a failure, never a minor note.
 - Clean by default (PLAN.md §10.0): one primary button per screen; secondary actions in ⋮ menus; optional features off and absent until switched on in Settings → Features.
 - Styles only through the theme tokens (`--acc`, `--s1`, `--tx2`, …); never hard-coded colours.
 - Every change announces what it touched (`ctx.changed(...)`, topics in `packages/shared/src/live.ts`) so all screens update live.

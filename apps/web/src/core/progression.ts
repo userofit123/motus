@@ -14,3 +14,6 @@ export const MISSED_HINT = "A missed workout: a working set below the bottom of 
 /** What Progression does, at the top of Settings' Progression and of an exercise's own */
 export const PROGRESSION_INTRO = "After each workout the routine keeps the reps you did. The reps move inside the rep range; when every set reaches its top, the weight goes up and the reps start again at its bottom";
 export const RANGE_HINT = "The reps to aim for. At the top on every set, the weight goes up";
+/** Settings' two rep range rows, one end each, like the two weight step rows */
+export const RANGE_BOTTOM_HINT = "Where the reps start again after the weight goes up";
+export const RANGE_TOP_HINT = "At the top on every set, the weight goes up";
