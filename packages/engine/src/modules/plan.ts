@@ -1,6 +1,6 @@
 // Turning a routine into today's plan: the sets to do with the routine's numbers (which are where you are now, PLAN.md
 // §8.7), last time's beside them, with reminders, pinned notes and an estimate of how long it takes. Used by the pre-start preview and by "Start".
-import { estimate, pairSets, restAfterSet, opensSideRound, restDefaultsOf, progressionOf, progressionDefaultsOf, usesReps, usesWeight, type Exercise, type Reminder, type Note, type Settings, type SetKind } from "@motus/shared";
+import { estimate, pairSets, restAfterSet, opensSideRound, restDefaultsOf, progressionOf, progressionDefaultsOf, usesReps, usesWeight, usesDuration, type Exercise, type Reminder, type Note, type Settings, type SetKind } from "@motus/shared";
 import type { Sql } from "../db";
 import { camel } from "../util";
 import { exerciseSessions, getExercises } from "./library";
@@ -146,13 +146,15 @@ export async function buildPlan(q: Sql, routine: any, settings: Settings, today:
         }
       }
       const isLastSet = i === re.sets.length - 1;
+      // only what the exercise tracks now: a set switched to time keeps no reps, one switched to reps no time
+      const hasReps = usesReps(tr), hasTime = usesDuration(tr);
       return {
-        kind: s.kind, weightKg, reps,
-        durationS: fromLast && prev.durationS != null ? prev.durationS : s.durationS,
+        kind: s.kind, weightKg, reps: hasReps ? reps : null,
+        durationS: !hasTime ? null : fromLast && prev.durationS != null ? prev.durationS : s.durationS,
         distanceM: fromLast && prev.distanceM != null ? prev.distanceM : s.distanceM,
         rpe: s.rpe, side: s.side ?? null,
         restS: restAfterSet({ setRestS: s.restS, kind: s.kind, nextKind: re.sets[i + 1]?.kind, sideRound: opensSideRound(re.sets, i), byKindS: re.restByKind, exRestS: re.restS, prefRestS: pref?.rest_s, isLastSet, exRestAfterS: re.restAfterS, prefRestAfterS: pref?.rest_after_s }, d),
-        targetReps: s.reps, targetRepsMax: top, targetWeightKg: s.weightKg,
+        targetReps: hasReps ? s.reps : null, targetRepsMax: top, targetWeightKg: s.weightKg,
         prev: prev ? { weightKg: prev.weightKg, reps: prev.reps, durationS: prev.durationS, distanceM: prev.distanceM } : null,
         prefilled: !!fromLast, adjusted,
       };

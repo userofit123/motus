@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { estimate, routineTime, setSeconds, usualDuration, CHANGEOVER_S } from "./training";
+import { estimate, routineTime, setSeconds, usualDuration, CHANGEOVER_S, liftedKg, trackingFor, retimeSet } from "./training";
 
 describe("estimate", () => {
   it("counts each set's work, the rests between sets and a changeover per exercise", () => {
@@ -50,5 +50,22 @@ describe("routineTime", () => {
     expect(routineTime(3300, { s: 3480, of: 1, newest: true })).toBe("58m last time");
     // the newest workout was given up, so the one kept is an older one: not "last time"
     expect(routineTime(3300, usualDuration([120, 3480]))).toBe("usually 58m");
+  });
+});
+
+describe("timed sets", () => {
+  it("lift weight × reps only when counted in reps with a load", () => {
+    expect(liftedKg(40, 8, "weight_reps")).toBe(320);
+    expect(liftedKg(40, 8, "weight_duration")).toBe(0);
+    expect(liftedKg(40, 8, "assisted")).toBe(0);
+  });
+  it("keep a bodyweight exercise's optional added weight when done for time", () => {
+    expect(trackingFor("bodyweight_reps", true)).toBe("weight_duration");
+    expect(trackingFor("assisted", true)).toBe("duration");
+  });
+  it("start a switched set like a new exercise's, weight kept", () => {
+    expect(retimeSet({ reps: 10, durationS: null }, "weight_duration")).toEqual({ reps: null, durationS: 30 });
+    expect(retimeSet({ reps: null, durationS: 45 }, "weight_reps")).toEqual({ reps: 8, durationS: null });
+    expect(retimeSet({ reps: null, durationS: 45 }, "duration")).toBeNull();
   });
 });

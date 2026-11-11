@@ -18,11 +18,10 @@ export const countsForVolume = (kind: SetKind) => kind !== "warmup";
  * they add nothing; neither does a set with no (or negative) weight. LIFTED_SQL is the same rule for queries. */
 export function liftedKg(weightKg: number | string | null | undefined, reps: number | null | undefined, tracking?: Tracking | string | null): number {
   const w = Number(weightKg) || 0;
-  if (tracking === "assisted" || w <= 0 || !reps) return 0;
+  // a set done for time lifts nothing, even with reps left over from before it was switched
+  if ((tracking && !liftsWeight(tracking)) || w <= 0 || !reps) return 0;
   return w * reps;
 }
-/** liftedKg in SQL, for a query with the set as `s` and its exercise as `e`. */
-export const LIFTED_SQL = "CASE WHEN e.tracking <> 'assisted' AND s.weight_kg > 0 THEN s.weight_kg * coalesce(s.reps, 0) ELSE 0 END";
 export function setVolume(s: { kind: SetKind; weightKg: number | null; reps: number | null; done?: boolean }, tracking?: Tracking | null): number {
   if (s.done === false || !countsForVolume(s.kind)) return 0;
   return liftedKg(s.weightKg, s.reps, tracking);
@@ -36,7 +35,8 @@ export const usesDistance = (t: Tracking) => t === "distance_duration" || t === 
 // Timed sets: any exercise counted in reps can be done for time instead (a hold, a stretch, a timed carry) and the other
 // way round; each person switches it per exercise (exercise_prefs.timed, null keeps the exercise's own way). It stays one
 // way per exercise, so its records, charts and "next time" all read the same kind of number.
-const TO_TIME: Partial<Record<Tracking, Tracking>> = { weight_reps: "weight_duration", bodyweight_reps: "duration", assisted: "duration", reps_only: "duration" };
+// bodyweight reps keep their optional added weight (a weighted plank or hang); assisted help isn't weight held, so it goes
+const TO_TIME: Partial<Record<Tracking, Tracking>> = { weight_reps: "weight_duration", bodyweight_reps: "weight_duration", assisted: "duration", reps_only: "duration" };
 const TO_REPS: Partial<Record<Tracking, Tracking>> = { weight_duration: "weight_reps", duration: "reps_only" };
 /** Whether the switch applies: distance exercises are neither reps nor a plain hold. */
 export const canTime = (t: Tracking) => !usesDistance(t);
@@ -51,6 +51,23 @@ export const TRACKING_SQL = `CASE ${[
   ...Object.entries(TO_TIME).map(([a, b]) => `WHEN p.timed AND e.tracking = '${a}' THEN '${b}'`),
   ...Object.entries(TO_REPS).map(([a, b]) => `WHEN p.timed = false AND e.tracking = '${a}' THEN '${b}'`),
 ].join(" ")} ELSE e.tracking END`;
+/** Whether an exercise is done for time (the "Timed sets" switch is on): a time for each set, no reps and no distance. */
+export const isTimed = (t: Tracking) => usesDuration(t) && canTime(t);
+/** What a set starts with once its exercise switches between reps and time: what a new exercise's sets start with
+ * (8 reps or 30 seconds), weight kept. Returns the changed fields only, null when the set already fits. */
+export const NEW_SET_REPS = 8, NEW_SET_S = 30;
+export function retimeSet(s: { reps?: number | null; durationS?: number | null }, t: Tracking): { reps: number | null; durationS: number | null } | null {
+  const next = isTimed(t) ? { reps: null, durationS: s.durationS || NEW_SET_S } : { reps: s.reps || NEW_SET_REPS, durationS: null };
+  return next.reps === (s.reps ?? null) && next.durationS === (s.durationS ?? null) ? null : next;
+}
+
+// weight × reps is lifted only by an exercise counted in reps whose weight is a load (assisted weight is help)
+const LIFTS: Tracking[] = ["weight_reps", "bodyweight_reps", "reps_only"];
+/** Whether its sets lift weight × reps (volume, one-rep max): counted in reps, with a load rather than help. */
+export const liftsWeight = (t: Tracking | string | null | undefined) => LIFTS.includes(t as Tracking);
+/** liftedKg in SQL, for a query with the set as `s` and its exercise as `e`: reads the person's own reps-or-time choice. */
+export const LIFTED_SQL = `CASE WHEN s.weight_kg > 0 AND (SELECT ${TRACKING_SQL} FROM (SELECT 1) one LEFT JOIN exercise_prefs p ON p.exercise_id = e.id AND p.user_id = s.user_id) IN (${LIFTS.map((t) => `'${t}'`).join(",")})
+  THEN s.weight_kg * coalesce(s.reps, 0) ELSE 0 END`;
 
 // ----- rest -----
 

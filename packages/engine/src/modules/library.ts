@@ -1,6 +1,6 @@
 // The exercise library: the shared catalog plus each person's own exercises, their per-exercise settings,
 // and every exercise's history, charts and records.
-import { e1rm, liftedKg, TRACKING_SQL, type Exercise, type Tracking } from "@motus/shared";
+import { e1rm, liftedKg, TRACKING_SQL, isTimed, canTime, NEW_SET_REPS, NEW_SET_S, type Exercise, type Tracking } from "@motus/shared";
 import type { Router, Ctx } from "../router";
 import type { Sql } from "../db";
 import { camel, id, str, numOrNull, intOrNull, bool, oneOf } from "../util";
@@ -134,8 +134,10 @@ export function libraryRoutes(r: Router) {
     return { id: exId };
   });
   r.put("/exercises/:id", async (ctx, p, b) => {
-    await saveCustom(ctx, id(p.id), b, false);
-    ctx.changed("exercise");
+    const exId = id(p.id), before = await trackingNow(ctx, exId);
+    await saveCustom(ctx, exId, b, false);
+    if (await retimeRoutines(ctx, exId, before)) ctx.changed("exercise", "workout", "routine");
+    else ctx.changed("exercise");
     return { ok: true };
   });
   r.del("/exercises/:id", async (ctx, p) => {
@@ -147,9 +149,10 @@ export function libraryRoutes(r: Router) {
     return { ok: true, archived: !!used };
   });
   r.put("/exercises/:id/prefs", async (ctx, p, body) => {
-    await savePrefs(ctx, id(p.id), body);
-    // reps or time also changes how its records, stats and goals count
-    if (body && typeof body === "object" && "timed" in body) ctx.changed("exercise", "workout");
+    const exId = id(p.id), before = await trackingNow(ctx, exId);
+    await savePrefs(ctx, exId, body);
+    // reps or time also changes how its records, stats and goals count, and every routine's sets of it
+    if (await retimeRoutines(ctx, exId, before)) ctx.changed("exercise", "workout", "routine");
     else ctx.changed("exercise");
     return { ok: true };
   });
@@ -179,6 +182,25 @@ export function libraryRoutes(r: Router) {
       [ex.id, ex.primaryMuscles, ex.category, ex.equipment]);
     return rows.map(exerciseFromRow);
   });
+}
+
+/** What an exercise tracks for this person (its own way with their reps-or-time choice applied). */
+async function trackingNow(ctx: Ctx, exId: string): Promise<Tracking | null> {
+  const row = (await ctx.q.query(`SELECT ${TRACKING_SQL} AS tracking FROM exercises e LEFT JOIN exercise_prefs p ON p.exercise_id = e.id AND p.user_id = $2 WHERE e.id = $1`,
+    [exId, ctx.userId])).rows[0];
+  return row ? (row.tracking as Tracking) : null;
+}
+/** Once an exercise switches between reps and time, every one of this person's routines moves with it, so no routine
+ * keeps reps that are hidden but still saved (and copied into the next workout): each set gets what a new exercise's
+ * sets start with (8 reps or 30 seconds, as the routine editor does), weight kept. True when it switched. */
+async function retimeRoutines(ctx: Ctx, exId: string, before: Tracking | null): Promise<boolean> {
+  const after = await trackingNow(ctx, exId);
+  if (!before || !after || !canTime(before) || !canTime(after) || isTimed(before) === isTimed(after)) return false;
+  const sets = isTimed(after) ? `reps = NULL, start_reps = NULL, duration_s = coalesce(nullif(s.duration_s, 0), ${NEW_SET_S})`
+    : `duration_s = NULL, reps = coalesce(nullif(s.reps, 0), ${NEW_SET_REPS})`;
+  await ctx.q.query(`UPDATE routine_sets s SET ${sets} FROM routine_exercises re
+    WHERE re.id = s.routine_exercise_id AND re.exercise_id = $1 AND s.user_id = $2`, [exId, ctx.userId]);
+  return true;
 }
 
 /** Saves the person's settings for one exercise. Only what is sent changes: one switch (favourite, one side at a time)

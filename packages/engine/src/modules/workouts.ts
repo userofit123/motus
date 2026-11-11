@@ -1,6 +1,6 @@
 // Workouts: starting one (from a routine or empty), logging sets, skipping, reordering and replacing exercises,
 // finishing, logging a past workout, editing and duplicating, and the full detail with records and improvements.
-import { e1rm, ymd, pairSets, planSetRest, restDefaultsOf, liftedKg, LIFTED_SQL, TRACKING_SQL, structureChanges, type Tracking, type RoutineExercise, type ExerciseStatus, type SetKind, type WorkoutExercise, type HomeRecord, type Workout, type WorkoutSummary, type Routine } from "@motus/shared";
+import { e1rm, ymd, pairSets, planSetRest, restDefaultsOf, liftedKg, liftsWeight, LIFTED_SQL, TRACKING_SQL, structureChanges, type Tracking, type RoutineExercise, type ExerciseStatus, type SetKind, type WorkoutExercise, type HomeRecord, type Workout, type WorkoutSummary, type Routine } from "@motus/shared";
 import type { Router, Ctx } from "../router";
 import type { Sql } from "../db";
 import { camel, id, optId, str, strList, intOrNull, numOrNull, bool, oneOf, isoTime, secondsBetween, visible } from "../util";
@@ -222,8 +222,8 @@ async function workoutReport(q: Sql, w: any) {
     const sw = e.sets.filter((s: any) => s.done && s.kind !== "warmup");
     const now = {
       volumeKg: sw.reduce((a: number, s: any) => a + liftedKg(s.weightKg, s.reps, e.exercise?.tracking), 0),
-      // an assisted exercise's "weight" is help, so it has no one-rep max; it's judged on reps
-      e1rm: e.exercise?.tracking === "assisted" ? null : Math.max(0, ...sw.map((s: any) => e1rm(s.weightKg, s.reps) ?? 0)) || null,
+      // an assisted exercise's "weight" is help and a timed one has no reps, so neither has a one-rep max
+      e1rm: !liftsWeight(e.exercise?.tracking) ? null : Math.max(0, ...sw.map((s: any) => e1rm(s.weightKg, s.reps) ?? 0)) || null,
       maxWeightKg: Math.max(0, ...sw.map((s: any) => s.weightKg ?? 0)) || null,
       reps: sw.reduce((a: number, s: any) => a + (s.reps ?? 0), 0),
     };

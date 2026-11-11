@@ -2,7 +2,7 @@
 // One exercise in the running workout: its reminders and pinned notes when it comes up, and the sets table
 // (Previous · kg · Reps · ✓). The routine's numbers are already filled in (last time's in an empty workout); tap Previous to copy it, tick to log the set.
 import { computed, ref, onBeforeUnmount } from "vue";
-import { usesWeight, usesReps, usesDuration, usesDistance, toM, fromM, parseQuick, warmups, muscleName, sideJoins, restDefaultsOf, type WorkoutExercise, type WorkoutSet } from "@motus/shared";
+import { usesWeight, usesReps, usesDuration, usesDistance, toM, fromM, parseQuick, warmups, muscleName, sideJoins, restDefaultsOf, retimeSet, type Tracking, type WorkoutExercise, type WorkoutSet } from "@motus/shared";
 import { joinRest } from "../core/plannedRest";
 import { SET_KINDS, setNo as setNoOf, sideJoinCls } from "../core/format";
 import { useWorkout } from "./useWorkout";
@@ -103,6 +103,12 @@ async function addWarmups() {
   await api.post(`/workout-exercises/${props.e.id}/sets`, { atStart: true, sets: ws.map((x) => ({ kind: "warmup", weightKg: x.weightKg, reps: x.reps, restPlannedS: 60 })) });
   invalidate(["workouts"]);
 }
+// switched between reps and time: the sets still to do start again as the routine editor's do (8 reps or 30 seconds,
+// weight kept); done ones keep what was logged
+function retime(t: Tracking) {
+  if (props.e.exercise) props.e.exercise.tracking = t;
+  for (const s of props.e.sets) { const patch = s.done ? null : retimeSet(s, t); if (patch) void W.editSet(s, patch); }
+}
 // in groups: what it is and reminders, doing it or not, its rests and tools, then Remove on its own
 const menu = computed(() => [
   { label: "About this exercise", icon: "info", run: () => (exerciseSheet.value = props.e.exerciseId) },
@@ -110,8 +116,8 @@ const menu = computed(() => [
   { label: "Skip", sep: true, icon: "skip", run: skip, hidden: props.e.status === "skipped" },
   { label: "Bring it back", icon: "refresh", run: () => W.setStatus(props.e, props.e.sets.every((s) => s.done) && props.e.sets.length ? "done" : "pending"), hidden: props.e.status !== "skipped" },
   { label: "Swap for another exercise", icon: "swap", run: openReplace },
-  // reps or time: the exercise's own way, switched for every workout from now on
-  { ...timedItem(props.e.exerciseId, tr.value, (t) => { if (props.e.exercise) props.e.exercise.tracking = t; }), sep: true },
+  // reps or time: the exercise's own way, switched for every workout from now on (and its sets in every routine)
+  { ...timedItem(props.e.exerciseId, tr.value, !!feat.value.timedSets, retime), sep: true },
   // any exercise can be switched to left and right sets (the exercise's default is only a start)
   { ...sidesItem(props.e.exerciseId, sided.value, (on) => { if (props.e.exercise) props.e.exercise.unilateral = on; }), hidden: !feat.value.unilateral },
   // one-sided exercises have this as a button under the sets; any other exercise can still get a left and a right set

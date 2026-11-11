@@ -82,6 +82,24 @@ describe("engine", () => {
     expect((await call(T, "GET", `/exercises/${squat.id}`)).tracking).toBe("weight_duration");
     await call(T, "PUT", `/exercises/${squat.id}/prefs`, { timed: null });
     expect((await call(T, "GET", `/exercises/${squat.id}`)).tracking).toBe("weight_reps");
+    // switching converts the sets in every routine of that person (8 reps or 30 seconds, weight kept) ...
+    const set0 = async () => (await call(T, "GET", `/routines/${r.id}`)).exercises[0].sets[0];
+    expect(await set0()).toMatchObject({ reps: 8, durationS: null, weightKg: 40 });
+    await call(T, "PUT", `/exercises/${squat.id}/prefs`, { timed: true });
+    expect(await set0()).toMatchObject({ reps: null, durationS: 30, weightKg: 40 });
+    // ... and a workout started from a routine with leftover reps keeps only what the exercise tracks now
+    await eng.db.admin.query("UPDATE routine_sets SET reps = 8 WHERE routine_exercise_id IN (SELECT id FROM routine_exercises WHERE routine_id = $1)", [r.id]);
+    await call(T, "POST", `/workouts/${w.id}/discard`);
+    const w2 = await call(T, "POST", "/workouts/start", { routineId: r.id });
+    expect(w2.exercises[0].sets[0]).toMatchObject({ reps: null, durationS: 30 });
+    await call(T, "PUT", `/exercises/${squat.id}/prefs`, { timed: null });
+    // editing your own exercise saves "Track it by" onto it and clears the personal switch, so the pick sticks
+    const mine = (await call(T, "POST", "/exercises", { name: "Timed test", tracking: "weight_reps" })).id;
+    await call(T, "PUT", `/exercises/${mine}/prefs`, { timed: true });
+    expect((await call(T, "GET", `/exercises/${mine}`)).tracking).toBe("weight_duration");
+    await call(T, "PUT", `/exercises/${mine}`, { name: "Timed test", tracking: "weight_reps" });
+    const back = await call(T, "GET", `/exercises/${mine}`);
+    expect([back.tracking, back.prefs?.timed ?? null]).toEqual(["weight_reps", null]);
   });
 
   it("routine sets can be left, right or both on any exercise; Start copies them, and last time and Progression go side by side", async () => {
