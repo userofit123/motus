@@ -92,12 +92,10 @@ function moveRoutine(from: number, to: number) {
     }
   });
 }
-async function useTemplate(slug: string) {
-  const r = await api.post("/routines", { template: slug });
-  invalidate(["routines"]);
+// the template opens in the editor as an unsaved new routine, saved only when the editor's Save is pressed
+function useTemplate(slug: string) {
   fromTemplate.value = false;
-  toast("Routine created");
-  router.push(`/routines/${r.id}`);
+  router.push({ path: "/routines/new/edit", query: { template: slug } });
 }
 const exercises = (n: number) => `${n} exercise${n === 1 ? "" : "s"}`;
 const menuFor = useRoutineMenu();

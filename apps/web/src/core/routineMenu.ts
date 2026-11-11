@@ -39,7 +39,7 @@ export function useRoutineMenu() {
     { label: "Remind me next time", icon: "bell", run: () => (reminderSheet.value = { targetType: "routine", targetId: r.id, label: r.name }) },
     { label: "Edit", sep: true, icon: "edit", run: () => router.push(`/routines/${r.id}/edit`) },
     { label: "Duplicate", icon: "copy", run: async () => { try { const x = await api.post(`/routines/${r.id}/duplicate`); invalidate(["routines"]); toast("Routine duplicated"); if (page) router.push(`/routines/${x.id}`); } catch (e) { toastError(e); } } },
-    { label: "New routine based on this", icon: "layers", run: async () => { const n = await prompt("Name the new routine", { value: r.name + " v2", ok: "Create", text: "A copy you can change; this one stays as it is." }); if (n) { const x = await api.post("/routines", { fromRoutineId: r.id, name: n }); invalidate(["routines"]); toast(`${n} created`); router.push(`/routines/${x.id}/edit`); } } },
+    { label: "New routine based on this", icon: "layers", run: async () => { const n = await prompt("Name the new routine", { value: r.name + " v2", ok: "Create", text: "A copy you can change; this one stays as it is." }); if (n) router.push({ path: "/routines/new/edit", query: { from: r.id, name: n } }); } },
     { label: "Add a note", icon: "note", run: () => (noteSheet.value = { targets: [{ type: "routine", id: r.id, label: r.name }] }) },
     { label: r.pinned ? "Unpin" : "Pin to top", sep: true, icon: "pin", run: () => set(r, { pinned: !r.pinned }, r.pinned ? "Routine unpinned" : "Routine pinned to top") },
     { label: "Move to folder", icon: "folder", run: () => moveTo(r) },

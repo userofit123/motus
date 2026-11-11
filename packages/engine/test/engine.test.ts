@@ -154,6 +154,15 @@ describe("engine", () => {
     await expect(eng.db.admin.query("UPDATE routine_sets SET side = 'X' WHERE id = $1", [after[0].id])).rejects.toThrow();
   });
   let routineId = "", benchId = "", workoutId = "";
+  it("reads a template as an unsaved routine, so a discarded one leaves nothing behind", async () => {
+    const before = (await call(A, "GET", "/routines")).length;
+    const t = await call(A, "GET", "/templates/push");
+    expect(t.name).toBeTruthy();
+    expect(t.exercises.length).toBe(5);
+    expect(t.exercises[0].sets[0]).toMatchObject({ kind: "normal", weightKg: null, side: null });
+    expect((await call(A, "GET", "/routines")).length).toBe(before);
+    await expect(call(A, "GET", "/templates/nope")).rejects.toThrow();
+  });
   it("creates a routine from a template", async () => {
     const r = await call(A, "POST", "/routines", { template: "push" });
     routineId = r.id;

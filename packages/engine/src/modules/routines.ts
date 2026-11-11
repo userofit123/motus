@@ -66,6 +66,23 @@ function restByKind(v: unknown): string | null {
 /** Writes a routine's exercises and sets, keeping the ids of exercises that stay (workouts point at them). `missed`
  * (workouts in a row with missed reps) is only written by finishing (`withMissed`); an edit keeps each one's count,
  * unless it changed the exercise's Progression (a count from under another mode means nothing). */
+// a template as a routine's body, in the editor's full shape; unsaved, so the editor can open it as a draft
+// that only becomes a routine on Save (GET /templates/:slug), and POST /routines { template } saves the same
+async function templateBody(q: Sql, slug: string) {
+  const t = TEMPLATES.find((x) => x.slug === slug);
+  if (!t) throw notFound("Template not found");
+  const ids = new Map((await q.query("SELECT source_id, id FROM exercises WHERE owner_id IS NULL AND source = $1 AND source_id = ANY($2::text[])", [SOURCE, t.exercises.map((e) => e.id)])).rows.map((x: any) => [x.source_id, x.id]));
+  return {
+    name: t.name, description: t.description, folderId: null, color: null,
+    exercises: t.exercises.filter((e) => ids.has(e.id)).map((e) => ({
+      exerciseId: ids.get(e.id) as string, superset: null, restS: e.restS ?? null, restAfterS: e.restAfterS ?? null, restByKind: null, repRestS: null, fixed: false, note: "",
+      // a template's "8-12" becomes the exercise's own rep range, its sets starting at the bottom
+      progression: e.repsMax && !e.durationS ? { mode: null, repsMin: e.reps, repsMax: e.repsMax, stepKg: null, lowerAfter: null } : null,
+      sets: Array.from({ length: e.sets }, () => ({ kind: "normal", reps: e.durationS ? null : e.reps, weightKg: null, durationS: e.durationS ?? null, distanceM: null, rpe: null, restS: null, side: null })),
+    })),
+  };
+}
+
 async function writeRoutineBody(ctx: Ctx, routineId: string, exercises: any[], withMissed = false) {
   if (!Array.isArray(exercises)) throw bad("Expected a list of exercises");
   if (exercises.length > 100) throw bad("Too many exercises");
@@ -273,18 +290,7 @@ export function routineRoutes(r: Router) {
       if (!w) throw notFound("Workout not found");
       body = { name: str(b.name, 120) || w.name, exercises: (await bodyFromWorkout(ctx.q, b.fromWorkoutId)).map((e) => ({ ...e, id: undefined })) };
     } else if (b?.template) {
-      const t = TEMPLATES.find((x) => x.slug === b.template);
-      if (!t) throw notFound("Template not found");
-      const ids = new Map((await ctx.q.query("SELECT source_id, id FROM exercises WHERE owner_id IS NULL AND source = $1 AND source_id = ANY($2::text[])", [SOURCE, t.exercises.map((e) => e.id)])).rows.map((x: any) => [x.source_id, x.id]));
-      body = {
-        name: t.name, description: t.description, folderId: b.folderId,
-        exercises: t.exercises.filter((e) => ids.has(e.id)).map((e) => ({
-          exerciseId: ids.get(e.id), restS: e.restS ?? null, restAfterS: e.restAfterS ?? null,
-          // a template's "8-12" becomes the exercise's own rep range, its sets starting at the bottom
-          progression: e.repsMax && !e.durationS ? { mode: null, repsMin: e.reps, repsMax: e.repsMax, stepKg: null, lowerAfter: null } : null,
-          sets: Array.from({ length: e.sets }, () => ({ kind: "normal", reps: e.durationS ? null : e.reps, durationS: e.durationS ?? null })),
-        })),
-      };
+      body = { ...(await templateBody(ctx.q, str(b.template, 80))), folderId: b.folderId };
     }
     const rid = await createRoutine(ctx, body);
     ctx.changed("routine");
@@ -422,6 +428,7 @@ export function routineRoutes(r: Router) {
       return { slug: t.slug, group: t.group, name: t.name, description: t.description, exercises: t.exercises.length, muscles, helpers };
     });
   });
+  r.get("/templates/:slug", async ({ q }, p) => templateBody(q, str(p.slug, 80)));
 
   // folders
   r.get("/folders", async ({ q }) => (await q.query("SELECT id, name, position, color FROM folders ORDER BY position, name")).rows);

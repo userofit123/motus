@@ -73,6 +73,14 @@ function load(data: any, folds: "fold" | "keep" = "fold") {
   dirty.value = false;
 }
 watch([src.data, isNew, planMode], () => {
+  // a template or "based on this" picked elsewhere opens here as an unsaved draft, like one picked in the starter below
+  const q = route.query;
+  if (isNew.value && !planMode.value && (q.template || q.from)) {
+    const name = typeof q.name === "string" ? q.name : undefined;
+    router.replace({ query: {} });
+    void startFrom(q.template ? "template" : "copy", String(q.template ?? q.from), name);
+    return;
+  }
   const d = readJson<any>(draftKey.value, null);
   const forKey = planMode.value ? "plan" : id.value;
   if (d && d.__for === forKey) { asRoutine.value = !!d.__asRoutine; load(d, "keep"); dirty.value = true; return; }
@@ -326,11 +334,20 @@ async function startPlanned() {
 useLeaveGuard(() => dirty.value, { title: planMode.value ? "Discard this workout plan?" : undefined,
   onDiscard: () => { localStorage.removeItem(draftKey.value); dirty.value = false; } });
 const cancel = () => goBack(router, planMode.value ? "/" : "/routines");
-async function startFrom(kind: "template" | "copy", v: string) {
-  const full = kind === "copy" ? await api.get(`/routines/${v}`) : null;
-  if (full) { load({ ...full, id: undefined, name: full.name + " (copy)", basedOnId: full.id, pinned: false, exercises: full.exercises.map((e: any) => ({ ...e, id: undefined })) }); dirty.value = true; }
-  else { const x = await api.post("/routines", { template: v }); invalidate(["routines"]); router.replace(`/routines/${x.id}/edit`); }
-  starter.value = false;
+// both open as an unsaved draft: nothing is created until Save, so Discard leaves no routine behind
+async function startFrom(kind: "template" | "copy", v: string, name?: string) {
+  try {
+    if (kind === "copy") {
+      const full = await api.get(`/routines/${v}`);
+      load({ ...full, id: undefined, name: name || full.name + " (copy)", basedOnId: full.id, pinned: false, exercises: full.exercises.map((e: any) => ({ ...e, id: undefined })) });
+    } else load(await api.get(`/templates/${encodeURIComponent(v)}`));
+    dirty.value = true;
+    starter.value = false;
+  } catch (e) {
+    toastError(e);
+    // opened with one from elsewhere and it couldn't be read: the usual empty new routine instead
+    if (!r.value) { load({ name: "", description: "", folderId: null, color: null, exercises: [] }); starter.value = true; }
+  }
 }
 // in groups: what it is, where it sits in the routine, how its numbers change, then Remove on its own
 const exMenu = (e: any, i: number) => [
