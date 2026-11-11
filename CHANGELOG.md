@@ -2,6 +2,14 @@
 
 The top entry's version is the one the release workflow publishes. Add a new `## [x.y.z]` section to release.
 
+## [0.1.16] - 2026-11-11
+
+- Finish lists every change to a routine's sets, each with its own switch, all off: sets added or left out, sets made warm-ups, left and right sets, and sets done in another order. The routine's sets change only where you switch one on; weights and reps are saved either way, and Finish says so.
+- Warm-up weights carry over to the routine like the other sets' numbers. They never decide when the weight goes up.
+- Drop sets keep their own numbers when a routine's sets change, and doing the right side before the left no longer counts as a change.
+- A left and right set with no rest between them are joined by a line wherever sets are listed: past workouts, the routine page, the routine editor, a workout and the Next time table.
+- Linux desktop downloads include the .rpm again, and installed Linux apps get updates again.
+
 ## [0.1.15] - 2026-11-11
 
 - Progression now holds the rep range. Settings → Workout defaults → Progression has the defaults: rep range (6-12), weight step for both-sides exercises (5 kg) and for one-side-at-a-time exercises (2.5 kg, or 10 lb and 5 lb), and how many missed workouts in a row before the weight goes down. Each exercise in a routine has a Progression row, after the timer between reps, to give it its own. The old Rep range and Progression menu items are gone.
