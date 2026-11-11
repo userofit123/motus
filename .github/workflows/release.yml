@@ -54,7 +54,7 @@ jobs:
           gh release view "v$V" >/dev/null 2>&1 || gh release create "v$V" --title "Motus $V" --notes-file notes.md
   docker:
     needs: [version, release]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04 # pinned with the Linux desktop build: on 26.04 the arm64 image build ran over 30 minutes without finishing
     timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
