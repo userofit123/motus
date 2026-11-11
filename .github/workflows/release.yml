@@ -74,7 +74,9 @@ jobs:
     needs: [version, release]
     strategy:
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        # Linux pinned to 24.04: on ubuntu-latest (26.04) electron-builder's rpm step fails, which also left out
+        # the .rpm and latest-linux.yml (Linux auto-update) in 0.1.14
+        os: [ubuntu-24.04, windows-latest]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     steps:
