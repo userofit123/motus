@@ -92,7 +92,18 @@ describe("engine", () => {
     await call(T, "POST", `/workouts/${w.id}/discard`);
     const w2 = await call(T, "POST", "/workouts/start", { routineId: r.id });
     expect(w2.exercises[0].sets[0]).toMatchObject({ reps: null, durationS: 30 });
+    // the workout still going converts its sets still to do the same way; a logged set keeps what was done
+    await call(T, "POST", `/workout-exercises/${w2.exercises[0].id}/sets`, { kind: "normal", weightKg: 40, durationS: 45 });
+    await call(T, "PUT", `/workout-sets/${w2.exercises[0].sets[0].id}`, { done: true });
     await call(T, "PUT", `/exercises/${squat.id}/prefs`, { timed: null });
+    const live = async () => (await call(T, "GET", `/workouts/${w2.id}`)).exercises[0].sets;
+    const [logged, todo] = await live();
+    expect(logged).toMatchObject({ done: true, reps: null, durationS: 30 });
+    expect(todo).toMatchObject({ done: false, reps: 8, durationS: null, weightKg: 40 });
+    await call(T, "PUT", `/exercises/${squat.id}/prefs`, { timed: true });
+    expect((await live())[1]).toMatchObject({ reps: null, durationS: 30, weightKg: 40 });
+    await call(T, "PUT", `/exercises/${squat.id}/prefs`, { timed: null });
+    await call(T, "POST", `/workouts/${w2.id}/discard`);
     // editing your own exercise saves "Track it by" onto it and clears the personal switch, so the pick sticks
     const mine = (await call(T, "POST", "/exercises", { name: "Timed test", tracking: "weight_reps" })).id;
     await call(T, "PUT", `/exercises/${mine}/prefs`, { timed: true });

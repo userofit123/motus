@@ -55,6 +55,8 @@ export interface RoutineSet {
   distanceM: number | null;
   rpe: number | null;
   restS: number | null;
+  /** read back with the routine (saving leaves it empty); cleared once the exercise switches to timed sets */
+  startReps?: number | null;
   /** "L" or "R": a set for one side (any exercise can have them, beside general sets); null or absent: both together */
   side?: string | null;
 }

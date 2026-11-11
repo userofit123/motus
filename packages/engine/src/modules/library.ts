@@ -192,7 +192,9 @@ async function trackingNow(ctx: Ctx, exId: string): Promise<Tracking | null> {
 }
 /** Once an exercise switches between reps and time, every one of this person's routines moves with it, so no routine
  * keeps reps that are hidden but still saved (and copied into the next workout): each set gets what a new exercise's
- * sets start with (8 reps or 30 seconds, as the routine editor does), weight kept. True when it switched. */
+ * sets start with (8 reps or 30 seconds, as the routine editor does), weight kept. A workout still going gets the same
+ * for its sets still to do (the switch is also in the exercise's own page, opened from the workout); logged sets stay
+ * as they were done. True when it switched. */
 async function retimeRoutines(ctx: Ctx, exId: string, before: Tracking | null): Promise<boolean> {
   const after = await trackingNow(ctx, exId);
   if (!before || !after || !canTime(before) || !canTime(after) || isTimed(before) === isTimed(after)) return false;
@@ -200,6 +202,10 @@ async function retimeRoutines(ctx: Ctx, exId: string, before: Tracking | null): 
     : `duration_s = NULL, reps = coalesce(nullif(s.reps, 0), ${NEW_SET_REPS})`;
   await ctx.q.query(`UPDATE routine_sets s SET ${sets} FROM routine_exercises re
     WHERE re.id = s.routine_exercise_id AND re.exercise_id = $1 AND s.user_id = $2`, [exId, ctx.userId]);
+  const live = isTimed(after) ? `reps = NULL, duration_s = coalesce(nullif(s.duration_s, 0), ${NEW_SET_S})`
+    : `duration_s = NULL, reps = coalesce(nullif(s.reps, 0), ${NEW_SET_REPS})`;
+  await ctx.q.query(`UPDATE workout_sets s SET ${live} FROM workout_exercises we JOIN workouts w ON w.id = we.workout_id
+    WHERE we.id = s.workout_exercise_id AND we.exercise_id = $1 AND w.status = 'in_progress' AND NOT s.done AND s.user_id = $2`, [exId, ctx.userId]);
   return true;
 }
 

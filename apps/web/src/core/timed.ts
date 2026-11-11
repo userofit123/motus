@@ -24,7 +24,7 @@ export const TIMED_HINT = "A time for each set, no reps";
 export const timedItem = (exerciseId: string, tracking: Tracking, featureOn: boolean, then?: (t: Tracking) => void) => {
   const on = isTimed(tracking);
   return {
-    label: "Timed sets", hint: TIMED_HINT, icon: "play", checked: on, hidden: !featureOn || !canTime(tracking),
+    label: "Timed sets", hint: TIMED_HINT, icon: "clock", checked: on, hidden: !featureOn || !canTime(tracking),
     run: async () => {
       try {
         await api.put(`/exercises/${exerciseId}/prefs`, { timed: !on });

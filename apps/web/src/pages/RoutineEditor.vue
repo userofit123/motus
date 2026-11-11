@@ -8,7 +8,7 @@
 import { computed, nextTick, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { plannedRest as plannedRestOf, restSummary } from "../core/plannedRest";
-import { usesWeight, usesReps, usesDuration, usesDistance, musclesWorked, estimate, restAfterSet, dropWeightKg, restDefaultsOf, progressionOf, progressionDefaultsOf, oneSideOf, duration, muscleName, sideRounds, sideJoins, toM, fromM, muscleSets, retimeSet, type Progression, type Tracking, type RoutineExercise } from "@motus/shared";
+import { usesWeight, usesReps, usesDuration, usesDistance, musclesWorked, estimate, restAfterSet, dropWeightKg, restDefaultsOf, progressionOf, progressionDefaultsOf, oneSideOf, duration, muscleName, sideRounds, sideJoins, toM, fromM, muscleSets, retimeSet, isTimed, type Progression, type Tracking, type RoutineExercise } from "@motus/shared";
 import { useRoutine, useRoutines, useFolders, useExercises, useSettings, useTemplates, loaded } from "../api/queries";
 import { api, mediaUrl } from "../api/client";
 import { invalidate } from "../api/live";
@@ -354,7 +354,8 @@ const exMenu = (e: any, i: number) => [
 function retime(exerciseId: string, t: Tracking) {
   for (const x of r.value.exercises as RoutineExercise[]) {
     if (x.exerciseId !== exerciseId) continue;
-    for (const set of x.sets) Object.assign(set, retimeSet(set, t));
+    // the server also drops the starting reps of a timed set (what Progression began from), so this copy does too
+    for (const set of x.sets) { Object.assign(set, retimeSet(set, t)); if (isTimed(t)) set.startReps = null; }
     if (x.exercise) x.exercise.tracking = t;
   }
 }

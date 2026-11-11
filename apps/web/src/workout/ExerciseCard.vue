@@ -103,11 +103,11 @@ async function addWarmups() {
   await api.post(`/workout-exercises/${props.e.id}/sets`, { atStart: true, sets: ws.map((x) => ({ kind: "warmup", weightKg: x.weightKg, reps: x.reps, restPlannedS: 60 })) });
   invalidate(["workouts"]);
 }
-// switched between reps and time: the sets still to do start again as the routine editor's do (8 reps or 30 seconds,
-// weight kept); done ones keep what was logged
+// switched between reps and time: the server has already converted the sets still to do (8 reps or 30 seconds, weight
+// kept; done ones keep what was logged), so this copy only shows the same until the refetch, without saving again
 function retime(t: Tracking) {
   if (props.e.exercise) props.e.exercise.tracking = t;
-  for (const s of props.e.sets) { const patch = s.done ? null : retimeSet(s, t); if (patch) void W.editSet(s, patch); }
+  for (const s of props.e.sets) { const patch = s.done ? null : retimeSet(s, t); if (patch) Object.assign(s, patch); }
 }
 // in groups: what it is and reminders, doing it or not, its rests and tools, then Remove on its own
 const menu = computed(() => [
