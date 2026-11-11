@@ -5,7 +5,7 @@
 // differed from the routine (listed, each saved only when switched on). Then how it felt, notes, body weight.
 import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
-import { applyStructure, planNext, progressionDefaultsOf, structureChanges, todaysSets, usesReps, usesWeight, workoutScore, workoutSoFar, type Routine, type StructureChange, type Tracking, type Workout } from "@motus/shared";
+import { applyStructure, planNext, progressionDefaultsOf, restDefaultsOf, sideJoins, structureChanges, todaysSets, usesReps, usesWeight, workoutScore, workoutSoFar, type Routine, type StructureChange, type Tracking, type Workout } from "@motus/shared";
 import { useWorkout, endWorkout, finishDraft } from "./useWorkout";
 import { api } from "../api/client";
 import { settle } from "../api/outbox";
@@ -16,6 +16,7 @@ import { elapsed, finishRest } from "./runtime";
 import { keepAwake } from "./native";
 import { maybeAutoBackup } from "../core/backup";
 import { setLabel } from "../core/format";
+import { plannedRest } from "../core/plannedRest";
 import Sheet from "../components/Sheet.vue";
 import Icon from "../components/Icon.vue";
 import WorkoutSoFar from "./WorkoutSoFar.vue";
@@ -152,6 +153,14 @@ const nextTime = computed(() => {
       if (last && last.lastKey === r.key - 1 && r.kind === "normal" && last.kind === "normal" && !r.side && !last.side && same(last.planned, r.planned) && same(last.did, r.did) && same(last.next, r.next) && last.trend === r.trend) {
         last.lastKey = r.key; last.label = `${last.label.split("-")[0]}-${r.label}`;
       } else sets.push({ ...r, lastKey: r.key });
+    }
+    // next time's left and right rounds with no rest between the sides (sideJoins, the routine's own rest rule as the
+    // routine page draws them): the bar joins two rows only when both sides are listed, one right under the other. Sided
+    // rows never fold into ranges, so a row's key is its set
+    if (sides) {
+      const rd = restDefaultsOf(W.settings.value.workout);
+      const joins = sideJoins(aft, (j) => plannedRest(after as Item, aft[j]!, j, rd));
+      sets.forEach((x, k) => { x.join = !!joins[x.key] && sets[k + 1]?.key === x.key + 1; });
     }
     const change = item.id ? plan.value.changes.find((c) => c.routineExerciseId === item.id) : undefined;
     const unticked = !!e && typedUnticked(e);

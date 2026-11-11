@@ -3,8 +3,9 @@ import type { NextChange } from "@motus/shared";
 /** one set (or a run of numbered sets in a row reading the same, `label` "1-6") whose numbers change, each value in
  * parts shown a line each (["47.5 kg", "× 12"], ["-"] when empty): what the routine planned before this workout, what
  * was done today in its place, and where next time starts it. `label` is the set's badge (1, 3L, W, D1), `side` its
- * side when left and right are shown, `trend` next time's weight against the plan's (today's when nothing was planned) */
-export interface NextSet { key: number; lastKey?: number; label: string; kind: string; side: string | null; planned: string[]; did: string[]; next: string[]; trend: "up" | "down" | null }
+ * side when left and right are shown, `trend` next time's weight against the plan's (today's when nothing was planned),
+ * `join` whether it opens a left and right round with no rest between with the next row (sideJoins), drawn as a bar */
+export interface NextSet { key: number; lastKey?: number; label: string; kind: string; side: string | null; planned: string[]; did: string[]; next: string[]; trend: "up" | "down" | null; join?: boolean }
 /** a routine exercise whose numbers change next time (or that has a Progression change, or sets left unticked with
  * numbers typed in); `index` is its place in the workout, for "Go to exercise"; `note` says when the slot is new or
  * holds another exercise now ("Was: Bench press"); `assisted`: the weight is help, so up means less of it */
@@ -23,6 +24,7 @@ import { computed, ref } from "vue";
 import { useWorkout } from "./useWorkout";
 import Sheet from "../components/Sheet.vue";
 import Icon from "../components/Icon.vue";
+import { sideJoinCls } from "../core/format";
 
 const props = defineProps<{ groups: NextGroup[]; unchanged: NextSame[] }>();
 const accepted = defineModel<string[]>({ required: true });
@@ -43,6 +45,8 @@ const applyLabel = (c: NextChange, g: NextGroup) => g.assisted
   ? `${c.direction === "up" ? "Use less" : "Use more"} assistance for ${g.name}`
   : `${c.direction === "up" ? "Raise" : "Lower"} the weight for ${g.name}`;
 const badge = (k: string) => ({ w: k === "warmup", d: k === "drop", f: k === "failure" });
+// the bar joining a left and right round's badges, as in every other list of sets (sideJoinCls)
+const joinCls = (g: NextGroup, k: number) => sideJoinCls(g.sets, g.sets.map((x) => !!x.join), k);
 </script>
 
 <template>
@@ -56,8 +60,8 @@ const badge = (k: string) => ({ w: k === "warmup", d: k === "drop", f: k === "fa
         <thead><tr><th>Set</th><th>Planned</th><th>You did</th><th>Next</th></tr></thead>
         <tbody>
           <!-- each value a line per part (weight, then "× reps"), in every cell alike, so nothing wraps mid-value -->
-          <tr v-for="x in g.sets" :key="x.key" :class="{ drop: x.kind === 'drop' }">
-            <td><span class="sk" :class="badge(x.kind)">{{ x.label }}</span></td>
+          <tr v-for="(x, k) in g.sets" :key="x.key" :class="{ drop: x.kind === 'drop' }">
+            <td class="nt-sk" :class="joinCls(g, k)"><span class="sk" :class="badge(x.kind)">{{ x.label }}</span></td>
             <td class="nt-pl"><span v-for="(p, k) in x.planned" :key="k" class="nt-v">{{ p }}</span></td>
             <td class="nt-did"><span v-for="(p, k) in x.did" :key="k" class="nt-v">{{ p }}</span></td>
             <td class="nt-nx" :class="x.trend === 'up' ? 'pos' : x.trend === 'down' ? 'neg' : ''">
@@ -114,6 +118,11 @@ const badge = (k: string) => ({ w: k === "warmup", d: k === "drop", f: k === "fa
 .nt-tbl td { font-size: var(--fs-sm); vertical-align: top; }
 .nt-v { display: block; white-space: nowrap; }
 .nt-tbl .sk { cursor: default; }
+/* the badge sits at the top of its row like the values beside it (a block, so its top is the cell's padding edge), so
+   the left and right bar starts under the badge's top-anchored box instead of the row's middle as in the other tables */
+.nt-sk .sk { display: grid; width: fit-content; }
+.nt-tbl .sj-a::after { top: calc(var(--tdy) + var(--sj-h)); }
+.nt-tbl .sj-b::before { bottom: calc(100% - var(--tdy)); }
 .nt-pl { color: var(--tx2); }
 .nt-nx { font-weight: 600; }
 .nt-nx .ico { vertical-align: -1px; margin-inline-end: 2px; }

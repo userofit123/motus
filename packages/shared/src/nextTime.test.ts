@@ -212,7 +212,7 @@ describe("structureChanges", () => {
       ["added:wf", "changed", "Add F to the routine", "You added it in this workout · it joins with today's 1 set"],
       ["removed:rd", "changed", "Remove D from the routine", "You removed it from this workout"],
       ["order", "changed", "Use this workout's exercise order", "You did the exercises in a different order"],
-      ["fewer:ra", "notDone", "Remove 1 set from A", "You did 2 of 3 sets · the routine would have 2"]]);
+      ["fewer:ra", "notDone", "Remove 1 set from A", "You did 2 sets · the routine has 3 sets"]]);
   });
   it("lists a skipped exercise and one with nothing ticked as skipped; one added with nothing ticked isn't listed", () => {
     const w = { exercises: [...routine.exercises.map((r) => ex({ name: r.exerciseId, exerciseId: r.exerciseId, routineExerciseId: r.id, status: r.id === "rc" ? "skipped" : "pending", sets: r.sets.map(() => set({ done: r.id !== "rb" })) })),
@@ -440,5 +440,82 @@ describe("planSetRest", () => {
     expect(planSetRest(kinds("normal", "normal"), 0, { prefRestS: 100 }, d)).toBe(100);
     expect(planSetRest(kinds("normal", "normal"), 0, {}, d, true)).toBe(150);
     expect(planSetRest([{ kind: "normal", side: "L" }, { kind: "normal", side: "R" }, { kind: "normal", side: null }], 0, x, d)).toBe(0);
+  });
+});
+
+// A drop set is lighter on purpose: reshaping the routine to today's sets must never give a drop a working set's weight
+// (or a working set a drop's), whichever sets were left out or added.
+describe("drop sets in a routine reshaped to today's sets", () => {
+  const D = { mode: "suggest" as const, repsMin: 6, repsMax: 12, stepKg: 5, stepOneSideKg: 2.5, lowerAfter: 3 };
+  const rs = (kind: string, weightKg: number, reps = 8) => ({ kind, reps, weightKg, durationS: null, distanceM: null, side: null });
+  const view = (sets: unknown[]) => (sets as RoutineSetLike[]).map((s) => [s.kind, s.weightKg, s.reps]);
+  const routineOf = (sets: ReturnType<typeof rs>[]) => ({ exercises: [{ id: "re1", exerciseId: "x", exercise: { name: "Curl" }, fixed: false, progression: null, missed: 0, sets }] });
+  const today = (sets: WorkoutSet[]) => ({ exercises: [ex({ name: "Curl", exerciseId: "x", routineExerciseId: "re1", sets })] });
+
+  it("pairs only sets of the same kind", () => {
+    const routine = [rs("normal", 60), rs("drop", 40)];
+    expect(pairSets([{ kind: "drop" }], routine)).toEqual([routine[1]]);
+    expect(pairSets([{ kind: "normal" }, { kind: "normal" }, { kind: "drop" }], routine, true)).toEqual([routine[0], routine[0], routine[1]]);
+    // nothing of its kind: no pair, even with sets of another kind free
+    expect(pairSets([{ kind: "drop" }], [rs("normal", 60)], true)).toEqual([null]);
+    expect(pairSets([{ kind: "failure" }], [rs("drop", 40), rs("normal", 60)])).toEqual([rs("normal", 60)]);
+  });
+
+  it("Finish, a working set left out before the drop: the drop keeps its own weight and takes today's drop", () => {
+    const r = routineOf([rs("normal", 60), rs("normal", 60), rs("drop", 40)]);
+    const w = today([set({ weightKg: 60, reps: 8 }), set({ weightKg: 60, reps: 8, done: false }), set({ kind: "drop", weightKg: 40, reps: 10 })]);
+    expect(structureChanges(r, w).map((c) => [c.key, c.text, c.action])).toEqual([["fewer:re1", "Remove 1 set from Curl", "You did 1 set and 1 drop set · the routine has 2 sets and 1 drop set"]]);
+    const shaped = applyStructure(r, w, ["fewer:re1"]) as ReturnType<typeof routineOf>["exercises"];
+    expect(view(shaped[0]!.sets)).toEqual([["normal", 60, 8], ["drop", 40, 8]]);
+    // today's drop reaches the routine's drop, past the working set left out
+    expect(view(planNext(shaped, w, D).exercises[0]!.sets)).toEqual([["normal", 60, 8], ["drop", 40, 10]]);
+  });
+
+  it("a drop added to a routine without one takes today's drop, never the working weight", () => {
+    const r = routineOf([rs("normal", 60), rs("normal", 60)]);
+    const w = today([set({ weightKg: 60, reps: 8 }), set({ weightKg: 60, reps: 8 }), set({ kind: "drop", weightKg: 45, reps: 10 })]);
+    expect(structureChanges(r, w).map((c) => c.key)).toEqual(["more:re1"]);
+    const shaped = applyStructure(r, w, ["more:re1"]) as ReturnType<typeof routineOf>["exercises"];
+    expect(view(shaped[0]!.sets)).toEqual([["normal", 60, 8], ["normal", 60, 8], ["drop", 45, 10]]);
+    expect(view(planNext(shaped, w, D).exercises[0]!.sets)).toEqual([["normal", 60, 8], ["normal", 60, 8], ["drop", 45, 10]]);
+  });
+
+  it("a working set added copies the routine's last working set, never its drop, wherever it was added", () => {
+    const r = routineOf([rs("normal", 60), rs("drop", 40)]);
+    for (const kinds of [["normal", "normal", "drop"], ["normal", "drop", "normal"]]) {
+      const w = today(kinds.map((kind) => set({ kind: kind as WorkoutSet["kind"], weightKg: kind === "drop" ? 42.5 : 62.5, reps: 8 })));
+      const shaped = applyStructure(r, w, ["more:re1"]) as ReturnType<typeof routineOf>["exercises"];
+      // structure only: the routine's own numbers, each from its own kind
+      expect(view(shaped[0]!.sets)).toEqual(kinds.map((k) => [k, k === "drop" ? 40 : 60, 8]));
+      // then today's numbers, each from today's of the same kind
+      expect(view(planNext(shaped, w, D).exercises[0]!.sets)).toEqual(kinds.map((k) => [k, k === "drop" ? 42.5 : 62.5, 8]));
+    }
+  });
+});
+
+describe("left and right sets in another order", () => {
+  const sided = (side: string | null, kind = "normal") => ({ kind, side, reps: 8, weightKg: 20 });
+  const routineOf = (sets: unknown[]) => ({ exercises: [{ id: "re1", exerciseId: "x", exercise: { name: "Curl" }, sets }] });
+  const today = (sets: [string | null, string?][]) => ({ exercises: [ex({ name: "Curl", exerciseId: "x", routineExerciseId: "re1",
+    sets: sets.map(([side, kind]) => set({ side, kind: (kind ?? "normal") as WorkoutSet["kind"], weightKg: 20, reps: 8 })) })] });
+  const rows = (r: ReturnType<typeof routineOf>, w: ReturnType<typeof today>) => structureChanges(r, w).map((c) => [c.key, c.text, c.action]);
+
+  it("a round done right side first is the same round", () => {
+    expect(rows(routineOf([sided("L"), sided("R")]), today([["R"], ["L"]]))).toEqual([]);
+    expect(rows(routineOf([sided("L"), sided("R"), sided("L"), sided("R")]), today([["R"], ["L"], ["L"], ["R"]]))).toEqual([]);
+    // more rounds, some right first: listed as more, in the same words as every set row
+    expect(rows(routineOf([sided("L"), sided("R")]), today([["R"], ["L"], ["R"], ["L"]]))).toEqual([
+      ["more:re1", "Add 1 left set and 1 right set to Curl", "You did 2 left sets and 2 right sets · the routine has 1 left set and 1 right set"]]);
+  });
+
+  it("sides in another order with every kind in its place are not listed", () => {
+    expect(rows(routineOf([sided("L"), sided("R"), sided("L"), sided("R")]), today([["L"], ["L"], ["R"], ["R"]]))).toEqual([]);
+  });
+
+  it("a kind moved is listed, naming the order", () => {
+    const r = routineOf([sided(null, "warmup"), sided(null), sided(null)]);
+    const w = today([[null], [null, "warmup"], [null]]);
+    expect(rows(r, w)).toEqual([["sets:re1", "Use this workout's set order for Curl", "You did 1 set, then 1 warm-up, then 1 set · the routine has 1 warm-up, then 2 sets"]]);
+    expect((applyStructure(r, w, ["sets:re1"])![0] as any).sets.map((s: any) => s.kind)).toEqual(["normal", "warmup", "normal"]);
   });
 });

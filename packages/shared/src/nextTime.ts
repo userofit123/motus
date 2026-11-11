@@ -6,7 +6,7 @@
 //   out or changed in kind or side), which only changes the routine when asked on the Finish screen (structureChanges, applyStructure).
 import type { Progression, WorkoutExercise } from "./types";
 import type { ProgressionDefaults } from "./settings";
-import { e1rm, usesReps, usesWeight, weightForReps } from "./training";
+import { e1rm, sideRounds, usesReps, usesWeight, weightForReps } from "./training";
 
 /** One weight step up from `fromKg`, on the step's grid (multiples of the step), so an odd weight lands on a real one. */
 export function stepUp(fromKg: number, stepKg: number): number {
@@ -86,14 +86,17 @@ export interface NextChange {
 export type RoutineSetLike = { kind: string; reps: number | null; weightKg: number | null; durationS?: number | null; distanceM?: number | null; side?: string | null };
 
 type Sided = { kind: string; side?: string | null };
-/** Pairs each of `sets` with the same set in `other` (last time's, or today's for the routine), warm-ups only with
- * warm-ups, never giving one set twice: first each set with the next of the same side (general with general, left with
+/** Pairs each of `sets` with the same set in `other` (last time's, or today's for the routine), only sets of the same
+ * kind: warm-ups with warm-ups, drops with drops, working sets (normal and to failure) with working sets, as a drop is
+ * lighter on purpose and a working set paired with one would take its weight (or the other way round); never giving one
+ * set twice: first each set with the next of the same side (general with general, left with
  * left), then a left or right set still without one takes a general set (a general set is both sides together, so it can
  * give one left and one right: a routine just split into sides still finds last time's numbers), then any set still
  * without one takes the next one nobody took, in order. `repeatLast`: a working set left over takes the other's last one
- * again (of its side if there is one). */
+ * again (of its side if there is one), a drop the other's last drop; warm-ups and sets whose kind the other has none of
+ * stay without. */
 export function pairSets<T extends Sided>(sets: Sided[], other: T[], repeatLast = false): (T | null)[] {
-  const group = (s: Sided) => (s.kind === "warmup" ? "w" : "k");
+  const group = (s: Sided) => (s.kind === "warmup" ? "w" : s.kind === "drop" ? "d" : "k");
   const sideOf = (s: Sided) => (s.side === "L" || s.side === "R" ? s.side : null);
   // who took each of `other`: "G" for a general set, else the side
   const takers = other.map(() => new Set<string>());
@@ -111,19 +114,19 @@ export function pairSets<T extends Sided>(sets: Sided[], other: T[], repeatLast 
   sets.forEach((s, i) => { if (!out[i] && sideOf(s)) pick(i, (o) => !sideOf(o)); });
   sets.forEach((s, i) => { if (!out[i]) pick(i, () => true); });
   if (repeatLast) sets.forEach((s, i) => {
-    if (out[i] || group(s) !== "k") return;
-    const k = other.filter((o) => group(o) === "k").reverse();
+    if (out[i] || group(s) === "w") return;
+    const k = other.filter((o) => group(o) === group(s)).reverse();
     out[i] = k.find((o) => sideOf(o) === sideOf(s)) ?? k.find((o) => !sideOf(o)) ?? k[0] ?? null;
   });
   return out;
 }
 /** Today's set in each routine set's place, the one planNext takes the numbers from (and the Next time sheet shows as
- * "You did"): the workout set in the same place, warm-ups among today's warm-ups and the rest among the rest, by
- * position so an unticked set keeps its place; left and right sets each with today's of their own side (pairSets).
- * Null: past today's last of its kind, unticked, or a drop facing a working set or the other way round. */
+ * "You did"): the workout set in the same place among today's sets of its kind (warm-ups, drops, working sets: pairSets),
+ * by position so an unticked set keeps its place, so a routine reshaped to today's sets finds today's drop for its drop
+ * even with a working set left out before it; left and right sets each with today's of their own side. Null: past
+ * today's last of its kind, or unticked. */
 export function todaysSets<T extends Sided & { done: boolean }>(sets: Sided[], e: { sets: T[] }): (T | null)[] {
-  const isDrop = (k: string) => k === "drop";
-  return pairSets(sets, e.sets).map((t, i) => (t && t.done && isDrop(t.kind) === isDrop(sets[i]!.kind) ? t : null));
+  return pairSets(sets, e.sets).map((t) => (t && t.done ? t : null));
 }
 export type RoutineItemLike = { id?: string | null; exerciseId: string; fixed?: boolean; progression?: unknown; missed?: number; sets: unknown[] };
 
@@ -274,6 +277,19 @@ function shapesText(xs: string[]): string {
   });
   return parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts.at(-1)}` : parts[0] ?? "no sets";
 }
+/** The sets' layout in order (shapeOf), each left and right round (sideRounds: neighbouring sides of one kind) as left
+ * then right whichever side came first: a round done right side first is the same round, not a change. */
+function layoutOf(xs: Sided[]): string[] {
+  const out = xs.map(shapeOf);
+  sideRounds(xs).forEach((r, i) => { if (r && xs[i]!.side === "R") [out[i], out[i + 1]] = [out[i + 1]!, out[i]!]; });
+  return out;
+}
+/** Sets in plain words in their order, each run of one kind and side counted: "1 set, then 1 warm-up, then 1 set". */
+function runsText(xs: string[]): string {
+  const runs: [string, number][] = [];
+  for (const x of xs) { const last = runs.at(-1); if (last?.[0] === x) last[1]++; else runs.push([x, 1]); }
+  return runs.map(([x, k]) => shapesText(Array(k).fill(x))).join(", then ") || "no sets";
+}
 /** The sets of `big` left once `small` is found in it in order (each of `small` at its next match), or null when
  * `small` isn't in it in that order. */
 function extraOf(small: string[], big: string[]): string[] | null {
@@ -308,12 +324,22 @@ export function structureChanges(routine: RoutineShape, w: SessionShape): Struct
     // the sets' layout (kind and side of each, in order): today's ticked sets against the routine's. Only sets added
     // (a warm-up put in front, left and right sets after) is "more", only sets left out is "fewer", anything else (a
     // set made a warm-up, a set split into sides) is "sets"; each saves today's layout (reshape), never by itself
-    const t = e.sets.filter((s) => s.done).map(shapeOf), rr = (r.sets as Sided[]).map(shapeOf);
+    // a left and right round counts as one whichever side came first (layoutOf)
+    const t = layoutOf(e.sets.filter((s) => s.done)), rr = layoutOf(r.sets as Sided[]);
     if (t.join() === rr.join()) continue;
+    // the same sets in another order: the counts read the same on both sides, so the row names the order instead; but
+    // only when a kind moved (a warm-up done after a set, a drop before it). Sides in another order with every kind in
+    // its place (left, left, right, right for left, right, left, right) are the same sets done the same way: not listed
+    const kindsOf = (xs: string[]) => xs.map((x) => x.replace(/[LR]$/, "")).join();
+    if ([...t].sort().join() === [...rr].sort().join()) {
+      if (kindsOf(t) !== kindsOf(rr)) changed.push({ key: `sets:${r.id}`, kind: "sets", group: "changed", text: `Use this workout's set order for ${label}`, action: `You did ${runsText(t)} · the routine has ${runsText(rr)}` });
+      continue;
+    }
+    // one pattern for every row about sets: what you did, then what the routine has
     const both = `You did ${shapesText(t)} · the routine has ${shapesText(rr)}`;
     const added = extraOf(rr, t), left = extraOf(t, rr);
     if (added) changed.push({ key: `more:${r.id}`, kind: "more", group: "changed", text: `Add ${shapesText(added)} to ${label}`, action: both });
-    else if (left) notDone.push({ key: `fewer:${r.id}`, kind: "fewer", group: "notDone", text: `Remove ${shapesText(left)} from ${label}`, action: `You did ${t.length} of ${rr.length} sets · the routine would have ${t.length}` });
+    else if (left) notDone.push({ key: `fewer:${r.id}`, kind: "fewer", group: "notDone", text: `Remove ${shapesText(left)} from ${label}`, action: both });
     else changed.push({ key: `sets:${r.id}`, kind: "sets", group: "changed", text: `Use this workout's sets for ${label}`, action: both });
   }
   for (const r of routine.exercises) if (r.id && !inWorkout.has(r.id)) changed.push({ key: `removed:${r.id}`, kind: "removed", group: "changed", text: `Remove ${r.exercise?.name ?? "an exercise"} from the routine`, action: "You removed it from this workout" });
@@ -352,7 +378,8 @@ export function applyStructure<R extends RoutineShape["exercises"][number]>(rout
       // the slot keeps its id, so its Progression, rests, note and pinned notes now go with the exercise swapped in
       if (reshape) return { ...r, exerciseId: e.exerciseId, sets: done.map(setBody) };
       // the routine's sets matched by kind: its warm-ups stay as they are, each working set takes today's working
-      // numbers in turn (past today's last one, that one again); with no working set ticked the routine's own stay
+      // numbers in turn and each drop today's drops (past today's last one, that one again); with none of its kind
+      // ticked the routine's own stay
       // (left and right sets each from today's of their side); each keeps the routine's own side
       const work = done.filter((s) => s.kind !== "warmup");
       const ts = pairSets(sets as Sided[], work, true);
@@ -362,8 +389,9 @@ export function applyStructure<R extends RoutineShape["exercises"][number]>(rout
         return t ? { ...setBody(t), kind: (rs.kind as string) ?? "normal", side: (rs.side as string | null | undefined) ?? null } : rs;
       }) };
     }
-    // today's ticked sets in their order, kind and side; each keeps the routine's own set it pairs with (its numbers and
-    // rest), a working set the routine has none for copies its last one, a warm-up it has none for takes today's
+    // today's ticked sets in their order, kind and side; each keeps the routine's own set of the same kind it pairs
+    // with (its numbers and rest: a drop never takes a working set's weight, nor the other way round), a working set or
+    // drop the routine has none for copies its last one of that kind, else (and a warm-up it has none for) takes today's
     if (reshape) {
       const own = pairSets(done, sets as Sided[], true);
       return { ...r, sets: done.map((t, i) => (own[i] ? { ...own[i], kind: t.kind, side: t.side ?? null } : setBody(t))) };
