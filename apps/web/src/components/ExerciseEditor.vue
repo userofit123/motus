@@ -11,6 +11,7 @@ import AppSelect from "./AppSelect.vue";
 import ChoiceTiles from "./ChoiceTiles.vue";
 import Icon from "./Icon.vue";
 import { SIDES_HINT } from "../core/sides";
+import { TRACK } from "../core/timed";
 
 const props = defineProps<{ exercise?: any; name?: string }>();
 const emit = defineEmits<{ close: []; saved: [id: string] }>();
@@ -22,8 +23,6 @@ const f = ref({
   primaryMuscles: [...(e?.primaryMuscles ?? [])] as string[], secondaryMuscles: [...(e?.secondaryMuscles ?? [])] as string[],
   instructions: (e?.instructions ?? []).join("\n"), images: [...(e?.images ?? [])] as string[], videoUrl: e?.videoUrl ?? "", unilateral: e?.unilateral ?? false,
 });
-const TRACK: [string, string][] = [["weight_reps", "Weight and reps"], ["bodyweight_reps", "Bodyweight reps (+ optional weight)"], ["assisted", "Assisted (weight helps)"], ["reps_only", "Reps only"],
-  ["duration", "Time (holds, planks)"], ["weight_duration", "Weight and time (carries)"], ["distance_duration", "Distance and time"], ["distance_weight", "Distance and weight (sled)"]];
 const busy = ref(false);
 const cap = (s: string) => s.replace(/\b\w/g, (c) => c.toUpperCase());
 const MUSCLE_OPTS = MUSCLES.map((m) => ({ value: m, label: muscleName(m) }));
@@ -55,7 +54,7 @@ async function save() {
 <template>
   <Sheet :title="e ? 'Edit exercise' : 'New exercise'" size="wide" @close="emit('close')">
     <div class="fld"><label>Name</label><input v-model="f.name" placeholder="e.g. Landmine press" /></div>
-    <div class="fld"><label>Track it by</label><AppSelect v-model="f.tracking" :options="TRACK.map(([value, label]) => ({ value, label }))" title="Track it by" /></div>
+    <div class="fld"><label>Track it by</label><AppSelect v-model="f.tracking" :options="Object.entries(TRACK).map(([value, label]) => ({ value, label }))" title="Track it by" /></div>
     <div class="frow">
       <div class="fld"><label>Category</label><AppSelect v-model="f.category" :options="CATEGORIES.map((c) => ({ value: c, label: cap(c) }))" title="Category" /></div>
       <div class="fld"><label>Equipment</label><AppSelect v-model="f.equipment" :options="[{ value: '', label: 'None' }, ...EQUIPMENT.map((q) => ({ value: q, label: cap(q) }))]" title="Equipment" /></div>

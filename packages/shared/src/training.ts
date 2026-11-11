@@ -33,6 +33,25 @@ export const usesReps = (t: Tracking) => t === "weight_reps" || t === "bodyweigh
 export const usesDuration = (t: Tracking) => t === "duration" || t === "weight_duration" || t === "distance_duration";
 export const usesDistance = (t: Tracking) => t === "distance_duration" || t === "distance_weight";
 
+// Timed sets: any exercise counted in reps can be done for time instead (a hold, a stretch, a timed carry) and the other
+// way round; each person switches it per exercise (exercise_prefs.timed, null keeps the exercise's own way). It stays one
+// way per exercise, so its records, charts and "next time" all read the same kind of number.
+const TO_TIME: Partial<Record<Tracking, Tracking>> = { weight_reps: "weight_duration", bodyweight_reps: "duration", assisted: "duration", reps_only: "duration" };
+const TO_REPS: Partial<Record<Tracking, Tracking>> = { weight_duration: "weight_reps", duration: "reps_only" };
+/** Whether the switch applies: distance exercises are neither reps nor a plain hold. */
+export const canTime = (t: Tracking) => !usesDistance(t);
+/** What an exercise tracks once the person's choice (true: for time, false: in reps, null: its own way) is applied. */
+export function trackingFor(t: Tracking, timed: boolean | null | undefined): Tracking {
+  if (timed === true) return TO_TIME[t] ?? t;
+  if (timed === false) return TO_REPS[t] ?? t;
+  return t;
+}
+/** trackingFor in SQL, for a query with the exercise as `e` and its prefs joined as `p`. */
+export const TRACKING_SQL = `CASE ${[
+  ...Object.entries(TO_TIME).map(([a, b]) => `WHEN p.timed AND e.tracking = '${a}' THEN '${b}'`),
+  ...Object.entries(TO_REPS).map(([a, b]) => `WHEN p.timed = false AND e.tracking = '${a}' THEN '${b}'`),
+].join(" ")} ELSE e.tracking END`;
+
 // ----- rest -----
 
 export interface RestDefaults {

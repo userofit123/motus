@@ -1,6 +1,6 @@
 // Workouts: starting one (from a routine or empty), logging sets, skipping, reordering and replacing exercises,
 // finishing, logging a past workout, editing and duplicating, and the full detail with records and improvements.
-import { e1rm, ymd, pairSets, planSetRest, restDefaultsOf, liftedKg, LIFTED_SQL, structureChanges, type Tracking, type RoutineExercise, type ExerciseStatus, type SetKind, type WorkoutExercise, type HomeRecord, type Workout, type WorkoutSummary, type Routine } from "@motus/shared";
+import { e1rm, ymd, pairSets, planSetRest, restDefaultsOf, liftedKg, LIFTED_SQL, TRACKING_SQL, structureChanges, type Tracking, type RoutineExercise, type ExerciseStatus, type SetKind, type WorkoutExercise, type HomeRecord, type Workout, type WorkoutSummary, type Routine } from "@motus/shared";
 import type { Router, Ctx } from "../router";
 import type { Sql } from "../db";
 import { camel, id, optId, str, strList, intOrNull, numOrNull, bool, oneOf, isoTime, secondsBetween, visible } from "../util";
@@ -83,8 +83,8 @@ async function recordsIn(q: Sql, w: any, exercises: any[]): Promise<Map<string, 
 export async function recentRecords(q: Sql, since: string, limit = 6): Promise<HomeRecord[]> {
   const { rows } = await q.query<{ id: string; kind: string; weight_kg: string | null; reps: number | null; duration_s: number | null; distance_m: string | null;
     we_id: string; exercise_id: string; tracking: Tracking; workout_id: string; started_at: string | Date }>(
-    `SELECT s.id, s.kind, s.weight_kg, s.reps, s.duration_s, s.distance_m, we.id AS we_id, we.exercise_id, e.tracking, w.id AS workout_id, w.started_at
-     FROM workout_sets s JOIN workout_exercises we ON we.id = s.workout_exercise_id JOIN workouts w ON w.id = we.workout_id JOIN exercises e ON e.id = we.exercise_id
+    `SELECT s.id, s.kind, s.weight_kg, s.reps, s.duration_s, s.distance_m, we.id AS we_id, we.exercise_id, ${TRACKING_SQL} AS tracking, w.id AS workout_id, w.started_at
+     FROM workout_sets s JOIN workout_exercises we ON we.id = s.workout_exercise_id JOIN workouts w ON w.id = we.workout_id JOIN exercises e ON e.id = we.exercise_id LEFT JOIN exercise_prefs p ON p.exercise_id = e.id
      WHERE s.done AND w.status = 'completed' AND we.exercise_id IN (
        SELECT x.exercise_id FROM workout_exercises x JOIN workouts y ON y.id = x.workout_id WHERE y.status = 'completed' AND y.started_at >= $1)
        AND we.id IN (SELECT id FROM (SELECT we2.id, row_number() OVER (PARTITION BY we2.exercise_id ORDER BY w2.started_at DESC, w2.id DESC) AS rn

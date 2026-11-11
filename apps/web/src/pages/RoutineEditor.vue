@@ -8,7 +8,7 @@
 import { computed, nextTick, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { plannedRest as plannedRestOf, restSummary } from "../core/plannedRest";
-import { usesWeight, usesReps, usesDuration, usesDistance, musclesWorked, estimate, restAfterSet, dropWeightKg, restDefaultsOf, progressionOf, progressionDefaultsOf, oneSideOf, duration, muscleName, sideRounds, sideJoins, toM, fromM, muscleSets, type Progression } from "@motus/shared";
+import { usesWeight, usesReps, usesDuration, usesDistance, musclesWorked, estimate, restAfterSet, dropWeightKg, restDefaultsOf, progressionOf, progressionDefaultsOf, oneSideOf, duration, muscleName, sideRounds, sideJoins, toM, fromM, muscleSets, type Progression, type Tracking } from "@motus/shared";
 import { useRoutine, useRoutines, useFolders, useExercises, useSettings, useTemplates, loaded } from "../api/queries";
 import { api, mediaUrl } from "../api/client";
 import { invalidate } from "../api/live";
@@ -20,6 +20,7 @@ import { useLeaveGuard, goBack } from "../core/leave";
 import { startWorkout } from "../workout/start";
 import { exerciseSheet } from "../core/ui";
 import { sidesItem } from "../core/sides";
+import { timedItem } from "../core/timed";
 import { startDrag } from "../core/drag";
 import Icon from "../components/Icon.vue";
 import Menu from "../components/Menu.vue";
@@ -338,12 +339,21 @@ const exMenu = (e: any, i: number) => [
   { label: "Move down", icon: "down", run: () => move(i, 1), hidden: i === r.value.exercises.length - 1 },
   { label: "Superset with next", hint: "Do one set of each in turn, resting after the pair", icon: "link", run: () => superset(i), hidden: !s.value.features.supersets || i === r.value.exercises.length - 1 || inSupersetWithNext(i) },
   { label: "Remove from superset", icon: "link", run: () => unsuperset(i), hidden: !e.superset },
+  // reps or time is the exercise's own way, switched here too; its sets start again like a new exercise's
+  { ...timedItem(e.exerciseId, tr(e), (t) => retime(e, t)), sep: true },
   // the exercise's own default, here too (it says what new sets start as); any exercise can get a left and a right set
-  { ...sidesItem(e.exerciseId, sidedEx(e)), sep: true, hidden: !sidesOn.value },
+  { ...sidesItem(e.exerciseId, sidedEx(e)), hidden: !sidesOn.value },
   { label: "Add a left + right set", hint: "One set for each side, beside the others", icon: "plus", run: () => addPair(e), hidden: !sidesOn.value || sidedEx(e) },
   { label: "Keep these numbers fixed", hint: "The numbers don't update after workouts and Progression is off", sep: true, icon: "lock", checked: !!e.fixed, run: () => { e.fixed = !e.fixed; touch(); } },
   { label: "Remove from routine", icon: "trash", danger: true, sep: true, run: () => removeEx(i) },
 ];
+// switched between reps and time: each set gets what a new exercise's sets start with (8 reps or 30 seconds), weight kept
+function retime(e: any, t: Tracking) {
+  const timed = usesDuration(t) && !usesReps(t);
+  for (const x of e.sets) { if (timed) { x.reps = null; if (!x.durationS) x.durationS = 30; } else { x.durationS = null; if (!x.reps) x.reps = 8; } }
+  if (e.exercise) e.exercise.tracking = t;
+  touch();
+}
 const setMenu = (e: any, j: number) => e.sets[j].kind === "drop" ? [
   { label: "Add another drop", hint: "Lower the weight again and keep going", icon: "arrowDown", run: () => addDrop(e, j) },
   { label: "Remove drop", icon: "trash", danger: true, sep: true, run: () => removeSet(e, j) },

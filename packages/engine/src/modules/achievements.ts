@@ -2,7 +2,7 @@
 // when it was reached. Worked out on request from the logged data, never stored: deleting a workout moves them too.
 // Weeks follow the app's calendar (tz = its getTimezoneOffset()), not the server's, so the server and the copy on a
 // device agree.
-import { ACHIEVEMENTS, achievementName, achievementTarget, e1rm, LIFTED_SQL, type Settings } from "@motus/shared";
+import { ACHIEVEMENTS, achievementName, achievementTarget, e1rm, LIFTED_SQL, TRACKING_SQL, type Settings } from "@motus/shared";
 import type { Sql } from "../db";
 
 const DAY = 86400000;
@@ -60,8 +60,8 @@ const running = (ev: { at: string; v: number }[]): Series => { let t = 0; return
 /** Exercise sessions that beat every earlier session of that exercise; the first time doing one is not a record. */
 async function recordSeries(q: Sql): Promise<Series> {
   const { rows } = await q.query(
-    `SELECT we.exercise_id, e.tracking, w.id AS workout_id, w.started_at, s.weight_kg, s.reps, s.duration_s, s.distance_m
-     FROM workout_sets s JOIN workout_exercises we ON we.id = s.workout_exercise_id JOIN workouts w ON w.id = we.workout_id JOIN exercises e ON e.id = we.exercise_id
+    `SELECT we.exercise_id, ${TRACKING_SQL} AS tracking, w.id AS workout_id, w.started_at, s.weight_kg, s.reps, s.duration_s, s.distance_m
+     FROM workout_sets s JOIN workout_exercises we ON we.id = s.workout_exercise_id JOIN workouts w ON w.id = we.workout_id JOIN exercises e ON e.id = we.exercise_id LEFT JOIN exercise_prefs p ON p.exercise_id = e.id
      WHERE w.status = 'completed' AND s.done AND s.kind <> 'warmup' ORDER BY we.exercise_id, w.started_at, w.id, s.position`);
   const events: { at: string; v: number }[] = [];
   let i = 0;

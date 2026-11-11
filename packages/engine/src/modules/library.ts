@@ -1,6 +1,6 @@
 // The exercise library: the shared catalog plus each person's own exercises, their per-exercise settings,
 // and every exercise's history, charts and records.
-import { e1rm, liftedKg, type Exercise, type Tracking } from "@motus/shared";
+import { e1rm, liftedKg, TRACKING_SQL, type Exercise, type Tracking } from "@motus/shared";
 import type { Router, Ctx } from "../router";
 import type { Sql } from "../db";
 import { camel, id, str, numOrNull, intOrNull, bool, oneOf } from "../util";
@@ -9,10 +9,10 @@ import { notFound, bad } from "../errors";
 
 const TRACKING: Tracking[] = ["weight_reps", "bodyweight_reps", "assisted", "reps_only", "duration", "weight_duration", "distance_duration", "distance_weight"];
 
-// one side at a time: the person's own choice for this exercise (exercise_prefs) wins over the exercise's default, so
-// queries that join the prefs as p use SIDES; the rest take the default
+// one side at a time and timed sets: the person's own choice for this exercise (exercise_prefs) wins over the exercise's
+// default, so every query here joins the prefs as p
 const SIDES = "coalesce(p.unilateral, e.unilateral) AS unilateral";
-const EX_COLS = `e.id, e.owner_id, e.source, e.name, e.aliases, e.category, e.equipment, e.mechanic, e.force, e.level, e.tracking,
+const EX_COLS = `e.id, e.owner_id, e.source, e.name, e.aliases, e.category, e.equipment, e.mechanic, e.force, e.level, ${TRACKING_SQL} AS tracking,
   e.primary_muscles, e.secondary_muscles, e.instructions, e.images, e.video_url, e.license, e.author, e.archived`;
 
 const exerciseFromRow = (r: any): Exercise => {
@@ -40,7 +40,7 @@ export async function getExercises(q: Sql, ids: string[]): Promise<Map<string, E
 export async function exerciseSessions(q: Sql, exerciseId: string, limit = 200, routineId?: string | null, withSkipped = false) {
   const { rows } = await q.query(
     `SELECT w.id AS workout_id, w.name AS workout_name, w.routine_id, w.started_at, we.id AS we_id, we.position, we.status,
-       (SELECT tracking FROM exercises e WHERE e.id = we.exercise_id) AS tracking,
+       (SELECT ${TRACKING_SQL} FROM exercises e LEFT JOIN exercise_prefs p ON p.exercise_id = e.id WHERE e.id = we.exercise_id) AS tracking,
        (SELECT count(*) FROM workout_exercises x WHERE x.workout_id = w.id) AS of_n,
        coalesce(json_agg(json_build_object('id', s.id, 'position', s.position, 'kind', s.kind, 'weightKg', s.weight_kg, 'reps', s.reps,
          'durationS', s.duration_s, 'distanceM', s.distance_m, 'rpe', s.rpe, 'rir', s.rir, 'side', s.side, 'doneAt', s.done_at, 'restActualS', s.rest_actual_s)
@@ -148,7 +148,9 @@ export function libraryRoutes(r: Router) {
   });
   r.put("/exercises/:id/prefs", async (ctx, p, body) => {
     await savePrefs(ctx, id(p.id), body);
-    ctx.changed("exercise");
+    // reps or time also changes how its records, stats and goals count
+    if (body && typeof body === "object" && "timed" in body) ctx.changed("exercise", "workout");
+    else ctx.changed("exercise");
     return { ok: true };
   });
   // merge: move all of one exercise's history and routines onto another (only your own exercise can be merged away)
@@ -169,7 +171,8 @@ export function libraryRoutes(r: Router) {
     const ex = (await getExercises(q, [id(p.id)])).get(p.id!);
     if (!ex) throw notFound();
     const { rows } = await q.query(
-      `SELECT ${EX_COLS}, e.unilateral, coalesce(u.n, 0) AS times_done FROM exercises e
+      `SELECT ${EX_COLS}, ${SIDES}, coalesce(u.n, 0) AS times_done FROM exercises e
+       LEFT JOIN exercise_prefs p ON p.exercise_id = e.id
        LEFT JOIN (SELECT exercise_id, count(*) n FROM workout_exercises GROUP BY 1) u ON u.exercise_id = e.id
        WHERE NOT e.archived AND e.id <> $1 AND e.primary_muscles && $2::text[] AND e.category = $3
        ORDER BY coalesce(u.n, 0) DESC, (e.equipment IS NOT DISTINCT FROM $4) DESC, e.name LIMIT 30`,
@@ -184,12 +187,12 @@ export async function savePrefs(ctx: Ctx, exId: string, body: Record<string, unk
   const had = (await ctx.q.query("SELECT * FROM exercise_prefs WHERE exercise_id = $1", [exId])).rows[0];
   const b: any = { ...(had ? camel<any>(had) : {}), ...body };
   await ctx.q.query(
-    `INSERT INTO exercise_prefs (user_id, exercise_id, rest_s, rest_after_s, favourite, hidden, bar_kg, increment_kg, unilateral)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
-     ON CONFLICT (user_id, exercise_id) DO UPDATE SET rest_s = $3, rest_after_s = $4, favourite = $5, hidden = $6, bar_kg = $7, increment_kg = $8, unilateral = $9`,
-    // unilateral: null goes back to the exercise's own default
+    `INSERT INTO exercise_prefs (user_id, exercise_id, rest_s, rest_after_s, favourite, hidden, bar_kg, increment_kg, unilateral, timed)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+     ON CONFLICT (user_id, exercise_id) DO UPDATE SET rest_s = $3, rest_after_s = $4, favourite = $5, hidden = $6, bar_kg = $7, increment_kg = $8, unilateral = $9, timed = $10`,
+    // unilateral and timed: null goes back to the exercise's own default
     [ctx.userId, exId, intOrNull(b.restS, 0, 3600), intOrNull(b.restAfterS, 0, 3600), bool(b.favourite), bool(b.hidden), numOrNull(b.barKg, 0, 100), numOrNull(b.incrementKg, 0, 50),
-      b.unilateral == null ? null : bool(b.unilateral)]);
+      b.unilateral == null ? null : bool(b.unilateral), b.timed == null ? null : bool(b.timed)]);
 }
 
 async function saveCustom(ctx: Ctx, exId: string, b: any, isNew: boolean) {
@@ -207,7 +210,7 @@ async function saveCustom(ctx: Ctx, exId: string, b: any, isNew: boolean) {
       `UPDATE exercises SET name=$3, aliases=$4, category=$5, equipment=$6, tracking=$7, unilateral=$8, primary_muscles=$9, secondary_muscles=$10,
          instructions=$11, images=$12, video_url=$13, updated_at=now() WHERE id=$1 AND owner_id=$2 RETURNING id`, vals);
     if (!rows.length) throw notFound("Only your own exercises can be edited");
-    // the editor shows the side setting in effect and saves it onto the exercise, so an earlier per-person choice would hide it
-    await ctx.q.query("UPDATE exercise_prefs SET unilateral = NULL WHERE exercise_id = $1 AND unilateral IS NOT NULL", [exId]);
+    // the editor shows the side and tracking in effect and saves them onto the exercise, so an earlier per-person choice would hide them
+    await ctx.q.query("UPDATE exercise_prefs SET unilateral = NULL, timed = NULL WHERE exercise_id = $1 AND (unilateral IS NOT NULL OR timed IS NOT NULL)", [exId]);
   }
 }

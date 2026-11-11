@@ -13,6 +13,7 @@ import { toast } from "../core/toast";
 import { invalidate } from "../api/live";
 import { beep } from "./runtime";
 import { sidesItem } from "../core/sides";
+import { timedItem } from "../core/timed";
 import Icon from "../components/Icon.vue";
 import Menu from "../components/Menu.vue";
 import NoteItem from "../components/NoteItem.vue";
@@ -109,8 +110,10 @@ const menu = computed(() => [
   { label: "Skip", sep: true, icon: "skip", run: skip, hidden: props.e.status === "skipped" },
   { label: "Bring it back", icon: "refresh", run: () => W.setStatus(props.e, props.e.sets.every((s) => s.done) && props.e.sets.length ? "done" : "pending"), hidden: props.e.status !== "skipped" },
   { label: "Swap for another exercise", icon: "swap", run: openReplace },
+  // reps or time: the exercise's own way, switched for every workout from now on
+  { ...timedItem(props.e.exerciseId, tr.value, (t) => { if (props.e.exercise) props.e.exercise.tracking = t; }), sep: true },
   // any exercise can be switched to left and right sets (the exercise's default is only a start)
-  { ...sidesItem(props.e.exerciseId, sided.value, (on) => { if (props.e.exercise) props.e.exercise.unilateral = on; }), sep: true, hidden: !feat.value.unilateral },
+  { ...sidesItem(props.e.exerciseId, sided.value, (on) => { if (props.e.exercise) props.e.exercise.unilateral = on; }), hidden: !feat.value.unilateral },
   // one-sided exercises have this as a button under the sets; any other exercise can still get a left and a right set
   { label: "Add a left and right set", hint: "One set for each side, beside the others", icon: "plus", run: () => W.addPair(props.e), hidden: !feat.value.unilateral || sided.value },
   { label: "Rest between sets", sep: true, icon: "timer", run: () => (restEdit.value = "between") },

@@ -3,7 +3,7 @@
 // that workout), charts, records, notes and reminders, and which routines use it. Shown as a page and as a sheet.
 import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
-import { strengthLevel, LEVELS, e1rm, weightForReps, usesWeight, usesReps, usesDuration, usesDistance, muscleName } from "@motus/shared";
+import { strengthLevel, LEVELS, e1rm, weightForReps, usesWeight, usesReps, usesDuration, usesDistance, muscleName, type Tracking } from "@motus/shared";
 import { invalidate } from "../api/live";
 import { useExercise, useExerciseHistory, useNotes, useReminders, useChange, useSettings, useBody } from "../api/queries";
 import { api, mediaUrl } from "../api/client";
@@ -12,6 +12,7 @@ import { noteSheet, reminderSheet, exerciseSheet } from "../core/ui";
 import { confirm } from "../core/ask";
 import { useNoteMenu } from "../core/noteMenu";
 import { sidesItem, SIDES_HINT } from "../core/sides";
+import { timedItem, TRACK } from "../core/timed";
 import { toast, savedToast } from "../core/toast";
 import Icon from "./Icon.vue";
 import BodyMap from "./BodyMap.vue";
@@ -34,7 +35,7 @@ const chart = ref("e1rm");
 const editing = ref(false);
 const e = computed<any>(() => ex.data.value);
 const sessions = computed<any[]>(() => hist.data.value?.sessions ?? []);
-const tracking = computed(() => e.value?.tracking ?? "weight_reps");
+const tracking = computed<Tracking>(() => e.value?.tracking ?? "weight_reps");
 const pending = computed(() => (rems.data.value ?? []).filter((r: any) => r.status === "pending"));
 const TABS = computed<[string, string][]>(() => [["about", "About"], ["history", `History${sessions.value.length ? " · " + sessions.value.length : ""}`], ["charts", "Charts"], ["records", "Records"],
   ["notes", `Notes${(notes.data.value?.length ?? 0) + pending.value.length ? " · " + ((notes.data.value?.length ?? 0) + pending.value.length) : ""}`]]);
@@ -78,12 +79,13 @@ async function del() {
   router.push("/exercises");
 }
 function openWorkout(id: string) { exerciseSheet.value = null; router.push(`/workouts/${id}`); }
-// in groups: notes and reminders, favourites, changing it, then Delete on its own
+// in groups: notes and reminders, favourites, how you do it, changing it, then Delete on its own
 const menu = computed<MenuItem[]>(() => [
   { label: "Add a note", icon: "note", run: () => (noteSheet.value = { targets: [{ type: "exercise", id: props.id, label: e.value.name }] }) },
   { label: "Remind me next time", icon: "bell", run: () => (reminderSheet.value = { targetType: "exercise", targetId: props.id, label: e.value.name }) },
   { label: e.value?.favourite ? "Remove from favourites" : "Add to favourites", icon: "star", sep: true, run: () => fav.run(!e.value?.favourite) },
-  // built-in exercises too: whether you do it one side at a time is yours to say
+  // built-in exercises too: whether you do it for time or in reps, and one side at a time, is yours to say
+  { ...timedItem(props.id, tracking.value), sep: true },
   { ...sidesItem(props.id, !!e.value?.unilateral), hidden: !sidesOn.value },
   { label: "Edit", icon: "edit", sep: true, run: () => (editing.value = true), hidden: !own.value },
   { label: "Make my own copy", icon: "copy", run: async () => { const r = await api.post("/exercises", { ...e.value, name: e.value.name + " (mine)" }); invalidate(["exercises"]); toast("Copy created"); exerciseSheet.value = null; router.push(`/exercises/${r.id}`); }, hidden: own.value },
@@ -136,6 +138,7 @@ const menu = computed<MenuItem[]>(() => [
           <template v-if="e.mechanic"><dt>Type</dt><dd>{{ e.mechanic }}</dd></template>
           <template v-if="e.force"><dt>Force</dt><dd>{{ e.force }}</dd></template>
           <dt>Category</dt><dd>{{ e.category }}</dd>
+          <dt>Track it by</dt><dd class="plain">{{ TRACK[tracking] }}</dd>
           <template v-if="sidesOn"><dt>Sides</dt><dd class="plain">{{ e.unilateral ? "One at a time: left and right sets, weight for one side" : "Both together: weight is the total moved" }}</dd></template>
           <template v-if="e.routines?.length"><dt>In routines</dt><dd class="plain">{{ e.routines.map((r: any) => r.name).join(", ") }}</dd></template>
         </dl>

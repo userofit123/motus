@@ -59,6 +59,31 @@ describe("engine", () => {
     await call(A, "DELETE", `/exercises/${mine}`);
   });
 
+  it("any exercise can be done for time instead of reps (and back), for that person only", async () => {
+    const T = uuidv7();
+    await eng.db.admin.query("INSERT INTO users (id, username, display_name) VALUES ($1,'timed-tester','T')", [T]);
+    const byName = async (u: string) => new Map<string, any>((await call(u, "GET", "/exercises")).map((e: any) => [e.name, e]));
+    const a = await byName(T);
+    const squat = a.get("Barbell Squat"), stretch = [...a.values()].find((e: any) => e.category === "stretching");
+    expect([squat.tracking, stretch.tracking]).toEqual(["weight_reps", "duration"]);
+    await call(T, "PUT", `/exercises/${squat.id}/prefs`, { timed: true });
+    await call(T, "PUT", `/exercises/${stretch.id}/prefs`, { timed: false });
+    expect((await call(T, "GET", `/exercises/${squat.id}`)).tracking).toBe("weight_duration");
+    expect((await call(T, "GET", `/exercises/${stretch.id}`)).tracking).toBe("reps_only");
+    expect((await byName(B)).get("Barbell Squat").tracking).toBe("weight_reps");
+    // routines and workouts read the same choice, and a logged timed set keeps its time
+    const r = await call(T, "POST", "/routines", { name: "Timed", exercises: [{ exerciseId: squat.id, sets: [{ kind: "normal", reps: null, weightKg: 40, durationS: 30 }] }] });
+    expect((await call(T, "GET", `/routines/${r.id}`)).exercises[0].exercise.tracking).toBe("weight_duration");
+    const w = await call(T, "POST", "/workouts/start", { routineId: r.id });
+    expect(w.exercises[0].exercise.tracking).toBe("weight_duration");
+    expect(w.exercises[0].sets[0].durationS).toBe(30);
+    // other settings saved later keep it; null goes back to the exercise's own way
+    await call(T, "PUT", `/exercises/${squat.id}/prefs`, { favourite: true });
+    expect((await call(T, "GET", `/exercises/${squat.id}`)).tracking).toBe("weight_duration");
+    await call(T, "PUT", `/exercises/${squat.id}/prefs`, { timed: null });
+    expect((await call(T, "GET", `/exercises/${squat.id}`)).tracking).toBe("weight_reps");
+  });
+
   it("routine sets can be left, right or both on any exercise; Start copies them, and last time and Progression go side by side", async () => {
     const D = uuidv7();
     await eng.db.admin.query("INSERT INTO users (id, username, display_name) VALUES ($1,'sides-tester','D')", [D]);

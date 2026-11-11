@@ -1,5 +1,5 @@
 // Stats and the home summary. Sessions come back with their times; the apps group them into days and weeks in their own time zone.
-import { e1rm, GROUPS, WEEKLY_SET_RANGE, liftedKg, LIFTED_SQL } from "@motus/shared";
+import { e1rm, GROUPS, WEEKLY_SET_RANGE, liftedKg, LIFTED_SQL, TRACKING_SQL } from "@motus/shared";
 import type { Router, Ctx } from "../router";
 import type { Sql } from "../db";
 import { camel, tzOf } from "../util";
@@ -42,12 +42,12 @@ async function workoutRows(q: Sql, from: string, to: string) {
 
 async function exerciseStats(q: Sql, from: string, to: string) {
   const { rows } = await q.query(
-    `SELECT e.id, e.name, e.primary_muscles, e.tracking, w.id AS workout_id, w.started_at, we.status,
+    `SELECT e.id, e.name, e.primary_muscles, ${TRACKING_SQL} AS tracking, w.id AS workout_id, w.started_at, we.status,
        coalesce(json_agg(json_build_object('w', s.weight_kg, 'r', s.reps, 'd', s.duration_s, 'm', s.distance_m)) FILTER (WHERE s.id IS NOT NULL), '[]') AS sets
-     FROM workout_exercises we JOIN workouts w ON w.id = we.workout_id JOIN exercises e ON e.id = we.exercise_id
+     FROM workout_exercises we JOIN workouts w ON w.id = we.workout_id JOIN exercises e ON e.id = we.exercise_id LEFT JOIN exercise_prefs p ON p.exercise_id = e.id
      LEFT JOIN workout_sets s ON s.workout_exercise_id = we.id AND s.done AND s.kind <> 'warmup'
      WHERE w.status = 'completed' AND w.started_at >= $1 AND w.started_at < $2
-     GROUP BY e.id, w.id, we.id ORDER BY w.started_at`, [from, to]);
+     GROUP BY e.id, w.id, we.id, p.timed ORDER BY w.started_at`, [from, to]);
   const by = new Map<string, any>();
   for (const r of rows) {
     const x = by.get(r.id) ?? { exerciseId: r.id, name: r.name, muscles: r.primary_muscles, tracking: r.tracking, times: 0, skipped: 0, lastAt: null, bestE1rm: 0, bestWeightKg: 0, volumeKg: 0, trend: [] as any[] };
