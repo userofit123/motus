@@ -17,7 +17,6 @@ import { recording } from "../workout/recording";
 import { ivRunning } from "../workout/intervals";
 import { useWorkout } from "../workout/useWorkout";
 import { useAutoUpdate } from "../core/updater";
-import { usePageWatch } from "./pageWatch";
 // the apps check for (and, if chosen, download) updates on their own while someone is signed in
 useAutoUpdate();
 
@@ -66,10 +65,13 @@ const active = useActive();
 useWorkout();
 // how many running-session bars float at the bottom (the workout, a recording, the interval timer), so the page leaves room for them
 const bars = computed(() => route.name === "workout" ? 0 : (active.data.value ? 1 : 0) + (recording.value && route.name !== "record" ? 1 : 0) + (ivRunning.value && route.name !== "timer" ? 1 : 0));
-// one key per page, so moving between pages animates; settings sections animate inside the page instead
+// Each page gets its own <Suspense> (keyed by page): the page waits for its data inside it (see loaded() in api/queries)
+// and comes in whole. One Suspense shared by all pages broke when a page was left before its data came: Vue then
+// mounted the next page late or not at all, so a tab tap while Home was still loading made later taps do nothing.
+// A Suspense of its own is thrown away with the page, half-loaded or not. (So the old page goes at once; only the
+// new one animates in.)
+// settings sections animate inside the page instead
 const pageKey = (r: any) => (r.name === "settings" ? "settings" : r.path);
-// a page that fails to replace the one before it gets the view rebuilt (see pageWatch)
-const { view, still } = usePageWatch(pageKey);
 // once a page has moved in, anything that appears on it later rises in by itself (see app.css)
 const arrived = (el: Element) => el.classList?.add("in");
 </script>
@@ -89,7 +91,7 @@ const arrived = (el: Element) => el.classList?.add("in");
         <button type="button" class="nb" :class="{ on: cur === 'settings' }" :aria-current="cur === 'settings' ? 'page' : undefined" @click="router.push(settings.to)"><span class="ic"><Icon :name="settings.icon" :size="22" /></span>{{ settings.label }}</button>
       </div>
     </nav>
-    <main :class="{ withbar: bars > 0, withbar2: bars > 1, withbar3: bars > 2 }"><MiniBar v-if="route.name === 'workout'" strip /><router-view v-slot="{ Component, route: r }"><Suspense :key="view"><Transition name="page" :css="!still" mode="out-in" appear @after-enter="arrived"><component :is="Component" :key="pageKey(r)" :data-page="pageKey(r)" /></Transition></Suspense></router-view></main>
+    <main :class="{ withbar: bars > 0, withbar2: bars > 1, withbar3: bars > 2 }"><MiniBar v-if="route.name === 'workout'" strip /><router-view v-slot="{ Component, route: r }"><Suspense :key="pageKey(r)"><Transition name="page" appear @after-enter="arrived"><component :is="Component" /></Transition></Suspense></router-view></main>
     <button v-if="route.name !== 'workout'" class="fab" aria-label="Start" title="Start a workout or activity (N)" @click="startOpen = true"><Icon name="plus" /></button>
     <MiniBar v-if="route.name !== 'workout'" />
     <SyncPill />

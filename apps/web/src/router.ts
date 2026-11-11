@@ -2,7 +2,7 @@ import { createRouter, createWebHistory } from "vue-router";
 
 export const router = createRouter({
   history: createWebHistory(),
-  // pages fade out before the next one comes in (see the shells), so scroll once the old page is gone. Going Back returns
+  // scroll once the new page has started coming in (see the shells). Going Back returns
   // to where you were: the page's data may still be arriving, so wait (up to 2 s) until it is tall enough to scroll there
   scrollBehavior: (to, from, saved) => to.path === from.path ? undefined : new Promise((ok) => {
     const t0 = Date.now();

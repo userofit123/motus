@@ -642,11 +642,10 @@ html.phone:has(.pshell.withbar2) .tst { bottom: calc(var(--tabh) + 132px + var(-
 
 /* ---------- motion: pages, tabs, sections, sheets and controls move instead of jumping ---------- */
 :root { --t-in: .22s; --t-out: .12s; }
-/* pages and in-page tab switches: the old one fades out quickly, the new one rises in */
+/* pages rise in (the old page goes at once, see the shells); in-page tab switches: the old one fades out quickly, the new one rises in */
 .page-enter-active, .sw-enter-active { transition: opacity var(--t-in) var(--ease), transform var(--t-in) var(--ease); }
-.page-leave-active, .sw-leave-active { transition: opacity var(--t-out) ease-in, transform var(--t-out) ease-in; }
+.sw-leave-active { transition: opacity var(--t-out) ease-in, transform var(--t-out) ease-in; }
 .page-enter-from { opacity: 0; transform: translateY(10px); }
-.page-leave-to { opacity: 0; transform: translateY(-4px); }
 .sw-enter-from { opacity: 0; transform: translateY(6px); }
 .sw-leave-to { opacity: 0; }
 /* next / previous (exercises in a workout, calendar months): slide in from the side you're going to */
@@ -658,11 +657,8 @@ html.phone:has(.pshell.withbar2) .tst { bottom: calc(var(--tabh) + 132px + var(-
 .pv-leave-to { opacity: 0; transform: translateX(20px); }
 /* moving between the phone's tabs: the page slides towards the tab you chose */
 .tnx-enter-active, .tpv-enter-active { transition: opacity .2s var(--ease), transform .26s var(--ease); }
-.tnx-leave-active, .tpv-leave-active { transition: opacity .12s ease-in, transform .12s ease-in; }
 .tnx-enter-from { opacity: 0; transform: translateX(40px); }
-.tnx-leave-to { opacity: 0; transform: translateX(-30px); }
 .tpv-enter-from { opacity: 0; transform: translateX(-40px); }
-.tpv-leave-to { opacity: 0; transform: translateX(30px); }
 /* reordering a list: rows glide to their new place */
 .mv-move { transition: transform .28s var(--ease); }
 .mv-enter-active { transition: opacity .2s, transform .2s var(--ease); }
@@ -701,7 +697,7 @@ html.phone .scr.leaving .sht { animation: up .22s ease-in reverse forwards; }
 .tabs.tsl button.on { border-bottom-color: transparent; }
 .tabi { position: absolute; left: 0; bottom: 0; height: 2px; border-radius: 2px; background: var(--acc); pointer-events: none; transition: transform .3s var(--ease), width .3s var(--ease); }
 @media (prefers-reduced-motion: reduce) {
-  .page-enter-active, .page-leave-active, .tnx-enter-active, .tnx-leave-active, .tpv-enter-active, .tpv-leave-active, .sw-enter-active, .sw-leave-active, .nx-enter-active, .nx-leave-active, .pv-enter-active, .pv-leave-active,
+  .page-enter-active, .tnx-enter-active, .tpv-enter-active, .sw-enter-active, .sw-leave-active, .nx-enter-active, .nx-leave-active, .pv-enter-active, .pv-leave-active,
   .mb-enter-active, .mb-leave-active, .rs-enter-active, .rs-leave-active, .mv-move { transition: none; }
   .tabi { transition: none; }
 }
