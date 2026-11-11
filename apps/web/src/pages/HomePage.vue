@@ -417,7 +417,7 @@ await loaded(home, ach);
         <div v-else-if="id === 'feed'" class="card hb sz-m">
           <div class="ch"><span class="bi"><Icon name="history" :size="15" /></span><span class="t grow">Recent activity</span><button class="lnk" @click="router.push('/history?view=list')">All</button></div>
           <div class="list"><div v-for="x in h.feed.slice(0, 5)" :key="x.id" class="li click" v-bind="link(x.kind === 'workout' ? `/workouts/${x.id}` : `/activities/${x.id}`)">
-            <Icon :name="x.kind === 'workout' ? 'dumbbell' : x.type === 'walk' ? 'walk' : 'activity'" :size="18" class="muted" /><div class="grow"><div class="t">{{ x.kind === "workout" ? x.name : x.name || x.type }}</div><div class="s">{{ fmt.date(x.startedAt, { weekday: "short", day: "numeric", month: "short" }) }}</div></div>
+            <Icon :name="x.kind === 'workout' ? 'dumbbell' : x.type === 'walk' ? 'walk' : 'activity'" :size="18" class="muted" /><div class="grow"><div class="t">{{ x.kind === "workout" ? x.name : x.name || x.type }}</div><div class="s">{{ fmt.date(x.startedAt, { weekday: "short", day: "numeric", month: "short" }) }}<template v-if="x.kind === 'activity' && x.steps"> · {{ fmt.num(x.steps, 0) }} steps</template></div></div>
             <span class="tiny">{{ x.kind === "workout" ? fmt.dur(x.durationS, true) : x.distanceM ? fmt.dist(x.distanceM, 1) : fmt.dur(x.durationS, true) }}</span></div></div>
         </div>
 

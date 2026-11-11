@@ -173,7 +173,7 @@ export function statsRoutes(r: Router) {
     const bw = (await ctx.q.query("SELECT value, measured_at FROM body_metrics WHERE kind = 'weight' ORDER BY measured_at DESC LIMIT 30")).rows.map((x: any) => ({ value: Number(x.value), at: x.measured_at }));
     const feed = [
       ...(await workoutSummaries(ctx.q, "w.status = 'completed'", [], 8)).map((w) => ({ kind: "workout", ...w })),
-      ...(await ctx.q.query("SELECT id, type, name, started_at, duration_s, distance_m FROM activities ORDER BY started_at DESC LIMIT 8")).rows.map((x: any) => ({ kind: "activity", ...camel<any>(x) })),
+      ...(await ctx.q.query("SELECT id, type, name, started_at, duration_s, distance_m, steps FROM activities ORDER BY started_at DESC LIMIT 8")).rows.map((x: any) => ({ kind: "activity", ...camel<any>(x) })),
     ].sort((a: any, b: any) => b.startedAt.localeCompare(a.startedAt)).slice(0, 8);
     // the days (in the app's calendar) with a finished workout or an activity: the week strip and the streak grid
     const days = [...new Set([...rows.map((x) => dayIn(x.startedAt, tzMin)), ...acts.map((x: any) => dayIn(x.started_at, tzMin))])].sort();

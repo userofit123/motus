@@ -456,7 +456,7 @@ export interface HomeWeek { start: string; workouts: number; volumeKg: number; t
 /** Home: a muscle group and how long since it was trained (null: never). */
 export interface HomeGroup { id: string; name: string; lastAt: string | null; days: number | null }
 /** Home: one line of recent activity, a workout summary or an activity. */
-export type HomeFeedItem = ({ kind: "workout" } & WorkoutSummary) | { kind: "activity"; id: string; type: string; name: string | null; startedAt: string; durationS: number; distanceM: number | null };
+export type HomeFeedItem = ({ kind: "workout" } & WorkoutSummary) | { kind: "activity"; id: string; type: string; name: string | null; startedAt: string; durationS: number; distanceM: number | null; steps: number | null };
 /** Home (/home): everything the blocks read. */
 export interface HomeData extends HomeToday {
   records: HomeRecord[];

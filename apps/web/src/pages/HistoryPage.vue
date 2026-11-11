@@ -18,6 +18,7 @@ import { isPhone } from "../core/device";
 import { activitySheet } from "../core/ui";
 import Icon from "../components/Icon.vue";
 import ScheduleEditor from "../components/ScheduleEditor.vue";
+import SessionStats from "../components/SessionStats.vue";
 
 const route = useRoute(), router = useRouter();
 const s = useSettings();
@@ -85,10 +86,6 @@ const monthStats = computed(() => {
   const w = all.filter((x) => x.kind === "workout" && x.status === "completed"), a = all.filter((x) => x.kind === "activity");
   return { workouts: w.length, activities: a.length, timeS: [...w, ...a].reduce((t, x) => t + (x.durationS ?? 0), 0), days: inMonth.filter(([, v]) => v.some((x) => x.kind !== "planned")).length };
 });
-// the day list's summary line: time, duration, then what the session holds (sets and volume, or distance and steps)
-const dayLine = (x: any) => [fmt.value.time(x.startedAt), fmt.value.dur(x.durationS, true),
-  x.kind === "workout" ? (x.sets ? n(x.sets, "set") : "") : x.distanceM ? fmt.value.dist(x.distanceM, 1) : "",
-  x.kind === "workout" ? (x.volumeKg > 0 ? fmt.value.vol(x.volumeKg) : "") : x.steps ? `${fmt.value.num(x.steps, 0)} steps` : ""].filter(Boolean).join(" · ");
 const planDay = ref<string | null>(null);
 const n = (k: number, one: string, many = one + "s") => `${k} ${k === 1 ? one : many}`;
 const summary = computed(() => {
@@ -148,7 +145,7 @@ await loaded(cal, listWorkouts, listActs);
         <div class="card">
           <div v-if="!(byDay.get(sel) ?? []).length" class="tiny">{{ sel >= today ? "Nothing planned. Use Plan to put a routine on this day." : "Nothing on this day." }}</div>
           <div class="list"><div v-for="x in byDay.get(sel) ?? []" :key="x.id ?? x.scheduleId" class="li click" @click="open(x)">
-            <Icon :name="icon(x)" :size="18" :style="{ color: x.color ?? 'var(--acc)' }" /><div class="grow"><div class="t" :style="x.missed ? { opacity: .5 } : undefined">{{ label(x) }}</div><div class="s">{{ x.kind === "planned" ? (x.missed ? "Missed" : "Planned") : dayLine(x) }}</div></div><span v-if="x.kind === 'planned' && !x.missed" @click.stop><Menu :items="[{ label: 'Skip this day', icon: 'close', run: () => skipPlanned(x) }]" /></span><Icon v-else name="right" class="muted" /></div></div>
+            <Icon :name="icon(x)" :size="18" :style="{ color: x.color ?? 'var(--acc)' }" /><div class="grow"><div class="t" :style="x.missed ? { opacity: .5 } : undefined">{{ label(x) }}</div><div class="s">{{ x.kind === "planned" ? (x.missed ? "Missed" : "Planned") : fmt.time(x.startedAt) }}</div></div><SessionStats v-if="x.kind !== 'planned'" :x="x" /><span v-if="x.kind === 'planned' && !x.missed" @click.stop><Menu :items="[{ label: 'Skip this day', icon: 'close', run: () => skipPlanned(x) }]" /></span><Icon v-else name="right" class="muted" /></div></div>
         </div>
       </div>
     </div>
@@ -160,7 +157,7 @@ await loaded(cal, listWorkouts, listActs);
         <div class="card"><div class="list"><div v-for="x in xs" :key="x.id" class="li click" @click="open(x)">
           <Icon :name="icon(x)" :size="18" :style="{ color: x.color ?? 'var(--acc)' }" />
           <div class="grow"><div class="t">{{ label(x) }}</div><div class="s">{{ fmt.date(x.startedAt, { weekday: "short", day: "numeric", month: "short" }) }} · {{ fmt.time(x.startedAt) }}</div></div>
-          <div class="r tiny"><div>{{ fmt.dur(x.durationS, true) }}</div><div>{{ x.kind === "workout" ? `${x.setCount} sets · ${fmt.vol(x.volumeKg)}` : x.distanceM ? fmt.dist(x.distanceM, 1) : "" }}</div></div>
+          <SessionStats :x="x" />
         </div></div></div>
       </section>
     </div>
