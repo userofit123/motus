@@ -2,13 +2,14 @@ import { createRouter, createWebHistory } from "vue-router";
 
 export const router = createRouter({
   history: createWebHistory(),
-  // scroll once the new page has started coming in (see the shells). Going Back returns
-  // to where you were: the page's data may still be arriving, so wait (up to 2 s) until it is tall enough to scroll there
-  scrollBehavior: (to, from, saved) => to.path === from.path ? undefined : new Promise((ok) => {
+  // a new page starts at the top straight away (the old page no longer fades out, so there is nothing to wait for).
+  // Going Back returns to where you were: the page's data may still be arriving, so wait (up to 2 s) until it is tall
+  // enough to scroll there
+  scrollBehavior: (to, from, saved) => to.path === from.path ? undefined : !saved ? { top: 0 } : new Promise((ok) => {
     const t0 = Date.now();
-    const ready = () => !saved || document.documentElement.scrollHeight - innerHeight >= saved.top - 2 || Date.now() - t0 > 2000;
-    const tick = () => (ready() ? ok(saved ?? { top: 0 }) : requestAnimationFrame(tick));
-    setTimeout(tick, 130);
+    const ready = () => document.documentElement.scrollHeight - innerHeight >= saved.top - 2 || Date.now() - t0 > 2000;
+    const tick = () => (ready() ? ok(saved) : requestAnimationFrame(tick));
+    tick();
   }),
   routes: [
     { path: "/", name: "home", component: () => import("./pages/HomePage.vue") },
