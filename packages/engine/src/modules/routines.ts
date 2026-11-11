@@ -63,9 +63,6 @@ function restByKind(v: unknown): string | null {
   return Object.keys(out).length ? JSON.stringify(out) : null;
 }
 
-/** Writes a routine's exercises and sets, keeping the ids of exercises that stay (workouts point at them). `missed`
- * (workouts in a row with missed reps) is only written by finishing (`withMissed`); an edit keeps each one's count,
- * unless it changed the exercise's Progression (a count from under another mode means nothing). */
 // a template as a routine's body, in the editor's full shape; unsaved, so the editor can open it as a draft
 // that only becomes a routine on Save (GET /templates/:slug), and POST /routines { template } saves the same
 async function templateBody(q: Sql, slug: string) {
@@ -83,6 +80,9 @@ async function templateBody(q: Sql, slug: string) {
   };
 }
 
+/** Writes a routine's exercises and sets, keeping the ids of exercises that stay (workouts point at them). `missed`
+ * (workouts in a row with missed reps) is only written by finishing (`withMissed`); an edit keeps each one's count,
+ * unless it changed the exercise's Progression (a count from under another mode means nothing). */
 async function writeRoutineBody(ctx: Ctx, routineId: string, exercises: any[], withMissed = false) {
   if (!Array.isArray(exercises)) throw bad("Expected a list of exercises");
   if (exercises.length > 100) throw bad("Too many exercises");
