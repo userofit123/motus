@@ -175,7 +175,7 @@ const nextSummary = computed(() => {
   const auto = (dir: "up" | "down", assisted: boolean) => ch.filter((c) => c.mode === "auto" && c.direction === dir && assistedIds.has(c.routineExerciseId) === assisted).length;
   const sug = ch.filter((c) => c.mode === "suggest"), on = sug.filter((c) => d.accepted.includes(c.routineExerciseId)).length;
   const fresh = groups.filter((g) => g.sets.length).length, unticked = groups.filter((g) => g.unticked).length;
-  if (fresh) lines.push({ icon: "refresh", text: `${n(fresh, "exercise has", "exercises have")} new numbers` });
+  if (fresh) lines.push({ icon: "refresh", text: `${n(fresh, "exercise has", "exercises have")} new numbers from this workout, saved on finish` });
   const up = auto("up", false), down = auto("down", false), less = auto("up", true), more = auto("down", true);
   if (up) lines.push({ icon: "arrowUp", text: `${n(up, "weight goes", "weights go")} up next time, saved on finish`, tone: "pos" });
   if (down) lines.push({ icon: "arrowDown", text: `${n(down, "weight goes", "weights go")} down next time, saved on finish`, tone: "neg" });
@@ -248,7 +248,7 @@ async function finish() {
 
     <template v-if="changes.length">
       <div class="sh"><h2>Routine changes</h2></div>
-      <RoutineChanges v-model="d.routineChanges" :changes="changes" />
+      <RoutineChanges v-model="d.routineChanges" :changes="changes" finishing />
     </template>
 
     <div class="sh"><h2>How it went</h2></div>

@@ -319,6 +319,41 @@ describe("updating a routine from a workout", () => {
     expect((await call(C, "GET", `/routines/${r.id}`)).exercises.map((e: any) => e.exerciseId)).toEqual([a, c]);
   });
 
+  // the developer's report: sets added, one made a warm-up with a weight, left and right sets added, all ticked
+  it("lists sets added, made warm-ups or split into sides, saves them only when switched on, and carries warm-up weights", async () => {
+    const C = uuidv7();
+    await eng.db.admin.query("INSERT INTO users (id, username, display_name) VALUES ($1,'warmup-tester','C')", [C]);
+    const ex = await call(C, "GET", "/exercises");
+    const blank = { kind: "normal", reps: 8, weightKg: null };
+    const make = async (name: string, sets: unknown[]) => {
+      const r = await call(C, "POST", "/routines", { name, exercises: [{ exerciseId: ex[0].id, sets }] });
+      const w = await call(C, "POST", "/workouts/start", { routineId: r.id });
+      const weId = w.exercises[0].id, [s1, s2, s3] = w.exercises[0].sets;
+      await call(C, "PUT", `/workout-sets/${s1.id}`, { kind: "warmup", weightKg: 10, reps: 12, done: true });
+      for (const s of [s2, s3]) await call(C, "PUT", `/workout-sets/${s.id}`, { weightKg: 20, reps: 8, done: true });
+      await call(C, "POST", `/workout-exercises/${weId}/sets`, { sets: [{ kind: "normal", weightKg: 20, reps: 8, done: true },
+        { kind: "normal", side: "L", weightKg: 10, reps: 10, done: true }, { kind: "normal", side: "R", weightKg: 10, reps: 10, done: true }] });
+      const routine = await call(C, "GET", `/routines/${r.id}`), done = await call(C, "GET", `/workouts/${w.id}`);
+      return { r: routine, w, list: structureChanges(routine, done) };
+    };
+    const shape = async (id: string) => (await call(C, "GET", `/routines/${id}`)).exercises[0].sets.map((s: any) => [s.kind, s.side ?? "", s.weightKg, s.reps]);
+    // nothing switched on: listed, the routine keeps its 3 sets, which take today's working numbers
+    const off = await make("Off", [blank, blank, blank]);
+    expect(off.list.map((c) => c.key)).toEqual([`more:${off.r.exercises[0].id}`]);
+    await call(C, "POST", `/workouts/${off.w.id}/finish`, { routineChanges: [] });
+    expect(await shape(off.r.id)).toEqual([["normal", "", 20, 8], ["normal", "", 20, 8], ["normal", "", 20, 8]]);
+    // switched on: today's sets, the warm-up's weight with them
+    const on = await make("On", [blank, blank, blank]);
+    await call(C, "POST", `/workouts/${on.w.id}/finish`, { routineChanges: on.list.map((c) => c.key) });
+    expect(await shape(on.r.id)).toEqual([["warmup", "", 10, 12], ["normal", "", 20, 8], ["normal", "", 20, 8], ["normal", "", 20, 8],
+      ["normal", "L", 10, 10], ["normal", "R", 10, 10]]);
+    // a routine that already has the warm-up: nothing to ask about its kind, and its weight follows today's
+    const warm = await make("Warm", [{ ...blank, kind: "warmup" }, blank, blank]);
+    expect(warm.list.map((c) => c.kind)).toEqual(["more"]);
+    await call(C, "POST", `/workouts/${warm.w.id}/finish`, {});
+    expect(await shape(warm.r.id)).toEqual([["warmup", "", 10, 12], ["normal", "", 20, 8], ["normal", "", 20, 8]]);
+  });
+
   it("leaves the routine alone unless asked, and the menu's update saves the session's structure, never its numbers", async () => {
     const C = uuidv7();
     await eng.db.admin.query("INSERT INTO users (id, username, display_name) VALUES ($1,'menu-tester','C')", [C]);
@@ -420,12 +455,12 @@ describe("the routine's numbers and Progression", () => {
     // an older app's `declined` is ignored: a Suggest change not in `accepted` is not applied
     await call(C, "POST", `/workouts/${w.id}/finish`, { accepted: [], declined: [] });
     const after = (await call(C, "GET", `/routines/${r.id}`)).exercises;
-    // warm-up untouched, Automatic up a step; Suggest not applied keeps today's (10, the top of 8-10); below the
+    // the warm-up takes today's 25 kg (it decides nothing), Automatic up a step; Suggest not applied keeps today's (10, the top of 8-10); below the
     // default 6-12 a miss keeps the planned reps; fixed stays
-    expect(after.map((e: any) => e.sets.map((s: any) => [s.weightKg, s.reps]))).toEqual([[[20, 10], [62.5, 5], [62.5, 5]], [[40, 10]], [[32.5, 8]], [[10, 8]]]);
+    expect(after.map((e: any) => e.sets.map((s: any) => [s.weightKg, s.reps]))).toEqual([[[25, 10], [62.5, 5], [62.5, 5]], [[40, 10]], [[32.5, 8]], [[10, 8]]]);
     expect(after[2].missed).toBe(1);
     const next = await call(C, "POST", "/workouts/start", { routineId: r.id, force: true });
-    expect(next.exercises[0].sets.map((s: any) => s.weightKg)).toEqual([20, 62.5, 62.5]);
+    expect(next.exercises[0].sets.map((s: any) => s.weightKg)).toEqual([25, 62.5, 62.5]);
     const page = await call(C, "GET", `/routines/${r.id}/versions`);
     const hist = page.items;
     expect(hist.map((v: any) => [v.reason, v.current])).toEqual([["workout", true], ["edit", false]]);

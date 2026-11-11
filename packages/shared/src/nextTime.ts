@@ -1,9 +1,9 @@
 // What a finished workout means for its routine (PLAN.md §8.7), kept as two separate things:
 // - numbers: the routine always shows where you are now. After a finish each routine exercise done takes today's
-//   working numbers, then Progression decides whether its weight goes up (or down after missed workouts): planNext,
+//   numbers (warm-ups too), then Progression decides whether its weight goes up (or down after missed workouts): planNext,
 //   used by the Finish screen to list it and by the engine to save it, so the two can't disagree;
-// - structure: how this session differed from the routine (exercises added, removed, swapped, moved, sets added or
-//   left out), which only changes the routine when asked on the Finish screen (structureChanges, applyStructure).
+// - structure: how this session differed from the routine (exercises added, removed, swapped, moved, sets added, left
+//   out or changed in kind or side), which only changes the routine when asked on the Finish screen (structureChanges, applyStructure).
 import type { Progression, WorkoutExercise } from "./types";
 import type { ProgressionDefaults } from "./settings";
 import { e1rm, usesReps, usesWeight, weightForReps } from "./training";
@@ -118,16 +118,12 @@ export function pairSets<T extends Sided>(sets: Sided[], other: T[], repeatLast 
   return out;
 }
 /** Today's set in each routine set's place, the one planNext takes the numbers from (and the Next time sheet shows as
- * "You did"): the workout set in the same place among the non-warm-ups, by position so an unticked set keeps its place;
- * left and right sets each with today's of their own side (pairSets). Null: a warm-up, past today's last, unticked, or a
- * drop facing a working set or the other way round. */
+ * "You did"): the workout set in the same place, warm-ups among today's warm-ups and the rest among the rest, by
+ * position so an unticked set keeps its place; left and right sets each with today's of their own side (pairSets).
+ * Null: past today's last of its kind, unticked, or a drop facing a working set or the other way round. */
 export function todaysSets<T extends Sided & { done: boolean }>(sets: Sided[], e: { sets: T[] }): (T | null)[] {
   const isDrop = (k: string) => k === "drop";
-  return pairSets(sets, e.sets.filter((s) => s.kind !== "warmup")).map((t, i) => {
-    const rs = sets[i]!;
-    if (rs.kind === "warmup") return null;
-    return t && t.done && isDrop(t.kind) === isDrop(rs.kind) ? t : null;
-  });
+  return pairSets(sets, e.sets).map((t, i) => (t && t.done && isDrop(t.kind) === isDrop(sets[i]!.kind) ? t : null));
 }
 export type RoutineItemLike = { id?: string | null; exerciseId: string; fixed?: boolean; progression?: unknown; missed?: number; sets: unknown[] };
 
@@ -144,8 +140,9 @@ const range = (p: ProgressionOf) => (p.repsMin === p.repsMax ? `${p.repsMin}` : 
 
 /** The routine's exercises after a finished session (double progression, PLAN.md §8.7): each one done (not skipped,
  * something ticked, the same exercise as its slot) takes today's numbers set by set, each routine set from the workout
- * set in its place among the non-warm-ups, when that one was ticked and is the same kind (drop with drop, working with
- * working; warm-ups never change, unticked or mismatched places and routine sets past today's last keep theirs). The
+ * set in its place (todaysSets), when that one was ticked and is the same kind (drop with drop, working with working,
+ * warm-up with warm-up: a warm-up takes what you did but decides nothing; unticked or mismatched places and routine
+ * sets past today's last keep theirs). The
  * reps move inside the exercise's rep range (its Progression's, else Settings'): reps done in the range are next time's,
  * reps below its bottom keep the planned ones (a miss stays a miss next time). Then Progression: every working set
  * ticked and at the top of the range → heavier (the weight today's numbers say you can lift for the bottom reps, on the
@@ -174,6 +171,8 @@ export function planNext<R extends RoutineItemLike>(exercises: R[], w: { exercis
       if (!t) return rs;
       const base = { ...rs, weightKg: num(t.weightKg, rs.weightKg), durationS: num(t.durationS, rs.durationS), distanceM: num(t.distanceM, rs.distanceM) };
       if (t.reps == null) return base;
+      // a warm-up keeps what you did: it decides nothing and has no range to stay in
+      if (rs.kind === "warmup") return { ...base, reps: t.reps };
       // in the range: what you did (above its top: the top); below it, or below a plain target: the planned reps stay
       if (ranged && rs.kind !== "drop") return { ...base, reps: t.reps < p.repsMin ? rs.reps : Math.min(t.reps, p.repsMax) };
       return { ...base, reps: rs.reps != null && t.reps < rs.reps ? rs.reps : t.reps };
@@ -245,7 +244,7 @@ export function planNext<R extends RoutineItemLike>(exercises: R[], w: { exercis
  * splits what was changed on purpose from what was left undone; `text` says what happened, `action` what saving does. */
 export interface StructureChange {
   key: string;
-  kind: "added" | "removed" | "swapped" | "order" | "more" | "skipped" | "fewer";
+  kind: "added" | "removed" | "swapped" | "order" | "more" | "sets" | "skipped" | "fewer";
   group: "changed" | "notDone";
   text: string;
   action: string;
@@ -262,9 +261,33 @@ const routineOf = (routine: RoutineShape, w: SessionShape) => {
   return { slot: (e: WorkoutExercise) => (e.routineExerciseId ? byId.get(e.routineExerciseId) : undefined) };
 };
 
-/** Every way this session differed from the routine, numbers aside (planNext carries them over). Changes you made: exercises added, removed, swapped, moved, sets added. Not done: exercises
- * skipped or with nothing ticked, fewer sets ticked than the routine has. Nothing here changes the routine by itself:
- * each is saved only when asked (applyStructure, used by the engine for both places that save). */
+// a set's place in the layout: its kind and side ("normal", "warmupL")
+const shapeOf = (s: Sided) => `${s.kind || "normal"}${s.side === "L" || s.side === "R" ? s.side : ""}`;
+const SHAPE: Record<string, string> = { warmup: "warm-up", normal: "set", drop: "drop set", failure: "to-failure set" };
+/** Sets in plain words, by kind and side in the order they first come: "1 warm-up, 3 sets and 1 left set". */
+function shapesText(xs: string[]): string {
+  const counts = new Map<string, number>();
+  for (const x of xs) counts.set(x, (counts.get(x) ?? 0) + 1);
+  const parts = [...counts].map(([x, k]) => {
+    const side = x.endsWith("L") ? "left " : x.endsWith("R") ? "right " : "", kind = side ? x.slice(0, -1) : x;
+    return plural(k, side + (SHAPE[kind] ?? "set"));
+  });
+  return parts.length > 1 ? `${parts.slice(0, -1).join(", ")} and ${parts.at(-1)}` : parts[0] ?? "no sets";
+}
+/** The sets of `big` left once `small` is found in it in order (each of `small` at its next match), or null when
+ * `small` isn't in it in that order. */
+function extraOf(small: string[], big: string[]): string[] | null {
+  const rest: string[] = [];
+  let i = 0;
+  for (const x of big) { if (i < small.length && small[i] === x) i++; else rest.push(x); }
+  return i < small.length ? null : rest;
+}
+
+/** Every way this session differed from the routine, numbers aside (planNext carries them over). Changes you made:
+ * exercises added, removed, swapped, moved, sets added, sets changed (a set made a warm-up, a drop or to-failure set,
+ * left and right sets in place of one): any difference in the kind and side of the ticked sets. Not done: exercises
+ * skipped or with nothing ticked, sets left out. Nothing here changes the routine by itself: each is saved only when
+ * asked (applyStructure, used by the engine for both places that save). */
 export function structureChanges(routine: RoutineShape, w: SessionShape): StructureChange[] {
   const changed: StructureChange[] = [], notDone: StructureChange[] = [];
   const { slot } = routineOf(routine, w);
@@ -282,9 +305,16 @@ export function structureChanges(routine: RoutineShape, w: SessionShape): Struct
     const label = r.exerciseId !== e.exerciseId ? `${rName} (today: ${name})` : rName;
     if (!wasDone(e)) { notDone.push({ key: `skipped:${r.id}`, kind: "skipped", group: "notDone", text: `Remove ${rName} from the routine`, action: e.status === "skipped" ? "You skipped it in this workout" : "No sets were ticked in this workout" }); continue; }
     if (r.exerciseId !== e.exerciseId) changed.push({ key: `swapped:${r.id}`, kind: "swapped", group: "changed", text: `Replace ${rName} with ${name}`, action: `You swapped it in this workout · ${name} takes its place and settings` });
-    const done = e.sets.filter((s) => s.done).length, planned = r.sets.length;
-    if (done > planned) changed.push({ key: `more:${r.id}`, kind: "more", group: "changed", text: `Add ${plural(done - planned, "set")} to ${label}`, action: `You did ${done} sets, the routine has ${planned} · it would have ${done}` });
-    if (done < planned) notDone.push({ key: `fewer:${r.id}`, kind: "fewer", group: "notDone", text: `Remove ${plural(planned - done, "set")} from ${label}`, action: `You did ${done} of ${planned} sets · the routine would have ${done}` });
+    // the sets' layout (kind and side of each, in order): today's ticked sets against the routine's. Only sets added
+    // (a warm-up put in front, left and right sets after) is "more", only sets left out is "fewer", anything else (a
+    // set made a warm-up, a set split into sides) is "sets"; each saves today's layout (reshape), never by itself
+    const t = e.sets.filter((s) => s.done).map(shapeOf), rr = (r.sets as Sided[]).map(shapeOf);
+    if (t.join() === rr.join()) continue;
+    const both = `You did ${shapesText(t)} · the routine has ${shapesText(rr)}`;
+    const added = extraOf(rr, t), left = extraOf(t, rr);
+    if (added) changed.push({ key: `more:${r.id}`, kind: "more", group: "changed", text: `Add ${shapesText(added)} to ${label}`, action: both });
+    else if (left) notDone.push({ key: `fewer:${r.id}`, kind: "fewer", group: "notDone", text: `Remove ${shapesText(left)} from ${label}`, action: `You did ${t.length} of ${rr.length} sets · the routine would have ${t.length}` });
+    else changed.push({ key: `sets:${r.id}`, kind: "sets", group: "changed", text: `Use this workout's sets for ${label}`, action: both });
   }
   for (const r of routine.exercises) if (r.id && !inWorkout.has(r.id)) changed.push({ key: `removed:${r.id}`, kind: "removed", group: "changed", text: `Remove ${r.exercise?.name ?? "an exercise"} from the routine`, action: "You removed it from this workout" });
   // order: the routine's own exercises done today, today's sequence against the routine's
@@ -299,7 +329,7 @@ const setBody = (s: WorkoutExercise["sets"][number]): SetBody => ({ kind: s.kind
 
 /** The routine's exercises after saving the changes whose keys are in `accept` (the rest stay as the routine has them).
  * Structure only: exercises the routine already had keep their own settings, weights and reps (a set added copies the
- * exercise's last one); only an exercise added or swapped in takes today's ticked numbers, as the routine has none
+ * exercise's last one of its kind; a set layout saved takes today's kinds and sides); only an exercise added or swapped in takes today's ticked numbers, as the routine has none
  * for it (one swapped in keeps the routine's sets, warm-ups as they are, unless its fewer/more row is on too). An
  * added exercise carries `fromWorkoutExerciseId` so the saver can point the workout exercise at the routine exercise
  * it became. Returns null when nothing asked for applies. */
@@ -317,9 +347,10 @@ export function applyStructure<R extends RoutineShape["exercises"][number]>(rout
     if (!e) return r;
     const done = e.sets.filter((s) => s.done);
     const sets = r.sets as Record<string, unknown>[];
+    const reshape = keys.has(`fewer:${id}`) || keys.has(`more:${id}`) || keys.has(`sets:${id}`);
     if (keys.has(`swapped:${id}`)) {
       // the slot keeps its id, so its Progression, rests, note and pinned notes now go with the exercise swapped in
-      if (keys.has(`fewer:${id}`) || keys.has(`more:${id}`)) return { ...r, exerciseId: e.exerciseId, sets: done.map(setBody) };
+      if (reshape) return { ...r, exerciseId: e.exerciseId, sets: done.map(setBody) };
       // the routine's sets matched by kind: its warm-ups stay as they are, each working set takes today's working
       // numbers in turn (past today's last one, that one again); with no working set ticked the routine's own stay
       // (left and right sets each from today's of their side); each keeps the routine's own side
@@ -331,8 +362,12 @@ export function applyStructure<R extends RoutineShape["exercises"][number]>(rout
         return t ? { ...setBody(t), kind: (rs.kind as string) ?? "normal", side: (rs.side as string | null | undefined) ?? null } : rs;
       }) };
     }
-    if (keys.has(`fewer:${id}`)) return { ...r, sets: sets.slice(0, done.length) };
-    if (keys.has(`more:${id}`)) return { ...r, sets: [...sets, ...done.slice(sets.length).map((s) => ({ ...(sets.at(-1) ?? {}), kind: s.kind, side: s.side ?? null }))] };
+    // today's ticked sets in their order, kind and side; each keeps the routine's own set it pairs with (its numbers and
+    // rest), a working set the routine has none for copies its last one, a warm-up it has none for takes today's
+    if (reshape) {
+      const own = pairSets(done, sets as Sided[], true);
+      return { ...r, sets: done.map((t, i) => (own[i] ? { ...own[i], kind: t.kind, side: t.side ?? null } : setBody(t))) };
+    }
     return r;
   };
   // the order to build in: today's when asked for (exercises not done today, whether skipped, with nothing ticked or not

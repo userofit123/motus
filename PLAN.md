@@ -679,15 +679,19 @@ This is the heart of the tracker. One simple model (M-74):
   workout, an exercise added on the spot) fills in from that exercise's last session. There is no setting
   for either.
 - After each finished workout, every routine exercise that was done (not skipped, something ticked, the
-  same exercise as its slot) takes today's working numbers: working sets are matched in order (warm-ups
-  never change; routine sets past today's last keep theirs). Weight, duration and distance become what you
+  same exercise as its slot) takes today's numbers: sets are matched in order, warm-ups with warm-ups and
+  working sets with working sets (a warm-up keeps what you did but never decides Progression; routine sets past
+  today's last of their kind keep theirs). Weight, duration and distance become what you
   did. Reps move inside the exercise's rep range (Progression's, below): reps done in it become next time's
   (above its top: the top), reps below its bottom keep the planned ones (so misses count). Exercises without
   both weight and reps: a rep target takes today's reps when reached. Skipped exercises keep everything.
 - "Keep these numbers fixed" (per exercise, ⋮ menu; hint "The numbers don't update after workouts and
   progression is off"): workouts never change its numbers.
 - Structure (exercises, sets, order) changes only through the Finish screen's "Routine changes" switches
-  and a finished workout's ⋮ "Update the routine from this" (structure only there).
+  and a finished workout's ⋮ "Update the routine from this" (structure only there). Sets count as structure by
+  kind and side, not only by number: sets added ("Add 1 warm-up and 1 left set to Curl"), left out, or changed
+  ("Use this workout's sets for Curl": a set made a warm-up, left and right sets in place of one), each off until
+  switched on. The Finish screen says weights and reps are saved either way, as Next time lists them.
 - "Show last time's numbers" keeps the Previous column beside each set.
 - Pending reminder actions apply on top at the start ("increase weight 2.5 kg"). Older "Ready for more
   weight" reminders still show and apply; none are made any more.
@@ -717,7 +721,7 @@ This is the heart of the tracker. One simple model (M-74):
   the finish, so the two can't disagree. Old "Progression rules" became each exercise's own Automatic.
 
 **3. Finish: "Next time".** One compact card, "The routine's numbers", with a line only for what applies ("4
-exercises have new numbers", "1 weight goes up automatically", "2 suggestions to review" in the accent colour, "1
+exercises have new numbers from this workout, saved on finish", "1 weight goes up automatically", "2 suggestions to review" in the accent colour, "1
 exercise has sets you didn't tick"; else "The routine stays the same"). Tapping it opens the "Next time" sheet:
 each exercise whose routine numbers change, set by set in a table with three labelled columns (M-107):
 "Planned" (the routine before this workout, as the switched-on routine changes shape it), "You did" (today's
@@ -1367,6 +1371,7 @@ Research items (IDs from §18) are placed in the phase they belong to.
 | 2026-11-03 | The everyday optional features (set types, supersets, plates, warm-ups, sides, programs, body, steps, daily log, achievements, reports, standards…) start **on** for new accounts; the rest stay off (§10.0) |
 | 2026-11-09 | One model for next time's numbers (M-74, §8.7): the routine always has the current numbers (today's after each finish), Progression (Suggest / Automatic / Off) moves the weight, History keeps every version. "Start from what you did last time", its scope, the "Progression rules" feature and more-weight reminders are gone |
 | 2026-11-10 | Rep range merged into Progression (M-107, §8.7): one range per exercise (default 6-12 in Settings, its own in the routine editor's Progression row), double progression (top of the range on every set → heavier from the estimated one-rep max, back to the bottom), steps for one side (2.5 kg) and both sides (5 kg), lowering only after N missed workouts |
+| 2026-11-11 | Set layout is structure (§8.7): a set's kind and side count, so sets made warm-ups or split into left and right are listed on Finish with a switch, off by default, like sets added or left out; warm-ups take today's numbers like working sets but never decide Progression |
 
 Still open, not blocking: server port/domain for your deployment (default `127.0.0.1:8790`).
 

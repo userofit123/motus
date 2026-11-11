@@ -18,9 +18,9 @@ describe("planNext", () => {
   const warm = () => set({ kind: "warmup", weightKg: 15, reps: 10 });
   const at = (weightKg: number, reps: number, p: Partial<WorkoutSet> = {}) => set({ weightKg, reps, ...p });
 
-  it("takes today's weights and the reps done inside the range; warm-ups stay; no change of weight below the top", () => {
+  it("takes today's weights and the reps done inside the range; warm-ups too; no change of weight below the top", () => {
     const r = planNext([slot()], done([warm(), at(22.5, 10), at(20, 7)]), D);
-    expect(view(r.exercises[0]!.sets)).toEqual([["warmup", 10, 10], ["normal", 22.5, 10], ["normal", 20, 7]]);
+    expect(view(r.exercises[0]!.sets)).toEqual([["warmup", 15, 10], ["normal", 22.5, 10], ["normal", 20, 7]]);
     expect(r.changes).toEqual([]);
     expect(r.numbersChanged).toBe(true);
   });
@@ -128,14 +128,14 @@ describe("planNext", () => {
   it("pairs routine sets by place, so an unticked middle set keeps its own numbers", () => {
     const three = slot({ sets: [rs({ kind: "warmup", reps: 10, weightKg: 10 }), rs({}), rs({}), rs({})] });
     const r = planNext([three], done([warm(), at(22.5, 10), at(30, 3, { done: false }), at(25, 9)]), D);
-    expect(view(r.exercises[0]!.sets)).toEqual([["warmup", 10, 10], ["normal", 22.5, 10], ["normal", 20, 8], ["normal", 25, 9]]);
+    expect(view(r.exercises[0]!.sets)).toEqual([["warmup", 15, 10], ["normal", 22.5, 10], ["normal", 20, 8], ["normal", 25, 9]]);
     expect(r.changes).toEqual([]);
   });
 
   it("pairs drops with drops only: a ticked drop set never gives a working set its weight", () => {
     const withDrop = slot({ sets: [rs({ kind: "warmup", reps: 10, weightKg: 10 }), rs({}), rs({ kind: "drop", reps: 10, weightKg: 15 })] });
     const r = planNext([withDrop], done([warm(), at(20, 8, { done: false }), at(12, 10, { kind: "drop" })]), D);
-    expect(view(r.exercises[0]!.sets)).toEqual([["warmup", 10, 10], ["normal", 20, 8], ["drop", 12, 10]]);
+    expect(view(r.exercises[0]!.sets)).toEqual([["warmup", 15, 10], ["normal", 20, 8], ["drop", 12, 10]]);
     expect(r.changes).toEqual([]);
   });
 
@@ -159,13 +159,16 @@ describe("planNext", () => {
 
   it("applies a lower only when accepted (Suggest), and the missed count starts again either way", () => {
     const miss = done([warm(), at(20, 4), at(20, 5)]);
-    expect(planNext([slot({ missed: 2 })], miss, D).exercises[0]).toMatchObject({ missed: 0, sets: [{ weightKg: 10 }, { weightKg: 20 }, { weightKg: 20 }] });
-    expect(planNext([slot({ missed: 2 })], miss, D, ["re1"]).exercises[0]).toMatchObject({ missed: 0, sets: [{ weightKg: 10 }, { weightKg: 15 }, { weightKg: 15 }] });
+    expect(planNext([slot({ missed: 2 })], miss, D).exercises[0]).toMatchObject({ missed: 0, sets: [{ weightKg: 15 }, { weightKg: 20 }, { weightKg: 20 }] });
+    expect(planNext([slot({ missed: 2 })], miss, D, ["re1"]).exercises[0]).toMatchObject({ missed: 0, sets: [{ weightKg: 15 }, { weightKg: 15 }, { weightKg: 15 }] });
   });
 
   it("says the numbers didn't change when today matched the routine", () => {
-    expect(planNext([slot()], done([warm(), at(20, 8), at(20, 8)]), D).numbersChanged).toBe(false);
-    expect(planNext([slot()], done([warm(), at(20, 9), at(20, 8)]), D).numbersChanged).toBe(true);
+    const same = () => set({ kind: "warmup", weightKg: 10, reps: 10 });
+    expect(planNext([slot()], done([same(), at(20, 8), at(20, 8)]), D).numbersChanged).toBe(false);
+    expect(planNext([slot()], done([same(), at(20, 9), at(20, 8)]), D).numbersChanged).toBe(true);
+    // a heavier warm-up is a change too
+    expect(planNext([slot()], done([warm(), at(20, 8), at(20, 8)]), D).numbersChanged).toBe(true);
   });
 
   // a first workout of a new routine (no weight, 8 reps planned), sets added, 46 kg x 12 on every left and right set:
@@ -175,7 +178,9 @@ describe("planNext", () => {
     const blank = rs({ reps: 8, weightKg: null });
     const r0 = { id: "re1", exerciseId: "x", fixed: false, progression: { mode: "auto" }, missed: 0, sets: [blank, blank, blank] };
     const w = done([1, 2, 3].flatMap(() => [at(46, 12, { side: "L" }), at(46, 12, { side: "R" })]));
-    const shaped = applyStructure({ exercises: [r0] }, w, ["more:re1"]) as typeof r0[];
+    // three sets for both sides together became left and right ones: a change of sets, not only more of them
+    expect(structureChanges({ exercises: [r0] }, w).map((c) => c.key)).toEqual(["sets:re1"]);
+    const shaped = applyStructure({ exercises: [r0] }, w, ["sets:re1"]) as typeof r0[];
     expect(shaped[0]!.sets).toHaveLength(6);
     const r = planNext(shaped, w, D);
     expect(r.exercises[0]!.sets.map((x: any) => [x.weightKg, x.reps])).toEqual(Array(6).fill([52.5, 6]));
@@ -202,7 +207,7 @@ describe("structureChanges", () => {
       ex({ name: "F", id: "wf", exerciseId: "F", sets: [set({})] })] };
     // D was taken out of the workout; B was swapped for E; C got a set more; A had one not done
     expect(structureChanges(routine, w).map((c) => [c.key, c.group, c.text, c.action])).toEqual([
-      ["more:rc", "changed", "Add 1 set to C", "You did 2 sets, the routine has 1 · it would have 2"],
+      ["more:rc", "changed", "Add 1 set to C", "You did 2 sets · the routine has 1 set"],
       ["swapped:rb", "changed", "Replace B with E", "You swapped it in this workout · E takes its place and settings"],
       ["added:wf", "changed", "Add F to the routine", "You added it in this workout · it joins with today's 1 set"],
       ["removed:rd", "changed", "Remove D from the routine", "You removed it from this workout"],
@@ -273,6 +278,63 @@ describe("applyStructure", () => {
       ex({ name: "C", exerciseId: "C", routineExerciseId: "rc", sets: [set({})] })] };
     expect(structureChanges(r3, w4).map((c) => c.key)).toContain("order");
     expect(applyStructure(r3, w4, ["order"])!.map((e: any) => e.exerciseId)).toEqual(["D", "A", "B", "C"]);
+  });
+});
+
+// The developer's report: a routine of 3 sets with no weights; in the workout set 1 made a warm-up with a weight, a
+// working set added, then a left and a right set, everything ticked. Finish must list it (off), save nothing of the
+// layout unasked, and carry the warm-up's weight either way.
+describe("a workout with sets added, made warm-ups and split into sides", () => {
+  const D = { mode: "suggest" as const, repsMin: 6, repsMax: 12, stepKg: 5, stepOneSideKg: 2.5, lowerAfter: 3 };
+  const blank = (p: Record<string, unknown> = {}) => ({ kind: "normal", reps: 8, weightKg: null, durationS: null, distanceM: null, side: null, ...p });
+  const view = (sets: unknown[]) => (sets as RoutineSetLike[]).map((s) => [s.kind, s.side ?? "", s.weightKg, s.reps]);
+  const today = () => ({ exercises: [ex({ name: "Curl", exerciseId: "x", routineExerciseId: "re1", sets: [
+    set({ kind: "warmup", weightKg: 10, reps: 12 }), set({ weightKg: 20, reps: 8 }), set({ weightKg: 20, reps: 8 }), set({ weightKg: 20, reps: 8 }),
+    set({ weightKg: 10, reps: 10, side: "L" }), set({ weightKg: 10, reps: 10, side: "R" })] })] });
+  const routine = () => ({ exercises: [{ id: "re1", exerciseId: "x", exercise: { name: "Curl" }, fixed: false, progression: null, missed: 0, sets: [blank(), blank(), blank()] }] });
+
+  // set 1 made a warm-up and a working set added reads as a warm-up in front of the routine's 3 sets
+  it("lists the sets added by kind and side, with a switch that starts off", () => {
+    expect(structureChanges(routine(), today()).map((c) => [c.key, c.group, c.text, c.action])).toEqual([
+      ["more:re1", "changed", "Add 1 warm-up, 1 left set and 1 right set to Curl", "You did 1 warm-up, 3 sets, 1 left set and 1 right set · the routine has 3 sets"]]);
+    expect(applyStructure(routine(), today(), [])).toBeNull();
+  });
+
+  it("not switched on: the routine keeps its 3 sets, which take today's working numbers (the warm-up has no place)", () => {
+    const r = planNext(routine().exercises, today(), D);
+    expect(view(r.exercises[0]!.sets)).toEqual([["normal", "", 20, 8], ["normal", "", 20, 8], ["normal", "", 20, 8]]);
+  });
+
+  it("switched on: the routine gets today's sets, the warm-up and the sides with today's weights", () => {
+    const shaped = applyStructure(routine(), today(), ["more:re1"]) as ReturnType<typeof routine>["exercises"];
+    const r = planNext(shaped, today(), D);
+    expect(view(r.exercises[0]!.sets)).toEqual([["warmup", "", 10, 12], ["normal", "", 20, 8], ["normal", "", 20, 8], ["normal", "", 20, 8],
+      ["normal", "L", 10, 10], ["normal", "R", 10, 10]]);
+  });
+
+  it("a set made a warm-up with nothing added is listed as a change of sets, and a routine warm-up takes today's weight", () => {
+    // the routine already has a warm-up: its weight follows today's, with no switch needed
+    const withWarm = { exercises: [{ ...routine().exercises[0]!, sets: [blank({ kind: "warmup", reps: 10 }), blank(), blank(), blank()] }] };
+    const w = today();
+    w.exercises[0]!.sets = w.exercises[0]!.sets.slice(0, 4);
+    expect(structureChanges(withWarm, w)).toEqual([]);
+    expect(view(planNext(withWarm.exercises, w, D).exercises[0]!.sets)[0]).toEqual(["warmup", "", 10, 12]);
+    // 3 working sets in the routine, today the first made a warm-up: listed, and only saved when switched on
+    const w2 = today();
+    w2.exercises[0]!.sets = w2.exercises[0]!.sets.slice(0, 3);
+    const ch = structureChanges(routine(), w2);
+    expect(ch.map((c) => [c.key, c.text, c.action])).toEqual([["sets:re1", "Use this workout's sets for Curl", "You did 1 warm-up and 2 sets · the routine has 3 sets"]]);
+    expect(view(planNext(routine().exercises, w2, D).exercises[0]!.sets).map((x) => x[0])).toEqual(["normal", "normal", "normal"]);
+    const on = applyStructure(routine(), w2, ["sets:re1"]) as ReturnType<typeof routine>["exercises"];
+    expect(view(planNext(on, w2, D).exercises[0]!.sets)).toEqual([["warmup", "", 10, 12], ["normal", "", 20, 8], ["normal", "", 20, 8]]);
+  });
+
+  it("sets left out are listed as not done, whichever ones they were", () => {
+    const withWarm = { exercises: [{ ...routine().exercises[0]!, sets: [blank({ kind: "warmup" }), blank(), blank()] }] };
+    const w = { exercises: [ex({ name: "Curl", exerciseId: "x", routineExerciseId: "re1", sets: [set({ kind: "warmup", done: false }), set({ weightKg: 20, reps: 8 }), set({ weightKg: 20, reps: 8 })] })] };
+    expect(structureChanges(withWarm, w).map((c) => [c.key, c.group, c.text])).toEqual([["fewer:re1", "notDone", "Remove 1 warm-up from Curl"]]);
+    const out = applyStructure(withWarm, w, ["fewer:re1"]) as ReturnType<typeof routine>["exercises"];
+    expect(out[0]!.sets.map((x) => x.kind)).toEqual(["normal", "normal"]);
   });
 });
 
