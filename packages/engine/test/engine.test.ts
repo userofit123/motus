@@ -99,11 +99,21 @@ describe("engine", () => {
     const live = async () => (await call(T, "GET", `/workouts/${w2.id}`)).exercises[0].sets;
     const [logged, todo] = await live();
     expect(logged).toMatchObject({ done: true, reps: null, durationS: 30 });
-    expect(todo).toMatchObject({ done: false, reps: 8, durationS: null, weightKg: 40 });
+    // the new reps are what the set starts with, so finishing doesn't take them for typed in
+    expect(todo).toMatchObject({ done: false, reps: 8, durationS: null, weightKg: 40, startReps: 8 });
     await call(T, "PUT", `/exercises/${squat.id}/prefs`, { timed: true });
-    expect((await live())[1]).toMatchObject({ reps: null, durationS: 30, weightKg: 40 });
+    expect((await live())[1]).toMatchObject({ reps: null, durationS: 30, weightKg: 40, startReps: null });
     await call(T, "PUT", `/exercises/${squat.id}/prefs`, { timed: null });
     await call(T, "POST", `/workouts/${w2.id}/discard`);
+    // a set planned with a rep target loses it once timed (a timed set has none), so it isn't counted as reps missed
+    const w3 = await call(T, "POST", "/workouts/start", { routineId: r.id });
+    expect(w3.exercises[0].sets[0]).toMatchObject({ reps: 8, targetReps: 8 });
+    await call(T, "PUT", `/exercises/${squat.id}/prefs`, { timed: true });
+    const [timedSet] = (await call(T, "GET", `/workouts/${w3.id}`)).exercises[0].sets;
+    expect(timedSet).toMatchObject({ reps: null, durationS: 30, targetReps: null, startReps: null });
+    expect(timedSet.targetRepsMax ?? null).toBeNull();
+    await call(T, "PUT", `/exercises/${squat.id}/prefs`, { timed: null });
+    await call(T, "POST", `/workouts/${w3.id}/discard`);
     // editing your own exercise saves "Track it by" onto it and clears the personal switch, so the pick sticks
     const mine = (await call(T, "POST", "/exercises", { name: "Timed test", tracking: "weight_reps" })).id;
     await call(T, "PUT", `/exercises/${mine}/prefs`, { timed: true });

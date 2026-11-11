@@ -202,8 +202,13 @@ async function retimeRoutines(ctx: Ctx, exId: string, before: Tracking | null): 
     : `duration_s = NULL, reps = coalesce(nullif(s.reps, 0), ${NEW_SET_REPS})`;
   await ctx.q.query(`UPDATE routine_sets s SET ${sets} FROM routine_exercises re
     WHERE re.id = s.routine_exercise_id AND re.exercise_id = $1 AND s.user_id = $2`, [exId, ctx.userId]);
-  const live = isTimed(after) ? `reps = NULL, duration_s = coalesce(nullif(s.duration_s, 0), ${NEW_SET_S})`
-    : `duration_s = NULL, reps = coalesce(nullif(s.reps, 0), ${NEW_SET_REPS})`;
+  // a timed set has no rep target (as a planned one never has), so nothing counts it as reps missed or rests it
+  // longer; back on reps, the new reps are what the set starts with, so finishing doesn't take them for typed in
+  // (the weight start falls back to the target, as it did while no start was kept)
+  const live = isTimed(after)
+    ? `reps = NULL, target_reps = NULL, target_reps_max = NULL, start_reps = NULL, duration_s = coalesce(nullif(s.duration_s, 0), ${NEW_SET_S})`
+    : `duration_s = NULL, reps = coalesce(nullif(s.reps, 0), ${NEW_SET_REPS}), start_reps = coalesce(nullif(s.reps, 0), ${NEW_SET_REPS}),
+      start_weight_kg = coalesce(s.start_weight_kg, s.target_weight_kg)`;
   await ctx.q.query(`UPDATE workout_sets s SET ${live} FROM workout_exercises we JOIN workouts w ON w.id = we.workout_id
     WHERE we.id = s.workout_exercise_id AND we.exercise_id = $1 AND w.status = 'in_progress' AND NOT s.done AND s.user_id = $2`, [exId, ctx.userId]);
   return true;

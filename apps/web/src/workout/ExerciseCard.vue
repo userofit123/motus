@@ -2,7 +2,7 @@
 // One exercise in the running workout: its reminders and pinned notes when it comes up, and the sets table
 // (Previous · kg · Reps · ✓). The routine's numbers are already filled in (last time's in an empty workout); tap Previous to copy it, tick to log the set.
 import { computed, ref, onBeforeUnmount } from "vue";
-import { usesWeight, usesReps, usesDuration, usesDistance, toM, fromM, parseQuick, warmups, muscleName, sideJoins, restDefaultsOf, retimeSet, type Tracking, type WorkoutExercise, type WorkoutSet } from "@motus/shared";
+import { usesWeight, usesReps, usesDuration, usesDistance, toM, fromM, parseQuick, warmups, muscleName, sideJoins, restDefaultsOf, retimeSet, isTimed, type Tracking, type WorkoutExercise, type WorkoutSet } from "@motus/shared";
 import { joinRest } from "../core/plannedRest";
 import { SET_KINDS, setNo as setNoOf, sideJoinCls } from "../core/format";
 import { useWorkout } from "./useWorkout";
@@ -107,7 +107,13 @@ async function addWarmups() {
 // kept; done ones keep what was logged), so this copy only shows the same until the refetch, without saving again
 function retime(t: Tracking) {
   if (props.e.exercise) props.e.exercise.tracking = t;
-  for (const s of props.e.sets) { const patch = s.done ? null : retimeSet(s, t); if (patch) Object.assign(s, patch); }
+  for (const s of props.e.sets) {
+    if (s.done) continue;
+    Object.assign(s, retimeSet(s, t));
+    // as the server does: timed sets lose their rep target and start; reps start from the new ones
+    if (isTimed(t)) Object.assign(s, { targetReps: null, targetRepsMax: null, startReps: null });
+    else Object.assign(s, { startReps: s.reps, startWeightKg: s.startWeightKg ?? s.targetWeightKg });
+  }
 }
 // in groups: what it is and reminders, doing it or not, its rests and tools, then Remove on its own
 const menu = computed(() => [
