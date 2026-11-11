@@ -2,6 +2,11 @@
 
 The top entry's version is the one the release workflow publishes. Add a new `## [x.y.z]` section to release.
 
+## [0.1.17] - 2026-11-11
+
+- Tapping a tab while a page is still loading (for example right after opening the app) opens the new page straight away, and every tap after it keeps working. Before, the next page could take a while and a further tap might never open, until the app was restarted.
+- Leaving a page no longer fades it out; the new page comes in at once and starts at the top.
+
 ## [0.1.16] - 2026-11-11
 
 - Finish lists every change to a routine's sets, each with its own switch, all off: sets added or left out, sets made warm-ups, left and right sets, and sets done in another order. The routine's sets change only where you switch one on; weights and reps are saved either way, and Finish says so.
