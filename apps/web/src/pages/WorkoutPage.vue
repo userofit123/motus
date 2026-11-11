@@ -6,11 +6,12 @@ import { startWorkout } from "../workout/start";
 import { goBack } from "../core/leave";
 import { computed, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { usesWeight, usesReps, muscleName, structureChanges, type StructureChange } from "@motus/shared";
+import { usesWeight, usesReps, muscleName, structureChanges, sideJoins, restDefaultsOf, type StructureChange } from "@motus/shared";
 import { useWorkoutQuery, useSettings, loaded } from "../api/queries";
 import { api, mediaUrl } from "../api/client";
 import { invalidate } from "../api/live";
-import { useFmt, localYmd, setLabel } from "../core/format";
+import { joinRest } from "../core/plannedRest";
+import { useFmt, localYmd, setLabel, sideJoinCls } from "../core/format";
 import { reminderText } from "../core/reminderText";
 import { exerciseSheet, noteSheet } from "../core/ui";
 import { confirm, prompt } from "../core/ask";
@@ -39,6 +40,10 @@ const doneLine = computed(() => { const t = rep.value?.totals; if (!t) return ""
   return [fmt.value.dur(t.durationS, true), `${t.workingSets} set${t.workingSets === 1 ? "" : "s"}`, t.volumeKg ? fmt.value.vol(t.volumeKg) : "", t.records ? `${t.records} new record${t.records === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · "); });
 const editing = ref(false), adding = ref(false);
 const verdict = (weId: string) => rep.value?.perExercise.find((p: any) => p.workoutExerciseId === weId);
+// a left and right round with no rest between its sides (the rest it planned, else the workout's rule): a bar joins the
+// two badges, as in the workout
+const joins = computed(() => { const d = restDefaultsOf({ ...s.value.workout, ...(w.value?.settings ?? {}) }), on = !!s.value.features.unilateral;
+  return new Map<string, boolean[]>((w.value?.exercises ?? []).map((e: any) => [e.id, on ? sideJoins(e.sets, (j) => joinRest(e, j, d)) : []])); });
 const delta = (a: number | null | undefined, b: number | null | undefined) => (a == null || b == null || !b ? null : a - b);
 
 async function save(path: string, body: unknown, method: "put" | "del" | "post" = "put") {
@@ -166,7 +171,7 @@ await loaded(q);
           <table v-if="e.sets.length" class="sets">
             <tbody>
               <tr v-for="(x, j) in e.sets" :key="x.id">
-                <td><span class="sk" :class="{ w: x.kind === 'warmup', d: x.kind === 'drop', f: x.kind === 'failure' }">{{ setLabel(e.sets, j, !!s.features.unilateral) }}</span></td>
+                <td :class="sideJoinCls(e.sets, joins.get(e.id) ?? [], j)"><span class="sk" :class="{ w: x.kind === 'warmup', d: x.kind === 'drop', f: x.kind === 'failure' }">{{ setLabel(e.sets, j, !!s.features.unilateral) }}</span></td>
                 <template v-if="!editing">
                   <td style="text-align:start;font-weight:500">{{ fmt.set(x, e.exercise?.tracking) }}<span v-if="x.rpe" class="tiny"> @ {{ x.rpe }}</span></td>
                   <td class="tiny" style="text-align:end;white-space:nowrap" :title="x.restPlannedS != null ? `Planned rest ${fmt.clock(x.restPlannedS)}` : undefined">{{ x.restActualS != null ? `Rest ${fmt.clock(x.restActualS)}` : "" }}</td>

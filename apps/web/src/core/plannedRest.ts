@@ -1,4 +1,4 @@
-import { restAfterSet, opensSideRound, type RestDefaults, type WorkoutPrefs, restDefaultsOf, type RoutineExercise, type RoutineSet, type SetKind } from "@motus/shared";
+import { restAfterSet, planSetRest, type WorkoutExercise, opensSideRound, type RestDefaults, type WorkoutPrefs, restDefaultsOf, type RoutineExercise, type RoutineSet, type SetKind } from "@motus/shared";
 
 type Ex = Pick<RoutineExercise, "restS" | "restAfterS" | "restByKind">;
 // The rest a routine plans after a set of one kind (the exercise's, then the person's defaults): one place so the
@@ -8,6 +8,10 @@ export const restForKind = (e: Ex, kind: SetKind, isLastSet: boolean, d: RestDef
 // ...and after one particular set, which may have its own rest or be followed by a drop (or open a left and right round)
 export const plannedRest = (e: Ex & { sets: RoutineSet[] }, x: RoutineSet, j: number, d: RestDefaults): number =>
   restForKind(e, x.kind, j === e.sets.length - 1, d, x.restS, e.sets[j + 1]?.kind, opensSideRound(e.sets, j));
+// The rest a workout exercise planned after set j, for joining left and right rounds (sideJoins): the set's own planned
+// rest, else the plan's rule. Never restFor, which adds runtime changes (adaptive rest, supersets) and would make the bar flicker.
+export const joinRest = (e: WorkoutExercise, j: number, d: RestDefaults): number =>
+  e.sets[j]?.restPlannedS ?? planSetRest(e.sets, j, e, d);
 
 const KIND_LABEL: Partial<Record<SetKind, string>> = { warmup: "after warm-ups", failure: "after failure sets", drop: "after drops" };
 /** ["1:00 after warm-ups", "1:45 between sets", "2:30 after the last one"]: the routine editor's and the routine page's rest

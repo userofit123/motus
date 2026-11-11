@@ -367,6 +367,20 @@ html.phone { --tabh: 64px; }
 .setgrid .sk.f { color: var(--neg); }
 /* a drop hangs off the set above it */
 .sitem.drop .sk { translate: 8px 0; }
+/* a left and right round with no rest between (sideJoins, classes from sideJoinCls): a bar from the first side's badge to
+   the second's, the same in the workout's table, a finished workout and the routine grids. Each row draws its own part,
+   from its badge to the middle of the space between the rows, so rows of any height still meet; --sj-x is the badge's
+   centre, --sj-h its height, --sj-gap the space between two rows */
+.sets { --sj-x: 25px; --sj-h: 26px; --sj-gap: 5px; }
+.setgrid { --sj-x: 19px; --sj-h: 30px; --sj-gap: 0px; }
+.sj-a, .sj-b, .sj-m { position: relative; }
+.sj-a::after, .sj-b::before, .sj-m::before { content: ""; position: absolute; inset-inline-start: var(--sj-x); width: 2px; background: color-mix(in srgb, var(--acc) 55%, transparent); pointer-events: none; }
+.sj-a::after { top: calc(50% + var(--sj-h) / 2); bottom: calc(var(--sj-gap) / -2); border-radius: var(--pill) var(--pill) 0 0; }
+.sj-b::before { top: calc(var(--sj-gap) / -2); bottom: calc(50% + var(--sj-h) / 2); border-radius: 0 0 var(--pill) var(--pill); }
+/* a row between the two sides (the first side's own "No rest"): the bar runs behind its R badge */
+.sj-m::before { top: calc(var(--sj-gap) / -2); bottom: calc(var(--sj-gap) / -2); }
+.sj-m > .sk { position: relative; }
+.sj-done::after, .sj-done::before { background: color-mix(in srgb, var(--pos) 60%, transparent); }
 /* the "×" between weight and reps: its own narrow column, quiet, centred on the boxes (routine editor and routine page) */
 .setgrid > .sx, .shead > .sx, .sets .sx { text-align: center; color: var(--tx2); font-size: 14px; font-weight: 400; line-height: 1; text-transform: none; letter-spacing: 0; user-select: none; }
 .sets .sx { width: 14px; padding-inline: 0; }

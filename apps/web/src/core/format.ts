@@ -139,6 +139,15 @@ export function setSummary(sets: any[], t: Tracking, f: { clock: (s: number) => 
   const sd = r.sides ? ` · ${r.sides}` : "";
   return `${what}${w}${sd}${warm ? ` · ${warm} warm-up` : ""}${drops ? ` · ${drops} drop${drops === 1 ? "" : "s"}` : ""}`;
 }
+/** The bar joining a left and right round's badges (sideJoins), as classes on set j's badge cell: `sj-a` on the first side
+ * (bar down from its badge), `sj-b` on the second (bar up to its badge), `sj-m` for a row between them (an own-rest row);
+ * green (`sj-done`) once the first side is done, as in the workout. Styles in app.css. */
+export function sideJoinCls(sets: readonly object[], joins: boolean[], j: number, mid = false) {
+  // routine sets have no done state, so it is read only where a set carries one
+  const done = (i: number) => { const x = sets[i]; return !!x && "done" in x && !!(x as { done?: boolean }).done; };
+  const a = !!joins[j], b = !mid && !!joins[j - 1];
+  return { "sj-a": a && !mid, "sj-m": a && mid, "sj-b": b, "sj-done": (a && done(j)) || (b && done(j - 1)) };
+}
 /** A set's short label in a list of sets: its number, W for a warm-up, F to failure, drops numbered within their set (D1,
  * D2…); with sides shown, L or R after it ("1L"). */
 export function setLabel(sets: SetLike[], j: number, sides = false) {

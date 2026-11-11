@@ -8,11 +8,11 @@
 import { computed, nextTick, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { plannedRest as plannedRestOf, restSummary } from "../core/plannedRest";
-import { usesWeight, usesReps, usesDuration, usesDistance, musclesWorked, estimate, restAfterSet, dropWeightKg, restDefaultsOf, progressionOf, progressionDefaultsOf, oneSideOf, duration, muscleName, sideRounds, toM, fromM, muscleSets, type Progression } from "@motus/shared";
+import { usesWeight, usesReps, usesDuration, usesDistance, musclesWorked, estimate, restAfterSet, dropWeightKg, restDefaultsOf, progressionOf, progressionDefaultsOf, oneSideOf, duration, muscleName, sideRounds, sideJoins, toM, fromM, muscleSets, type Progression } from "@motus/shared";
 import { useRoutine, useRoutines, useFolders, useExercises, useSettings, useTemplates, loaded } from "../api/queries";
 import { api, mediaUrl } from "../api/client";
 import { invalidate } from "../api/live";
-import { useFmt, SET_KINDS, setLabel, setSummary as setSummaryOf } from "../core/format";
+import { useFmt, SET_KINDS, setLabel, setSummary as setSummaryOf, sideJoinCls } from "../core/format";
 import { readJson, writeJson } from "../core/prefs";
 import { toast, toastError } from "../core/toast";
 import { prompt } from "../core/ask";
@@ -198,6 +198,8 @@ const perSide = (e: any) => { const w = e.sets.filter((x: any) => x.kind !== "wa
 const sideItems = (e: any) => sidedEx(e) || (sidesOn.value && e.sets.some((x: any) => x.side));
 // a left and right round (either order, see sideRounds): no rest between its two sets
 const hasSideRounds = (e: any) => sidesOn.value && sideRounds(e.sets).some(Boolean);
+// ...and those with no rest planned between the sides: a bar joins the two badges, as in the workout
+const joins = (e: any) => (sidesOn.value ? sideJoins(e.sets, (j) => plannedRest(e, e.sets[j], j)) : []);
 const exName = (e: any) => exOf(e)?.name ?? "";
 const exImg = (e: any) => exOf(e)?.images?.[0];
 
@@ -436,7 +438,7 @@ await loaded(src, all, folders, routines, templates);
               <span v-if="usesDuration(tr(e))">Sec</span><span v-if="usesDistance(tr(e))">{{ fmt.du }}</span><span v-if="s.features.rpe">RPE</span><span /></div>
             <div class="slist">
               <div v-for="(x, j) in e.sets" :key="x._k" data-drag class="sitem" :class="{ drop: x.kind === 'drop' }">
-                <div class="setgrid" :style="cols(e)">
+                <div class="setgrid" :class="sideJoinCls(e.sets, joins(e), j)" :style="cols(e)">
                   <button class="sk dragh" :class="{ w: x.kind === 'warmup', d: x.kind === 'drop', f: x.kind === 'failure' }" title="Drag to reorder" @pointerdown="dragSet($event, e, j)">{{ setLabel(e.sets, j, sidesOn) }}</button>
                   <input v-if="usesWeight(tr(e))" class="vin" inputmode="decimal" :value="wIn(x.weightKg)" placeholder="-" @change="x.weightKg = wOut(($event.target as HTMLInputElement).value); touch()" />
                   <span v-if="usesWeight(tr(e)) && usesReps(tr(e))" class="sx" aria-hidden="true">×</span>
@@ -446,7 +448,7 @@ await loaded(src, all, folders, routines, templates);
                   <input v-if="s.features.rpe" class="vin" inputmode="decimal" :value="x.rpe ?? ''" placeholder="-" @change="x.rpe = nOut(($event.target as HTMLInputElement).value); touch()" />
                   <Menu :items="setMenu(e, j)" icon="more" label="Set options" />
                 </div>
-                <div v-if="x.restS != null" class="setgrid rrow" :style="cols(e)">
+                <div v-if="x.restS != null" class="setgrid rrow" :class="sideJoinCls(e.sets, joins(e), j, true)" :style="cols(e)">
                   <button class="sk r" title="Custom rest after this set" @click="restFor = { ex: i, set: j, kind: 'set' }">R</button>
                   <button class="rpill" @click="restFor = { ex: i, set: j, kind: 'set' }"><Icon name="timer" :size="14" />{{ x.restS === 0 ? "No rest" : `${fmt.clock(x.restS)} rest` }}</button>
                   <button class="ib sm plain" aria-label="Remove this rest" @click="x.restS = null; touch()"><Icon name="close" :size="14" /></button>

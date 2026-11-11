@@ -54,6 +54,13 @@ export function sideRounds(sets: SidedSet[]): boolean[] {
 }
 /** Whether set `j` opens a left and right round with the next one (sideRounds). */
 export const opensSideRound = (sets: SidedSet[], j: number) => sideRounds(sets)[j] ?? false;
+/** Which left and right rounds read as one split set, so every list of sets joins their two badges with a bar: for each
+ * set, whether it opens one. A round (sideRounds: neighbouring left and right of the same kind, no drops) whose first side
+ * has no rest after it (`restAfter`, the screen's own rest rule: the workout's rest, the stored plan, the routine's plan).
+ * Warm-ups stay out: both their badges say just "W". */
+export function sideJoins(sets: SidedSet[], restAfter: (j: number) => number): boolean[] {
+  return sideRounds(sets).map((r, j) => r && sets[j]!.kind !== "warmup" && restAfter(j) === 0);
+}
 
 /** The rest after a set: the set's own rest, else for a warm-up, drop or to-failure set the routine's rest for that kind,
  * else the person's default for that kind as Settings shows it (unset: "Same as between sets", the between-sets default),

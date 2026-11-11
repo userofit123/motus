@@ -2,8 +2,9 @@
 // One exercise in the running workout: its reminders and pinned notes when it comes up, and the sets table
 // (Previous · kg · Reps · ✓). The routine's numbers are already filled in (last time's in an empty workout); tap Previous to copy it, tick to log the set.
 import { computed, ref, onBeforeUnmount } from "vue";
-import { usesWeight, usesReps, usesDuration, usesDistance, toM, fromM, parseQuick, warmups, muscleName, sideRounds, type WorkoutExercise, type WorkoutSet } from "@motus/shared";
-import { SET_KINDS, setNo as setNoOf } from "../core/format";
+import { usesWeight, usesReps, usesDuration, usesDistance, toM, fromM, parseQuick, warmups, muscleName, sideJoins, restDefaultsOf, type WorkoutExercise, type WorkoutSet } from "@motus/shared";
+import { joinRest } from "../core/plannedRest";
+import { SET_KINDS, setNo as setNoOf, sideJoinCls } from "../core/format";
 import { useWorkout } from "./useWorkout";
 import { mediaUrl, api } from "../api/client";
 import { exerciseSheet, noteSheet, reminderSheet } from "../core/ui";
@@ -35,14 +36,9 @@ const kindShort = (s: WorkoutSet) => (s.kind === "warmup" ? "W" : s.kind === "dr
 // the exercise's own setting (left and right sets by default); any set of any exercise can still be made left or right
 const sided = computed(() => !!feat.value.unilateral && !!props.e.exercise?.unilateral);
 // a left set and its right one done with no rest between (the usual round, unless a rest was set on the first side)
-// are one split set: the table joins the two rows. Keyed by the first side's id. Warm-ups stay out (both badges say just "W").
-const rounds = computed(() => {
-  const open = new Set<string>();
-  if (!feat.value.unilateral) return { open };
-  const a = props.e.sets;
-  sideRounds(a).forEach((r, j) => { if (r && a[j]!.kind !== 'warmup' && a[j + 1]!.kind !== 'warmup' && W.restFor(props.e, j).secs === 0) open.add(a[j]!.id); });
-  return { open };
-});
+// are one split set: a bar joins the two badges, by the rule every list of sets uses (sideJoins), with this workout's rests
+const joins = computed(() => (feat.value.unilateral ? sideJoins(props.e.sets, (j) => joinRest(props.e, j, restDefaultsOf(W.prefs.value))) : []));
+const joinCls = (s: WorkoutSet) => sideJoinCls(props.e.sets, joins.value, props.e.sets.indexOf(s));
 // the weight column says "/ side" only when every set that counts is for one side; in a mix the L and R badges say it
 const perSide = computed(() => { const w = props.e.sets.filter((s) => s.kind !== "warmup" && s.kind !== "drop"); return !!feat.value.unilateral && w.length > 0 && w.every((s) => s.side); });
 // the set menu's side items: always on a one-sided exercise, else once it has a side set (the exercise menu adds the first)
@@ -162,8 +158,8 @@ const nowId = computed(() => (W.state.active === props.index ? visibleSets.value
     <table class="sets">
       <thead><tr><th>Set</th><th v-if="prefs.showPrevious">Previous</th><th v-if="showW">{{ fmt.wu }}<span v-if="perSide" class="thside"> / side</span></th><th v-if="showW && showR" class="sx" /><th v-if="showR">Reps</th><th v-if="showD">Time</th><th v-if="showDist">{{ fmt.du }}</th><th v-if="feat.rpe">RPE</th><th style="width:44px" /></tr></thead>
       <tbody>
-        <tr v-for="s in visibleSets" :key="s.id" :class="{ done: s.done, drop: s.kind === 'drop', now: s.id === nowId && e.status !== 'skipped', 'sr-a': rounds.open.has(s.id) }" :aria-current="s.id === nowId ? 'step' : undefined">
-          <td :class="{ srl: rounds.open.has(s.id) }"><button class="sk" :class="{ w: s.kind === 'warmup', d: s.kind === 'drop', f: s.kind === 'failure' }" @click.stop>{{ kindShort(s) }}</button></td>
+        <tr v-for="s in visibleSets" :key="s.id" :class="{ done: s.done, drop: s.kind === 'drop', now: s.id === nowId && e.status !== 'skipped' }" :aria-current="s.id === nowId ? 'step' : undefined">
+          <td :class="joinCls(s)"><button class="sk" :class="{ w: s.kind === 'warmup', d: s.kind === 'drop', f: s.kind === 'failure' }" @click.stop>{{ kindShort(s) }}</button></td>
           <td v-if="prefs.showPrevious" class="prev" @click="copyPrev(s)">{{ prevText(s) }}<span v-if="s.pr?.length" class="pr pvx">PR</span><span v-else-if="beat(s)" class="pos tiny pvx">{{ beat(s) }}</span></td>
           <td v-if="showW"><input class="vin" :class="{ pre: s.prefilled && !s.done }" inputmode="decimal" :value="wIn(s.weightKg)" placeholder="-" @change="W.editSet(s, { weightKg: num(($event.target as HTMLInputElement).value) == null ? null : fmt.toKg(num(($event.target as HTMLInputElement).value)!) })" @focus="($event.target as HTMLInputElement).select()" /></td>
           <td v-if="showW && showR" class="sx" aria-hidden="true">×</td>
@@ -204,10 +200,5 @@ const nowId = computed(() => (W.state.active === props.index ? visibleSets.value
 .exnotes { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--ol); }
 /* the pills under the sets: the gap the rows use between blocks */
 .aw-add { margin-top: var(--hg); flex-wrap: wrap; }
-/* a split set: a bar from the left badge down through the row gap to the right badge, as one group (the badge is
-   26px high, so the bar runs from its bottom edge to the next row's badge top; the rows' spacing is 5px) */
-.srl { position: relative; }
-.srl::after { content: ""; position: absolute; inset-inline-start: calc(8px + 17px); width: 2px; top: calc(50% + 13px); bottom: calc(8px - 50%); border-radius: var(--pill); background: color-mix(in srgb, var(--acc) 55%, transparent); pointer-events: none; }
-.sets tr.sr-a.done .srl::after { background: color-mix(in srgb, var(--pos) 60%, transparent); }
 .exrem { display: flex; flex-direction: column; gap: 8px; margin-bottom: var(--hg); }
 </style>
