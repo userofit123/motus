@@ -1,7 +1,8 @@
 <script setup lang="ts">
-// Choosing exercises: search (names and aliases), filter by muscle and equipment, recently used first; one or many.
-import { computed, ref, onMounted, onBeforeUnmount } from "vue";
-import { GROUPS, EQUIPMENT, CATEGORIES, type Exercise } from "@motus/shared";
+// Choosing exercises: search (names and aliases), filter by muscle and equipment, and behind the filter button by category
+// and (with left and right sets on) sides; recently used first; one or many.
+import { computed, ref, watch, onMounted, onBeforeUnmount } from "vue";
+import { GROUPS, EQUIPMENT, CATEGORIES, categoryName, type Exercise } from "@motus/shared";
 import { useExercises, useExercise, useSettings } from "../api/queries";
 import { mediaUrl } from "../api/client";
 import Sheet from "./Sheet.vue";
@@ -19,7 +20,10 @@ const settings = useSettings();
 // gym profiles (optional feature): only what the active gym has, unless "All equipment" is chosen
 const gym = computed(() => (settings.value.features.gyms ? settings.value.gyms.find((g) => g.id === settings.value.activeGym) : null) ?? null);
 const anyEquip = ref(false);
-const q = ref(""), group = ref(""), equip = ref(""), cat = ref(""), picked = ref<string[]>([]), creating = ref(false);
+const q = ref(""), group = ref(""), equip = ref(""), cat = ref(""), sides = ref(""), picked = ref<string[]>([]), creating = ref(false);
+// one side at a time is an optional feature (Settings → Features): without it the sides filter is gone and ignored
+const sidesOn = computed(() => !!settings.value.features.unilateral);
+const side = computed(() => (sidesOn.value ? sides.value : ""));
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ");
 const list = computed(() => {
   const words = norm(q.value).split(" ").filter(Boolean);
@@ -28,6 +32,7 @@ const list = computed(() => {
     && (!g || e.primaryMuscles.some((m) => g.muscles.includes(m)))
     && (!equip.value || e.equipment === equip.value)
     && (!cat.value || e.category === cat.value)
+    && (!side.value || !!e.unilateral === (side.value === "one"))
     && (!gym.value || anyEquip.value || !e.equipment || gym.value.equipment.includes(e.equipment))
     && words.every((w) => norm(e.name + " " + e.aliases.join(" ")).includes(w)))
     .sort((a, b) => Number(b.favourite) - Number(a.favourite) || (b.timesDone ?? 0) - (a.timesDone ?? 0) || (b.lastDoneAt ?? "").localeCompare(a.lastDoneAt ?? "") || a.name.localeCompare(b.name))
@@ -35,15 +40,21 @@ const list = computed(() => {
 });
 // shorter, friendlier names for the catalog's equipment
 const EQ_NAME: Record<string, string> = { "body only": "Bodyweight", "e-z curl bar": "EZ bar", kettlebells: "Kettlebell", "medicine ball": "Medicine ball", "exercise ball": "Exercise ball", "foam roll": "Foam roller" };
-const CAT_OPTS = CATEGORIES.map((c) => ({ value: c, label: c[0]!.toUpperCase() + c.slice(1) }));
+const CAT_OPTS = CATEGORIES.map((c) => ({ value: c, label: categoryName(c) }));
+const SIDES_OPTS = [{ value: "one", label: "One side at a time" }, { value: "both", label: "Both together" }];
 const eqName = (e: string) => EQ_NAME[e] ?? e[0]!.toUpperCase() + e.slice(1);
 // the muscle groups, with biceps and triceps on their own after Arms: people often pick an exercise for just one
 const PICK_GROUPS = GROUPS.flatMap((g) => g.id === "arms" ? [g, { id: "biceps", name: "Biceps", muscles: ["biceps"] }, { id: "triceps", name: "Triceps", muscles: ["triceps"] }] : [g]);
 const GROUP_OPTS = PICK_GROUPS.map((g) => ({ value: g.id, label: g.name }));
 const EQUIP_OPTS = EQUIPMENT.map((e) => ({ value: e, label: eqName(e) }));
 const showSuggest = computed(() => !!props.suggest?.length && !q.value && !filtered.value);
-const filtered = computed(() => !!group.value || !!equip.value || !!cat.value || (!!gym.value && anyEquip.value));
-function clear() { group.value = ""; equip.value = ""; cat.value = ""; anyEquip.value = false; }
+// category and sides wait behind the filter button so the list keeps its room with the keyboard up; setting one opens
+// them, and they can be folded away again with the badge still counting what's set
+const moreOpen = ref(false);
+const moreCount = computed(() => Number(!!cat.value) + Number(!!side.value));
+watch(moreCount, (n) => { if (n) moreOpen.value = true; });
+const filtered = computed(() => !!group.value || !!equip.value || !!moreCount.value || (!!gym.value && anyEquip.value));
+function clear() { group.value = ""; equip.value = ""; cat.value = ""; sides.value = ""; anyEquip.value = false; moreOpen.value = false; }
 function tap(id: string) {
   if (!props.multi) { emit("pick", [id]); return; }
   const i = picked.value.indexOf(id);
@@ -92,7 +103,10 @@ function te(e: TouchEvent) {
 
 <template>
   <Sheet :title="title ?? 'Add exercises'" size="wide" @close="emit('close')">
-    <div class="search hgap"><Icon name="search" :size="18" /><input v-model="q" placeholder="Search exercises" autofocus /></div>
+    <div class="row hgap">
+      <div class="search grow"><Icon name="search" :size="18" /><input v-model="q" placeholder="Search exercises" autofocus /></div>
+      <button class="ib" aria-label="Filters" title="Filters" :aria-expanded="moreOpen" @click="moreOpen = !moreOpen"><Icon name="filter" /><span v-if="moreCount" class="badge">{{ moreCount }}</span></button>
+    </div>
     <FilterPanel :count="showSuggest ? 'Works the same muscles' : `${list.length === 150 ? '150+' : list.length} exercises`" :active="filtered" @clear="clear">
       <FilterRow v-model="group" label="Muscle group" all="All" :options="GROUP_OPTS" />
       <FilterRow v-if="!gym" v-model="equip" label="Equipment" all="Any" :options="EQUIP_OPTS" />
@@ -101,7 +115,10 @@ function te(e: TouchEvent) {
         <button class="fchip" :class="{ on: !anyEquip && !equip }" @click="anyEquip = false; equip = ''">At {{ gym.name }}</button><button class="fchip" :class="{ on: anyEquip && !equip }" @click="anyEquip = true; equip = ''">Any</button>
         <button v-for="o in EQUIP_OPTS" :key="o.value" class="fchip" :class="{ on: equip === o.value }" @click="equip = equip === o.value ? '' : o.value">{{ o.label }}</button>
       </FilterRow>
-      <FilterRow v-model="cat" label="Category" all="Any" :options="CAT_OPTS" />
+      <template v-if="moreOpen">
+        <FilterRow v-model="cat" label="Category" all="Any" :options="CAT_OPTS" />
+        <FilterRow v-if="sidesOn" v-model="sides" label="Sides" all="Any" :options="SIDES_OPTS" />
+      </template>
     </FilterPanel>
     <div class="list">
       <div v-for="e in (showSuggest ? suggest : list)" :key="e.id" class="li click" @click="tap(e.id)">
@@ -141,5 +158,7 @@ function te(e: TouchEvent) {
 <style scoped>
 /* the whole preview takes the swipe, even below short content */
 .pvx { min-height: 100%; overflow-x: hidden; }
+/* open like a picked filter chip */
+.ib[aria-expanded="true"] { background: var(--accc); color: var(--onc); border-color: transparent; }
 .pvn { align-self: center; min-width: 6ch; text-align: center; font-variant-numeric: tabular-nums; }
 </style>

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // Your own exercise: name, how it is tracked, muscles, equipment, steps, and photos or a video link.
 import { ref, computed } from "vue";
-import { MUSCLES, EQUIPMENT, CATEGORIES, muscleName } from "@motus/shared";
+import { MUSCLES, EQUIPMENT, CATEGORIES, muscleName, categoryName } from "@motus/shared";
 import { api, mediaUrl } from "../api/client";
 import { invalidate } from "../api/live";
 import { useSettings } from "../api/queries";
@@ -56,7 +56,7 @@ async function save() {
     <div class="fld"><label>Name</label><input v-model="f.name" placeholder="e.g. Landmine press" /></div>
     <div class="fld"><label>Track it by</label><AppSelect v-model="f.tracking" :options="Object.entries(TRACK).map(([value, label]) => ({ value, label }))" title="Track it by" /></div>
     <div class="frow">
-      <div class="fld"><label>Category</label><AppSelect v-model="f.category" :options="CATEGORIES.map((c) => ({ value: c, label: cap(c) }))" title="Category" /></div>
+      <div class="fld"><label>Category</label><AppSelect v-model="f.category" :options="CATEGORIES.map((c) => ({ value: c, label: categoryName(c) }))" title="Category" /></div>
       <div class="fld"><label>Equipment</label><AppSelect v-model="f.equipment" :options="[{ value: '', label: 'None' }, ...EQUIPMENT.map((q) => ({ value: q, label: cap(q) }))]" title="Equipment" /></div>
     </div>
     <div class="fld"><label>Main muscles</label><ChoiceTiles :model-value="f.primaryMuscles" :options="MUSCLE_OPTS" multiple compact label="Main muscles" @update:model-value="(v) => setMuscles('primaryMuscles', v)" /></div>

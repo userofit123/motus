@@ -39,3 +39,5 @@ export const WEEKLY_SET_RANGE: [number, number] = [10, 20];
 
 export const EQUIPMENT = ["barbell", "dumbbell", "cable", "machine", "kettlebells", "bands", "body only", "e-z curl bar", "medicine ball", "exercise ball", "foam roll", "other"];
 export const CATEGORIES = ["strength", "stretching", "plyometrics", "powerlifting", "olympic weightlifting", "strongman", "cardio"];
+/** A category as the UI shows it, in sentence case ("Olympic weightlifting"), the same on every screen */
+export const categoryName = (c: string) => (c ? c[0]!.toUpperCase() + c.slice(1) : c);
