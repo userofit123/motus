@@ -7,6 +7,7 @@ import { camel, id, optId, str, intOrNull, oneOf, dateStr, visible, tzOf } from 
 import { dayIn } from "./achievements";
 import { uuidv7 } from "../ids";
 import { bad } from "../errors";
+import { VOLUME_SQL } from "./workouts";
 
 const addDays = (d: string, n: number) => { const x = new Date(d + "T12:00:00Z"); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
 const dow = (d: string) => new Date(d + "T12:00:00Z").getUTCDay();
@@ -130,10 +131,11 @@ export function scheduleRoutes(r: Router) {
     const workouts = (await q.query(
       `SELECT w.id, w.name, w.routine_id, w.started_at, w.status, r.color,
          greatest(0, extract(epoch FROM coalesce(w.ended_at, now()) - w.started_at)::int - w.paused_s) AS duration_s,
-         (SELECT count(*) FROM workout_sets s JOIN workout_exercises we ON we.id = s.workout_exercise_id WHERE we.workout_id = w.id AND s.done) AS sets
-       FROM workouts w LEFT JOIN routines r ON r.id = w.routine_id WHERE w.status <> 'discarded' AND w.started_at >= $1::date AND w.started_at < $2::date ORDER BY w.started_at`, [lo, hi])).rows.map((x: any) => camel(x));
+         (SELECT count(*) FROM workout_sets s JOIN workout_exercises we ON we.id = s.workout_exercise_id WHERE we.workout_id = w.id AND s.done) AS sets,
+         ${VOLUME_SQL} AS volume_kg
+       FROM workouts w LEFT JOIN routines r ON r.id = w.routine_id WHERE w.status <> 'discarded' AND w.started_at >= $1::date AND w.started_at < $2::date ORDER BY w.started_at`, [lo, hi])).rows.map((x: any) => ({ ...camel(x), sets: Number(x.sets), volumeKg: Number(x.volume_kg) }));
     const activities = (await q.query(
-      `SELECT id, type, name, started_at, duration_s, distance_m FROM activities WHERE started_at >= $1::date AND started_at < $2::date ORDER BY started_at`, [lo, hi])).rows.map((x: any) => camel(x));
+      `SELECT id, type, name, started_at, duration_s, distance_m, steps FROM activities WHERE started_at >= $1::date AND started_at < $2::date ORDER BY started_at`, [lo, hi])).rows.map((x: any) => camel(x));
     const planned = await plannedOpen(q, from, to, tzOf(qs));
     return { workouts, activities, planned };
   });
