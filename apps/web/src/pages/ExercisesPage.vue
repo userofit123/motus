@@ -1,14 +1,14 @@
 <script lang="ts">
 import { reactive } from "vue";
 // Search, muscle group, filters, sort and how far the list is opened. Kept for the session only; the exercise pickers have their own.
-export const exercisesView = reactive({ q: "", group: "", equip: "", only: "" as "" | "mine" | "done" | "fav", sort: "used" as "used" | "name" | "recent", shown: 60 });
+export const exercisesView = reactive({ q: "", group: "", equip: "", cat: "", only: "" as "" | "mine" | "done" | "fav", sort: "used" as "used" | "name" | "recent", shown: 60 });
 </script>
 
 <script setup lang="ts">
 // The exercise library: search, filter by muscle group and equipment, your own exercises, favourites and most used first.
 import { computed, ref, toRefs } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { GROUPS, EQUIPMENT, muscleName, groupOf } from "@motus/shared";
+import { GROUPS, EQUIPMENT, CATEGORIES, muscleName, groupOf } from "@motus/shared";
 import { useExercises, loaded } from "../api/queries";
 import { mediaUrl } from "../api/client";
 import { ago } from "../core/format";
@@ -26,13 +26,13 @@ const all = useExercises();
 // the filters live outside the component (below) so they survive opening an exercise and coming back, or visiting another tab
 const view = exercisesView;
 if (route.query.muscle) { Object.assign(view, { group: groupOf(String(route.query.muscle)), shown: 60 }); }
-const { q, group, equip, only, sort, shown } = toRefs(view);
+const { q, group, equip, cat, only, sort, shown } = toRefs(view);
 const creating = ref(false);
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ");
 const list = computed(() => {
   const words = norm(q.value).split(" ").filter(Boolean);
   const g = GROUPS.find((x) => x.id === group.value);
-  return (all.data.value ?? []).filter((e) => (!g || e.primaryMuscles.some((m) => g.muscles.includes(m))) && (!equip.value || e.equipment === equip.value)
+  return (all.data.value ?? []).filter((e) => (!g || e.primaryMuscles.some((m) => g.muscles.includes(m))) && (!equip.value || e.equipment === equip.value) && (!cat.value || e.category === cat.value)
     && (only.value !== "mine" || e.ownerId) && (only.value !== "done" || (e.timesDone ?? 0) > 0) && (only.value !== "fav" || e.favourite)
     && words.every((w) => norm(e.name + " " + e.aliases.join(" ")).includes(w)))
     .sort((a, b) => sort.value === "name" ? a.name.localeCompare(b.name) : sort.value === "recent" ? (b.lastDoneAt ?? "").localeCompare(a.lastDoneAt ?? "") || a.name.localeCompare(b.name)
@@ -40,8 +40,8 @@ const list = computed(() => {
 });
 // muscle groups stay one tap away; everything else lives behind Filters so the page stays calm
 const filtersOpen = ref(false);
-const filterCount = computed(() => Number(!!equip.value) + Number(!!only.value) + Number(sort.value !== "used"));
-const clearFilters = () => { equip.value = ""; only.value = ""; sort.value = "used"; shown.value = 60; };
+const filterCount = computed(() => Number(!!equip.value) + Number(!!cat.value) + Number(!!only.value) + Number(sort.value !== "used"));
+const clearFilters = () => { equip.value = ""; cat.value = ""; only.value = ""; sort.value = "used"; shown.value = 60; };
 const GROUP_OPTS = GROUPS.map((g) => ({ value: g.id, label: g.name }));
 // show the page once its data is in, all at once
 await loaded(all);
@@ -62,6 +62,7 @@ await loaded(all);
       <div class="fld"><label>Show</label><div class="seg block"><button v-for="[k, l] in [['', 'All'], ['fav', 'Favourites'], ['done', 'Done before'], ['mine', 'My own']]" :key="k" :class="{ on: only === k }" @click="only = k as any">{{ l }}</button></div></div>
       <div class="fld"><label>Sort</label><div class="seg block"><button v-for="[k, l] in [['used', 'Most used'], ['recent', 'Recent'], ['name', 'A-Z']]" :key="k" :class="{ on: sort === k }" @click="sort = k as any">{{ l }}</button></div></div>
       <div class="fld"><label>Equipment</label><AppSelect v-model="equip" :options="[{ value: '', label: 'Any' }, ...EQUIPMENT.map((q) => ({ value: q, label: q.replace(/\b\w/g, (c) => c.toUpperCase()) }))]" title="Equipment" /></div>
+      <div class="fld"><label>Category</label><AppSelect v-model="cat" :options="[{ value: '', label: 'Any' }, ...CATEGORIES.map((c) => ({ value: c, label: c.replace(/\b\w/g, (x) => x.toUpperCase()) }))]" title="Category" /></div>
       <template #foot><button class="btn o" :disabled="!filterCount" @click="clearFilters">Clear</button><button class="btn" @click="filtersOpen = false">Show {{ list.length }}</button></template>
     </Sheet>
     <div class="grid gauto">

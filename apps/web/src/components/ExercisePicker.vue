@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // Choosing exercises: search (names and aliases), filter by muscle and equipment, recently used first; one or many.
 import { computed, ref, onMounted, onBeforeUnmount } from "vue";
-import { GROUPS, EQUIPMENT, type Exercise } from "@motus/shared";
+import { GROUPS, EQUIPMENT, CATEGORIES, type Exercise } from "@motus/shared";
 import { useExercises, useExercise, useSettings } from "../api/queries";
 import { mediaUrl } from "../api/client";
 import Sheet from "./Sheet.vue";
@@ -19,7 +19,7 @@ const settings = useSettings();
 // gym profiles (optional feature): only what the active gym has, unless "All equipment" is chosen
 const gym = computed(() => (settings.value.features.gyms ? settings.value.gyms.find((g) => g.id === settings.value.activeGym) : null) ?? null);
 const anyEquip = ref(false);
-const q = ref(""), group = ref(""), equip = ref(""), picked = ref<string[]>([]), creating = ref(false);
+const q = ref(""), group = ref(""), equip = ref(""), cat = ref(""), picked = ref<string[]>([]), creating = ref(false);
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ");
 const list = computed(() => {
   const words = norm(q.value).split(" ").filter(Boolean);
@@ -27,6 +27,7 @@ const list = computed(() => {
   return (all.data.value ?? []).filter((e) => !e.hidden && !props.exclude?.includes(e.id)
     && (!g || e.primaryMuscles.some((m) => g.muscles.includes(m)))
     && (!equip.value || e.equipment === equip.value)
+    && (!cat.value || e.category === cat.value)
     && (!gym.value || anyEquip.value || !e.equipment || gym.value.equipment.includes(e.equipment))
     && words.every((w) => norm(e.name + " " + e.aliases.join(" ")).includes(w)))
     .sort((a, b) => Number(b.favourite) - Number(a.favourite) || (b.timesDone ?? 0) - (a.timesDone ?? 0) || (b.lastDoneAt ?? "").localeCompare(a.lastDoneAt ?? "") || a.name.localeCompare(b.name))
@@ -34,14 +35,15 @@ const list = computed(() => {
 });
 // shorter, friendlier names for the catalog's equipment
 const EQ_NAME: Record<string, string> = { "body only": "Bodyweight", "e-z curl bar": "EZ bar", kettlebells: "Kettlebell", "medicine ball": "Medicine ball", "exercise ball": "Exercise ball", "foam roll": "Foam roller" };
+const CAT_OPTS = CATEGORIES.map((c) => ({ value: c, label: c[0]!.toUpperCase() + c.slice(1) }));
 const eqName = (e: string) => EQ_NAME[e] ?? e[0]!.toUpperCase() + e.slice(1);
 // the muscle groups, with biceps and triceps on their own after Arms: people often pick an exercise for just one
 const PICK_GROUPS = GROUPS.flatMap((g) => g.id === "arms" ? [g, { id: "biceps", name: "Biceps", muscles: ["biceps"] }, { id: "triceps", name: "Triceps", muscles: ["triceps"] }] : [g]);
 const GROUP_OPTS = PICK_GROUPS.map((g) => ({ value: g.id, label: g.name }));
 const EQUIP_OPTS = EQUIPMENT.map((e) => ({ value: e, label: eqName(e) }));
 const showSuggest = computed(() => !!props.suggest?.length && !q.value && !filtered.value);
-const filtered = computed(() => !!group.value || !!equip.value || (!!gym.value && anyEquip.value));
-function clear() { group.value = ""; equip.value = ""; anyEquip.value = false; }
+const filtered = computed(() => !!group.value || !!equip.value || !!cat.value || (!!gym.value && anyEquip.value));
+function clear() { group.value = ""; equip.value = ""; cat.value = ""; anyEquip.value = false; }
 function tap(id: string) {
   if (!props.multi) { emit("pick", [id]); return; }
   const i = picked.value.indexOf(id);
@@ -99,6 +101,7 @@ function te(e: TouchEvent) {
         <button class="fchip" :class="{ on: !anyEquip && !equip }" @click="anyEquip = false; equip = ''">At {{ gym.name }}</button><button class="fchip" :class="{ on: anyEquip && !equip }" @click="anyEquip = true; equip = ''">Any</button>
         <button v-for="o in EQUIP_OPTS" :key="o.value" class="fchip" :class="{ on: equip === o.value }" @click="equip = equip === o.value ? '' : o.value">{{ o.label }}</button>
       </FilterRow>
+      <FilterRow v-model="cat" label="Category" all="Any" :options="CAT_OPTS" />
     </FilterPanel>
     <div class="list">
       <div v-for="e in (showSuggest ? suggest : list)" :key="e.id" class="li click" @click="tap(e.id)">
