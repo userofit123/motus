@@ -14,6 +14,8 @@ export const joinRest = (e: WorkoutExercise, j: number, d: RestDefaults): number
   e.sets[j]?.restPlannedS ?? planSetRest(e.sets, j, e, d);
 
 export const KIND_LABEL: Partial<Record<SetKind, string>> = { warmup: "after warm-ups", failure: "after failure sets", drop: "after drops" };
+/** the other two rests, named the same wherever they are shown (the routine page's summary, the workout's offer to keep one) */
+export const REST_LABEL = { between: "between sets", after: "after the last one" };
 /** ["1:00 after warm-ups", "1:45 between sets", "2:30 after the last one"]: the routine editor's and the routine page's rest
  *  summary, as parts so the views join them with the same dot as every other summary line. Only the set types the exercise
  *  has, and only rests above 0 (0 is off); the numbers come from restForKind, the rule the workout and server use. */
@@ -28,11 +30,11 @@ export const restSummary = (e: Ex & { sets: (RoutineSet | { kind?: SetKind | nul
   return [
     // warm-ups resting like every other set need no part of their own
     kinds("warmup") && restForKind(e, "warmup", false, d) === between ? "" : kindPart("warmup"),
-    between > 0 ? `${clock(between)} between sets` : "",
+    between > 0 ? `${clock(between)} ${REST_LABEL.between}` : "",
     kindPart("failure"),
     kindPart("drop"),
     sides ? "none between sides" : "",
-    after > 0 ? `${clock(after)} after the last one` : "",
+    after > 0 ? `${clock(after)} ${REST_LABEL.after}` : "",
     e.sets.some((x) => x.restS != null) ? "some sets their own" : "",
   ].filter(Boolean);
 };

@@ -8,7 +8,7 @@ import { computed, ref, watch, onBeforeUnmount } from "vue";
 import { clock, usesWeight, usesReps, usesDuration, type WorkoutSet, type SetKind } from "@motus/shared";
 import { useWorkout } from "./useWorkout";
 import { setNo } from "../core/format";
-import { KIND_LABEL } from "../core/plannedRest";
+import { KIND_LABEL, REST_LABEL } from "../core/plannedRest";
 import { rest, restLeft, restActive, adjustRest, finishRest } from "./runtime";
 import { choose } from "../core/ask";
 import Icon from "../components/Icon.vue";
@@ -22,13 +22,16 @@ const W = useWorkout();
 // the tap, and which rest it is
 const saved = ref("");
 let savedT: ReturnType<typeof setTimeout> | undefined;
-// What keeping the rest covers. The rest after a warm-up, drop set or set to failure is kept for that kind of set: in a
-// workout from a routine this exercise's, else Settings', for every exercise. The kind's name is the routine page's
-const offerFor = (x: { after: boolean; kind: string | null; inRoutine: boolean } | null) =>
-  x?.kind ? `${KIND_LABEL[x.kind as SetKind]} in ${x.inRoutine ? "this" : "every"} exercise` : x?.after ? "after this exercise from now on" : "for this exercise from now on";
+// What keeping the rest covers, worded as the routine page names its rests: between sets and after the last one are this
+// exercise's; the rest after a warm-up, drop set or set to failure is kept for that kind of set: in a workout from a
+// routine this exercise's, else Settings', for every exercise
+const offerFor = (x: { after: boolean; kind: Exclude<SetKind, "normal"> | null; inRoutine: boolean } | null) =>
+  x?.kind ? `${KIND_LABEL[x.kind]} in ${x.inRoutine ? "this" : "every"} exercise` : `${x?.after ? REST_LABEL.after : REST_LABEL.between} in this exercise`;
 function keep() {
+  // worded before keeping, from the same state the offer showed
+  const why = offerFor(W.restKeeps.value);
   const k = W.keepRest(); if (!k) return;
-  saved.value = `${clock(k.secs)} rest ${offerFor(k)}`;
+  saved.value = `${clock(k.secs)} rest ${why}`;
   clearTimeout(savedT); savedT = setTimeout(() => (saved.value = ""), 2500);
 }
 // a new rest starts without the last one's confirmation
