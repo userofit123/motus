@@ -5,15 +5,16 @@
 // Several plans for today are a list of equals, each with its own Start and a ⋮ menu to log it instead, skip it or
 // remove it (a single plan's ⋮ sits top-right in the header); only the earliest one's button is the filled one, so the
 // screen keeps one primary button. Tapping a day in the week shows that day here instead of today; its plans have only
-// the ⋮ to skip or remove them.
+// the ⋮ to skip or remove them; a past day lists what you did (each opens) and the plans you missed.
 import { computed, ref } from "vue";
 import type { HomePlan, HomeToday } from "@motus/shared";
 import { useRouter } from "vue-router";
-import { useSettings } from "../../api/queries";
+import { useCalendar, useSettings } from "../../api/queries";
 import { useFmt, ago, localYmd, tomorrowYmd, activityIcon } from "../../core/format";
 import { startOpen } from "../../core/ui";
 import Icon from "../Icon.vue";
 import MuscleFig from "../MuscleFig.vue";
+import SessionStats from "../SessionStats.vue";
 import Menu from "../Menu.vue";
 import { startPlan, planMenu, unplanItems } from "./planActions";
 
@@ -65,10 +66,38 @@ const rows = computed(() => (props.h.active || todays.value.length > 1 ? todays.
 // the filled button: the earliest plan's, unless a workout in progress holds it (Resume)
 const primary = (i: number) => !props.h.active && i === 0;
 
-// another day of the week: its plans (no Start or Log it: it isn't that day yet, so the ⋮ only skips or removes), or whether
-// you trained on a past one
+// another day of the week: its plans (no Start or Log it: it isn't that day yet, so the ⋮ only skips or removes), or on
+// a past one what you did and what you missed, like the calendar's day list
 const dayLabel = computed(() => (sel.value === tomorrow ? "Tomorrow" : fmt.value.date(sel.value, { weekday: "long", day: "numeric", month: "long" })));
-const pastNote = computed(() => ((props.h.days ?? []).includes(sel.value) ? "You trained on this day." : "No workout or activity on this day."));
+// Home's data only says which days you trained, so a past day's sessions come from the calendar, for the whole week at
+// once and only after you first pick a past day (Home itself doesn't wait for it)
+const wantPast = ref(false);
+const weekRange = computed(() => {
+  const now = new Date(), back = (now.getDay() - s.value.firstDay + 7) % 7;
+  return { from: localYmd(new Date(now.getFullYear(), now.getMonth(), now.getDate() - back)), to: localYmd(new Date(now.getFullYear(), now.getMonth(), now.getDate() - back + 6)) };
+});
+const cal = useCalendar(weekRange, wantPast);
+interface PastRow { key: string; kind: "workout" | "activity" | "planned"; icon: string; name: string; sub: string; x: any }
+const pastRows = computed<PastRow[]>(() => {
+  const c = cal.data.value as any, d = sel.value;
+  if (!c || d >= today) return [];
+  const on = (iso: string) => localYmd(new Date(iso)) === d;
+  const done: PastRow[] = [
+    ...c.workouts.filter((w: any) => on(w.startedAt)).map((w: any) => ({ key: w.id, kind: "workout" as const, icon: "dumbbell", name: w.name || "Workout", sub: `${fmt.value.time(w.startedAt)} · Workout`, x: { kind: "workout", ...w } })),
+    ...c.activities.filter((a: any) => on(a.startedAt)).map((a: any) => {
+      const t = a.type ? a.type[0].toUpperCase() + a.type.slice(1) : "Activity";
+      return { key: a.id, kind: "activity" as const, icon: activityIcon(a.type), name: a.name || t, sub: `${fmt.value.time(a.startedAt)} · ${t}`, x: { kind: "activity", ...a } };
+    }),
+  ].sort((a, b) => a.x.startedAt.localeCompare(b.x.startedAt));
+  // plans that day not done (the engine leaves out the done ones): missed, as the calendar shows them
+  const missed: PastRow[] = c.planned.filter((p: any) => p.date === d).map((p: any) => ({ key: p.scheduleId, kind: "planned" as const, icon: kindIcon(p), name: p.name, sub: ["Missed", kindName(p)].join(" · "), x: p }));
+  return [...done, ...missed];
+});
+const pastDone = computed(() => pastRows.value.filter((r) => r.kind !== "planned").length);
+const pastMissed = computed(() => pastRows.value.length - pastDone.value);
+const pastLabel = computed(() => [pastDone.value ? n(pastDone.value, "session") : "Nothing done", pastMissed.value ? `${pastMissed.value} missed` : ""].filter(Boolean).join(" · "));
+const openPast = (r: PastRow) => router.push(r.kind === "activity" ? `/activities/${r.x.id}` : r.x.status === "in_progress" ? "/workout" : `/workouts/${r.x.id}`);
+const pick = (d: string) => { sel.value = sel.value === d ? today : d; if (sel.value < today) wantPast.value = true; };
 const openDay = () => router.push({ path: "/history", query: { date: sel.value } });
 
 // this week, from your first day of the week: trained, planned, today, still to come
@@ -122,12 +151,17 @@ const doneCount = computed(() => week.value.filter((d) => d.done).length);
         <div class="tl">{{ picked.length ? n(picked.length, "plan") : "Nothing planned" }}</div>
         <div v-if="!picked.length" class="ts">Plan a routine or an activity for this day in the calendar.</div>
       </template>
-      <div v-else class="ts">{{ pastNote }}</div>
+      <template v-else-if="cal.data.value">
+        <div class="tl">{{ pastLabel }}</div>
+        <div v-if="!pastRows.length" class="ts">No workout or activity on this day.</div>
+      </template>
+      <!-- the calendar is still on its way: hold the line's place so the block doesn't jump -->
+      <div v-else class="tl" aria-hidden="true">&nbsp;</div>
     </div>
     <MuscleFig v-if="sel === today && hero?.routine" class="tfig" :routine="hero.routine" />
     <div class="tweek" role="group" :aria-label="`This week: ${doneCount} of 7 days trained`">
       <button v-for="d in week" :key="d.ymd" type="button" class="wd" :class="{ done: d.done, now: d.today, plan: d.plan, past: d.past, sel: sel === d.ymd && !d.today }"
-        :aria-pressed="sel === d.ymd" :aria-label="d.aria" :title="d.done ? 'Trained' : d.plan ? 'Planned' : undefined" @click="sel = sel === d.ymd ? today : d.ymd">
+        :aria-pressed="sel === d.ymd" :aria-label="d.aria" :title="d.done ? 'Trained' : d.plan ? 'Planned' : undefined" @click="pick(d.ymd)">
         <span class="wl">{{ d.day }}</span>
         <span class="wn">{{ d.done ? "" : d.n }}<Icon v-if="d.done" name="check" :size="14" /></span>
       </button>
@@ -151,6 +185,22 @@ const doneCount = computed(() => week.value.filter((d) => d.done).length);
         <div class="pt"><div class="pn">{{ p.name }}</div><div class="ps">{{ planSub(p) }}</div></div>
         <span class="pact"><Menu :items="unplanItems(p)" :label="`Options for ${p.name}`" /></span>
       </div>
+    </div>
+    <!-- a past day: what you did (each opens), then the plans you missed, faded like the calendar's -->
+    <div v-else-if="sel < today && pastRows.length" class="tlist plist" role="list" aria-live="polite">
+      <template v-for="r in pastRows" :key="r.key">
+        <div v-if="r.kind === 'planned'" role="listitem" class="prow missed">
+          <span class="pk"><Icon :name="r.icon" :size="18" /></span>
+          <div class="pt"><div class="pn">{{ r.name }}</div><div class="ps">{{ r.sub }}</div></div>
+          <span class="pact"><Menu :items="unplanItems(r.x)" :label="`Options for ${r.name}`" /></span>
+        </div>
+        <div v-else role="listitem" class="prow click" tabindex="0" :aria-label="`Open ${r.name}`" @click="openPast(r)" @keydown.enter.self.prevent="openPast(r)">
+          <span class="pk"><Icon :name="r.icon" :size="18" /></span>
+          <div class="pt"><div class="pn">{{ r.name }}</div><div class="ps">{{ r.sub }}</div></div>
+          <SessionStats :x="r.x" />
+          <Icon name="right" :size="16" class="pgo" />
+        </div>
+      </template>
     </div>
   </div>
 </template>
@@ -199,6 +249,13 @@ const doneCount = computed(() => week.value.filter((d) => d.done).length);
 :is(.pact, .hmenu) :deep(.ib.plain:hover) { background: color-mix(in srgb, var(--onc) 18%, transparent); }
 /* the other plans' buttons: tonal on the hero's own colour, so only the first one is filled */
 .prow .btn.tonal { background: color-mix(in srgb, var(--onc) 12%, transparent); color: var(--onc); }
+/* a past day's sessions open like the calendar's rows: the hero's own hover, its stats column and arrow in its softer text */
+.prow.click:hover { background: color-mix(in srgb, var(--onc) 14%, transparent); }
+.prow.click:focus-visible { outline: 2px solid var(--onc); outline-offset: 2px; }
+.prow :deep(.sstats) { color: color-mix(in srgb, var(--onc) 72%, transparent); text-align: end; }
+.pgo { flex: none; color: color-mix(in srgb, var(--onc) 60%, transparent); }
+/* a plan you missed: faded, as the calendar shows it */
+.prow.missed .pn { opacity: .5; }
 /* a workout in progress: a calm pulse beside its label is the one moving thing on Home */
 .pulse { width: 8px; height: 8px; border-radius: 50%; background: var(--pos); animation: pulse 1.6s ease-in-out infinite; }
 @keyframes pulse { 50% { opacity: .35; } }
