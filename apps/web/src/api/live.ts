@@ -1,5 +1,6 @@
 // Live updates (PLAN.md §5): the server announces which topics a change touched, and every cached screen filed under
 // one of those topics reloads. The same happens on this device right after its own changes.
+import { ref } from "vue";
 import { QueryClient } from "@tanstack/vue-query";
 import { server } from "./client";
 
@@ -14,14 +15,19 @@ export const queryClient = new QueryClient({
 // tap, so the topics asked for within a moment are gathered and every screen reloads once.
 const GATHER_MS = 30;
 const asked = new Set<string>();
+// true from the moment a reload is queued until it has started, so a screen can tell "waiting for a reload" from "nothing
+// there" (the queries only say they are fetching once the reload has begun)
+export const reloadQueued = ref(false);
 let gathering: ReturnType<typeof setTimeout> | null = null;
 export function invalidate(topics: string[]) {
   for (const t of topics) asked.add(t);
+  reloadQueued.value = true;
   gathering ??= setTimeout(() => {
     const all = [...asked];
     asked.clear(); gathering = null;
     if (all.includes("*")) queryClient.invalidateQueries();
     else queryClient.invalidateQueries({ predicate: (q) => all.includes(String(q.queryKey[0])) });
+    reloadQueued.value = false; // invalidating marks the queries as fetching in the same step
   }, GATHER_MS);
 }
 
