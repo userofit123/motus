@@ -148,7 +148,7 @@ function audio() {
   if (!ctx) {
     ctx = new AudioContext();
     const comp = ctx.createDynamicsCompressor(), master = ctx.createGain();
-    // used as a limiter (the browser's default setting squeezes every note by ~12 dB, which made the cues quiet):
+    // used as a limiter (the browser's default setting squashed the cues by several dB even after its automatic makeup gain, which made them quiet):
     // it only catches the peaks, so the notes can be written loud and stacked ones still don't clip
     comp.threshold.value = -6; comp.knee.value = 3; comp.ratio.value = 20; comp.attack.value = 0.002; comp.release.value = 0.12;
     master.gain.value = 1; comp.connect(master).connect(ctx.destination); out = comp;
@@ -162,10 +162,10 @@ function audio() {
 for (const ev of ["pointerdown", "keydown"]) addEventListener(ev, () => { if (!ctx || ctx.state !== "running") audio(); }, { capture: true, passive: true });
 /** [frequency ratio, loudness, how long it rings as a share of the note] */
 export type Overtone = readonly [number, number, number];
-/** A struck bell: slightly out-of-tune overtones that die away faster than the note itself. */
 /** Every note's `vol` is multiplied by this: the cues were written at 0.16-0.4 of full scale, far below what a phone's
  *  speaker needs to be heard over a gym; the limiter above keeps the sum clean. */
 const LOUDER = 2.2;
+/** A struck bell: slightly out-of-tune overtones that die away faster than the note itself. */
 const BELL: Overtone[] = [[1, 1, 1], [2, 0.32, 0.6], [2.76, 0.16, 0.4], [5.4, 0.05, 0.2]];
 /** Round and soft: the note with a little warmth on top. */
 export const SOFT: Overtone[] = [[1, 1, 1], [2, 0.18, 0.5]];
