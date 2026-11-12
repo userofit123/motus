@@ -148,7 +148,10 @@ function audio() {
   if (!ctx) {
     ctx = new AudioContext();
     const comp = ctx.createDynamicsCompressor(), master = ctx.createGain();
-    master.gain.value = 0.8; comp.connect(master).connect(ctx.destination); out = comp;
+    // used as a limiter (the browser's default setting squeezes every note by ~12 dB, which made the cues quiet):
+    // it only catches the peaks, so the notes can be written loud and stacked ones still don't clip
+    comp.threshold.value = -6; comp.knee.value = 3; comp.ratio.value = 20; comp.attack.value = 0.002; comp.release.value = 0.12;
+    master.gain.value = 1; comp.connect(master).connect(ctx.destination); out = comp;
   }
   if (ctx.state === "suspended") void ctx.resume();
   return { ac: ctx, dest: out! };
@@ -160,6 +163,9 @@ for (const ev of ["pointerdown", "keydown"]) addEventListener(ev, () => { if (!c
 /** [frequency ratio, loudness, how long it rings as a share of the note] */
 export type Overtone = readonly [number, number, number];
 /** A struck bell: slightly out-of-tune overtones that die away faster than the note itself. */
+/** Every note's `vol` is multiplied by this: the cues were written at 0.16-0.4 of full scale, far below what a phone's
+ *  speaker needs to be heard over a gym; the limiter above keeps the sum clean. */
+const LOUDER = 2.2;
 const BELL: Overtone[] = [[1, 1, 1], [2, 0.32, 0.6], [2.76, 0.16, 0.4], [5.4, 0.05, 0.2]];
 /** Round and soft: the note with a little warmth on top. */
 export const SOFT: Overtone[] = [[1, 1, 1], [2, 0.18, 0.5]];
@@ -174,7 +180,7 @@ export function tone(freq: number, { delay = 0, dur = 0.5, vol = 0.3, partials =
       const o = ac.createOscillator(), g = ac.createGain(), end = t + Math.max(attack + 0.05, dur * ring);
       o.type = "sine"; o.frequency.value = f;
       // a rise of at least 5 ms takes the click off the start; the exponential fall to near silence takes it off the end
-      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol * amp, t + attack); g.gain.exponentialRampToValueAtTime(0.0001, end);
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol * amp * LOUDER, t + attack); g.gain.exponentialRampToValueAtTime(0.0001, end);
       o.connect(g).connect(dest); o.start(t); o.stop(end + 0.02);
     }
   } catch { /* no sound */ }
@@ -182,7 +188,7 @@ export function tone(freq: number, { delay = 0, dur = 0.5, vol = 0.3, partials =
 /** The countdown in the last seconds of a rest or an interval part: a short soft blip, the last one higher so you
  *  know "now". */
 export function tick(last: boolean) {
-  tone(last ? 1318.5 : 659.25, { dur: last ? 0.18 : 0.09, vol: last ? 0.22 : 0.16, partials: SOFT }); // E6, E5
+  tone(last ? 1318.5 : 659.25, { dur: last ? 0.22 : 0.12, vol: last ? 0.3 : 0.26, partials: SOFT }); // E6, E5
 }
 /** The plain cue used by the rest timer and timed sets: `times` soft bell notes. */
 export function beep(times = 1, freq = 880) {
