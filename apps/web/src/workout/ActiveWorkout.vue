@@ -19,6 +19,7 @@ import Menu from "../components/Menu.vue";
 import Sheet from "../components/Sheet.vue";
 import ReorderSheet from "../components/ReorderSheet.vue";
 import NoteItem from "../components/NoteItem.vue";
+import { useNoteMenu } from "../core/noteMenu";
 import ReminderItem from "../components/ReminderItem.vue";
 import ExerciseCard from "./ExerciseCard.vue";
 import ActionBar from "./ActionBar.vue";
@@ -66,6 +67,7 @@ const paused = computed(() => !!w.value?.pauseStartedAt);
 // how far along: one segment per exercise, as long as its sets, filled by the sets done
 // under the exercise: the routine's pinned notes, and every note written in this workout (pinned or not)
 const workoutNotes = computed(() => (w.value?.routineNotes ?? []).filter((x: any) => x.pinned || x.targetType === "workout" || x.workoutId === w.value?.id));
+const noteMenu = useNoteMenu();
 const segs = computed(() => (w.value?.exercises ?? []).filter((e) => e.status !== "skipped").map((e) => ({ id: e.id, n: Math.max(1, e.sets.length), done: e.sets.filter((s) => s.done).length })));
 // the tabs of exercises on the phone keep the current one in view
 const strip = ref<HTMLElement | null>(null);
@@ -157,7 +159,7 @@ const menu = computed(() => [
       </div>
       <!-- the routine's pinned notes: under the exercise, not pushing it down (its reminders stay at the top) -->
       <div v-if="workoutNotes.length" class="aw-notes">
-        <NoteItem v-for="n in workoutNotes" :key="n.id" :note="n" />
+        <NoteItem v-for="n in workoutNotes" :key="n.id" :note="n" :menu="noteMenu(n, n.targetType === 'routine' ? w.name : 'This workout')" />
       </div>
       <div ref="dock" class="aw-dock"><ActionBar :paused="paused" @finish="finishing = true" @pause="togglePause" /></div>
     </template>
@@ -184,7 +186,7 @@ const menu = computed(() => [
         <div :class="{ card: !onSummary }"><Transition name="sw" mode="out-in"><WorkoutSoFar v-if="onSummary" key="summary" :w="w" @open="go" /><ExerciseCard v-else-if="w.exercises[W.state.cur]" :key="w.exercises[W.state.cur]!.id" :e="w.exercises[W.state.cur]!" :index="W.state.cur" /></Transition></div>
         <ActionBar :paused="paused" @finish="finishing = true" @pause="togglePause" />
         <div v-if="workoutNotes.length" class="aw-notes">
-          <NoteItem v-for="n in workoutNotes" :key="n.id" :note="n" />
+          <NoteItem v-for="n in workoutNotes" :key="n.id" :note="n" :menu="noteMenu(n, n.targetType === 'routine' ? w.name : 'This workout')" />
         </div>
       </div>
       <div class="side stack">

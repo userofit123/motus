@@ -12,9 +12,12 @@ export const SHOWS: Record<string, string> = {
   routine: "Shows in every workout of this routine",
 };
 
+// every screen a note shows on, as the note sheet reloads them: a running workout shows its notes too
+const NOTE_TOPICS = ["notes", "workouts", "routines", "exercises"];
+
 export function useNoteMenu() {
-  const del = useChange(async (id: string) => { await api.del(`/notes/${id}`); toast("Note deleted"); }, ["notes"]);
-  const pin = useChange(async (n: any) => { await api.put(`/notes/${n.id}`, { pinned: !n.pinned }); toast(n.pinned ? "Note kept on record only" : SHOWS[n.targetType] ?? ""); }, ["notes"]);
+  const del = useChange(async (id: string) => { await api.del(`/notes/${id}`); toast("Note deleted"); }, NOTE_TOPICS);
+  const pin = useChange(async (n: any) => { await api.put(`/notes/${n.id}`, { pinned: !n.pinned }); toast(n.pinned ? "Note kept on record only" : SHOWS[n.targetType] ?? ""); }, NOTE_TOPICS);
   /** label: what the note is about, shown in the note sheet when editing it */
   return (n: any, label: string): MenuItem[] => [
     { label: "Edit", icon: "edit", run: () => (noteSheet.value = { targets: [{ type: n.targetType, id: n.targetId, label }], edit: n }) },

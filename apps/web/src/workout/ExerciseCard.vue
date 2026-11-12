@@ -1,7 +1,7 @@
 <script setup lang="ts">
-// One exercise in the running workout: its reminders and pinned notes when it comes up, and the sets table
+// One exercise in the running workout: its reminders and pinned notes when it comes up (and the notes written in it), and the sets table
 // (Previous · kg · Reps · ✓). The routine's numbers are already filled in (last time's in an empty workout); tap Previous to copy it, tick to log the set.
-import { computed, ref, onBeforeUnmount } from "vue";
+import { computed, ref, watch, nextTick, onBeforeUnmount } from "vue";
 import { usesWeight, usesReps, usesDuration, usesDistance, toM, fromM, parseQuick, warmups, muscleName, sideJoins, restDefaultsOf, retimeSet, isTimed, type Tracking, type WorkoutExercise, type WorkoutSet } from "@motus/shared";
 import { joinRest } from "../core/plannedRest";
 import { SET_KINDS, setNo as setNoOf, sideJoinCls } from "../core/format";
@@ -13,6 +13,7 @@ import { toast } from "../core/toast";
 import { invalidate } from "../api/live";
 import { beep } from "./runtime";
 import { sidesItem } from "../core/sides";
+import { useNoteMenu } from "../core/noteMenu";
 import { timedItem } from "../core/timed";
 import Icon from "../components/Icon.vue";
 import Menu from "../components/Menu.vue";
@@ -148,6 +149,18 @@ const setMenu = (s: WorkoutSet) => [
   { label: "Remove set", icon: "trash", danger: true, sep: true, run: () => W.removeSet(props.e, s) },
 ];
 const isCur = computed(() => W.state.cur === props.index);
+// notes under the exercise: the ones that come back (pinned), when reminders are shown, and every note written in this
+// workout, always: one just written must show here (the setting hides what comes back, not what you wrote today)
+const shownNotes = computed(() => (props.e.notes ?? []).filter((x) => x.workoutId === W.state.w?.id || (prefs.value.showReminders && x.pinned)));
+const noteMenu = useNoteMenu();
+// a note just written lands under the sets, on the phone behind the action bar: bring it into view so it's seen saved
+const notesEl = ref<HTMLElement | null>(null);
+let seenNotes = new Set(shownNotes.value.map((n) => n.id));
+watch(() => shownNotes.value.map((n) => n.id), async (ids) => {
+  const fresh = shownNotes.value.some((n) => !seenNotes.has(n.id) && n.workoutId === W.state.w?.id);
+  seenNotes = new Set(ids);
+  if (fresh) { await nextTick(); notesEl.value?.scrollIntoView({ block: "nearest", behavior: "smooth" }); }
+});
 // the set to do now, marked in the table (the same one the action bar shows)
 // sets are logged only in the exercise being done: in one you're just looking at, the ticks are locked against stray taps
 const isActive = computed(() => W.state.active === props.index);
@@ -201,8 +214,8 @@ const nowId = computed(() => (W.state.active === props.index ? visibleSets.value
       <button class="fchip" @click="noteSheet = { targets: [{ type: 'exercise', id: e.exerciseId, label: `${e.exercise.name}, every time` }, ...(e.routineExerciseId && !e.swapped ? [{ type: 'routine_exercise', id: e.routineExerciseId, label: `${e.exercise.name} in ${W.state.w?.name ?? 'this routine'}` }] : []), ...(W.state.w?.routineId ? [{ type: 'routine', id: W.state.w.routineId, label: `The whole routine` }] : []), { type: 'workout_exercise', id: e.id, label: 'Just today' }], workoutId: W.state.w?.id }"><Icon name="note" :size="14" />Note</button>
     </div>
     <!-- notes for this exercise: under it, where you look after a set -->
-    <div v-if="prefs.showReminders && isCur && e.notes?.some((x) => x.pinned || x.workoutId === W.state.w?.id)" class="exnotes">
-      <NoteItem v-for="n in e.notes?.filter((x) => x.pinned || x.workoutId === W.state.w?.id)" :key="n.id" :note="n" />
+    <div v-if="isCur && shownNotes.length" ref="notesEl" class="exnotes">
+      <NoteItem v-for="n in shownNotes" :key="n.id" :note="n" :menu="noteMenu(n, e.exercise?.name ?? '')" />
     </div>
     <ExercisePicker v-if="picking" title="Replace with" :suggest="alts" @close="picking = null" @pick="replace" />
     <RestPicker v-if="restEdit" :title="restEdit === 'between' ? 'Rest between sets' : 'Rest after this exercise'" :value="restEdit === 'between' ? e.restS : e.restAfterS" :default-label="'Default'" @close="restEdit = null"
@@ -212,7 +225,8 @@ const nowId = computed(() => (W.state.active === props.index ? visibleSets.value
 </template>
 
 <style scoped>
-.exnotes { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--ol); }
+/* scrolled to after a note is written, so it stops clear of the phone's action bar (--dockh, set by ActiveWorkout) */
+.exnotes { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--ol); scroll-margin-bottom: calc(var(--dockh, 0px) + var(--spg)); }
 /* the pills under the sets: the gap the rows use between blocks */
 .aw-add { margin-top: var(--hg); flex-wrap: wrap; }
 .exrem { display: flex; flex-direction: column; gap: 8px; margin-bottom: var(--hg); }

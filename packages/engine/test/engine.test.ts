@@ -198,6 +198,10 @@ describe("engine", () => {
     for (const [i, s] of bench.sets.entries()) await call(A, "PUT", `/workout-sets/${s.id}`, { weightKg: 80, reps: 8 - i, done: true });
     await call(A, "PUT", `/workout-exercises/${w.exercises[1].id}`, { status: "skipped", skipReason: "Equipment busy" });
     await call(A, "POST", "/notes", { targetType: "exercise", targetId: benchId, body: "Felt strong", workoutId, pinned: true });
+    // a note written during the workout is on its exercise straight away, also a "just today" one
+    await call(A, "POST", "/notes", { targetType: "workout_exercise", targetId: bench.id, body: "Grip slipped", workoutId });
+    const live = await call(A, "GET", "/workouts/active");
+    expect(live.exercises[0].notes.map((n: any) => n.body)).toEqual(["Felt strong", "Grip slipped"]);
     await call(A, "POST", "/reminders", { targetType: "exercise", targetId: benchId, body: "Go up 2.5 kg", action: { weightKg: 2.5 }, workoutId });
     await call(A, "POST", `/workouts/${workoutId}/finish`, {});
     const done = await call(A, "GET", `/workouts/${workoutId}`);
