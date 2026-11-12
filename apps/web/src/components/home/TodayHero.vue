@@ -156,7 +156,8 @@ const doneCount = computed(() => week.value.filter((d) => d.done).length);
         <div v-if="!pastRows.length" class="ts">No workout or activity on this day.</div>
       </template>
       <!-- the calendar is still on its way: hold the line's place so the block doesn't jump -->
-      <div v-else class="tl" aria-hidden="true">&nbsp;</div>
+      <div v-else-if="cal.isError.value" class="ts">Couldn't load this day.</div>
+      <template v-else><div class="tl" aria-hidden="true">&nbsp;</div><div class="ts" aria-hidden="true">&nbsp;</div></template>
     </div>
     <MuscleFig v-if="sel === today && hero?.routine" class="tfig" :routine="hero.routine" />
     <div class="tweek" role="group" :aria-label="`This week: ${doneCount} of 7 days trained`">
@@ -198,7 +199,7 @@ const doneCount = computed(() => week.value.filter((d) => d.done).length);
           <span class="pk"><Icon :name="r.icon" :size="18" /></span>
           <div class="pt"><div class="pn">{{ r.name }}</div><div class="ps">{{ r.sub }}</div></div>
           <SessionStats :x="r.x" />
-          <Icon name="right" :size="16" class="pgo" />
+          <Icon name="right" class="pgo" />
         </div>
       </template>
     </div>
@@ -250,7 +251,8 @@ const doneCount = computed(() => week.value.filter((d) => d.done).length);
 /* the other plans' buttons: tonal on the hero's own colour, so only the first one is filled */
 .prow .btn.tonal { background: color-mix(in srgb, var(--onc) 12%, transparent); color: var(--onc); }
 /* a past day's sessions open like the calendar's rows: the hero's own hover, its stats column and arrow in its softer text */
-.prow.click:hover { background: color-mix(in srgb, var(--onc) 14%, transparent); }
+.prow.click > .pt { min-width: 42%; }
+.prow.click:is(:hover, :active) { background: color-mix(in srgb, var(--onc) 14%, transparent); }
 .prow.click:focus-visible { outline: 2px solid var(--onc); outline-offset: 2px; }
 .prow :deep(.sstats) { color: color-mix(in srgb, var(--onc) 72%, transparent); text-align: end; }
 .pgo { flex: none; color: color-mix(in srgb, var(--onc) 60%, transparent); }
