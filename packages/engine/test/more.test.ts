@@ -46,6 +46,21 @@ describe("schedules", () => {
     const after = await call("GET", "/calendar", undefined, { from: "2031-03-01", to: "2031-05-31", tz: "0" });
     expect(after.planned.filter((p: any) => p.scheduleId === sid).map((p: any) => p.date)).toEqual(["2031-04-02"]);
   });
+
+  it("takes a planned day off the calendar: skipping one day of a repeating plan, undoing it, removing a one-off", async () => {
+    const r = (await call("POST", "/routines", { name: "Unplan test" })).id;
+    const weekly = (await call("POST", "/schedules", { routineId: r, rule: "weekly", days: [1], startDate: "2031-06-01" })).id;
+    const once = (await call("POST", "/schedules", { routineId: r, rule: "once", startDate: "2031-06-03" })).id;
+    const days = async (sid: string) => (await call("GET", "/calendar", undefined, { from: "2031-06-01", to: "2031-06-16", tz: "0" })).planned.filter((p: any) => p.scheduleId === sid);
+    expect((await days(weekly)).map((p: any) => [p.date, p.repeats])).toEqual([["2031-06-02", true], ["2031-06-09", true], ["2031-06-16", true]]);
+    expect((await days(once)).map((p: any) => [p.date, p.repeats])).toEqual([["2031-06-03", false]]);
+    await call("POST", `/schedules/${weekly}/exception`, { date: "2031-06-09" });
+    expect((await days(weekly)).map((p: any) => p.date)).toEqual(["2031-06-02", "2031-06-16"]);
+    await call("POST", `/schedules/${weekly}/exception`, { date: "2031-06-09", clear: true });
+    expect((await days(weekly)).map((p: any) => p.date)).toEqual(["2031-06-02", "2031-06-09", "2031-06-16"]);
+    await call("DELETE", `/schedules/${once}`);
+    expect(await days(once)).toEqual([]);
+  });
 });
 
 describe("programs", () => {

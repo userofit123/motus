@@ -430,7 +430,7 @@ export interface LiveEvent {
 export type GoalDays = null | "workdays" | number[];
 
 /** Home (/home): what's planned for a day in the coming week. */
-export interface HomePlan { scheduleId: string; date: string; routineId: string | null; activityType: string | null; name: string; color: string | null; timeOfDay: string | null }
+export interface HomePlan { scheduleId: string; date: string; routineId: string | null; activityType: string | null; name: string; color: string | null; timeOfDay: string | null; repeats: boolean }
 /** Home: a program you follow, where you are in it (absent while Programs is switched off). */
 export interface HomeProgram extends Omit<ProgramState, "next"> { next: ProgramSlot; id: string; name: string; weeks: number; deloadPct: number; startDate: string; calendarWeek: number }
 /** Home: a routine or muscle worth doing next. */

@@ -14,7 +14,7 @@ import { toast } from "../core/toast";
 import { onHome, streakOnHome, toggleHomeGoal, setHomeStreak, periodWord, periodNow, periodLabel, useStepGoal } from "../core/goals";
 import { useFmt, ago, goalLabel, localYmd, tomorrowYmd } from "../core/format";
 import { reminderText } from "../core/reminderText";
-import { startPlan } from "../components/home/planActions";
+import { startPlan, unplanItems } from "../components/home/planActions";
 import { startOpen, bodySheet, dailySheet, reminderView } from "../core/ui";
 import { isPhone } from "../core/device";
 import Icon from "../components/Icon.vue";
@@ -344,6 +344,7 @@ await loaded(home, ach);
               <MuscleFig sm :routine="p.routineId ?? undefined" />
               <div class="grow"><div class="t">{{ p.name }}</div><div class="s">{{ dayName(p.date) }}{{ p.timeOfDay ? " · " + p.timeOfDay : "" }}</div></div>
               <button class="btn s o over" :aria-label="`Start ${p.name}`" @click="startPlan(router, p)"><Icon name="play" :size="14" />Start</button>
+              <span class="over"><Menu :items="unplanItems(p)" :label="`Options for ${p.name}`" /></span>
             </div>
           </div>
         </div>

@@ -9,10 +9,8 @@ const kept: { v: { month: number; sel: string | null } | null } = { v: null };
 import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useCalendar, useSettings, useWorkouts, useActivities, loaded } from "../api/queries";
-import { api } from "../api/client";
-import { invalidate } from "../api/live";
-import { toast } from "../core/toast";
 import Menu from "../components/Menu.vue";
+import { unplanItems } from "../components/home/planActions";
 import { useFmt, localYmd, activityIcon } from "../core/format";
 import { isPhone } from "../core/device";
 import { activitySheet } from "../core/ui";
@@ -93,8 +91,6 @@ const summary = computed(() => {
   if (!m.days) return "Nothing yet this month";
   return [n(m.workouts, "workout"), m.activities ? n(m.activities, "activity", "activities") : "", fmt.value.dur(m.timeS, true)].filter(Boolean).join(" · ");
 });
-// the schedule's exception for that date drops the planned day; the same call the old day window made
-async function skipPlanned(x: any) { await api.post(`/schedules/${x.scheduleId}/exception`, { date: x.date }); invalidate(["calendar", "home"]); toast("Planned workout skipped"); }
 // list view
 const listWorkouts = useWorkouts(computed(() => ({ limit: 300 })));
 const listActs = useActivities(computed(() => ({ limit: 300 })));
@@ -145,7 +141,7 @@ await loaded(cal, listWorkouts, listActs);
         <div class="card">
           <div v-if="!(byDay.get(sel) ?? []).length" class="tiny">{{ sel >= today ? "Nothing planned. Use Plan to put a routine on this day." : "Nothing on this day." }}</div>
           <div class="list"><div v-for="x in byDay.get(sel) ?? []" :key="x.id ?? x.scheduleId" class="li click" @click="open(x)">
-            <Icon :name="icon(x)" :size="18" :style="{ color: x.color ?? 'var(--acc)' }" /><div class="grow"><div class="t" :style="x.missed ? { opacity: .5 } : undefined">{{ label(x) }}</div><div class="s">{{ x.kind === "planned" ? (x.missed ? "Missed" : "Planned") : fmt.time(x.startedAt) }}</div></div><SessionStats v-if="x.kind !== 'planned'" :x="x" /><span v-if="x.kind === 'planned' && !x.missed" @click.stop><Menu :items="[{ label: 'Skip this day', icon: 'close', run: () => skipPlanned(x) }]" /></span><Icon v-else name="right" class="muted" /></div></div>
+            <Icon :name="icon(x)" :size="18" :style="{ color: x.color ?? 'var(--acc)' }" /><div class="grow"><div class="t" :style="x.missed ? { opacity: .5 } : undefined">{{ label(x) }}</div><div class="s">{{ x.kind === "planned" ? (x.missed ? "Missed" : "Planned") : fmt.time(x.startedAt) }}</div></div><SessionStats v-if="x.kind !== 'planned'" :x="x" /><span v-if="x.kind === 'planned'" @click.stop><Menu :items="unplanItems(x)" :label="`Options for ${x.name}`" /></span><Icon v-else name="right" class="muted" /></div></div>
         </div>
       </div>
     </div>
