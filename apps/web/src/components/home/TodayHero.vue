@@ -2,9 +2,10 @@
 // Home's first block: what to do today, and this week's training days at a glance. It changes with the day:
 // a workout in progress takes it over, then today's plans, then your program's next workout, then a suggestion; with
 // none of those it offers a workout of your choice. A new account gets a way to begin instead.
-// Several plans for today are a list of equals, each with its own Start and a ⋮ menu to log it instead (a single plan's ⋮
-// sits top-right in the header); only the earliest one's button is the filled one, so the screen keeps one primary
-// button. Tapping a day in the week shows that day here instead of today.
+// Several plans for today are a list of equals, each with its own Start and a ⋮ menu to log it instead, skip it or
+// remove it (a single plan's ⋮ sits top-right in the header); only the earliest one's button is the filled one, so the
+// screen keeps one primary button. Tapping a day in the week shows that day here instead of today; its plans have only
+// the ⋮ to skip or remove them.
 import { computed, ref } from "vue";
 import type { HomePlan, HomeToday } from "@motus/shared";
 import { useRouter } from "vue-router";
@@ -14,7 +15,7 @@ import { startOpen } from "../../core/ui";
 import Icon from "../Icon.vue";
 import MuscleFig from "../MuscleFig.vue";
 import Menu from "../Menu.vue";
-import { startPlan, planMenu } from "./planActions";
+import { startPlan, planMenu, unplanItems } from "./planActions";
 
 const props = defineProps<{ h: HomeToday; fresh: boolean }>();
 const router = useRouter();
@@ -25,7 +26,7 @@ const tomorrow = tomorrowYmd();
 // the day the block shows: today unless you tapped another day in the week
 const sel = ref(today);
 
-// a plan starts (a routine) or records (an activity); its ⋮ menu logs it instead (planActions)
+// a plan starts (a routine) or records (an activity); its ⋮ menu logs it instead, skips it or removes it (planActions)
 const open = (p: HomePlan) => startPlan(router, p);
 // the engine sends plans not done yet (each drops out on its own once done), timed ones in time order, then the rest
 const plansOn = (d: string) => (props.h.upNext ?? []).filter((p) => p.date === d);
@@ -64,7 +65,8 @@ const rows = computed(() => (props.h.active || todays.value.length > 1 ? todays.
 // the filled button: the earliest plan's, unless a workout in progress holds it (Resume)
 const primary = (i: number) => !props.h.active && i === 0;
 
-// another day of the week: its plans (no Start: it isn't that day yet), or whether you trained on a past one
+// another day of the week: its plans (no Start or Log it: it isn't that day yet, so the ⋮ only skips or removes), or whether
+// you trained on a past one
 const dayLabel = computed(() => (sel.value === tomorrow ? "Tomorrow" : fmt.value.date(sel.value, { weekday: "long", day: "numeric", month: "long" })));
 const pastNote = computed(() => ((props.h.days ?? []).includes(sel.value) ? "You trained on this day." : "No workout or activity on this day."));
 const openDay = () => router.push({ path: "/history", query: { date: sel.value } });
@@ -147,6 +149,7 @@ const doneCount = computed(() => week.value.filter((d) => d.done).length);
       <div v-for="p in picked" :key="p.scheduleId" role="listitem" class="prow">
         <span class="pk"><Icon :name="kindIcon(p)" :size="18" /></span>
         <div class="pt"><div class="pn">{{ p.name }}</div><div class="ps">{{ planSub(p) }}</div></div>
+        <span class="pact"><Menu :items="unplanItems(p)" :label="`Options for ${p.name}`" /></span>
       </div>
     </div>
   </div>
@@ -190,7 +193,7 @@ const doneCount = computed(() => week.value.filter((d) => d.done).length);
 .pt { flex: 1; min-width: 0; }
 .pn { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ps { font-size: var(--fs-sm); color: color-mix(in srgb, var(--onc) 72%, transparent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-/* the ⋮ beside Start (and a single plan's in the header): full on-colour like the hero's other controls (above the
+/* the ⋮ beside Start (on a later day's plans on its own, and a single plan's in the header): full on-colour like the hero's other controls (above the
    hero's softer .sm text), and the hero's own hover instead of the surface one */
 :is(.pact, .hmenu) :deep(.ib.plain) { color: var(--onc); }
 :is(.pact, .hmenu) :deep(.ib.plain:hover) { background: color-mix(in srgb, var(--onc) 18%, transparent); }

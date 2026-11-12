@@ -5,14 +5,13 @@ import { computed, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useQuery } from "@tanstack/vue-query";
 import { restDefaultsOf, progressionOf, progressionDefaultsOf, oneSideOf, usesWeight, usesReps, routineTime, muscleName, muscleSets, musclesWorked, scheduleSummary, sideRounds } from "@motus/shared";
-import { useRoutine, useRoutines, useNotes, useReminders, useSchedules, useSettings, useChange, loaded } from "../api/queries";
+import { useRoutine, useRoutines, useNotes, useReminders, useSchedules, useSettings, loaded } from "../api/queries";
 import { api, mediaUrl } from "../api/client";
 import { progParts as progPartsOf } from "../core/progression";
 import { restSummary } from "../core/plannedRest";
 import { isPhone } from "../core/device";
 import { useFmt, ago, setSummary } from "../core/format";
 import { noteSheet, reminderSheet, exerciseSheet, scheduleSheet } from "../core/ui";
-import { toast } from "../core/toast";
 import Icon from "../components/Icon.vue";
 import MuscleFig from "../components/MuscleFig.vue";
 import Menu from "../components/Menu.vue";
@@ -22,6 +21,7 @@ import LineChart from "../components/LineChart.vue";
 import PlanSets from "../components/PlanSets.vue";
 import BodyMap from "../components/BodyMap.vue";
 import { useRoutineMenu } from "../core/routineMenu";
+import { removeItem } from "../components/home/planActions";
 import { useNoteMenu } from "../core/noteMenu";
 
 const route = useRoute(), router = useRouter();
@@ -72,7 +72,8 @@ const exItems = (e: any) => [
 ];
 // the same wording as the schedule popup's summary, without when it started
 const schedLine = (s: any) => { const t = scheduleSummary(s, fmt.value.day, false); return t.charAt(0).toUpperCase() + t.slice(1); };
-const delSched = useChange(async (sid: string) => { await api.del(`/schedules/${sid}`); toast("Schedule removed"); }, ["schedules", "calendar", "home"]);
+// removing one of its plans works as everywhere else (planActions): a repeating one asks first, a one-off one has Undo
+const schedRemove = (s: any) => removeItem({ scheduleId: s.id, name: routine.value.name, repeats: s.rule !== "once" });
 const noteMenu = useNoteMenu();
 // a note on one of the routine's exercises says which; notes on the routine itself need no label
 const noteWhere = (n: any) => (n.targetType === "routine_exercise" ? routine.value?.exercises.find((e: any) => e.id === n.targetId)?.exercise?.name ?? null : null);
@@ -142,7 +143,7 @@ await loaded(r, summaries, notes, rems, schedules, history);
           <div class="row hgap"><b class="grow">Schedule</b><button class="qb acc" style="padding:4px 6px" @click="scheduleSheet = { routineId: id }"><Icon name="plus" :size="16" /></button></div>
           <div v-if="!mySchedules.length" class="tiny">Not scheduled. Add days to see it in Up next and the calendar, with a reminder.</div>
           <div v-for="s in mySchedules" :key="s.id" class="li" style="min-height:0;padding:calc(var(--lpy) - 2px) 0"><Icon name="calendar" :size="16" class="muted" /><span class="grow">{{ schedLine(s) }}</span>
-            <Menu :items="[{ label: 'Edit', icon: 'edit', run: () => (scheduleSheet = s) }, { label: 'Remove', icon: 'trash', danger: true, sep: true, run: () => delSched.run(s.id) }]" /></div>
+            <Menu :items="[{ label: 'Edit', icon: 'edit', run: () => (scheduleSheet = s) }, schedRemove(s)]" /></div>
         </div>
       </div>
     </div>

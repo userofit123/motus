@@ -339,12 +339,12 @@ await loaded(home, ach);
             <button class="lnk" @click="planOpen = { rule: 'once' }"><Icon name="plus" :size="14" />Plan</button><button class="lnk" @click="router.push('/history')">Calendar</button></div>
           <div v-if="!upNext.length" class="tiny">Nothing else planned this week. Plan a routine for certain days and it shows here and in the calendar.</div>
           <div v-else class="list">
-            <div v-for="p in upNext" :key="p.scheduleId + p.date" class="li click">
+            <div v-for="p in upNext" :key="p.scheduleId + p.date" class="li click uprow">
               <button class="cover" :aria-label="`Open ${p.name}`" @click="startPlan(router, p)" />
               <MuscleFig sm :routine="p.routineId ?? undefined" />
-              <div class="grow"><div class="t">{{ p.name }}</div><div class="s">{{ dayName(p.date) }}{{ p.timeOfDay ? " · " + p.timeOfDay : "" }}</div></div>
-              <button class="btn s o over" :aria-label="`Start ${p.name}`" @click="startPlan(router, p)"><Icon name="play" :size="14" />Start</button>
-              <span class="over"><Menu :items="unplanItems(p)" :label="`Options for ${p.name}`" /></span>
+              <div class="grow"><div class="t ellipsis">{{ p.name }}</div><div class="s ellipsis">{{ dayName(p.date) }}{{ p.timeOfDay ? " · " + p.timeOfDay : "" }}</div></div>
+              <span class="pact over"><button class="btn s o" :aria-label="`Start ${p.name}`" @click="startPlan(router, p)"><Icon name="play" :size="14" />Start</button>
+                <Menu :items="unplanItems(p)" :label="`Options for ${p.name}`" /></span>
             </div>
           </div>
         </div>
@@ -464,6 +464,9 @@ await loaded(home, ach);
 </template>
 
 <style scoped>
+/* an Up next row: the name gives way to Start and ⋮ (cut with an ellipsis, like the plan rows in Today) instead of
+   keeping the setting rows' 42%, so the row fits at phone width */
+.uprow > .grow { min-width: 0; }
 /* the board: four columns on a computer, two on the phone. Small blocks fill gaps left by wide ones (dense), so any order
    still lays out without holes */
 .hgrid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--spg); grid-auto-flow: row dense; align-items: stretch; }
