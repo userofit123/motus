@@ -158,7 +158,9 @@ await loaded(q);
     </div>
 
     <div v-if="w.notes" class="banner note spt"><Icon name="note" :size="18" class="note-ic" /><div style="white-space:pre-wrap">{{ w.notes }}</div></div>
-    <NoteItem v-for="n in w.routineNotes?.filter((x: any) => x.workoutId === w.id)" :key="n.id" :note="n" :menu="noteMenu(n, n.targetType === 'routine' ? w.name : 'This workout')" />
+    <div v-if="w.routineNotes?.some((x: any) => x.workoutId === w.id)" class="aw-notes">
+      <NoteItem v-for="n in w.routineNotes.filter((x: any) => x.workoutId === w.id)" :key="n.id" :note="n" :menu="noteMenu(n, n.targetType === 'routine' ? w.name : 'This workout')" />
+    </div>
 
     <div class="grid spt" style="grid-template-columns:minmax(0,1fr) 300px;align-items:start">
       <div class="stack">
@@ -193,7 +195,9 @@ await loaded(q);
             Last time {{ fmt.date(verdict(e.id).last.startedAt) }}: {{ verdict(e.id).last.e1rm ? `1RM ${fmt.w(verdict(e.id).last.e1rm)}` : `${verdict(e.id).last.reps} reps` }} · {{ fmt.vol(verdict(e.id).last.volumeKg) }}
             <template v-if="delta(verdict(e.id).now.e1rm, verdict(e.id).last.e1rm)"> · <span :class="delta(verdict(e.id).now.e1rm, verdict(e.id).last.e1rm)! > 0 ? 'pos' : 'neg'">{{ delta(verdict(e.id).now.e1rm, verdict(e.id).last.e1rm)! > 0 ? "+" : "" }}{{ fmt.w(delta(verdict(e.id).now.e1rm, verdict(e.id).last.e1rm)!) }} {{ fmt.wu }} 1RM</span></template>
           </div>
-          <NoteItem v-for="n in e.notes?.filter((x: any) => x.workoutId === w.id)" :key="n.id" :note="n" :menu="noteMenu(n, e.exercise?.name ?? '')" class="spt" />
+          <div v-if="e.notes?.some((x: any) => x.workoutId === w.id)" class="exnotes">
+            <NoteItem v-for="n in e.notes.filter((x: any) => x.workoutId === w.id)" :key="n.id" :note="n" :menu="noteMenu(n, e.exercise?.name ?? '')" />
+          </div>
         </div>
         <button v-if="editing" class="btn tonal block" @click="adding = true"><Icon name="plus" />Add exercise</button>
       </div>

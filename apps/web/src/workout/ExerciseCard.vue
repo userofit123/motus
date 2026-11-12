@@ -180,7 +180,7 @@ const nowId = computed(() => (W.state.active === props.index ? visibleSets.value
     </div>
 
     <!-- reminders come first, before the sets they are about; notes go under the exercise -->
-    <div v-if="prefs.showReminders && isCur && e.reminders?.length" class="exrem">
+    <div v-if="prefs.showReminders && isCur && e.reminders?.length" class="exrem nlist">
       <ReminderItem v-for="r in e.reminders" :key="r.id" :reminder="r" @gone="e.reminders = e.reminders?.filter((x) => x.id !== r.id)" :actions="[{ label: 'Done', primary: true, run: () => remDone(r.id, 'done') }, { label: 'Next time', run: () => remDone(r.id, 'pending') }, { label: 'Dismiss', run: () => remDone(r.id, 'dismissed') }]" />
     </div>
 
@@ -226,11 +226,7 @@ const nowId = computed(() => (W.state.active === props.index ? visibleSets.value
 </template>
 
 <style scoped>
-/* a list inside the exercise: notes as close as the Routine page's (.pnotes), set off from the sets by the gap between blocks */
-.exnotes { display: flex; flex-direction: column; gap: var(--lpy); margin-top: var(--hg); padding-top: var(--hg); border-top: 1px solid var(--ol); }
-/* a note just written is scrolled to, so it stops clear of the phone's action bar (--dockh, set by ActiveWorkout) */
-.exnotes > .nitem { scroll-margin-bottom: calc(var(--dockh, 0px) + var(--spg)); }
 /* the pills under the sets: the gap the rows use between blocks */
 .aw-add { margin-top: var(--hg); flex-wrap: wrap; }
-.exrem { display: flex; flex-direction: column; gap: 8px; margin-bottom: var(--hg); }
+.exrem { margin-bottom: var(--hg); }
 </style>

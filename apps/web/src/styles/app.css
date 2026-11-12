@@ -28,6 +28,15 @@ hr.sep { border: 0; border-top: 1px solid var(--ol); margin: 14px 0; }
    setting in Appearance moves them all; a heading, a filter row or a toolbar sits --hg above what it belongs to */
 .stack { display: flex; flex-direction: column; gap: var(--spg); }
 .spt { margin-top: var(--spg); }
+/* every list of notes or reminders: items --lpy apart (rows of one block) */
+.nlist, .aw-notes, .exnotes { display: flex; flex-direction: column; gap: var(--lpy); }
+/* as a block on a page: --spg from its neighbours */
+.aw-notes { margin-top: var(--spg); }
+.stack > .aw-notes { margin-top: 0; }
+/* inside an exercise card: --hg and a divider line from the sets above */
+.exnotes { margin-top: var(--hg); padding-top: var(--hg); border-top: 1px solid var(--ol); }
+/* a note just written is scrolled to, so it stops clear of the phone's action bar (--dockh, set by ActiveWorkout) */
+.aw-notes > .nitem, .exnotes > .nitem { scroll-margin-bottom: calc(var(--dockh, 0px) + var(--spg)); }
 /* the chosen day's list is keyed by the day, so each day fades in moving up (fi) instead of swapping size abruptly */
 @media (prefers-reduced-motion: no-preference) { .spt.dayfade { animation: fi .22s var(--ease); } }
 .spb { margin-bottom: var(--spg); }

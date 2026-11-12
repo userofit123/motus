@@ -149,7 +149,7 @@ const menu = computed(() => [
       <button class="btn" :class="{ o: done === 0 }" @click="finishing = true">Finish</button>
     </div>
     <div v-if="!isPhone" class="aw-prog" aria-hidden="true"><span v-for="g in segs" :key="g.id" :style="{ flexGrow: g.n }"><i :style="{ width: (g.done / g.n) * 100 + '%' }" /></span></div>
-    <div v-if="w.reminders?.length" class="col spb" style="gap:8px"><ReminderItem v-for="m in w.reminders" :key="m.id" :reminder="m" @gone="w.reminders = w.reminders.filter((x: Reminder) => x.id !== m.id)" /></div>
+    <div v-if="W.prefs.value.showReminders && w.reminders?.length" class="nlist spb"><ReminderItem v-for="m in w.reminders" :key="m.id" :reminder="m" @gone="w.reminders = w.reminders.filter((x: Reminder) => x.id !== m.id)" /></div>
 
 
     <div v-if="!w.exercises.length" class="card empty"><Icon name="dumbbell" :size="34" /><b>Add your first exercise</b><button class="btn" @click="adding = true">Add exercises</button></div>
@@ -247,10 +247,6 @@ const menu = computed(() => [
 .aw-tabs .add { padding-inline: 12px; }
 /* the exercise being done: a dot after its name, wherever you're looking */
 .aw-tabs button.act::after, .aw-list .li.act .t::after { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--pos); flex: none; display: inline-block; margin-inline-start: 6px; vertical-align: middle; }
-/* one list of notes: as close together as an exercise's notes (.exnotes), the gap between blocks above it */
-.aw-notes { display: flex; flex-direction: column; gap: var(--lpy); margin-top: var(--spg); }
-.aw-notes > .nitem { scroll-margin-bottom: calc(var(--dockh, 0px) + var(--spg)); }
-.stack > .aw-notes { margin-top: 0; }
 /* phone: the controls are a sheet fixed to the bottom edge, its own shadow lifting it off the page */
 .aw-dock { position: fixed; z-index: 50; left: 0; right: 0; bottom: 0; padding-inline: var(--sl) var(--sr); }
 .aw-dock :deep(.abar) { border-radius: var(--r-sheet) var(--r-sheet) 0 0; border-bottom: 0; padding-bottom: calc(14px + var(--sb, 0px)); box-shadow: 0 -10px 30px -18px rgb(0 0 0 / .45); }

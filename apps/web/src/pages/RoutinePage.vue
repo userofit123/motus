@@ -92,7 +92,7 @@ await loaded(r, summaries, notes, rems, schedules, history);
     </div>
     <p v-if="routine.description" class="muted desc">{{ routine.description }}</p>
     <!-- the notes that show every time and its reminders, as a workout's page shows them; not on the Notes tab, which lists the notes -->
-    <div v-if="tab !== 'notes' && (shown('routine', id).length || myRems.length)" class="stack spb">
+    <div v-if="tab !== 'notes' && (shown('routine', id).length || myRems.length)" class="nlist spb">
       <NoteItem v-for="n in shown('routine', id)" :key="n.id" :note="n" :menu="noteMenu(n, routine.name)" />
       <ReminderItem v-for="m in myRems" :key="m.id" :reminder="m" :where="m.targetType === 'exercise' ? m.targetName : null" :routine-name="routine.name" when />
     </div>
