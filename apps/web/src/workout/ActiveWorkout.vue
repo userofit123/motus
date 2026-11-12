@@ -234,7 +234,7 @@ const menu = computed(() => [
 .aw-clock { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; font-size: 12.5px; color: var(--tx2); }
 .aw-clock b { font-size: 26px; font-weight: 600; letter-spacing: -.8px; color: var(--tx); font-variant-numeric: tabular-nums; line-height: 1.1; }
 .aw-paused { color: var(--acc); font-weight: 600; }
-/* -4px pulls the bar up under the header (optical); the gap below is a block gap */
+/* -4px pulls the bar up under the header's --hg gap (optical); the gap below is a block gap */
 .aw-prog { display: flex; gap: 3px; margin: -4px 0 var(--spg); }
 .aw-prog span { flex-basis: 0; height: 5px; border-radius: 5px; background: var(--s2); overflow: hidden; }
 .aw-prog i { display: block; height: 100%; background: var(--acc); border-radius: inherit; transition: width .3s var(--ease); }

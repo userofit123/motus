@@ -459,7 +459,7 @@ button.sect-h.go { width: 100%; padding: 0; border: 0; background: none; font: i
 .tick.on svg { stroke-width: 2.6; }
 
 /* ---------- active workout ---------- */
-.aw-top { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+.aw-top { display: flex; align-items: center; gap: 12px; margin-bottom: var(--hg); }
 .aw-ex .exh { display: flex; align-items: flex-start; gap: 12px; margin-bottom: 12px; }
 .aw-ex .exh h3 { font-size: 19px; font-weight: 600; letter-spacing: -.3px; line-height: 1.2; cursor: pointer; }
 /* a banner is a block: --spg below it on a page, --hg inside a card or a sheet, none in a stack (its gap does it);

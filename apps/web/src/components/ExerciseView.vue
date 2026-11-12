@@ -205,7 +205,7 @@ const menu = computed<MenuItem[]>(() => [
       <div v-if="pending.length" class="nlist hgap">
         <ReminderItem v-for="r in pending" :key="r.id" :reminder="r" when />
       </div>
-      <div v-if="notes.data.value?.length">
+      <div v-if="notes.data.value?.length" class="list">
         <NoteItem v-for="n in notes.data.value" :key="n.id" :note="n" flat date
           :menu="noteMenu(n, e.name)" />
       </div>
