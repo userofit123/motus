@@ -189,8 +189,15 @@ export function useWorkout() {
     if (done && rest.endAt) finishRest(true);
     const allDone = e.sets.every((x) => x.done);
     e.status = e.status === "skipped" ? "skipped" : allDone ? "done" : "pending";
-    await call("put", `/workout-sets/${s.id}`, { done, weightKg: s.weightKg, reps: s.reps, durationS: s.durationS, distanceM: s.distanceM, rpe: s.rpe, rir: s.rir, kind: s.kind });
-    if (!done) return;
+    // saved behind the scenes: the rest and the next exercise follow the copy here at once. Waiting for the save left
+    // the screen stuck for seconds while the device's copy (PGlite) was still reloading the workout after the weight
+    // and reps were typed in, its queries running one at a time
+    const saved = call("put", `/workout-sets/${s.id}`, { done, weightKg: s.weightKg, reps: s.reps, durationS: s.durationS, distanceM: s.distanceM, rpe: s.rpe, rir: s.rir, kind: s.kind });
+    if (done) afterDone(e, si, s, allDone);
+    await saved;
+  }
+  /** What follows a set ticked done: its rest, and the next exercise (or the superset partner). */
+  function afterDone(e: WorkoutExercise, si: number, s: WorkoutSet, allDone: boolean) {
     const { secs } = restFor(e, si);
     const isFinal = state.w!.exercises.every((x) => x.status !== "pending");
     if (prefs.value.autoRest && secs > 0 && !isFinal) startRest(secs, { setId: s.id, label: allDone ? "Next exercise" : "Rest", next: describeNext(e, si), workoutId: state.w!.id });
