@@ -202,7 +202,7 @@ const menu = computed<MenuItem[]>(() => [
         <button class="btn o s" @click="reminderSheet = { targetType: 'exercise', targetId: props.id, label: e.name }"><Icon name="bell" :size="16" />Reminder</button>
       </div>
       <div v-if="!notes.data.value?.length && !pending.length" class="empty"><Icon name="note" :size="32" /><b>No notes yet</b>Write how it felt, what to change, or whether it suits you.</div>
-      <div v-if="pending.length" class="col" style="gap:8px;margin-bottom:var(--hg)">
+      <div v-if="pending.length" class="nlist hgap">
         <ReminderItem v-for="r in pending" :key="r.id" :reminder="r" when />
       </div>
       <div v-if="notes.data.value?.length">

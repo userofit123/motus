@@ -132,7 +132,7 @@ await loaded(r, summaries, notes, rems, schedules, history);
             <!-- its note and the notes that show every time; no menu here: notes are edited on the Notes tab -->
             <div v-if="e.note || shown('routine_exercise', e.id).length" class="sect">
               <div class="sect-h"><span class="si"><Icon name="note" :size="16" /></span><span class="grow"><b>Note</b><span v-if="e.note" class="tiny ntx">{{ e.note }}</span></span></div>
-              <div v-if="shown('routine_exercise', e.id).length" class="pnotes"><NoteItem v-for="n in shown('routine_exercise', e.id)" :key="n.id" :note="n" /></div>
+              <div v-if="shown('routine_exercise', e.id).length" class="nlist"><NoteItem v-for="n in shown('routine_exercise', e.id)" :key="n.id" :note="n" /></div>
             </div>
           </div>
         </div>
@@ -187,7 +187,6 @@ await loaded(r, summaries, notes, rems, schedules, history);
 .pexs { gap: 6px; flex-wrap: wrap; }
 /* the column's gap already sits above a section's line, so its margin is the editor's less that gap: --cpy-1 on both sides of the line at every density */
 .pexb > .sect { margin-top: calc(var(--cpy) - 1px - var(--lpy)); }
-.pnotes { display: flex; flex-direction: column; gap: var(--lpy); }
 .ntx { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; }
 </style>
 

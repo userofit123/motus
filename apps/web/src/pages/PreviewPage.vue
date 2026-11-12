@@ -101,7 +101,7 @@ await loaded(pv);
     </div>
 
     <div v-if="route.query.deload" class="banner spt"><Icon name="info" /><b>Deload week: working weights are {{ route.query.deload }}% lighter today.</b></div>
-    <div v-if="p.reminders?.length || p.notes?.length" class="col spt" style="gap:8px">
+    <div v-if="p.reminders?.length || p.notes?.length" class="nlist spt">
       <ReminderItem v-for="m in p.reminders" :key="m.id" :reminder="m" :where="exName(m)" />
       <NoteItem v-for="n in p.notes" :key="n.id" :note="n" :where="exName(n)" />
     </div>

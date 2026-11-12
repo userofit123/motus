@@ -191,7 +191,7 @@ await loaded(q);
               </tr>
             </tbody>
           </table>
-          <div v-if="verdict(e.id)?.last && e.status !== 'skipped'" class="tiny" style="margin-top:6px">
+          <div v-if="verdict(e.id)?.last && e.status !== 'skipped'" class="tiny lastt">
             Last time {{ fmt.date(verdict(e.id).last.startedAt) }}: {{ verdict(e.id).last.e1rm ? `1RM ${fmt.w(verdict(e.id).last.e1rm)}` : `${verdict(e.id).last.reps} reps` }} · {{ fmt.vol(verdict(e.id).last.volumeKg) }}
             <template v-if="delta(verdict(e.id).now.e1rm, verdict(e.id).last.e1rm)"> · <span :class="delta(verdict(e.id).now.e1rm, verdict(e.id).last.e1rm)! > 0 ? 'pos' : 'neg'">{{ delta(verdict(e.id).now.e1rm, verdict(e.id).last.e1rm)! > 0 ? "+" : "" }}{{ fmt.w(delta(verdict(e.id).now.e1rm, verdict(e.id).last.e1rm)!) }} {{ fmt.wu }} 1RM</span></template>
           </div>
@@ -221,6 +221,7 @@ await loaded(q);
 </template>
 
 <style scoped>
+.lastt { margin-top: var(--tdy); }
 .done-hi { display: flex; align-items: center; gap: var(--cpx); }
 .done-hi .t { font-weight: 600; font-size: 17px; }
 .done-hi .bi { background: color-mix(in srgb, var(--pos) 16%, transparent); color: var(--pos); }
