@@ -20,7 +20,8 @@ const routines = useRoutines();
 const all = useExercises();
 const fmt = useFmt();
 const exById = computed(() => new Map((all.data.value ?? []).map((e) => [e.id, e])));
-const f = ref({ routineId: "", name: "", date: String(route.query.date ?? localYmd(new Date())), time: "18:00", minutes: 60, notes: "" });
+// ?routine= starts from that routine (a planned workout's "Log it" on Home)
+const f = ref({ routineId: String(route.query.routine ?? ""), name: "", date: String(route.query.date ?? localYmd(new Date())), time: "18:00", minutes: 60, notes: "" });
 const exs = ref<{ exerciseId: string; sets: { weight: number | null; reps: number | null; durationS: number | null }[] }[]>([]);
 const picking = ref(false), busy = ref(false), saved = ref(false);
 // leaving with exercises filled in asks first
@@ -30,7 +31,7 @@ watch(() => f.value.routineId, async (id) => {
   const r = await api.get(`/routines/${id}`);
   f.value.name = r.name;
   exs.value = r.exercises.map((e: any) => ({ exerciseId: e.exerciseId, sets: e.sets.filter((s: any) => s.kind !== "warmup").map((s: any) => ({ weight: s.weightKg != null ? Math.round(fmt.value.fromKg(s.weightKg) * 100) / 100 : null, reps: s.reps, durationS: s.durationS })) }));
-});
+}, { immediate: true });
 const add = (ids: string[]) => { for (const id of ids) exs.value.push({ exerciseId: id, sets: [{ weight: null, reps: null, durationS: null }, { weight: null, reps: null, durationS: null }, { weight: null, reps: null, durationS: null }] }); picking.value = false; };
 async function save() {
   busy.value = true;

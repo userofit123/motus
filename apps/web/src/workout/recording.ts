@@ -42,6 +42,8 @@ function load(): Rec | null {
 }
 
 export const recording = ref<Rec | null>(load());
+/** where Start goes for an activity: back to the recording already running (only one runs at a time), or a new one of this type */
+export const recordPath = (type?: string | null) => (recording.value ? "/activities/record" : `/activities/record?type=${type ?? "walk"}`);
 /** a clock tick while recording, so every screen showing the time moves together */
 const recNow = ref(Date.now());
 export const gpsError = ref("");

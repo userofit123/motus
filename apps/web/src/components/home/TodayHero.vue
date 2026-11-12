@@ -2,18 +2,19 @@
 // Home's first block: what to do today, and this week's training days at a glance. It changes with the day:
 // a workout in progress takes it over, then today's plans, then your program's next workout, then a suggestion; with
 // none of those it offers a workout of your choice. A new account gets a way to begin instead.
-// Several plans for today are a list of equals, each with its own Start (an activity's Log it is in its ⋮ menu); only the earliest one's button is the
-// filled one, so the screen keeps one primary button. Tapping a day in the week shows that day here instead of today.
+// Several plans for today are a list of equals, each with its own Start and a ⋮ menu to log it instead; only the
+// earliest one's button is the filled one, so the screen keeps one primary button. Tapping a day in the week shows that
+// day here instead of today.
 import { computed, ref } from "vue";
 import type { HomePlan, HomeToday } from "@motus/shared";
 import { useRouter } from "vue-router";
 import { useSettings } from "../../api/queries";
 import { useFmt, ago, localYmd, tomorrowYmd, activityIcon } from "../../core/format";
-import { startOpen, activitySheet } from "../../core/ui";
+import { startOpen } from "../../core/ui";
 import Icon from "../Icon.vue";
 import MuscleFig from "../MuscleFig.vue";
 import Menu from "../Menu.vue";
-import { recording } from "../../workout/recording";
+import { startPlan, planMenu } from "./planActions";
 
 const props = defineProps<{ h: HomeToday; fresh: boolean }>();
 const router = useRouter();
@@ -24,12 +25,8 @@ const tomorrow = tomorrowYmd();
 // the day the block shows: today unless you tapped another day in the week
 const sel = ref(today);
 
-const start = (p: HomePlan) => router.push(`/routines/${p.routineId}/start${p.scheduleId ? `?schedule=${p.scheduleId}&date=${p.date}` : ""}`);
-// a routine starts, an activity starts recording (or returns to the one running); logging it afterwards is in the ⋮ menu
-const logIt = (p: HomePlan) => (activitySheet.value = { type: p.activityType ?? undefined });
-const startActivity = (p: HomePlan) => router.push(recording.value ? "/activities/record" : `/activities/record?type=${p.activityType ?? "walk"}`);
-const open = (p: HomePlan) => (p.routineId ? start(p) : startActivity(p));
-const logMenu = (p: HomePlan) => [{ label: "Log it", icon: "plus", run: () => logIt(p) }];
+// a plan starts (a routine) or records (an activity); its ⋮ menu logs it instead (planActions)
+const open = (p: HomePlan) => startPlan(router, p);
 // the engine sends plans not done yet (each drops out on its own once done), timed ones in time order, then the rest
 const plansOn = (d: string) => (props.h.upNext ?? []).filter((p) => p.date === d);
 const todays = computed(() => plansOn(today));
@@ -112,8 +109,8 @@ const doneCount = computed(() => week.value.filter((d) => d.done).length);
           <div class="tl"><span v-if="h.active" class="pulse" aria-hidden="true" />{{ hero.label }}</div>
           <div class="thead">
             <div class="tt">{{ hero.title }}</div>
-            <span class="tact"><button class="btn s" @click="hero.act.run()"><Icon :name="hero.act.icon" :size="14" />{{ hero.act.label }}</button>
-              <Menu v-if="hero.plan && !hero.plan.routineId" :items="logMenu(hero.plan)" :label="`Options for ${hero.plan.name}`" /></span>
+            <span class="pact"><button class="btn s" @click="hero.act.run()"><Icon :name="hero.act.icon" :size="14" />{{ hero.act.label }}</button>
+              <Menu v-if="hero.plan" :items="planMenu(router, hero.plan)" :label="`Options for ${hero.plan.name}`" /></span>
           </div>
           <div v-if="hero.sub" class="ts">{{ hero.sub }}</div>
         </template>
@@ -141,8 +138,8 @@ const doneCount = computed(() => week.value.filter((d) => d.done).length);
         <div v-for="(p, i) in rows" :key="p.scheduleId" role="listitem" class="prow">
           <span class="pk"><Icon :name="kindIcon(p)" :size="16" /></span>
           <div class="pt"><div class="pn">{{ p.name }}</div><div class="ps">{{ planSub(p) }}</div></div>
-          <button class="btn s" :class="{ tonal: !primary(i) }" :aria-label="`Start ${p.name}`" @click="open(p)"><Icon name="play" :size="14" />Start</button>
-          <Menu v-if="!p.routineId" :items="logMenu(p)" :label="`Options for ${p.name}`" />
+          <span class="pact"><button class="btn s" :class="{ tonal: !primary(i) }" :aria-label="`Start ${p.name}`" @click="open(p)"><Icon name="play" :size="14" />Start</button>
+            <Menu :items="planMenu(router, p)" :label="`Options for ${p.name}`" /></span>
         </div>
       </div>
     </div>
@@ -178,7 +175,6 @@ const doneCount = computed(() => week.value.filter((d) => d.done).length);
 /* the one action sits on the title's row, small, instead of a large button under it */
 .thead { display: flex; align-items: center; justify-content: space-between; gap: var(--cpx); }
 .thead .btn { flex: none; }
-.tact { flex: none; display: flex; align-items: center; gap: 4px; color: var(--onc); }
 .tacts { display: flex; flex-wrap: wrap; gap: 8px; }
 /* a day's plans: equal rows, each a soft tile with its kind, name, time and its own action */
 .plist { display: flex; flex-direction: column; gap: var(--tdy); }
@@ -188,9 +184,10 @@ const doneCount = computed(() => week.value.filter((d) => d.done).length);
 .pt { flex: 1; min-width: 0; }
 .pn { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ps { font-size: var(--fs-sm); color: color-mix(in srgb, var(--onc) 72%, transparent); }
-.prow .btn { flex: none; }
-.prow :deep(.ib) { color: var(--onc); }
-.tact :deep(.ib) { color: var(--onc); }
+/* the ⋮ beside Start: full on-colour like the hero's other controls (above the hero's softer .sm text), and the hero's
+   own hover instead of the surface one */
+.pact :deep(.ib.plain) { color: var(--onc); }
+.pact :deep(.ib.plain:hover) { background: color-mix(in srgb, var(--onc) 18%, transparent); }
 /* the other plans' buttons: tonal on the hero's own colour, so only the first one is filled */
 .prow .btn.tonal { background: color-mix(in srgb, var(--onc) 12%, transparent); color: var(--onc); }
 /* a workout in progress: a calm pulse beside its label is the one moving thing on Home */

@@ -10,7 +10,7 @@ import { invalidate } from "../api/live";
 import { toast, toastError } from "../core/toast";
 import { useFmt, localYmd } from "../core/format";
 import { toM } from "@motus/shared";
-import { recording } from "../workout/recording";
+import { recording, recordPath } from "../workout/recording";
 import Sheet from "../components/Sheet.vue";
 import DatePicker from "../components/DatePicker.vue";
 import TimePicker from "../components/TimePicker.vue";
@@ -40,7 +40,7 @@ async function save() {
     emit("close");
   } catch (e) { toastError(e); } finally { busy.value = false; }
 }
-function record() { emit("close"); router.push(recording.value ? "/activities/record" : `/activities/record?type=${type.value}`); }
+function record() { emit("close"); router.push(recordPath(type.value)); }
 async function importFiles(ev: Event) {
   const files = Array.from((ev.target as HTMLInputElement).files ?? []);
   try {
