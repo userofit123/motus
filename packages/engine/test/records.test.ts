@@ -5,6 +5,8 @@ import { liftedKg, setVolume } from "@motus/shared";
 import { createEngine, type Engine } from "../src/index";
 import { pgliteDb } from "../src/adapters/pglite";
 import { uuidv7 } from "../src/ids";
+import { exerciseSessions } from "../src/modules/library";
+import { flagRecords } from "../src/modules/workouts";
 
 let eng: Engine;
 let NOW = new Date("2026-10-05T10:00:00Z"); // a Monday
@@ -76,6 +78,49 @@ describe("records in a workout", () => {
     await log("2026-09-01T08:00:00Z", [{ exerciseId: ex, sets: [{ weightKg: 60, reps: 8 }] }]);
     const w = await log("2026-09-02T08:00:00Z", [{ exerciseId: ex, sets: [{ weightKg: 62.5, reps: 8 }, { weightKg: 50, reps: 12 }] }]);
     expect(prsOf(await call("GET", `/workouts/${w.id}`))).toEqual([["weight", "e1rm", "volume"], ["volume", "reps"]]);
+  });
+
+  // The workout's records and "Previous" come from one query each for all its exercises; they must match what a read of
+  // each exercise's whole history gives (how they were worked out before), on a mixed history
+  it("one query for all exercises gives the same records and Previous as reading each exercise's history", async () => {
+    const { call, log, exercise } = await user();
+    const exs = [await exercise("Test mix squat", "weight_reps"), await exercise("Test mix assisted dip", "assisted"),
+      await exercise("Test mix push-up", "bodyweight_reps"), await exercise("Test mix plank", "duration")];
+    const routine = (await call("POST", "/routines", { name: "Test mix day", exercises: exs.map((e) => ({ exerciseId: e, sets: [{ reps: 5 }] })) })).id;
+    let seed = 7;
+    const rnd = (n: number) => { seed = (seed * 16807) % 2147483647; return seed % n; };
+    const setsFor = (i: number) => Array.from({ length: 1 + rnd(4) }, () => ({
+      kind: rnd(5) === 0 ? "warmup" : "normal", weightKg: i === 2 && rnd(2) ? null : 10 + rnd(8) * 2.5, reps: i === 3 ? null : 3 + rnd(8), durationS: i === 3 ? 20 + rnd(6) * 10 : null }));
+    const logged: string[] = [];
+    for (let d = 0; d < 30; d++) {
+      // some days skip an exercise, do it twice, or only warm up
+      const items = exs.flatMap((e, i) => (rnd(4) === 0 ? [] : rnd(6) === 0 ? [{ exerciseId: e, sets: setsFor(i) }, { exerciseId: e, sets: setsFor(i) }]
+        : [{ exerciseId: e, sets: rnd(8) === 0 ? [{ kind: "warmup", weightKg: 10, reps: 5 }] : setsFor(i) }]));
+      logged.push((await call("POST", "/workouts/log", { startedAt: new Date(Date.UTC(2026, 6, 1 + d, 8)).toISOString(), durationS: 3600, routineId: rnd(2) ? routine : undefined, exercises: items })).id);
+    }
+    const running = (await call("POST", "/workouts/start", { routineId: routine })).id;
+    const live = await call("GET", "/workouts/active");
+    for (const [i, e] of live.exercises.entries()) for (const st of e.sets) await call("PUT", `/workout-sets/${st.id}`, { ...setsFor(i), kind: "normal", weightKg: 30, reps: 12, durationS: i === 3 ? 90 : null, done: true });
+    const q = eng.db.admin;
+    for (const wid of [...logged, running]) {
+      const w = await call("GET", `/workouts/${wid}`);
+      const want = new Map<string, string[]>();
+      for (const we of w.exercises) {
+        const before = (await exerciseSessions(q, we.exerciseId, 500)).filter((x) => new Date(x.startedAt) < new Date(w.startedAt) && x.workoutId !== w.id);
+        if (before.length) flagRecords(we.exercise?.tracking, before.flatMap((x) => x.sets).filter((x: any) => x.kind !== "warmup"), we.sets, want);
+      }
+      expect(w.exercises.map((e: any) => e.sets.map((x: any) => x.pr))).toEqual(w.exercises.map((e: any) => e.sets.map((x: any) => want.get(x.id) ?? [])));
+    }
+    const w = await call("GET", "/workouts/active");
+    for (const we of w.exercises) {
+      const hist = await exerciseSessions(q, we.exerciseId, 10, routine);
+      const all = (hist.length ? hist : await exerciseSessions(q, we.exerciseId, 10)).filter((h) => h.workoutId !== w.id && new Date(h.startedAt) < new Date(w.startedAt));
+      // done twice that day: the first time
+      const prev = (all.filter((h) => h.workoutId === all[0]?.workoutId).sort((a, b) => a.position - b.position)[0]?.sets ?? [])
+        .filter((x: any) => x.kind !== "warmup").map((x: any) => ({ weightKg: x.weightKg, reps: x.reps, durationS: x.durationS, distanceM: x.distanceM }));
+      expect(we.last).toEqual(prev);
+    }
+    expect(w.exercises.flatMap((e: any) => e.sets.map((x: any) => x.pr)).some((x: string[]) => x.length)).toBe(true);
   });
 });
 

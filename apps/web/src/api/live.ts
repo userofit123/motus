@@ -8,9 +8,21 @@ export const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 30_000, gcTime: 30 * 60_000, retry: 1, refetchOnWindowFocus: true, networkMode: "always" }, mutations: { networkMode: "always" } },
 });
 
+// One change is announced more than once: on the device the engine announces it while saving and the screen that made it
+// asks again once the save is back; with a server its live message and the answer arrive together. Each reload of a
+// running workout is a big read, and on the device's database (one query at a time) a second one held up the next
+// tap, so the topics asked for within a moment are gathered and every screen reloads once.
+const GATHER_MS = 30;
+const asked = new Set<string>();
+let gathering: ReturnType<typeof setTimeout> | null = null;
 export function invalidate(topics: string[]) {
-  if (topics.includes("*")) { queryClient.invalidateQueries(); return; }
-  queryClient.invalidateQueries({ predicate: (q) => topics.includes(String(q.queryKey[0])) });
+  for (const t of topics) asked.add(t);
+  gathering ??= setTimeout(() => {
+    const all = [...asked];
+    asked.clear(); gathering = null;
+    if (all.includes("*")) queryClient.invalidateQueries();
+    else queryClient.invalidateQueries({ predicate: (q) => all.includes(String(q.queryKey[0])) });
+  }, GATHER_MS);
 }
 
 // a change on the server: reload the screens it touched (or, with an offline copy, fetch it into that copy)

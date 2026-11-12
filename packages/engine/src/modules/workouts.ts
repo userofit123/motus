@@ -33,7 +33,7 @@ interface RecSet { id: string; kind: string; done?: boolean; weightKg: number | 
 /** The records each of `sets` breaks against `prev` (the exercise's earlier working sets), in order, so a set also
  * counts the ones before it and a record is flagged once, not on every set that matches it. Kinds: weight, e1rm,
  * volume, reps, duration, distance. `prev` grows with the sets checked. */
-function flagRecords(tracking: string | undefined, prev: RecSet[], sets: RecSet[], out: Map<string, string[]>) {
+export function flagRecords(tracking: string | undefined, prev: RecSet[], sets: RecSet[], out: Map<string, string[]>) {
   // assisted exercises log the help taken off as weight: less help is the better lift, and help isn't weight lifted
   const assisted = tracking === "assisted";
   const wt = (s: RecSet) => Number(s.weightKg) || 0;
@@ -64,15 +64,31 @@ function flagRecords(tracking: string | undefined, prev: RecSet[], sets: RecSet[
   }
 }
 
-/** Records set in this workout: each done set compared with the best of every earlier session of that exercise and the
- * sets before it in this one. */
+/** Records set in this workout: each done set compared with the best of every earlier session of that exercise (its
+ * last 500, as on Home) and the sets before it in this one. One query whatever the history: the record check only
+ * looks at bests (and most reps at a weight), so each exercise's earlier done sets come grouped by weight and reps. */
 async function recordsIn(q: Sql, w: any, exercises: any[]): Promise<Map<string, string[]>> {
   const out = new Map<string, string[]>();
+  const ids = [...new Set(exercises.map((we) => we.exerciseId))];
+  if (!ids.length) return out;
+  const { rows } = await q.query<{ exercise_id: string; warmup: boolean; weight_kg: string | null; reps: number | null; duration_s: number | null; distance_m: string | null }>(
+    `WITH sess AS (SELECT we.id, w.id AS workout_id, w.started_at, row_number() OVER (PARTITION BY we.exercise_id ORDER BY w.started_at DESC, w.id DESC) AS rn
+       FROM workout_exercises we JOIN workouts w ON w.id = we.workout_id
+       WHERE we.exercise_id = ANY($1::uuid[]) AND w.status = 'completed' AND EXISTS (SELECT 1 FROM workout_sets d WHERE d.workout_exercise_id = we.id AND d.done))
+     SELECT we.exercise_id, s.kind = 'warmup' AS warmup, s.weight_kg, s.reps, max(s.duration_s) AS duration_s, max(s.distance_m) AS distance_m
+     FROM sess x JOIN workout_exercises we ON we.id = x.id JOIN workout_sets s ON s.workout_exercise_id = x.id AND s.done
+     WHERE x.rn <= 500 AND x.started_at < $2 AND x.workout_id <> $3
+     GROUP BY 1, 2, 3, 4`, [ids, w.startedAt, w.id]);
+  // per exercise: whether it was done before (a session of only warm-ups counts) and its earlier working sets
+  const hist = new Map<string, RecSet[]>();
+  for (const r of rows) {
+    const list = hist.get(r.exercise_id) ?? hist.set(r.exercise_id, []).get(r.exercise_id)!;
+    if (!r.warmup) list.push({ id: "", kind: "normal", done: true, weightKg: r.weight_kg == null ? null : Number(r.weight_kg), reps: r.reps, durationS: r.duration_s, distanceM: r.distance_m == null ? null : Number(r.distance_m) });
+  }
   for (const we of exercises) {
-    const before = (await exerciseSessions(q, we.exerciseId, 500)).filter((s) => s.startedAt < w.startedAt && s.workoutId !== w.id);
-    if (!before.length) continue; // the first time is not a record
-    const prev: RecSet[] = before.flatMap((s) => s.sets).filter((s: RecSet) => s.kind !== "warmup");
-    flagRecords(we.exercise?.tracking, prev, we.sets, out);
+    const prev = hist.get(we.exerciseId);
+    if (!prev) continue; // the first time is not a record
+    flagRecords(we.exercise?.tracking, [...prev], we.sets, out);
   }
   return out;
 }
@@ -131,13 +147,25 @@ export async function loadWorkout(q: Sql, workoutId: string, today: string): Pro
   const reIds = wes.map((e: any) => e.routine_exercise_id).filter(Boolean);
   const slotEx = new Map<string, string>(reIds.length ? (await q.query("SELECT id, exercise_id FROM routine_exercises WHERE id = ANY($1::uuid[])", [reIds])).rows
     .map((r: { id: string; exercise_id: string }) => [r.id, r.exercise_id]) : []);
-  // "Previous": the same set in the last completed session of that exercise before this workout
+  // "Previous": the same set in the last completed session of that exercise before this workout (during a routine's
+  // workout, the last one of that routine if there is one; done twice there, the first time). One query for all
+  // exercises, not a history read per exercise.
   const prevByEx = new Map<string, any[]>();
-  for (const e of wes) {
-    if (prevByEx.has(e.exercise_id)) continue;
-    const hist = await exerciseSessions(q, e.exercise_id, 3, w.status === "in_progress" && w.routine_id ? w.routine_id : null);
-    const fallback = hist.length ? hist : await exerciseSessions(q, e.exercise_id, 3);
-    prevByEx.set(e.exercise_id, (fallback.find((h) => h.workoutId !== w.id && h.startedAt < w.started_at)?.sets) ?? []);
+  if (wes.length) {
+    const { rows } = await q.query(
+      `WITH last AS (SELECT DISTINCT ON (we.exercise_id) we.exercise_id, we.id FROM workout_exercises we JOIN workouts w ON w.id = we.workout_id
+         WHERE we.exercise_id = ANY($1::uuid[]) AND w.status = 'completed' AND w.started_at < $2 AND w.id <> $3
+           AND EXISTS (SELECT 1 FROM workout_sets d WHERE d.workout_exercise_id = we.id AND d.done)
+         ORDER BY we.exercise_id, ($4::uuid IS NOT NULL AND w.routine_id IS NOT DISTINCT FROM $4::uuid) DESC, w.started_at DESC, w.id DESC, we.position)
+       SELECT l.exercise_id, s.id, s.position, s.kind, s.weight_kg, s.reps, s.duration_s, s.distance_m, s.rpe, s.rir, s.side, s.done_at, s.rest_actual_s
+       FROM last l JOIN workout_sets s ON s.workout_exercise_id = l.id AND s.done ORDER BY s.position`,
+      [[...new Set(wes.map((e: any) => e.exercise_id))], w.started_at, w.id, w.status === "in_progress" && w.routine_id ? w.routine_id : null]);
+    for (const r of rows) {
+      const { exerciseId, ...set } = camel<any>(r);
+      set.weightKg = set.weightKg == null ? null : Number(set.weightKg);
+      set.distanceM = set.distanceM == null ? null : Number(set.distanceM);
+      (prevByEx.get(exerciseId) ?? prevByEx.set(exerciseId, []).get(exerciseId)!).push(set);
+    }
   }
   // what the server plans a set's rest from (replanRests), so the workout screen can show a set's new rest at once
   const snap: Pick<Routine, "exercises"> | null = typeof w.routine_snapshot === "string" ? JSON.parse(w.routine_snapshot) : w.routine_snapshot;
@@ -553,7 +581,7 @@ export function workoutRoutes(r: Router) {
     return { ok: true };
   });
 
-  // "Use 1:00 after warm-ups from now on": the rest running after a warm-up (drop set, set to failure) kept as the rest
+  // "Use 1:00 after warm-ups in this exercise": the rest running after a warm-up (drop set, set to failure) kept as the rest
   // after that kind of set, for the sets of that kind still to do here and where the next workout's rest comes from: the
   // routine exercise's rest for that kind in a workout from a routine, else Settings' rest for that kind (exercises have
   // no rests by kind of their own). This workout's copy of the routine gets it too, as it wins over Settings.
