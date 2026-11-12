@@ -5,9 +5,10 @@
 // with -15 and +15 either side. When an exercise is finished: on to the next, or Finish. The workout's Pause is always
 // the first button of the bottom row.
 import { computed, ref, watch, onBeforeUnmount } from "vue";
-import { clock, usesWeight, usesReps, usesDuration, type WorkoutSet } from "@motus/shared";
+import { clock, usesWeight, usesReps, usesDuration, type WorkoutSet, type SetKind } from "@motus/shared";
 import { useWorkout } from "./useWorkout";
 import { setNo } from "../core/format";
+import { KIND_LABEL } from "../core/plannedRest";
 import { rest, restLeft, restActive, adjustRest, finishRest } from "./runtime";
 import { choose } from "../core/ask";
 import Icon from "../components/Icon.vue";
@@ -19,18 +20,15 @@ const emit = defineEmits<{ finish: []; pause: [] }>();
 const W = useWorkout();
 // the saved rest is confirmed in place of the offer for a moment, so a tap is never silent: what was saved as it was at
 // the tap, and which rest it is
-const saved = ref(""), savedHead = ref("Saved");
+const saved = ref("");
 let savedT: ReturnType<typeof setTimeout> | undefined;
 // What keeping the rest covers. The rest after a warm-up, drop set or set to failure is kept for that kind of set: in a
-// workout from a routine this exercise's, else Settings', for every exercise. Where it went heads the confirmation, so
-// each line stays short enough for a phone's one line
-const KIND_SETS: Record<string, [string, string]> = { warmup: ["warm-up", "warm-ups"], drop: ["drop set", "drop sets"], failure: ["set to failure", "sets to failure"] };
+// workout from a routine this exercise's, else Settings', for every exercise. The kind's name is the routine page's
 const offerFor = (x: { after: boolean; kind: string | null; inRoutine: boolean } | null) =>
-  x?.kind ? (x.inRoutine ? `after ${KIND_SETS[x.kind]![1]} from now on` : `after every ${KIND_SETS[x.kind]![0]}`) : x?.after ? "after this exercise from now on" : "for this exercise from now on";
+  x?.kind ? `${KIND_LABEL[x.kind as SetKind]} in ${x.inRoutine ? "this" : "every"} exercise` : x?.after ? "after this exercise from now on" : "for this exercise from now on";
 function keep() {
   const k = W.keepRest(); if (!k) return;
-  savedHead.value = !k.kind ? "Saved" : k.inRoutine ? "Saved for this exercise" : "Saved in Settings";
-  saved.value = `${clock(k.secs)} rest ${!k.kind ? offerFor(k) : k.inRoutine ? `after ${KIND_SETS[k.kind]![1]}` : `after every ${KIND_SETS[k.kind]![0]}`}`;
+  saved.value = `${clock(k.secs)} rest ${offerFor(k)}`;
   clearTimeout(savedT); savedT = setTimeout(() => (saved.value = ""), 2500);
 }
 // a new rest starts without the last one's confirmation
@@ -74,10 +72,11 @@ const nextIdx = computed(() => {
 
 const wStep = computed(() => Math.round(fmt.value.fromKg(W.incKg.value) * 100) / 100);
 const wNum = (kg: number | null) => (kg == null ? null : Math.round(fmt.value.fromKg(kg) * 100) / 100);
-// Done with the reps left empty takes the target, as the field showed
-async function done() {
+// Done with the reps left empty takes the target, as the field showed. Not waiting for that save: editSet changes the
+// set here at once, and the tick, sent after it, carries the reps too
+function done() {
   const x = s.value!;
-  if (x.reps == null && x.targetReps != null && usesReps(tr.value)) await W.editSet(x, { reps: x.targetReps });
+  if (x.reps == null && x.targetReps != null && usesReps(tr.value)) void W.editSet(x, { reps: x.targetReps });
   W.tick(e.value!, si.value);
 }
 async function skip() {
@@ -110,7 +109,7 @@ const RING = 2 * Math.PI * 58;
       </div>
       <div class="ab-k ellipsis ab-next">{{ rest.next }}</div>
       </div>
-      <div v-if="saved" class="ab-saved" role="status"><span class="ab-sv"><Icon name="check" :size="14" />{{ savedHead }}</span><span class="ab-why">{{ saved }}</span></div>
+      <div v-if="saved" class="ab-saved" role="status"><span class="ab-sv"><Icon name="check" :size="14" />Saved</span><span class="ab-why">{{ saved }}</span></div>
       <button v-else-if="W.restChanged.value" class="qb ab-keep" @click="keep">
         <span class="ab-why">This rest was planned at {{ clock(W.restPlannedNow.value ?? 0) }}, now {{ clock(rest.totalS) }}</span>
         <span class="ab-act">Use {{ clock(rest.totalS) }} {{ offerFor(W.restKeeps.value) }}</span>

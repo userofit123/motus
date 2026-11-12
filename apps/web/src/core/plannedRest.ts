@@ -13,7 +13,7 @@ export const plannedRest = (e: Ex & { sets: RoutineSet[] }, x: RoutineSet, j: nu
 export const joinRest = (e: WorkoutExercise, j: number, d: RestDefaults): number =>
   e.sets[j]?.restPlannedS ?? planSetRest(e.sets, j, e, d);
 
-const KIND_LABEL: Partial<Record<SetKind, string>> = { warmup: "after warm-ups", failure: "after failure sets", drop: "after drops" };
+export const KIND_LABEL: Partial<Record<SetKind, string>> = { warmup: "after warm-ups", failure: "after failure sets", drop: "after drops" };
 /** ["1:00 after warm-ups", "1:45 between sets", "2:30 after the last one"]: the routine editor's and the routine page's rest
  *  summary, as parts so the views join them with the same dot as every other summary line. Only the set types the exercise
  *  has, and only rests above 0 (0 is off); the numbers come from restForKind, the rule the workout and server use. */

@@ -233,11 +233,6 @@ export async function updateRoutineFromWorkout(ctx: Ctx, routineId: string, work
   return changed;
 }
 
-/** "Use 3:30 for this exercise from now on" in a workout from this routine: the routine exercise's rest between sets
- * (`restS`) or after its last set (`restAfterS`) becomes it, as that is what the next workout from the routine rests by.
- * A routine set's own rest wins over the exercise's (restAfterSet), so the sets it stands for lose theirs: the working
- * sets but the last for a rest between sets, the last set for the rest after. Kept in History with the workout, as a
- * finish's changes are. False when the slot is gone or holds another exercise (swapped): the rest isn't the routine's. */
 /** A rest kept from now on in a workout (M-106), in the routine the workout came from: `field` is the rest between
  * sets, the rest after the exercise, or the rest after a kind of set (a warm-up, a drop set, a set to failure: the
  * routine exercise's rest for that kind). The routine sets' own rests it covers give way to it. False when the routine
