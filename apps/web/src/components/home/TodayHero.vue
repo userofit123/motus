@@ -2,7 +2,7 @@
 // Home's first block: what to do today, and this week's training days at a glance. It changes with the day:
 // a workout in progress takes it over, then today's plans, then your program's next workout, then a suggestion; with
 // none of those it offers a workout of your choice. A new account gets a way to begin instead.
-// Several plans for today are a list of equals, each with its own Start or Log; only the earliest one's button is the
+// Several plans for today are a list of equals, each with its own Start (an activity's Log it is in its ⋮ menu); only the earliest one's button is the
 // filled one, so the screen keeps one primary button. Tapping a day in the week shows that day here instead of today.
 import { computed, ref } from "vue";
 import type { HomePlan, HomeToday } from "@motus/shared";
@@ -12,6 +12,8 @@ import { useFmt, ago, localYmd, tomorrowYmd, activityIcon } from "../../core/for
 import { startOpen, activitySheet } from "../../core/ui";
 import Icon from "../Icon.vue";
 import MuscleFig from "../MuscleFig.vue";
+import Menu from "../Menu.vue";
+import { recording } from "../../workout/recording";
 
 const props = defineProps<{ h: HomeToday; fresh: boolean }>();
 const router = useRouter();
@@ -23,8 +25,11 @@ const tomorrow = tomorrowYmd();
 const sel = ref(today);
 
 const start = (p: HomePlan) => router.push(`/routines/${p.routineId}/start${p.scheduleId ? `?schedule=${p.scheduleId}&date=${p.date}` : ""}`);
-// a routine starts, an activity opens its log
-const open = (p: HomePlan) => (p.routineId ? start(p) : (activitySheet.value = { type: p.activityType ?? undefined }));
+// a routine starts, an activity starts recording (or returns to the one running); logging it afterwards is in the ⋮ menu
+const logIt = (p: HomePlan) => (activitySheet.value = { type: p.activityType ?? undefined });
+const startActivity = (p: HomePlan) => router.push(recording.value ? "/activities/record" : `/activities/record?type=${p.activityType ?? "walk"}`);
+const open = (p: HomePlan) => (p.routineId ? start(p) : startActivity(p));
+const logMenu = (p: HomePlan) => [{ label: "Log it", icon: "plus", run: () => logIt(p) }];
 // the engine sends plans not done yet (each drops out on its own once done), timed ones in time order, then the rest
 const plansOn = (d: string) => (props.h.upNext ?? []).filter((p) => p.date === d);
 const todays = computed(() => plansOn(today));
@@ -36,7 +41,7 @@ const trainedToday = computed(() => (props.h.days ?? []).includes(today));
 const n = (k: number, one: string, many = one + "s") => `${k} ${k === 1 ? one : many}`;
 
 // one big title with one action: a workout in progress, the only plan for today, or what to do with none
-interface Hero { label: string; title: string; sub: string; routine: string | null; act: { label: string; icon: string; run: () => void } }
+interface Hero { label: string; title: string; sub: string; routine: string | null; plan?: HomePlan; act: { label: string; icon: string; run: () => void } }
 const hero = computed<Hero | null>(() => {
   const h = props.h;
   if (h.active) return { label: "Workout in progress", title: h.active.name || "Workout", sub: `Started ${ago(h.active.startedAt)}`, routine: null,
@@ -44,8 +49,8 @@ const hero = computed<Hero | null>(() => {
   // two or more plans: the list below says it all
   if (todays.value.length > 1) return null;
   const plan = todays.value[0];
-  if (plan) return { label: plan.timeOfDay ? `Planned for today at ${plan.timeOfDay}` : "Planned for today", title: plan.name, sub: "", routine: plan.routineId ?? null,
-    act: plan.routineId ? { label: "Start", icon: "play", run: () => start(plan) } : { label: "Log it", icon: "plus", run: () => open(plan) } };
+  if (plan) return { label: plan.timeOfDay ? `Planned for today at ${plan.timeOfDay}` : "Planned for today", title: plan.name, sub: "", routine: plan.routineId ?? null, plan,
+    act: { label: "Start", icon: "play", run: () => open(plan) } };
   // a program only while Programs is switched on (Settings → Features)
   const prog = s.value.features.programs ? (h.programs ?? []).find((p) => p.calendarWeek > 0 && p.next) : undefined;
   const next = prog?.next;
@@ -107,7 +112,8 @@ const doneCount = computed(() => week.value.filter((d) => d.done).length);
           <div class="tl"><span v-if="h.active" class="pulse" aria-hidden="true" />{{ hero.label }}</div>
           <div class="thead">
             <div class="tt">{{ hero.title }}</div>
-            <button class="btn s" @click="hero.act.run()"><Icon :name="hero.act.icon" :size="14" />{{ hero.act.label }}</button>
+            <span class="tact"><button class="btn s" @click="hero.act.run()"><Icon :name="hero.act.icon" :size="14" />{{ hero.act.label }}</button>
+              <Menu v-if="hero.plan && !hero.plan.routineId" :items="logMenu(hero.plan)" :label="`Options for ${hero.plan.name}`" /></span>
           </div>
           <div v-if="hero.sub" class="ts">{{ hero.sub }}</div>
         </template>
@@ -135,8 +141,8 @@ const doneCount = computed(() => week.value.filter((d) => d.done).length);
         <div v-for="(p, i) in rows" :key="p.scheduleId" role="listitem" class="prow">
           <span class="pk"><Icon :name="kindIcon(p)" :size="16" /></span>
           <div class="pt"><div class="pn">{{ p.name }}</div><div class="ps">{{ planSub(p) }}</div></div>
-          <button class="btn s" :class="{ tonal: !primary(i) }" :aria-label="`${p.routineId ? 'Start' : 'Log it'} ${p.name}`" @click="open(p)">
-            <Icon :name="p.routineId ? 'play' : 'plus'" :size="14" />{{ p.routineId ? "Start" : "Log it" }}</button>
+          <button class="btn s" :class="{ tonal: !primary(i) }" :aria-label="`Start ${p.name}`" @click="open(p)"><Icon name="play" :size="14" />Start</button>
+          <Menu v-if="!p.routineId" :items="logMenu(p)" :label="`Options for ${p.name}`" />
         </div>
       </div>
     </div>
@@ -172,6 +178,7 @@ const doneCount = computed(() => week.value.filter((d) => d.done).length);
 /* the one action sits on the title's row, small, instead of a large button under it */
 .thead { display: flex; align-items: center; justify-content: space-between; gap: var(--cpx); }
 .thead .btn { flex: none; }
+.tact { flex: none; display: flex; align-items: center; gap: 4px; color: var(--onc); }
 .tacts { display: flex; flex-wrap: wrap; gap: 8px; }
 /* a day's plans: equal rows, each a soft tile with its kind, name, time and its own action */
 .plist { display: flex; flex-direction: column; gap: var(--tdy); }
@@ -182,6 +189,8 @@ const doneCount = computed(() => week.value.filter((d) => d.done).length);
 .pn { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ps { font-size: var(--fs-sm); color: color-mix(in srgb, var(--onc) 72%, transparent); }
 .prow .btn { flex: none; }
+.prow :deep(.ib) { color: var(--onc); }
+.tact :deep(.ib) { color: var(--onc); }
 /* the other plans' buttons: tonal on the hero's own colour, so only the first one is filled */
 .prow .btn.tonal { background: color-mix(in srgb, var(--onc) 12%, transparent); color: var(--onc); }
 /* a workout in progress: a calm pulse beside its label is the one moving thing on Home */

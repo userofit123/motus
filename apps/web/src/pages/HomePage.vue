@@ -14,6 +14,7 @@ import { toast } from "../core/toast";
 import { onHome, streakOnHome, toggleHomeGoal, setHomeStreak, periodWord, periodNow, periodLabel, useStepGoal } from "../core/goals";
 import { useFmt, ago, goalLabel, localYmd, tomorrowYmd } from "../core/format";
 import { reminderText } from "../core/reminderText";
+import { recording } from "../workout/recording";
 import { startOpen, bodySheet, dailySheet, activitySheet, reminderView } from "../core/ui";
 import { isPhone } from "../core/device";
 import Icon from "../components/Icon.vue";
@@ -111,6 +112,8 @@ const resting = computed(() => [...groups.value].filter((g) => g.days == null ||
 // up next: the first few plans of the coming days. Today's are all listed in Today (also while a workout is in progress)
 const upNext = computed<HomePlan[]>(() => (h.value?.upNext ?? []).filter((p) => p.date !== today).slice(0, 5));
 const dayName = (d: string) => { const tm = tomorrowYmd(); return d === today ? "Today" : d === tm ? "Tomorrow" : fmt.value.date(d, { weekday: "long" }); };
+// an activity starts recording (or returns to the one running); logging it is in the row's ⋮ menu
+const startActivity = (p: HomePlan) => router.push(recording.value ? "/activities/record" : `/activities/record?type=${p.activityType ?? "walk"}`);
 const start = (p: HomePlan) => router.push(`/routines/${p.routineId}/start${p.scheduleId ? `?schedule=${p.scheduleId}&date=${p.date}` : ""}`);
 const planOpen = ref<any>(null);
 
@@ -340,11 +343,14 @@ await loaded(home, ach);
           <div v-if="!upNext.length" class="tiny">Nothing else planned this week. Plan a routine for certain days and it shows here and in the calendar.</div>
           <div v-else class="list">
             <div v-for="p in upNext" :key="p.scheduleId + p.date" class="li click">
-              <button class="cover" :aria-label="`Open ${p.name}`" @click="p.routineId ? start(p) : (activitySheet = { type: p.activityType ?? undefined })" />
+              <button class="cover" :aria-label="`Open ${p.name}`" @click="p.routineId ? start(p) : startActivity(p)" />
               <MuscleFig sm :routine="p.routineId ?? undefined" />
               <div class="grow"><div class="t">{{ p.name }}</div><div class="s">{{ dayName(p.date) }}{{ p.timeOfDay ? " · " + p.timeOfDay : "" }}</div></div>
               <button v-if="p.routineId" class="btn s o over" @click="start(p)">Start</button>
-              <button v-else class="btn s o over" @click="activitySheet = { type: p.activityType ?? undefined }">Log</button>
+              <template v-else>
+                <button class="btn s o over" @click="startActivity(p)">Start</button>
+                <span class="over"><Menu :items="[{ label: 'Log it', icon: 'plus', run: () => (activitySheet = { type: p.activityType ?? undefined }) }]" :label="`Options for ${p.name}`" /></span>
+              </template>
             </div>
           </div>
         </div>
