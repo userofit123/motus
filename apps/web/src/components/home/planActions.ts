@@ -1,6 +1,6 @@
 // What a plan on Home does, the same in Today and Up next: Start starts the routine or records the activity (back to
-// the recording already running), and the ⋮ menu beside it logs it as done instead (a workout on the log page with the
-// routine filled in, an activity in its sheet).
+// the recording already running). Today's plans also get a ⋮ menu that logs one as done instead: a workout on the log
+// page with the routine filled in, an activity in its sheet (Up next has none: those days haven't come yet).
 import type { Router } from "vue-router";
 import type { HomePlan } from "@motus/shared";
 import type { MenuItem } from "../Menu.vue";

@@ -20,15 +20,17 @@ const routines = useRoutines();
 const all = useExercises();
 const fmt = useFmt();
 const exById = computed(() => new Map((all.data.value ?? []).map((e) => [e.id, e])));
-// ?routine= starts from that routine (a planned workout's "Log it" on Home)
-const f = ref({ routineId: String(route.query.routine ?? ""), name: "", date: String(route.query.date ?? localYmd(new Date())), time: "18:00", minutes: 60, notes: "" });
+const f = ref({ routineId: "", name: "", date: String(route.query.date ?? localYmd(new Date())), time: "18:00", minutes: 60, notes: "" });
 const exs = ref<{ exerciseId: string; sets: { weight: number | null; reps: number | null; durationS: number | null }[] }[]>([]);
 const picking = ref(false), busy = ref(false), saved = ref(false);
 // leaving with exercises filled in asks first
 useLeaveGuard(() => !saved.value && exs.value.length > 0, { title: "Discard this workout?" });
 watch(() => f.value.routineId, async (id) => {
   if (!id) return;
-  const r = await api.get(`/routines/${id}`);
+  let r;
+  try { r = await api.get(`/routines/${id}`); }
+  // a stale link (a routine deleted since): start from no routine instead
+  catch (e) { toastError(e); f.value.routineId = ""; return; }
   f.value.name = r.name;
   exs.value = r.exercises.map((e: any) => ({ exerciseId: e.exerciseId, sets: e.sets.filter((s: any) => s.kind !== "warmup").map((s: any) => ({ weight: s.weightKg != null ? Math.round(fmt.value.fromKg(s.weightKg) * 100) / 100 : null, reps: s.reps, durationS: s.durationS })) }));
 }, { immediate: true });
@@ -44,6 +46,9 @@ async function save() {
 }
 // show the page once its data is in, all at once
 await loaded(routines, all);
+// ?routine= starts from that routine (a planned workout's "Log it" on Home), if it is still one of your routines
+const want = String(route.query.routine ?? "");
+if (want && (routines.data.value ?? []).some((r) => r.id === want)) f.value.routineId = want;
 </script>
 
 <template>

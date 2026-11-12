@@ -2,9 +2,9 @@
 // Home's first block: what to do today, and this week's training days at a glance. It changes with the day:
 // a workout in progress takes it over, then today's plans, then your program's next workout, then a suggestion; with
 // none of those it offers a workout of your choice. A new account gets a way to begin instead.
-// Several plans for today are a list of equals, each with its own Start and a ⋮ menu to log it instead; only the
-// earliest one's button is the filled one, so the screen keeps one primary button. Tapping a day in the week shows that
-// day here instead of today.
+// Several plans for today are a list of equals, each with its own Start and a ⋮ menu to log it instead (a single plan's ⋮
+// sits top-right in the header); only the earliest one's button is the filled one, so the screen keeps one primary
+// button. Tapping a day in the week shows that day here instead of today.
 import { computed, ref } from "vue";
 import type { HomePlan, HomeToday } from "@motus/shared";
 import { useRouter } from "vue-router";
@@ -100,7 +100,8 @@ const doneCount = computed(() => week.value.filter((d) => d.done).length);
   </div>
   <div v-else class="card hero today">
     <div class="ch"><span class="bi"><Icon name="play" :size="15" /></span><span class="t grow">{{ sel === today ? "Today" : dayLabel }}</span>
-      <button v-if="sel !== today" class="tlnk" @click="openDay">Open in calendar<Icon name="right" :size="14" /></button></div>
+      <button v-if="sel !== today" class="tlnk" @click="openDay">Open in calendar<Icon name="right" :size="14" /></button>
+      <span v-else-if="hero?.plan" class="hmenu"><Menu :items="planMenu(router, hero.plan)" :label="`Options for ${hero.plan.name}`" /></span></div>
 
     <!-- the top row: the title (or what the list below is) beside the figure and the week -->
     <div class="tmain tsec" aria-live="polite">
@@ -109,8 +110,7 @@ const doneCount = computed(() => week.value.filter((d) => d.done).length);
           <div class="tl"><span v-if="h.active" class="pulse" aria-hidden="true" />{{ hero.label }}</div>
           <div class="thead">
             <div class="tt">{{ hero.title }}</div>
-            <span class="pact"><button class="btn s" @click="hero.act.run()"><Icon :name="hero.act.icon" :size="14" />{{ hero.act.label }}</button>
-              <Menu v-if="hero.plan" :items="planMenu(router, hero.plan)" :label="`Options for ${hero.plan.name}`" /></span>
+            <button class="btn s" :aria-label="hero.plan || hero.routine ? `${hero.act.label} ${hero.title}` : undefined" @click="hero.act.run()"><Icon :name="hero.act.icon" :size="14" />{{ hero.act.label }}</button>
           </div>
           <div v-if="hero.sub" class="ts">{{ hero.sub }}</div>
         </template>
@@ -172,9 +172,12 @@ const doneCount = computed(() => week.value.filter((d) => d.done).length);
 .tl { font-size: var(--fs-sm); font-weight: 600; display: flex; align-items: center; gap: 8px; color: color-mix(in srgb, var(--onc) 78%, transparent); }
 .tt { font-size: calc(var(--fs-lg) * 1.625); font-weight: 650; letter-spacing: -.5px; line-height: 1.15; overflow-wrap: anywhere; }
 .ts { font-size: var(--fs-sm); color: color-mix(in srgb, var(--onc) 75%, transparent); }
-/* the one action sits on the title's row, small, instead of a large button under it */
+/* the one action sits on the title's row, small, instead of a large button under it; a plan's ⋮ sits top-right in the
+   header, like the ⋮ on a routine card, so the title keeps the room it had beside Start alone */
 .thead { display: flex; align-items: center; justify-content: space-between; gap: var(--cpx); }
 .thead .btn { flex: none; }
+/* the ⋮ is taller than the header's icon; it overlaps the header's padding instead of making the header taller */
+.hmenu { margin-block: -5px; }
 .tacts { display: flex; flex-wrap: wrap; gap: 8px; }
 /* a day's plans: equal rows, each a soft tile with its kind, name, time and its own action */
 .plist { display: flex; flex-direction: column; gap: var(--tdy); }
@@ -184,10 +187,10 @@ const doneCount = computed(() => week.value.filter((d) => d.done).length);
 .pt { flex: 1; min-width: 0; }
 .pn { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ps { font-size: var(--fs-sm); color: color-mix(in srgb, var(--onc) 72%, transparent); }
-/* the ⋮ beside Start: full on-colour like the hero's other controls (above the hero's softer .sm text), and the hero's
-   own hover instead of the surface one */
-.pact :deep(.ib.plain) { color: var(--onc); }
-.pact :deep(.ib.plain:hover) { background: color-mix(in srgb, var(--onc) 18%, transparent); }
+/* the ⋮ beside Start (and a single plan's in the header): full on-colour like the hero's other controls (above the
+   hero's softer .sm text), and the hero's own hover instead of the surface one */
+:is(.pact, .hmenu) :deep(.ib.plain) { color: var(--onc); }
+:is(.pact, .hmenu) :deep(.ib.plain:hover) { background: color-mix(in srgb, var(--onc) 18%, transparent); }
 /* the other plans' buttons: tonal on the hero's own colour, so only the first one is filled */
 .prow .btn.tonal { background: color-mix(in srgb, var(--onc) 12%, transparent); color: var(--onc); }
 /* a workout in progress: a calm pulse beside its label is the one moving thing on Home */

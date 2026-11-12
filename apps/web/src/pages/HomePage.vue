@@ -14,7 +14,7 @@ import { toast } from "../core/toast";
 import { onHome, streakOnHome, toggleHomeGoal, setHomeStreak, periodWord, periodNow, periodLabel, useStepGoal } from "../core/goals";
 import { useFmt, ago, goalLabel, localYmd, tomorrowYmd } from "../core/format";
 import { reminderText } from "../core/reminderText";
-import { startPlan, planMenu } from "../components/home/planActions";
+import { startPlan } from "../components/home/planActions";
 import { startOpen, bodySheet, dailySheet, reminderView } from "../core/ui";
 import { isPhone } from "../core/device";
 import Icon from "../components/Icon.vue";
@@ -343,8 +343,7 @@ await loaded(home, ach);
               <button class="cover" :aria-label="`Open ${p.name}`" @click="startPlan(router, p)" />
               <MuscleFig sm :routine="p.routineId ?? undefined" />
               <div class="grow"><div class="t">{{ p.name }}</div><div class="s">{{ dayName(p.date) }}{{ p.timeOfDay ? " · " + p.timeOfDay : "" }}</div></div>
-              <span class="pact over"><button class="btn s o" :aria-label="`Start ${p.name}`" @click="startPlan(router, p)">Start</button>
-                <Menu :items="planMenu(router, p)" :label="`Options for ${p.name}`" /></span>
+              <button class="btn s o over" :aria-label="`Start ${p.name}`" @click="startPlan(router, p)"><Icon name="play" :size="14" />Start</button>
             </div>
           </div>
         </div>
@@ -537,7 +536,7 @@ html.phone .gtile.sz-m { flex-direction: row; }
 .has-cover { position: relative; }
 .cover { position: absolute; inset: 0; z-index: 0; margin: 0; padding: 0; border: 0; background: none; border-radius: inherit; cursor: pointer; }
 .cover:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
-/* a row with a cover button too (Up next): its own controls stay above the cover, so ⋮ opens its menu instead of the row */
+/* a row with a cover button too (Up next): its own controls stay above the cover, so they act instead of the row */
 :is(.has-cover, .li) .over { position: relative; z-index: 1; }
 .mrest { display: flex; flex-direction: column; gap: 2px; margin-top: auto; padding-top: var(--hg); }
 .mrest .row { gap: 6px; }

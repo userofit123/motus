@@ -43,7 +43,8 @@ hr.sep { border: 0; border-top: 1px solid var(--ol); margin: 14px 0; }
 .ph { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: calc(var(--spg) + 6px); }
 .ph h1 { font-size: var(--fs-h1); font-weight: 600; letter-spacing: -.6px; line-height: 1.15; }
 .ph .sub { color: var(--tx2); font-size: 13px; margin-top: 4px; }
-.ph .acts { display: flex; gap: 8px; align-items: center; flex: none; }
+/* a page header's buttons and ⋮; a plan row's Start and ⋮ on Home (.pact) is the same pair */
+.ph .acts, .pact { display: flex; gap: 8px; align-items: center; flex: none; }
 /* a page's Back: a small pill, the chevron on its own tinted dot; same height as the old text link */
 .back { display: inline-flex; align-items: center; gap: 6px; color: var(--tx2); font-size: 13px; line-height: 20px; font-weight: 500; margin: 0 0 8px -4px; cursor: pointer; background: none; border: 0; padding: 3px 10px 3px 3px; border-radius: var(--pill); transition: background .2s, color .2s; }
 .back svg { display: block; flex: none; width: 20px; height: 20px; padding: 3px; box-sizing: border-box; border-radius: 50%; background: var(--s2); color: var(--tx); transition: background .2s, color .2s; }
@@ -109,8 +110,6 @@ hr.sep { border: 0; border-top: 1px solid var(--ol); margin: 14px 0; }
 .list { display: flex; flex-direction: column; }
 .li { display: flex; align-items: center; gap: 12px; padding: var(--lpy) 4px; border-bottom: 1px solid var(--ol); min-height: var(--lmh); }
 .li:last-child { border-bottom: 0; }
-/* a row's Start and its ⋮ beside it, as one pair that ends every plan row the same way (Home: Today, Up next) */
-.pact { flex: none; display: flex; align-items: center; gap: var(--tdy); }
 .hrow { display: flex; align-items: center; gap: var(--hg); flex-wrap: wrap; }
 /* a row lights up edge to edge: across the whole card, and on the first and last row up to the card's own edge; the
    card's rounded corners clip it. Rows outside a card light up across their own width */
