@@ -22,7 +22,7 @@ const W = useWorkout();
 // the tap, and which rest it is
 const saved = ref("");
 let savedT: ReturnType<typeof setTimeout> | undefined;
-// What keeping the rest covers, worded as the routine page names its rests: between sets and after the last one are this
+// What keeping the rest covers, worded as the routine page names its rests: between sets and after the last set are this
 // exercise's; the rest after a warm-up, drop set or set to failure is kept for that kind of set: in a workout from a
 // routine this exercise's, else Settings', for every exercise
 const offerFor = (x: { after: boolean; kind: Exclude<SetKind, "normal"> | null; inRoutine: boolean } | null) =>
