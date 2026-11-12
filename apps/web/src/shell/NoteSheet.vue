@@ -15,6 +15,7 @@ import RadioList from "../components/RadioList.vue";
 import Icon from "../components/Icon.vue";
 import { DIFFICULTY } from "../components/NoteItem.vue";
 import { SHOWS } from "../core/noteMenu";
+import { TOPICS } from "@motus/shared";
 
 const props = defineProps<{ o: { targets: { type: string; id: string; label: string; scopeRoutineId?: string | null }[]; workoutId?: string | null; edit?: any } }>();
 const emit = defineEmits<{ close: [] }>();
@@ -40,7 +41,8 @@ const opts = computed<Opt[]>(() => {
 const choice = ref(props.o.edit && !props.o.edit.pinned && opts.value.length > 1 ? 1 : 0);
 const cur = computed<Opt>(() => opts.value[choice.value] ?? { ti: 0, pinned: !!props.o.edit?.pinned, label: "", hint: "" });
 
-const body = ref(props.o.edit?.body ?? ""), tags = ref<string[]>([...(props.o.edit?.tags ?? [])]), difficulty = ref<number | null>(props.o.edit?.difficulty ?? null);
+// an older tags-only note carries its tags as text too: edit it as tags alone
+const body = ref(props.o.edit?.body && props.o.edit.body !== (props.o.edit.tags ?? []).join(", ") ? props.o.edit.body : ""), tags = ref<string[]>([...(props.o.edit?.tags ?? [])]), difficulty = ref<number | null>(props.o.edit?.difficulty ?? null);
 // the person's tags, plus any an older note carries that have since been removed from the list
 const tagOpts = computed(() => [...new Set([...(settings.value.noteTags ?? []), ...tags.value])].map((t) => ({ value: t, label: t })));
 async function addTag() {
@@ -61,8 +63,8 @@ async function save() {
   try {
     const t = props.o.targets[cur.value.ti]!, pinned = cur.value.pinned;
     if (props.o.edit) await api.put(`/notes/${props.o.edit.id}`, { body: body.value, tags: tags.value, difficulty: difficulty.value, pinned });
-    else await api.post("/notes", { targetType: t.type, targetId: t.id, scopeRoutineId: t.scopeRoutineId ?? null, body: body.value || tags.value.join(", "), tags: tags.value, difficulty: difficulty.value, pinned, workoutId: props.o.workoutId ?? null });
-    invalidate(["notes", "workouts", "routines", "exercises"]);
+    else await api.post("/notes", { targetType: t.type, targetId: t.id, scopeRoutineId: t.scopeRoutineId ?? null, body: body.value, tags: tags.value, difficulty: difficulty.value, pinned, workoutId: props.o.workoutId ?? null });
+    invalidate([...TOPICS.note]);
     toast("Note saved");
     emit("close");
   } catch (e) { toastError(e); } finally { busy.value = false; }

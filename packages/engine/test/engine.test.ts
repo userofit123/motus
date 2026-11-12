@@ -202,6 +202,11 @@ describe("engine", () => {
     await call(A, "POST", "/notes", { targetType: "workout_exercise", targetId: bench.id, body: "Grip slipped", workoutId });
     const live = await call(A, "GET", "/workouts/active");
     expect(live.exercises[0].notes.map((n: any) => n.body)).toEqual(["Felt strong", "Grip slipped"]);
+    // a note with only tags is saved without text, so the tag shows once (as a chip), not twice
+    const tagOnly = await call(A, "POST", "/notes", { targetType: "workout_exercise", targetId: bench.id, body: "", tags: ["Grip"], workoutId });
+    const tagged = (await call(A, "GET", "/workouts/active")).exercises[0].notes.find((n: any) => n.id === tagOnly.id);
+    expect([tagged.body, tagged.tags]).toEqual(["", ["Grip"]]);
+    await call(A, "DELETE", `/notes/${tagOnly.id}`);
     await call(A, "POST", "/reminders", { targetType: "exercise", targetId: benchId, body: "Go up 2.5 kg", action: { weightKg: 2.5 }, workoutId });
     await call(A, "POST", `/workouts/${workoutId}/finish`, {});
     const done = await call(A, "GET", `/workouts/${workoutId}`);

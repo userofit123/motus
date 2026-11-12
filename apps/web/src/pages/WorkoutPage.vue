@@ -20,6 +20,7 @@ import { toast, toastError, savedToast } from "../core/toast";
 import { saveFile } from "../core/saveFile";
 import Icon from "../components/Icon.vue";
 import NoteItem from "../components/NoteItem.vue";
+import { useNoteMenu } from "../core/noteMenu";
 import Menu from "../components/Menu.vue";
 import BodyMap from "../components/BodyMap.vue";
 import ExercisePicker from "../components/ExercisePicker.vue";
@@ -32,6 +33,8 @@ const q = useWorkoutQuery(id);
 const s = useSettings();
 const fmt = useFmt();
 const w = computed<any>(() => q.data.value);
+// the same ⋮ on its notes as in the running workout: edit, show again, delete
+const noteMenu = useNoteMenu();
 const rep = computed<any>(() => w.value?.report);
 // straight after Finish: the summary opens with a word of what you did, and the back link says Home and goes there
 // rather than to the calendar. No button of its own in that word: it only duplicated the back link and vanished on return.
@@ -155,7 +158,7 @@ await loaded(q);
     </div>
 
     <div v-if="w.notes" class="banner note spt"><Icon name="note" :size="18" class="note-ic" /><div style="white-space:pre-wrap">{{ w.notes }}</div></div>
-    <NoteItem v-for="n in w.routineNotes?.filter((x: any) => x.workoutId === w.id)" :key="n.id" :note="n" />
+    <NoteItem v-for="n in w.routineNotes?.filter((x: any) => x.workoutId === w.id)" :key="n.id" :note="n" :menu="noteMenu(n, n.targetType === 'routine' ? w.name : 'This workout')" />
 
     <div class="grid spt" style="grid-template-columns:minmax(0,1fr) 300px;align-items:start">
       <div class="stack">
@@ -190,7 +193,7 @@ await loaded(q);
             Last time {{ fmt.date(verdict(e.id).last.startedAt) }}: {{ verdict(e.id).last.e1rm ? `1RM ${fmt.w(verdict(e.id).last.e1rm)}` : `${verdict(e.id).last.reps} reps` }} · {{ fmt.vol(verdict(e.id).last.volumeKg) }}
             <template v-if="delta(verdict(e.id).now.e1rm, verdict(e.id).last.e1rm)"> · <span :class="delta(verdict(e.id).now.e1rm, verdict(e.id).last.e1rm)! > 0 ? 'pos' : 'neg'">{{ delta(verdict(e.id).now.e1rm, verdict(e.id).last.e1rm)! > 0 ? "+" : "" }}{{ fmt.w(delta(verdict(e.id).now.e1rm, verdict(e.id).last.e1rm)!) }} {{ fmt.wu }} 1RM</span></template>
           </div>
-          <NoteItem v-for="n in e.notes?.filter((x: any) => x.workoutId === w.id)" :key="n.id" :note="n" class="spt" />
+          <NoteItem v-for="n in e.notes?.filter((x: any) => x.workoutId === w.id)" :key="n.id" :note="n" :menu="noteMenu(n, e.exercise?.name ?? '')" class="spt" />
         </div>
         <button v-if="editing" class="btn tonal block" @click="adding = true"><Icon name="plus" />Add exercise</button>
       </div>

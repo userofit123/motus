@@ -11,7 +11,7 @@ import { keepAwake } from "./native";
 import { isPhone } from "../core/device";
 import { confirm, prompt } from "../core/ask";
 import { noteSheet, reminderSheet } from "../core/ui";
-import { invalidate } from "../api/live";
+import { invalidate, reloadQueued } from "../api/live";
 import { waiting, send } from "../api/outbox";
 import { toastError } from "../core/toast";
 import Icon from "../components/Icon.vue";
@@ -50,7 +50,7 @@ onMounted(() => { if (W.prefs.value.keepAwake) keepAwake(true); addEventListener
 onBeforeUnmount(() => { keepAwake(false); removeEventListener("keydown", key); });
 // no workout any more (finished or discarded elsewhere): go home. Not while fetching: right after Start, the cached
 // answer is still "none" until the new workout arrives
-watch(() => W.active.isFetched.value && !W.active.isFetching.value && !W.active.data.value && !W.state.pending, (gone) => { if (gone) router.replace("/"); });
+watch(() => W.active.isFetched.value && !W.active.isFetching.value && !reloadQueued.value && !W.active.data.value && !W.state.pending, (gone) => { if (gone) router.replace("/"); });
 
 const soFar = computed(() => workoutSoFar(w.value ?? { exercises: [] }));
 const done = computed(() => soFar.value.setsDone), total = computed(() => soFar.value.setsPlanned);
@@ -65,9 +65,20 @@ const remainingS = computed(() => {
 });
 const paused = computed(() => !!w.value?.pauseStartedAt);
 // how far along: one segment per exercise, as long as its sets, filled by the sets done
-// under the exercise: the routine's pinned notes, and every note written in this workout (pinned or not)
-const workoutNotes = computed(() => (w.value?.routineNotes ?? []).filter((x: any) => x.pinned || x.targetType === "workout" || x.workoutId === w.value?.id));
+// under the exercise: every note written in this workout (pinned or not), and the routine's pinned ones when reminders
+// are shown: the same rule as an exercise's notes (ExerciseCard), the setting hides what comes back, not what you wrote today
+const workoutNotes = computed(() => (w.value?.routineNotes ?? []).filter((x: any) => x.workoutId === w.value?.id || x.targetType === "workout" || (W.prefs.value.showReminders && x.pinned)));
 const noteMenu = useNoteMenu();
+// a note on the whole routine lands under the exercise, on the phone behind the action bar: bring it into view
+// the phone and computer layouts each have the list, only one is on screen
+const notesEl = ref<HTMLElement | null>(null);
+let seenNotes = new Set(workoutNotes.value.map((n: any) => n.id));
+// keyed by the workout too: the notes there when it first loads are not new
+watch(() => [w.value?.id, ...workoutNotes.value.map((n: any) => n.id)], async ([wid, ...ids], old) => {
+  const fresh = wid === old?.[0] && workoutNotes.value.find((n: any) => !seenNotes.has(n.id) && n.workoutId === wid);
+  seenNotes = new Set(ids);
+  if (fresh) { await nextTick(); notesEl.value?.querySelector(`[data-note="${fresh.id}"]`)?.scrollIntoView({ block: "nearest", behavior: "smooth" }); }
+});
 const segs = computed(() => (w.value?.exercises ?? []).filter((e) => e.status !== "skipped").map((e) => ({ id: e.id, n: Math.max(1, e.sets.length), done: e.sets.filter((s) => s.done).length })));
 // the tabs of exercises on the phone keep the current one in view
 const strip = ref<HTMLElement | null>(null);
@@ -76,7 +87,8 @@ const dock = ref<HTMLElement | null>(null);
 let ro: ResizeObserver | null = null;
 watch(dock, (el) => {
   ro?.disconnect();
-  if (!el) return;
+  // no action bar (the computer layout): nothing to keep clear of
+  if (!el) { document.querySelector<HTMLElement>(".aw")?.style.removeProperty("--dockh"); return; }
   ro = new ResizeObserver(() => document.querySelector<HTMLElement>(".aw")?.style.setProperty("--dockh", `${el.offsetHeight}px`));
   ro.observe(el);
 });
@@ -158,8 +170,8 @@ const menu = computed(() => [
         <Transition :name="exDir" mode="out-in"><WorkoutSoFar v-if="onSummary" key="summary" :w="w" @open="go" /><ExerciseCard v-else-if="w.exercises[W.state.cur]" :key="w.exercises[W.state.cur]!.id" :e="w.exercises[W.state.cur]!" :index="W.state.cur" /></Transition>
       </div>
       <!-- the routine's pinned notes: under the exercise, not pushing it down (its reminders stay at the top) -->
-      <div v-if="workoutNotes.length" class="aw-notes">
-        <NoteItem v-for="n in workoutNotes" :key="n.id" :note="n" :menu="noteMenu(n, n.targetType === 'routine' ? w.name : 'This workout')" />
+      <div v-if="workoutNotes.length" ref="notesEl" class="aw-notes">
+        <NoteItem v-for="n in workoutNotes" :key="n.id" :data-note="n.id" :note="n" :menu="noteMenu(n, n.targetType === 'routine' ? w.name : 'This workout')" />
       </div>
       <div ref="dock" class="aw-dock"><ActionBar :paused="paused" @finish="finishing = true" @pause="togglePause" /></div>
     </template>
@@ -185,8 +197,8 @@ const menu = computed(() => [
         <!-- the summary brings its own cards (hero, tiles), so only the exercise sits in one, as on the phone -->
         <div :class="{ card: !onSummary }"><Transition name="sw" mode="out-in"><WorkoutSoFar v-if="onSummary" key="summary" :w="w" @open="go" /><ExerciseCard v-else-if="w.exercises[W.state.cur]" :key="w.exercises[W.state.cur]!.id" :e="w.exercises[W.state.cur]!" :index="W.state.cur" /></Transition></div>
         <ActionBar :paused="paused" @finish="finishing = true" @pause="togglePause" />
-        <div v-if="workoutNotes.length" class="aw-notes">
-          <NoteItem v-for="n in workoutNotes" :key="n.id" :note="n" :menu="noteMenu(n, n.targetType === 'routine' ? w.name : 'This workout')" />
+        <div v-if="workoutNotes.length" ref="notesEl" class="aw-notes">
+          <NoteItem v-for="n in workoutNotes" :key="n.id" :data-note="n.id" :note="n" :menu="noteMenu(n, n.targetType === 'routine' ? w.name : 'This workout')" />
         </div>
       </div>
       <div class="side stack">
@@ -211,8 +223,8 @@ const menu = computed(() => [
     <Sheet v-if="settingsOpen" title="Workout settings" @close="settingsOpen = false"><WorkoutSettings v-model="overrides" /></Sheet>
     <ReorderSheet v-if="listOpen" title="Reorder exercises" hint="Drag to reorder, or use the arrows. Tap an exercise to open it." :items="w.exercises.map((e, i) => ({ id: e.id, title: e.exercise.name, sub: `${e.sets.filter((s) => s.done).length}/${e.sets.length} sets`, cur: i === W.state.cur, active: i === W.state.active, muted: e.status === 'skipped' }))" @move="moveTo" @select="(i) => { go(i); listOpen = false; }" @close="listOpen = false" />
   </div>
-  <!-- only once we know: while the app opens, the workout may still be on its way -->
-  <div v-else-if="W.active.isFetched.value && !W.active.isFetching.value" class="page"><div class="empty"><b>No workout in progress</b><button class="btn" @click="router.push('/')">Home</button></div></div>
+  <!-- only once we know: while the app opens, or a reload is queued, the workout may still be on its way -->
+  <div v-else-if="W.active.isFetched.value && !W.active.isFetching.value && !reloadQueued" class="page"><div class="empty"><b>No workout in progress</b><button class="btn" @click="router.push('/')">Home</button></div></div>
 </template>
 
 <style scoped>
@@ -235,7 +247,9 @@ const menu = computed(() => [
 .aw-tabs .add { padding-inline: 12px; }
 /* the exercise being done: a dot after its name, wherever you're looking */
 .aw-tabs button.act::after, .aw-list .li.act .t::after { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--pos); flex: none; display: inline-block; margin-inline-start: 6px; vertical-align: middle; }
-.aw-notes { display: flex; flex-direction: column; gap: var(--spg); margin-top: var(--spg); }
+/* one list of notes: as close together as an exercise's notes (.exnotes), the gap between blocks above it */
+.aw-notes { display: flex; flex-direction: column; gap: var(--lpy); margin-top: var(--spg); }
+.aw-notes > .nitem { scroll-margin-bottom: calc(var(--dockh, 0px) + var(--spg)); }
 .stack > .aw-notes { margin-top: 0; }
 /* phone: the controls are a sheet fixed to the bottom edge, its own shadow lifting it off the page */
 .aw-dock { position: fixed; z-index: 50; left: 0; right: 0; bottom: 0; padding-inline: var(--sl) var(--sr); }

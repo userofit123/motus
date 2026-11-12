@@ -153,13 +153,14 @@ const isCur = computed(() => W.state.cur === props.index);
 // workout, always: one just written must show here (the setting hides what comes back, not what you wrote today)
 const shownNotes = computed(() => (props.e.notes ?? []).filter((x) => x.workoutId === W.state.w?.id || (prefs.value.showReminders && x.pinned)));
 const noteMenu = useNoteMenu();
-// a note just written lands under the sets, on the phone behind the action bar: bring it into view so it's seen saved
+// a note just written lands under the sets, on the phone behind the action bar: bring that note itself into view
+// (not the whole list: with pinned notes above it, the list's top could fit while the new one stays under the bar)
 const notesEl = ref<HTMLElement | null>(null);
 let seenNotes = new Set(shownNotes.value.map((n) => n.id));
 watch(() => shownNotes.value.map((n) => n.id), async (ids) => {
-  const fresh = shownNotes.value.some((n) => !seenNotes.has(n.id) && n.workoutId === W.state.w?.id);
+  const fresh = shownNotes.value.find((n) => !seenNotes.has(n.id) && n.workoutId === W.state.w?.id);
   seenNotes = new Set(ids);
-  if (fresh) { await nextTick(); notesEl.value?.scrollIntoView({ block: "nearest", behavior: "smooth" }); }
+  if (fresh) { await nextTick(); notesEl.value?.querySelector(`[data-note="${fresh.id}"]`)?.scrollIntoView({ block: "nearest", behavior: "smooth" }); }
 });
 // the set to do now, marked in the table (the same one the action bar shows)
 // sets are logged only in the exercise being done: in one you're just looking at, the ticks are locked against stray taps
@@ -215,7 +216,7 @@ const nowId = computed(() => (W.state.active === props.index ? visibleSets.value
     </div>
     <!-- notes for this exercise: under it, where you look after a set -->
     <div v-if="isCur && shownNotes.length" ref="notesEl" class="exnotes">
-      <NoteItem v-for="n in shownNotes" :key="n.id" :note="n" :menu="noteMenu(n, e.exercise?.name ?? '')" />
+      <NoteItem v-for="n in shownNotes" :key="n.id" :data-note="n.id" :note="n" :menu="noteMenu(n, e.exercise?.name ?? '')" />
     </div>
     <ExercisePicker v-if="picking" title="Replace with" :suggest="alts" @close="picking = null" @pick="replace" />
     <RestPicker v-if="restEdit" :title="restEdit === 'between' ? 'Rest between sets' : 'Rest after this exercise'" :value="restEdit === 'between' ? e.restS : e.restAfterS" :default-label="'Default'" @close="restEdit = null"
@@ -225,8 +226,10 @@ const nowId = computed(() => (W.state.active === props.index ? visibleSets.value
 </template>
 
 <style scoped>
-/* scrolled to after a note is written, so it stops clear of the phone's action bar (--dockh, set by ActiveWorkout) */
-.exnotes { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--ol); scroll-margin-bottom: calc(var(--dockh, 0px) + var(--spg)); }
+/* a list inside the exercise: notes as close as the Routine page's (.pnotes), set off from the sets by the gap between blocks */
+.exnotes { display: flex; flex-direction: column; gap: var(--lpy); margin-top: var(--hg); padding-top: var(--hg); border-top: 1px solid var(--ol); }
+/* a note just written is scrolled to, so it stops clear of the phone's action bar (--dockh, set by ActiveWorkout) */
+.exnotes > .nitem { scroll-margin-bottom: calc(var(--dockh, 0px) + var(--spg)); }
 /* the pills under the sets: the gap the rows use between blocks */
 .aw-add { margin-top: var(--hg); flex-wrap: wrap; }
 .exrem { display: flex; flex-direction: column; gap: 8px; margin-bottom: var(--hg); }

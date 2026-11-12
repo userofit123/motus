@@ -4,6 +4,7 @@ import { useChange } from "../api/queries";
 import { toast } from "./toast";
 import { noteSheet } from "./ui";
 import type { MenuItem } from "../components/Menu.vue";
+import { TOPICS } from "@motus/shared";
 
 // Where a note comes back, by note type. The note sheet and this menu both read it, so the wording and the set of
 // types that can come back cannot drift apart. Any other type (a workout's or an activity's note) stays where it was written.
@@ -13,7 +14,7 @@ export const SHOWS: Record<string, string> = {
 };
 
 // every screen a note shows on, as the note sheet reloads them: a running workout shows its notes too
-const NOTE_TOPICS = ["notes", "workouts", "routines", "exercises"];
+const NOTE_TOPICS = [...TOPICS.note];
 
 export function useNoteMenu() {
   const del = useChange(async (id: string) => { await api.del(`/notes/${id}`); toast("Note deleted"); }, NOTE_TOPICS);

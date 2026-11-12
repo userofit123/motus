@@ -15,6 +15,8 @@ const props = defineProps<{ note: any; flat?: boolean; date?: boolean; where?: s
 const fmt = useFmt();
 // "shows every time" only means something for notes on an exercise or routine; workout notes stay with their workout
 const repeats = computed(() => props.note.pinned && ["exercise", "routine_exercise", "routine"].includes(props.note.targetType));
+// older tags-only notes saved their tags as the text too: show them once, as chips
+const text = computed(() => (props.note.body && props.note.body !== (props.note.tags ?? []).join(", ") ? props.note.body : ""));
 const meta = computed(() => [
   props.where,
   props.date ? fmt.value.date(props.note.createdAt, { day: "numeric", month: "short", year: "numeric" }) : null,
@@ -28,7 +30,7 @@ const meta = computed(() => [
   <div class="nitem" :class="{ flat }">
     <Icon name="note" :size="18" class="note-ic" />
     <div class="b">
-      <div v-if="note.body" class="tx">{{ note.body }}</div>
+      <div v-if="text" class="tx">{{ text }}</div>
       <div v-if="meta.length || note.tags?.length" class="m">
         <template v-for="(x, i) in meta" :key="i"><span v-if="i" class="sep">·</span><span>{{ x }}</span></template>
         <span v-for="t in note.tags" :key="t" class="mchip">{{ t }}</span>
