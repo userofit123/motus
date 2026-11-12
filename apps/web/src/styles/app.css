@@ -312,7 +312,8 @@ html.phone { --tabh: 64px; }
 .pmain { padding: calc(14px + var(--st)) 16px 24px; overflow-x: clip; }
 .pmain .ph { margin-bottom: var(--spg); align-items: center; }
 .pmain .ph h1 { font-size: 26px; }
-.pmain .ph .acts { gap: 4px; }
+/* a phone header's buttons and ⋮ sit closer; so does the same pair on a plan row on Home (.pact) */
+.pmain .ph .acts, .pmain .pact { gap: 4px; }
 .pmain .ph .acts .btn { min-height: 38px; padding: 8px 16px; }
 .pmain .ph .acts .btn.lg { min-height: 44px; padding: 10px 20px; font-size: 15px; }
 /* the bottom dock: the running workout (when there is one) above the tabs, on one blurred background */

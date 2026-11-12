@@ -11,6 +11,7 @@ import { useRouter } from "vue-router";
 import { useSettings } from "../../api/queries";
 import { useFmt, ago, localYmd, tomorrowYmd, activityIcon } from "../../core/format";
 import { startOpen } from "../../core/ui";
+import { isPhone } from "../../core/device";
 import Icon from "../Icon.vue";
 import MuscleFig from "../MuscleFig.vue";
 import Menu from "../Menu.vue";
@@ -110,7 +111,7 @@ const doneCount = computed(() => week.value.filter((d) => d.done).length);
           <div class="tl"><span v-if="h.active" class="pulse" aria-hidden="true" />{{ hero.label }}</div>
           <div class="thead">
             <div class="tt">{{ hero.title }}</div>
-            <button class="btn s" :aria-label="hero.plan || hero.routine ? `${hero.act.label} ${hero.title}` : undefined" @click="hero.act.run()"><Icon :name="hero.act.icon" :size="14" />{{ hero.act.label }}</button>
+            <button class="btn s" :aria-label="hero.plan || hero.routine || h.active ? `${hero.act.label} ${hero.title}` : undefined" @click="hero.act.run()"><Icon :name="hero.act.icon" :size="14" />{{ hero.act.label }}</button>
           </div>
           <div v-if="hero.sub" class="ts">{{ hero.sub }}</div>
         </template>
@@ -136,7 +137,7 @@ const doneCount = computed(() => week.value.filter((d) => d.done).length);
       <div v-if="hero" class="tl">Also planned for today</div>
       <div class="plist" role="list">
         <div v-for="(p, i) in rows" :key="p.scheduleId" role="listitem" class="prow">
-          <span class="pk"><Icon :name="kindIcon(p)" :size="16" /></span>
+          <span class="pk"><Icon :name="kindIcon(p)" :size="isPhone ? 18 : 16" /></span>
           <div class="pt"><div class="pn">{{ p.name }}</div><div class="ps">{{ planSub(p) }}</div></div>
           <span class="pact"><button class="btn s" :class="{ tonal: !primary(i) }" :aria-label="`Start ${p.name}`" @click="open(p)"><Icon name="play" :size="14" />Start</button>
             <Menu :items="planMenu(router, p)" :label="`Options for ${p.name}`" /></span>
@@ -145,7 +146,7 @@ const doneCount = computed(() => week.value.filter((d) => d.done).length);
     </div>
     <div v-else-if="sel > today && picked.length" class="tlist plist" role="list" aria-live="polite">
       <div v-for="p in picked" :key="p.scheduleId" role="listitem" class="prow">
-        <span class="pk"><Icon :name="kindIcon(p)" :size="16" /></span>
+        <span class="pk"><Icon :name="kindIcon(p)" :size="isPhone ? 18 : 16" /></span>
         <div class="pt"><div class="pn">{{ p.name }}</div><div class="ps">{{ planSub(p) }}</div></div>
       </div>
     </div>
@@ -179,14 +180,16 @@ const doneCount = computed(() => week.value.filter((d) => d.done).length);
 /* the ⋮ is taller than the header's icon; it overlaps the header's padding instead of making the header taller */
 .hmenu { margin-block: -5px; }
 .tacts { display: flex; flex-wrap: wrap; gap: 8px; }
-/* a day's plans: equal rows, each a soft tile with its kind, name, time and its own action */
+/* a day's plans: equal rows, each a soft tile with its kind, name, time and its own action. Spaced like the app's other
+   tinted rows (the workout's exercise list: --lpy all round, the 12px gap every list row has), so the name keeps its room
+   beside Start and ⋮ */
 .plist { display: flex; flex-direction: column; gap: var(--tdy); }
 .tl + .plist { margin-top: var(--tdy); }
-.prow { display: flex; align-items: center; gap: var(--cpx); min-height: var(--lmh); padding: var(--lpy) var(--cpx); border-radius: var(--r-md); background: color-mix(in srgb, var(--onc) 8%, transparent); }
+.prow { display: flex; align-items: center; gap: 12px; min-height: var(--lmh); padding: var(--lpy); border-radius: var(--r-md); background: color-mix(in srgb, var(--onc) 8%, transparent); }
 .pk { width: 32px; height: 32px; flex: none; border-radius: var(--r-sm); display: grid; place-items: center; background: color-mix(in srgb, var(--onc) 12%, transparent); color: var(--onc); }
 .pt { flex: 1; min-width: 0; }
 .pn { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ps { font-size: var(--fs-sm); color: color-mix(in srgb, var(--onc) 72%, transparent); }
+.ps { font-size: var(--fs-sm); color: color-mix(in srgb, var(--onc) 72%, transparent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* the ⋮ beside Start (and a single plan's in the header): full on-colour like the hero's other controls (above the
    hero's softer .sm text), and the hero's own hover instead of the surface one */
 :is(.pact, .hmenu) :deep(.ib.plain) { color: var(--onc); }
@@ -221,5 +224,7 @@ html.phone .today { grid-template-columns: minmax(0, 1fr) auto; }
 html.phone .today > .tweek { grid-column: 1 / -1; order: 1; margin-left: 0; justify-content: space-between; }
 html.phone .tt { font-size: calc(var(--fs-lg) * 1.375); }
 html.phone .wd { width: auto; flex: 1; }
+/* a phone's rows show their kind as a plain icon, like the calendar's day list, so the name has room beside Start and ⋮ */
+html.phone .pk { width: auto; height: auto; background: none; }
 html.phone .wn { width: min(34px, 100%); aspect-ratio: 1; height: auto; }
 </style>
