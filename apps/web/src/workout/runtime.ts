@@ -142,15 +142,16 @@ if (isNativeApp() && !hidden()) void cancelRestAlarm();
 
 // Sounds are made here rather than shipped as files. Each note is a few sine partials with a quick (but not instant)
 // attack and an exponential fade, so it rings like a small bell instead of clicking on and off like a raw square
-// beep; everything goes through one compressor so stacked notes never clip.
+// beep; everything goes through one limiter so stacked notes never clip. The workout's own cues (10 seconds, 3-2-1,
+// rest over) are the exception: they must cut through a gym on a phone speaker, see CUE below.
 let ctx: AudioContext | null = null, out: AudioNode | null = null;
 function audio() {
   if (!ctx) {
     ctx = new AudioContext();
     const comp = ctx.createDynamicsCompressor(), master = ctx.createGain();
-    // used as a limiter (the browser's default setting squashed the cues by several dB even after its automatic makeup gain, which made them quiet):
-    // it only catches the peaks, so the notes can be written loud and stacked ones still don't clip
-    comp.threshold.value = -6; comp.knee.value = 3; comp.ratio.value = 20; comp.attack.value = 0.002; comp.release.value = 0.12;
+    // used as a limiter that only catches the last few dB of a peak (its automatic makeup gain then adds about 1.5 dB),
+    // so loud notes come out near full scale and stacked ones still don't clip
+    comp.threshold.value = -3; comp.knee.value = 1; comp.ratio.value = 20; comp.attack.value = 0.001; comp.release.value = 0.1;
     master.gain.value = 1; comp.connect(master).connect(ctx.destination); out = comp;
   }
   if (ctx.state === "suspended") void ctx.resume();
@@ -169,30 +170,40 @@ const LOUDER = 2.2;
 const BELL: Overtone[] = [[1, 1, 1], [2, 0.32, 0.6], [2.76, 0.16, 0.4], [5.4, 0.05, 0.2]];
 /** Round and soft: the note with a little warmth on top. */
 export const SOFT: Overtone[] = [[1, 1, 1], [2, 0.18, 0.5]];
+/** The workout's cues: a bright tone (the first harmonics, like a soft square wave) that stays at full loudness for a
+ *  moment before it fades. A bell's quick fade leaves almost nothing for the ear to add up (it judges loudness over
+ *  about 0.2 s), and a phone's small speaker barely plays notes below 1 kHz, so the old 660-880 Hz bells came out
+ *  20-40 dB under full scale however much they were turned up. These sit at 1-3 kHz, where speaker and ear are both
+ *  at their best. With `vol` 0.23 the harmonics add up to full scale. */
+const CUE: Overtone[] = [[1, 1, 1], [2, 0.5, 1], [3, 0.3, 1], [4, 0.15, 1]];
 /** One note starting `delay` seconds from now that rings for `dur` seconds; `attack` is how long it takes to reach full
- *  loudness (a few ms for a struck note, longer for one that swells in). */
-export function tone(freq: number, { delay = 0, dur = 0.5, vol = 0.3, partials = BELL, attack = 0.005 }: { delay?: number; dur?: number; vol?: number; partials?: readonly Overtone[]; attack?: number } = {}) {
+ *  loudness (a few ms for a struck note, longer for one that swells in); `hold` keeps it at full loudness that long
+ *  before the fade starts. */
+export function tone(freq: number, { delay = 0, dur = 0.5, vol = 0.3, partials = BELL, attack = 0.005, hold = 0 }: { delay?: number; dur?: number; vol?: number; partials?: readonly Overtone[]; attack?: number; hold?: number } = {}) {
   try {
     const { ac, dest } = audio(), t = ac.currentTime + 0.01 + delay;
     for (const [ratio, amp, ring] of partials) {
       const f = freq * ratio;
       if (f > 16000) continue;
-      const o = ac.createOscillator(), g = ac.createGain(), end = t + Math.max(attack + 0.05, dur * ring);
+      const o = ac.createOscillator(), g = ac.createGain(), peak = vol * amp * LOUDER, end = t + hold + Math.max(attack + 0.05, dur * ring);
       o.type = "sine"; o.frequency.value = f;
       // a rise of at least 5 ms takes the click off the start; the exponential fall to near silence takes it off the end
-      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol * amp * LOUDER, t + attack); g.gain.exponentialRampToValueAtTime(0.0001, end);
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(peak, t + attack);
+      if (hold > 0) g.gain.setValueAtTime(peak, t + attack + hold);
+      g.gain.exponentialRampToValueAtTime(0.0001, end);
       o.connect(g).connect(dest); o.start(t); o.stop(end + 0.02);
     }
   } catch { /* no sound */ }
 }
-/** The countdown in the last seconds of a rest or an interval part: a short soft blip, the last one higher so you
- *  know "now". */
+/** The countdown in the last seconds of a rest or an interval part: a short blip, the last one higher so you know
+ *  "now". */
 export function tick(last: boolean) {
-  tone(last ? 1318.5 : 659.25, { dur: last ? 0.22 : 0.12, vol: last ? 0.3 : 0.26, partials: SOFT }); // E6, E5
+  tone(last ? 2637 : 1318.5, { hold: last ? 0.2 : 0.14, dur: last ? 0.12 : 0.08, vol: 0.23, partials: CUE }); // E7, E6
 }
-/** The plain cue used by the rest timer and timed sets: `times` soft bell notes. */
+/** The plain cue used by the rest timer and timed sets: `times` short beeps. `freq` keeps the callers' pitches apart
+ *  (10 seconds 660, rest over 880, …); each sounds an octave higher, where a phone's speaker is loud. */
 export function beep(times = 1, freq = 880) {
-  for (let i = 0; i < times; i++) tone(freq, { delay: i * 0.2, dur: 0.45 });
+  for (let i = 0; i < times; i++) tone(freq * 2, { delay: i * 0.25, hold: times > 1 ? 0.15 : 0.22, dur: times > 1 ? 0.06 : 0.12, vol: 0.23, partials: CUE });
 }
 function speak(text: string) {
   try { const u = new SpeechSynthesisUtterance(text); u.rate = 1.05; speechSynthesis.cancel(); speechSynthesis.speak(u); } catch { /* no voice */ }
