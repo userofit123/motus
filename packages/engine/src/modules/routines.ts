@@ -238,15 +238,20 @@ export async function updateRoutineFromWorkout(ctx: Ctx, routineId: string, work
  * A routine set's own rest wins over the exercise's (restAfterSet), so the sets it stands for lose theirs: the working
  * sets but the last for a rest between sets, the last set for the rest after. Kept in History with the workout, as a
  * finish's changes are. False when the slot is gone or holds another exercise (swapped): the rest isn't the routine's. */
-export async function keepRoutineRest(ctx: Ctx, reId: string, exerciseId: string, field: "restS" | "restAfterS", secs: number, workoutId: string): Promise<boolean> {
+/** A rest kept from now on in a workout (M-106), in the routine the workout came from: `field` is the rest between
+ * sets, the rest after the exercise, or the rest after a kind of set (a warm-up, a drop set, a set to failure: the
+ * routine exercise's rest for that kind). The routine sets' own rests it covers give way to it. False when the routine
+ * exercise is gone or holds another exercise (a swap), so the caller keeps it elsewhere. */
+export async function keepRoutineRest(ctx: Ctx, reId: string, exerciseId: string, field: "restS" | "restAfterS" | "warmup" | "drop" | "failure", secs: number, workoutId: string): Promise<boolean> {
   const re = (await ctx.q.query(
     "SELECT re.routine_id FROM routine_exercises re JOIN routines r ON r.id = re.routine_id WHERE re.id = $1 AND re.exercise_id = $2 AND r.deleted_at IS NULL",
     [reId, exerciseId])).rows[0];
   if (!re) return false;
   await keepCurrent(ctx, re.routine_id);
-  await ctx.q.query(`UPDATE routine_exercises SET ${field === "restS" ? "rest_s" : "rest_after_s"} = $2 WHERE id = $1`, [reId, secs]);
+  if (field === "restS" || field === "restAfterS") await ctx.q.query(`UPDATE routine_exercises SET ${field === "restS" ? "rest_s" : "rest_after_s"} = $2 WHERE id = $1`, [reId, secs]);
+  else await ctx.q.query("UPDATE routine_exercises SET rest_by_kind = coalesce(rest_by_kind, '{}'::jsonb) || jsonb_build_object($2::text, $3::int) WHERE id = $1", [reId, field, secs]);
   const sets: { id: string; kind: string }[] = (await ctx.q.query("SELECT id, kind FROM routine_sets WHERE routine_exercise_id = $1 ORDER BY position", [reId])).rows;
-  const own = sets.filter((x, i) => (field === "restAfterS" ? i === sets.length - 1 : i < sets.length - 1 && x.kind === "normal")).map((x) => x.id);
+  const own = sets.filter((x, i) => (field === "restAfterS" ? i === sets.length - 1 : i < sets.length - 1 && x.kind === (field === "restS" ? "normal" : field))).map((x) => x.id);
   if (own.length) await ctx.q.query("UPDATE routine_sets SET rest_s = NULL WHERE id = ANY($1::uuid[])", [own]);
   await ctx.q.query("UPDATE routines SET updated_at = $2 WHERE id = $1", [re.routine_id, ctx.now().toISOString()]);
   await snapshot(ctx, re.routine_id, "workout", workoutId);

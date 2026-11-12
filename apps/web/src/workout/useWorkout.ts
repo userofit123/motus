@@ -239,7 +239,8 @@ export function useWorkout() {
     // the id is made here, so the new set can be ticked or changed straight away, even offline
     // a general set (both sides together); left and right ones come from addPair or the set's menu
     const s = { ...(last ?? ({} as any)), id: crypto.randomUUID(), done: false, doneAt: null, kind: last?.kind === "warmup" || last?.kind === "drop" ? "normal" : last?.kind ?? "normal", side: null, position: e.sets.length, prefilled: true, pr: [] };
-    e.sets.push(s);
+    // the set that was last now rests between sets, as the server plans it again
+    followPlan(e, () => e.sets.push(s), (_x, i) => i === e.sets.length - 2);
     if (e.status === "done") e.status = "pending";
     await call("post", `/workout-exercises/${e.id}/sets`, { id: s.id, kind: s.kind, weightKg: s.weightKg ?? null, reps: s.reps ?? null, durationS: s.durationS ?? null, distanceM: s.distanceM ?? null, restPlannedS: s.restPlannedS ?? null, side: null, prefilled: true }, true);
   }
@@ -250,7 +251,9 @@ export function useWorkout() {
     const last = [...e.sets].reverse().find((s) => s.side && s.kind !== "warmup" && s.kind !== "drop") ?? e.sets.at(-1);
     const pair = (["L", "R"] as const).map((side, i) => ({ ...(last ?? ({} as any)), id: crypto.randomUUID(), done: false, doneAt: null, kind: "normal", side,
       restPlannedS: null, restActualS: null, position: e.sets.length + i, prefilled: true, pr: [] }) as WorkoutSet);
-    e.sets.push(...pair);
+    // the set that was last now rests between sets, as the server plans it again
+    const was = e.sets.length - 1;
+    followPlan(e, () => e.sets.push(...pair), (_x, i) => i === was);
     if (e.status === "done") e.status = "pending";
     await call("post", `/workout-exercises/${e.id}/sets`, { sets: pair.map((s) => ({ id: s.id, kind: "normal", side: s.side, weightKg: s.weightKg ?? null, reps: s.reps ?? null,
       durationS: s.durationS ?? null, distanceM: s.distanceM ?? null, restPlannedS: null, prefilled: true })) }, true);
@@ -267,7 +270,9 @@ export function useWorkout() {
     await call("post", `/workout-exercises/${e.id}/sets`, { id: s.id, afterId: prev.id, kind: "drop", weightKg: s.weightKg ?? null, reps: s.reps ?? null, durationS: s.durationS ?? null, distanceM: s.distanceM ?? null, restPlannedS: s.restPlannedS ?? null, side: prev.side ?? null, prefilled: true }, true);
   }
   async function removeSet(e: WorkoutExercise, s: WorkoutSet) {
-    e.sets.splice(e.sets.indexOf(s), 1);
+    // the set before it rests by what now follows it (the rest after the exercise once it is last), as the server does
+    const at = e.sets.indexOf(s);
+    followPlan(e, () => e.sets.splice(at, 1), (x, i) => i === at - 1 && (!x.done || !e.sets[i + 1]?.done));
     await call("del", `/workout-sets/${s.id}`, undefined, true);
   }
   async function setStatus(e: WorkoutExercise, status: string, reason?: string | null) {
@@ -329,8 +334,17 @@ export function useWorkout() {
   // the rest running now was changed (±15 s…): offer to make it this exercise's rest from now on
   const restSet = () => { for (const e of state.w?.exercises ?? []) { const s = e.sets.find((x) => x.id === rest.setId); if (s) return { e, s }; } return null; };
   const restKey = () => `${rest.setId}:${rest.totalS}`;
-  // only where keeping saves something: working sets share the between-sets rest, the last set the rest after the exercise
-  const restChanged = computed(() => { const f = rest.setId ? restSet() : null; return !!f && (f.s.kind === "normal" || f.e.sets.indexOf(f.s) === f.e.sets.length - 1) && keptRest.value !== restKey() && Math.abs(rest.totalS - (f.s.restPlannedS ?? rest.totalS)) >= 1; });
+  // Where keeping it goes, for the offer's wording: after the last set the rest after the exercise, after a warm-up,
+  // drop set or set to failure the rest after that kind of set (`kind`), else the rest between sets; `inRoutine` when it
+  // goes to the routine (a kind's rest otherwise goes to Settings, for every exercise). Any set: the rest after a
+  // warm-up is as much yours to keep as one after a working set (M-113).
+  const restKeeps = computed(() => {
+    const f = rest.setId ? restSet() : null; if (!f) return null;
+    const after = f.e.sets.indexOf(f.s) === f.e.sets.length - 1;
+    const kind = !after && f.s.kind !== "normal" ? (f.s.kind as Exclude<WorkoutSet["kind"], "normal">) : null;
+    return { e: f.e, s: f.s, after, kind, inRoutine: !!state.w?.routineId && !!f.e.routineExerciseId && !f.e.swapped };
+  });
+  const restChanged = computed(() => { const k = restKeeps.value; return !!k && keptRest.value !== restKey() && Math.abs(rest.totalS - (k.s.restPlannedS ?? rest.totalS)) >= 1; });
   // what this rest was planned at, so the offer can say what was changed
   const restPlannedNow = computed(() => { const f = rest.setId ? restSet() : null; return f?.s.restPlannedS ?? null; });
   // A rest running after a set follows what that set's rest now comes to: the set made a warm-up, the exercise given a
@@ -351,17 +365,24 @@ export function useWorkout() {
    * next workout's rest comes from, the routine exercise in a workout from a routine, else the exercise's settings (the
    * server picks, sent through the outbox like any change). After the last set it is the rest after the exercise.
    * Returns what was saved, for the confirmation: the exercise is the one the rest follows, not the one on screen. */
-  function keepRest(): { secs: number; after: boolean; inRoutine: boolean } | null {
-    const f = restSet(); if (!f) return null;
+  function keepRest(): { secs: number; after: boolean; kind: string | null; inRoutine: boolean } | null {
+    const k = restKeeps.value; if (!k) return null;
+    const { e, after, kind, inRoutine } = k;
     const secs = rest.totalS;
-    const after = f.e.sets.indexOf(f.s) === f.e.sets.length - 1;
     // the routine sets' own rests it covers give way to it, as the server does (replanRests), so the screen agrees at once
-    const covers = (i: number) => (after ? i === f.e.sets.length - 1 : i < f.e.sets.length - 1 && f.e.sets[i]!.kind === "normal");
-    if (f.e.routineSetRests) f.e.routineSetRests = f.e.routineSetRests.map((x, i) => (covers(i) ? null : x));
-    void patchExercise(f.e, { ...(after ? { restAfterS: secs } : { restS: secs }), keep: true });
-    for (const x of f.e.sets) if (!x.done) x.restPlannedS = null;
+    const covers = (i: number) => (after ? i === e.sets.length - 1 : i < e.sets.length - 1 && e.sets[i]!.kind === (kind ?? "normal"));
+    const dropOwn = () => { if (e.routineSetRests) e.routineSetRests = e.routineSetRests.map((x, i) => (covers(i) ? null : x)); };
+    if (kind) {
+      // the sets of that kind still to do rest by it now; this workout's rests by kind take it (they win over Settings)
+      followPlan(e, () => { dropOwn(); e.restByKind = { ...(e.restByKind ?? {}), [kind]: secs }; }, (x, i) => !x.done && x.kind === kind && i < e.sets.length - 1);
+      void call("post", `/workout-exercises/${e.id}/kind-rest`, { kind, restS: secs });
+    } else {
+      dropOwn();
+      void patchExercise(e, { ...(after ? { restAfterS: secs } : { restS: secs }), keep: true });
+      for (const x of e.sets) if (!x.done) x.restPlannedS = null;
+    }
     keptRest.value = restKey();
-    return { secs, after, inRoutine: !!state.w?.routineId && !!f.e.routineExerciseId && !f.e.swapped };
+    return { secs, after, kind, inRoutine };
   }
   async function patchWorkout(patch: Record<string, unknown>) {
     Object.assign(state.w!, patch);
@@ -377,7 +398,7 @@ export function useWorkout() {
     if (!p) state.w!.pausedS = (state.w!.pausedS ?? 0) + Math.max(0, Math.round((Date.now() - new Date(state.w!.pauseStartedAt!).getTime()) / 1000));
     patchWorkout({ pause: p, pauseStartedAt: p ? new Date().toISOString() : null });
   }
-  return { state, prefs, settings, fmt, incKg, ex, activate, restChanged, restPlannedNow, keptRest, keepRest, skipExercise, tick, editSet, addSet, addPair, addDrop, removeSet, setStatus, reorder, patchExercise, addExercises, removeExercise, patchWorkout, togglePause, restFor, call, active };
+  return { state, prefs, settings, fmt, incKg, ex, activate, restChanged, restKeeps, restPlannedNow, keptRest, keepRest, skipExercise, tick, editSet, addSet, addPair, addDrop, removeSet, setStatus, reorder, patchExercise, addExercises, removeExercise, patchWorkout, togglePause, restFor, call, active };
 }
 
 /**

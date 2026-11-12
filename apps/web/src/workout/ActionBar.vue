@@ -18,12 +18,19 @@ defineProps<{ paused: boolean }>();
 const emit = defineEmits<{ finish: []; pause: [] }>();
 const W = useWorkout();
 // the saved rest is confirmed in place of the offer for a moment, so a tap is never silent: what was saved as it was at
-// the tap, and whether it is the rest between sets or after the exercise
-const saved = ref("");
+// the tap, and which rest it is
+const saved = ref(""), savedHead = ref("Saved");
 let savedT: ReturnType<typeof setTimeout> | undefined;
+// What keeping the rest covers. The rest after a warm-up, drop set or set to failure is kept for that kind of set: in a
+// workout from a routine this exercise's, else Settings', for every exercise. Where it went heads the confirmation, so
+// each line stays short enough for a phone's one line
+const KIND_SETS: Record<string, [string, string]> = { warmup: ["warm-up", "warm-ups"], drop: ["drop set", "drop sets"], failure: ["set to failure", "sets to failure"] };
+const offerFor = (x: { after: boolean; kind: string | null; inRoutine: boolean } | null) =>
+  x?.kind ? (x.inRoutine ? `after ${KIND_SETS[x.kind]![1]} from now on` : `after every ${KIND_SETS[x.kind]![0]}`) : x?.after ? "after this exercise from now on" : "for this exercise from now on";
 function keep() {
   const k = W.keepRest(); if (!k) return;
-  saved.value = `${clock(k.secs)} rest ${k.after ? "after" : "for"} this exercise from now on`;
+  savedHead.value = !k.kind ? "Saved" : k.inRoutine ? "Saved for this exercise" : "Saved in Settings";
+  saved.value = `${clock(k.secs)} rest ${!k.kind ? offerFor(k) : k.inRoutine ? `after ${KIND_SETS[k.kind]![1]}` : `after every ${KIND_SETS[k.kind]![0]}`}`;
   clearTimeout(savedT); savedT = setTimeout(() => (saved.value = ""), 2500);
 }
 // a new rest starts without the last one's confirmation
@@ -103,10 +110,10 @@ const RING = 2 * Math.PI * 58;
       </div>
       <div class="ab-k ellipsis ab-next">{{ rest.next }}</div>
       </div>
-      <div v-if="saved" class="ab-saved" role="status"><span class="ab-sv"><Icon name="check" :size="14" />Saved</span><span class="ab-why">{{ saved }}</span></div>
+      <div v-if="saved" class="ab-saved" role="status"><span class="ab-sv"><Icon name="check" :size="14" />{{ savedHead }}</span><span class="ab-why">{{ saved }}</span></div>
       <button v-else-if="W.restChanged.value" class="qb ab-keep" @click="keep">
         <span class="ab-why">This rest was planned at {{ clock(W.restPlannedNow.value ?? 0) }}, now {{ clock(rest.totalS) }}</span>
-        <span class="ab-act">Use {{ clock(rest.totalS) }} for this exercise from now on</span>
+        <span class="ab-act">Use {{ clock(rest.totalS) }} {{ offerFor(W.restKeeps.value) }}</span>
       </button>
       <div class="ab-row">
         <button class="ib ab-pause" :class="{ on: paused }" :aria-label="paused ? 'Resume the workout' : 'Pause the workout'" :aria-pressed="paused" @click="emit('pause')"><Icon :name="paused ? 'play' : 'pause'" /></button>

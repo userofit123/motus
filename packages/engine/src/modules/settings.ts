@@ -1,6 +1,6 @@
 // The signed-in person and their settings.
 import { withDefaults, type Settings } from "@motus/shared";
-import type { Router } from "../router";
+import type { Router, Ctx } from "../router";
 import type { Sql } from "../db";
 import { str } from "../util";
 import { bad } from "../errors";
@@ -24,14 +24,19 @@ export function settingsRoutes(r: Router) {
   r.put("/settings", async (ctx, _p, b) => {
     if (!b || typeof b !== "object" || Array.isArray(b)) throw bad("Expected settings");
     if (JSON.stringify(b).length > 50000) throw bad("Too large");
-    const cur = await getSettings(ctx.q, ctx.userId);
-    const next = withDefaults(mergeDeep(cur, b));
-    await ctx.q.query(
-      `INSERT INTO user_settings (user_id, data, updated_at) VALUES ($1, $2, now())
-       ON CONFLICT (user_id) DO UPDATE SET data = $2, updated_at = now()`, [ctx.userId, JSON.stringify(next)]);
-    ctx.changed("settings");
-    return next;
+    return saveSettings(ctx, b);
   });
+}
+
+/** Merges a partial change into the person's settings and saves them; returns the settings as they are now. */
+export async function saveSettings(ctx: Ctx, patch: Record<string, unknown>): Promise<Settings> {
+  const cur = await getSettings(ctx.q, ctx.userId);
+  const next = withDefaults(mergeDeep(cur, patch));
+  await ctx.q.query(
+    `INSERT INTO user_settings (user_id, data, updated_at) VALUES ($1, $2, now())
+     ON CONFLICT (user_id) DO UPDATE SET data = $2, updated_at = now()`, [ctx.userId, JSON.stringify(next)]);
+  ctx.changed("settings");
+  return next;
 }
 
 function mergeDeep(a: any, b: any): any {

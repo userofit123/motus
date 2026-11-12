@@ -1,12 +1,12 @@
 // Workouts: starting one (from a routine or empty), logging sets, skipping, reordering and replacing exercises,
 // finishing, logging a past workout, editing and duplicating, and the full detail with records and improvements.
-import { e1rm, ymd, pairSets, planSetRest, restDefaultsOf, liftedKg, liftsWeight, LIFTED_SQL, TRACKING_SQL, structureChanges, type Tracking, type RoutineExercise, type ExerciseStatus, type SetKind, type WorkoutExercise, type HomeRecord, type Workout, type WorkoutSummary, type Routine } from "@motus/shared";
+import { e1rm, ymd, pairSets, planSetRest, restDefaultsOf, liftedKg, liftsWeight, LIFTED_SQL, TRACKING_SQL, structureChanges, type Tracking, type RoutineExercise, type ExerciseStatus, type SetKind, type RestByKind, type RestDefaults, type WorkoutExercise, type HomeRecord, type Workout, type WorkoutSummary, type Routine } from "@motus/shared";
 import type { Router, Ctx } from "../router";
 import type { Sql } from "../db";
 import { camel, id, optId, str, strList, intOrNull, numOrNull, bool, oneOf, isoTime, secondsBetween, visible } from "../util";
 import { uuidv7 } from "../ids";
 import { notFound, bad, HttpError } from "../errors";
-import { getSettings } from "./settings";
+import { getSettings, saveSettings } from "./settings";
 import { buildPlan, loadRoutine, pendingReminders, withWorkoutOverrides } from "./plan";
 import { getExercises, exerciseSessions, savePrefs } from "./library";
 
@@ -328,7 +328,7 @@ async function workoutOfSet(q: Sql, setId: string): Promise<{ workoutId: string;
 /** A workout set as replanRests reads it. */
 interface RestSetRow { id: string; kind: SetKind; side: string | null; done: boolean; rest_planned_s: number | null }
 /** What a set's planned rest is worked out from that can change during a workout. */
-interface RestInputs { restS: number | null; restAfterS: number | null; kinds: SetKind[]; sides: (string | null)[] }
+interface RestInputs { restS: number | null; restAfterS: number | null; kinds: SetKind[]; sides: (string | null)[]; byKind?: RestByKind | null; d?: RestDefaults }
 
 /**
  * Plans the rest after some sets again, the way Start planned it (buildPlan): a set's planned rest is fixed at Start
@@ -362,8 +362,10 @@ async function replanRests(ctx: Ctx, weId: string, pick: (s: RestSetRow, i: numb
   }
   // inside a superset round there is no rest (as at Start)
   const inRound = !!we.superset && we.next_superset === we.superset;
+  // `byKind` and `d`: the routine's rests by kind and the person's defaults as they were (a rest by kind kept from now on)
   const plan = (i: number, x: RestInputs, own = nowSetRests) => inRound ? 0 : planSetRest(x.kinds.map((kind, n) => ({ kind, side: x.sides[n] })), i,
-    { restS: x.restS, restAfterS: x.restAfterS, prefRestS: pref?.rest_s, prefRestAfterS: pref?.rest_after_s, restByKind: re?.restByKind, routineSetRests: own }, d);
+    { restS: x.restS, restAfterS: x.restAfterS, prefRestS: pref?.rest_s, prefRestAfterS: pref?.rest_after_s, restByKind: x.byKind !== undefined ? x.byKind : re?.restByKind,
+      routineSetRests: own }, x.d ?? d);
   const now: RestInputs = { restS: we.rest_s, restAfterS: we.rest_after_s, kinds: sets.map((s) => s.kind), sides: sets.map((s) => s.side) };
   const was = before?.(now, sets);
   for (const [i, s] of sets.entries()) {
@@ -551,6 +553,38 @@ export function workoutRoutes(r: Router) {
     return { ok: true };
   });
 
+  // "Use 1:00 after warm-ups from now on": the rest running after a warm-up (drop set, set to failure) kept as the rest
+  // after that kind of set, for the sets of that kind still to do here and where the next workout's rest comes from: the
+  // routine exercise's rest for that kind in a workout from a routine, else Settings' rest for that kind (exercises have
+  // no rests by kind of their own). This workout's copy of the routine gets it too, as it wins over Settings.
+  r.post("/workout-exercises/:id/kind-rest", async (ctx, p, b) => {
+    const weId = id(p.id);
+    const wid = await workoutOfExercise(ctx.q, weId);
+    const kind = (["warmup", "drop", "failure"] as const).find((k) => k === b?.kind);
+    const secs = intOrNull(b?.restS, 0, 3600);
+    if (!kind || secs == null) throw bad("Expected a kind of set and a rest");
+    const we = (await ctx.q.query(`SELECT we.exercise_id, we.routine_exercise_id, w.routine_snapshot, w.settings AS w_settings
+      FROM workout_exercises we JOIN workouts w ON w.id = we.workout_id WHERE we.id = $1`, [weId])).rows[0];
+    const snap: Pick<Routine, "exercises"> | null = typeof we.routine_snapshot === "string" ? JSON.parse(we.routine_snapshot) : we.routine_snapshot;
+    const re = we.routine_exercise_id ? snap?.exercises?.find((x) => x.id === we.routine_exercise_id) : undefined;
+    const byKindWas = re?.restByKind ?? null;
+    const dWas = restDefaultsOf(withWorkoutOverrides(await getSettings(ctx.q, ctx.userId), we.w_settings).workout);
+    if (re) {
+      re.restByKind = { ...(re.restByKind ?? {}), [kind]: secs };
+      await ctx.q.query("UPDATE workouts SET routine_snapshot = $2 WHERE id = $1", [wid, JSON.stringify(snap)]);
+    }
+    const { keepRoutineRest } = await import("./routines");
+    const inRoutine = !!we.routine_exercise_id && await keepRoutineRest(ctx, we.routine_exercise_id, we.exercise_id, kind, secs, wid);
+    if (!inRoutine) await saveSettings(ctx, { workout: { restByKindS: { [kind]: secs } } });
+    // the sets of that kind still to do, each only while its rest is still what the old rests gave it (a rest set on
+    // one set stays); the routine sets' own rests for that kind give way to it, as in the routine
+    await replanRests(ctx, weId, (s, i, all) => !s.done && s.kind === kind && i < all.length - 1, (now) => ({ ...now, byKind: byKindWas, d: dWas }),
+      (i, all) => i < all.length - 1 && all[i]!.kind === kind);
+    await touch(ctx, wid);
+    ctx.changed("workout");
+    return { ok: true };
+  });
+
   r.del("/workout-exercises/:id", async (ctx, p) => {
     const weId = id(p.id);
     const wid = await workoutOfExercise(ctx.q, weId);
@@ -594,7 +628,14 @@ export function workoutRoutes(r: Router) {
         await replanRests(ctx, weId, (s, i, all) => s.id === b.afterId && !all[i + 1]?.done,
           (now, all) => { const kept = all.filter((s) => !added.has(s.id)); return { ...now, kinds: kept.map((s) => s.kind), sides: kept.map((s) => s.side) }; });
       }
-    } else await insertSets(ctx, weId, list, n);
+    } else {
+      await insertSets(ctx, weId, list, n);
+      // the set that was last rested as the last one (the rest after the exercise); with sets after it, it rests as a
+      // set between others again (none inside a left and right round). Only while that rest is still what the plan
+      // without the new sets gave it: a rest set on it stays
+      if (last && list.length) await replanRests(ctx, weId, (s) => s.id === last.id,
+        (now) => ({ ...now, kinds: now.kinds.slice(0, n), sides: now.sides.slice(0, n) }));
+    }
     // a new set reopens the exercise during a workout; on a finished workout it is simply part of it
     await ctx.q.query(`UPDATE workout_exercises SET status = CASE WHEN (SELECT status FROM workouts WHERE id = $2) = 'completed' THEN 'done'
       WHEN status = 'done' THEN 'pending' ELSE status END WHERE id = $1`, [weId, wid]);
@@ -662,9 +703,16 @@ export function workoutRoutes(r: Router) {
   r.del("/workout-sets/:id", async (ctx, p) => {
     const sid = id(p.id);
     const { workoutId, weId } = await workoutOfSet(ctx.q, sid);
+    const gone = (await ctx.q.query("SELECT kind, side FROM workout_sets WHERE id = $1", [sid])).rows[0];
+    const before = (await ctx.q.query("SELECT id FROM workout_sets WHERE workout_exercise_id = $1 ORDER BY position", [weId])).rows.findIndex((x: any) => x.id === sid);
     await ctx.q.query("DELETE FROM workout_sets WHERE id = $1", [sid]);
     const rest = (await ctx.q.query("SELECT id FROM workout_sets WHERE workout_exercise_id = $1 ORDER BY position", [weId])).rows;
     for (const [i, x] of rest.entries()) await ctx.q.query("UPDATE workout_sets SET position = $2 WHERE id = $1", [x.id, i]);
+    // the set before it rests by what now follows it: the rest after the exercise once it is the last set, a rest
+    // again once no drop set or other side follows. Only while its rest is still what the plan with the removed set gave
+    // it (a rest set on it stays), and only while that rest is still ahead or may be running (the set after it not done)
+    if (gone && before > 0) await replanRests(ctx, weId, (s, i, all) => i === before - 1 && (!s.done || !all[i + 1]?.done),
+      (now) => ({ ...now, kinds: [...now.kinds.slice(0, before), gone.kind, ...now.kinds.slice(before)], sides: [...now.sides.slice(0, before), gone.side, ...now.sides.slice(before)] }));
     await touch(ctx, workoutId);
     ctx.changed("workout");
     return { ok: true };
