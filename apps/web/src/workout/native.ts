@@ -157,8 +157,9 @@ export async function clearSession() {
 // at once: the clock (Android), distance and steps so far, and Pause or Resume. `keepAlive` (the Android app records a
 // route or counts steps): it is the notification of the service that keeps them going with the screen off, so there is
 // one notification, not that service's beside this one. `live`: where the distance and steps stand, so the Android app
-// carries them on while this page is held up with the screen off (MotusWorkoutPlugin.showRecording).
-export interface RecordingLive { distM: number; unit: "km" | "mi"; last: number[] | null; steps: number | null; stepSession: number | null; stepSeen: number; elapsedS: number }
+// carries them on while this page is held up with the screen off (MotusWorkoutPlugin.showRecording). `distM` null: no route
+// being recorded, so it carries no distance on.
+export interface RecordingLive { distM: number | null; unit: "km" | "mi"; last: number[] | null; steps: number | null; stepSession: number | null; stepSeen: number; elapsedS: number }
 export async function showRecording(o: { title: string; body: string; since: number | null; actions: NoticeButton[]; keepAlive?: boolean; live?: RecordingLive }) {
   const p = plugin("MotusWorkout");
   if (p?.showRecording) { const { live, ...rest } = o; p.showRecording({ ...rest, ...live }).catch?.(() => {}); return; }

@@ -271,9 +271,14 @@ function setPaused(on: boolean) {
   const r = recording.value; if (!r || !!r.pauseAt === on) return;
   // going on again: the next point starts a new stretch, so the way between where you paused and where you go on isn't counted
   // going on: the steps the counter still holds back were taken while paused (resumeSteps)
-  if (r.pauseAt) { void resumeSteps(); r.pausedMs += Date.now() - r.pauseAt; r.pauseAt = null; if (r.route.length) r.breaks.push(r.route.length); } else { r.pauseAt = Date.now(); void settleSteps(); }
+  // either way the notification is shown again once the held-back steps are in: Pause's count was short of them, and
+  // Resume's start of the count (stepSeen) was still before the steps taken while paused
+  if (r.pauseAt) { void resumeSteps().then(stepsSettled); r.pausedMs += Date.now() - r.pauseAt; r.pauseAt = null; if (r.route.length) r.breaks.push(r.route.length); } else { r.pauseAt = Date.now(); void settleSteps().then(stepsSettled); }
   persist();
 }
+/** bumped once Pause's or Resume's held-back steps are in, so the notification is shown again with them */
+const stepsRev = ref(0);
+const stepsSettled = () => { stepsRev.value++; };
 /** saves it as an activity and returns its id */
 export async function finishRecording(): Promise<string> {
   const r = recording.value!;
@@ -307,7 +312,7 @@ const recNotice = computed(() => {
   if (!r) return null;
   const du: "km" | "mi" = queryClient.getQueryData<SettingsMe>(["settings", "me"])?.settings?.units?.distance === "mi" ? "mi" : "km";
   return { type: r.type, paused: !!r.pauseAt, since: r.startedAt + r.pausedMs, startedAt: r.startedAt, du, dist: Math.floor(fromM(recDistM.value, du) * 10) / 10,
-    steps: countsSteps(r.type) && recStepsCounted.value ? Math.floor(r.steps / 50) * 50 : null, pausedFor: r.pauseAt ? clock(recElapsedS.value) : null, hasDist: recDistM.value >= 10 };
+    steps: countsSteps(r.type) && recStepsCounted.value ? Math.floor(r.steps / 50) * 50 : null, pausedFor: r.pauseAt ? clock(recElapsedS.value) : null, stepsRev: stepsRev.value };
 });
 // compared as text, so a new GPS point that changes none of it shows nothing again. The setting is part of it, so
 // turning it off mid-recording takes the notification off. The settings come from the query cache, which isn't
@@ -337,7 +342,9 @@ watch(() => JSON.stringify([recNotice.value, noticeOn(), keepAlive.value]), () =
     since: n.paused ? null : n.since,
     actions: [n.paused ? { id: "rec-resume", title: "Resume" } : { id: "rec-pause", title: "Pause" }],
     keepAlive: keepAlive.value,
-    live: { distM: recDistM.value, unit: n.du, last, steps, stepSession: r.stepSession, stepSeen: r.stepSeen, elapsedS: Math.round(recElapsedS.value) },
+    // the Android app goes on with the distance only from the route plugin's own fixes: none for a type without a route,
+    // or without that plugin's watcher (a browser's location stops with the page anyway)
+    live: { distM: bgOn.value && typeInfo(n.type)?.hasGps !== false ? recDistM.value : null, unit: n.du, last, steps, stepSession: r.stepSession, stepSeen: r.stepSeen, elapsedS: Math.round(recElapsedS.value) },
   });
 }, { immediate: true });
 onNoticeAction("rec-pause", () => setPaused(true));
