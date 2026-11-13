@@ -228,7 +228,7 @@ await loaded(st, prev, ach);
 .ach.on svg { color: var(--warn); }
 .ach .t { font-size: 13px; font-weight: 600; color: var(--tx); }
 .ach .s { font-size: 11.5px; }
-.ach .pbar { margin-top: calc(var(--lpy) / 2); background: var(--bg); } /* tile is --s2, so the track needs a different token to show the empty part */
+.ach .pbar { margin-top: calc(var(--lpy) / 2); height: 6px; background: var(--s1); } /* tile is --s2, so the track needs a different token to show the empty part */
 .setnote { margin-top: calc(var(--lpy) / 2); }
 .mrow { cursor: pointer; border-radius: 6px; outline: none; }
 .mrow.on { font-weight: 600; color: var(--tx); }
