@@ -2,6 +2,18 @@
 
 The top entry's version is the one the release workflow publishes. Add a new `## [x.y.z]` section to release.
 
+## [0.1.19] - 2026-11-13
+
+- Workout sounds have their own section under Rest timer in Settings → Workout defaults (and in a workout's own settings). "Play sounds" turns every workout sound on or off. Below it: the 10-second warning and 3-2-1 switches, a Rest over sound and a Countdown sound to pick from twelve sounds (including Hand bell, Ship's bell, Tubular bell, Temple bell, Singing bowl and Deep gong, each with a play button), and a Sound level. The interval timer offers the same sounds under the same names.
+- On Android, the 10-second warning and 3-2-1 play on time with the app in the background or the screen off, and Vibrate uses the phone's own vibration, so it works on phones that mute touch vibration. The desktop app keeps rest timers on time in the background. A cue whose moment has passed is skipped instead of beeping late when you come back.
+- The recording notification on Android keeps counting steps and distance with the screen off and shows the time, the distance and steps for every activity.
+- An activity's splits show pace per km or mile from moving time, with the fastest one highlighted, and the line under its title says "recorded with GPS" or "imported from a file". The map's enlarge button no longer shows over menus.
+- Reminders look and work the same everywhere. In a workout, routine and exercise reminders both offer Done, Next time and Dismiss, and Next time now really keeps the reminder for your next workout. New notes and reminders on an exercise in a routine are for that routine by default.
+- Routines made from a template follow your progression defaults, and the routine editor's progression choices show their default values.
+- Every search box shares one design, and the magnifier stays sharp with the Glass look. With Glass, the workout's bottom controls are nearly solid on a phone.
+- A finished workout opens its routine from the ⋮ menu. Set ranges like "1-3" stay on one line, and a few links got their missing space.
+- Updating adds a small database change on first start.
+
 ## [0.1.18] - 2026-11-13
 
 - Track by: any exercise can be tracked by reps, time, distance, distance and time, or reps and time, each with or without weight, from "Track by" in its ⋮ menu (exercise page, routine editor and workout). A plank with plates on your back is Time with Weight, a ruck is Distance + time with Weight, kettlebell swings in a minute are Reps + time with Weight. Switching converts the sets in your routines and the sets still to do in a running workout; sets already done stay as logged. Your own exercises use the same two choices. It replaces Timed sets and can be switched off in Settings → Features → Set tracking.
