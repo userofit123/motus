@@ -15,6 +15,7 @@ export function valueOf(m: string, groups: MuscleGroup[] = GROUPS): string {
 </script>
 
 <script setup lang="ts">
+// `compact` (phones only) shrinks the body so a sheet keeps room for its list.
 // The "Muscle group" row of an exercise list's filters: the body always shown, with the chips in a grid (beside it on desktop, below it on phones):
 // tap a muscle to show only exercises that work it as a main muscle, tap it again to clear. Groups and muscles share one
 // value, so a group chip lights its muscles on the body, and a muscle picked on the body that is no chip of its own
@@ -25,7 +26,7 @@ import FilterRow from "./FilterRow.vue";
 import BodyMap from "./BodyMap.vue";
 import { isPhone } from "../core/device";
 
-const props = defineProps<{ modelValue: string; groups: MuscleGroup[] }>();
+const props = defineProps<{ modelValue: string; groups: MuscleGroup[]; compact?: boolean }>();
 const emit = defineEmits<{ "update:modelValue": [v: string] }>();
 const chosen = computed(() => musclesOf(props.modelValue, props.groups));
 const options = computed(() => {
@@ -55,7 +56,7 @@ const tap = (m: string) => {
   <FilterRow :model-value="modelValue" label="Muscle group" all="All" :options="options" @update:model-value="(v) => emit('update:modelValue', v)">
     <template #aside>
       <div class="mfig">
-        <BodyMap pickable :values="{}" :highlight="chosen" :pressed="pressed" :height="isPhone ? 175 : 230" @pick="tap" />
+        <BodyMap pickable :values="{}" :highlight="chosen" :pressed="pressed" :height="!isPhone ? 230 : compact ? 90 : 175" @pick="tap" />
         <span class="tiny" :class="{ on: !!modelValue }">{{ caption }}</span>
       </div>
     </template>

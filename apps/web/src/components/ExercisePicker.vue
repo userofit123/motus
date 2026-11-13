@@ -109,7 +109,7 @@ function te(e: TouchEvent) {
       <button class="ib" aria-label="Filters" title="Filters" :aria-expanded="moreOpen" @click="moreOpen = !moreOpen"><Icon name="filter" /><span v-if="moreCount" class="badge">{{ moreCount }}</span></button>
     </div>
     <FilterPanel :count="showSuggest ? 'Works the same muscles' : `${list.length === 150 ? '150+' : list.length} exercises`" :active="filtered" @clear="clear">
-      <MuscleFilter v-model="group" :groups="PICK_GROUPS" />
+      <MuscleFilter v-model="group" :groups="PICK_GROUPS" compact />
       <FilterRow v-if="!gym" v-model="equip" label="Equipment" all="Any" :options="EQUIP_OPTS" />
       <!-- with a gym profile the row starts with what that gym has, then "Any" -->
       <FilterRow v-else label="Equipment">

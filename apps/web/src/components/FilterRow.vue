@@ -32,13 +32,13 @@ const pick = (v: string) => emit("update:modelValue", props.all != null && props
 /* chips run to the panel's edge while scrolling on phones; on wider screens they wrap */
 .chips.hscroll { margin-inline: calc(-1 * var(--cpx)); padding-inline: var(--cpx); }
 html:not(.phone) .chips.hscroll { margin-inline: 0; padding-inline: 0; }
-/* the picture sits above the chips on phones (three equal columns, labels centred) and left of them on desktop (two columns as wide
+/* the picture sits above the chips on phones (three equal columns, labels centred) and left of them on desktop (two equal columns as wide
    as the longest label, so the chips follow the density). On desktop the picture stretches to the grid's height, so a third
    chip row never makes it jump */
 .fside { display: flex; flex-direction: column; gap: var(--lpy); }
 .cgrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); align-content: center; }
 .cgrid .fchip { justify-content: center; }
 html:not(.phone) .fside { flex-direction: row; align-items: stretch; gap: var(--spg); }
-html:not(.phone) .cgrid { grid-template-columns: repeat(2, max-content); }
+html:not(.phone) .cgrid { grid-template-columns: repeat(2, 1fr); }
 .n { opacity: .65; font-variant-numeric: tabular-nums; margin-inline-start: 2px; }
 </style>
