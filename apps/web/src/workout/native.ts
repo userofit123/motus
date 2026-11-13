@@ -109,10 +109,11 @@ const REST_ALARM = 7001;
 // The rest-over nudge in the Android app: an alarm at the rest's end that shows "Rest over" heads-up, with the rest
 // channel's sound and vibration, also with the phone asleep and the app's own timers stopped. Scheduled only while
 // the app is in the background (workout/runtime.ts), so on screen the in-app cues are the only alert. Each call
-// replaces the one scheduled before. A channel's sound is fixed once made (and Capacitor can't make a silent one), so
-// with the workout sounds off (Settings → Workout) it goes on "restBuzz", heads-up and vibrating but silent, and with
-// vibration off too on the quiet "running" channel of the workout's own notification: in the shade, no heads-up, no
-// sound. Both are made by MotusWorkoutPlugin with the rest countdown shown first.
+// replaces the one scheduled before. A channel's sound and vibration are fixed once made (and Capacitor can't make a
+// silent one), so each pair of the switches "Play sounds" and "Vibrate when the rest ends" has its own channel: both on
+// "rest" (made here); sound only "restSound"; vibration only "restBuzz", heads-up and vibrating but silent; neither the
+// quiet "running" channel of the workout's own notification: in the shade, no heads-up, no sound. The last three are
+// made by MotusWorkoutPlugin with the rest countdown shown first.
 // Scheduling and taking off run one after the other, in the order asked (each waits on the bridge): back on screen
 // right after going to the background, the cancel then comes after the schedule, never before it, so no alarm is left
 // behind to ring after a skip or on top of the in-app beeps.
@@ -124,7 +125,7 @@ export function scheduleRestAlarm(endAt: number, body: string, o: { sound: boole
       // the channel is made when a workout starts (askNotificationsOnce), but not on this device when the workout was
       // started on another one; without it Android drops the alarm. Made once per app run.
       await restChannel();
-      await ln.schedule({ notifications: [{ id: REST_ALARM, title: "Rest over", body: body || "Time for the next set", schedule: { at: new Date(endAt), allowWhileIdle: true }, channelId: o.sound ? "rest" : o.vibrate ? "restBuzz" : "running", smallIcon: "ic_stat_motus", actionTypeId: logFromNotification ? "rest" : undefined }] });
+      await ln.schedule({ notifications: [{ id: REST_ALARM, title: "Rest over", body: body || "Time for the next set", schedule: { at: new Date(endAt), allowWhileIdle: true }, channelId: o.sound ? (o.vibrate ? "rest" : "restSound") : o.vibrate ? "restBuzz" : "running", smallIcon: "ic_stat_motus", actionTypeId: logFromNotification ? "rest" : undefined }] });
     } catch { /* the in-app timer still runs */ }
   });
 }
@@ -264,6 +265,15 @@ export function showIntervalNotice(o: { title: string; body: string; endAt: numb
 export function clearIntervalNotice() {
   plugin("MotusWorkout")?.clearTimer?.().catch?.(() => {});
   void closeWebNotice("motus-timer");
+}
+/** A vibration through the phone in the Android app (workout/runtime.ts vibrate says why); false outside it. An older
+ *  app without it falls back to the WebView's own. */
+export function nativeVibrate(pattern: number[]) {
+  const p = plugin("MotusWorkout");
+  if (!p || !isNativeApp()) return false;
+  const web = () => { try { navigator.vibrate?.(pattern); } catch { /* none */ } };
+  if (typeof p.vibrate !== "function") web(); else Promise.resolve(p.vibrate({ pattern })).catch(web);
+  return true;
 }
 export const haptic = (style: "light" | "medium" = "light") => {
   const h = plugin("Haptics");

@@ -1,4 +1,4 @@
-// Names of the sounds that both the workout cues (CUE_SOUND_NAME, TICK_SOUND_NAME) and the interval timer (SOUND_NAME)
+// Names of the sounds that both the workout cues (WORKOUT_SOUND_NAME) and the interval timer (SOUND_NAME)
 // offer, so one sound has one name wherever it is picked. The saved ids differ between the lists and stay as they are.
 export const SOUND_BELL = "Bell"; // cue "bell", interval "beep"
 export const SOUND_ROUND = "Round"; // cue "soft", interval "low"

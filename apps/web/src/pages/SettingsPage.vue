@@ -44,7 +44,7 @@ const GROUPS = computed<[string, Section[]][]>(() => [
   ["You", [["account", "Account", "user", "Name, password, devices, sync"],
     // the apps keep several servers and on-device accounts; in a browser the server is the site, so this only names it
     (globalThis as any).motusNative?.accounts ? ["accounts", "Servers & accounts", "server", "Switch, add or remove a server"] : ["accounts", "Server", "server", location.host]]],
-  ["Training", [["workout", "Workout defaults", "dumbbell", "Rest times, timer, progression, filling in sets"], ["activities", "Activity types", "walk", "Walk, run, ride and your own"], ["features", "Features", "sparkle", "Switch extras on or off"]]],
+  ["Training", [["workout", "Workout defaults", "dumbbell", "Rest times, sets, timer, sounds, progression"], ["activities", "Activity types", "walk", "Walk, run, ride and your own"], ["features", "Features", "sparkle", "Switch extras on or off"]]],
   ["App", [["units", "Units & formats", "scale", "kg or lb, dates, work week"], ["appearance", "Appearance", "palette", "Colours, style, layout"], ["notifications", "Notifications", "bell", "Planned workouts"]]],
   ["Your data", [["backup", "Backup & restore", "download", "A copy of everything"], ["data", "Export & import", "upload", "Motus files, CSV, other apps"], ["log", "Activity log", "history", "Everything you changed"]]],
   ["About", [["versions", "App & Versions", "refresh", "Installed version, downloads"], ["changelog", "What's new", "sparkle", "Release notes"], ...(s.value.features.apiTokens || s.value.features.mcp ? [["integrations", "Integrations", "link", "API tokens, Ask Claude"] as Section] : []),

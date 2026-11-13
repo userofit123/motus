@@ -23,6 +23,11 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.VibrationAttributes;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
+import android.os.VibratorManager;
+import android.media.AudioAttributes;
 import android.text.TextUtils;
 import androidx.core.app.NotificationCompat;
 import androidx.core.app.NotificationManagerCompat;
@@ -63,6 +68,7 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener2 {
     private static final String CHANNEL = "running";
     private static final String OLD_CHANNEL = "workout";
     private static final String BUZZ_CHANNEL = "restBuzz";
+    private static final String SOUND_CHANNEL = "restSound";
     private static final int ID = 7002;
     private static final int TIMER_ID = 7003;
     private static final int REC_ID = RecordingService.REC_ID;
@@ -100,7 +106,38 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener2 {
             buzz.enableVibration(true);
             buzz.setLockscreenVisibility(android.app.Notification.VISIBILITY_PUBLIC);
             nm.createNotificationChannel(buzz);
+            // and with the sound on but vibration off: the phone's notification sound, no vibration
+            NotificationChannel quiet = new NotificationChannel(SOUND_CHANNEL, "Rest timer without vibration", NotificationManager.IMPORTANCE_HIGH);
+            quiet.setDescription("When a rest ends with vibration off");
+            quiet.enableVibration(false);
+            quiet.setVibrationPattern(null);
+            quiet.setLockscreenVisibility(android.app.Notification.VISIBILITY_PUBLIC);
+            nm.createNotificationChannel(quiet);
         }
+    }
+
+    /** A vibration in `pattern` (on/off milliseconds, starting with on) from the web app's cues (workout/runtime.ts
+     *  vibrate). The WebView's navigator.vibrate counts as touch feedback, which many phones turn off or down, and is
+     *  refused without a recent tap; marked as an alarm here, it follows the phone's alarm vibration instead. */
+    @PluginMethod
+    public void vibrate(PluginCall call) {
+        JSArray list = call.getArray("pattern");
+        List<Long> on = new ArrayList<>();
+        try { for (int i = 0; list != null && i < list.length() && i < 20; i++) on.add(Math.max(0L, Math.min(5000L, list.getLong(i)))); } catch (JSONException e) { /* what was read */ }
+        if (on.isEmpty()) { call.resolve(); return; }
+        long[] timings = new long[on.size() + 1]; // Android's pattern starts with a wait
+        for (int i = 0; i < on.size(); i++) timings[i + 1] = on.get(i);
+        Context ctx = getContext();
+        Vibrator v = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+            ? ((VibratorManager) ctx.getSystemService(Context.VIBRATOR_MANAGER_SERVICE)).getDefaultVibrator()
+            : (Vibrator) ctx.getSystemService(Context.VIBRATOR_SERVICE);
+        if (v == null || !v.hasVibrator()) { call.resolve(); return; }
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) v.vibrate(VibrationEffect.createWaveform(timings, -1), VibrationAttributes.createForUsage(VibrationAttributes.USAGE_ALARM));
+            else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) v.vibrate(VibrationEffect.createWaveform(timings, -1), new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ALARM).build());
+            else v.vibrate(timings, -1);
+        } catch (RuntimeException e) { /* no vibration */ }
+        call.resolve();
     }
 
     /** The buttons the web app passes as `actions` ([{ id, title }], at most three, Android's limit). `base` keeps each

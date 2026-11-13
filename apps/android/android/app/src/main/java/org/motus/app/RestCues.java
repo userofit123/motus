@@ -81,14 +81,16 @@ public class RestCues extends BroadcastReceiver {
         long endAt = intent.getLongExtra("endAt", 0), from = intent.getLongExtra("from", 0);
         String sound = intent.getStringExtra("sound");
         int volume = intent.getIntExtra("volume", 100);
-        // as on screen: the 10 seconds is one long note at 1320 Hz (beep(1, 660)), the 3-2-1 short ones at 1318.5 Hz (tick)
+        // as on screen: the 10 seconds is one long note at 1320 Hz (beep(660)), the 3-2-1 short ones at 1318.5 Hz with the
+        // last ("1") an octave up and long (tick)
         long[] due = warn ? new long[] { endAt - 10_000 } : new long[] { endAt - 3000, endAt - 2000, endAt - 1000 };
-        float freq = warn ? 1320f : 1318.5f;
         long now = System.currentTimeMillis(), last = now;
         for (long d : due) {
             if (d < from - 50 || now - d > LATE_MS) continue; // played on screen before the app went away, or long gone
             long wait = Math.max(0, d - now);
-            audio.postAtTime(() -> play(sound, freq, warn, volume), NOTES, SystemClock.uptimeMillis() + wait);
+            boolean one = !warn && d == endAt - 1000;
+            double freq = warn ? 1320 : one ? TICK_F * 2 : TICK_F;
+            audio.postAtTime(() -> play(sound, freq, warn || one, volume), NOTES, SystemClock.uptimeMillis() + wait);
             last = Math.max(last, now + wait);
         }
         // the 3-2-1 takes up to 3 seconds: kept awake (and the broadcast open) until its last note has played
@@ -109,37 +111,65 @@ public class RestCues extends BroadcastReceiver {
     private static final double[][] PURE = { { 1, 1, 1 } };
     private static final double[][] WOOD = { { 1, 1, 1 }, { 4, 0.22, 0.12 }, { 10, 0.04, 0.05 } };
     private static final double[][] CLICK = { { 1, 1, 1 }, { 2.4, 0.45, 0.4 }, { 4.7, 0.2, 0.25 } };
+    // the ringing sounds' partials (BRONZE, TUBE, TEMPLE, BOWL, DEEP_GONG in workout/runtime.ts)
+    private static final double[][] BRONZE = { { 0.5, 0.3, 1.4 }, { 1, 1, 1 }, { 1.19, 0.45, 0.8 }, { 1.5, 0.25, 0.6 }, { 2, 0.4, 0.5 }, { 2.5, 0.12, 0.35 }, { 2.98, 0.1, 0.25 }, { 4.1, 0.05, 0.15 } };
+    private static final double[][] TUBE = { { 1, 1, 1 }, { 2.76, 0.45, 0.6 }, { 5.4, 0.25, 0.4 }, { 8.93, 0.12, 0.25 }, { 13.34, 0.05, 0.15 } };
+    private static final double[][] TEMPLE = { { 1, 1, 1 }, { 1.003, 0.5, 1 }, { 2.1, 0.55, 0.75 }, { 3.15, 0.4, 0.55 }, { 4.6, 0.28, 0.4 }, { 6.3, 0.16, 0.28 }, { 8.2, 0.08, 0.18 } };
+    private static final double[][] BOWL = { { 1, 1, 1 }, { 1.005, 0.7, 1 }, { 2.71, 0.5, 0.8 }, { 2.722, 0.35, 0.8 }, { 5.15, 0.2, 0.5 }, { 5.17, 0.12, 0.5 } };
+    private static final double[][] DEEP_GONG = { { 1, 0.7, 1 }, { 1.48, 0.5, 0.9 }, { 2.1, 0.6, 0.85 }, { 2.9, 0.55, 0.7 }, { 3.9, 0.45, 0.6 }, { 5.2, 0.35, 0.5 }, { 6.8, 0.25, 0.4 }, { 8.9, 0.18, 0.3 }, { 11.6, 0.12, 0.25 }, { 15.2, 0.08, 0.2 } };
     private static final double LOUDER = 2.2;
+    private static final double TICK_F = 1318.5; // the countdown's pitch, E6 (TICK_F)
+    private static final double RING_TICK_S = 0.85; // a ringing sound's countdown note is gone by then (RING_TICK_S)
 
     /** One note of a cue in the chosen countdown sound (TICK_NOTE in workout/runtime.ts); `lng`: a "now" note, held a little longer. */
     private static void play(String sound, double f, boolean lng, int volume) {
         double level = Math.pow(Math.max(10, Math.min(100, volume)) / 100.0, 2);
         if ("bell".equals(sound)) note(f, lng ? 0.7 : 0.45, 0.4, BELL, 0.005, 0, level);
         else if ("soft".equals(sound)) note(f, lng ? 0.2 : 0.14, 0.4, SOFT, 0.02, lng ? 0.16 : 0.1, level);
-        else if ("digital".equals(sound)) note(f, 0.03, 0.45, PURE, 0.003, lng ? 0.12 : 0.07, level);
+        else if ("digital".equals(sound)) note(f, 0.03, 0.45, PURE, 0.003, 0.05, level, 2, 0.1);
         else if ("wood".equals(sound)) note(f / 2, lng ? 0.35 : 0.22, 0.45, WOOD, 0.002, 0, level);
         else if ("click".equals(sound)) note(f / 1.5, lng ? 0.1 : 0.06, 0.5, CLICK, 0.001, 0, level);
+        else if ("handBell".equals(sound)) note(2093 * f / TICK_F, 0.2, 0.3, BELL, 0.005, 0, level, 3, 0.07);
+        else if ("shipBell".equals(sound)) ring(880, BRONZE, 0.36, 0.003, f, level);
+        else if ("tubular".equals(sound)) ring(784, TUBE, 0.4, 0.003, f, level);
+        else if ("temple".equals(sound)) ring(330, TEMPLE, 0.42, 0.004, f, level);
+        else if ("bowl".equals(sound)) ring(587, BOWL, 0.4, 0.04, f, level);
+        else if ("gong".equals(sound)) ring(98, DEEP_GONG, 0.42, 0.06, f, level);
         else note(f, lng ? 0.12 : 0.08, 0.23, CUE, 0.005, lng ? 0.2 : 0.14, level);
     }
 
-    /** The web app's tone(): each partial rises exponentially to its peak in `attack`, stays there `hold`, then falls
-     *  exponentially to near silence; peaks above the web app's limiter are scaled down to it. */
+    /** A ringing sound's single short strike at its own pitch, moved with `f` (ringTick in workout/runtime.ts). */
+    private static void ring(double base, double[][] partials, double vol, double attack, double f, double level) {
+        double longest = 0;
+        for (double[] p : partials) longest = Math.max(longest, p[2]);
+        note(base * f / TICK_F, RING_TICK_S / longest, vol, partials, attack, 0, level);
+    }
+
     private static void note(double freq, double dur, double vol, double[][] partials, double attack, double hold, double level) {
-        double len = 0;
-        for (double[] p : partials) len = Math.max(len, hold + Math.max(attack + 0.05, dur * p[2]));
+        note(freq, dur, vol, partials, attack, hold, level, 1, 0);
+    }
+
+    /** The web app's tone(), `strikes` times `gap` seconds apart (one buffer): each partial rises exponentially to its peak in `attack`, stays there `hold`, then falls
+     *  exponentially to near silence; peaks above the web app's limiter are scaled down to it. */
+    private static void note(double freq, double dur, double vol, double[][] partials, double attack, double hold, double level, int strikes, double gap) {
+        double one = 0;
+        for (double[] p : partials) one = Math.max(one, hold + Math.max(attack + 0.05, dur * p[2]));
+        double len = one + (strikes - 1) * gap;
         int n = (int) ((len + 0.02) * RATE);
         double[] sum = new double[n];
+        for (int k = 0; k < strikes; k++)
         for (double[] p : partials) {
             double f = freq * p[0];
             if (f > 16000) continue;
             double peak = Math.max(0.0002, vol * p[1] * LOUDER * level), fall = attack + hold, end = hold + Math.max(attack + 0.05, dur * p[2]);
-            for (int i = 0; i < n; i++) {
+            int start = (int) Math.round(k * gap * RATE);
+            for (int i = 0; start + i < n; i++) {
                 double t = (double) i / RATE, g;
                 if (t >= end) break;
                 if (t < attack) g = 0.0001 * Math.pow(peak / 0.0001, t / attack);
                 else if (t < fall) g = peak;
                 else g = peak * Math.pow(0.0001 / peak, (t - fall) / (end - fall));
-                sum[i] += g * Math.sin(2 * Math.PI * f * t);
+                sum[start + i] += g * Math.sin(2 * Math.PI * f * t);
             }
         }
         double max = 0;

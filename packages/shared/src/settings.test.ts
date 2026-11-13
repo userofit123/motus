@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cleanHomeBlocks, cleanGoalsOrder, orderGoals, withDefaults, HOME_BLOCKS } from "./settings";
+import { cleanHomeBlocks, cleanGoalsOrder, orderGoals, withDefaults, HOME_BLOCKS, WORKOUT_SOUNDS } from "./settings";
 
 const ids = (x: { id: string }[]) => x.map((s) => s.id);
 
@@ -57,6 +57,9 @@ describe("Workout cue sound and volume", () => {
     expect(withDefaults({ workout: { cueSound: "wood" } }).workout).toMatchObject({ cueSound: "wood", tickSound: "wood" });
     expect(withDefaults({ workout: { cueSound: "gong" } }).workout).toMatchObject({ cueSound: "gong", tickSound: "beep" });
     expect(withDefaults({ workout: { cueSound: "wood", tickSound: "click" } }).workout.tickSound).toBe("click");
-    expect(withDefaults({ workout: { tickSound: "gong" } }).workout.tickSound).toBe("beep");
+    expect(withDefaults({ workout: { tickSound: "nope" } }).workout.tickSound).toBe("beep");
+  });
+  it("offers every sound for both the rest over and the countdown", () => {
+    for (const id of WORKOUT_SOUNDS) expect(withDefaults({ workout: { cueSound: id, tickSound: id } }).workout).toMatchObject({ cueSound: id, tickSound: id });
   });
 });
