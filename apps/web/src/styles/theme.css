@@ -264,7 +264,7 @@ body.glass :is(.card,table:not(.sets),.bgrp,.jhero,.fcard,.rkeq) {
   position: relative;
 }
 
-body.glass :is(.card,table:not(.sets),.bgrp,.jhero,.fcard,.setnav,.rkeq)::before {
+body.glass :is(.card,table:not(.sets),.bgrp,.jhero,.fcard,.setnav,.rkeq,.abar)::before {
   content: "";
   position: absolute;
   inset: 0;
@@ -304,9 +304,21 @@ body.glass :is(.rktip,.trtip) {
 /* filled parts that stand on the page by themselves (tab rows, round buttons, fields) blur what is behind them directly;
    inside a block they need not,
    the block already does */
-body.glass :is(.rkbr,.inf,.exo,.exbox,.exd,.exsamp,.txs-c,.jstat3,.stl,.phs > div,.trstats > div,.jstats > div,.exst > div,.cstn > div,.jfs > div,.wct,.bq,.sinfo,.trex,.trtog,.trleg .lgi,.tcs,.hdemo,.jt,.jct,.kvc,.atile,.phb,.phl,.txs2,.rule,.wnc,input:not([type=checkbox],[type=radio],[type=range],[type=color]),textarea,.fpick,.ftools select):not(:is(.card,table:not(.sets),.bgrp,.jhero,.fcard,.setnav,.rkeq,.sheet,.pop,.askb,.help,.rcal,.dvbox,.tsug,.ddm,.cmenu,.toast,.sugb) *) {
+body.glass :is(.rkbr,.inf,.exo,.exbox,.exd,.exsamp,.txs-c,.jstat3,.stl,.phs > div,.trstats > div,.jstats > div,.exst > div,.cstn > div,.jfs > div,.wct,.bq,.sinfo,.trex,.trtog,.trleg .lgi,.tcs,.hdemo,.jt,.jct,.kvc,.atile,.phb,.phl,.txs2,.rule,.wnc,input:not([type=checkbox],[type=radio],[type=range],[type=color]),textarea,.fpick,.ftools select):not(:is(.card,table:not(.sets),.bgrp,.jhero,.fcard,.setnav,.rkeq,.abar,.sheet,.pop,.askb,.help,.rcal,.dvbox,.tsug,.ddm,.cmenu,.toast,.sugb) *) {
   -webkit-backdrop-filter: var(--gfx);
   backdrop-filter: var(--gfx);
+}
+
+/* the workout's controls: in the computer's column a block like the cards (see-through, blurred backdrop via ::before above);
+   docked to the phone's bottom edge the page scrolls under it, so it stays nearly solid like windows and menus and the
+   sets behind never show through the buttons */
+body.glass .aw-dock .abar {
+  background: var(--gp1);
+}
+
+body.glass .aw-dock .abar::before {
+  -webkit-backdrop-filter: var(--gpfx);
+  backdrop-filter: var(--gpfx);
 }
 
 /* the bar that shows a running job */
