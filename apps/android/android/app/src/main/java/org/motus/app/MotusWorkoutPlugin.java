@@ -1,5 +1,6 @@
 package org.motus.app;
 
+import android.Manifest;
 import android.app.AlarmManager;
 import android.app.Notification;
 import android.app.NotificationChannel;
@@ -10,13 +11,19 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
+import android.location.Location;
+import android.location.LocationListener;
+import android.location.LocationManager;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener2;
 import android.hardware.SensorManager;
 import android.os.Build;
+import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.text.TextUtils;
 import androidx.core.app.NotificationCompat;
 import androidx.core.app.NotificationManagerCompat;
 import androidx.core.content.ContextCompat;
@@ -32,8 +39,13 @@ import com.getcapacitor.annotation.PermissionCallback;
 import org.json.JSONArray;
 import org.json.JSONException;
 import org.json.JSONObject;
+import java.math.RoundingMode;
+import java.text.DecimalFormat;
+import java.text.DecimalFormatSymbols;
+import java.text.NumberFormat;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 
 /**
  * The rest timer in the notification shade and on the lock screen: a live countdown while a rest runs.
@@ -305,21 +317,121 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener2 {
         }
     }
 
-    /** An activity being recorded: its clock counting up from `since` (none while paused), the distance and steps so
-     *  far, and Pause or Resume; tapping it opens the recording. `keepAlive` (a route or steps are recorded): it is the
-     *  notification of the service that keeps them going with the screen off (RecordingService), not one beside it. */
+    /** An activity being recorded: its clock counting up from `since` (none while paused, when the time so far is in
+     *  the text instead), the distance and steps so far, and Pause or Resume; tapping it opens the recording.
+     *  `keepAlive` (a route or steps are recorded): it is the notification of the service that keeps them going with
+     *  the screen off (RecordingService), not one beside it. The web app is held up with the screen off, so it can't
+     *  keep the steps and distance current there: it hands over where they stood (`distM` with the route's `last`
+     *  point, `steps` with the counter's `stepSession` and `stepSeen`), and this side carries them on from the phone's
+     *  step counter and the location fixes until the web app shows the notification again. */
     @PluginMethod
     public void showRecording(PluginCall call) {
         channel();
         Long since = call.getLong("since");
+        Number distM = number(call, "distM"), steps = number(call, "steps"), stepSession = number(call, "stepSession");
+        Number stepSeen = number(call, "stepSeen"), elapsedS = number(call, "elapsedS");
+        JSArray last = call.getArray("last");
+        Rec r = new Rec();
+        r.title = call.getString("title", "Recording");
+        r.body = call.getString("body", "");
+        r.actions = call.getArray("actions");
+        r.since = since;
+        r.keepAlive = call.getBoolean("keepAlive", false);
+        r.mi = "mi".equals(call.getString("unit"));
+        r.distM = distM == null ? null : distM.doubleValue();
+        r.steps = steps == null ? null : steps.longValue();
+        r.stepSession = stepSession == null ? 0 : stepSession.longValue();
+        r.stepSeen = stepSeen == null ? 0 : stepSeen.longValue();
+        r.elapsedS = elapsedS == null ? 0 : elapsedS.longValue();
+        r.shownAt = System.currentTimeMillis();
+        try {
+            if (last != null && last.length() >= 3) { r.lastLat = last.getDouble(0); r.lastLon = last.getDouble(1); r.fromMs = (long) (last.getDouble(2) * 1000); }
+            else r.fromMs = r.shownAt;
+        } catch (JSONException e) { r.fromMs = r.shownAt; }
+        // on the main thread, where the step counter's reports and the location fixes arrive, so they never see half of it
+        main.post(() -> {
+            synchronized (REC_LOCK) {
+                rec = r;
+                postRecording();
+            }
+            fixes(r.since != null && r.distM != null);
+            call.resolve();
+        });
+    }
+
+    /** a number the web app passed, whichever kind JSON made of it (PluginCall.getLong takes only a Long, and a small
+     *  count arrives as an Integer); null when it passed none */
+    private static Number number(PluginCall call, String name) {
+        Object v = call.getData().opt(name);
+        return v instanceof Number ? (Number) v : null;
+    }
+
+    /** What the recording's notification shows, as the web app last handed it over, and how far the steps and
+     *  distance have gone on since (main thread). */
+    private static class Rec {
+        String title, body;
+        JSONArray actions;
+        Long since, steps;
+        Double distM;
+        boolean keepAlive, mi;
+        long stepSession, stepSeen, elapsedS, shownAt, fromMs;
+        /** the route's last point: fixes go on from it, nearer than 3 m adds nothing (as on the route itself) */
+        double lastLat = Double.NaN, lastLon = Double.NaN;
+        /** metres added here from fixes after the web app's last point */
+        double addedM = 0;
+    }
+    private Rec rec;
+    /** Steps and distance change every few seconds; the notification is shown again at most this often (ms), the clock
+     *  needs none of it (Android runs it). */
+    private static final long REC_REFRESH_MS = 10000;
+    private long recPostedAt = 0;
+    private final Runnable recRefresh = () -> { synchronized (REC_LOCK) { postRecording(); } };
+
+    /** The steps so far: the web app's count, plus what the step counter has counted since the reading it had. */
+    private Long recSteps(Rec r) {
+        if (r.steps == null) return null;
+        if (r.since == null || !listening || session != r.stepSession || counterBase < 0) return r.steps;
+        return r.steps + Math.max(0, counterNow - counterBase - r.stepSeen);
+    }
+
+    /** "1.2 km · 1,234 steps" (numbers as the app shows them, en-US), with the time so far first while paused (the clock is stopped then) */
+    private String recBody(Rec r) {
+        if (r.distM == null) return r.body;
+        List<String> parts = new ArrayList<>();
+        if (r.since == null) parts.add(clock(r.elapsedS));
+        // the distance once there is some (10 m, as in the app's bar), at most one decimal and none when it's whole
+        double m = r.distM + r.addedM;
+        if (m >= 10) {
+            DecimalFormat one = new DecimalFormat("#,##0.#", DecimalFormatSymbols.getInstance(Locale.US));
+            one.setRoundingMode(RoundingMode.FLOOR);
+            parts.add(one.format(m / (r.mi ? 1609.344 : 1000)) + (r.mi ? " mi" : " km"));
+        }
+        Long steps = recSteps(r);
+        if (steps != null) parts.add(NumberFormat.getIntegerInstance(Locale.US).format(steps) + " steps");
+        // nothing yet: what the web app says then (when it started)
+        return parts.isEmpty() ? r.body : TextUtils.join(" · ", parts);
+    }
+
+    /** 0:45, 1:30, 1:02:03, as in the app */
+    private static String clock(long s) {
+        long h = s / 3600, m = (s % 3600) / 60, x = s % 60;
+        return h > 0 ? String.format(Locale.ROOT, "%d:%02d:%02d", h, m, x) : String.format(Locale.ROOT, "%d:%02d", m, x);
+    }
+
+    /** Shows the recording's notification as it now stands (REC_LOCK held). Not once the recording has ended. */
+    private void postRecording() {
+        Rec r = rec;
+        if (r == null) return;
+        main.removeCallbacks(recRefresh);
+        recPostedAt = System.currentTimeMillis();
         Intent open = new Intent(getContext(), MainActivity.class);
         open.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
         open.putExtra(EXTRA_PATH, "/activities/record");
         PendingIntent pi = PendingIntent.getActivity(getContext(), 2, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
         NotificationCompat.Builder b = new NotificationCompat.Builder(getContext(), CHANNEL)
             .setSmallIcon(R.drawable.ic_stat_motus)
-            .setContentTitle(call.getString("title", "Recording"))
-            .setContentText(call.getString("body", ""))
+            .setContentTitle(r.title)
+            .setContentText(recBody(r))
             .setOngoing(true)
             .setOnlyAlertOnce(true)
             .setSilent(true)
@@ -327,30 +439,79 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener2 {
             .setCategory(NotificationCompat.CATEGORY_STOPWATCH)
             .setContentIntent(pi)
             .setDeleteIntent(PendingIntent.getBroadcast(getContext(), 0, new Intent(getContext(), RecordingSwiped.class), PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT));
-        if (since != null) b.setWhen(since).setUsesChronometer(true).setShowWhen(true);
+        if (r.since != null) b.setWhen(r.since).setUsesChronometer(true).setShowWhen(true);
         else b.setShowWhen(false);
-        addActions(b, call, 40);
+        addActions(getContext(), b, r.actions, 40);
         Notification n = b.build();
         recShown = n;
-        if (call.getBoolean("keepAlive", false)) {
+        if (r.keepAlive) {
             recNotice = n;
-            if (RecordingService.start(getContext(), n)) { call.resolve(); return; }
+            if (RecordingService.start(getContext(), n)) return;
         } else if (recNotice != null) {
             recNotice = null;
             RecordingService.stop(getContext(), true);
         }
         try { NotificationManagerCompat.from(getContext()).notify(REC_ID, n); } catch (SecurityException e) { /* notifications not allowed */ }
-        call.resolve();
+    }
+
+    /** The steps or distance moved on: shown again, at most every REC_REFRESH_MS (the last change waits for its turn). */
+    private void recChanged() {
+        if (rec == null || rec.since == null) return; // paused: nothing moves on
+        main.removeCallbacks(recRefresh);
+        main.postDelayed(recRefresh, Math.max(0, recPostedAt + REC_REFRESH_MS - System.currentTimeMillis()));
+    }
+
+    // ---- distance while the web app is held up ----
+    // The location plugin's fixes reach the web app only once it runs again. The passive provider hands this side the
+    // same fixes (it asks for none of its own, so no extra battery), and they go on the distance the way the route
+    // takes them (route.ts takesPoint): not while paused, none rougher than 50 m, none nearer than 3 m to the last.
+    private LocationListener fixListener;
+
+    /** listens to the location fixes while a recording runs with a distance to carry on, stops otherwise (main thread) */
+    private void fixes(boolean on) {
+        LocationManager lm = (LocationManager) getContext().getSystemService(Context.LOCATION_SERVICE);
+        if (lm == null) return;
+        if (!on || ContextCompat.checkSelfPermission(getContext(), Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            if (fixListener != null) { lm.removeUpdates(fixListener); fixListener = null; }
+            return;
+        }
+        if (fixListener != null) return;
+        fixListener = new LocationListener() {
+            @Override public void onLocationChanged(Location l) { onFix(l); }
+            @Override public void onStatusChanged(String provider, int status, Bundle extras) { }
+            @Override public void onProviderEnabled(String provider) { }
+            @Override public void onProviderDisabled(String provider) { }
+        };
+        try { lm.requestLocationUpdates(LocationManager.PASSIVE_PROVIDER, 0, 0, fixListener, Looper.getMainLooper()); }
+        catch (SecurityException | IllegalArgumentException e) { fixListener = null; }
+    }
+
+    private void onFix(Location l) {
+        Rec r = rec;
+        // before the web app's last point it has the fix already; paused, it doesn't count
+        if (r == null || r.since == null || r.distM == null || l.getTime() <= r.fromMs) return;
+        if (!l.hasAccuracy() || l.getAccuracy() > 50) return;
+        if (!Double.isNaN(r.lastLat)) {
+            float[] d = new float[1];
+            Location.distanceBetween(r.lastLat, r.lastLon, l.getLatitude(), l.getLongitude(), d);
+            if (d[0] < 3) return;
+            r.addedM += d[0];
+        }
+        r.lastLat = l.getLatitude(); r.lastLon = l.getLongitude(); r.fromMs = l.getTime();
+        recChanged();
     }
 
     @PluginMethod
     public void clearRecording(PluginCall call) {
-        stopRecordingService();
-        call.resolve();
+        // after any showRecording still on its way to the main thread, so that one can't put it back
+        main.post(() -> { stopRecordingService(); call.resolve(); });
     }
 
     private void stopRecordingService() {
         synchronized (REC_LOCK) {
+            rec = null;
+            main.removeCallbacks(recRefresh);
+            fixes(false);
             recNotice = null;
             recShown = null;
             RecordingService.stop(getContext(), false);
@@ -675,6 +836,7 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener2 {
         counterNow = total;
         if (savedNow < 0 || total - savedNow >= SAVE_STEPS || total < savedNow || System.currentTimeMillis() - savedAt >= SAVE_MS) saveSteps();
         notifyListeners("steps", reading());
+        recChanged();
     }
 
     @Override

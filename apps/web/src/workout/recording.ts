@@ -15,8 +15,9 @@ import { readJson, writeJson } from "../core/prefs";
 import { api } from "../api/client";
 import { invalidate, queryClient } from "../api/live";
 import type { SettingsMe } from "../api/queries";
+import { makeFmt } from "../core/format";
 import { keepAwake, showRecording, clearRecording, isNativeApp, onNoticeAction, askNotificationsOnce } from "./native";
-import { fromM, routeStats, takesPoint, addStepReading, stepsPaused, MotionSteps, ROUTE_ROUGH_M, type StepReading } from "@motus/shared";
+import { fromM, clock, num, routeStats, takesPoint, addStepReading, stepsPaused, MotionSteps, ROUTE_ROUGH_M, type StepReading } from "@motus/shared";
 
 export interface Rec {
   type: string; startedAt: number; route: number[][]; pausedMs: number; pauseAt: number | null;
@@ -297,13 +298,16 @@ if (recording.value) void startSensors(false, false);
 if (typeof document !== "undefined") document.addEventListener("visibilitychange", () => { if (recording.value && document.visibilityState === "visible") { keepAwake(true, "recording"); void catchUpSteps(); } });
 
 // The recording as a notification too (same setting as the workout's), also on the lock screen in the Android app: its
-// clock there (a browser's can't run one, so it says when it started), the distance in your units and the steps so far,
-// and Pause or Resume. Shown again when those change: the distance by a tenth, the steps by fifty, so not all the time.
+// clock there (a browser's can't run one, so it says when it started; while paused the time so far is in the text), the
+// distance in your units and the steps where they're counted, and Pause or Resume. Shown again when those change: the
+// distance by a tenth, the steps by fifty, so not all the time. With the screen off this page is held up, so the Android
+// app carries the steps and distance on itself from where this one left them (`live`).
 const recNotice = computed(() => {
   const r = recording.value;
   if (!r) return null;
-  const du = queryClient.getQueryData<SettingsMe>(["settings", "me"])?.settings?.units?.distance === "mi" ? "mi" : "km";
-  return { type: r.type, paused: !!r.pauseAt, since: r.startedAt + r.pausedMs, startedAt: r.startedAt, du, dist: Math.floor(fromM(recDistM.value, du) * 10) / 10, steps: countsSteps(r.type) ? Math.floor(r.steps / 50) * 50 : null };
+  const du: "km" | "mi" = queryClient.getQueryData<SettingsMe>(["settings", "me"])?.settings?.units?.distance === "mi" ? "mi" : "km";
+  return { type: r.type, paused: !!r.pauseAt, since: r.startedAt + r.pausedMs, startedAt: r.startedAt, du, dist: Math.floor(fromM(recDistM.value, du) * 10) / 10,
+    steps: countsSteps(r.type) && recStepsCounted.value ? Math.floor(r.steps / 50) * 50 : null, pausedFor: r.pauseAt ? clock(recElapsedS.value) : null, hasDist: recDistM.value >= 10 };
 });
 // compared as text, so a new GPS point that changes none of it shows nothing again. The setting is part of it, so
 // turning it off mid-recording takes the notification off. The settings come from the query cache, which isn't
@@ -319,14 +323,21 @@ watch(() => JSON.stringify([recNotice.value, noticeOn(), keepAlive.value]), () =
   const n = recNotice.value;
   if (!n || !(noticeOn() || keepAlive.value)) { if (recShown) { void clearRecording(); recShown = false; } return; }
   recShown = true;
-  const at = new Date(n.startedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-  const so = [n.dist > 0 ? `${n.dist.toFixed(1)} ${n.du}` : "", n.steps ? `${n.steps.toLocaleString()} steps` : ""].filter(Boolean).join(" · ");
+  // the exact counts as they are now (the rounded ones above only decide when to show it again)
+  const r = recording.value!, steps = n.steps == null ? null : r.steps;
+  const me = queryClient.getQueryData<SettingsMe>(["settings", "me"])?.settings;
+  const at = me ? makeFmt(me).time(new Date(n.startedAt).toISOString()) : new Date(n.startedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  // the distance once there is some (10 m, as in the bar at the bottom), the steps from the first
+  const so = [n.pausedFor, recDistM.value >= 10 ? `${num(n.dist, 1)} ${n.du}` : "", steps == null ? "" : `${num(steps, 0)} steps`].filter(Boolean).join(" · ");
+  // the first point after a pause starts a new stretch (routeStats): the Android app goes on from none, not across the pause
+  const last = r.route.length && !r.breaks.includes(r.route.length) ? r.route.at(-1)! : null;
   showRecording({
     title: `${typeName(n.type)}${n.paused ? " (paused)" : ": recording"}`,
     body: isNativeApp() ? so || `Started ${at}` : [so, `Started ${at}. Keep Motus open on screen to record the route.`].filter(Boolean).join("\n"),
     since: n.paused ? null : n.since,
     actions: [n.paused ? { id: "rec-resume", title: "Resume" } : { id: "rec-pause", title: "Pause" }],
     keepAlive: keepAlive.value,
+    live: { distM: recDistM.value, unit: n.du, last, steps, stepSession: r.stepSession, stepSeen: r.stepSeen, elapsedS: Math.round(recElapsedS.value) },
   });
 }, { immediate: true });
 onNoticeAction("rec-pause", () => setPaused(true));
