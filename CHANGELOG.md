@@ -2,6 +2,20 @@
 
 The top entry's version is the one the release workflow publishes. Add a new `## [x.y.z]` section to release.
 
+## [0.1.20] - 2026-11-13
+
+- Home shows only goals you created and pinned. The app no longer makes or pins goals by itself; the "Weekly target" and "Daily steps" goals it made before come off Home but stay in Goals. Every pinned goal is one wide block: the current value with the target under it on the left, its streak, days left or done date on the right, and its history as dots or a trend line. A device still on an older version can pin those goals back through sync until it updates.
+- The Streak and Steps blocks are gone from Home, since pinned goals show the same. Today shows one clear state ("Nothing planned for today", or "Done for today" with today's sessions and "Nothing else planned for today" once plans are done), This week shows each stat as a tile with its change from last week, Muscles this week lists every group with when you last worked it, and Last workout fits its title, workout and day on one row.
+- Suggested on Home also points out muscle groups no routine works, muscles with no exercise of their own and muscles you trained much less than the others, each with a + to start a new routine. The Home editor's switches fit every block.
+- Goal rings and their check use your accent colours, gradient included. Correcting or deleting the entry that achieved a one-off goal reopens it, and achieved goals stay achieved after merging an exercise or removing a routine.
+- Weeks start on the day chosen in Settings everywhere: calendar, Home, goals, streaks, schedules and Stats. Stats adds Today, This week, Last week, Last 7 days, This month and Last month, and "Last year" is now "Last 12 months".
+- The exercise picker and the Exercises page can filter by tapping the body figure, with the muscle buttons in step. On phones the figure is large with wide tap areas, folds away behind a small figure next to the chevron, and the list scrolls into view after a pick.
+- Stats: tap a muscle or Main / Helped / A little to highlight it, a learn button explains the 10-20 working sets target, chart dates no longer overlap, and every achievement has a progress bar. Reports label every month, and each month and the year get stat tiles with the change from before plus records, top routine and top muscle group.
+- A step count you type for a day replaces the steps from recorded walks instead of being ignored when it is lower.
+- The calendar names the month its totals cover, and the selected day is clearly visible and slides to the day you tap. The daily log's inputs line up and its 7-day table has column headings and fits on a phone. Filter blocks and notes use the normal card look, and tab rows scroll the open tab into view.
+- The desktop and Android apps show a notice when an update is out, with Download update, View and close, and with automatic updates on it shows the download already running. It never shows during a workout.
+- Updating adds a small database change on first start.
+
 ## [0.1.19] - 2026-11-13
 
 - Workout sounds have their own section under Rest timer in Settings → Workout defaults (and in a workout's own settings). "Play sounds" turns every workout sound on or off. Below it: the 10-second warning and 3-2-1 switches, a Rest over sound and a Countdown sound to pick from twelve sounds (including Hand bell, Ship's bell, Tubular bell, Temple bell, Singing bowl and Deep gong, each with a play button), and a Sound level. The interval timer offers the same sounds under the same names.
