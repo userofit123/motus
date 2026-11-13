@@ -586,11 +586,11 @@ await loaded(src, all, folders, routines, templates);
     <Sheet v-if="progFor" :title="`Progression · ${exName(progFor)}`" @close="progFor = null">
       <p class="tiny pg-intro">{{ PROGRESSION_INTRO }}.</p>
       <div class="flbl">Mode</div>
-      <RadioList :model-value="progFor.progression?.mode ?? null" :options="[{ value: null, label: `Your default (${modeLabel(s.progression.mode)})`, hint: 'From Settings → Workout defaults → Progression' }, ...PROGRESSION_MODES]"
+      <RadioList :model-value="progFor.progression?.mode ?? null" :options="[{ value: null, label: `Default (${modeLabel(s.progression.mode)})`, hint: 'From Settings → Workout defaults → Progression' }, ...PROGRESSION_MODES]"
         @update:model-value="(v) => setProg(progFor, { mode: v })" />
       <div class="card pg-rows">
         <div class="li"><div class="grow"><div class="t">Rep range</div><div class="s">{{ RANGE_HINT }}</div></div>
-          <AppSelect :model-value="progFor.progression?.repsMin != null" :options="[{ value: false, label: `Your default (${rangeText(s.progression.repsMin, s.progression.repsMax)})` }, { value: true, label: 'Its own' }]" title="Rep range" style="width:auto"
+          <AppSelect :model-value="progFor.progression?.repsMin != null" :options="[{ value: false, label: `Default (${rangeText(s.progression.repsMin, s.progression.repsMax)})` }, { value: true, label: 'Its own' }]" title="Rep range" style="width:auto"
             @update:model-value="(v) => (v ? setRange(progFor, s.progression.repsMin, s.progression.repsMax) : setProg(progFor, { repsMin: null, repsMax: null }))" /></div>
         <!-- its own range: one row per end with one stepper, like "Its own weight step" and Settings' two rows -->
         <template v-if="progFor.progression?.repsMin != null && progFor.progression?.repsMax != null">
@@ -601,15 +601,15 @@ await loaded(src, all, folders, routines, templates);
         </template>
         <div class="li"><div class="grow"><div class="t">Weight step</div><div class="s">The smallest change when the weight goes up or down</div></div>
           <!-- a picker like "Lower the weight after": the default's label is too long for a two-part toggle on a phone -->
-          <AppSelect :model-value="progFor.progression?.stepKg != null" :options="[{ value: false, label: `Your default (${fmt.wu_(defaultsOf(progFor).stepKg)})` }, { value: true, label: 'Its own' }]" title="Weight step" style="width:auto"
+          <AppSelect :model-value="progFor.progression?.stepKg != null" :options="[{ value: false, label: `Default (${fmt.wu_(defaultsOf(progFor).stepKg)})` }, { value: true, label: 'Its own' }]" title="Weight step" style="width:auto"
             @update:model-value="(v) => setProg(progFor, { stepKg: v ? defaultsOf(progFor).stepKg : null })" /></div>
         <div v-if="progFor.progression?.stepKg != null" class="li"><div class="grow"><div class="t">Its own weight step</div></div>
           <NumStep :value="wNum(progFor.progression.stepKg)" :step="fmt.wu === 'lb' ? 1 : 0.5" :min="fmt.wu === 'lb' ? 0.5 : 0.25" :max="100" :unit="fmt.wu" label="weight step" @set="(v) => setProg(progFor, { stepKg: fmt.toKg(v) })" /></div>
         <div class="li"><div class="grow"><div class="t">Lower the weight after</div><div class="s">{{ MISSED_HINT }}</div></div>
-          <AppSelect :model-value="progFor.progression?.lowerAfter ?? null" :options="[{ value: null, label: `Your default (${lowerAfterLabel(s.progression.lowerAfter)})` }, ...LOWER_AFTER]" title="Lower the weight after" style="width:auto"
+          <AppSelect :model-value="progFor.progression?.lowerAfter ?? null" :options="[{ value: null, label: `Default (${lowerAfterLabel(s.progression.lowerAfter)})` }, ...LOWER_AFTER]" title="Lower the weight after" style="width:auto"
             @update:model-value="(v) => setProg(progFor, { lowerAfter: v })" /></div>
       </div>
-      <button v-if="ownProg(progFor)" class="btn tonal block pg-reset" @click="setProg(progFor, { mode: null, repsMin: null, repsMax: null, stepKg: null, lowerAfter: null })">Use your defaults</button>
+      <button v-if="ownProg(progFor)" class="btn tonal block pg-reset" @click="setProg(progFor, { mode: null, repsMin: null, repsMax: null, stepKg: null, lowerAfter: null })">Back to default</button>
     </Sheet>
   </div>
 </template>

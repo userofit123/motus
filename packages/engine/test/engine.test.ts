@@ -207,6 +207,30 @@ describe("engine", () => {
     const list = await call(A, "GET", "/routines");
     expect(list[0].estimateS).toBeGreaterThan(600);
   });
+  it("gives a template's exercises no Progression of their own: they follow Settings, starting inside its rep range (M-129)", async () => {
+    // Full Body A: squat 5-8, bench 5-8, row 6-10 and a plank hold; the default range is 6-12
+    const N = uuidv7();
+    await eng.db.admin.query("INSERT INTO users (id, username, display_name) VALUES ($1,'template-tester','N')", [N]);
+    for (const t of [await call(N, "GET", "/templates/full-a"), await call(N, "GET", `/routines/${(await call(N, "POST", "/routines", { template: "full-a" })).id}`)]) {
+      expect(t.exercises.every((e: any) => e.progression == null)).toBe(true);
+      const reps = t.exercises.map((e: any) => e.sets[0].reps);
+      expect(reps).toEqual([6, 6, 6, null]);
+    }
+  });
+  it("a copy keeps each exercise's own Progression as the routine had it; Save as a routine from a workout gives none (M-129)", async () => {
+    const O = uuidv7();
+    await eng.db.admin.query("INSERT INTO users (id, username, display_name) VALUES ($1,'copy-tester','O')", [O]);
+    const r = await call(O, "POST", "/routines", { name: "Own", exercises: [
+      { exerciseId: benchId, progression: { mode: "auto", repsMin: 5, repsMax: 5 }, sets: [{ kind: "normal", reps: 5, weightKg: 60 }] },
+      { exerciseId: benchId, sets: [{ kind: "normal", reps: 8, weightKg: 40 }] }] });
+    const copy = await call(O, "GET", `/routines/${(await call(O, "POST", `/routines/${r.id}/duplicate`, {})).id}`);
+    expect(copy.exercises[0].progression).toMatchObject({ mode: "auto", repsMin: 5, repsMax: 5 });
+    expect(copy.exercises[1].progression).toBeNull();
+    const w = await call(O, "POST", "/workouts/start", { routineId: r.id });
+    for (const e of w.exercises) for (const x of e.sets) await call(O, "PUT", `/workout-sets/${x.id}`, { done: true });
+    const saved = await call(O, "GET", `/routines/${(await call(O, "POST", "/routines", { fromWorkoutId: w.id, name: "From a workout" })).id}`);
+    expect(saved.exercises.map((e: any) => e.progression)).toEqual([null, null]);
+  });
 
   it("plans the rest after each kind of set, with a set's own rest first", async () => {
     const r = await call(A, "POST", "/routines", { name: "Rests", exercises: [{ exerciseId: benchId, restS: 120, restAfterS: 200, restByKind: { warmup: 45, drop: 0, bogus: 9 }, sets: [

@@ -1,6 +1,6 @@
 // Routines (saved plans) and their folders: list, open, create (from scratch, from another routine, from a workout,
 // from a template), edit, duplicate, version history, and the pre-start preview.
-import { TEMPLATES, applyStructure, cleanProgression, planNext, progressionDefaultsOf, estimate, usualDuration, restAfterSet, isStretch, opensSideRound, restDefaultsOf, ymd, LIFTED_SQL, type RoutineItemLike, type RoutineSummary, type RoutineSnapshot, type RoutineSnapshotExercise, type RoutineVersionRow, type RoutineTrendPoint, type SetKind, type Tracking } from "@motus/shared";
+import { TEMPLATES, TRACKING_SQL, applyStructure, cleanProgression, planNext, progresses, progressionDefaultsOf, estimate, usualDuration, restAfterSet, isStretch, opensSideRound, restDefaultsOf, ymd, LIFTED_SQL, type RoutineItemLike, type RoutineSummary, type RoutineSnapshot, type RoutineSnapshotExercise, type RoutineVersionRow, type RoutineTrendPoint, type SetKind, type Tracking } from "@motus/shared";
 import { SOURCE } from "@motus/exercise-data/meta";
 import type { Router, Ctx } from "../router";
 import type { Sql } from "../db";
@@ -64,18 +64,24 @@ function restByKind(v: unknown): string | null {
 }
 
 // a template as a routine's body, in the editor's full shape; unsaved, so the editor can open it as a draft
-// that only becomes a routine on Save (GET /templates/:slug), and POST /routines { template } saves the same
-async function templateBody(q: Sql, slug: string) {
+// that only becomes a routine on Save (GET /templates/:slug), and POST /routines { template } saves the same.
+// Its exercises follow your Progression (each field null, M-129): a template's "8-12" is only where its sets start, kept
+// inside your default rep range, so a 5-rep start under a 6-12 default isn't a missed workout from the first day.
+async function templateBody(q: Sql, userId: string, slug: string) {
   const t = TEMPLATES.find((x) => x.slug === slug);
   if (!t) throw notFound("Template not found");
-  const ids = new Map((await q.query("SELECT source_id, id FROM exercises WHERE owner_id IS NULL AND source = $1 AND source_id = ANY($2::text[])", [SOURCE, t.exercises.map((e) => e.id)])).rows.map((x: any) => [x.source_id, x.id]));
+  const rows = (await q.query(`SELECT e.source_id, e.id, ${TRACKING_SQL} AS tracking FROM exercises e LEFT JOIN exercise_prefs p ON p.exercise_id = e.id
+    WHERE e.owner_id IS NULL AND e.source = $1 AND e.source_id = ANY($2::text[])`, [SOURCE, t.exercises.map((e) => e.id)])).rows;
+  const ids = new Map(rows.map((x: any) => [x.source_id, x.id])), tracking = new Map(rows.map((x: any) => [x.source_id, x.tracking as Tracking]));
+  const d = progressionDefaultsOf(await getSettings(q, userId));
+  const startReps = (e: (typeof t.exercises)[number]) =>
+    e.durationS ? null : progresses(tracking.get(e.id) ?? "weight_reps") ? Math.min(Math.max(e.reps, d.repsMin), d.repsMax) : e.reps;
   return {
     name: t.name, description: t.description, folderId: null, color: null,
     exercises: t.exercises.filter((e) => ids.has(e.id)).map((e) => ({
       exerciseId: ids.get(e.id) as string, superset: null, restS: e.restS ?? null, restAfterS: e.restAfterS ?? null, restByKind: null, repRestS: null, fixed: false, note: "",
-      // a template's "8-12" becomes the exercise's own rep range, its sets starting at the bottom
-      progression: e.repsMax && !e.durationS ? { mode: null, repsMin: e.reps, repsMax: e.repsMax, stepKg: null, lowerAfter: null } : null,
-      sets: Array.from({ length: e.sets }, () => ({ kind: "normal", reps: e.durationS ? null : e.reps, weightKg: null, durationS: e.durationS ?? null, distanceM: null, rpe: null, restS: null, side: null })),
+      progression: null,
+      sets: Array.from({ length: e.sets }, () => ({ kind: "normal", reps: startReps(e), weightKg: null, durationS: e.durationS ?? null, distanceM: null, rpe: null, restS: null, side: null })),
     })),
   };
 }
@@ -290,7 +296,7 @@ export function routineRoutes(r: Router) {
       if (!w) throw notFound("Workout not found");
       body = { name: str(b.name, 120) || w.name, exercises: (await bodyFromWorkout(ctx.q, b.fromWorkoutId)).map((e) => ({ ...e, id: undefined })) };
     } else if (b?.template) {
-      body = { ...(await templateBody(ctx.q, str(b.template, 80))), folderId: b.folderId };
+      body = { ...(await templateBody(ctx.q, ctx.userId, str(b.template, 80))), folderId: b.folderId };
     }
     const rid = await createRoutine(ctx, body);
     ctx.changed("routine");
@@ -428,7 +434,7 @@ export function routineRoutes(r: Router) {
       return { slug: t.slug, group: t.group, name: t.name, description: t.description, exercises: t.exercises.length, muscles, helpers };
     });
   });
-  r.get("/templates/:slug", async ({ q }, p) => templateBody(q, str(p.slug, 80)));
+  r.get("/templates/:slug", async ({ q, userId }, p) => templateBody(q, userId, str(p.slug, 80)));
 
   // folders
   r.get("/folders", async ({ q }) => (await q.query("SELECT id, name, position, color FROM folders ORDER BY position, name")).rows);
