@@ -1,6 +1,6 @@
 // Routines (saved plans) and their folders: list, open, create (from scratch, from another routine, from a workout,
 // from a template), edit, duplicate, version history, and the pre-start preview.
-import { TEMPLATES, applyStructure, cleanProgression, planNext, progressionDefaultsOf, estimate, usualDuration, restAfterSet, opensSideRound, restDefaultsOf, ymd, LIFTED_SQL, type RoutineItemLike, type RoutineSummary, type RoutineSnapshot, type RoutineSnapshotExercise, type RoutineVersionRow, type RoutineTrendPoint, type SetKind, type Tracking } from "@motus/shared";
+import { TEMPLATES, applyStructure, cleanProgression, planNext, progressionDefaultsOf, estimate, usualDuration, restAfterSet, isStretch, opensSideRound, restDefaultsOf, ymd, LIFTED_SQL, type RoutineItemLike, type RoutineSummary, type RoutineSnapshot, type RoutineSnapshotExercise, type RoutineVersionRow, type RoutineTrendPoint, type SetKind, type Tracking } from "@motus/shared";
 import { SOURCE } from "@motus/exercise-data/meta";
 import type { Router, Ctx } from "../router";
 import type { Sql } from "../db";
@@ -34,7 +34,7 @@ export async function routineSummaries(q: Sql, userId: string, where = "r.delete
        (SELECT count(*) FROM reminders m WHERE m.status = 'pending' AND ((m.target_type = 'routine' AND m.target_id = r.id)
           OR (m.target_type = 'exercise' AND m.target_id IN (SELECT exercise_id FROM routine_exercises WHERE routine_id = r.id)
               AND (m.scope_routine_id IS NULL OR m.scope_routine_id = r.id)))) AS pending_reminders,
-       coalesce((SELECT json_agg(json_build_object('name', e.name, 'primary', e.primary_muscles, 'secondary', e.secondary_muscles, 'restS', re.rest_s, 'restAfterS', re.rest_after_s, 'restByKind', re.rest_by_kind,
+       coalesce((SELECT json_agg(json_build_object('name', e.name, 'category', e.category, 'primary', e.primary_muscles, 'secondary', e.secondary_muscles, 'restS', re.rest_s, 'restAfterS', re.rest_after_s, 'restByKind', re.rest_by_kind,
           'sets', (SELECT coalesce(json_agg(json_build_object('kind', s.kind, 'reps', s.reps, 'durationS', s.duration_s, 'restS', s.rest_s, 'side', s.side) ORDER BY s.position), '[]')
                    FROM routine_sets s WHERE s.routine_exercise_id = re.id)) ORDER BY re.position)
          FROM routine_exercises re JOIN exercises e ON e.id = re.exercise_id WHERE re.routine_id = r.id), '[]') AS exs
@@ -42,7 +42,7 @@ export async function routineSummaries(q: Sql, userId: string, where = "r.delete
   return rows.map((r: any) => {
     const exs = r.exs as any[];
     const est = estimate(exs.map((e, i) => ({
-      sets: (e.sets as any[]).map((s, j) => ({ ...s, restS: restAfterSet({ setRestS: s.restS, kind: s.kind, nextKind: e.sets[j + 1]?.kind, sideRound: opensSideRound(e.sets, j), byKindS: e.restByKind, exRestS: e.restS, isLastSet: j === e.sets.length - 1, exRestAfterS: e.restAfterS }, d) })),
+      sets: (e.sets as any[]).map((s, j) => ({ ...s, restS: restAfterSet({ setRestS: s.restS, kind: s.kind, nextKind: e.sets[j + 1]?.kind, sideRound: opensSideRound(e.sets, j), stretch: isStretch(e), byKindS: e.restByKind, exRestS: e.restS, isLastSet: j === e.sets.length - 1, exRestAfterS: e.restAfterS }, d) })),
     })));
     const muscles = [...new Set(exs.flatMap((e) => e.primary as string[]))];
     // helpers that are nobody's main muscle here, for the little body on the routine card

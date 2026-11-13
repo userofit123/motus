@@ -17,6 +17,8 @@ export interface WorkoutPrefs {
   restBetweenSetsS: number;
   restAfterExerciseS: number;
   restByKindS: RestByKind;
+  restStretchBetweenS: number; // a stretch's rests (isStretch): back into position, then on to the next stretch
+  restStretchAfterS: number;
   sessionNotice: boolean; // the workout in progress as a notification
   countdown: boolean;
   sound: boolean;
@@ -122,7 +124,8 @@ export const DEFAULT_SETTINGS: Settings = {
   dateFormat: "dmy",
   clock: "24",
   workout: {
-    autoRest: true, restEndNext: true, restBetweenSetsS: 90, restAfterExerciseS: 150, restByKindS: {}, sessionNotice: true, countdown: true,
+    autoRest: true, restEndNext: true, restBetweenSetsS: 90, restAfterExerciseS: 150, restByKindS: {}, restStretchBetweenS: 10, restStretchAfterS: 15,
+    sessionNotice: true, countdown: true,
     sound: true, vibrate: true, warn10: true, voice: false, keepAwake: true, lockScreen: true, showWarmups: true, autoAdvance: true,
     showPrevious: false, showReminders: true, confirmSkip: false,
   },
@@ -152,7 +155,8 @@ export const DEFAULT_SETTINGS: Settings = {
 
 /** Deep-merges saved settings over the defaults, so new settings get their default value. */
 /** The person's rest defaults, for restAfterSet */
-export const restDefaultsOf = (w: WorkoutPrefs): RestDefaults => ({ betweenSetsS: w.restBetweenSetsS, afterExerciseS: w.restAfterExerciseS, byKindS: w.restByKindS });
+export const restDefaultsOf = (w: WorkoutPrefs): RestDefaults => ({ betweenSetsS: w.restBetweenSetsS, afterExerciseS: w.restAfterExerciseS, byKindS: w.restByKindS,
+  stretchBetweenS: w.restStretchBetweenS, stretchAfterS: w.restStretchAfterS });
 
 export function withDefaults(saved: unknown): Settings {
   const merge = (d: any, s: any): any => {

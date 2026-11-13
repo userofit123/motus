@@ -4,7 +4,7 @@
 // and the action bar (rest included) in the middle, what comes next and the totals on the right.
 import { computed, nextTick, onMounted, onBeforeUnmount, ref, watch } from "vue";
 import { useRouter } from "vue-router";
-import { clock, muscleName, workoutSoFar, type Reminder } from "@motus/shared";
+import { clock, muscleName, workoutSoFar, restAfterSet, restDefaultsOf, isStretch, type Reminder } from "@motus/shared";
 import { useWorkout, endWorkout } from "./useWorkout";
 import { elapsed, finishRest } from "./runtime";
 import { keepAwake } from "./native";
@@ -52,6 +52,12 @@ onBeforeUnmount(() => { keepAwake(false); removeEventListener("keydown", key); }
 // answer is still "none" until the new workout arrives
 watch(() => W.active.isFetched.value && !W.active.isFetching.value && !reloadQueued.value && !W.active.data.value && !W.state.pending, (gone) => { if (gone) router.replace("/"); });
 
+// the exercise being done's rests as "Up next" says them: the rule the workout rests by (restAfterSet), so a stretch says its own
+const upRest = computed(() => {
+  const e = w.value?.exercises[W.state.active], d = restDefaultsOf(W.prefs.value);
+  const o = { stretch: isStretch(e?.exercise), exRestS: e?.restS, prefRestS: e?.prefRestS, exRestAfterS: e?.restAfterS, prefRestAfterS: e?.prefRestAfterS };
+  return { between: restAfterSet({ ...o, isLastSet: false }, d), after: restAfterSet({ ...o, isLastSet: true }, d) };
+});
 const soFar = computed(() => workoutSoFar(w.value ?? { exercises: [] }));
 const done = computed(() => soFar.value.setsDone), total = computed(() => soFar.value.setsPlanned);
 // the Summary tab comes after the last exercise: cur one past the end
@@ -205,7 +211,7 @@ const menu = computed(() => [
         <div class="card">
           <div class="lbl">Up next</div>
           <div style="font-weight:600;margin-top:4px">{{ w.exercises.find((e, i) => i > W.state.active && e.status === "pending")?.exercise.name ?? "Last exercise" }}</div>
-          <div class="tiny" style="margin-top:6px">Rest between sets {{ fmt.clock(w.exercises[W.state.active]?.restS ?? W.prefs.value.restBetweenSetsS) }}, after the exercise {{ fmt.clock(w.exercises[W.state.active]?.restAfterS ?? W.prefs.value.restAfterExerciseS) }}</div>
+          <div class="tiny" style="margin-top:6px">Rest between sets {{ fmt.clock(upRest.between) }}, after the exercise {{ fmt.clock(upRest.after) }}</div>
         </div>
         <div class="card">
           <div class="grid g2" style="gap:10px">

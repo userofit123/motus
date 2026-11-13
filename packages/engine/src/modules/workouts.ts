@@ -369,7 +369,7 @@ interface RestInputs { restS: number | null; restAfterS: number | null; kinds: S
 async function replanRests(ctx: Ctx, weId: string, pick: (s: RestSetRow, i: number, sets: RestSetRow[]) => boolean, before?: (now: RestInputs, sets: RestSetRow[]) => RestInputs,
   keptOwn?: (i: number, sets: RestSetRow[]) => boolean) {
   const we = (await ctx.q.query(
-    `SELECT we.*, w.routine_snapshot, w.settings AS w_settings,
+    `SELECT we.*, w.routine_snapshot, w.settings AS w_settings, (SELECT e.category FROM exercises e WHERE e.id = we.exercise_id) AS category,
        (SELECT n.superset FROM workout_exercises n WHERE n.workout_id = we.workout_id AND n.position > we.position ORDER BY n.position LIMIT 1) AS next_superset
      FROM workout_exercises we JOIN workouts w ON w.id = we.workout_id WHERE we.id = $1 AND w.status = 'in_progress'`, [weId])).rows[0];
   if (!we) return;
@@ -393,7 +393,7 @@ async function replanRests(ctx: Ctx, weId: string, pick: (s: RestSetRow, i: numb
   // `byKind` and `d`: the routine's rests by kind and the person's defaults as they were (a rest by kind kept from now on)
   const plan = (i: number, x: RestInputs, own = nowSetRests) => inRound ? 0 : planSetRest(x.kinds.map((kind, n) => ({ kind, side: x.sides[n] })), i,
     { restS: x.restS, restAfterS: x.restAfterS, prefRestS: pref?.rest_s, prefRestAfterS: pref?.rest_after_s, restByKind: x.byKind !== undefined ? x.byKind : re?.restByKind,
-      routineSetRests: own }, x.d ?? d);
+      routineSetRests: own, exercise: { category: we.category } }, x.d ?? d);
   const now: RestInputs = { restS: we.rest_s, restAfterS: we.rest_after_s, kinds: sets.map((s) => s.kind), sides: sets.map((s) => s.side) };
   const was = before?.(now, sets);
   for (const [i, s] of sets.entries()) {

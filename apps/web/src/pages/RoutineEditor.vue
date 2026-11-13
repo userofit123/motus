@@ -7,7 +7,7 @@
 // and it is saved as a routine too only when asked.
 import { computed, nextTick, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { plannedRest as plannedRestOf, restSummary } from "../core/plannedRest";
+import { plannedRest as plannedRestOf, restForKind, restSummary } from "../core/plannedRest";
 import { usesWeight, usesReps, usesDuration, usesDistance, musclesWorked, estimate, restAfterSet, dropWeightKg, restDefaultsOf, progressionOf, progressionDefaultsOf, oneSideOf, duration, muscleName, sideRounds, sideJoins, toM, fromM, muscleSets, retimeSet, isTimed, type Progression, type Tracking, type RoutineExercise } from "@motus/shared";
 import { useRoutine, useRoutines, useFolders, useExercises, useSettings, useTemplates, loaded } from "../api/queries";
 import { api, mediaUrl } from "../api/client";
@@ -201,7 +201,9 @@ function superset(i: number) {
 }
 const unsuperset = (i: number) => { r.value.exercises[i].superset = null; tidySupersets(); touch(); };
 const restDefaults = computed(() => restDefaultsOf(s.value.workout));
-const plannedRest = (e: any, x: any, j: number) => plannedRestOf(e, x, j, restDefaults.value);
+// with its exercise, for whether it is a stretch (a stretch rests by the stretch defaults); one just added has only its id
+const withEx = (e: any) => (e.exercise ? e : { ...e, exercise: exOf(e) });
+const plannedRest = (e: any, x: any, j: number) => plannedRestOf(withEx(e), x, j, restDefaults.value);
 const est = computed(() => r.value ? estimate(r.value.exercises.map((e: any) => ({ sets: e.sets.map((x: any, j: number) => ({ ...x, restS: plannedRest(e, x, j) })) }))) : null);
 const setCount = computed(() => (r.value?.exercises ?? []).reduce((a: number, e: any) => a + e.sets.length, 0));
 const muscles = computed(() => muscleSets((r.value?.exercises ?? []).map((e: any) => { const x = e.exercise ?? exById.value.get(e.exerciseId); return { primary: x?.primaryMuscles ?? [], secondary: x?.secondaryMuscles ?? [], sets: e.sets.length }; })));
@@ -227,11 +229,14 @@ const exImg = (e: any) => exOf(e)?.images?.[0];
 const setSummary = (e: any) => setSummaryOf(e.sets, tr(e), fmt.value, sidesOn.value);
 
 // rest after each kind of set; normal sets use the exercise's own rest, the others the person's default for the kind as
-// Settings shows it (unset: the between-sets default), the same rule as the workout (restAfterSet)
+// Settings shows it (unset: the between-sets default; a stretch's are the stretch defaults), the same rule as the workout (restAfterSet)
 const KIND_REST: [k: "warmup" | "drop" | "failure", label: string][] = [["warmup", "Warm-up sets"], ["drop", "Drop sets"], ["failure", "To-failure sets"]];
-const workRest = (e: any) => e.restS ?? s.value.workout.restBetweenSetsS;
-const kindDefault = (k: "warmup" | "drop" | "failure") => s.value.workout.restByKindS?.[k] ?? s.value.workout.restBetweenSetsS;
-const kindRest = (e: any, k: "warmup" | "drop" | "failure") => e.restByKind?.[k] ?? kindDefault(k);
+type RestKind = "normal" | "warmup" | "drop" | "failure";
+const restOf = (e: any, k: RestKind, last = false) => restForKind(withEx(e), k, last, restDefaults.value);
+// ...and what it falls back to with nothing set on the exercise: the picker's "Default"
+const restDefaultOf = (e: any, k: RestKind, last = false) => restOf({ exercise: exOf(e), restS: null, restAfterS: null, restByKind: null }, k, last);
+const workRest = (e: any) => restOf(e, "normal");
+const kindRest = (e: any, k: "warmup" | "drop" | "failure") => restOf(e, k);
 function restGet(t: RestTarget): number | null {
   const e = r.value.exercises[t.ex];
   if (t.kind === "between") return e.restS;
@@ -250,12 +255,12 @@ function setRest(v: number | null) {
 const restTitle = (t: RestTarget) => ({ between: "Rest after a normal set", after: "Rest after the last set", rep: "Timer between reps", set: `Rest after set ${t.set! + 1}`,
   warmup: "Rest after a warm-up set", drop: "Rest after a drop set", failure: "Rest after a set to failure" })[t.kind];
 function restDefault(t: RestTarget) {
-  const c = fmt.value.clock, w = s.value.workout;
-  if (t.kind === "between") return `Default (${c(w.restBetweenSetsS)})`;
-  if (t.kind === "after") return `Default (${c(w.restAfterExerciseS)})`;
+  const c = fmt.value.clock, e = r.value.exercises[t.ex];
+  if (t.kind === "between") return `Default (${c(restDefaultOf(e, "normal"))})`;
+  if (t.kind === "after") return `Default (${c(restDefaultOf(e, "normal", true))})`;
   if (t.kind === "rep") return "Off";
   if (t.kind === "set") return "No custom rest";
-  return `Default (${c(kindDefault(t.kind))})`;
+  return `Default (${c(restDefaultOf(e, t.kind))})`;
 }
 const cols = (e: any) => {
   const t = tr(e);
@@ -297,7 +302,7 @@ function setRange(e: any, lo: number, hi: number) { setProg(e, { repsMin: Math.m
 // Progression moves the weight by reps reached, so it's offered only where an exercise has both
 const progUsable = (e: any) => usesWeight(tr(e)) && usesReps(tr(e)) && (!planMode.value || asRoutine.value);
 const wNum = (kg: number | null) => (kg == null ? null : Math.round(fmt.value.fromKg(kg) * 100) / 100);
-const restLine = (e: any) => restSummary(e, fmt.value.clock, s.value.workout, hasSideRounds(e));
+const restLine = (e: any) => restSummary(withEx(e), fmt.value.clock, s.value.workout, hasSideRounds(e));
 const wIn = (kg: number | null) => (kg == null ? "" : String(Math.round(fmt.value.fromKg(kg) * 100) / 100));
 const wOut = (v: string) => (v === "" ? null : fmt.value.toKg(Number(v)));
 const dIn = (m: number | null) => (m == null ? "" : String(Math.round(fromM(m, fmt.value.du) * 100) / 100));
@@ -513,7 +518,7 @@ await loaded(src, all, folders, routines, templates);
                 </template>
                 <!-- inside a left and right round you switch sides straight away: shown, not set here -->
                 <div v-if="hasSideRounds(e)" class="rtile" title="A left set and its right one are one round: you switch sides straight away"><span>Between sides</span><b>No rest</b></div>
-                <button class="rtile" @click="restFor = { ex: i, kind: 'after' }"><span>After the last set</span><b :class="{ dim: e.restAfterS == null }">{{ fmt.clock(e.restAfterS ?? s.workout.restAfterExerciseS) }}</b></button>
+                <button class="rtile" @click="restFor = { ex: i, kind: 'after' }"><span>After the last set</span><b :class="{ dim: e.restAfterS == null }">{{ fmt.clock(restOf(e, "normal", true)) }}</b></button>
               </div>
               <div class="tiny" style="margin-top:6px">For a different rest after one set, use that set's ⋮ menu; it shows as <b>R</b>.</div>
             </details>

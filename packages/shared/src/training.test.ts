@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { estimate, routineTime, setSeconds, usualDuration, CHANGEOVER_S, liftedKg, trackingFor, retimeSet } from "./training";
+import { estimate, routineTime, setSeconds, usualDuration, CHANGEOVER_S, liftedKg, trackingFor, retimeSet, restAfterSet, planSetRest, isStretch } from "./training";
+import { restDefaultsOf, withDefaults } from "./settings";
+import { TEMPLATES } from "./templates";
 
 describe("estimate", () => {
   it("counts each set's work, the rests between sets and a changeover per exercise", () => {
@@ -67,5 +69,45 @@ describe("timed sets", () => {
     expect(retimeSet({ reps: 10, durationS: null }, "weight_duration")).toEqual({ reps: null, durationS: 30 });
     expect(retimeSet({ reps: null, durationS: 45 }, "weight_reps")).toEqual({ reps: 8, durationS: null });
     expect(retimeSet({ reps: null, durationS: 45 }, "duration")).toBeNull();
+  });
+});
+
+describe("stretch rests", () => {
+  const d = { ...restDefaultsOf(withDefaults({}).workout), byKindS: { warmup: 60 } };
+  const stretch = { category: "stretching" }, plank = { category: "strength" };
+  const kinds = (...k: string[]) => k.map((kind) => ({ kind, side: null }));
+  it("defaults to 10 s between sets and 15 s before the next exercise", () => {
+    expect([d.stretchBetweenS, d.stretchAfterS]).toEqual([10, 15]);
+  });
+  it("is keyed on the category, so a plank held for time rests like lifting", () => {
+    expect(isStretch(stretch)).toBe(true);
+    expect(isStretch(plank)).toBe(false);
+    expect(isStretch(undefined)).toBe(false);
+    expect([0, 1].map((i) => planSetRest(kinds("normal", "normal"), i, { exercise: stretch }, d))).toEqual([10, 15]);
+    expect([0, 1].map((i) => planSetRest(kinds("normal", "normal"), i, { exercise: plank }, d))).toEqual([d.betweenSetsS, d.afterExerciseS]);
+  });
+  it("rests a stretch's other kinds of set by the stretch default too, unless the routine sets one", () => {
+    expect(restAfterSet({ kind: "warmup", stretch: true, isLastSet: false }, d)).toBe(10);
+    expect(restAfterSet({ kind: "warmup", stretch: true, byKindS: { warmup: 20 }, isLastSet: false }, d)).toBe(20);
+    expect(restAfterSet({ kind: "warmup", isLastSet: false }, d)).toBe(60);
+  });
+  it("lets anything more specific win: the set's own, the routine exercise's, the exercise default", () => {
+    const o = { stretch: true, isLastSet: false };
+    expect(restAfterSet({ ...o, setRestS: 40 }, d)).toBe(40);
+    expect(restAfterSet({ ...o, exRestS: 30 }, d)).toBe(30);
+    expect(restAfterSet({ ...o, prefRestS: 25 }, d)).toBe(25);
+    expect(restAfterSet({ ...o, isLastSet: true, exRestAfterS: 45 }, d)).toBe(45);
+    expect(restAfterSet({ ...o, isLastSet: true, prefRestAfterS: 35 }, d)).toBe(35);
+  });
+  it("keeps no rest inside a left and right round or before a drop", () => {
+    expect(restAfterSet({ stretch: true, sideRound: true, isLastSet: false }, d)).toBe(0);
+    expect(restAfterSet({ stretch: true, nextKind: "drop", isLastSet: false }, d)).toBe(0);
+  });
+  it("follows the person's own stretch defaults", () => {
+    const mine = restDefaultsOf(withDefaults({ workout: { restStretchBetweenS: 5, restStretchAfterS: 20 } }).workout);
+    expect([0, 1].map((i) => planSetRest(kinds("normal", "normal"), i, { exercise: stretch }, mine))).toEqual([5, 20]);
+  });
+  it("Daily stretch sets no rest of its own, so it follows the stretch defaults", () => {
+    expect(TEMPLATES.find((t) => t.name === "Daily stretch")!.exercises.every((e) => e.restS == null)).toBe(true);
   });
 });

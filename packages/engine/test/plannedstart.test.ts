@@ -338,4 +338,22 @@ describe("starting a planned workout", () => {
     expect(await status("POST", "/workouts/start", { exercises: [{ exerciseId: "nope", sets: [] }] })).toBe(400);
     expect(await call("GET", "/workouts/active")).toBeNull();
   });
+
+  it("rests a stretch by the stretch defaults, at Start and when a set changes kind, as the screen works it out", async () => {
+    const list = await call("GET", "/exercises");
+    const stretch = list.find((e: any) => e.category === "stretching").id;
+    const w = await call("POST", "/workouts/start", { exercises: [
+      { exerciseId: stretch, sets: [{ durationS: 30 }, { durationS: 30 }, { durationS: 30 }] },
+      { exerciseId: row, sets: [{ reps: 8 }, { reps: 8 }] },
+    ] });
+    const d = restDefaultsOf(withDefaults({}).workout);
+    expect(w.exercises[0].sets.map((s: any) => s.restPlannedS)).toEqual([10, 10, 15]);
+    expect(w.exercises[1].sets.map((s: any) => s.restPlannedS)).toEqual([d.betweenSetsS, d.afterExerciseS]);
+    // a set made a warm-up is planned again by the server; the screen's own rule says the same
+    await call("PUT", `/workout-sets/${w.exercises[0].sets[0].id}`, { kind: "warmup" });
+    const ae = (await call("GET", "/workouts/active")).exercises[0];
+    expect(ae.sets[0].restPlannedS).toBe(10);
+    expect(ae.sets.map((_: any, i: number) => planSetRest(ae.sets, i, ae, d))).toEqual([10, 10, 15]);
+    await call("POST", `/workouts/${w.id}/discard`, {});
+  });
 });

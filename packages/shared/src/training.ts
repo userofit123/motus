@@ -75,7 +75,13 @@ export interface RestDefaults {
   betweenSetsS: number;
   afterExerciseS: number;
   byKindS?: RestByKind; // the person's defaults after warm-up, drop and to-failure sets
+  // a stretch's defaults: between holds just the time to get back into position, then on to the next stretch
+  stretchBetweenS?: number;
+  stretchAfterS?: number;
 }
+/** Whether an exercise is a stretch (its catalog category), which rests by the stretch defaults. Keyed on the category,
+ * not on timed sets: a plank or a dead hang held for time is effort and rests like any other exercise. */
+export const isStretch = (ex: { category?: string | null } | null | undefined) => ex?.category === "stretching";
 type SidedSet = { kind?: string | null; side?: string | null };
 /** For each set, whether it opens a round with the set straight after it: a left set and a right one next to each other
  * (either order) of the same kind are one round, sharing a number with no rest between them; L R L R is two rounds.
@@ -101,10 +107,11 @@ export function sideJoins(sets: SidedSet[], restAfter: (j: number) => number): b
 /** The rest after a set: the set's own rest, else for a warm-up, drop or to-failure set the routine's rest for that kind,
  * else the person's default for that kind as Settings shows it (unset: "Same as between sets", the between-sets default),
  * never the exercise's working-set rest (a warm-up in a 2:00 exercise rested 2:00 while Settings said 1:30); a normal set
- * takes the exercise in the routine, else the person's exercise default, else the global default.
+ * takes the exercise in the routine, else the person's exercise default, else the global default. A stretch (`stretch`)
+ * falls back to the stretch defaults instead of the lifting ones (by kind too), once nothing more specific is set.
  * None before a drop set, nor inside a left and right round (`sideRound`: this set opens one, see sideRounds). */
 export function restAfterSet(
-  o: { setRestS?: number | null; kind?: SetKind; nextKind?: SetKind; sideRound?: boolean; byKindS?: RestByKind | null; exRestS?: number | null; prefRestS?: number | null; isLastSet: boolean; exRestAfterS?: number | null; prefRestAfterS?: number | null },
+  o: { setRestS?: number | null; kind?: SetKind; nextKind?: SetKind; sideRound?: boolean; stretch?: boolean; byKindS?: RestByKind | null; exRestS?: number | null; prefRestS?: number | null; isLastSet: boolean; exRestAfterS?: number | null; prefRestAfterS?: number | null },
   d: RestDefaults,
 ): number {
   if (o.setRestS != null) return o.setRestS;
@@ -112,9 +119,10 @@ export function restAfterSet(
   if (o.nextKind === "drop") return 0;
   // a left and right round: switch sides straight away, the rest comes after the second side
   if (o.sideRound) return 0;
-  if (o.isLastSet) return o.exRestAfterS ?? o.prefRestAfterS ?? d.afterExerciseS;
-  if (o.kind && o.kind !== "normal") return o.byKindS?.[o.kind] ?? d.byKindS?.[o.kind] ?? d.betweenSetsS;
-  return o.exRestS ?? o.prefRestS ?? d.betweenSetsS;
+  const between = o.stretch ? d.stretchBetweenS ?? d.betweenSetsS : d.betweenSetsS;
+  if (o.isLastSet) return o.exRestAfterS ?? o.prefRestAfterS ?? (o.stretch ? d.stretchAfterS ?? d.afterExerciseS : d.afterExerciseS);
+  if (o.kind && o.kind !== "normal") return o.byKindS?.[o.kind] ?? (o.stretch ? between : d.byKindS?.[o.kind] ?? between);
+  return o.exRestS ?? o.prefRestS ?? between;
 }
 
 /** What a workout exercise's planned rests are worked out from: the exercise's rests as they are now, and from the
@@ -122,6 +130,8 @@ export function restAfterSet(
 export interface SetRestInputs {
   restS?: number | null; restAfterS?: number | null; prefRestS?: number | null; prefRestAfterS?: number | null;
   restByKind?: RestByKind | null; routineSetRests?: (number | null)[] | null;
+  /** the exercise, for whether it is a stretch (isStretch) */
+  exercise?: { category?: string | null } | null;
 }
 /** The rest planned after set `i` of a workout exercise, as Start plans it and as the server plans it again when a set
  * changes kind or side: one rule for both, so the workout screen shows the new rest before the server's copy is back.
@@ -131,7 +141,7 @@ export interface SetRestInputs {
 export function planSetRest(sets: SidedSet[], i: number, x: SetRestInputs, d: RestDefaults, isLastSet = i === sets.length - 1): number {
   const own = x.routineSetRests?.length === sets.length ? x.routineSetRests[i] : undefined;
   return restAfterSet({ setRestS: own, kind: (sets[i]?.kind ?? undefined) as SetKind | undefined, nextKind: (sets[i + 1]?.kind ?? undefined) as SetKind | undefined,
-    sideRound: opensSideRound(sets, i), byKindS: x.restByKind, exRestS: x.restS, prefRestS: x.prefRestS, isLastSet, exRestAfterS: x.restAfterS, prefRestAfterS: x.prefRestAfterS }, d);
+    sideRound: opensSideRound(sets, i), stretch: isStretch(x.exercise), byKindS: x.restByKind, exRestS: x.restS, prefRestS: x.prefRestS, isLastSet, exRestAfterS: x.restAfterS, prefRestAfterS: x.prefRestAfterS }, d);
 }
 
 /** A drop set's starting weight: about 20% lighter than the set before it, on a weight a gym has (2.5 kg or 5 lb steps). */

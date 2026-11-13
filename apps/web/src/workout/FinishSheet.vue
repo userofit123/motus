@@ -159,7 +159,8 @@ const nextTime = computed(() => {
     // rows never fold into ranges, so a row's key is its set
     if (sides) {
       const rd = restDefaultsOf(W.settings.value.workout);
-      const joins = sideJoins(aft, (j) => plannedRest(after as Item, aft[j]!, j, rd));
+      const ex = { ...(after as Item), exercise: e?.exercise ?? item.exercise };
+      const joins = sideJoins(aft, (j) => plannedRest(ex, aft[j]!, j, rd));
       sets.forEach((x, k) => { x.join = !!joins[x.key] && sets[k + 1]?.key === x.key + 1; });
     }
     const change = item.id ? plan.value.changes.find((c) => c.routineExerciseId === item.id) : undefined;
