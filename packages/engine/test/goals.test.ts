@@ -242,4 +242,30 @@ describe("editing a goal", () => {
     await call("PUT", `/goals/${id}`, { target: 100 * (1 + 1e-9), title: "Chest" });
     expect(await goal(id)).toMatchObject({ title: "Chest", status: "achieved", achievedAt: before.achievedAt });
   });
+
+  it("re-checks an achieved one-off goal when the data that reached it is corrected", async () => {
+    const ex = (await call("POST", "/exercises", { name: "Typo bench", tracking: "weight_reps", primaryMuscles: ["chest"] })).id;
+    const { id } = await call("POST", "/goals", { metric: "max_weight", scopeId: ex, target: 100 });
+    const w = await call("POST", "/workouts/log", { startedAt: new Date(Date.now() - 3600000).toISOString(), durationS: 3600, exercises: [{ exerciseId: ex, sets: [{ weightKg: 1000, reps: 5 }] }] });
+    expect((await goal(id)).status).toBe("achieved"); // 1000 kg: a typo for 100
+    const set = (await call("GET", `/workouts/${w.id}`)).exercises[0].sets[0];
+    await call("PUT", `/workout-sets/${set.id}`, { weightKg: 80 });
+    expect(await goal(id)).toMatchObject({ status: "active", achievedAt: null, progress: { current: 80, done: false } });
+    // the real thing later achieves it again
+    await call("PUT", `/workout-sets/${set.id}`, { weightKg: 102.5 });
+    expect((await goal(id)).status).toBe("achieved");
+  });
+
+  it("keeps a body goal achieved after a real slip back, but not after its only reaching entry is deleted", async () => {
+    await log("thigh_l", 50, 5);
+    const { id } = await call("POST", "/goals", { metric: "body_metric", scopeId: "thigh_l", target: 55 });
+    const typo = await log("thigh_l", 555, 1);
+    expect((await goal(id)).status).toBe("achieved");
+    await call("DELETE", `/body/${typo.id}`);
+    expect((await goal(id)).status).toBe("active");
+    await log("thigh_l", 55.5, 0.5);
+    expect((await goal(id)).status).toBe("achieved");
+    await log("thigh_l", 54.5); // reached once for real: a later dip doesn't take it away
+    expect(await goal(id)).toMatchObject({ status: "achieved", progress: { done: false } });
+  });
 });

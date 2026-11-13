@@ -23,6 +23,8 @@ const types = useActivityTypes();
 const q = useGoalDetail(computed(() => props.id));
 const d = computed(() => q.data.value);
 const g = computed<Goal | undefined>(() => d.value?.goal);
+// reached this time round, or achieved for good: the ring is full and holds a check (as on the goal's card)
+const reached = computed(() => g.value?.status === "achieved" || !!g.value?.progress?.done);
 const periodic = computed(() => !!g.value && g.value.period !== "once");
 // values come in kg, km and cm; shown in your units
 const show = (v: number) => { const u = g.value?.progress?.unit; return u === "kg" ? fmt.value.w(v) : u === "km" ? fmt.value.num(fromM(v * 1000, fmt.value.du), 1) : u === "cm" ? fmt.value.len(v) : fmt.value.num(v, 1); };
@@ -47,10 +49,10 @@ const menu = computed(() => !g.value ? [] : [
     <template #head><b class="grow ellipsis">{{ g?.title ?? "Goal" }}</b><Menu v-if="g" :items="menu" /></template>
     <template v-if="g">
       <div class="gs-top">
-        <Ring :pct="g.progress?.pct ?? 0" :size="64" :stroke="7" :color="g.progress?.done ? 'var(--pos)' : undefined" />
+        <Ring :pct="g.progress?.pct ?? 0" :size="64" :stroke="7" :done="reached" :color="reached ? 'var(--pos)' : undefined" />
         <div class="grow">
           <div class="gs-val">{{ goalLabel(g, fmt) }}</div>
-          <div class="tiny" :class="{ pos: g.progress?.done }">{{ g.status === "achieved" ? `Achieved ${fmt.date(g.achievedAt)}` : g.progress?.done ? `Reached ${periodNow(g).toLowerCase()}` : g.progress?.pace ?? periodNow(g) }}</div>
+          <div class="tiny" :class="{ pos: reached }">{{ g.status === "achieved" ? `Achieved ${fmt.date(g.achievedAt)}` : g.progress?.done ? `Reached ${periodNow(g).toLowerCase()}` : g.progress?.pace ?? periodNow(g) }}</div>
         </div>
       </div>
       <div class="tiny gs-when">{{ periodLabel(g, s) }} · since {{ fmt.date(g.startDate, { day: "numeric", month: "short", year: "numeric" }) }}{{ g.deadline ? ` · deadline ${fmt.date(g.deadline, { day: "numeric", month: "short", year: "numeric" })}` : "" }}</div>

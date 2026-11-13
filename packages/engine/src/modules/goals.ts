@@ -253,6 +253,23 @@ export async function ensureStarterGoal(q: Sql, userId: string) {
   await q.query(`INSERT INTO user_settings (user_id, data, updated_at) VALUES ($1, $2, now()) ON CONFLICT (user_id) DO UPDATE SET data = user_settings.data || $2, updated_at = now()`, [userId, JSON.stringify(next)]);
 }
 
+/**
+ * Whether an achieved one-off goal that its current value no longer meets was still reached at some point, by the data as
+ * it is now. Most one-off measures already cover everything since the goal started (the heaviest set, the most reps, the
+ * quickest run of a routine, sessions in total), so not met now means the data that reached it was changed or deleted.
+ * A body measure goes back and forth: any entry since the goal was set (from the one it started at) still reaching the
+ * target keeps it. A streak or an average of steps can slip with time and nothing tells a slip from a typo, so they keep it.
+ */
+async function stillReached(q: Sql, g: Goal): Promise<boolean> {
+  if (g.metric === "streak_weeks" || g.metric === "steps_avg") return true;
+  if (g.scope !== "body") return false;
+  const set = (g as Goal & { createdAt?: string }).createdAt ?? `${g.startDate}T23:59:59Z`;
+  return (await q.query(
+    `SELECT 1 FROM body_metrics WHERE kind = $1 AND value > 0 AND (CASE WHEN $3::text = '<=' THEN value <= $4::numeric ELSE value >= $4::numeric END)
+       AND measured_at >= coalesce((SELECT max(measured_at) FROM body_metrics WHERE kind = $1 AND measured_at <= $2::timestamptz), '-infinity'::timestamptz) LIMIT 1`,
+    [bodyKind(g), set, g.comparator, g.target])).rows.length > 0;
+}
+
 export async function goalsWithProgress(ctx: Ctx, tzMin: number, where = "status <> 'archived'"): Promise<Goal[]> {
   await ensureStarterGoal(ctx.q, ctx.userId);
   const s = await getSettings(ctx.q, ctx.userId);
@@ -260,10 +277,15 @@ export async function goalsWithProgress(ctx: Ctx, tzMin: number, where = "status
   for (const g of rows) {
     g.target = Number(g.target);
     g.progress = await progressOf(ctx.q, g, s, ctx.now(), tzMin);
-    // one-off goals are marked achieved the first time they are met
-    if (g.status === "active" && g.period === "once" && g.progress.done) {
-      await ctx.q.query("UPDATE goals SET status = 'achieved', achieved_at = now() WHERE id = $1", [g.id]);
+    if (g.period !== "once") continue;
+    // one-off goals are marked achieved the first time they are met, and re-checked on every read against the data as it
+    // is now: a mistyped set or entry that reached the target and was then corrected (or deleted) no longer holds it
+    if (g.status === "active" && g.progress.done) {
+      if ((await ctx.q.query("UPDATE goals SET status = 'achieved', achieved_at = now() WHERE id = $1 AND status = 'active' RETURNING id", [g.id])).rows.length) ctx.changed("goal");
       g.status = "achieved"; g.achievedAt = ctx.now().toISOString();
+    } else if (g.status === "achieved" && !g.progress.done && !(await stillReached(ctx.q, g))) {
+      if ((await ctx.q.query("UPDATE goals SET status = 'active', achieved_at = NULL WHERE id = $1 AND status = 'achieved' RETURNING id", [g.id])).rows.length) ctx.changed("goal");
+      g.status = "active"; g.achievedAt = null;
     }
   }
   // in the order you set (Reorder goals), achieved ones still after the rest
@@ -361,8 +383,8 @@ export function goalRoutes(r: Router) {
     const prev = camel<Goal>(row);
     const v = await goalFields(ctx, b, prev);
     // a change to what is measured or the target reopens a goal it had marked achieved; it is re-checked on the next read.
-    // A target within float error of the old one is no change (the form leaves out a target you didn't touch); a step as small
-    // as 0.1 lb is a real one.
+    // A target within float error of the old one is no change and keeps the stored one (else 100.0000001 would no longer be
+    // met by 100 on the re-check); a step as small as 0.1 lb is a real one.
     const was = Number(prev.target), retargeted = Math.abs(v.target - was) > 1e-6 * Math.max(Math.abs(was), 1e-9);
     const moved = v.metric !== prev.metric || v.scopeId !== prev.scopeId || retargeted || v.comparator !== prev.comparator
       || v.period !== prev.period || v.days !== daysIn(prev.days);
@@ -371,7 +393,7 @@ export function goalRoutes(r: Router) {
     await ctx.q.query(
       `UPDATE goals SET title = $2, scope = $3, scope_id = $4, metric = $5, comparator = $6, target = $7, period = $8, days = $9::jsonb, start_date = $10, deadline = $11, notes = $12,
          status = $13, achieved_at = $14 WHERE id = $1`,
-      [prev.id, b.title != null ? str(b.title, 120) : prev.title, v.scope, v.scopeId, v.metric, v.comparator, v.target, v.period, v.days,
+      [prev.id, b.title != null ? str(b.title, 120) : prev.title, v.scope, v.scopeId, v.metric, v.comparator, retargeted ? v.target : was, v.period, v.days,
         "startDate" in b ? dateStr(b.startDate) ?? prev.startDate : prev.startDate, "deadline" in b ? dateStr(b.deadline) : prev.deadline,
         b.notes != null ? str(b.notes, 2000) : prev.notes, status, achievedAt]);
     ctx.changed("goal");
