@@ -133,3 +133,22 @@ describe("moving routines, programs and workouts to another account", () => {
     expect((rows[0] as any).scope_id).toBe((await call(E, "GET", "/exercises")).find((e: any) => e.name === "Barbell Squat").id);
   });
 });
+
+describe("a backup from before Track by", () => {
+  it("turns the old reps-or-time switch into the tracking it stood for and drops a tracking it doesn't know", async () => {
+    const D = uuidv7();
+    await eng.db.admin.query("INSERT INTO users (id, username) VALUES ($1,'pretrack')", [D]);
+    const lib = await call(D, "GET", "/exercises");
+    const squat = lib.find((e: any) => e.name === "Barbell Squat");
+    const other = lib.find((e: any) => e.tracking === "weight_reps" && e.id !== squat.id);
+    const file = { app: "motus", format: 1, parts: ["other"], tables: { exercise_prefs: [
+      { user_id: uuidv7(), exercise_id: squat.id, rest_s: 90, timed: true },
+      { user_id: uuidv7(), exercise_id: other.id, rest_s: 60, tracking: "juggling" },
+    ] } };
+    const res = await call(D, "POST", "/import", { data: file, mode: "merge" });
+    expect(res.exercise_prefs).toBe(2);
+    const after = await call(D, "GET", "/exercises");
+    expect(after.find((e: any) => e.id === squat.id).tracking).toBe("weight_duration");
+    expect(after.find((e: any) => e.id === other.id).tracking).toBe("weight_reps");
+  });
+});

@@ -30,7 +30,8 @@ export function numOrNull(v: unknown, min = -1e9, max = 1e9): number | null {
 }
 export const intOrNull = (v: unknown, min = -1e9, max = 1e9) => { const n = numOrNull(v, min, max); return n == null ? null : Math.round(n); };
 export const bool = (v: unknown, fallback = false) => (typeof v === "boolean" ? v : fallback);
-export function oneOf<T extends string>(v: unknown, allowed: readonly T[], fallback: T): T {
+// the fallback may be null where leaving a value out means "the default"
+export function oneOf<T extends string, F extends T | null>(v: unknown, allowed: readonly T[], fallback: F): T | F {
   return allowed.includes(v as T) ? (v as T) : fallback;
 }
 export function dateStr(v: unknown): string | null {

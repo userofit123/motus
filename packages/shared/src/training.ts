@@ -46,8 +46,9 @@ export const COUNTED_BY: { value: CountedBy; label: string }[] = [
   { value: "reps", label: "Reps" }, { value: "time", label: "Time" }, { value: "distance", label: "Distance" },
   { value: "distance_time", label: "Distance + time" }, { value: "reps_time", label: "Reps + time" },
 ];
-const WEIGHT_LABEL: Record<WeightKind, string> = { none: "None", weight: "Weight", added: "Added to bodyweight", assisted: "Assisted" };
-/** The weight choices that go with a way of counting ("Added to bodyweight" and "Assisted" only with reps). */
+// the same words as after the "+" in trackingLabel ("Reps + added weight")
+const WEIGHT_LABEL: Record<WeightKind, string> = { none: "No weight", weight: "Weight", added: "Added weight", assisted: "Assistance" };
+/** The weight choices that go with a way of counting ("Added weight" and "Assistance" only with reps). */
 export const weightKindsFor = (c: CountedBy) => (Object.keys(GRID[c]) as WeightKind[]).map((value) => ({ value, label: WEIGHT_LABEL[value] }));
 /** The two choices an exercise's tracking is made of. */
 export const trackingParts = (t: Tracking): { counted: CountedBy; weight: WeightKind } => {
@@ -103,8 +104,8 @@ export function refitSet(s: { reps?: number | null; durationS?: number | null; d
 export const newSetFor = (t: Tracking) => refitSet({}, "reps_only", t) ?? { reps: NEW_SET_REPS, durationS: null, distanceM: null, weightKg: null };
 
 // weight × reps is lifted only by an exercise counted in reps whose weight is a load (assisted weight is help); reps
-// against the clock (kettlebell swings in 60 s) lift it too
-const LIFTS: Tracking[] = ["weight_reps", "bodyweight_reps", "reps_only", "reps_duration", "weight_reps_duration"];
+// against the clock (kettlebell swings in 60 s) lift it too. One that tracks no weight lifts none, even if a set kept some
+const LIFTS: Tracking[] = ["weight_reps", "bodyweight_reps", "weight_reps_duration"];
 /** Whether its sets lift weight × reps (volume, one-rep max): counted in reps, with a load rather than help. */
 export const liftsWeight = (t: Tracking | string | null | undefined) => LIFTS.includes(t as Tracking);
 /** liftedKg in SQL, for a query with the set as `s` and its exercise as `e`: reads the person's own reps-or-time choice. */

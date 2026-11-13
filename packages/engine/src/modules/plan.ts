@@ -1,6 +1,6 @@
 // Turning a routine into today's plan: the sets to do with the routine's numbers (which are where you are now, PLAN.md
 // §8.7), last time's beside them, with reminders, pinned notes and an estimate of how long it takes. Used by the pre-start preview and by "Start".
-import { estimate, pairSets, restAfterSet, isStretch, opensSideRound, restDefaultsOf, progressionOf, progressionDefaultsOf, usesReps, usesWeight, usesDuration, usesDistance, type Exercise, type Reminder, type Note, type Settings, type SetKind } from "@motus/shared";
+import { estimate, pairSets, restAfterSet, isStretch, opensSideRound, restDefaultsOf, progressionOf, progressionDefaultsOf, progresses, usesReps, usesWeight, usesDuration, usesDistance, type Exercise, type Reminder, type Note, type Settings, type SetKind } from "@motus/shared";
 import type { Sql } from "../db";
 import { camel } from "../util";
 import { exerciseSessions, getExercises } from "./library";
@@ -126,7 +126,7 @@ export async function buildPlan(q: Sql, routine: any, settings: Settings, today:
 
     // the top of the rep range the reps move in (the exercise's Progression), kept with each set of a routine's workout
     const tr = re.exercise?.tracking ?? "weight_reps";
-    const top = routine.id && usesWeight(tr) && usesReps(tr) ? progressionOf(re.progression, progressionDefaultsOf(settings)).repsMax : null;
+    const top = routine.id && progresses(tr) ? progressionOf(re.progression, progressionDefaultsOf(settings)).repsMax : null;
     // a drop set moves with the set it drops from: when a reminder sets that set's weight, the drop shifts by as much
     let parentShift = 0;
     const sets: PlannedSet[] = re.sets.map((s: any, i: number) => {
@@ -146,15 +146,16 @@ export async function buildPlan(q: Sql, routine: any, settings: Settings, today:
         }
       }
       const isLastSet = i === re.sets.length - 1;
-      // only what the exercise tracks now: a set no longer counted in reps keeps no reps, one with no clock no time
-      const hasReps = usesReps(tr), hasTime = usesDuration(tr), hasDist = usesDistance(tr);
+      // only what the exercise tracks now: a set no longer counted in reps keeps no reps, one with no clock no time, one
+      // without weight no weight (a hidden weight would still count as volume and records)
+      const hasReps = usesReps(tr), hasTime = usesDuration(tr), hasDist = usesDistance(tr), hasWeight = usesWeight(tr);
       return {
-        kind: s.kind, weightKg, reps: hasReps ? reps : null,
+        kind: s.kind, weightKg: hasWeight ? weightKg : null, reps: hasReps ? reps : null,
         durationS: !hasTime ? null : fromLast && prev.durationS != null ? prev.durationS : s.durationS,
         distanceM: !hasDist ? null : fromLast && prev.distanceM != null ? prev.distanceM : s.distanceM,
         rpe: s.rpe, side: s.side ?? null,
         restS: restAfterSet({ setRestS: s.restS, kind: s.kind, nextKind: re.sets[i + 1]?.kind, sideRound: opensSideRound(re.sets, i), stretch: isStretch(re.exercise), byKindS: re.restByKind, exRestS: re.restS, prefRestS: pref?.rest_s, isLastSet, exRestAfterS: re.restAfterS, prefRestAfterS: pref?.rest_after_s }, d),
-        targetReps: hasReps ? s.reps : null, targetRepsMax: top, targetWeightKg: s.weightKg,
+        targetReps: hasReps ? s.reps : null, targetRepsMax: top, targetWeightKg: hasWeight ? s.weightKg : null,
         prev: prev ? { weightKg: prev.weightKg, reps: prev.reps, durationS: prev.durationS, distanceM: prev.distanceM } : null,
         prefilled: !!fromLast, adjusted,
       };

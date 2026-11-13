@@ -14,11 +14,6 @@ const setWeight = (w: WeightKind) => emit("update:modelValue", trackingFrom(part
 </script>
 
 <template>
-  <div class="fld trk"><label>Counted by</label><ChoiceTiles :model-value="parts.counted" :options="COUNTED_BY" compact :cols="2" label="Counted by" @update:model-value="setCounted" /></div>
-  <div class="fld"><label>Weight</label><ChoiceTiles :model-value="parts.weight" :options="weights" compact :cols="2" label="Weight" @update:model-value="setWeight" /></div>
+  <div class="fld"><label>Counted by</label><ChoiceTiles :model-value="parts.counted" :options="COUNTED_BY" compact label="Counted by" @update:model-value="setCounted" /></div>
+  <div class="fld"><label>With</label><ChoiceTiles :model-value="parts.weight" :options="weights" compact label="With" @update:model-value="setWeight" /></div>
 </template>
-
-<style scoped>
-/* two even columns at every width; an odd last tile ("Reps + time") takes the whole row instead of half of it */
-.trk :deep(.ct > button:last-child:nth-child(odd)) { grid-column: 1 / -1; }
-</style>

@@ -231,7 +231,7 @@ export async function savePrefs(ctx: Ctx, exId: string, body: Record<string, unk
        tracking = EXCLUDED.tracking`,
     // unilateral and tracking: null goes back to the exercise's own default (so does choosing its own tracking)
     [ctx.userId, exId, intOrNull(b.restS, 0, 3600), intOrNull(b.restAfterS, 0, 3600), bool(b.favourite), bool(b.hidden), numOrNull(b.barKg, 0, 100), numOrNull(b.incrementKg, 0, 50),
-      b.unilateral == null ? null : bool(b.unilateral), b.tracking == null ? null : oneOf(b.tracking, TRACKINGS, null as any)]);
+      b.unilateral == null ? null : bool(b.unilateral), b.tracking == null ? null : oneOf(b.tracking, TRACKINGS, null)]);
 }
 
 async function saveCustom(ctx: Ctx, exId: string, b: any, isNew: boolean) {

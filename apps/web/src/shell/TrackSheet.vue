@@ -27,7 +27,7 @@ async function save() {
 
 <template>
   <Sheet title="Track by" @close="emit('close')">
-    <p class="tiny hgap">For you, for this exercise. Its sets in your routines and those still to do in a workout under way change with it; sets you logged stay as they are.</p>
+    <p class="tiny hgap">For you, for this exercise. Its sets in your routines and those still to do in the workout you're doing change with it; sets you logged stay as they are.</p>
     <TrackChoice v-model="t" />
     <template #foot><button class="btn o" @click="emit('close')">Cancel</button><button class="btn" @click="save">Save</button></template>
   </Sheet>

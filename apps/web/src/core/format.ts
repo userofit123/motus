@@ -30,12 +30,14 @@ export function makeFmt(s: Settings) {
     distNum: (m: number) => fromM(m, du),
     pace: (s: number, m: number) => { if (!m || !s) return ""; const per = s / fromM(m, du); return `${clock(per)} /${du}`; },
     clock, dur,
-    /** one set as done: "80 kg × 8", "12 reps", "1:30", "2.5 km" (what the exercise tracks) */
+    /** one set as done: "80 kg × 8", "12 reps", "1:30", "15 reps in 1:00", "2.5 km" (what the exercise tracks) */
     set: (x: SetFigures, t: Tracking | null | undefined) => {
       const kg = x.weightKg != null && !!t && usesWeight(t) ? wu_(x.weightKg) : "";
       // reps logged before the exercise stopped being counted in reps still show (a set with no time has nothing else to say)
       const r = x.reps != null && !!t && (usesReps(t) || (!!x.reps && !x.durationS)) ? (kg ? `× ${x.reps}` : `${x.reps} rep${x.reps === 1 ? "" : "s"}`) : "";
-      return [kg, r, x.durationS ? clock(x.durationS) : "", x.distanceM ? dist(x.distanceM) : ""].filter(Boolean).join(" ");
+      // reps against the clock: "15 reps in 1:00", "20 kg × 15 in 1:00"
+      const time = x.durationS ? (r ? `in ${clock(x.durationS)}` : clock(x.durationS)) : "";
+      return [kg, r, time, x.distanceM ? dist(x.distanceM) : ""].filter(Boolean).join(" ");
     },
     date: (iso: string | null | undefined, o: Intl.DateTimeFormatOptions = { day: "numeric", month: "short" }) => (iso ? new Date(iso.length === 10 ? iso + "T12:00:00" : iso).toLocaleDateString(locale, o) : ""),
     /** a planned day in words: "today", "tomorrow", else "Tue 10 Nov" (with the year when it isn't this year) */

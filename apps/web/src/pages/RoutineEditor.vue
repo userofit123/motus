@@ -482,7 +482,7 @@ await loaded(src, all, folders, routines, templates);
           <Collapse :open="isOpen(e)"><div class="exb">
             <div class="setgrid shead" :style="cols(e)"><span>Set</span>
               <span v-if="usesWeight(tr(e))">{{ fmt.wu }}<span v-if="perSide(e)" class="thside"> / side</span></span><span v-if="usesWeight(tr(e)) && usesReps(tr(e))" class="sx" /><span v-if="usesReps(tr(e))">Reps</span>
-              <span v-if="usesDuration(tr(e))">Sec</span><span v-if="usesDistance(tr(e))">{{ fmt.du }}</span><span v-if="s.features.rpe">RPE</span><span /></div>
+              <span v-if="usesDuration(tr(e))">Time</span><span v-if="usesDistance(tr(e))">{{ fmt.du }}</span><span v-if="s.features.rpe">RPE</span><span /></div>
             <div class="slist">
               <div v-for="(x, j) in e.sets" :key="x._k" data-drag class="sitem" :class="{ drop: x.kind === 'drop' }">
                 <div class="setgrid" :class="sideJoinCls(e.sets, joins(e), j)" :style="cols(e)">
@@ -490,7 +490,7 @@ await loaded(src, all, folders, routines, templates);
                   <input v-if="usesWeight(tr(e))" class="vin" inputmode="decimal" :value="wIn(x.weightKg)" placeholder="-" @change="x.weightKg = wOut(($event.target as HTMLInputElement).value); touch()" />
                   <span v-if="usesWeight(tr(e)) && usesReps(tr(e))" class="sx" aria-hidden="true">×</span>
                   <input v-if="usesReps(tr(e))" class="vin" inputmode="numeric" :value="x.reps ?? ''" placeholder="-" @change="x.reps = nOut(($event.target as HTMLInputElement).value); touch()" />
-                  <input v-if="usesDuration(tr(e))" class="vin" inputmode="numeric" :value="x.durationS ?? ''" placeholder="-" @change="x.durationS = nOut(($event.target as HTMLInputElement).value); touch()" />
+                  <input v-if="usesDuration(tr(e))" class="vin" inputmode="numeric" :value="x.durationS ?? ''" placeholder="sec" @change="x.durationS = nOut(($event.target as HTMLInputElement).value); touch()" />
                   <input v-if="usesDistance(tr(e))" class="vin" inputmode="decimal" :value="dIn(x.distanceM)" placeholder="-" @change="x.distanceM = dOut(($event.target as HTMLInputElement).value); touch()" />
                   <input v-if="s.features.rpe" class="vin" inputmode="decimal" :value="x.rpe ?? ''" placeholder="-" @change="x.rpe = nOut(($event.target as HTMLInputElement).value); touch()" />
                   <Menu :items="setMenu(e, j)" icon="more" label="Set options" />

@@ -104,7 +104,7 @@ const menu = computed<MenuItem[]>(() => [
           <span v-for="m in e.primaryMuscles" :key="m" class="mchip" style="color:var(--tx)">{{ muscleName(m) }}</span>
           <span v-for="m in e.secondaryMuscles" :key="m" class="mchip">{{ muscleName(m) }}</span>
           <span v-if="e.equipment" class="mchip" style="text-transform:capitalize">{{ e.equipment }}</span>
-          <span v-if="trackOn && e.prefs?.tracking" class="mchip" title="Your own choice for this exercise">Tracked by {{ trackingLabel(tracking).toLowerCase() }}</span>
+          <span v-if="trackOn && e.prefs?.tracking" class="mchip" title="Your own choice for this exercise">{{ trackingLabel(tracking) }}</span>
           <span v-if="sidesOn && e.unilateral" class="mchip" :title="SIDES_HINT">One side at a time</span>
           <Icon v-if="e.favourite" name="star" :size="16" style="color:var(--acc)" />
         </div>
@@ -140,7 +140,7 @@ const menu = computed<MenuItem[]>(() => [
           <template v-if="e.mechanic"><dt>Type</dt><dd>{{ e.mechanic }}</dd></template>
           <template v-if="e.force"><dt>Force</dt><dd>{{ e.force }}</dd></template>
           <dt>Category</dt><dd class="plain">{{ categoryName(e.category) }}</dd>
-          <dt>Tracked by</dt><dd class="plain">{{ trackingLabel(tracking) }}</dd>
+          <dt>Sets</dt><dd class="plain">{{ trackingLabel(tracking) }}</dd>
           <template v-if="sidesOn"><dt>Sides</dt><dd class="plain">{{ e.unilateral ? "One at a time: left and right sets, weight for one side" : "Both together: weight is the total moved" }}</dd></template>
           <template v-if="e.routines?.length"><dt>In routines</dt><dd class="plain">{{ e.routines.map((r: any) => r.name).join(", ") }}</dd></template>
         </dl>

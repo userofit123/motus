@@ -283,3 +283,15 @@ describe("Home's records and training days", () => {
     expect(two[0].kinds).not.toContain("weight");
   });
 });
+
+describe("records follow what the exercise tracks", () => {
+  it("a weight left on a set of an exercise that tracks none is no weight, 1RM or volume record", () => {
+    const set = (id: string, weightKg: number | null, reps: number) => ({ id, kind: "normal", done: true, weightKg, reps, durationS: null, distanceM: null });
+    const out = new Map<string, string[]>();
+    flagRecords("reps_only", [set("a", null, 10)], [set("b", 100, 12)], out);
+    expect(out.get("b")).toEqual(["reps"]);
+    const timed = new Map<string, string[]>();
+    flagRecords("reps_duration", [{ ...set("a", null, 10), durationS: 60 }], [{ ...set("b", 20, 15), durationS: 60 }], timed);
+    expect(timed.get("b")).toEqual(["reps"]);
+  });
+});

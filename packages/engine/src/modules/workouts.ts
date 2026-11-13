@@ -1,6 +1,6 @@
 // Workouts: starting one (from a routine or empty), logging sets, skipping, reordering and replacing exercises,
 // finishing, logging a past workout, editing and duplicating, and the full detail with records and improvements.
-import { e1rm, ymd, pairSets, planSetRest, restDefaultsOf, liftedKg, liftsWeight, LIFTED_SQL, TRACKING_SQL, structureChanges, type Tracking, type RoutineExercise, type ExerciseStatus, type SetKind, type RestByKind, type RestDefaults, type WorkoutExercise, type HomeRecord, type Workout, type WorkoutSummary, type Routine } from "@motus/shared";
+import { e1rm, usesWeight, ymd, pairSets, planSetRest, restDefaultsOf, liftedKg, liftsWeight, LIFTED_SQL, TRACKING_SQL, structureChanges, type Tracking, type RoutineExercise, type ExerciseStatus, type SetKind, type RestByKind, type RestDefaults, type WorkoutExercise, type HomeRecord, type Workout, type WorkoutSummary, type Routine } from "@motus/shared";
 import type { Router, Ctx } from "../router";
 import type { Sql } from "../db";
 import { camel, id, optId, str, strList, intOrNull, numOrNull, bool, oneOf, isoTime, secondsBetween, visible } from "../util";
@@ -36,7 +36,10 @@ interface RecSet { id: string; kind: string; done?: boolean; weightKg: number | 
 export function flagRecords(tracking: string | undefined, prev: RecSet[], sets: RecSet[], out: Map<string, string[]>) {
   // assisted exercises log the help taken off as weight: less help is the better lift, and help isn't weight lifted
   const assisted = tracking === "assisted";
-  const wt = (s: RecSet) => Number(s.weightKg) || 0;
+  // a weight kept on a set of an exercise that tracks none (from before its tracking changed) is no lift: it sets no
+  // weight, 1RM or volume record. A one-rep max only comes from weight lifted for reps (as the workout summary's)
+  const weighs = !tracking || usesWeight(tracking as Tracking), maxes = !tracking || liftsWeight(tracking);
+  const wt = (s: RecSet) => (weighs ? Number(s.weightKg) || 0 : 0);
   const best = (f: (s: RecSet) => number) => Math.max(0, ...prev.map(f));
   for (const s of sets) {
     if (!s.done || s.kind === "warmup") continue;
@@ -47,7 +50,7 @@ export function flagRecords(tracking: string | undefined, prev: RecSet[], sets: 
       if (s.weightKg != null && reps > 0 && helped.length && kg < Math.min(...helped.map(wt))) f.push("weight");
     } else {
       if (kg > 0 && kg > best(wt)) f.push("weight");
-      if ((e1rm(kg, reps) ?? 0) > best((p) => e1rm(wt(p), p.reps) ?? 0) + 0.01) f.push("e1rm");
+      if (maxes && (e1rm(kg, reps) ?? 0) > best((p) => e1rm(wt(p), p.reps) ?? 0) + 0.01) f.push("e1rm");
       const v = liftedKg(kg, reps, tracking);
       if (v > 0 && v > best((p) => liftedKg(wt(p), p.reps, tracking))) f.push("volume");
     }

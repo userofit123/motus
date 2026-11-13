@@ -1,6 +1,6 @@
 // Everything in and out: the full backup/export (JSON), restore (replace or merge), CSV export in Strong's layout,
 // and imports from Strong, Hevy and FitNotes CSV files.
-import { cleanProgression } from "@motus/shared";
+import { cleanProgression, TRACKINGS } from "@motus/shared";
 import type { Router, Ctx } from "../router";
 import type { Sql } from "../db";
 import { uuidv7, isUuid } from "../ids";
@@ -157,6 +157,13 @@ export async function importAll(ctx: Ctx, data: any, mode: "replace" | "merge") 
         row.progression = cleanProgression(row.progression);
         delete row.prefill; delete row.prefill_scope;
       }
+      // a backup from before Track by (024_exercise_tracking): the reps-or-time switch becomes the tracking it stood for
+      if (t === "exercise_prefs") {
+        if (row.timed != null && row.tracking == null) row.tracking = await timedTracking(q, row.exercise_id, row.timed === true);
+        delete row.timed;
+        row.tracking = row.tracking == null ? null : oneOf(row.tracking, TRACKINGS, null);
+      }
+      if (t === "exercises") row.tracking = oneOf(row.tracking, TRACKINGS, "weight_reps");
       row[OWNER_COL[t] ?? "user_id"] = ctx.userId;
       if (t === "exercises") row.source = "custom";
       // a note or reminder limited to one routine means nothing without it: left out rather than made unlimited
@@ -406,4 +413,13 @@ export function dataRoutes(r: Router) {
     ctx.changed("everything");
     return { format, workouts: created };
   });
+}
+
+/** What an exercise_prefs.timed switch from an older backup stands for, as 024_exercise_tracking turned it into tracking:
+ * timed for a reps exercise is time (with weight if it had weight), untimed for a timed one is reps; otherwise its own. */
+async function timedTracking(q: Sql, exerciseId: unknown, timed: boolean): Promise<string | null> {
+  if (typeof exerciseId !== "string" || !isUuid(exerciseId)) return null;
+  const own = (await q.query<{ tracking: string }>("SELECT tracking FROM exercises WHERE id = $1", [exerciseId])).rows[0]?.tracking;
+  if (timed) return own === "weight_reps" || own === "bodyweight_reps" ? "weight_duration" : own === "assisted" || own === "reps_only" ? "duration" : null;
+  return own === "weight_duration" ? "weight_reps" : own === "duration" ? "reps_only" : null;
 }

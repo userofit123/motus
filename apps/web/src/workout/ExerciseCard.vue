@@ -28,6 +28,8 @@ const W = useWorkout();
 const fmt = W.fmt, feat = computed(() => W.settings.value.features), prefs = W.prefs;
 const tr = computed(() => props.e.exercise?.tracking ?? "weight_reps");
 const showW = computed(() => usesWeight(tr.value)), showR = computed(() => usesReps(tr.value)), showD = computed(() => usesDuration(tr.value)), showDist = computed(() => usesDistance(tr.value));
+// three numbers a set (reps + time + weight, distance + time + weight) don't fit beside Previous at phone width (app.css .v3)
+const three = computed(() => [showW.value, showR.value, showD.value, showDist.value].filter(Boolean).length >= 3);
 const visibleSets = computed(() => props.e.sets.filter((s) => prefs.value.showWarmups || s.kind !== "warmup"));
 // with sides shown, a left and right round (either order) shares a number (1L, 1R)
 const setNo = (s: WorkoutSet) => setNoOf(props.e.sets, props.e.sets.indexOf(s), !!feat.value.unilateral);
@@ -61,25 +63,31 @@ const beat = (s: WorkoutSet) => {
 };
 const remDone = async (id: string, status: string) => { await api.put(`/reminders/${id}`, { status }); props.e.reminders = props.e.reminders?.filter((r) => r.id !== id); invalidate(["reminders"]); toast(status === "done" ? "Reminder done" : status === "pending" ? "It will show next time" : "Reminder dismissed"); };
 
-// timed sets (planks, holds): 3-2-1, count down, then tick the set
-const timer = ref<{ set: WorkoutSet; left: number; lead: number } | null>(null);
+// timed sets (planks, holds): 3-2-1, count down, then tick the set. Reps against the clock still need their reps typed,
+// so there the timer only fills in the time (the full time, or as far as it got when stopped) and the set stays to tick
+const timer = ref<{ set: WorkoutSet; left: number; lead: number; of: number } | null>(null);
+const timedRan = ref(new Set<string>()); // reps + time sets whose timer has run: their time shows as a number to correct
 let tH: ReturnType<typeof setInterval> | null = null;
 function startTimed(s: WorkoutSet) {
   stopTimed();
-  timer.value = { set: s, left: s.durationS ?? 30, lead: prefs.value.countdown ? 3 : 0 };
+  timer.value = { set: s, left: s.durationS ?? 30, lead: prefs.value.countdown ? 3 : 0, of: s.durationS ?? 30 };
   tH = setInterval(() => {
     const t = timer.value!;
     if (t.lead > 0) { beep(1, 520); t.lead--; return; }
     t.left--;
-    if (t.left <= 0) { beep(3, 880); const set = t.set; stopTimed(); W.tick(props.e, props.e.sets.indexOf(set)); }
+    if (t.left <= 0) { beep(3, 880); const set = t.set; stopTimed(); if (!showR.value) W.tick(props.e, props.e.sets.indexOf(set)); }
   }, 1000);
 }
-function stopTimed() { if (tH) clearInterval(tH); tH = null; timer.value = null; }
+function stopTimed(keep: unknown = true) {
+  const t = timer.value;
+  if (tH) clearInterval(tH); tH = null; timer.value = null;
+  if (keep && t && showR.value && t.lead <= 0 && t.of - t.left > 0) { timedRan.value.add(t.set.id); W.editSet(t.set, { durationS: t.of - Math.max(0, t.left) }); }
+}
 // rest between reps (cluster sets): a beep every N seconds while it runs
 const repTimer = ref(false);
 let rH: ReturnType<typeof setInterval> | null = null;
 function toggleRepTimer() { repTimer.value = !repTimer.value; if (rH) clearInterval(rH); rH = null; if (repTimer.value) rH = setInterval(() => beep(1, 740), (props.e.repRestS ?? 15) * 1000); }
-onBeforeUnmount(() => { stopTimed(); if (rH) clearInterval(rH); });
+onBeforeUnmount(() => { stopTimed(false); if (rH) clearInterval(rH); });
 
 const picking = ref<null | "replace">(null), alts = ref<any[]>([]), restEdit = ref<null | "between" | "after">(null), plates = ref<number | null>(null);
 const skip = () => W.skipExercise(props.e);
@@ -186,18 +194,18 @@ const nowId = computed(() => (W.state.active === props.index ? visibleSets.value
       <ReminderItem v-for="r in e.reminders" :key="r.id" :reminder="r" @gone="e.reminders = e.reminders?.filter((x) => x.id !== r.id)" :actions="[{ label: 'Done', primary: true, run: () => remDone(r.id, 'done') }, { label: 'Next time', run: () => remDone(r.id, 'pending') }, { label: 'Dismiss', run: () => remDone(r.id, 'dismissed') }]" />
     </div>
 
-    <table class="sets">
-      <thead><tr><th>Set</th><th v-if="prefs.showPrevious">Previous</th><th v-if="showW">{{ fmt.wu }}<span v-if="perSide" class="thside"> / side</span></th><th v-if="showW && showR" class="sx" /><th v-if="showR">Reps</th><th v-if="showD">Time</th><th v-if="showDist">{{ fmt.du }}</th><th v-if="feat.rpe">RPE</th><th style="width:44px" /></tr></thead>
+    <table class="sets" :class="{ v3: three }">
+      <thead><tr><th>Set</th><th v-if="prefs.showPrevious" class="prevh">Previous</th><th v-if="showW">{{ fmt.wu }}<span v-if="perSide" class="thside"> / side</span></th><th v-if="showW && showR" class="sx" /><th v-if="showR">Reps</th><th v-if="showD">Time</th><th v-if="showDist">{{ fmt.du }}</th><th v-if="feat.rpe">RPE</th><th style="width:44px" /></tr></thead>
       <tbody>
         <tr v-for="s in visibleSets" :key="s.id" :class="{ done: s.done, drop: s.kind === 'drop', now: s.id === nowId && e.status !== 'skipped' }" :aria-current="s.id === nowId ? 'step' : undefined">
-          <td :class="joinCls(s)"><button class="sk" :class="{ w: s.kind === 'warmup', d: s.kind === 'drop', f: s.kind === 'failure' }" @click.stop>{{ kindShort(s) }}</button></td>
+          <td :class="joinCls(s)"><button class="sk" :class="{ w: s.kind === 'warmup', d: s.kind === 'drop', f: s.kind === 'failure' }" @click.stop>{{ kindShort(s) }}</button><span v-if="three && s.pr?.length" class="pr pvx v3pr">PR</span></td>
           <td v-if="prefs.showPrevious" class="prev" @click="copyPrev(s)">{{ prevText(s) }}<span v-if="s.pr?.length" class="pr pvx">PR</span><span v-else-if="beat(s)" class="pos tiny pvx">{{ beat(s) }}</span></td>
           <td v-if="showW"><input class="vin" :class="{ pre: s.prefilled && !s.done }" inputmode="decimal" :value="wIn(s.weightKg)" placeholder="-" @change="W.editSet(s, { weightKg: num(($event.target as HTMLInputElement).value) == null ? null : fmt.toKg(num(($event.target as HTMLInputElement).value)!) })" @focus="($event.target as HTMLInputElement).select()" /></td>
           <td v-if="showW && showR" class="sx" aria-hidden="true">×</td>
           <td v-if="showR" class="rcell"><input class="vin" :class="{ pre: s.prefilled && !s.done }" inputmode="numeric" :value="s.reps ?? ''" :placeholder="s.targetReps != null ? String(s.targetReps) : '-'" @change="W.editSet(s, { reps: num(($event.target as HTMLInputElement).value) })" @focus="($event.target as HTMLInputElement).select()" /></td>
           <td v-if="showD">
-            <button v-if="!s.done && timer?.set !== s && !showR" :disabled="!isActive" class="btn tonal s" style="min-width:76px" @click="startTimed(s)"><Icon name="play" :size="14" />{{ fmt.clock(s.durationS ?? 30) }}</button>
-            <button v-else-if="timer?.set === s" class="btn s" style="min-width:76px" @click="stopTimed">{{ timer.lead > 0 ? timer.lead : fmt.clock(timer.left) }}</button>
+            <button v-if="!s.done && timer?.set !== s && !timedRan.has(s.id)" :disabled="!isActive" class="btn tonal s tbtn" @click="startTimed(s)"><Icon name="play" :size="14" />{{ fmt.clock(s.durationS ?? 30) }}</button>
+            <button v-else-if="timer?.set === s" class="btn s tbtn" @click="stopTimed">{{ timer.lead > 0 ? timer.lead : fmt.clock(timer.left) }}</button>
             <input v-else class="vin" inputmode="numeric" :value="s.durationS ?? ''" placeholder="sec" @change="W.editSet(s, { durationS: num(($event.target as HTMLInputElement).value) })" />
           </td>
           <td v-if="showDist"><input class="vin" inputmode="decimal" :value="s.distanceM != null ? Math.round(fromM(s.distanceM, fmt.du) * 100) / 100 : ''" placeholder="-" @change="W.editSet(s, { distanceM: num(($event.target as HTMLInputElement).value) == null ? null : toM(num(($event.target as HTMLInputElement).value)!, fmt.du) })" /></td>

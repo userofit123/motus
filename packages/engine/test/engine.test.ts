@@ -556,7 +556,8 @@ describe("the routine's numbers and Progression", () => {
   it("takes today's numbers at the finish, applies Automatic, asks for Suggest, keeps fixed ones, and keeps History", async () => {
     const C = uuidv7();
     await eng.db.admin.query("INSERT INTO users (id, username, display_name) VALUES ($1,'prog-tester','C')", [C]);
-    const ex = await call(C, "GET", "/exercises");
+    // exercises lifted with weight: one that tracks none keeps no weight in a workout
+    const ex = (await call(C, "GET", "/exercises")).filter((e: any) => e.tracking === "weight_reps");
     const r = await call(C, "POST", "/routines", { name: "Prog", exercises: [
       { exerciseId: ex[0].id, progression: { mode: "auto", repsMin: 5, repsMax: 5, stepKg: 2.5 }, sets: [{ kind: "warmup", reps: 10, weightKg: 20 }, { kind: "normal", reps: 5, weightKg: 60 }, { kind: "normal", reps: 5, weightKg: 60 }] },
       { exerciseId: ex[1].id, progression: { repsMin: 8, repsMax: 10 }, sets: [{ kind: "normal", reps: 8, weightKg: 40 }] },
