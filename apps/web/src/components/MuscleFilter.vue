@@ -21,7 +21,8 @@ export function valueOf(m: string, groups: MuscleGroup[] = GROUPS): string {
 // chip of its own (lats, calves) gets a chip right after its group's, to show what is set and to clear it like any other.
 // On phones the body is as big as the card allows so small muscles can be hit, which leaves no room for the list: so it folds
 // (shut until the user opens it, then remembered per place: the page and the picker), hides while a name is searched, and after
-// a pick the results are scrolled up. The fold button shows a small figure, so a shut fold still says there is a body to open.
+// a pick the results are scrolled up. The fold button shows a tiny copy of the body (what is picked lit) beside its chevron,
+// so a shut fold still says what is set.
 import { computed, getCurrentInstance, nextTick, ref, watch } from "vue";
 import { groupOf, muscleName } from "@motus/shared";
 import FilterRow from "./FilterRow.vue";
@@ -90,8 +91,9 @@ const tap = (m: string) => {
 </script>
 
 <template>
-  <FilterRow :model-value="modelValue" label="Muscle group" all="All" :options="options" :fold="isPhone ? 'body' : undefined" :open="searching ? shown : bodyOpen" :shown="shown"
+  <FilterRow :model-value="modelValue" label="Muscle group" all="All" :options="options" :fold="isPhone" :open="searching ? shown : bodyOpen" :shown="shown"
     @update:model-value="set" @update:open="toggle">
+    <template #foldicon><BodyMap class="ffig" aria-hidden="true" :values="{}" :highlight="chosen" :height="22" /></template>
     <template #aside>
       <div class="mfig">
         <BodyMap pickable :values="{}" :highlight="chosen" :pressed="pressed" :height="isPhone ? undefined : 230" @pick="tap" />
@@ -112,4 +114,8 @@ html.phone .mfig { padding: var(--cpy) 0; container-type: inline-size; }
 html.phone .mfig :deep(.figs) { height: min(300px, calc((100cqi - 4px) * 194 / 160)); }
 .mfig .tiny { width: 0; min-width: 100%; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mfig .on { color: var(--tx); font-weight: 600; }
+/* the fold button's tiny body only shows: the whole row stays the fold button, no muscle tooltips; picked lit in the accent as on the big one */
+.ffig { pointer-events: none; }
+.ffig :deep(.figs) { gap: 1px; }
+.ffig :deep([data-t="1"] .m) { fill: var(--acc); }
 </style>
