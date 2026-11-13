@@ -3,9 +3,9 @@
 // counter: where you are comes from how long it has run, so it stays right after the phone sleeps (PLAN.md §8.6).
 import { computed, reactive } from "vue";
 import { intervalPhases, intervalAt, intervalTotalS, cleanInterval, INTERVAL_DEFAULT, type IntervalConfig, type IntervalKind, type IntervalSound } from "@motus/shared";
-import { SOUND_BELL, SOUND_ROUND, SOUND_DIGITAL, SOUND_MARIMBA } from "../core/soundNames";
+import { SOUND_BELL, SOUND_ROUND, SOUND_DIGITAL, SOUND_MARIMBA, SOUND_HAND_BELL, SOUND_SHIP_BELL, SOUND_TUBULAR, SOUND_TEMPLE, SOUND_BOWL, SOUND_DEEP_GONG } from "../core/soundNames";
 import { readJson, writeJson } from "../core/prefs";
-import { now, tone as note, tick, levelOf, SOFT, PURE, WOOD, savedCues, vibrate, type Overtone } from "./runtime";
+import { now, tone as note, tick, levelOf, SOFT, PURE, WOOD, RINGS, savedCues, vibrate, type Overtone } from "./runtime";
 import { keepAwake, backgroundTimers, scheduleIntervalCues, cancelIntervalCues, showIntervalNotice, clearIntervalNotice, onNoticeAction, INTERVAL_CUE_MAX, type IntervalCue } from "./native";
 
 interface IntervalRun {
@@ -24,7 +24,8 @@ export const PHASE_NAME: Record<IntervalKind, string> = { prep: "Get ready", wor
 
 export const SOUND_NAME: Record<IntervalSound, string> = {
   beep: SOUND_BELL, double: "Double bell", triple: "Three bells", high: "High", low: SOUND_ROUND, rising: "Rising",
-  softAlarm: "Soft alarm", chime: "Chime", marimba: SOUND_MARIMBA, pulse: "Pulse", gong: "Gong", digital: SOUND_DIGITAL, wake: "Wake", none: "None",
+  softAlarm: "Soft alarm", chime: "Chime", marimba: SOUND_MARIMBA, pulse: "Pulse", gong: "Gong", digital: SOUND_DIGITAL, wake: "Wake",
+  handBell: SOUND_HAND_BELL, shipBell: SOUND_SHIP_BELL, tubular: SOUND_TUBULAR, temple: SOUND_TEMPLE, bowl: SOUND_BOWL, deepGong: SOUND_DEEP_GONG, none: "None",
 };
 // notes of a C major chord, so every sound (and any two in a row) sits in tune with the others
 const C4 = 261.63, C5 = 523.25, E5 = 659.25, G5 = 783.99, C6 = 1046.5, E6 = 1318.5, G6 = 1567.98, C7 = 2093;
@@ -48,6 +49,8 @@ export function playIntervalSound(sound: IntervalSound) {
   else if (sound === "pulse") [C5, E5, G5].forEach((f, i) => tone(f, { delay: i * 0.3, dur: 0.32, vol: 0.28 + i * 0.03, partials: SOFT, attack: 0.05 })); // three soft swells, rising
   else if (sound === "gong") tone(C4, { dur: 2.2, vol: 0.4, partials: GONG, attack: 0.02 }); // long, so it sits under the next part's start
   else if (sound === "digital") [0, 0.1, 0.38, 0.48].forEach((d) => tone(E6, { delay: d, dur: 0.07, vol: 0.16, partials: PURE, attack: 0.004 })); // a watch's double chirp, quieter
+  else if (sound === "deepGong") RINGS.gong(level); // the rest timer's, the same sound wherever it is picked
+  else if (sound === "handBell" || sound === "shipBell" || sound === "tubular" || sound === "temple" || sound === "bowl") RINGS[sound](level);
   else if (sound === "wake") { tone(G5, { dur: 1.6, vol: 0.24, partials: SOFT, attack: 0.6 }); tone(C6, { delay: 0.35, dur: 1.4, vol: 0.16, partials: SOFT, attack: 0.6 }); } // fades in, no edge
 }
 

@@ -11,7 +11,7 @@ import { exerciseSheet, noteSheet, reminderSheet } from "../core/ui";
 import { prompt } from "../core/ask";
 import { toast } from "../core/toast";
 import { invalidate } from "../api/live";
-import { beep } from "./runtime";
+import { beep, restOver } from "./runtime";
 import { sidesItem } from "../core/sides";
 import { useNoteMenu } from "../core/noteMenu";
 import { trackItem } from "../core/track";
@@ -70,12 +70,13 @@ const timedRan = ref(new Set<string>()); // reps + time sets whose timer has run
 let tH: ReturnType<typeof setInterval> | null = null;
 function startTimed(s: WorkoutSet) {
   stopTimed();
-  timer.value = { set: s, left: s.durationS ?? 30, lead: prefs.value.countdown ? 3 : 0, of: s.durationS ?? 30 };
+  // the 3-2-1 lead-in is one of the workout sounds (its switch shows only with them on)
+  timer.value = { set: s, left: s.durationS ?? 30, lead: prefs.value.sound && prefs.value.countdown ? 3 : 0, of: s.durationS ?? 30 };
   tH = setInterval(() => {
     const t = timer.value!;
-    if (t.lead > 0) { beep(1, 520); t.lead--; return; }
+    if (t.lead > 0) { beep(520); t.lead--; return; }
     t.left--;
-    if (t.left <= 0) { beep(3, 880); const set = t.set; stopTimed(); if (!showR.value) W.tick(props.e, props.e.sets.indexOf(set)); }
+    if (t.left <= 0) { restOver(); const set = t.set; stopTimed(); if (!showR.value) W.tick(props.e, props.e.sets.indexOf(set)); }
   }, 1000);
 }
 function stopTimed(keep: unknown = true) {
@@ -86,7 +87,7 @@ function stopTimed(keep: unknown = true) {
 // rest between reps (cluster sets): a beep every N seconds while it runs
 const repTimer = ref(false);
 let rH: ReturnType<typeof setInterval> | null = null;
-function toggleRepTimer() { repTimer.value = !repTimer.value; if (rH) clearInterval(rH); rH = null; if (repTimer.value) rH = setInterval(() => beep(1, 740), (props.e.repRestS ?? 15) * 1000); }
+function toggleRepTimer() { repTimer.value = !repTimer.value; if (rH) clearInterval(rH); rH = null; if (repTimer.value) rH = setInterval(() => beep(740), (props.e.repRestS ?? 15) * 1000); }
 onBeforeUnmount(() => { stopTimed(false); if (rH) clearInterval(rH); });
 
 const picking = ref<null | "replace">(null), alts = ref<any[]>([]), restEdit = ref<null | "between" | "after">(null), plates = ref<number | null>(null);

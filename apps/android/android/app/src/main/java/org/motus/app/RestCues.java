@@ -19,8 +19,8 @@ import android.os.SystemClock;
 /**
  * The rest timer's 10 seconds warning and 3-2-1 while the app is in the background, where the WebView's own timers and
  * sound are stopped (workout/runtime.ts plays them on screen). Each is an exact alarm, so it comes with the screen off,
- * and the notes are made here the way the web app makes them (workout/runtime.ts CUE_NOTE): the same partials,
- * envelope, pitch and level for each cue sound, so a cue sounds the same in the background as on screen. The rest's end
+ * and the notes are made here the way the web app makes them (workout/runtime.ts TICK_NOTE): the same partials,
+ * envelope, pitch and level for each countdown sound, so a cue sounds the same in the background as on screen. The rest's end
  * is the web app's "Rest over" alarm, not this. A note whose moment passed more than LATE_MS ago is dropped.
  */
 public class RestCues extends BroadcastReceiver {
@@ -108,15 +108,17 @@ public class RestCues extends BroadcastReceiver {
     private static final double[][] SOFT = { { 1, 1, 1 }, { 2, 0.18, 0.5 } };
     private static final double[][] PURE = { { 1, 1, 1 } };
     private static final double[][] WOOD = { { 1, 1, 1 }, { 4, 0.22, 0.12 }, { 10, 0.04, 0.05 } };
+    private static final double[][] CLICK = { { 1, 1, 1 }, { 2.4, 0.45, 0.4 }, { 4.7, 0.2, 0.25 } };
     private static final double LOUDER = 2.2;
 
-    /** One note of a cue in the chosen sound (CUE_NOTE in workout/runtime.ts); `lng`: a "now" note, held a little longer. */
+    /** One note of a cue in the chosen countdown sound (TICK_NOTE in workout/runtime.ts); `lng`: a "now" note, held a little longer. */
     private static void play(String sound, double f, boolean lng, int volume) {
         double level = Math.pow(Math.max(10, Math.min(100, volume)) / 100.0, 2);
         if ("bell".equals(sound)) note(f, lng ? 0.7 : 0.45, 0.4, BELL, 0.005, 0, level);
         else if ("soft".equals(sound)) note(f, lng ? 0.2 : 0.14, 0.4, SOFT, 0.02, lng ? 0.16 : 0.1, level);
         else if ("digital".equals(sound)) note(f, 0.03, 0.45, PURE, 0.003, lng ? 0.12 : 0.07, level);
         else if ("wood".equals(sound)) note(f / 2, lng ? 0.35 : 0.22, 0.45, WOOD, 0.002, 0, level);
+        else if ("click".equals(sound)) note(f / 1.5, lng ? 0.1 : 0.06, 0.5, CLICK, 0.001, 0, level);
         else note(f, lng ? 0.12 : 0.08, 0.23, CUE, 0.005, lng ? 0.2 : 0.14, level);
     }
 

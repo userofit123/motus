@@ -11,12 +11,17 @@ export interface ProgressionDefaults extends ProgressionSettings { stepKg: numbe
 import type { RestDefaults } from "./training";
 import { cleanIntervalPresets, type IntervalPreset } from "./intervals";
 
-/** The workout cues' sounds (Settings → Workout defaults → Rest timer). Each keeps the cues' pitches and counts, so
- *  "3 2 1" and "rest over" still tell apart; only the tone changes. */
-export const CUE_SOUNDS = ["beep", "bell", "soft", "digital", "wood"] as const;
+/** The workout's two cue sounds (Settings → Workout defaults → Rest timer). The rest over sound (`cueSound`) plays when a
+ *  rest or a timed set ends: the short ones three times, the ones that ring out (bells, gongs, the bowl) once or twice.
+ *  The countdown sound (`tickSound`) is the short note of the 10 seconds warning, the 3-2-1 and a timed set's start; a
+ *  long ringing sound can't be a tick, so it has its own, shorter list. Ids stay as saved. */
+export const CUE_SOUNDS = ["beep", "bell", "soft", "digital", "wood", "handBell", "shipBell", "tubular", "temple", "bowl", "gong"] as const;
 export type CueSound = (typeof CUE_SOUNDS)[number];
+export const TICK_SOUNDS = ["beep", "bell", "soft", "digital", "wood", "click"] as const;
+export type TickSound = (typeof TICK_SOUNDS)[number];
 /** A cue sound and volume as saved anywhere (also a workout's own override), made safe. */
 export const cleanCueSound = (v: unknown): CueSound => ((CUE_SOUNDS as readonly unknown[]).includes(v) ? (v as CueSound) : "beep");
+export const cleanTickSound = (v: unknown): TickSound => ((TICK_SOUNDS as readonly unknown[]).includes(v) ? (v as TickSound) : "beep");
 export const cleanCueVolume = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) ? Math.min(100, Math.max(10, Math.round(v))) : 100);
 
 export interface WorkoutPrefs {
@@ -29,8 +34,9 @@ export interface WorkoutPrefs {
   restStretchAfterS: number;
   sessionNotice: boolean; // the workout in progress as a notification
   countdown: boolean;
-  sound: boolean;
-  cueSound: CueSound; // how the rest timer's and timed sets' cues sound (10 seconds, 3-2-1, rest over)
+  sound: boolean; // every workout sound (rest over, 10 seconds, 3-2-1, timed sets, rep timer); off: none of them
+  cueSound: CueSound; // the rest over sound (also a timed set's end)
+  tickSound: TickSound; // the countdown sound: 10 seconds, 3-2-1, a timed set's start, the rep timer
   cueVolume: number; // 10-100, % of full level, for every sound the app plays itself
   vibrate: boolean;
   warn10: boolean;
@@ -135,7 +141,7 @@ export const DEFAULT_SETTINGS: Settings = {
   workout: {
     autoRest: true, restEndNext: true, restBetweenSetsS: 90, restAfterExerciseS: 150, restByKindS: {}, restStretchBetweenS: 10, restStretchAfterS: 15,
     sessionNotice: true, countdown: true,
-    sound: true, cueSound: "beep", cueVolume: 100, vibrate: true, warn10: true, voice: false, keepAwake: true, lockScreen: true, showWarmups: true, autoAdvance: true,
+    sound: true, cueSound: "beep", tickSound: "beep", cueVolume: 100, vibrate: true, warn10: true, voice: false, keepAwake: true, lockScreen: true, showWarmups: true, autoAdvance: true,
     showPrevious: false, showReminders: true, confirmSkip: false,
   },
   increments: { kg: 2.5, lb: 5 },
@@ -188,7 +194,9 @@ export function withDefaults(saved: unknown): Settings {
   // gone: a routine always holds where you are now (its numbers follow each finished workout, then Progression), and
   // structure changes are only ever saved when ticked on the Finish screen, so the old choices mean nothing and are dropped
   const { updateRoutine: _u, prefillFromLast: _pl, prefillScope: _ps, ...workout } = out.workout as WorkoutPrefs & { updateRoutine?: unknown; prefillFromLast?: unknown; prefillScope?: unknown };
-  out.workout = { ...workout, cueSound: cleanCueSound(workout.cueSound), cueVolume: cleanCueVolume(workout.cueVolume) };
+  // before there were two sounds the one chosen also played the countdown: kept for it until a countdown sound is chosen
+  const savedTick = (saved as { workout?: { tickSound?: unknown } } | null)?.workout?.tickSound;
+  out.workout = { ...workout, cueSound: cleanCueSound(workout.cueSound), tickSound: cleanTickSound(savedTick ?? workout.cueSound), cueVolume: cleanCueVolume(workout.cueVolume) };
   // a top-level "sound" from the first version was never used (the cues' sound is workout.cueSound): dropped
   delete (out as Settings & { sound?: unknown }).sound;
   // the "Progression rules" feature switch went with them: Progression is always there, its mode Off when unwanted

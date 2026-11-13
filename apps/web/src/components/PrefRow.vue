@@ -4,29 +4,31 @@
 // hearing a sound at the volume chosen there.
 import type { WorkoutPrefs } from "@motus/shared";
 import type { PrefRow } from "../core/workoutPrefs";
-import { previewCue } from "../workout/runtime";
+import { previewCue, previewTick } from "../workout/runtime";
 import AppSelect from "./AppSelect.vue";
 import NumStep from "./NumStep.vue";
 import Icon from "./Icon.vue";
 
 const props = defineProps<{ row: PrefRow; value: unknown; prefs: WorkoutPrefs; local?: boolean }>();
 const emit = defineEmits<{ set: [v: unknown] }>();
-const play = (cueSound: unknown) => previewCue({ cueSound: cueSound as WorkoutPrefs["cueSound"], cueVolume: props.prefs.cueVolume });
+// each sound is heard as it plays: the rest over sound as at a rest's end, the countdown sound as a 3-2-1
+const play = (id: unknown) => (props.row.key === "tickSound" ? previewTick : previewCue)({ ...props.prefs, [props.row.key]: id });
 // a new volume is played at once, so you hear what you chose
-function setNum(v: number) { emit("set", v); if (props.row.key === "cueVolume" && props.prefs.sound) previewCue({ cueSound: props.prefs.cueSound, cueVolume: v }); }
+function setNum(v: number) { emit("set", v); if (props.row.key === "cueVolume") previewCue({ ...props.prefs, cueVolume: v }); }
 const label = (v: unknown) => props.row.options?.find((o) => o.value === v)?.label ?? "";
 </script>
 
 <template>
-  <div v-if="row.options || row.num" class="li"><div class="grow"><div class="t">{{ row.label }}<span v-if="local" class="mchip pr-chip">this workout</span></div><div v-if="row.hint" class="s">{{ row.hint }}</div></div>
+  <template v-if="row.under && !prefs[row.under]" />
+  <div v-else-if="row.options || row.num" class="li"><div class="grow"><div class="t">{{ row.label }}<span v-if="local" class="mchip pr-chip">this workout</span></div><div v-if="row.hint" class="s">{{ row.hint }}</div></div>
     <NumStep v-if="row.num" :value="value as number" :min="row.num.min" :max="row.num.max" :step="row.num.step" :unit="row.num.unit" :label="row.label.toLowerCase()" @set="setNum" />
     <template v-else>
-      <AppSelect :model-value="value" :options="row.options!" :title="row.label" style="width:auto" @update:model-value="(v) => emit('set', v)">
+      <AppSelect :model-value="value" :options="row.options!" :title="row.label" @update:model-value="(v) => emit('set', v)">
         <template v-if="row.preview" #end="{ option }">
-          <button type="button" class="ib sm plain" :disabled="!prefs.sound" :aria-label="`Play ${option.label}`" :title="`Play ${option.label}`" @click.stop="play(option.value)"><Icon name="play" /></button>
+          <button type="button" class="ib sm plain" :aria-label="`Play ${option.label}`" :title="`Play ${option.label}`" @click.stop="play(option.value)"><Icon name="play" /></button>
         </template>
       </AppSelect>
-      <button v-if="row.preview" type="button" class="ib sm plain" :disabled="!prefs.sound" :aria-label="`Play ${label(value)}`" :title="`Play ${label(value)}`" @click="play(value)"><Icon name="play" /></button>
+      <button v-if="row.preview" type="button" class="ib sm plain" :aria-label="`Play ${label(value)}`" :title="`Play ${label(value)}`" @click="play(value)"><Icon name="play" /></button>
     </template>
   </div>
   <label v-else class="tgl"><div class="grow"><div class="t">{{ row.label }}<span v-if="local" class="mchip pr-chip">this workout</span></div><div v-if="row.hint" class="s">{{ row.hint }}</div></div>

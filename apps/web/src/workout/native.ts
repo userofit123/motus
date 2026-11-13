@@ -109,9 +109,10 @@ const REST_ALARM = 7001;
 // The rest-over nudge in the Android app: an alarm at the rest's end that shows "Rest over" heads-up, with the rest
 // channel's sound and vibration, also with the phone asleep and the app's own timers stopped. Scheduled only while
 // the app is in the background (workout/runtime.ts), so on screen the in-app cues are the only alert. Each call
-// replaces the one scheduled before. With sound and vibration both off (Settings → Workout) it goes on the quiet
-// "running" channel of the workout's own notification (MotusWorkoutPlugin, made by the countdown shown first):
-// in the shade, no heads-up, no sound (a channel's sound is fixed once made, and Capacitor can't make a silent one).
+// replaces the one scheduled before. A channel's sound is fixed once made (and Capacitor can't make a silent one), so
+// with the workout sounds off (Settings → Workout) it goes on "restBuzz", heads-up and vibrating but silent, and with
+// vibration off too on the quiet "running" channel of the workout's own notification: in the shade, no heads-up, no
+// sound. Both are made by MotusWorkoutPlugin with the rest countdown shown first.
 // Scheduling and taking off run one after the other, in the order asked (each waits on the bridge): back on screen
 // right after going to the background, the cancel then comes after the schedule, never before it, so no alarm is left
 // behind to ring after a skip or on top of the in-app beeps.
@@ -123,7 +124,7 @@ export function scheduleRestAlarm(endAt: number, body: string, o: { sound: boole
       // the channel is made when a workout starts (askNotificationsOnce), but not on this device when the workout was
       // started on another one; without it Android drops the alarm. Made once per app run.
       await restChannel();
-      await ln.schedule({ notifications: [{ id: REST_ALARM, title: "Rest over", body: body || "Time for the next set", schedule: { at: new Date(endAt), allowWhileIdle: true }, channelId: o.sound || o.vibrate ? "rest" : "running", smallIcon: "ic_stat_motus", actionTypeId: logFromNotification ? "rest" : undefined }] });
+      await ln.schedule({ notifications: [{ id: REST_ALARM, title: "Rest over", body: body || "Time for the next set", schedule: { at: new Date(endAt), allowWhileIdle: true }, channelId: o.sound ? "rest" : o.vibrate ? "restBuzz" : "running", smallIcon: "ic_stat_motus", actionTypeId: logFromNotification ? "rest" : undefined }] });
     } catch { /* the in-app timer still runs */ }
   });
 }
@@ -134,10 +135,10 @@ export function cancelRestAlarm() {
   });
 }
 // The cues leading up to the rest's end, played by the Android app while it is in the background (the WebView's timers
-// and sound are stopped there): the 10 seconds warning and the 3-2-1, at their times, in the chosen sound and level
+// and sound are stopped there): the 10 seconds warning and the 3-2-1, at their times, in the chosen countdown sound and level
 // (MotusWorkoutPlugin.scheduleRestCues), also with the screen off. The end itself is the alarm above. Scheduled and
 // taken off together with it (workout/runtime.ts); each call replaces the ones scheduled before.
-export function scheduleRestCues(endAt: number, o: { warn10: boolean; countdown: boolean; cueSound: string; cueVolume: number }) {
+export function scheduleRestCues(endAt: number, o: { warn10: boolean; countdown: boolean; tickSound: string; cueVolume: number }) {
   plugin("MotusWorkout")?.scheduleRestCues?.({ endAt, ...o }).catch?.(() => {});
 }
 export function cancelRestCues() {

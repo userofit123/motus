@@ -52,4 +52,11 @@ describe("Workout cue sound and volume", () => {
     expect(withDefaults({ workout: { cueSound: "nope", cueVolume: 500 } }).workout).toMatchObject({ cueSound: "beep", cueVolume: 100 });
     expect(withDefaults({ workout: { cueVolume: 0 } }).workout.cueVolume).toBe(10);
   });
+  it("gives the countdown the one sound chosen before there were two, until one is chosen for it", () => {
+    expect(withDefaults({}).workout.tickSound).toBe("beep");
+    expect(withDefaults({ workout: { cueSound: "wood" } }).workout).toMatchObject({ cueSound: "wood", tickSound: "wood" });
+    expect(withDefaults({ workout: { cueSound: "gong" } }).workout).toMatchObject({ cueSound: "gong", tickSound: "beep" });
+    expect(withDefaults({ workout: { cueSound: "wood", tickSound: "click" } }).workout.tickSound).toBe("click");
+    expect(withDefaults({ workout: { tickSound: "gong" } }).workout.tickSound).toBe("beep");
+  });
 });

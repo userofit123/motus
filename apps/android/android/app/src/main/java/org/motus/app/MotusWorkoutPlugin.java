@@ -62,6 +62,7 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener2 {
     // screen. A channel's importance can't be raised once made, hence a new channel in place of the old "workout" one.
     private static final String CHANNEL = "running";
     private static final String OLD_CHANNEL = "workout";
+    private static final String BUZZ_CHANNEL = "restBuzz";
     private static final int ID = 7002;
     private static final int TIMER_ID = 7003;
     private static final int REC_ID = RecordingService.REC_ID;
@@ -91,6 +92,14 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener2 {
             NotificationManager nm = (NotificationManager) getContext().getSystemService(Context.NOTIFICATION_SERVICE);
             nm.createNotificationChannel(ch);
             nm.deleteNotificationChannel(OLD_CHANNEL);
+            // the rest over alarm with the workout sounds off but vibration on (workout/native.ts scheduleRestAlarm):
+            // heads-up and vibrating like the "rest" channel, without its sound
+            NotificationChannel buzz = new NotificationChannel(BUZZ_CHANNEL, "Rest timer without sound", NotificationManager.IMPORTANCE_HIGH);
+            buzz.setDescription("When a rest ends with the workout sounds off");
+            buzz.setSound(null, null);
+            buzz.enableVibration(true);
+            buzz.setLockscreenVisibility(android.app.Notification.VISIBILITY_PUBLIC);
+            nm.createNotificationChannel(buzz);
         }
     }
 
@@ -277,12 +286,12 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener2 {
     }
 
     /** The rest's 10 seconds warning and 3-2-1 while the app is in the background (`endAt`, `warn10`, `countdown`,
-     *  `cueSound`, `cueVolume`), in place of any scheduled before: RestCues. */
+     *  `tickSound`: the countdown sound, `cueVolume`), in place of any scheduled before: RestCues. */
     @PluginMethod
     public void scheduleRestCues(PluginCall call) {
         Long endAt = call.getLong("endAt");
         if (endAt == null) { call.reject("endAt missing"); return; }
-        RestCues.schedule(getContext(), endAt, call.getBoolean("warn10", false), call.getBoolean("countdown", false), call.getString("cueSound", "beep"), call.getInt("cueVolume", 100));
+        RestCues.schedule(getContext(), endAt, call.getBoolean("warn10", false), call.getBoolean("countdown", false), call.getString("tickSound", "beep"), call.getInt("cueVolume", 100));
         call.resolve();
     }
 

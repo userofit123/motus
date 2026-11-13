@@ -3,7 +3,7 @@
 // (PLAN.md §8.6). The rest timer is kept on the device so a reload does not lose it.
 import { reactive, ref } from "vue";
 import { readJson, writeJson } from "../core/prefs";
-import { withDefaults, cleanCueSound, cleanCueVolume, type CueSound } from "@motus/shared";
+import { withDefaults, cleanCueSound, cleanTickSound, cleanCueVolume, type CueSound, type TickSound } from "@motus/shared";
 import { api } from "../api/client";
 import { queryClient } from "../api/live";
 import { showRestCountdown, clearRestCountdown, scheduleRestAlarm, cancelRestAlarm, scheduleRestCues, cancelRestCues, notifyRestOverWeb, isNativeApp, backgroundTimers } from "./native";
@@ -24,16 +24,17 @@ export const rest = reactive<RestState>({ ...EMPTY, ...readJson("motusRest", {})
 export const now = ref(Date.now());
 const save = () => writeJson("motusRest", rest);
 
-/** The sound the cues play, and how loud (10-100 %) */
-export interface CueVoice { cueSound: CueSound; cueVolume: number }
+/** The sounds the cues play (rest over, countdown), and how loud (10-100 %). `sound` false ("Workout sounds" off):
+ *  none plays; a preview leaves it out. */
+export interface CueVoice { cueSound: CueSound; tickSound: TickSound; cueVolume: number; sound?: boolean }
 export interface Cues extends CueVoice { sound: boolean; vibrate: boolean; warn10: boolean; voice: boolean; countdown: boolean; next?: boolean }
-let cues: Cues = { sound: true, cueSound: "beep", cueVolume: 100, vibrate: true, warn10: true, voice: false, countdown: true, next: true };
+let cues: Cues = { sound: true, cueSound: "beep", tickSound: "beep", cueVolume: 100, vibrate: true, warn10: true, voice: false, countdown: true, next: true };
 export const setCues = (c: Cues) => { cues = c; };
 /** Sound and vibration as chosen in Settings → Workout, read from the settings the app has loaded, so they are right
  *  on any page (the cues above are only filled once a workout screen has been opened). */
 export function savedCues(): CueVoice & { sound: boolean; vibrate: boolean; warn10: boolean; countdown: boolean } {
   const w = withDefaults(queryClient.getQueryData<{ settings?: unknown }>(["settings", "me"])?.settings ?? {}).workout;
-  return { sound: w.sound, vibrate: w.vibrate, cueSound: w.cueSound, cueVolume: w.cueVolume, warn10: w.warn10, countdown: w.countdown };
+  return { sound: w.sound, vibrate: w.vibrate, cueSound: w.cueSound, tickSound: w.tickSound, cueVolume: w.cueVolume, warn10: w.warn10, countdown: w.countdown };
 }
 export function vibrate(pattern: number | number[]) { try { navigator.vibrate?.(pattern); } catch { /* no vibration */ } }
 
@@ -48,7 +49,7 @@ setInterval(() => {
     const left = (rest.endAt - now.value) / 1000;
     // in the background with the alarm set, the alarm alone announces the end: no warning or 3-2-1 leading up to it
     const quiet = alarmCovers();
-    if (left <= 10 && left > 9 && !warned && cues.warn10) { warned = true; if (!quiet) beep(1, 660); }
+    if (left <= 10 && left > 9 && !warned && cues.sound && cues.warn10) { warned = true; if (!quiet) beep(660); }
     // 3-2-1 in the last seconds (not on rests too short for it to mean anything); the end's own beep is the "now"
     const s = Math.ceil(left);
     if (s >= 1 && s <= 3 && s !== lastCount && rest.totalS > 5 && cues.sound && cues.countdown) { lastCount = s; if (!quiet) tick(false); }
@@ -112,7 +113,7 @@ function restEnded() {
   // return. The end was announced by the Android app's alarm or the notification below (shown even when late).
   const late = Date.now() - rest.endAt! > LATE_MS;
   if (late) { if (hidden() || !document.hasFocus()) void notifyRestOverWeb(rest.next); return; }
-  if (cues.sound) beep(3, 880);
+  if (cues.sound) restOver();
   if (cues.vibrate) vibrate([300, 150, 300]);
   if (cues.voice && rest.next) speak(`Rest over. ${rest.next}`);
   // A browser's or the desktop app's own notification, when you're in another tab, window or app (the Android app has
@@ -144,8 +145,9 @@ function planAlarm() {
   // savedCues: the cues above are only filled once the workout screen has been opened
   const c = savedCues();
   void scheduleRestAlarm(rest.endAt!, rest.next, c); alarmOn = true;
-  // the same choices as the in-app cues above: the 10 seconds has its own switch, the 3-2-1 also needs the sound on
-  scheduleRestCues(rest.endAt!, { warn10: c.warn10, countdown: c.sound && c.countdown && rest.totalS > 5, cueSound: c.cueSound, cueVolume: c.cueVolume });
+  // the same choices as the in-app cues above: the 10 seconds and the 3-2-1 each have their own switch, and both need
+  // the workout sounds on
+  scheduleRestCues(rest.endAt!, { warn10: c.sound && c.warn10, countdown: c.sound && c.countdown && rest.totalS > 5, tickSound: c.tickSound, cueVolume: c.cueVolume });
 }
 function dropAlarm() {
   if (!alarmOn) return;
@@ -236,26 +238,56 @@ function play(freq: number, { delay = 0, dur = 0.5, vol = 0.3, partials = BELL, 
 /** The volume setting (10-100 %) as a gain. Squared, because the ear hears loudness roughly by the square: 50 % is
  *  then about half as loud (-12 dB) rather than barely quieter (-6 dB). */
 export const levelOf = (volume: number) => (cleanCueVolume(volume) / 100) ** 2;
-/** How each cue sound plays one note of a cue; `long` is a "now" note (the last of 3-2-1, a single beep), held a little
+/** How each countdown sound plays one note; `long` is a "now" note (the last of 3-2-1, a single beep), held a little
  *  longer. All keep the bright CUE notes' 1-3 kHz pitches, where a phone speaker is loud; the softer ones (a bell
- *  fades fast, a wooden knock is short) are a choice for those who find the beep harsh. */
-const CUE_NOTE: Record<CueSound, (freq: number, delay: number, long: boolean, level: number) => void> = {
+ *  fades fast, a wooden knock is short) are a choice for those who find the beep harsh. The Android app plays the same
+ *  notes in the background (RestCues.java play()): a change here goes there too. */
+const TICK_NOTE: Record<TickSound, (freq: number, delay: number, long: boolean, level: number) => void> = {
   beep: (f, delay, long, level) => tone(f, { delay, hold: long ? 0.2 : 0.14, dur: long ? 0.12 : 0.08, vol: 0.23, partials: CUE, level }),
   bell: (f, delay, long, level) => tone(f, { delay, dur: long ? 0.7 : 0.45, vol: 0.4, level }),
   soft: (f, delay, long, level) => tone(f, { delay, attack: 0.02, hold: long ? 0.16 : 0.1, dur: long ? 0.2 : 0.14, vol: 0.4, partials: SOFT, level }),
   digital: (f, delay, long, level) => tone(f, { delay, hold: long ? 0.12 : 0.07, dur: 0.03, vol: 0.45, partials: PURE, attack: 0.003, level }),
   wood: (f, delay, long, level) => tone(f / 2, { delay, dur: long ? 0.35 : 0.22, vol: 0.45, partials: WOOD, attack: 0.002, level }),
+  click: (f, delay, long, level) => tone(f / 1.5, { delay, dur: long ? 0.1 : 0.06, vol: 0.5, partials: CLICK, attack: 0.001, level }),
 };
-const note = (v: CueVoice, f: number, delay: number, long: boolean) => CUE_NOTE[cleanCueSound(v.cueSound)](f, delay, long, levelOf(v.cueVolume));
+/** A wood block: off-key overtones gone at once, so it clicks rather than rings. */
+const CLICK: Overtone[] = [[1, 1, 1], [2.4, 0.45, 0.4], [4.7, 0.2, 0.25]];
+// The ringing sounds: bronze and brass with their off-key overtones, each dying away at its own pace. The hum below a
+// bell's note rings longest; two partials a hair apart beat against each other, the wobble of a bowl or a temple bell.
+const BRONZE: Overtone[] = [[0.5, 0.3, 1.4], [1, 1, 1], [1.19, 0.45, 0.8], [1.5, 0.25, 0.6], [2, 0.4, 0.5], [2.5, 0.12, 0.35], [2.98, 0.1, 0.25], [4.1, 0.05, 0.15]];
+const TUBE: Overtone[] = [[1, 1, 1], [2.76, 0.45, 0.6], [5.4, 0.25, 0.4], [8.93, 0.12, 0.25], [13.34, 0.05, 0.15]];
+const TEMPLE: Overtone[] = [[1, 1, 1], [1.003, 0.5, 1], [2.1, 0.55, 0.75], [3.15, 0.4, 0.55], [4.6, 0.28, 0.4], [6.3, 0.16, 0.28], [8.2, 0.08, 0.18]];
+const BOWL: Overtone[] = [[1, 1, 1], [1.005, 0.7, 1], [2.71, 0.5, 0.8], [2.722, 0.35, 0.8], [5.15, 0.2, 0.5], [5.17, 0.12, 0.5]];
+// a low note a phone barely plays, so its many overtones (up to 1.5 kHz) carry it; a slow attack, as a gong blooms
+const DEEP_GONG: Overtone[] = [[1, 0.7, 1], [1.48, 0.5, 0.9], [2.1, 0.6, 0.85], [2.9, 0.55, 0.7], [3.9, 0.45, 0.6], [5.2, 0.35, 0.5], [6.8, 0.25, 0.4], [8.9, 0.18, 0.3], [11.6, 0.12, 0.25], [15.2, 0.08, 0.2]];
+export type RingSound = "handBell" | "shipBell" | "tubular" | "temple" | "bowl" | "gong";
+/** The sounds that ring out, played once (the ship's bell twice, the hand bell shaken): three in a row would only blur
+ *  into one. Also offered by the interval timer (workout/intervals.ts). */
+export const RINGS: Record<RingSound, (level: number) => void> = {
+  handBell: (level) => { for (let i = 0; i < 5; i++) tone(2093, { delay: i * 0.11, dur: i === 4 ? 0.9 : 0.4, vol: 0.3 - i * 0.02, level }); },
+  shipBell: (level) => { for (let i = 0; i < 2; i++) tone(880, { delay: i * 0.42, dur: 1.6, vol: 0.36, partials: BRONZE, attack: 0.003, level }); },
+  tubular: (level) => tone(784, { dur: 3, vol: 0.4, partials: TUBE, attack: 0.003, level }),
+  temple: (level) => tone(330, { dur: 4.5, vol: 0.42, partials: TEMPLE, attack: 0.004, level }),
+  bowl: (level) => tone(587, { dur: 5, vol: 0.4, partials: BOWL, attack: 0.04, level }),
+  gong: (level) => tone(98, { dur: 5, vol: 0.42, partials: DEEP_GONG, attack: 0.06, level }),
+};
+const note = (v: CueVoice, f: number, delay: number, long: boolean) => TICK_NOTE[cleanTickSound(v.tickSound)](f, delay, long, levelOf(v.cueVolume));
 /** The countdown in the last seconds of a rest or an interval part: a short blip, the last one higher so you know
  *  "now". `v`: the sound and volume (the running workout's, unless given). */
 export function tick(last: boolean, v: CueVoice = cues) {
-  note(v, last ? 2637 : 1318.5, 0, last); // E7, E6
+  if (v.sound !== false) note(v, last ? 2637 : 1318.5, 0, last); // E7, E6
 }
-/** The plain cue used by the rest timer and timed sets: `times` short beeps. `freq` keeps the callers' pitches apart
- *  (10 seconds 660, rest over 880, …); each sounds an octave higher, where a phone's speaker is loud. */
-export function beep(times = 1, freq = 880, v: CueVoice = cues) {
-  for (let i = 0; i < times; i++) note(v, freq * 2, i * 0.25, times === 1);
+/** One countdown note: the 10 seconds warning, a timed set's start, the rep timer. `freq` keeps the callers' pitches
+ *  apart (10 seconds 660, …); each sounds an octave higher, where a phone's speaker is loud. */
+export function beep(freq = 880, v: CueVoice = cues) {
+  if (v.sound !== false) note(v, freq * 2, 0, true);
+}
+/** The end of a rest or a timed set, in the rest over sound: a short sound three times in a row, a ringing one once. */
+export function restOver(v: CueVoice = cues) {
+  if (v.sound === false) return;
+  const id = cleanCueSound(v.cueSound), level = levelOf(v.cueVolume);
+  if (id in RINGS) { RINGS[id as RingSound](level); return; }
+  for (let i = 0; i < 3; i++) TICK_NOTE[id as TickSound](1760, i * 0.25, false, level);
 }
 function speak(text: string) {
   try { const u = new SpeechSynthesisUtterance(text); u.rate = 1.05; speechSynthesis.cancel(); speechSynthesis.speak(u); } catch { /* no voice */ }
@@ -265,5 +297,10 @@ export function elapsed(w: { startedAt: string; pausedS: number; pauseStartedAt:
   const end = w.endedAt ? new Date(w.endedAt).getTime() : w.pauseStartedAt ? new Date(w.pauseStartedAt).getTime() : now.value;
   return Math.max(0, Math.round((end - new Date(w.startedAt).getTime()) / 1000) - (w.pausedS ?? 0));
 }
-/** Lets a sound and volume be heard where they are chosen: the rest-over cue, the one heard most. */
-export const previewCue = (v: CueVoice) => beep(3, 880, v);
+/** Lets a sound and volume be heard where they are chosen: the rest over sound as at a rest's end, the countdown
+ *  sound as a 3-2-1 (quicker than the real one). */
+export const previewCue = (v: CueVoice) => restOver({ ...v, sound: true });
+export function previewTick(v: CueVoice) {
+  const w = { ...v, sound: true };
+  [0, 0.4].forEach((d) => note(w, 1318.5, d, false)); note(w, 2637, 0.8, true);
+}
