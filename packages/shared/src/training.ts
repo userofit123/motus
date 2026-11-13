@@ -294,7 +294,7 @@ export const STATS_PERIODS = [
   { value: "today", label: "Today" }, { value: "week", label: "This week" }, { value: "lastweek", label: "Last week" },
   { value: "7d", label: "Last 7 days" }, { value: "month", label: "This month" }, { value: "lastmonth", label: "Last month" },
   { value: "4w", label: "Last 4 weeks" }, { value: "3m", label: "Last 3 months" }, { value: "6m", label: "Last 6 months" },
-  { value: "1y", label: "Last year" }, { value: "all", label: "All time" },
+  { value: "1y", label: "Last 12 months" }, { value: "all", label: "All time" },
 ] as const;
 export type StatsPeriod = (typeof STATS_PERIODS)[number]["value"];
 /**

@@ -59,7 +59,7 @@ const body = computed(() => {
   const d = f.value.rule === "daily";
   return { rule: (d ? "interval" : f.value.rule) as Schedule["rule"], days: f.value.days, intervalDays: d ? 1 : f.value.intervalDays, startDate: f.value.startDate, endDate: repeats.value ? f.value.endDate || null : null, timeOfDay: f.value.timeOfDay || null };
 });
-const summary = computed(() => scheduleSummary(body.value, fmt.value.day));
+const summary = computed(() => scheduleSummary(body.value, fmt.value.day, fmt.value.s.firstDay));
 // the banner leads with the chosen routine or activity ("Push Day · every day, ..."); nothing chosen, the summary alone
 const chosen = computed(() => {
   const k = what.value, list = k.startsWith("r:") ? routineOpts.value : k.startsWith("a:") ? activityOpts.value : [];

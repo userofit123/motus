@@ -86,6 +86,47 @@ describe("suggestions", () => {
     expect(fa?.title).toBe("Work your forearms");
     expect(fa?.reason).toBe("Your routines only work your forearms as a helper · add a forearm exercise");
   }, 60000);
+
+  // a workout of a routine that is then archived, moved back by `daysAgo`: trained outside the routines you keep
+  async function trainedOutside(muscle: string, daysAgo: number) {
+    const e = await call("POST", "/exercises", { name: `Old ${muscle}`, primaryMuscles: [muscle], secondaryMuscles: [], equipment: "dumbbell", category: "strength" });
+    const r = (await call("POST", "/routines", { name: "Old", exercises: [{ exerciseId: e.id, sets: [{ reps: 8 }] }] })).id;
+    await doWorkout(r);
+    await eng.db.admin.query("UPDATE workouts SET started_at = started_at - make_interval(days => $2) WHERE routine_id = $1", [r, daysAgo]);
+    await call("PUT", `/routines/${r}`, { archived: true });
+  }
+
+  it("gives a muscle no routine works its own tip, which can start a new routine", async () => {
+    await personWith(["chest"]);
+    await trainedOutside("lats", 12);
+    const lats = (await suggest()).find((x) => x.muscle === "lats");
+    expect(lats?.kind).toBe("rested");
+    expect(lats?.routineId).toBeNull();
+    expect(lats?.title).toBe("Work your lats");
+  }, 60000);
+
+  it("keeps a muscle's tip when its group's gap tip was cut by the two-gaps limit", async () => {
+    await personWith(["chest"]);
+    await trainedOutside("quadriceps", 30); // a month ago: legs is still a gap, but the fifth one
+    const sug = await suggest();
+    expect(sug.filter((x) => x.kind === "gap").map((x) => x.muscle)).toEqual(["back", "shoulders"]);
+    const quads = sug.find((x) => x.muscle === "quadriceps");
+    expect(quads?.kind).toBe("rested");
+    expect(quads?.routineId).toBeNull();
+  }, 60000);
+
+  it("says a muscle left out was not worked in the last 7 days", async () => {
+    const a = await personWith(["chest", "lats", "shoulders", "biceps"]);
+    const tri = await call("POST", "/exercises", { name: "Only triceps", primaryMuscles: ["triceps"], secondaryMuscles: [], equipment: "dumbbell", category: "strength" });
+    const b = (await call("POST", "/routines", { name: "Arms", exercises: [{ exerciseId: tri.id, sets: [{ reps: 8 }] }] })).id;
+    await doWorkout(b);
+    await eng.db.admin.query("UPDATE workouts SET started_at = started_at - interval '8 days' WHERE routine_id = $1", [b]);
+    await doWorkout(a);
+    const t = (await suggest()).find((x) => x.muscle === "triceps");
+    expect(t?.kind).toBe("missed");
+    expect(t?.routineId).toBe(b);
+    expect(t?.reason).toBe("Triceps: the only one not worked in the last 7 days · works your triceps");
+  }, 60000);
 });
 
 describe("fixes found in the audit", () => {

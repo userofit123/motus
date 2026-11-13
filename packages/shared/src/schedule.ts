@@ -1,6 +1,7 @@
 // How a plan's repeat reads and which days a monthly plan falls on, shared by the engine (the calendar) and the apps
 // (the schedule popup's summary line and a routine's list of plans), so both always say the same thing.
 import type { Schedule } from "./types";
+import { daysIntoWeek } from "./training";
 
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 const daysIn = (y: number, m: number) => new Date(Date.UTC(y, m, 0)).getUTCDate(); // m is 1-12
@@ -23,9 +24,10 @@ const andList = (xs: string[]) => (xs.length < 2 ? xs.join("") : xs.slice(0, -1)
 type Rule = Pick<Schedule, "rule" | "days" | "intervalDays" | "startDate"> & { endDate?: string | null; timeOfDay?: string | null };
 
 /** One plain line for a plan, e.g. "Every Monday and Thursday, starting today, at 18:00".
- * `day` words a date ("today", "tomorrow", "Tue 10 Nov"); `start: false` leaves out when it starts (a routine's list). */
-export function scheduleSummary(s: Rule, day: (ymd: string) => string, start = true): string {
-  const days = [...(s.days ?? [])].sort((a, b) => a - b);
+ * `day` words a date ("today", "tomorrow", "Tue 10 Nov"); `firstDay` (Sunday = 0, Monday = 1, from Settings) orders the
+ * days as the week starts; `start: false` leaves out when it starts (a routine's list). */
+export function scheduleSummary(s: Rule, day: (ymd: string) => string, firstDay: number, start = true): string {
+  const days = [...(s.days ?? [])].sort((a, b) => daysIntoWeek(a, firstDay) - daysIntoWeek(b, firstDay));
   const everyDay = (s.rule === "interval" && s.intervalDays === 1) || (s.rule === "weekly" && days.length === 7);
   let line: string;
   if (s.rule === "once") line = start ? `Once, ${day(s.startDate)}` : day(s.startDate);

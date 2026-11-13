@@ -141,7 +141,7 @@ const scopeName = computed(() => {
 const autoTitle = computed(() => {
   const m = metric.value; if (!m || f.value.target == null) return "";
   const w = f.value.when;
-  const per = w === "week" ? " a week" : w === "month" ? " a month" : w === "day" ? " a day" : w === "workdays" ? " on workdays" : w === "days" && f.value.days.length ? ` on ${daysShort(f.value.days)}` : "";
+  const per = w === "week" ? " a week" : w === "month" ? " a month" : w === "day" ? " a day" : w === "workdays" ? " on workdays" : w === "days" && f.value.days.length ? ` on ${daysShort(f.value.days, settings.value.firstDay)}` : "";
   if (f.value.scope === "body") return `${scopeName.value} to ${f.value.target} ${bodyUnitShown.value}`;
   // "Gym workouts: 3 a week", "Walk: 2 a week", "Sessions: 4 a week"
   if (m.metric === "sessions") return `${scopeName.value || "Sessions"}: ${f.value.target}${per || " in total"}`;
@@ -241,7 +241,7 @@ await loaded(goals, metrics, routines, exercises, types, body);
         <div v-if="metric?.periodic && f.scope !== 'body'" class="fld"><label>How often</label><AppSelect v-model="f.when" :options="WHEN" title="How often" /></div>
       </div>
       <div v-if="f.when === 'days' && f.scope !== 'body'" class="fld"><label>On these days</label><ChoiceTiles v-model="f.days" :options="DAY_OPTS" multiple compact min="56px" label="On these days" /></div>
-      <p v-else-if="f.when === 'workdays' && f.scope !== 'body'" class="tiny hgap">{{ daysShort(workdaysOf(settings)) }}, your work week. <button class="lnk inl" @click="router.push('/settings/units')">Change it</button></p>
+      <p v-else-if="f.when === 'workdays' && f.scope !== 'body'" class="tiny hgap">{{ daysShort(workdaysOf(settings), settings.firstDay) }}, your work week. <button class="lnk inl" @click="router.push('/settings/units')">Change it</button></p>
       <div class="frow"><div class="fld"><label>Deadline (optional)</label><DatePicker v-model="f.deadline" clearable placeholder="No deadline" title="Deadline" /></div></div>
       <div class="fld"><label>Name</label><input v-model="f.title" :placeholder="autoTitle || 'Name the goal'" /></div>
       <template #foot><button class="btn o" @click="closeForm">Cancel</button><button class="btn" @click="save">Save goal</button></template>

@@ -1,7 +1,7 @@
 // Suggestions for Home, worked out from what you actually do and what your routines hold, best first:
 // - the next workout of a program you're following
 // - your usual order of routines (if Back usually follows Chest and you just did Chest, Back is next)
-// - a muscle left out this week while the rest were worked
+// - a muscle left out in the last 7 days while the rest were worked
 // - gaps in your routines: a muscle group none of them works (no core exercise anywhere), or a muscle that is only ever a
 //   helper (forearms in rows and curls) with no exercise of its own
 // - a muscle that gets far fewer sets than the others lately, or hasn't been worked for a long while (or ever)
@@ -78,7 +78,7 @@ export async function suggestions(q: Sql, routines: RoutineSummary[], now: Date,
      WHERE w.status = 'completed' AND w.started_at >= $1 GROUP BY 1`, [new Date(now.getTime() - 28 * DAY).toISOString()])).rows.map((x) => [x.m, Number(x.n)]));
   const days = (m: string) => lastAt.has(m) ? Math.floor((now.getTime() - lastAt.get(m)!) / DAY) : null;
   const known = MAIN.filter((m) => lastAt.has(m)); // only muscles you have trained before
-  const thisWeek = known.filter((m) => days(m)! < 7);
+  const last7 = known.filter((m) => days(m)! < 7);
   const hits = (await q.query<{ routine_id: string; m: string; n: string; main: boolean }>(
     `SELECT re.routine_id, unnest(e.primary_muscles) AS m, count(*) AS n, true AS main FROM routine_exercises re JOIN exercises e ON e.id = re.exercise_id GROUP BY 1, 2
      UNION ALL SELECT re.routine_id, unnest(e.secondary_muscles) AS m, count(*) AS n, false AS main FROM routine_exercises re JOIN exercises e ON e.id = re.exercise_id GROUP BY 1, 2`))
@@ -92,31 +92,34 @@ export async function suggestions(q: Sql, routines: RoutineSummary[], now: Date,
   const gaps = usable.length ? GROUPS.filter((g) => g.id !== "neck" && !g.muscles.some((m) => routineFor(m) || trained(m))) : [];
   // a muscle whose group is covered but that has no exercise of its own anywhere
   const targets = usable.length ? WATCH.filter((m) => !routineFor(m) && !trained(m) && !gaps.some((g) => g.muscles.includes(m))) : [];
-  const isGap = (m: string) => targets.includes(m) || gaps.some((g) => g.muscles.includes(m));
-  // a muscle's tip opens the routine that works it most; a muscle no routine works is left to its gap tip, which can also
-  // start a new routine
+  // the gap tips, worked out here so a muscle's own tip can step aside for one that will be shown: like every muscle tip the
+  // title says what to do and the reason why; it opens the exercises for it, or its + makes a routine. Only a helper
+  // somewhere is said so, since the routine's figure shows it worked.
+  const why = (name: string, help: boolean, adj: string) => `${help ? `Your routines only work your ${name} as a helper` : `No routine works your ${name}`} · add ${adj} exercise`;
+  const gapTips: Omit<Suggestion, "key">[] = [
+    ...gaps.map((g) => { const name = g.name.toLowerCase(); return { kind: "gap" as const, title: `Work your ${name}`, reason: why(name, g.muscles.some(helped), AS_ADJ[g.id] ?? `a ${name}`), routineId: null, color: null, muscle: g.id, muscles: g.muscles.filter((m) => WATCH.includes(m)) }; }),
+    ...targets.map((m) => ({ kind: "target" as const, title: `Work your ${lower(m)}`, reason: why(lower(m), helped(m), AS_ADJ[m] ?? `a ${lower(m)}`), routineId: null, color: null, muscle: m, muscles: [m] })),
+  ];
+  // only the gaps that make the cut (two at most, not dismissed): a muscle whose gap tip was cut keeps its own tip
+  const shownGaps = gapTips.filter((x) => !isHidden(`${x.kind}:${x.muscle}`)).slice(0, PER_KIND);
+  const isGap = (m: string) => shownGaps.some((x) => x.muscles!.includes(m));
+  // a muscle's tip opens the routine that works it most; with no routine for it, it opens the exercises and its + starts a
+  // new routine, like a gap tip
   const muscleTip = (m: string, kind: "missed" | "rested" | "low", reason: string) => {
     if (isGap(m)) return;
     const rid = routineFor(m), r = rid ? byId.get(rid)! : null;
     add({ kind, title: r ? r.name : `Work your ${lower(m)}`, reason: r ? `${reason} · works your ${lower(m)}` : reason, routineId: r?.id ?? null, color: r?.color ?? null, muscle: m, muscles: [m] });
   };
 
-  // 2. left out this week, while most of the others were worked
-  if (known.length >= 4 && thisWeek.length >= known.length * 0.6) {
+  // 2. left out in the last 7 days, while most of the others were worked
+  if (known.length >= 4 && last7.length >= known.length * 0.6) {
     const left = known.filter((x) => days(x)! >= 7).sort((a, b) => days(b)! - days(a)!);
     for (const m of left.slice(0, 2))
-      muscleTip(m, "missed", left.length === 1 ? `${muscleName(m)}: the only one not worked this week` : `${muscleName(m)}: not worked this week, unlike most others`);
+      muscleTip(m, "missed", left.length === 1 ? `${muscleName(m)}: the only one not worked in the last 7 days` : `${muscleName(m)}: not worked in the last 7 days, unlike most others`);
   }
 
-  // 3. the gaps: like every muscle tip the title says what to do and the reason why; it opens the exercises for it, or its +
-  // makes a routine. Only a helper somewhere is said so, since the routine's figure shows it worked.
-  const why = (name: string, help: boolean, adj: string) => `${help ? `Your routines only work your ${name} as a helper` : `No routine works your ${name}`} · add ${adj} exercise`;
-  for (const g of gaps) {
-    const name = g.name.toLowerCase();
-    add({ kind: "gap", title: `Work your ${name}`, reason: why(name, g.muscles.some(helped), AS_ADJ[g.id] ?? `a ${name}`), routineId: null, color: null, muscle: g.id, muscles: g.muscles.filter((m) => WATCH.includes(m)) });
-  }
-  for (const m of targets)
-    add({ kind: "target", title: `Work your ${lower(m)}`, reason: why(lower(m), helped(m), AS_ADJ[m] ?? `a ${lower(m)}`), routineId: null, color: null, muscle: m, muscles: [m] });
+  // 3. the gaps in your routines
+  for (const x of gapTips) add(x);
 
   // 4. far fewer sets than the rest lately: under a quarter of what a typical muscle got in four weeks
   const counts = known.map((m) => sets28.get(m) ?? 0).filter((n) => n > 0).sort((a, b) => a - b);

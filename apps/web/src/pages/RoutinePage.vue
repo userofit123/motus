@@ -71,7 +71,7 @@ const exItems = (e: any) => [
   { label: "Remind me next time", hint: "Pops up when you reach this exercise", icon: "bell", run: () => (reminderSheet.value = { targetType: "exercise", targetId: e.exerciseId, label: e.exercise.name, scopeRoutineId: id.value, routineName: routine.value.name }) },
 ];
 // the same wording as the schedule popup's summary, without when it started
-const schedLine = (s: any) => { const t = scheduleSummary(s, fmt.value.day, false); return t.charAt(0).toUpperCase() + t.slice(1); };
+const schedLine = (s: any) => { const t = scheduleSummary(s, fmt.value.day, fmt.value.s.firstDay, false); return t.charAt(0).toUpperCase() + t.slice(1); };
 // removing one of its plans works as everywhere else (planActions): a repeating one asks first, a one-off one has Undo
 const schedRemove = (s: any) => removeItem({ scheduleId: s.id, name: routine.value.name, repeats: s.rule !== "once" });
 const noteMenu = useNoteMenu();
