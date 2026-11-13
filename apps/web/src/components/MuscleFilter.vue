@@ -15,7 +15,7 @@ export function valueOf(m: string, groups: MuscleGroup[] = GROUPS): string {
 </script>
 
 <script setup lang="ts">
-// The "Muscle group" row of an exercise list's filters, with the body always shown above the chips:
+// The "Muscle group" row of an exercise list's filters: the body always shown, with the chips in a grid beside it:
 // tap a muscle to show only exercises that work it as a main muscle, tap it again to clear. Groups and muscles share one
 // value, so a group chip lights its muscles on the body, and a muscle picked on the body that is no chip of its own
 // (lats, calves) gets a chip right after its group's, to show what is set and to clear it like any other.
@@ -23,8 +23,9 @@ import { computed } from "vue";
 import { groupOf, muscleName } from "@motus/shared";
 import FilterRow from "./FilterRow.vue";
 import BodyMap from "./BodyMap.vue";
+import { isPhone } from "../core/device";
 
-const props = defineProps<{ modelValue: string; groups: MuscleGroup[]; compact?: boolean }>();
+const props = defineProps<{ modelValue: string; groups: MuscleGroup[] }>();
 const emit = defineEmits<{ "update:modelValue": [v: string] }>();
 const chosen = computed(() => musclesOf(props.modelValue, props.groups));
 const options = computed(() => {
@@ -52,9 +53,9 @@ const tap = (m: string) => {
 
 <template>
   <FilterRow :model-value="modelValue" label="Muscle group" all="All" :options="options" @update:model-value="(v) => emit('update:modelValue', v)">
-    <template #top>
-      <div class="mfig" :class="{ compact }">
-        <BodyMap pickable :values="{}" :highlight="chosen" :pressed="pressed" :height="compact ? 110 : 150" @pick="tap" />
+    <template #aside>
+      <div class="mfig">
+        <BodyMap pickable :values="{}" :highlight="chosen" :pressed="pressed" :height="isPhone ? 130 : 230" @pick="tap" />
         <span class="tiny" :class="{ on: !!modelValue }">{{ caption }}</span>
       </div>
     </template>
@@ -62,16 +63,11 @@ const tap = (m: string) => {
 </template>
 
 <style scoped>
-/* an inner tile in --s2 on the panel's --s1 card (the app's usual tile-in-card shade), the body centred in it; --lpy below
-   it, the panel's own 10px gap between rows at the usual density */
-.mfig { display: flex; flex-direction: column; align-items: center; gap: var(--tdy); margin-bottom: var(--lpy); padding: var(--cpy) var(--cpx); border-radius: var(--r-md); background: var(--s2); }
-/* on wider screens the card hugs a taller body at the row's left edge (where the label and chips start) instead of
-   leaving a wide empty card around a small figure; phones keep it full width */
-html:not(.phone) .mfig { width: fit-content; min-width: 240px; }
-html:not(.phone) .mfig :deep(.figs) { height: 220px; }
-/* compact (the phone picker sheet, where the list needs the room): a smaller body with the caption beside it. The body
-   stays put at the left; the caption takes the rest and is left-aligned, so its changing width never moves the body */
-.mfig.compact { flex-direction: row; justify-content: flex-start; gap: var(--cpx); }
-.mfig.compact .tiny { flex: 1; min-width: 0; text-align: left; }
+/* an inner tile in --s2 on the panel's --s1 card (the app's usual tile-in-card shade) at the row's left edge, the body
+   centred in it with what is picked (or the hint) under it; it keeps its width whatever the caption says, so picking a
+   muscle never shifts the chips. Phones keep it slimmer (about 45% of the row) so two columns of chips fit beside it */
+.mfig { flex: none; display: flex; flex-direction: column; align-items: center; gap: var(--tdy); padding: var(--cpy) var(--cpx); border-radius: var(--r-md); background: var(--s2); }
+html.phone .mfig { padding: var(--lpy); }
+.mfig .tiny { width: 0; min-width: 100%; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mfig .on { color: var(--tx); font-weight: 600; }
 </style>

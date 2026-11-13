@@ -14,7 +14,6 @@ import FilterPanel from "./FilterPanel.vue";
 import FilterRow from "./FilterRow.vue";
 import MuscleFilter, { musclesOf } from "./MuscleFilter.vue";
 import ExerciseView from "./ExerciseView.vue";
-import { isPhone } from "../core/device";
 
 const props = defineProps<{ title?: string; multi?: boolean; exclude?: string[]; suggest?: Exercise[] }>();
 const emit = defineEmits<{ close: []; pick: [ids: string[]] }>();
@@ -110,7 +109,7 @@ function te(e: TouchEvent) {
       <button class="ib" aria-label="Filters" title="Filters" :aria-expanded="moreOpen" @click="moreOpen = !moreOpen"><Icon name="filter" /><span v-if="moreCount" class="badge">{{ moreCount }}</span></button>
     </div>
     <FilterPanel :count="showSuggest ? 'Works the same muscles' : `${list.length === 150 ? '150+' : list.length} exercises`" :active="filtered" @clear="clear">
-      <MuscleFilter v-model="group" :groups="PICK_GROUPS" :compact="isPhone" />
+      <MuscleFilter v-model="group" :groups="PICK_GROUPS" />
       <FilterRow v-if="!gym" v-model="equip" label="Equipment" all="Any" :options="EQUIP_OPTS" />
       <!-- with a gym profile the row starts with what that gym has, then "Any" -->
       <FilterRow v-else label="Equipment">
