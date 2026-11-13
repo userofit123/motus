@@ -52,7 +52,7 @@ const menu = computed(() => !g.value ? [] : [
         <Ring :pct="g.progress?.pct ?? 0" :size="64" :stroke="7" :done="reached" />
         <div class="grow">
           <div class="gs-val">{{ goalLabel(g, fmt) }}</div>
-          <div class="tiny" :class="{ pos: reached }">{{ g.status === "achieved" ? `Achieved ${fmt.date(g.achievedAt)}` : g.progress?.done ? `Reached ${periodNow(g).toLowerCase()}` : g.progress?.pace ?? periodNow(g) }}</div>
+          <div class="tiny">{{ g.status === "achieved" ? `Achieved ${fmt.date(g.achievedAt)}` : g.progress?.done ? `Reached ${periodNow(g).toLowerCase()}` : g.progress?.pace ?? periodNow(g) }}</div>
         </div>
       </div>
       <div class="tiny gs-when">{{ periodLabel(g, s) }} · since {{ fmt.date(g.startDate, { day: "numeric", month: "short", year: "numeric" }) }}{{ g.deadline ? ` · deadline ${fmt.date(g.deadline, { day: "numeric", month: "short", year: "numeric" })}` : "" }}</div>

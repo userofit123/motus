@@ -26,7 +26,7 @@ const s = useSettings();
       <Ring :pct="goal.progress?.pct ?? 0" :size="46" :done="reached" />
     </div>
     <div style="margin-top:10px;font-weight:600;font-variant-numeric:tabular-nums">{{ goalLabel(goal, fmt) }}</div>
-    <div class="sub" :class="{ pos: reached }">{{ goal.status === "achieved" ? "Achieved" : goal.progress?.done ? `Reached this ${periodWord(goal)}` : goal.progress?.pace }}</div>
+    <div class="sub">{{ goal.status === "achieved" ? "Achieved" : goal.progress?.done ? `Reached this ${periodWord(goal)}` : goal.progress?.pace }}</div>
     <div v-if="goal.progress?.streak" class="sub gc-run"><Icon name="flame" :size="13" />{{ goal.progress.streak }} {{ periodWord(goal, goal.progress.streak) }} in a row</div>
     <Sparkline v-if="(goal.progress?.history?.length ?? 0) > 1" :values="goal.progress!.history.map((h) => h.value)" />
   </div>

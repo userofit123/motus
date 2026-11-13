@@ -19,7 +19,6 @@ const TREND: Record<Trend, string> = { up: "Better than last time", same: "Same 
 const r = computed(() => workoutSoFar(props.w));
 const secs = computed(() => elapsed(props.w));
 const pct = computed(() => (r.value.setsPlanned ? r.value.setsDone / r.value.setsPlanned : 0));
-const allDone = computed(() => r.value.setsPlanned > 0 && r.value.setsDone >= r.value.setsPlanned);
 // only exercises with a working set done count as worked; main muscles beat helpers (as on the routine cards)
 const worked = computed(() => musclesWorked(props.w.exercises
   .filter((e) => e.status !== "skipped" && e.sets.some((s) => s.done && s.kind !== "warmup"))
@@ -58,7 +57,7 @@ const rows = computed(() => r.value.perExercise.map((p, i) => {
       <div class="wsf-prog">
         <div class="wsf-cap">Sets done</div>
         <div class="wsf-ringrow">
-          <div class="wsf-ring"><Ring aria-hidden="true" :pct="pct" :size="62" :stroke="6" :color="allDone ? 'var(--pos)' : undefined" /><span>{{ Math.round(pct * 100) }}%</span></div>
+          <div class="wsf-ring"><Ring aria-hidden="true" :pct="pct" :size="62" :stroke="6" /><span>{{ Math.round(pct * 100) }}%</span></div>
           <div class="wsf-big">{{ r.setsDone }}<small> of {{ r.setsPlanned }}</small></div>
         </div>
         <div class="wsf-cap">{{ muscleLine || (final ? "No sets ticked" : "Muscles show here as you tick sets") }}</div>
