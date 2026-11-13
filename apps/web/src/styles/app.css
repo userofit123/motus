@@ -106,10 +106,10 @@ hr.sep { border: 0; border-top: 1px solid var(--ol); margin: 14px 0; }
 
 /* stat tiles (Home's This week and Last workout, Stats' reports) side by side split by a faint line, each a label with
    its icon, the value with its unit set small, and where there is one the change from the period before. The block
-   is the container (class wk): the value scales with one tile's width (the block's width less the gaps and lines,
+   is the container (class wkc): the value scales with one tile's width (the block's width less the gaps and lines,
    split by the tiles in a row) so the longest values ("105h 20m", "1,234.5 km") still fit at the smallest size; the
    breakpoints sit where that smallest size stops fitting, so nothing overlaps the next tile or is cut off */
-.wk { container-type: inline-size; min-width: 0; }
+.wkc { container-type: inline-size; min-width: 0; }
 .wstats { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: var(--hg); }
 .wstats .ws { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .wstats .ws + .ws { border-inline-start: 1px solid var(--ol); padding-inline-start: var(--hg); }

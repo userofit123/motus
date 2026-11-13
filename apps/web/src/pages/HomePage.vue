@@ -289,7 +289,7 @@ await loaded(home, ach);
         </div>
 
         <!-- this week against last week, and workouts per week over eight weeks -->
-        <div v-else-if="id === 'week'" class="card hb wk sz-m click" v-bind="link('/stats')">
+        <div v-else-if="id === 'week'" class="card hb wkc sz-m click" v-bind="link('/stats')">
           <div class="ch"><span class="bi"><Icon name="stats" :size="15" /></span><span class="t grow">This week</span><span v-if="anyDelta" class="tiny">Vs last week</span></div>
           <div class="wstats" :class="{ n4: weekStats.length === 4, plain: !anyDelta }">
             <div v-for="x in weekStats" :key="x.key" class="ws" role="group" :aria-label="`${[x.label, x.value, x.unit, x.delta].filter(Boolean).join(' ')}, last week ${x.last}`" :title="`Last week ${x.last}`">
@@ -397,7 +397,7 @@ await loaded(home, ach);
         </div>
 
         <!-- last workout -->
-        <div v-else-if="id === 'previous' && h.last" class="card hb wk sz-m click has-cover">
+        <div v-else-if="id === 'previous' && h.last" class="card hb wkc sz-m click has-cover">
           <button class="cover" :aria-label="`Open ${h.last.name}`" @click="go(`/workouts/${h.last.id}`)" />
           <div class="ch"><span class="bi"><Icon name="dumbbell" :size="15" /></span><span class="t grow">Last workout</span></div>
           <div class="row lname"><b class="ellipsis">{{ h.last.name }}</b><span class="sep">·</span><span class="lday">{{ when(h.last.startedAt) }}</span></div>
@@ -545,7 +545,7 @@ html.phone .sz-s .big { font-size: clamp(22px, 7vw, var(--fs-val)); }
 .sgrid i.fu { background: none; box-shadow: inset 0 0 0 1px var(--ol); }
 .sgrid i.now { box-shadow: 0 0 0 1.5px var(--tx2); }
 
-/* the stat tiles of this week and the last workout are the shared .wk/.wstats ones (app.css) */
+/* the stat tiles of this week and the last workout are the shared .wkc/.wstats ones (app.css) */
 .wbars { display: flex; align-items: flex-end; gap: 6px; height: 34px; margin-top: auto; padding-top: var(--hg); box-sizing: content-box; }
 .wbars i { flex: 1; border-radius: 4px 4px 2px 2px; background: color-mix(in srgb, var(--acc) 28%, transparent); }
 .wbars i.cur { background: var(--acc); }

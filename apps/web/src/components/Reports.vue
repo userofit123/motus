@@ -108,7 +108,7 @@ const year = computed(() => {
          for all of them -->
     <div v-if="year" class="grid g2">
       <template v-for="r in [year, ...report]" :key="r.k">
-        <div class="card wk" :class="{ full: r === year }">
+        <div class="card wkc" :class="{ full: r === year }">
           <div class="ch"><span class="bi"><Icon :name="r === year ? 'star' : 'calendar'" :size="15" /></span><span class="t grow">{{ r.title }}</span><span v-if="r.anyDelta" class="tiny">Vs {{ r.prev }}</span></div>
           <div class="wstats n4" :class="{ plain: !r.anyDelta }">
             <div v-for="x in r.tiles" :key="x.key" class="ws" role="group" :aria-label="`${[x.label, x.value, x.unit, x.delta].filter(Boolean).join(' ')}, ${r.prev} ${x.last}`" :title="`${r.prev} ${x.last}`">

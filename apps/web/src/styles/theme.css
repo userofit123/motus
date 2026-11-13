@@ -283,8 +283,6 @@ body.glass :is(.sheet,.sht,.pop,.askb,.help,.rcal,.dvbox) {
 
 body.glass :is(.tsug,.ddm,.cmenu,.mnu,.sugb) {
   background: var(--gp1);
-  -webkit-backdrop-filter: var(--gpfx);
-  backdrop-filter: var(--gpfx);
 }
 
 /* buttons, chips and pills are not surfaces: they stay solid on a see-through block */
@@ -420,6 +418,4 @@ body.glass :is(.nitem,.banner.note):not(.flat,.card *)::before {
   pointer-events: none;
   -webkit-backdrop-filter: var(--gfx);
   backdrop-filter: var(--gfx);
-  -webkit-backdrop-filter: var(--gpfx);
-  backdrop-filter: var(--gpfx);
 }
