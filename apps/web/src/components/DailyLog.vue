@@ -23,8 +23,9 @@ const day = computed(() => props.day ?? localYmd(new Date()));
 const KINDS = computed(() => DAILY_KINDS.filter((k) => s.value.features[k.feature]));
 const row = (k: string, d: string) => (q.data.value ?? []).find((x: any) => x.kind === k && String(x.date).slice(0, 10) === d);
 const num = (v: unknown) => (v == null ? null : Number(v));
-// value: what the day counts (for steps, walks included); the box shows only what was entered (logged), so a lower
-// number typed in stays visible instead of jumping back to the walks' total, which shows as a hint under it
+// value: what the day counts (for steps: the typed count, else the recorded walks); the box shows only what was entered
+// (logged), and the walks' total shows as a hint under it: "From activities" while it's the day's count, "Recorded" once a
+// typed count replaces it, so it never reads as added on top
 const val = (k: string, d = day.value) => num(row(k, d)?.value);
 const entered = (k: string) => { const r = row(k, day.value); return num(k === "steps" && r ? r.logged : r?.value); };
 const walked = computed(() => num(row("steps", day.value)?.walked) ?? 0);
@@ -46,7 +47,7 @@ const show = (k: string, v: number | null) => (v == null ? "-" : fmt.value.num(v
     <div class="list">
       <div v-for="k in KINDS" :key="k.id" class="li"><Icon :name="k.icon" :size="18" class="muted" />
         <div class="grow"><div class="t">{{ k.name }}<span v-if="k.unit" class="tiny"> ({{ k.unit }})</span></div>
-          <div v-if="k.id === 'steps' && walked > 0" class="s">From activities: {{ fmt.num(walked, 0) }}</div></div>
+          <div v-if="k.id === 'steps' && walked > 0" class="s">{{ entered('steps') != null ? "Recorded" : "From activities" }}: {{ fmt.num(walked, 0) }}</div></div>
         <input class="num-in" type="number" :step="k.step" min="0" inputmode="decimal" :aria-label="k.name" :value="entered(k.id) ?? ''" @change="set(k.id, ($event.target as HTMLInputElement).value)" />
       </div>
     </div>

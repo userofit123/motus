@@ -51,14 +51,18 @@ export function parseTrack(text: string): { name: string; type: string; route: n
   return { name, type, route };
 }
 
-/** A day's steps: value is what counts (the larger of the two); logged is the daily log's own count (typed or from the
- *  phone, null when none), walked what the day's activities add up to, so the log box can show what was entered. */
+/** A day's steps: value is what counts; logged is the daily log's own count (typed or from the phone, null when none),
+ *  walked what the day's activities add up to, so the log box can show what was entered and the walks under it. */
 export interface StepsDay { date: string; kind: "steps"; value: number; source: string | null; logged: number | null; walked: number }
 
 /**
- * Steps per calendar day (the app's calendar: tzMin as for goals), newest first: the daily log's count, or what the
- * activities recorded that day add up to when that's more. Not the two added together: a count from the phone or typed in
- * is normally the whole day's, walks included, so adding would count those steps twice; the larger is never short of either.
+ * Steps per calendar day (the app's calendar: tzMin as for goals), newest first. Never the log's count and the walks added
+ * together: a day's count is normally the whole day's, walks included, so adding would count those steps twice.
+ * - A count typed in (source "manual"; null on old rows, which could only be typed) is the person's final word for the
+ *   day: it replaces the walks' steps, lower or higher, so "I did 1,200 today" reads 1,200 everywhere.
+ * - Any other daily source (a phone's step counter) may lag behind a walk just recorded, so the larger of it and the
+ *   walks counts; the larger is never short of either.
+ * - No count logged: the walks' steps are the day's.
  * toDay is exclusive; null runs to the end.
  */
 export async function stepsByDay(q: Sql, fromDay: string, toDay: string | null, tzMin: number): Promise<StepsDay[]> {
@@ -70,7 +74,9 @@ export async function stepsByDay(q: Sql, fromDay: string, toDay: string | null, 
      ORDER BY 1 DESC`, [fromDay, toDay, tzMin, startOfDay(fromDay, tzMin).toISOString(), toDay ? startOfDay(toDay, tzMin).toISOString() : null]);
   return rows.map((r) => {
     const logged = r.logged == null ? null : Number(r.logged), walked = Number(r.walked);
-    return { date: r.date, kind: "steps", value: Math.max(logged ?? 0, walked), source: walked > (logged ?? 0) ? "activities" : r.source, logged, walked };
+    const typed = logged != null && (r.source == null || r.source === "manual");
+    const value = typed ? logged : Math.max(logged ?? 0, walked);
+    return { date: r.date, kind: "steps", value, source: typed ? "manual" : walked > (logged ?? 0) ? "activities" : r.source, logged, walked };
   });
 }
 
@@ -222,7 +228,7 @@ export function activityRoutes(r: Router) {
   });
 
   // daily log: steps, sleep (h), water (ml), mood (1-5)
-  // steps come with the day's recorded activities counted in (stepsByDay); tz: the app's calendar, as for goals
+  // steps: a typed count, else the day's recorded activities (stepsByDay); tz: the app's calendar, as for goals
   r.get("/daily", async ({ q }, _p, _b, qs) => {
     const from = dateStr(qs.from) ?? "1970-01-01";
     const { rows } = await q.query<{ date: string | Date; kind: string; value: number | string; source: string | null }>(`SELECT date, kind, value, source FROM daily_logs WHERE date >= $1::date AND kind <> 'steps' ORDER BY date DESC`, [from]);

@@ -1375,6 +1375,7 @@ Research items (IDs from §18) are placed in the phase they belong to.
 | 2026-11-09 | One model for next time's numbers (M-74, §8.7): the routine always has the current numbers (today's after each finish), Progression (Suggest / Automatic / Off) moves the weight, History keeps every version. "Start from what you did last time", its scope, the "Progression rules" feature and more-weight reminders are gone |
 | 2026-11-10 | Rep range merged into Progression (M-107, §8.7): one range per exercise (default 6-12 in Settings, its own in the routine editor's Progression row), double progression (top of the range on every set → heavier from the estimated one-rep max, back to the bottom), steps for one side (2.5 kg) and both sides (5 kg), lowering only after N missed workouts |
 | 2026-11-11 | Set layout is structure (§8.7): a set's kind and side count, so sets made warm-ups or split into left and right are listed on Finish with a switch, off by default, like sets added or left out; warm-ups take today's numbers like working sets but never decide Progression |
+| 2026-11-13 | Steps typed in for a day are the day's final count (M-155): they replace the recorded walks' steps everywhere (Home, goals, Stats, the daily log), lower or higher, never added; recorded steps count only on a day with no typed count; a phone's daily count (when it comes) takes the larger of it and the walks, as it may lag behind a walk |
 
 Still open, not blocking: server port/domain for your deployment (default `127.0.0.1:8790`).
 

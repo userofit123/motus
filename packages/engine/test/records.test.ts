@@ -155,6 +155,22 @@ describe("volume leaves out assisted help", () => {
   });
 });
 
+describe("records in stats", () => {
+  it("lists every record in the range only when asked, as Reports counts them per month", async () => {
+    const { call, log, exercise } = await user();
+    const ex = await exercise("Test row", "weight_reps");
+    await log("2026-08-01T08:00:00Z", [{ exerciseId: ex, sets: [{ weightKg: 50, reps: 8 }] }]);
+    await log("2026-08-20T08:00:00Z", [{ exerciseId: ex, sets: [{ weightKg: 55, reps: 8 }] }]);
+    await log("2026-09-10T08:00:00Z", [{ exerciseId: ex, sets: [{ weightKg: 50, reps: 8 }] }]);
+    await log("2026-09-20T08:00:00Z", [{ exerciseId: ex, sets: [{ weightKg: 60, reps: 8 }] }]);
+    expect((await call("GET", "/stats")).records).toEqual([]);
+    const recs = (await call("GET", "/stats", undefined, { records: "1" })).records;
+    // the first session is no record and the third only matches the second
+    expect(recs.map((r: any) => [r.at.slice(0, 10), r.name, r.weightKg])).toEqual([["2026-09-20", "Test row", 60], ["2026-08-20", "Test row", 55]]);
+    expect((await call("GET", "/stats", undefined, { records: "1", from: "2026-09-01T00:00:00Z" })).records).toHaveLength(1);
+  });
+});
+
 describe("goals on the app's calendar", () => {
   it("puts a late-Sunday-UTC workout in the week the app is in", async () => {
     NOW = new Date("2026-10-05T10:00:00Z");
@@ -233,25 +249,41 @@ describe("goals on the app's calendar", () => {
     expect((await call("GET", `/goals/${sat.id}`, undefined, { tz: "0" })).days).toEqual([6]);
   });
 
-  it("counts a recorded walk's steps toward the day, taking the larger of them and the daily count, never both", async () => {
+  it("counts a recorded walk's steps toward the day until a count is typed in, which replaces them, never both", async () => {
     NOW = new Date("2026-10-07T22:30:00Z"); // Thursday 8 October, 00:30 for the app; still Wednesday in UTC
     const { call } = await user();
     const day = await call("POST", "/goals", { metric: "steps_avg", target: 8000, period: "day" }, { tz: AHEAD });
+    const steps = async () => (await call("GET", "/daily", undefined, { from: "2026-10-01", tz: AHEAD })).filter((x: any) => x.kind === "steps");
+    const current = async () => (await call("GET", `/goals/${day.id}`, undefined, { tz: AHEAD })).progress.current;
     // a walk just after midnight for the app belongs to the 8th; nothing typed in that day
     await call("POST", "/activities", { type: "walk", startedAt: "2026-10-07T22:05:00Z", durationS: 1200, steps: 1500 });
     await call("POST", "/activities", { type: "walk", startedAt: "2026-10-07T22:20:00Z", durationS: 300, steps: 500 });
-    expect((await call("GET", `/goals/${day.id}`, undefined, { tz: AHEAD })).progress.current).toBe(2000);
-    const daily = await call("GET", "/daily", undefined, { from: "2026-10-01", tz: AHEAD });
-    expect(daily.filter((x: any) => x.kind === "steps")).toMatchObject([{ date: "2026-10-08", value: 2000, source: "activities", logged: null, walked: 2000 }]);
-    // a lower number typed in stays what the log box shows, while the day still counts the walks
+    expect(await current()).toBe(2000);
+    expect(await steps()).toMatchObject([{ date: "2026-10-08", value: 2000, source: "activities", logged: null, walked: 2000 }]);
+    // the day's final count typed in is the day's, even below the walks: it replaces them, not added, not ignored
     await call("PUT", "/daily", { date: "2026-10-08", kind: "steps", value: 1200 });
-    expect((await call("GET", "/daily", undefined, { from: "2026-10-01", tz: AHEAD })).filter((x: any) => x.kind === "steps"))
-      .toMatchObject([{ date: "2026-10-08", value: 2000, logged: 1200, walked: 2000 }]);
-    // the phone's count for the day already holds the walks: it wins, not 2000 on top
+    expect(await steps()).toMatchObject([{ date: "2026-10-08", value: 1200, source: "manual", logged: 1200, walked: 2000 }]);
+    expect(await current()).toBe(1200);
+    // a higher count already holds the walks: 6000, not 2000 on top
     await call("PUT", "/daily", { date: "2026-10-08", kind: "steps", value: 6000 });
-    expect((await call("GET", `/goals/${day.id}`, undefined, { tz: AHEAD })).progress.current).toBe(6000);
+    expect(await current()).toBe(6000);
     const log = (await call("GET", `/goals/${day.id}/detail`, undefined, { tz: AHEAD })).log;
     expect(log).toMatchObject([{ kind: "day", at: "2026-10-08", value: 6000 }]);
+    // clearing the box hands the day back to the walks
+    await call("PUT", "/daily", { date: "2026-10-08", kind: "steps", value: null });
+    expect(await steps()).toMatchObject([{ date: "2026-10-08", value: 2000, source: "activities", walked: 2000 }]);
+    expect(await current()).toBe(2000);
+  });
+
+  it("takes the larger of a phone's daily count and the recorded walks, as the phone may lag behind a walk", async () => {
+    NOW = new Date("2026-10-08T20:00:00Z");
+    const { call } = await user();
+    await call("POST", "/activities", { type: "walk", startedAt: "2026-10-08T10:00:00Z", durationS: 1200, steps: 2000 });
+    const steps = async () => (await call("GET", "/daily", undefined, { from: "2026-10-01", tz: "0" })).filter((x: any) => x.kind === "steps");
+    await call("PUT", "/daily", { date: "2026-10-08", kind: "steps", value: 1200, source: "phone" });
+    expect(await steps()).toMatchObject([{ date: "2026-10-08", value: 2000, source: "activities", logged: 1200 }]);
+    await call("PUT", "/daily", { date: "2026-10-08", kind: "steps", value: 7000, source: "phone" });
+    expect(await steps()).toMatchObject([{ date: "2026-10-08", value: 7000, source: "phone", logged: 7000 }]);
   });
 });
 
