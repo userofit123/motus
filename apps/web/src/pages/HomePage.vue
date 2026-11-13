@@ -121,8 +121,15 @@ const pct = (g: Goal) => Math.max(0, Math.min(100, (g.progress?.pct ?? 0) * 100)
 // or the day it started; under it the goal's trend (its last periods, or its entries for a one-off goal)
 const noon = (d: string) => d.slice(0, 10) + "T12:00:00"; // a calendar day read on this device's calendar, not as UTC midnight
 const shortDate = (d: string) => fmt.value.date(noon(d), { day: "numeric", month: "short" });
-const goalSide = (g: Goal): { icon: string; label: string; big: string; small?: string; sub: string } => {
-  if (g.status === "achieved" && g.achievedAt) return { icon: "check", label: "Achieved", big: fmt.value.date(g.achievedAt, { day: "numeric", month: "short" }), sub: when(g.achievedAt) };
+// both halves of the tile are built the same way, row by row: header, big value, a tiny line, then the bottom element
+type GoalSide = { icon: string; label: string; big: string; small?: string; sub: string };
+const goalSide = (g: Goal & { showStreak?: boolean }): GoalSide => {
+  if (g.showStreak) {
+    const n = g.progress?.streak ?? 0, k = dots(g).length;
+    return { icon: "flame", label: "Streak", big: String(n), small: `${periodWord(g, n)} in a row`, sub: `Last ${k} ${periodWord(g, k)}` };
+  }
+  // the left half already says "Achieved", so this one names the day
+  if (g.status === "achieved" && g.achievedAt) return { icon: "check", label: "Done on", big: fmt.value.date(g.achievedAt, { day: "numeric", month: "short" }), sub: when(g.achievedAt) };
   if (g.deadline && !reached(g)) {
     // calendar days left with today counted, as the goal's own pace says
     const d = daysLeft(g) + 1;
@@ -132,6 +139,11 @@ const goalSide = (g: Goal): { icon: string; label: string; big: string; small?: 
   return { icon: "calendar", label: "Started", big: shortDate(g.startDate), sub: when(noon(g.startDate)) };
 };
 const trend = (g: Goal) => (g.progress?.history ?? []).map((x) => x.value);
+// recurring goals end on their last periods as dots (filled when reached), one-off goals on their trend line; with no
+// periods yet the dots are all empty, and a trend with nothing to draw is a flat line, so the half is never bare
+const recurring = (g: Goal) => g.period !== "once";
+const dots = (g: Goal) => (g.progress?.history?.length ? g.progress.history.map((x) => x.value >= g.target) : Array<boolean>(8).fill(false));
+const hasTrend = (g: Goal) => trend(g).length > 1 && trend(g).some((v) => v);
 
 // "Today", "Yesterday", "3 days ago": the day something was last done, by this device's calendar (as everywhere else)
 const when = (iso: string | null | undefined) => { const a = ago(iso); return a.charAt(0).toUpperCase() + a.slice(1); };
@@ -293,7 +305,8 @@ await loaded(home, ach);
         </div>
 
         <!-- pinned goals: one block each, all the same width: the goal on the left, its streak on the right, or for a goal
-             shown without its streak the day it started, ends or was achieved, with its trend -->
+             shown without its streak the day it started, ends or was done; both halves end on its periods' dots
+             (recurring goals) or its trend (one-off goals) -->
         <div v-else-if="id === 'pinned'" class="pins">
           <div v-for="g in pinnedGoals" :key="g.id" class="card hb gtile sz-m click" :class="{ hero: reached(g) }" v-bind="link(() => (goalOpen = g.id))">
             <div class="gmain">
@@ -306,17 +319,14 @@ await loaded(home, ach);
               </div>
               <div class="tiny gsub">{{ g.status === "achieved" ? "Achieved" : g.progress?.done ? `Reached ${periodNow(g).toLowerCase()}` : g.progress?.pace ?? periodNow(g) }}</div>
             </div>
-            <div v-if="g.showStreak" class="grun">
-              <div class="ch"><span class="bi"><Icon name="flame" :size="15" /></span><span class="t">Streak</span></div>
-              <div class="big">{{ g.progress?.streak ?? 0 }}<small>{{ periodWord(g, g.progress?.streak ?? 0) }} in a row</small></div>
-              <!-- the last eight weeks (or months), oldest first: filled when reached -->
-              <div class="gdots" aria-hidden="true"><i v-for="(x, k) in g.progress?.history ?? []" :key="k" :class="{ on: x.value >= g.target }" /></div>
-            </div>
-            <div v-else class="grun">
+            <div class="grun">
               <div class="ch"><span class="bi"><Icon :name="goalSide(g).icon" :size="15" /></span><span class="t">{{ goalSide(g).label }}</span></div>
               <div class="big">{{ goalSide(g).big }}<small v-if="goalSide(g).small">{{ goalSide(g).small }}</small></div>
               <div class="tiny">{{ goalSide(g).sub }}</div>
-              <Sparkline v-if="trend(g).length > 1" :values="trend(g)" :color="reached(g) ? 'var(--onc)' : undefined" />
+              <!-- the last eight periods, oldest first: filled when reached -->
+              <div v-if="recurring(g)" class="gdots" aria-hidden="true"><i v-for="(on, k) in dots(g)" :key="k" :class="{ on }" /></div>
+              <Sparkline v-else-if="hasTrend(g)" :values="trend(g)" :color="reached(g) ? 'var(--onc)' : undefined" />
+              <div v-else class="gflat" aria-hidden="true" />
             </div>
           </div>
         </div>
@@ -548,7 +558,9 @@ html.phone .sz-s .big { font-size: clamp(22px, 7vw, var(--fs-val)); }
 .gdots i.on, .mg.on .mdot { background: var(--acc); }
 .hero .gdots i.on { background: var(--onc); }
 /* the trend under a goal shown without its streak sits where the streak's dots do */
-.grun .spark { display: block; width: 100%; height: 28px; margin-top: auto; padding-top: var(--hg); box-sizing: content-box; }
+.grun .spark, .gflat { display: block; width: 100%; height: 28px; margin-top: auto; padding-top: var(--hg); box-sizing: content-box; }
+/* nothing to draw yet: the trend's flat baseline, in the empty dots' colour */
+.gflat { background: linear-gradient(color-mix(in srgb, currentColor 14%, transparent), color-mix(in srgb, currentColor 14%, transparent)) bottom 4px left / 100% 2px no-repeat content-box; }
 /* on the phone a goal keeps its two halves side by side */
 html.phone .gtile.sz-m { flex-direction: row; }
 

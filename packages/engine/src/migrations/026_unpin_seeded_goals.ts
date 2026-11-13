@@ -7,7 +7,8 @@ UPDATE user_settings s SET data = jsonb_set(s.data, '{home,goals}', coalesce((
     SELECT jsonb_agg(x ORDER BY i) FROM jsonb_array_elements(s.data->'home'->'goals') WITH ORDINALITY AS t(x, i)
     WHERE x->>'id' IS DISTINCT FROM md5(s.user_id::text || ':weekly-target')::uuid::text
       AND x->>'id' IS DISTINCT FROM md5(s.user_id::text || ':daily-steps')::uuid::text), '[]'::jsonb))
-WHERE jsonb_typeof(s.data->'home'->'goals') = 'array'
-  AND EXISTS (SELECT 1 FROM jsonb_array_elements(s.data->'home'->'goals') x
-    WHERE x->>'id' IN (md5(s.user_id::text || ':weekly-target')::uuid::text, md5(s.user_id::text || ':daily-steps')::uuid::text));
+-- SQL may test the conditions in any order, so the array check guards the EXISTS itself: a pin list that isn't an array
+-- (written by hand or an old bug) is skipped instead of failing the whole migration
+WHERE CASE WHEN jsonb_typeof(s.data->'home'->'goals') = 'array' THEN EXISTS (SELECT 1 FROM jsonb_array_elements(s.data->'home'->'goals') x
+    WHERE x->>'id' IN (md5(s.user_id::text || ':weekly-target')::uuid::text, md5(s.user_id::text || ':daily-steps')::uuid::text)) ELSE false END;
 `;

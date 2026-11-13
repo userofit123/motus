@@ -66,9 +66,6 @@ export interface Settings {
   platesKg: number[];
   platesLb: number[];
   e1rm: "epley" | "brzycki";
-  /** the old fixed weekly and daily step targets, read by nothing now: goals took their place, made only by the person */
-  weeklyGoal: number;
-  stepGoal: number;
   /** the work week (Sunday = 0); null: from the first day of the week, Sunday to Thursday or Monday to Friday */
   workdays: number[] | null;
   /** blocks: Home's blocks in the order shown, each shown or hidden (Edit home).
@@ -150,8 +147,6 @@ export const DEFAULT_SETTINGS: Settings = {
   platesKg: [25, 20, 15, 10, 5, 2.5, 1.25],
   platesLb: [45, 35, 25, 10, 5, 2.5],
   e1rm: "epley",
-  weeklyGoal: 3,
-  stepGoal: 8000,
   workdays: null,
   home: { blocks: HOME_BLOCKS, hidden: {}, goals: [] },
   goalsOrder: [],
@@ -201,6 +196,9 @@ export function withDefaults(saved: unknown): Settings {
   out.workout = { ...workout, cueSound: cleanWorkoutSound(workout.cueSound), tickSound: cleanWorkoutSound(savedTick ?? oldTick), cueVolume: cleanCueVolume(workout.cueVolume) };
   // a top-level "sound" from the first version was never used (the cues' sound is workout.cueSound): dropped
   delete (out as Settings & { sound?: unknown }).sound;
+  // the old fixed weekly and daily step targets, and the marks that the app had made its own starting goals from them:
+  // goals took their place, made only by the person, so nothing reads them any more
+  for (const k of ["weeklyGoal", "stepGoal", "goalsSeeded", "stepGoalSeeded"]) delete (out as unknown as Record<string, unknown>)[k];
   // the "Progression rules" feature switch went with them: Progression is always there, its mode Off when unwanted
   // (someone who had it switched off and never chose a mode gets Off, so nothing starts moving their weights)
   const savedMode = (saved as { progression?: { mode?: unknown } } | null)?.progression?.mode;

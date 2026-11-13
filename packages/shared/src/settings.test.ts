@@ -44,6 +44,12 @@ describe("Goal order", () => {
     expect(orderGoals([g("new"), g("b"), g("a"), g("c")], ["a", "gone", "b"]).map((x) => x.id)).toEqual(["a", "b", "new", "c"]);
     expect(orderGoals([g("b"), g("a")], []).map((x) => x.id)).toEqual(["b", "a"]);
   });
+  it("drops the old fixed weekly and step targets and the starting-goal marks from saved settings", () => {
+    const out = withDefaults({ weeklyGoal: 4, stepGoal: 12000, goalsSeeded: true, stepGoalSeeded: true, firstDay: 0 }) as unknown as Record<string, unknown>;
+    for (const k of ["weeklyGoal", "stepGoal", "goalsSeeded", "stepGoalSeeded"]) expect(k in out).toBe(false);
+    expect(out.firstDay).toBe(0);
+    expect("weeklyGoal" in withDefaults({})).toBe(false);
+  });
 });
 
 describe("Workout cue sound and volume", () => {
