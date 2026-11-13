@@ -22,6 +22,14 @@ export function num(v: number | null | undefined, dp = 1): string {
   return r.toLocaleString("en-US", { maximumFractionDigits: dp, useGrouping: Math.abs(r) >= 1000 });
 }
 
+/** The change from an earlier value as a whole percent ("+12%", "-5%"), or "" when there was nothing before to compare with,
+ * so Stats and Home show a change the same way. */
+export function percentChange(now: number | null | undefined, before: number | null | undefined): string {
+  if (!before || now == null) return "";
+  const pc = Math.round(((now - before) / before) * 100);
+  return `${pc >= 0 ? "+" : ""}${pc}%`;
+}
+
 /** Rounds a weight in the person's unit to the nearest step (2.5 kg / 5 lb plates by default), so 80 kg shown in lb is 176.4 not 176.369... */
 export function roundWeight(kg: number, u: WeightUnit, step = u === "kg" ? 0.25 : 0.5): number {
   const v = fromKg(kg, u);

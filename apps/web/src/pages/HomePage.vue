@@ -5,7 +5,7 @@
 import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
 import { useQuery } from "@tanstack/vue-query";
-import { num, fromM, orderGoals, HOME_BLOCKS, type Goal, type HomePlan, type HomeRecord, type HomeGroup, type HomeWeek } from "@motus/shared";
+import { num, fromM, percentChange, orderGoals, HOME_BLOCKS, type Goal, type HomePlan, type HomeRecord, type HomeGroup, type HomeWeek } from "@motus/shared";
 import { useHome, useSettings, saveSettings, useAchievements, useGoals, loaded } from "../api/queries";
 import { api } from "../api/client";
 import { invalidate, queryClient } from "../api/live";
@@ -77,13 +77,14 @@ const weekMax = computed(() => Math.max(1, ...weeks.value.map((w) => w.workouts)
 const walked = computed(() => weeks.value.some((w) => w.walkM > 0));
 
 // a stat tile in This week and Previous: label, value with its unit set small, and for This week the change from last week
-// ("12.3k kg" splits at its space so the number carries the weight and the unit can't push it into an ellipsis)
-interface WStat { key: string; icon: string; label: string; value: string; unit: string; diff?: number; delta?: string; last?: string }
+// as a percent, the same way Stats shows it (nothing when last week had none to compare with)
+// ("12.3k kg" splits at its space so the number carries the weight and the unit is set small beside it)
+interface WStat { key: string; icon: string; label: string; value: string; unit: string; delta?: string; last?: string }
 const unitOf = (s: string) => { const i = s.lastIndexOf(" "); return i < 0 ? { value: s, unit: "" } : { value: s.slice(0, i), unit: s.slice(i + 1) }; };
 const weekStats = computed<WStat[]>(() => {
   const row = (key: string, icon: string, label: string, now: number, last: number, show: (n: number) => string, split = false): WStat => {
-    const v = show(now), diff = now - last;
-    return { key, icon, label, ...(split ? unitOf(v) : { value: v, unit: "" }), diff, delta: diff ? show(Math.abs(diff)) : "Same", last: show(last) };
+    const v = show(now);
+    return { key, icon, label, ...(split ? unitOf(v) : { value: v, unit: "" }), delta: percentChange(now, last), last: show(last) };
   };
   const out = [
     row("workouts", "dumbbell", "Workouts", tw.value.workouts, lw.value.workouts, (n) => String(n)),
@@ -276,12 +277,12 @@ await loaded(home, ach);
 
         <!-- this week against last week, and workouts per week over eight weeks -->
         <div v-else-if="id === 'week'" class="card hb wk sz-m click" v-bind="link('/stats')">
-          <div class="ch"><span class="bi"><Icon name="stats" :size="15" /></span><span class="t grow">This week</span><span class="tiny">vs last week</span></div>
+          <div class="ch"><span class="bi"><Icon name="stats" :size="15" /></span><span class="t grow">This week</span><span class="tiny">Vs last week</span></div>
           <div class="wstats" :class="{ n4: weekStats.length === 4 }">
-            <div v-for="x in weekStats" :key="x.key" class="ws" role="group" :aria-label="`${x.label} ${x.value} ${x.unit}, last week ${x.last}`" :title="`Last week ${x.last}`">
+            <div v-for="x in weekStats" :key="x.key" class="ws" role="group" :aria-label="`${[x.label, x.value, x.unit, x.delta].filter(Boolean).join(' ')}, last week ${x.last}`" :title="`Last week ${x.last}`">
               <div class="wlb"><Icon :name="x.icon" :size="14" />{{ x.label }}</div>
               <div class="wv">{{ x.value }}<small v-if="x.unit">{{ x.unit }}</small></div>
-              <div class="wd" :class="{ pos: x.diff! > 0, neg: x.diff! < 0 }"><Icon v-if="x.diff" :name="x.diff > 0 ? 'arrowUp' : 'arrowDown'" :size="12" />{{ x.delta }}</div>
+              <div class="wd">{{ x.delta }}</div>
             </div>
           </div>
           <div class="wbars" role="img" :aria-label="`Workouts per week, last 8 weeks: ${weeks.map((w) => w.workouts).join(', ')}`">
@@ -519,7 +520,7 @@ html.phone .hgrid .sz-m { grid-column: 1 / -1; }
 .ch .lnk + .lnk { margin-inline-start: var(--hg); }
 .hero .ch .bi { background: color-mix(in srgb, var(--onc) 14%, transparent); color: var(--onc); }
 .big { font-size: var(--fs-val); font-weight: 650; letter-spacing: -.8px; line-height: 1.1; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.big small { font-size: var(--fs); font-weight: 500; margin-inline-start: 5px; color: var(--tx2); letter-spacing: 0; }
+.big small, .wv small { font-size: var(--fs); font-weight: 500; margin-inline-start: 5px; color: var(--tx2); letter-spacing: 0; }
 .hero .big small, .hero .tiny { color: color-mix(in srgb, var(--onc) 75%, transparent); }
 html.phone .sz-s .big { font-size: clamp(22px, 7vw, var(--fs-val)); }
 
@@ -531,33 +532,35 @@ html.phone .sz-s .big { font-size: clamp(22px, 7vw, var(--fs-val)); }
 .sgrid i.now { box-shadow: 0 0 0 1.5px var(--tx2); }
 
 /* this week and the last workout: stat tiles side by side split by a faint line (as a pinned goal's streak half), each a
-   label with its icon, the value with its unit set small, and for this week the change from last week as an arrow and amount.
-   The value scales with the block (measured on the card) and four tiles go two by two when the block is narrower, so nothing
-   is cut off with an ellipsis */
+   label with its icon, the value with its unit set small, and for this week the change from last week as a percent.
+   The value scales with one tile's width (the block's width less the gaps and lines, split by the tiles in a row) so the
+   longest values ("105h 20m", "1,234.5 km") still fit at the smallest size; the breakpoints sit where that smallest size
+   stops fitting, so nothing overlaps the next tile or is cut off with an ellipsis */
 .wk { container-type: inline-size; }
 .wstats { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: var(--hg); }
 .ws { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .ws + .ws { border-inline-start: 1px solid var(--ol); padding-inline-start: var(--hg); }
 .wlb { display: flex; align-items: center; gap: 4px; font-size: var(--fs-sm); color: var(--tx2); white-space: nowrap; }
 .wlb :deep(svg) { color: var(--acc); flex: none; }
-.wv { font-size: clamp(var(--fs-lg), 5.4cqi, calc(var(--fs-lg) * 1.25)); font-weight: 650; line-height: 1.2; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.wv small { font-size: var(--fs-sm); font-weight: 500; color: var(--tx2); margin-inline-start: 3px; }
-.wd { display: inline-flex; align-items: center; gap: 2px; font-size: var(--fs-sm); font-weight: 600; color: var(--tx2); font-variant-numeric: tabular-nums; white-space: nowrap; }
-.wd.pos { color: var(--pos); }
-.wd.neg { color: var(--neg); }
-@container (max-width: 440px) {
+/* a tile is (block - gaps and lines) / tiles; the value may take a tile / 5.6, room for about 5.6 characters' widths */
+.wv { font-size: clamp(var(--fs-lg), calc((100cqi - 4 * var(--hg)) / 16.8), calc(var(--fs-lg) * 1.25)); font-weight: 650; line-height: 1.2; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.wstats.n4 .wv { font-size: clamp(var(--fs-lg), calc((100cqi - 6 * var(--hg)) / 22.4), calc(var(--fs-lg) * 1.25)); }
+/* the line keeps its height when there is no change to show, so the tiles stay level */
+.wd { font-size: var(--fs-sm); line-height: 1.4; min-height: 1.4em; color: var(--tx2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+@container (max-width: 460px) {
   .wstats.n4 { grid-auto-flow: row; grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: var(--hg); }
   .wstats.n4 .ws:nth-child(odd) { border-inline-start: 0; padding-inline-start: 0; }
+  .wstats.n4 .wv { font-size: clamp(var(--fs-lg), calc((100cqi - 2 * var(--hg)) / 11.2), calc(var(--fs-lg) * 1.25)); }
 }
 /* a narrow block (the phone, or a narrow window) can't fit three tiles across without cutting the values, so the stats
    become rows instead: label on the left, value and change on the right, lined up in columns */
-@container (max-width: 300px) {
+@container (max-width: 330px) {
   .wstats, .wstats.n4 { grid-auto-flow: row; grid-template-columns: minmax(0, 1fr) auto auto; column-gap: var(--cpx); row-gap: var(--tdy); align-items: baseline; }
   .wstats.plain { grid-template-columns: minmax(0, 1fr) auto; }
   .ws { display: contents; }
   .wlb { align-self: center; }
-  .wv { font-size: var(--fs-lg); text-align: end; }
-  .wd { justify-content: flex-end; }
+  .wstats .wv, .wstats.n4 .wv { font-size: var(--fs-lg); text-align: end; }
+  .wd { text-align: end; }
 }
 .wbars { display: flex; align-items: flex-end; gap: 6px; height: 34px; margin-top: auto; padding-top: var(--hg); box-sizing: content-box; }
 .wbars i { flex: 1; border-radius: 4px 4px 2px 2px; background: color-mix(in srgb, var(--acc) 28%, transparent); }

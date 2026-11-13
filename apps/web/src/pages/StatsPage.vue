@@ -2,7 +2,7 @@
 // Stats (requirement 16): progress over time overall, per routine, per exercise, per muscle group, for activities and the body.
 import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { GROUPS, muscleName, weekStartOf, WEEKLY_SET_RANGE, num, bodyName, bodyMeasure, fromCm } from "@motus/shared";
+import { GROUPS, muscleName, weekStartOf, WEEKLY_SET_RANGE, num, bodyName, bodyMeasure, fromCm, percentChange } from "@motus/shared";
 import { useStats, useSettings, useAchievements, useGoals, loaded } from "../api/queries";
 import { useFmt, localYmd } from "../core/format";
 import { startOpen } from "../core/ui";
@@ -50,7 +50,7 @@ const totals = (x: any) => x ? {
   days: new Set([...x.workouts, ...x.activities].map((w: any) => localYmd(new Date(w.startedAt)))).size,
 } : null;
 const T = computed(() => totals(d.value)), P = computed(() => totals(p.value));
-const change = (k: string) => { const a = (T.value as any)?.[k], b = (P.value as any)?.[k]; if (!b || a == null) return ""; const pc = Math.round(((a - b) / b) * 100); return `${pc >= 0 ? "+" : ""}${pc}% vs previous`; };
+const change = (k: string) => { const pc = percentChange((T.value as any)?.[k], (P.value as any)?.[k]); return pc && `${pc} vs previous`; };
 // weeks in range
 const weeks = computed(() => {
   if (!d.value) return [];
