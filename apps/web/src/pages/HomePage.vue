@@ -94,6 +94,8 @@ const weekStats = computed<WStat[]>(() => {
   if (walked.value) out.push(row("walk", "walk", "Walked", tw.value.walkM, lw.value.walkM, (n) => fmt.value.dist(n, 1), true));
   return out;
 });
+// no stat has a change (first week): the header note and the change column are left out
+const anyDelta = computed(() => weekStats.value.some((x) => x.delta));
 const lastStats = computed<WStat[]>(() => {
   const l = h.value?.last;
   if (!l) return [];
@@ -277,12 +279,12 @@ await loaded(home, ach);
 
         <!-- this week against last week, and workouts per week over eight weeks -->
         <div v-else-if="id === 'week'" class="card hb wk sz-m click" v-bind="link('/stats')">
-          <div class="ch"><span class="bi"><Icon name="stats" :size="15" /></span><span class="t grow">This week</span><span class="tiny">Vs last week</span></div>
-          <div class="wstats" :class="{ n4: weekStats.length === 4 }">
+          <div class="ch"><span class="bi"><Icon name="stats" :size="15" /></span><span class="t grow">This week</span><span v-if="anyDelta" class="tiny">Vs last week</span></div>
+          <div class="wstats" :class="{ n4: weekStats.length === 4, plain: !anyDelta }">
             <div v-for="x in weekStats" :key="x.key" class="ws" role="group" :aria-label="`${[x.label, x.value, x.unit, x.delta].filter(Boolean).join(' ')}, last week ${x.last}`" :title="`Last week ${x.last}`">
               <div class="wlb"><Icon :name="x.icon" :size="14" />{{ x.label }}</div>
               <div class="wv">{{ x.value }}<small v-if="x.unit">{{ x.unit }}</small></div>
-              <div class="wd">{{ x.delta }}</div>
+              <div v-if="anyDelta" class="wd">{{ x.delta }}</div>
             </div>
           </div>
           <div class="wbars" role="img" :aria-label="`Workouts per week, last 8 weeks: ${weeks.map((w) => w.workouts).join(', ')}`">
@@ -357,7 +359,7 @@ await loaded(home, ach);
                 <div class="big">{{ worked }}<small>of {{ groups.length }} groups</small></div>
                 <div class="tiny">worked in the last 7 days</div>
               </template>
-              <div v-else class="tiny">No workouts this week</div>
+              <div v-else class="tiny">No workouts in the last 7 days</div>
               <div v-if="resting.length" class="mrest">
                 <div v-for="g in resting" :key="g.id" class="row tiny"><span class="mn">{{ g.name }}</span><span class="sep">·</span><span>{{ g.days == null ? "not yet" : `${g.days} days` }}</span></div>
               </div>
