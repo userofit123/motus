@@ -29,7 +29,7 @@ export const WORKOUT_PREF_GROUPS: PrefGroup[] = [
     { key: "autoRest", label: "Start the rest timer when a set is ticked", hint: "" },
     { key: "restEndNext", label: "Go to the next set when the rest ends", hint: "Otherwise it waits on \"Rest over\" until you tap Next set" },
     { key: "sound", label: "Sound when the rest ends", hint: "" },
-    { key: "cueSound", label: "Sound", hint: "For every workout cue: rest, 10-second warning and timed sets", preview: true,
+    { key: "cueSound", label: "Sound", hint: "Rest timer, countdown and timed sets", preview: true,
       options: (Object.keys(CUE_SOUND_NAME) as CueSound[]).map((value) => ({ value, label: CUE_SOUND_NAME[value] })) },
     { key: "cueVolume", label: "Sound level", hint: "How loud the workout cues play", num: { min: 10, max: 100, step: 10, unit: "%" } },
     { key: "vibrate", label: "Vibrate when the rest ends", hint: "" },

@@ -23,7 +23,7 @@ const save = () => { writeJson(KEY, iv); notice(); };
 export const PHASE_NAME: Record<IntervalKind, string> = { prep: "Get ready", work: "Work", rest: "Rest", setRest: "Rest between sets" };
 
 export const SOUND_NAME: Record<IntervalSound, string> = {
-  beep: SOUND_BELL, double: "Double beep", triple: "Three beeps", high: "High", low: SOUND_ROUND, rising: "Rising",
+  beep: SOUND_BELL, double: "Double bell", triple: "Three bells", high: "High", low: SOUND_ROUND, rising: "Rising",
   softAlarm: "Soft alarm", chime: "Chime", marimba: SOUND_MARIMBA, pulse: "Pulse", gong: "Gong", digital: SOUND_DIGITAL, wake: "Wake", none: "None",
 };
 // notes of a C major chord, so every sound (and any two in a row) sits in tune with the others

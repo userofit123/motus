@@ -23,10 +23,10 @@ const label = (v: unknown) => props.row.options?.find((o) => o.value === v)?.lab
     <template v-else>
       <AppSelect :model-value="value" :options="row.options!" :title="row.label" style="width:auto" @update:model-value="(v) => emit('set', v)">
         <template v-if="row.preview" #end="{ option }">
-          <button type="button" class="ib sm plain" :aria-label="`Play ${option.label}`" :title="`Play ${option.label}`" @click.stop="play(option.value)"><Icon name="play" /></button>
+          <button type="button" class="ib sm plain" :disabled="!prefs.sound" :aria-label="`Play ${option.label}`" :title="`Play ${option.label}`" @click.stop="play(option.value)"><Icon name="play" /></button>
         </template>
       </AppSelect>
-      <button v-if="row.preview" type="button" class="ib sm plain" :aria-label="`Play ${label(value)}`" :title="`Play ${label(value)}`" @click="play(value)"><Icon name="play" /></button>
+      <button v-if="row.preview" type="button" class="ib sm plain" :disabled="!prefs.sound" :aria-label="`Play ${label(value)}`" :title="`Play ${label(value)}`" @click="play(value)"><Icon name="play" /></button>
     </template>
   </div>
   <label v-else class="tgl"><div class="grow"><div class="t">{{ row.label }}<span v-if="local" class="mchip pr-chip">this workout</span></div><div v-if="row.hint" class="s">{{ row.hint }}</div></div>

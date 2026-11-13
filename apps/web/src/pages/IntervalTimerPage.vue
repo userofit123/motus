@@ -132,7 +132,7 @@ const menu = computed<MenuItem[]>(() => [
           <button type="button" class="ib sm plain" :disabled="!canPlay(iv.cfg.sounds[k])" :aria-label="`Play ${SOUND_NAME[iv.cfg.sounds[k]]}`" :title="`Play ${SOUND_NAME[iv.cfg.sounds[k]]}`" @click="playIntervalSound(iv.cfg.sounds[k])"><Icon name="play" /></button>
         </div>
       </div>
-      <p class="tiny plan spt">{{ s.workout.sound ? "Each sound plays when that part starts, at the volume set in Settings → Workout. With the app in the background, notifications use the phone's notification sound." : "Sounds are off in Settings → Workout." }}</p>
+      <p class="tiny plan spt">{{ s.workout.sound ? "Each sound plays when that part starts, at the sound level set in Settings → Workout defaults. With the app in the background, notifications use the phone's notification sound." : "Sounds are off in Settings → Workout defaults." }}</p>
     </template>
 
     <div v-else class="face" :class="phase?.kind ?? 'done'">
