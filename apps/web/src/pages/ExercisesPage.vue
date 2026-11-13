@@ -1,11 +1,11 @@
 <script lang="ts">
 import { reactive } from "vue";
-// Search, muscle group, filters, sort and how far the list is opened. Kept for the session only; the exercise pickers have their own.
+// Search, muscle group (or one muscle picked on the body), filters, sort and how far the list is opened. Kept for the session only; the exercise pickers have their own.
 export const exercisesView = reactive({ q: "", group: "", equip: "", cat: "", sides: "", only: "" as "" | "mine" | "done" | "fav", sort: "used" as "used" | "name" | "recent", shown: 60 });
 </script>
 
 <script setup lang="ts">
-// The exercise library: search, filter by muscle group, equipment, category and (with left and right sets on) sides,
+// The exercise library: search, filter by muscle group (chips or the body), equipment, category and (with left and right sets on) sides,
 // your own exercises, favourites and most used first.
 import { computed, ref, toRefs } from "vue";
 import { useRoute, useRouter } from "vue-router";
@@ -20,7 +20,7 @@ import ExerciseEditor from "../components/ExerciseEditor.vue";
 import Sheet from "../components/Sheet.vue";
 import AppSelect from "../components/AppSelect.vue";
 import FilterPanel from "../components/FilterPanel.vue";
-import FilterRow from "../components/FilterRow.vue";
+import MuscleFilter, { musclesOf } from "../components/MuscleFilter.vue";
 
 const router = useRouter(), route = useRoute();
 const all = useExercises();
@@ -37,8 +37,8 @@ const creating = ref(false);
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ");
 const list = computed(() => {
   const words = norm(q.value).split(" ").filter(Boolean);
-  const g = GROUPS.find((x) => x.id === group.value);
-  return (all.data.value ?? []).filter((e) => (!g || e.primaryMuscles.some((m) => g.muscles.includes(m))) && (!equip.value || e.equipment === equip.value) && (!cat.value || e.category === cat.value)
+  const ms = musclesOf(group.value);
+  return (all.data.value ?? []).filter((e) => (!ms.length || e.primaryMuscles.some((m) => ms.includes(m))) && (!equip.value || e.equipment === equip.value) && (!cat.value || e.category === cat.value)
     && (!side.value || !!e.unilateral === (side.value === "one"))
     && (only.value !== "mine" || e.ownerId) && (only.value !== "done" || (e.timesDone ?? 0) > 0) && (only.value !== "fav" || e.favourite)
     && words.every((w) => norm(e.name + " " + e.aliases.join(" ")).includes(w)))
@@ -49,7 +49,6 @@ const list = computed(() => {
 const filtersOpen = ref(false);
 const filterCount = computed(() => Number(!!equip.value) + Number(!!cat.value) + Number(!!side.value) + Number(!!only.value) + Number(sort.value !== "used"));
 const clearFilters = () => { equip.value = ""; cat.value = ""; sides.value = ""; only.value = ""; sort.value = "used"; shown.value = 60; };
-const GROUP_OPTS = GROUPS.map((g) => ({ value: g.id, label: g.name }));
 const SIDES_OPTS = [{ value: "", label: "Any" }, { value: "one", label: "One side at a time" }, { value: "both", label: "Both together" }];
 // show the page once its data is in, all at once
 await loaded(all);
@@ -64,7 +63,7 @@ await loaded(all);
       <button class="ib" aria-label="Filters" title="Filters" @click="filtersOpen = true"><Icon name="filter" /><span v-if="filterCount" class="badge">{{ filterCount }}</span></button>
     </div>
     <FilterPanel :count="`${list.length} exercise${list.length === 1 ? '' : 's'}`" :active="!!group || !!filterCount" @clear="group = ''; clearFilters()">
-      <FilterRow v-model="group" label="Muscle group" all="All" :options="GROUP_OPTS" />
+      <MuscleFilter v-model="group" :groups="GROUPS" />
     </FilterPanel>
     <Sheet v-if="filtersOpen" title="Filters" @close="filtersOpen = false">
       <div class="fld"><label>Show</label><div class="seg block"><button v-for="[k, l] in [['', 'All'], ['fav', 'Favourites'], ['done', 'Done before'], ['mine', 'My own']]" :key="k" :class="{ on: only === k }" @click="only = k as any">{{ l }}</button></div></div>

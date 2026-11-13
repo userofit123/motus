@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Choosing exercises: search (names and aliases), filter by muscle and equipment, and behind the filter button by category
+// Choosing exercises: search (names and aliases), filter by muscle (chips or the body) and equipment, and behind the filter button by category
 // and (with left and right sets on) sides; recently used first; one or many.
 import { computed, ref, watch, onMounted, onBeforeUnmount } from "vue";
 import { GROUPS, EQUIPMENT, CATEGORIES, categoryName, type Exercise } from "@motus/shared";
@@ -12,6 +12,7 @@ import MuscleFig from "./MuscleFig.vue";
 import ExerciseEditor from "./ExerciseEditor.vue";
 import FilterPanel from "./FilterPanel.vue";
 import FilterRow from "./FilterRow.vue";
+import MuscleFilter, { musclesOf } from "./MuscleFilter.vue";
 import ExerciseView from "./ExerciseView.vue";
 
 const props = defineProps<{ title?: string; multi?: boolean; exclude?: string[]; suggest?: Exercise[] }>();
@@ -28,9 +29,9 @@ const side = computed(() => (sidesOn.value ? sides.value : ""));
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, " ");
 const list = computed(() => {
   const words = norm(q.value).split(" ").filter(Boolean);
-  const g = PICK_GROUPS.find((x) => x.id === group.value);
+  const ms = musclesOf(group.value, PICK_GROUPS);
   return (all.data.value ?? []).filter((e) => !e.hidden && !props.exclude?.includes(e.id)
-    && (!g || e.primaryMuscles.some((m) => g.muscles.includes(m)))
+    && (!ms.length || e.primaryMuscles.some((m) => ms.includes(m)))
     && (!equip.value || e.equipment === equip.value)
     && (!cat.value || e.category === cat.value)
     && (!side.value || !!e.unilateral === (side.value === "one"))
@@ -46,7 +47,6 @@ const SIDES_OPTS = [{ value: "one", label: "One side at a time" }, { value: "bot
 const eqName = (e: string) => EQ_NAME[e] ?? e[0]!.toUpperCase() + e.slice(1);
 // the muscle groups, with biceps and triceps on their own after Arms: people often pick an exercise for just one
 const PICK_GROUPS = GROUPS.flatMap((g) => g.id === "arms" ? [g, { id: "biceps", name: "Biceps", muscles: ["biceps"] }, { id: "triceps", name: "Triceps", muscles: ["triceps"] }] : [g]);
-const GROUP_OPTS = PICK_GROUPS.map((g) => ({ value: g.id, label: g.name }));
 const EQUIP_OPTS = EQUIPMENT.map((e) => ({ value: e, label: eqName(e) }));
 const showSuggest = computed(() => !!props.suggest?.length && !q.value && !filtered.value);
 // category and sides wait behind the filter button so the list keeps its room with the keyboard up; setting one opens
@@ -109,7 +109,7 @@ function te(e: TouchEvent) {
       <button class="ib" aria-label="Filters" title="Filters" :aria-expanded="moreOpen" @click="moreOpen = !moreOpen"><Icon name="filter" /><span v-if="moreCount" class="badge">{{ moreCount }}</span></button>
     </div>
     <FilterPanel :count="showSuggest ? 'Works the same muscles' : `${list.length === 150 ? '150+' : list.length} exercises`" :active="filtered" @clear="clear">
-      <FilterRow v-model="group" label="Muscle group" all="All" :options="GROUP_OPTS" />
+      <MuscleFilter v-model="group" :groups="PICK_GROUPS" />
       <FilterRow v-if="!gym" v-model="equip" label="Equipment" all="Any" :options="EQUIP_OPTS" />
       <!-- with a gym profile the row starts with what that gym has, then "Any" -->
       <FilterRow v-else label="Equipment">

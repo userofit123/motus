@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // One labelled row of chips inside a FilterPanel. With `all`, the first chip clears the row and tapping the picked chip again
 // goes back to it; without, exactly one option is always on (a status or a sort). Scrolls sideways on phones.
+// Slots: #aside sits at the right end of the label line (a small toggle), #top between the label and the chips.
 import Icon from "./Icon.vue";
 
 interface FilterOption { value: string; label: string; icon?: string; count?: number }
@@ -11,7 +12,8 @@ const pick = (v: string) => emit("update:modelValue", props.all != null && props
 
 <template>
   <div>
-    <div class="flbl">{{ label }}</div>
+    <div class="flbl"><span class="grow">{{ label }}</span><slot name="aside" /></div>
+    <slot name="top" />
     <div class="chips hscroll">
       <button v-if="all != null" class="fchip" :class="{ on: !modelValue }" @click="emit('update:modelValue', '')">{{ all }}</button>
       <slot>
@@ -24,7 +26,9 @@ const pick = (v: string) => emit("update:modelValue", props.all != null && props
 </template>
 
 <style scoped>
-.flbl { margin-bottom: 6px; }
+.flbl { display: flex; align-items: center; margin-bottom: 6px; }
+/* a toggle in the label line keeps the line its usual height */
+.flbl :slotted(.qb) { margin-block: -6px; padding: 4px 8px; font-size: 12.5px; }
 /* chips run to the panel's edge while scrolling on phones; on wider screens they wrap */
 .chips.hscroll { margin-inline: calc(4px - var(--cpx)); padding-inline: calc(var(--cpx) - 4px); }
 html:not(.phone) .chips.hscroll { margin-inline: 0; padding-inline: 0; }

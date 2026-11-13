@@ -553,6 +553,12 @@ html.phone .cal .dots i.plan { background: none; border: 1px solid var(--ec, var
 .bodymap [data-t="1"] .m { fill: var(--heat1); }
 .bodymap [data-t="2"] .m { fill: var(--heat2); }
 .bodymap [data-t="3"] .m { fill: var(--heat3); }
+/* the figure as a filter: muscles are buttons, the chosen ones in the accent like a picked chip */
+.bodymap.pick g[role] { cursor: pointer; outline: none; }
+.bodymap.pick g[role]:focus-visible .m { fill: color-mix(in srgb, var(--acc) 45%, transparent); }
+/* hover only with a mouse: on a phone it would stick to the muscle just tapped off */
+@media (hover: hover) { .bodymap.pick g[role]:hover .m { fill: color-mix(in srgb, var(--acc) 45%, transparent); } }
+.bodymap.pick g[role][data-t="1"] .m { fill: var(--acc); }
 /* the little body on the left of a card, info on the right, as on the Routines list's routine cards (CLAUDE.md rule).
    The row never hangs on :has() (where it is missing the whole rule drops and the figure stacks above the info),
    and two classes so it outranks the card's own column (.rcard) whatever order the rules come in.
