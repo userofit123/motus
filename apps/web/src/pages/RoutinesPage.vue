@@ -122,7 +122,7 @@ await loaded(routines, folders, ...(settings.value.features.programs ? [programs
 <Transition name="sw" mode="out-in">
     <div v-if="onPrograms" key="programs"><ProgramsSection ref="programsRef" /></div>
     <div v-else key="routines">
-    <SearchField v-if="(routines.data.value?.length ?? 0) > 6" v-model="q" class="hgap" placeholder="Search routines" />
+    <SearchField v-if="(routines.data.value?.length ?? 0) > 6" v-model="q" class="lsearch" placeholder="Search routines" />
     <div v-if="showArchived" class="banner note"><Icon name="archive" />Showing archived routines<button class="qb acc" style="margin-inline-start:auto;padding:0 6px" @click="showArchived = false">Done</button></div>
 
     <div v-if="routines.data.value && !list.length && !showArchived" class="card empty">

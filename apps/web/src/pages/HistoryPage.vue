@@ -92,8 +92,8 @@ const n = (k: number, one: string, many = one + "s") => `${k} ${k === 1 ? one : 
 const summary = computed(() => {
   const m = monthStats.value, mk = localYmd(month.value).slice(0, 7);
   const name = mk === today.slice(0, 7) ? "This month" : month.value.toLocaleDateString(undefined, mk.slice(0, 4) === today.slice(0, 4) ? { month: "long" } : { month: "long", year: "numeric" });
-  if (!m.days) return mk >= today.slice(0, 7) ? `${name}: nothing yet` : `${name}: nothing logged`;
-  return `${name}: ` + [m.workouts ? n(m.workouts, "workout") : "", m.activities ? n(m.activities, "activity", "activities") : "", m.timeS ? `${fmt.value.dur(m.timeS, true)} in total` : ""].filter(Boolean).join(" · ");
+  if (!m.workouts && !m.activities) return { head: `${name}:`, parts: [mk >= today.slice(0, 7) ? "nothing yet" : "nothing logged"] };
+  return { head: `${name}:`, parts: [m.workouts ? n(m.workouts, "workout") : "", m.activities ? n(m.activities, "activity", "activities") : "", m.timeS ? `${fmt.value.dur(m.timeS, true)} in total` : ""].filter(Boolean) };
 });
 // list view
 const listWorkouts = useWorkouts(computed(() => ({ limit: 300 })));
@@ -109,7 +109,7 @@ await loaded(cal, listWorkouts, listActs);
 <template>
   <div class="page">
     <div class="ph">
-      <div><h1>Calendar</h1><div class="sub">{{ view === "calendar" ? summary : n(list.length, "session") }}</div></div>
+      <div><h1>Calendar</h1><div class="sub"><template v-if="view === 'calendar'">{{ summary.head }} <template v-for="(p, i) in summary.parts" :key="p"><template v-if="i"> · </template><span class="nw">{{ p }}</span></template></template><template v-else>{{ n(list.length, "session") }}</template></div></div>
       <div class="acts">
         <div class="seg"><button :class="{ on: view === 'calendar' }" @click="view = 'calendar'">Calendar</button><button :class="{ on: view === 'list' }" @click="view = 'list'">List</button></div>
       </div>

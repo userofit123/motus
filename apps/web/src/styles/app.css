@@ -49,7 +49,7 @@ hr.sep { border: 0; border-top: 1px solid var(--ol); margin: 14px 0; }
 .shell, .pshell { padding-inline: var(--sl) var(--sr); }
 .shell { display: flex; width: 100%; min-height: 100vh; min-height: 100dvh; }
 .page { width: 100%; max-width: 1100px; margin: 0 auto; }
-.ph { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: calc(var(--spg) + 6px); }
+.ph { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: var(--phgap); }
 .ph h1 { font-size: var(--fs-h1); font-weight: 600; letter-spacing: -.6px; line-height: 1.15; }
 .ph .sub { color: var(--tx2); font-size: 13px; margin-top: 4px; }
 /* a page header's buttons and ⋮; a plan row's Start and ⋮ on Home (.pact) is the same pair */
@@ -324,7 +324,7 @@ html.phone { --tabh: 64px; }
 .pshell.withbar2 { padding-bottom: calc(var(--tabh) + 132px + var(--sb)); }
 .pshell.withbar3 { padding-bottom: calc(var(--tabh) + 184px + var(--sb)); }
 .pmain { padding: calc(14px + var(--st)) 16px 24px; overflow-x: clip; }
-.pmain .ph { margin-bottom: var(--spg); align-items: center; }
+.pmain .ph { align-items: center; }
 .pmain .ph h1 { font-size: 26px; }
 /* a phone header's buttons and ⋮ sit closer; so does the same pair on a plan row on Home (.pact) */
 .pmain .ph .acts, .pmain .pact { gap: 4px; }
@@ -646,9 +646,12 @@ html.phone .grid.g4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .calnav b { font-size: 15px; font-weight: 600; text-align: center; }
 .calnav b { flex: none; min-width: 132px; }
 html:not(.phone) .calnav b { min-width: 170px; }
-/* the List view's search: the same gap below it as the page header leaves above it, so it sits midway, not on the first month */
-.lsearch { margin-bottom: calc(var(--spg) + 6px); }
-.pmain .lsearch { margin-bottom: var(--spg); }
+/* the gap under a page header, shared by the header and a page-level search right below it (History list, Routines),
+   so the search sits as far from the header as the header sits from what follows it */
+.ph, .lsearch { --phgap: calc(var(--spg) + 6px); }
+.pmain .ph, .pmain .lsearch { --phgap: var(--spg); }
+.lsearch { margin-bottom: var(--phgap); }
+.nw { white-space: nowrap; }
 .fchip.acc { color: var(--acc); border-color: var(--acc); }
 .pvx.off { opacity: .45; }
 .pvx .thumb { align-self: flex-start; margin-top: 2px; }
