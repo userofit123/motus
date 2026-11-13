@@ -121,19 +121,20 @@ const pct = (g: Goal) => Math.max(0, Math.min(100, (g.progress?.pct ?? 0) * 100)
 // or the day it started; under it the goal's trend (its last periods, or its entries for a one-off goal)
 const noon = (d: string) => d.slice(0, 10) + "T12:00:00"; // a calendar day read on this device's calendar, not as UTC midnight
 const shortDate = (d: string) => fmt.value.date(noon(d), { day: "numeric", month: "short" });
-// both halves of the tile are built the same way, row by row: header, big value, a tiny line, then the bottom element
+// both halves of the tile are built the same way, row by row: header, big value, a tiny line, then the bottom element.
+// The big value stays short (a number and one word) so it fits the narrower half at 360px without being cut
 type GoalSide = { icon: string; label: string; big: string; small?: string; sub: string };
 const goalSide = (g: Goal & { showStreak?: boolean }): GoalSide => {
   if (g.showStreak) {
-    const n = g.progress?.streak ?? 0, k = dots(g).length;
-    return { icon: "flame", label: "Streak", big: String(n), small: `${periodWord(g, n)} in a row`, sub: `Last ${k} ${periodWord(g, k)}` };
+    const n = g.progress?.streak ?? 0;
+    return { icon: "flame", label: "Streak", big: String(n), small: periodWord(g, n), sub: "In a row" };
   }
   // the left half already says "Achieved", so this one names the day
   if (g.status === "achieved" && g.achievedAt) return { icon: "check", label: "Done on", big: fmt.value.date(g.achievedAt, { day: "numeric", month: "short" }), sub: when(g.achievedAt) };
   if (g.deadline && !reached(g)) {
     // calendar days left with today counted, as the goal's own pace says
     const d = daysLeft(g) + 1;
-    return d > 0 ? { icon: "calendar", label: "Deadline", big: String(d), small: d === 1 ? "day left" : "days left", sub: `Ends ${shortDate(g.deadline)}` }
+    return d > 0 ? { icon: "calendar", label: "Days left", big: String(d), sub: `Ends ${shortDate(g.deadline)}` }
       : { icon: "calendar", label: "Deadline", big: shortDate(g.deadline), sub: "Deadline passed" };
   }
   return { icon: "calendar", label: "Started", big: shortDate(g.startDate), sub: when(noon(g.startDate)) };
@@ -312,21 +313,24 @@ await loaded(home, ach);
             <div class="gmain">
               <div class="ch"><span class="bi"><Icon :name="goalIcon(g)" :size="15" /></span><span class="t grow ellipsis">{{ g.title }}</span></div>
               <div class="row">
-                <div v-if="g.scope === 'body'" class="big grow">{{ goalLabel(g, fmt) }}</div>
-                <div v-else class="big grow">{{ goalVal(g, g.progress?.current ?? 0) }}<small>of {{ goalVal(g, g.target) }}{{ goalUnit(g) ? ` ${goalUnit(g)}` : "" }}</small></div>
+                <!-- a body goal heads to its target (up or down), the others count up to it -->
+                <div class="big grow">{{ goalVal(g, g.progress?.current ?? 0) }}<small>{{ g.scope === "body" ? "to" : "of" }} {{ goalVal(g, g.target) }}{{ goalUnit(g) ? ` ${goalUnit(g)}` : "" }}</small></div>
                 <!-- a reached goal's tile turns accent, so its ring and check take the on-accent colour -->
                 <Ring :pct="g.progress?.pct ?? 0" :size="40" :done="reached(g)" :color="reached(g) ? 'var(--onc)' : undefined" />
               </div>
-              <div class="tiny gsub">{{ g.status === "achieved" ? "Achieved" : g.progress?.done ? `Reached ${periodNow(g).toLowerCase()}` : g.progress?.pace ?? periodNow(g) }}</div>
+              <div class="tiny">{{ g.status === "achieved" ? "Achieved" : g.progress?.done ? `Reached ${periodNow(g).toLowerCase()}` : g.progress?.pace ?? periodNow(g) }}</div>
             </div>
             <div class="grun">
               <div class="ch"><span class="bi"><Icon :name="goalSide(g).icon" :size="15" /></span><span class="t">{{ goalSide(g).label }}</span></div>
-              <div class="big">{{ goalSide(g).big }}<small v-if="goalSide(g).small">{{ goalSide(g).small }}</small></div>
+              <div class="row"><div class="big grow">{{ goalSide(g).big }}<small v-if="goalSide(g).small">{{ goalSide(g).small }}</small></div></div>
               <div class="tiny">{{ goalSide(g).sub }}</div>
-              <!-- the last eight periods, oldest first: filled when reached -->
-              <div v-if="recurring(g)" class="gdots" aria-hidden="true"><i v-for="(on, k) in dots(g)" :key="k" :class="{ on }" /></div>
-              <Sparkline v-else-if="hasTrend(g)" :values="trend(g)" :color="reached(g) ? 'var(--onc)' : undefined" />
-              <div v-else class="gflat" aria-hidden="true" />
+              <!-- the bottom element sits in one fixed box: the last eight periods as dots, oldest first, filled when reached;
+                   or a one-off goal's trend -->
+              <div class="gfoot" aria-hidden="true">
+                <div v-if="recurring(g)" class="gdots"><i v-for="(on, k) in dots(g)" :key="k" :class="{ on }" /></div>
+                <Sparkline v-else-if="hasTrend(g)" :values="trend(g)" :color="reached(g) ? 'var(--onc)' : undefined" />
+                <div v-else class="gflat" />
+              </div>
             </div>
           </div>
         </div>
@@ -533,7 +537,8 @@ html.phone .hgrid .sz-m { grid-column: 1 / -1; }
 .big { font-size: var(--fs-val); font-weight: 650; letter-spacing: -.8px; line-height: 1.1; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .big small { font-size: var(--fs); font-weight: 500; margin-inline-start: 5px; color: var(--tx2); letter-spacing: 0; }
 .hero .big small, .hero .tiny { color: color-mix(in srgb, var(--onc) 75%, transparent); }
-html.phone .sz-s .big { font-size: clamp(22px, 7vw, var(--fs-val)); }
+/* small blocks and the goal tiles' halves are narrow on the phone, so their values shrink with the screen */
+html.phone .sz-s .big, html.phone .gtile .big { font-size: clamp(22px, 7vw, var(--fs-val)); }
 
 /* the stat tiles of this week and the last workout are the shared .wkc/.wstats ones (app.css) */
 .wbars { display: flex; align-items: flex-end; gap: 6px; height: 34px; margin-top: auto; padding-top: var(--hg); box-sizing: content-box; }
@@ -545,24 +550,27 @@ html.phone .sz-s .big { font-size: clamp(22px, 7vw, var(--fs-val)); }
 .lnm { min-width: 0; color: var(--tx); font-weight: 600; }
 .lday { color: var(--tx2); white-space: nowrap; flex: none; }
 
-/* a pinned goal; with its streak the two halves sit side by side, split by a faint line */
-.gtile { flex-direction: row; gap: var(--cpx); }
-.gmain { flex: 1.3; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
-.gsub { margin-top: auto; }
-.grun { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; padding-inline-start: var(--cpx); border-inline-start: 1px solid var(--ol); }
+/* a pinned goal: its two halves side by side, split by a faint line. Both share the tile's four rows (subgrid), so header,
+   value, tiny line and bottom box line up across the halves whatever each holds; the header is spaced from the value
+   like every other block's (.hb > .ch), and the value row is the ring's height in both halves */
+.gtile { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); grid-template-rows: auto minmax(40px, auto) auto 1fr; column-gap: var(--cpx); row-gap: 4px; }
+.gmain, .grun { grid-row: 1 / -1; display: grid; grid-template-rows: subgrid; grid-template-columns: minmax(0, 1fr); row-gap: 4px; min-width: 0; align-items: center; }
+.gmain > .ch, .grun > .ch { margin-bottom: calc(var(--hg) - 4px); }
+.gtile .tiny { align-self: start; }
+.gtile .row { align-self: stretch; }
+.grun { padding-inline-start: var(--cpx); border-inline-start: 1px solid var(--ol); }
 .hero .grun { border-color: color-mix(in srgb, var(--onc) 18%, transparent); }
-.gdots { display: flex; gap: 4px; margin-top: auto; padding-top: var(--hg); }
+/* the bottom box: one height for dots, trend and flat line, so stacked tiles are the same height */
+.gfoot { align-self: end; height: 28px; padding-top: var(--hg); box-sizing: content-box; display: flex; align-items: flex-end; }
+.gdots { flex: 1; display: flex; gap: 4px; }
 .gdots i { flex: 1; max-width: 18px; height: 6px; border-radius: 3px; }
 /* off and on look the same for the streak dots and the muscle groups' dots */
 .gdots i, .mdot { background: color-mix(in srgb, currentColor 14%, transparent); }
 .gdots i.on, .mg.on .mdot { background: var(--acc); }
 .hero .gdots i.on { background: var(--onc); }
-/* the trend under a goal shown without its streak sits where the streak's dots do */
-.grun .spark, .gflat { display: block; width: 100%; height: 28px; margin-top: auto; padding-top: var(--hg); box-sizing: content-box; }
+.gfoot .spark, .gflat { position: static; display: block; width: 100%; height: 28px; }
 /* nothing to draw yet: the trend's flat baseline, in the empty dots' colour */
-.gflat { background: linear-gradient(color-mix(in srgb, currentColor 14%, transparent), color-mix(in srgb, currentColor 14%, transparent)) bottom 4px left / 100% 2px no-repeat content-box; }
-/* on the phone a goal keeps its two halves side by side */
-html.phone .gtile.sz-m { flex-direction: row; }
+.gflat { background: linear-gradient(color-mix(in srgb, currentColor 14%, transparent), color-mix(in srgb, currentColor 14%, transparent)) bottom 4px left / 100% 2px no-repeat; }
 
 /* goal rows: title and state, the bar, the numbers */
 .glist { display: flex; flex-direction: column; gap: var(--hg); }
