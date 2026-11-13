@@ -122,7 +122,8 @@ const menu = computed(() => [
   { label: "Rename", icon: "edit", run: rename },
   { label: "Change times", icon: "clock", run: editTimes },
   { label: "Add a note", icon: "note", run: () => (noteSheet.value = { targets: [{ type: "workout", id: id.value, label: "This workout" }], workoutId: id.value }) },
-  { label: "Save as a routine", sep: true, icon: "routines", run: saveAsRoutine },
+  { label: "Open the routine", sep: true, icon: "right", run: () => router.push(`/routines/${w.value.routineId}`), hidden: !w.value?.routineId },
+  { label: "Save as a routine", icon: "routines", run: saveAsRoutine },
   { label: "Update the routine from this", icon: "refresh", run: updateRoutine, hidden: !w.value?.routineId },
   { label: "Share as an image", sep: true, icon: "share", run: () => shareWorkoutImage(w.value, fmt.value), hidden: !s.value.features.shareImage },
   { label: "Copy for an AI assistant", icon: "copy", run: copyText, hidden: !s.value.features.mcp },
@@ -143,7 +144,7 @@ await loaded(q);
       <button class="ib sm plain" :disabled="!w.nextId" aria-label="Later workout" @click="router.push(`/workouts/${w.nextId}`)"><Icon name="right" :size="18" /></button>
     </div>
     <div class="ph">
-      <div><h1>{{ w.name }}</h1><div class="sub">{{ fmt.dateLong(w.startedAt) }} · {{ fmt.time(w.startedAt) }}-{{ fmt.time(w.endedAt) }}<template v-if="w.routineId"> · <a class="acc click" @click="router.push(`/routines/${w.routineId}`)">routine</a></template><template v-if="w.rating"> · felt {{ RATE[w.rating - 1]?.toLowerCase() }}</template></div></div>
+      <div><h1>{{ w.name }}</h1><div class="sub">{{ fmt.dateLong(w.startedAt) }} · {{ fmt.time(w.startedAt) }}-{{ fmt.time(w.endedAt) }}<template v-if="w.rating"> · felt {{ RATE[w.rating - 1]?.toLowerCase() }}</template></div></div>
       <div class="acts"><button v-if="editing" class="btn keep" @click="editing = false">Done</button><Menu :items="menu" /></div>
     </div>
 
