@@ -3,7 +3,7 @@
 // red for the main muscles, yellow for those that helped, blue for those that did a little.
 // values: muscle name (as in the exercise library) → weighted sets (main muscle 1, helper 0.5, see muscleSets()).
 // highlight/secondary: one exercise's main and helper muscles instead of amounts.
-// pickable: each muscle is a button that emits pick (the muscle filter above exercise lists); off, the figure only shows.
+// pickable: each muscle is a button that emits pick (the muscle filter above exercise lists), with a wider invisible tap ring; off, the figure only shows.
 // pressed: with pickable, the muscles whose button is on (a tap clears them); lit muscles are not always pressed.
 // inspect: the amounts keep their colours, but muscles and legend entries are buttons (pick, pickTier with that
 // band's muscles) so a page can point one out; focus: the muscles pointed out, ringed while the rest fade.
@@ -42,6 +42,11 @@ const tierMuscles = (t: number) => [...new Set(VIEWS.flatMap((v) => v.shapes.map
     <div class="figs">
       <svg v-for="v in VIEWS" :key="v.name" viewBox="10 3 80 194" role="img" :aria-label="v.name">
         <g class="sil"><path :d="SILHOUETTE" /><path :d="SILHOUETTE" :transform="MIRROR" /><ellipse v-bind="HEAD" /></g>
+        <!-- as a filter, a wide invisible ring round each muscle under the muscles themselves, so a small one (biceps, calves) is
+             easy to hit on a phone: a tap on a muscle's own fill picks it, a tap in the gap picks the nearest one -->
+        <g v-if="pickable" aria-hidden="true">
+          <template v-for="[m, d] in v.shapes" :key="m"><path class="hit" :d="d" @click="emit('pick', m)" /><path class="hit" :d="d" :transform="MIRROR" @click="emit('pick', m)" /></template>
+        </g>
         <!-- the level is an attribute, not a class: patching the class of SVG elements inside these lists crashes Vue (3.5) -->
         <g v-for="[m, d] in v.shapes" :key="m" :data-t="tier(m)" :data-f="focus?.includes(m) ? 1 : undefined" :role="btn ? 'button' : undefined" :tabindex="btn ? 0 : undefined"
           :aria-pressed="pickable ? !!pressed?.includes(m) : inspect ? !!focus?.includes(m) : undefined" :aria-label="btn ? label(m) : undefined"

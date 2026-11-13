@@ -104,12 +104,12 @@ function te(e: TouchEvent) {
 
 <template>
   <Sheet :title="title ?? 'Add exercises'" size="wide" @close="emit('close')">
-    <div class="row hgap">
+    <div class="row hgap pksearch">
       <SearchField v-model="q" class="grow" placeholder="Search exercises" autofocus />
       <button class="ib" aria-label="Filters" title="Filters" :aria-expanded="moreOpen" @click="moreOpen = !moreOpen"><Icon name="filter" /><span v-if="moreCount" class="badge">{{ moreCount }}</span></button>
     </div>
     <FilterPanel :count="showSuggest ? 'Works the same muscles' : `${list.length === 150 ? '150+' : list.length} exercises`" :active="filtered" @clear="clear">
-      <MuscleFilter v-model="group" :groups="PICK_GROUPS" compact />
+      <MuscleFilter v-model="group" :groups="PICK_GROUPS" place="picker" :searching="!!q" />
       <FilterRow v-if="!gym" v-model="equip" label="Equipment" all="Any" :options="EQUIP_OPTS" />
       <!-- with a gym profile the row starts with what that gym has, then "Any" -->
       <FilterRow v-else label="Equipment">
@@ -157,6 +157,11 @@ function te(e: TouchEvent) {
 
 
 <style scoped>
+/* the search stays on top while the filters and the list scroll under it (-4px cancels the sheet body's top padding),
+   on the sheet's own background */
+.pksearch { position: sticky; top: -4px; z-index: 1; background: var(--bg); padding-block: 4px; margin-bottom: var(--hg); }
+/* a pick on the phone's big body scrolls the count line up to just under that search (about 56px tall) */
+:deep(.ffoot) { scroll-margin-top: calc(56px + var(--hg)); }
 /* the whole preview takes the swipe, even below short content */
 .pvx { min-height: 100%; overflow-x: hidden; }
 /* open like a picked filter chip */

@@ -15,19 +15,28 @@ export function valueOf(m: string, groups: MuscleGroup[] = GROUPS): string {
 </script>
 
 <script setup lang="ts">
-// `compact` (phones only) shrinks the body so a sheet keeps room for its list.
-// The "Muscle group" row of an exercise list's filters: the body always shown, with the chips in a grid (beside it on desktop, below it on phones):
-// tap a muscle to show only exercises that work it as a main muscle, tap it again to clear. Groups and muscles share one
-// value, so a group chip lights its muscles on the body, and a muscle picked on the body that is no chip of its own
-// (lats, calves) gets a chip right after its group's, to show what is set and to clear it like any other.
-import { computed } from "vue";
+// The "Muscle group" row of an exercise list's filters: the body (front and back) with the chips (in a grid beside it on desktop,
+// in one sideways row under it on phones): tap a muscle to show only exercises that work it as a main muscle, tap it again to clear.
+// Groups and muscles share one value, so a group chip lights its muscles on the body, and a muscle picked on the body that is no
+// chip of its own (lats, calves) gets a chip right after its group's, to show what is set and to clear it like any other.
+// On phones the body is as big as the card allows so small muscles can be hit, which leaves no room for the list: so it folds
+// (remembered per place: the page and the picker), hides while a name is searched, and after a pick the results are scrolled up.
+import { computed, getCurrentInstance, nextTick, ref } from "vue";
 import { groupOf, muscleName } from "@motus/shared";
 import FilterRow from "./FilterRow.vue";
 import BodyMap from "./BodyMap.vue";
 import { isPhone } from "../core/device";
+import { readJson, writeJson } from "../core/prefs";
 
-const props = defineProps<{ modelValue: string; groups: MuscleGroup[]; compact?: boolean }>();
+const props = defineProps<{ modelValue: string; groups: MuscleGroup[]; place: "page" | "picker"; searching?: boolean }>();
 const emit = defineEmits<{ "update:modelValue": [v: string] }>();
+const FOLD_KEY = "motusMuscleBody";
+const folds = readJson<{ page?: boolean; picker?: boolean }>(FOLD_KEY, {});
+const bodyOpen = ref(folds[props.place] ?? true);
+function setOpen(v: boolean) {
+  bodyOpen.value = v;
+  writeJson(FOLD_KEY, { ...readJson(FOLD_KEY, {}), [props.place]: v });
+}
 const chosen = computed(() => musclesOf(props.modelValue, props.groups));
 const options = computed(() => {
   const opts = props.groups.map((g) => ({ value: g.id, label: g.name }));
@@ -46,17 +55,33 @@ const caption = computed(() => {
 // pressed only where a tap would clear: with a group chosen its muscles are lit, but tapping one narrows to it rather than
 // clearing, so they are not "pressed" (a group of one muscle is that muscle, so it is)
 const pressed = computed(() => chosen.value.filter((m) => valueOf(m, props.groups) === props.modelValue));
+const self = getCurrentInstance();
+// on a phone the open body fills the screen: once something is picked, bring the count line up so the results show
+// (only when fewer than about two rows of them are in view; clearing to All stays put)
+async function set(v: string) {
+  emit("update:modelValue", v);
+  if (!v || !isPhone.value || !bodyOpen.value || props.searching) return;
+  await nextTick();
+  const foot = (self?.proxy?.$el as HTMLElement | undefined)?.closest(".fpanel")?.querySelector<HTMLElement>(".ffoot");
+  if (!foot) return;
+  // the bottom of what is in view: the sheet's body in the picker, above the phone's tab bar on a page
+  const sheet = foot.closest(".sh_b")?.getBoundingClientRect().bottom;
+  const bottom = sheet ?? innerHeight - (parseFloat(getComputedStyle(foot).getPropertyValue("--tabh")) || 0);
+  if (foot.getBoundingClientRect().top > bottom - 140)
+    foot.scrollIntoView({ block: "start", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+}
 const tap = (m: string) => {
   const v = valueOf(m, props.groups);
-  emit("update:modelValue", props.modelValue === v ? "" : v);
+  void set(props.modelValue === v ? "" : v);
 };
 </script>
 
 <template>
-  <FilterRow :model-value="modelValue" label="Muscle group" all="All" :options="options" @update:model-value="(v) => emit('update:modelValue', v)">
+  <FilterRow :model-value="modelValue" label="Muscle group" all="All" :options="options" :fold="isPhone" :open="bodyOpen && !searching"
+    @update:model-value="set" @update:open="setOpen">
     <template #aside>
       <div class="mfig">
-        <BodyMap pickable :values="{}" :highlight="chosen" :pressed="pressed" :height="!isPhone ? 230 : compact ? 90 : 175" @pick="tap" />
+        <BodyMap pickable :values="{}" :highlight="chosen" :pressed="pressed" :height="isPhone ? undefined : 230" @pick="tap" />
         <span class="tiny" :class="{ on: !!modelValue }">{{ caption }}</span>
       </div>
     </template>
@@ -69,6 +94,9 @@ const tap = (m: string) => {
    muscle never shifts the chips and it stretches to their height; on phones it is the full row above the chips */
 .mfig { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--tdy); padding: var(--cpy) var(--cpx); border-radius: var(--r-md); background: var(--s2); }
 html:not(.phone) .mfig { flex: none; }
+/* on phones the bodies take the tile's whole width, up to 300px tall (two 80 x 194 bodies and their 4px gap) */
+html.phone .mfig { padding: var(--cpy) 0; container-type: inline-size; }
+html.phone .mfig :deep(.figs) { height: min(300px, calc((100cqi - 4px) * 194 / 160)); }
 .mfig .tiny { width: 0; min-width: 100%; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mfig .on { color: var(--tx); font-weight: 600; }
 </style>

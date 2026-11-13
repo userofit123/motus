@@ -612,6 +612,8 @@ html.phone .cal .dots i.plan { background: none; border: 1px solid var(--ec, var
 .bodymap [data-t="3"] .m { fill: var(--heat3); }
 /* the figure as a filter: muscles are buttons, the chosen ones in the accent like a picked chip */
 .bodymap.pick g[role] { cursor: pointer; outline: none; }
+/* the tap ring round each muscle (BodyMap .hit): 7px past its edge on every side at any figure size, never drawn */
+.bodymap.pick .hit { fill: none; stroke: transparent; stroke-width: 14px; stroke-linejoin: round; vector-effect: non-scaling-stroke; pointer-events: stroke; cursor: pointer; }
 .bodymap.pick g[role]:focus-visible .m { fill: color-mix(in srgb, var(--acc) 45%, transparent); }
 /* hover only with a mouse: on a phone it would stick to the muscle just tapped off */
 @media (hover: hover) { .bodymap.pick g[role]:hover .m { fill: color-mix(in srgb, var(--acc) 45%, transparent); } }

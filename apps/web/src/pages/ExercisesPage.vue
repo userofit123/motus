@@ -63,7 +63,7 @@ await loaded(all);
       <button class="ib" aria-label="Filters" title="Filters" @click="filtersOpen = true"><Icon name="filter" /><span v-if="filterCount" class="badge">{{ filterCount }}</span></button>
     </div>
     <FilterPanel :count="`${list.length} exercise${list.length === 1 ? '' : 's'}`" :active="!!group || !!filterCount" @clear="group = ''; clearFilters()">
-      <MuscleFilter v-model="group" :groups="GROUPS" />
+      <MuscleFilter v-model="group" :groups="GROUPS" place="page" :searching="!!q" />
     </FilterPanel>
     <Sheet v-if="filtersOpen" title="Filters" @close="filtersOpen = false">
       <div class="fld"><label>Show</label><div class="seg block"><button v-for="[k, l] in [['', 'All'], ['fav', 'Favourites'], ['done', 'Done before'], ['mine', 'My own']]" :key="k" :class="{ on: only === k }" @click="only = k as any">{{ l }}</button></div></div>
@@ -89,3 +89,8 @@ await loaded(all);
     <ExerciseEditor v-if="creating" :name="q" @close="creating = false" @saved="(id) => router.push(`/exercises/${id}`)" />
   </div>
 </template>
+
+<style scoped>
+/* a pick on the phone's big body scrolls the count line up to just under the phone's top bar */
+:deep(.ffoot) { scroll-margin-top: calc(var(--st) + var(--hg)); }
+</style>
