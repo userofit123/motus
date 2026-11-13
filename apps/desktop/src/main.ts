@@ -216,6 +216,9 @@ function updateDone(title: string, body: string) {
 // A nudge from the screens (the rest is over) while you're in another window or app: a system notification, with the
 // system's sound; a click brings Motus back on `page`. In front, the screen's own cues are enough.
 let screenNotice: Notification | null = null;
+// A window in the background has its timers slowed (to once a minute after a while): a running rest or interval timer
+// asks for them not to be, so its cues come on time (workout/native.ts backgroundTimers).
+ipcMain.handle("timers:background", (e, on: unknown) => { e.sender.setBackgroundThrottling(on !== true); });
 ipcMain.handle("notice:show", (_e, title: string, body: string, page: string) => {
   if (!Notification.isSupported() || win?.isFocused()) return;
   screenNotice?.close();

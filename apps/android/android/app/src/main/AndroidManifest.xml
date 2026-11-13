@@ -28,6 +28,8 @@
 
         <!-- the interval timer's changes while the app is in the background (MotusWorkoutPlugin.TimerCue) -->
         <receiver android:name=".MotusWorkoutPlugin$TimerCue" android:exported="false" />
+        <!-- the rest's 10 seconds warning and 3-2-1 while the app is in the background (RestCues) -->
+        <receiver android:name=".RestCues" android:exported="false" />
         <!-- puts the recording's notification back when it is swiped away (Android 13+ allows that for a foreground service's, Android 14+ for other ongoing ones) -->
         <receiver android:name=".MotusWorkoutPlugin$RecordingSwiped" android:exported="false" />
 

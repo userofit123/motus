@@ -6,7 +6,7 @@ import { intervalPhases, intervalAt, intervalTotalS, cleanInterval, INTERVAL_DEF
 import { SOUND_BELL, SOUND_ROUND, SOUND_DIGITAL, SOUND_MARIMBA } from "../core/soundNames";
 import { readJson, writeJson } from "../core/prefs";
 import { now, tone as note, tick, levelOf, SOFT, PURE, WOOD, savedCues, vibrate, type Overtone } from "./runtime";
-import { keepAwake, scheduleIntervalCues, cancelIntervalCues, showIntervalNotice, clearIntervalNotice, onNoticeAction, INTERVAL_CUE_MAX, type IntervalCue } from "./native";
+import { keepAwake, backgroundTimers, scheduleIntervalCues, cancelIntervalCues, showIntervalNotice, clearIntervalNotice, onNoticeAction, INTERVAL_CUE_MAX, type IntervalCue } from "./native";
 
 interface IntervalRun {
   cfg: Required<IntervalConfig>; // sounds filled in
@@ -120,6 +120,7 @@ function finish(cue: boolean) {
   if (document.visibilityState === "visible") { cancelIntervalCues(); scheduledForHide = false; }
 }
 setInterval(() => {
+  backgroundTimers("intervals", ivRunning.value && iv.pausedAt == null);
   if (iv.startedAt == null || iv.pausedAt != null) return;
   const ph = ivPhases.value, run = Date.now() - iv.startedAt, { index, leftMs } = intervalAt(ph, run);
   if (index !== lastIndex) {

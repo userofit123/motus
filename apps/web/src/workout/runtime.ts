@@ -6,7 +6,7 @@ import { readJson, writeJson } from "../core/prefs";
 import { withDefaults, cleanCueSound, cleanCueVolume, type CueSound } from "@motus/shared";
 import { api } from "../api/client";
 import { queryClient } from "../api/live";
-import { showRestCountdown, clearRestCountdown, scheduleRestAlarm, cancelRestAlarm, notifyRestOverWeb, isNativeApp } from "./native";
+import { showRestCountdown, clearRestCountdown, scheduleRestAlarm, cancelRestAlarm, scheduleRestCues, cancelRestCues, notifyRestOverWeb, isNativeApp, backgroundTimers } from "./native";
 
 export interface RestState {
   endAt: number | null; // ms
@@ -31,9 +31,9 @@ let cues: Cues = { sound: true, cueSound: "beep", cueVolume: 100, vibrate: true,
 export const setCues = (c: Cues) => { cues = c; };
 /** Sound and vibration as chosen in Settings → Workout, read from the settings the app has loaded, so they are right
  *  on any page (the cues above are only filled once a workout screen has been opened). */
-export function savedCues(): CueVoice & { sound: boolean; vibrate: boolean } {
+export function savedCues(): CueVoice & { sound: boolean; vibrate: boolean; warn10: boolean; countdown: boolean } {
   const w = withDefaults(queryClient.getQueryData<{ settings?: unknown }>(["settings", "me"])?.settings ?? {}).workout;
-  return { sound: w.sound, vibrate: w.vibrate, cueSound: w.cueSound, cueVolume: w.cueVolume };
+  return { sound: w.sound, vibrate: w.vibrate, cueSound: w.cueSound, cueVolume: w.cueVolume, warn10: w.warn10, countdown: w.countdown };
 }
 export function vibrate(pattern: number | number[]) { try { navigator.vibrate?.(pattern); } catch { /* no vibration */ } }
 
@@ -43,6 +43,7 @@ let warned = false;
 let lastCount = 0;
 setInterval(() => {
   now.value = Date.now();
+  backgroundTimers("rest", restActive() && rest.pausedLeftS == null);
   if (rest.endAt && !rest.done && rest.pausedLeftS == null) {
     const left = (rest.endAt - now.value) / 1000;
     // in the background with the alarm set, the alarm alone announces the end: no warning or 3-2-1 leading up to it
@@ -107,6 +108,10 @@ function restEnded() {
   // in the background the Android app's alarm is the alert (it sounds with the phone asleep); the in-app cues too would
   // only double it
   if (alarmCovers()) return;
+  // Found over only now, long after the end (the app's timers were stopped in the background): no late beeps on
+  // return. The end was announced by the Android app's alarm or the notification below (shown even when late).
+  const late = Date.now() - rest.endAt! > LATE_MS;
+  if (late) { if (hidden() || !document.hasFocus()) void notifyRestOverWeb(rest.next); return; }
   if (cues.sound) beep(3, 880);
   if (cues.vibrate) vibrate([300, 150, 300]);
   if (cues.voice && rest.next) speak(`Rest over. ${rest.next}`);
@@ -117,8 +122,9 @@ function restEnded() {
 
 // The rest-over alarm (Android app, native.ts): scheduled for the rest's end only while the app is in the background,
 // since a locked phone stops the app's own timers and beeps; back on screen it is taken off (with a "Rest over" it
-// already showed) and the in-app cues carry on, so the end is never announced twice. Every change to the rest's end
-// (+/- time, pause, skip, a new rest, the workout ending) while in the background schedules it again or takes it off.
+// already showed) and the in-app cues carry on, so the end is never announced twice. The 10 seconds and 3-2-1 leading
+// up to it go with it, played by the Android app itself (scheduleRestCues). Every change to the rest's end (+/- time,
+// pause, skip, a new rest, the workout ending) while in the background schedules them again or takes them off.
 let alarmOn = false;
 const hidden = () => typeof document !== "undefined" && document.hidden;
 const alarmCovers = () => alarmOn && hidden();
@@ -127,11 +133,14 @@ function planAlarm() {
   if (!isNativeApp()) return;
   if (!resting()) { dropAlarm(); return; }
   // savedCues: the cues above are only filled once the workout screen has been opened
-  void scheduleRestAlarm(rest.endAt!, rest.next, savedCues()); alarmOn = true;
+  const c = savedCues();
+  void scheduleRestAlarm(rest.endAt!, rest.next, c); alarmOn = true;
+  // the same choices as the in-app cues above: the 10 seconds has its own switch, the 3-2-1 also needs the sound on
+  scheduleRestCues(rest.endAt!, { warn10: c.warn10, countdown: c.sound && c.countdown && rest.totalS > 5, cueSound: c.cueSound, cueVolume: c.cueVolume });
 }
 function dropAlarm() {
   if (!alarmOn) return;
-  void cancelRestAlarm(); alarmOn = false;
+  void cancelRestAlarm(); cancelRestCues(); alarmOn = false;
 }
 // a new end time: the countdown in the shade shows it, and in the background the alarm moves with it
 function restTimeSet() {
@@ -140,7 +149,7 @@ function restTimeSet() {
 }
 if (typeof document !== "undefined") document.addEventListener("visibilitychange", () => { if (hidden()) planAlarm(); else dropAlarm(); });
 // one left from before the app was closed in the background would still sound with the app open again
-if (isNativeApp() && !hidden()) void cancelRestAlarm();
+if (isNativeApp() && !hidden()) { void cancelRestAlarm(); cancelRestCues(); }
 
 // Sounds are made here rather than shipped as files. Each note is a few sine partials with a quick (but not instant)
 // attack and an exponential fade, so it rings like a small bell instead of clicking on and off like a raw square
@@ -185,7 +194,21 @@ const CUE: Overtone[] = [[1, 1, 1], [2, 0.5, 1], [3, 0.3, 1], [4, 0.15, 1]];
 /** One note starting `delay` seconds from now that rings for `dur` seconds; `attack` is how long it takes to reach full
  *  loudness (a few ms for a struck note, longer for one that swells in); `hold` keeps it at full loudness that long
  *  before the fade starts; `level` is the chosen volume as a gain (levelOf). */
-export function tone(freq: number, { delay = 0, dur = 0.5, vol = 0.3, partials = BELL, attack = 0.005, hold = 0, level = 1 }: { delay?: number; dur?: number; vol?: number; partials?: readonly Overtone[]; attack?: number; hold?: number; level?: number } = {}) {
+export function tone(freq: number, o: ToneOptions = {}) {
+  try {
+    const { ac } = audio();
+    if (ac.state === "running") { play(freq, o); return; }
+    // A context that isn't running (the page was hidden, the phone slept) holds its clock still, so notes put on it now
+    // would all sound at once when it wakes, long after their moment. So wait for it, and drop the note if that took
+    // longer than a second: a cue is only worth playing on time.
+    const asked = Date.now();
+    void ac.resume().then(() => { if (Date.now() - asked <= LATE_MS) play(freq, o); }, () => {});
+  } catch { /* no sound */ }
+}
+/** How late a cue may still play; later than this it is dropped (a beep for a moment long gone only confuses). */
+export const LATE_MS = 1000;
+type ToneOptions = { delay?: number; dur?: number; vol?: number; partials?: readonly Overtone[]; attack?: number; hold?: number; level?: number };
+function play(freq: number, { delay = 0, dur = 0.5, vol = 0.3, partials = BELL, attack = 0.005, hold = 0, level = 1 }: ToneOptions) {
   try {
     const { ac, dest } = audio(), t = ac.currentTime + 0.01 + delay;
     for (const [ratio, amp, ring] of partials) {

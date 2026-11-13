@@ -133,9 +133,30 @@ export function cancelRestAlarm() {
     try { await plugin("LocalNotifications")?.cancel({ notifications: [{ id: REST_ALARM }] }); } catch { /* nothing scheduled */ }
   });
 }
+// The cues leading up to the rest's end, played by the Android app while it is in the background (the WebView's timers
+// and sound are stopped there): the 10 seconds warning and the 3-2-1, at their times, in the chosen sound and level
+// (MotusWorkoutPlugin.scheduleRestCues), also with the screen off. The end itself is the alarm above. Scheduled and
+// taken off together with it (workout/runtime.ts); each call replaces the ones scheduled before.
+export function scheduleRestCues(endAt: number, o: { warn10: boolean; countdown: boolean; cueSound: string; cueVolume: number }) {
+  plugin("MotusWorkout")?.scheduleRestCues?.({ endAt, ...o }).catch?.(() => {});
+}
+export function cancelRestCues() {
+  plugin("MotusWorkout")?.cancelRestCues?.().catch?.(() => {});
+}
+// The desktop app slows the timers of a window in the background (after a few minutes to once a minute), so a rest's
+// 10 seconds, 3-2-1 and end would come late or not at all; while a rest or the interval timer runs it doesn't.
+const timing = new Set<string>();
+let unthrottled = false;
+export function backgroundTimers(who: "rest" | "intervals", on: boolean) {
+  if (on) timing.add(who); else timing.delete(who);
+  if (timing.size > 0 === unthrottled) return;
+  unthrottled = timing.size > 0;
+  const set = (globalThis as { motusNative?: { backgroundTimers?: (on: boolean) => Promise<void> } }).motusNative?.backgroundTimers;
+  if (set) void set(unthrottled).catch(() => {});
+}
 // The rest is over, in a browser or the desktop app with Motus in the background (the Android app has its alarm
 // above): in a browser "+30s" rests a little longer; the desktop app has no service worker, so its own notification
-// (apps/desktop, without buttons). Background timers are slowed down, so this can come a second or so late.
+// (apps/desktop, without buttons). A browser slows the timers of a tab in the background, so there this can come late.
 export function notifyRestOverWeb(body: string) {
   const desk = (globalThis as { motusNative?: { notify?: (title: string, body: string, page: string) => Promise<void> | void } }).motusNative?.notify;
   if (desk) return Promise.resolve(desk("Rest over", body || "Time for the next set", "/workout")).catch(() => {});

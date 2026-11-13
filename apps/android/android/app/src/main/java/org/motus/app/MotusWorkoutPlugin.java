@@ -230,7 +230,7 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener2 {
     // True while this process has the web app loaded (load() until handleOnDestroy()). Swiping the app away usually kills
     // the process without handleOnDestroy, so its alarms then fire into a fresh process where this is false: nothing
     // would answer the notification's buttons there, so the cue takes everything off instead of showing it.
-    private static volatile boolean live = false;
+    static volatile boolean live = false; // also read by RestCues
 
     private static Intent cueIntent(Context ctx) {
         return new Intent(ctx, TimerCue.class).setAction(CUE_ACTION);
@@ -273,6 +273,22 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener2 {
             else if (exact) am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi);
             else am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, at, pi);
         }
+        call.resolve();
+    }
+
+    /** The rest's 10 seconds warning and 3-2-1 while the app is in the background (`endAt`, `warn10`, `countdown`,
+     *  `cueSound`, `cueVolume`), in place of any scheduled before: RestCues. */
+    @PluginMethod
+    public void scheduleRestCues(PluginCall call) {
+        Long endAt = call.getLong("endAt");
+        if (endAt == null) { call.reject("endAt missing"); return; }
+        RestCues.schedule(getContext(), endAt, call.getBoolean("warn10", false), call.getBoolean("countdown", false), call.getString("cueSound", "beep"), call.getInt("cueVolume", 100));
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void cancelRestCues(PluginCall call) {
+        RestCues.cancel(getContext());
         call.resolve();
     }
 
@@ -609,6 +625,7 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener2 {
         nm.cancel(TIMER_ID);
         stopRecordingService();
         cancelCues(getContext()); // or they would show the timer again, with buttons nothing answers
+        RestCues.cancel(getContext());
         stopListening();
         super.handleOnDestroy();
     }

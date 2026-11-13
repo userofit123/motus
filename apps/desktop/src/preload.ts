@@ -33,6 +33,7 @@ const api = {
   openBackupFolder: () => ipcRenderer.invoke("backup:open"),
   saveFile: (name: string, bytes: Uint8Array) => ipcRenderer.invoke("file:save", name, bytes),
   notify: (title: string, body: string, page: string) => ipcRenderer.invoke("notice:show", title, body, page),
+  backgroundTimers: (on: boolean) => ipcRenderer.invoke("timers:background", on),
   update: {
     version: () => ipcRenderer.invoke("update:version"),
     check: () => ipcRenderer.invoke("update:check"),
