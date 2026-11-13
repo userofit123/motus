@@ -524,8 +524,11 @@ button.sect-h.go { width: 100%; padding: 0; border: 0; background: none; font: i
 .cal .ent .ico { width: 12px; height: 12px; }
 html.phone .cal { gap: 2px; }
 html.phone .cal .d { min-height: 46px; padding: 4px 2px; align-items: center; background: none; border-color: transparent; }
-.cal .d.sel { background: var(--s2); border-color: var(--acc); }
-html.phone .cal .d.sel { background: var(--s2); border-color: transparent; }
+/* the chosen day: an accent tint over the day's own surface (any accent, light or dark, plain or Glass) and the number in the
+   accent; the desktop box also gets an accent border. A grey --s2 alone barely showed on a light background */
+.cal .d.sel { background-image: linear-gradient(color-mix(in srgb, var(--acc) 16%, transparent), color-mix(in srgb, var(--acc) 16%, transparent)); border-color: var(--acc); }
+.cal .d.sel:not(.today) .n { color: var(--acc); font-weight: 700; }
+html.phone .cal .d.sel { border-color: transparent; }
 html.phone .cal .dots { display: flex; gap: 3px; justify-content: center; flex-wrap: wrap; }
 html.phone .cal .dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--ec, var(--acc)); }
 html.phone .cal .dots i.plan { background: none; border: 1px solid var(--ec, var(--acc)); }
@@ -562,6 +565,13 @@ html.phone .cal .dots i.plan { background: none; border: 1px solid var(--ec, var
 /* keyboard focus as a ring round the muscle, after the chosen fill so it shows on a chosen muscle too
    (the g itself has no box to outline in every browser) */
 .bodymap.pick g[role]:focus-visible .m { stroke: var(--tx); stroke-width: 2px; vector-effect: non-scaling-stroke; }
+/* the figure as a pointer (Stats → Muscles): amounts keep their colours; the muscles pointed out get a ring, the rest fade */
+.bodymap.insp g[role] { cursor: pointer; outline: none; }
+.bodymap.insp .m { transition: fill .3s, opacity .2s; }
+.bodymap.focused g[role]:not([data-f]) .m { opacity: .3; }
+.bodymap.insp g[data-f] .m { stroke: var(--tx); stroke-width: 1.5px; vector-effect: non-scaling-stroke; }
+.bodymap.insp g[role]:focus-visible .m { stroke: var(--acc); stroke-width: 2px; vector-effect: non-scaling-stroke; }
+@media (hover: hover) { .bodymap.insp g[role]:hover .m { opacity: 1; } }
 /* the little body on the left of a card, info on the right, as on the Routines list's routine cards (CLAUDE.md rule).
    The row never hangs on :has() (where it is missing the whole rule drops and the figure stacks above the info),
    and two classes so it outranks the card's own column (.rcard) whatever order the rules come in.
@@ -574,6 +584,9 @@ html.phone .cal .dots i.plan { background: none; border: 1px solid var(--ec, var
 .bodymap.rbody.sm { width: 46px; min-height: 52px; }
 .bmlegend { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; font-size: var(--fs-xs); color: var(--tx2); }
 .bmlegend span { display: inline-flex; align-items: center; gap: 5px; }
+.bmlegend button { display: inline-flex; align-items: center; gap: 5px; background: none; border: 0; padding: 0; font: inherit; color: inherit; cursor: pointer; border-radius: 6px; }
+.bmlegend button.on { color: var(--tx); font-weight: 600; }
+.bmlegend button:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
 .bmlegend i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
 .bmlegend i.t1 { background: var(--heat1); }
 .bmlegend i.t2 { background: var(--heat2); }
@@ -633,6 +646,9 @@ html.phone .grid.g4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .calnav b { font-size: 15px; font-weight: 600; text-align: center; }
 .calnav b { flex: none; min-width: 132px; }
 html:not(.phone) .calnav b { min-width: 170px; }
+/* the List view's search: the same gap below it as the page header leaves above it, so it sits midway, not on the first month */
+.lsearch { margin-bottom: calc(var(--spg) + 6px); }
+.pmain .lsearch { margin-bottom: var(--spg); }
 .fchip.acc { color: var(--acc); border-color: var(--acc); }
 .pvx.off { opacity: .45; }
 .pvx .thumb { align-self: flex-start; margin-top: 2px; }

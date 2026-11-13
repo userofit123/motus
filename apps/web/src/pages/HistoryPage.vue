@@ -87,10 +87,13 @@ const monthStats = computed(() => {
 });
 const planDay = ref<string | null>(null);
 const n = (k: number, one: string, many = one + "s") => `${k} ${k === 1 ? one : many}`;
+// the shown month's finished workouts and activities and their time together; it follows the month you are looking at,
+// so it names that month (a bare "6 workouts · 7h 2m" under the title read as a riddle)
 const summary = computed(() => {
-  const m = monthStats.value;
-  if (!m.days) return "Nothing yet this month";
-  return [n(m.workouts, "workout"), m.activities ? n(m.activities, "activity", "activities") : "", fmt.value.dur(m.timeS, true)].filter(Boolean).join(" · ");
+  const m = monthStats.value, mk = localYmd(month.value).slice(0, 7);
+  const name = mk === today.slice(0, 7) ? "This month" : month.value.toLocaleDateString(undefined, mk.slice(0, 4) === today.slice(0, 4) ? { month: "long" } : { month: "long", year: "numeric" });
+  if (!m.days) return mk >= today.slice(0, 7) ? `${name}: nothing yet` : `${name}: nothing logged`;
+  return `${name}: ` + [m.workouts ? n(m.workouts, "workout") : "", m.activities ? n(m.activities, "activity", "activities") : "", m.timeS ? `${fmt.value.dur(m.timeS, true)} in total` : ""].filter(Boolean).join(" · ");
 });
 // list view
 const listWorkouts = useWorkouts(computed(() => ({ limit: 300 })));
@@ -148,7 +151,7 @@ await loaded(cal, listWorkouts, listActs);
     </div>
 
     <div v-else key="list">
-      <SearchField v-model="qtext" class="hgap" placeholder="Search workouts and activities" />
+      <SearchField v-model="qtext" class="lsearch" placeholder="Search workouts and activities" />
       <div v-if="!list.length" class="card empty"><Icon name="calendar" :size="34" /><b>Nothing yet</b>Finished workouts and activities show here.</div>
       <section v-for="[m, xs] in listGroups" :key="m"><div class="sh"><h2>{{ m }}</h2><span class="tiny">{{ xs.length }}</span></div>
         <div class="card"><div class="list"><div v-for="x in xs" :key="x.id" class="li click" @click="open(x)">
