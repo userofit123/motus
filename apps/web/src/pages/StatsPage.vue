@@ -84,6 +84,13 @@ const balance = computed(() => {
   const m = d.value?.muscles ?? {}; const sum = (ks: string[]) => ks.reduce((a, k) => a + (m[k] ?? 0), 0);
   return { push: sum(["chest", "shoulders", "triceps"]), pull: sum(["lats", "middle back", "biceps", "traps"]), upper: sum(["chest", "shoulders", "triceps", "lats", "middle back", "biceps", "traps", "forearms"]), lower: sum(["quadriceps", "hamstrings", "glutes", "calves", "adductors", "abductors"]) };
 });
+// training weeks in the period: with one, its average is just this week again, so the average waits for a second
+const trainWeeks = computed(() => weeks.value.filter((w) => w.workouts).length);
+// the muscles pointed out on the figure: one muscle (its own tap or label), or a whole band from the legend; again clears
+const mSel = ref<{ tier?: number; muscles: string[] } | null>(null);
+watch(rk, () => (mSel.value = null));
+const pickMuscle = (m: string) => { mSel.value = !mSel.value?.tier && mSel.value?.muscles[0] === m ? null : { muscles: [m] }; };
+const pickTier = (t: number, ms: string[]) => { mSel.value = mSel.value?.tier === t ? null : { tier: t, muscles: ms }; };
 const neglected = computed(() => GROUPS.filter((g) => g.id !== "neck" && g.muscles.every((m) => !(d.value?.muscles?.[m]))).map((g) => g.name));
 // activities
 const actTypes = computed(() => { const m = new Map<string, any>(); for (const a of d.value?.activities ?? []) { const x = m.get(a.type) ?? { type: a.type, n: 0, s: 0, m: 0 }; x.n++; x.s += a.durationS; x.m += Number(a.distanceM ?? 0); m.set(a.type, x); } return [...m.values()].sort((a, b) => b.n - a.n); });
@@ -162,11 +169,12 @@ await loaded(st, prev, ach);
     <template v-else-if="tab === 'muscles'">
       <div v-if="!Object.keys(d.muscles).length" class="card empty"><Icon name="activity" :size="34" /><b>No sets in this period</b>The muscles you train, and how evenly, show here once you've done some workouts.</div>
       <div v-else class="grid g2">
-        <div class="card"><div class="lbl hgap">Sets per muscle in this period</div><BodyMap :values="d.muscles" :height="240" legend />
-          <div class="grid g2 keep" style="margin-top:12px;gap:6px 28px"><div v-for="[m, n] in Object.entries(d.muscles).sort((a: any, b: any) => b[1] - a[1])" :key="m" class="row tiny"><span class="grow" style="color:var(--tx)">{{ muscleName(m) }}</span>{{ Math.round(Number(n)) }}</div></div></div>
+        <div class="card"><div class="lbl hgap">Sets per muscle in this period</div><BodyMap :values="d.muscles" :height="240" legend inspect :focus="mSel?.muscles" :focus-tier="mSel?.tier" @pick="pickMuscle" @pick-tier="pickTier" />
+          <div class="grid g2 keep" style="margin-top:12px;gap:6px 28px"><div v-for="[m, n] in Object.entries(d.muscles).sort((a: any, b: any) => b[1] - a[1])" :key="m" class="row tiny mrow" :class="{ on: mSel?.muscles.includes(m) }" role="button" tabindex="0" :aria-pressed="!!mSel?.muscles.includes(m)" @click="pickMuscle(m)" @keydown.enter.space.prevent="pickMuscle(m)"><span class="grow" style="color:var(--tx)">{{ muscleName(m) }}</span>{{ Math.round(Number(n)) }}</div></div></div>
         <div class="stack">
-          <div class="card"><div class="lbl hgap">Working sets this week · target {{ WEEKLY_SET_RANGE[0] }}-{{ WEEKLY_SET_RANGE[1] }} per group</div><BarChart :bars="groupWeek" horizontal :band="WEEKLY_SET_RANGE" /></div>
-          <div class="card"><div class="lbl hgap">Average per training week</div><BarChart :bars="groupAvg" horizontal /></div>
+          <div class="card"><div class="lbl hgap">Working sets this week · target {{ WEEKLY_SET_RANGE[0] }}-{{ WEEKLY_SET_RANGE[1] }} per group</div><BarChart :bars="groupWeek" horizontal :band="WEEKLY_SET_RANGE" />
+            <div class="tiny" style="margin-top:6px">The dashed box is {{ WEEKLY_SET_RANGE[0] }}-{{ WEEKLY_SET_RANGE[1] }} hard sets a week, the range research finds builds muscle for most people. A main muscle counts 1 set, a helper half.</div></div>
+          <div v-if="trainWeeks > 1" class="card"><div class="lbl hgap">Average per training week · {{ trainWeeks }} weeks in this period</div><BarChart :bars="groupAvg" horizontal :band="WEEKLY_SET_RANGE" /></div>
           <div class="card"><div class="lbl hgap">Balance</div>
             <div class="row tiny" style="margin-bottom:6px"><span style="width:60px">Push</span><div class="pbar grow"><i :style="{ width: (balance.push / Math.max(1, balance.push + balance.pull)) * 100 + '%' }" /></div><span style="width:60px;text-align:end">Pull</span></div>
             <div class="row tiny"><span style="width:60px">Upper</span><div class="pbar grow"><i :style="{ width: (balance.upper / Math.max(1, balance.upper + balance.lower)) * 100 + '%' }" /></div><span style="width:60px;text-align:end">Lower</span></div>
@@ -202,7 +210,8 @@ await loaded(st, prev, ach);
           <div class="tiny" style="margin-top:2px">{{ a.desc }}</div>
           <div class="achs">
             <div v-for="x in a.steps" :key="x.id" class="ach" :class="{ on: x.reachedAt }" :title="x.reachedAt ? `Reached ${fmt.date(x.reachedAt, { day: 'numeric', month: 'short', year: 'numeric' })}` : `${achAmount(a.unit, a.value)} of ${achAmount(a.unit, x.target)}`">
-              <Icon name="trophy" :size="16" /><div class="grow"><div class="t">{{ x.name }}</div><div class="s">{{ x.reachedAt ? fmt.date(x.reachedAt, { day: "numeric", month: "short", year: "numeric" }) : `${Math.floor(Math.min(1, a.value / x.target) * 100)}%` }}</div></div>
+              <Icon name="trophy" :size="16" /><div class="grow"><div class="t">{{ x.name }}</div><div class="s">{{ x.reachedAt ? fmt.date(x.reachedAt, { day: "numeric", month: "short", year: "numeric" }) : `${Math.floor(Math.min(1, a.value / x.target) * 100)}%` }}</div>
+                <div class="pbar" :class="{ ok: x.reachedAt }"><i :style="{ width: (x.reachedAt ? 100 : Math.min(1, a.value / x.target) * 100) + '%' }" /></div></div>
             </div>
           </div>
         </div>
@@ -219,4 +228,8 @@ await loaded(st, prev, ach);
 .ach.on svg { color: var(--warn); }
 .ach .t { font-size: 13px; font-weight: 600; color: var(--tx); }
 .ach .s { font-size: 11.5px; }
+.ach .pbar { height: 4px; margin-top: 4px; }
+.mrow { cursor: pointer; border-radius: 6px; outline: none; }
+.mrow.on { font-weight: 600; color: var(--tx); }
+.mrow:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
 </style>

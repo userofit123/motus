@@ -23,7 +23,23 @@ const path = computed(() => sorted.value.map((p, i) => `${i ? "L" : "M"}${sx(p.x
 const area = computed(() => sorted.value.length ? `${path.value}L${sx(sorted.value.at(-1)!.x)},${H.value - P.b}L${sx(sorted.value[0]!.x)},${H.value - P.b}Z` : "");
 // three gridlines, unless the labels would repeat (flat or tiny ranges), then one per distinct label
 const ticks = computed(() => { const d = dom.value; if (d.flat) return [sorted.value[0]!.y]; const t = [0, 0.5, 1].map((k) => d.y0 + (d.y1 - d.y0) * k); return t.filter((v, i) => t.findIndex((u) => f(u) === f(v)) === i); });
-const xticks = computed(() => { const s = sorted.value; if (s.length < 2) return s.map((p) => p.x); return [s[0]!.x, s[Math.floor(s.length / 2)]!.x, s.at(-1)!.x]; });
+// first, last and middle date, the middle one halfway in time (not the middle entry: entries bunched at one end put
+// it on top of the last label). A label that would touch one already placed, or repeat it, is left out.
+const LABEL_CH = 6, LABEL_GAP = 8; // about one character of .ax text in px, and the least room between two labels
+const xticks = computed(() => {
+  const s = sorted.value; if (!s.length) return [];
+  const d = dom.value, mid = (d.x0 + d.x1) / 2;
+  const out: { x: number; anchor: "start" | "middle" | "end"; lo: number; hi: number; text: string }[] = [];
+  const tryAdd = (x: number, anchor: "start" | "middle" | "end") => {
+    const text = xf(x), w = text.length * LABEL_CH, at = sx(x);
+    const lo = anchor === "start" ? at : anchor === "end" ? at - w : at - w / 2, hi = lo + w;
+    if (out.some((t) => t.text === text || (lo < t.hi + LABEL_GAP && hi > t.lo - LABEL_GAP))) return;
+    out.push({ x, anchor, lo, hi, text });
+  };
+  if (s.length < 2 || d.x0 === d.x1) { tryAdd(s[0]!.x, "middle"); return out; }
+  tryAdd(d.x0, "start"); tryAdd(d.x1, "end"); tryAdd(mid, "middle");
+  return out.sort((a, b) => a.x - b.x);
+});
 const hover = ref<number | null>(null);
 function move(e: MouseEvent) {
   const r = (e.currentTarget as SVGElement).getBoundingClientRect();
@@ -43,7 +59,7 @@ const xf = (t: number) => (props.xfmt ? props.xfmt(t) : new Date(t).toLocaleDate
       @click="hover != null && sorted[hover]?.id && emit('pick', sorted[hover]!.id!)">
       <defs><linearGradient :id="'cg' + uid" x1="0" y1="0" x2="0" y2="1"><stop offset="0" :stop-color="color ?? 'var(--acc)'" stop-opacity=".35" /><stop offset="1" :stop-color="color ?? 'var(--acc)'" stop-opacity="0" /></linearGradient></defs>
       <g v-for="t in ticks" :key="t"><line class="gl" :x1="P.l" :x2="W - P.r" :y1="sy(t)" :y2="sy(t)" /><text class="ax" :x="P.l - 6" :y="sy(t) + 3" text-anchor="end">{{ f(t) }}</text></g>
-      <text v-for="(t, i) in xticks" :key="'x' + i" class="ax" :x="sx(t)" :y="H - 4" :text-anchor="i === 0 ? 'start' : i === xticks.length - 1 ? 'end' : 'middle'">{{ xf(t) }}</text>
+      <text v-for="t in xticks" :key="'x' + t.x" class="ax" :x="sx(t.x)" :y="H - 4" :text-anchor="t.anchor">{{ t.text }}</text>
       <path :d="area" :fill="`url(#cg${uid})`" />
       <path class="ln" :d="path" :style="color ? { stroke: color } : undefined" />
       <circle v-for="(p, i) in sorted" :key="i" class="pt" :cx="sx(p.x)" :cy="sy(p.y)" :r="hover === i ? 5 : sorted.length > 40 ? 0 : 3" :style="color ? { stroke: color } : undefined" />

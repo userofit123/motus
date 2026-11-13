@@ -5,12 +5,14 @@
 // highlight/secondary: one exercise's main and helper muscles instead of amounts.
 // pickable: each muscle is a button that emits pick (the muscle filter above exercise lists); off, the figure only shows.
 // pressed: with pickable, the muscles whose button is on (a tap clears them); lit muscles are not always pressed.
+// inspect: the amounts keep their colours, but muscles and legend entries are buttons (pick, pickTier with that
+// band's muscles) so a page can point one out; focus: the muscles pointed out, ringed while the rest fade.
 import { computed } from "vue";
 import { muscleName } from "@motus/shared";
 import { SILHOUETTE, HEAD, FRONT, BACK } from "./bodyShapes";
 
-const props = defineProps<{ values: Record<string, number>; max?: number; height?: number; highlight?: string[]; secondary?: string[]; legend?: boolean; pickable?: boolean; pressed?: string[] }>();
-const emit = defineEmits<{ pick: [muscle: string] }>();
+const props = defineProps<{ values: Record<string, number>; max?: number; height?: number; highlight?: string[]; secondary?: string[]; legend?: boolean; pickable?: boolean; pressed?: string[]; inspect?: boolean; focus?: string[]; focusTier?: number }>();
+const emit = defineEmits<{ pick: [muscle: string]; pickTier: [tier: number, muscles: string[]] }>();
 const MIRROR = "translate(100 0) scale(-1 1)";
 const VIEWS = [{ name: "Front", shapes: Object.entries(FRONT) }, { name: "Back", shapes: Object.entries(BACK) }];
 
@@ -31,24 +33,29 @@ const label = (m: string) => {
   return `${m[0]!.toUpperCase()}${m.slice(1)}${tier(m) ? ` · ${TIER_NAME[tier(m)]}` : ""}${v ? ` · ${Math.round(v * 10) / 10} sets` : ""}`;
 };
 const used = computed(() => new Set(VIEWS.flatMap((v) => v.shapes.map(([m]) => tier(m))).filter(Boolean)));
+const btn = computed(() => props.pickable || props.inspect);
+const tierMuscles = (t: number) => [...new Set(VIEWS.flatMap((v) => v.shapes.map(([m]) => m)))].filter((m) => tier(m) === t);
 </script>
 
 <template>
-  <div class="bodymap" :class="{ pick: pickable }" :style="{ '--bmh': (height ?? 200) + 'px' }">
+  <div class="bodymap" :class="{ pick: pickable, insp: inspect, focused: !!focus?.length }" :style="{ '--bmh': (height ?? 200) + 'px' }">
     <div class="figs">
       <svg v-for="v in VIEWS" :key="v.name" viewBox="10 3 80 194" role="img" :aria-label="v.name">
         <g class="sil"><path :d="SILHOUETTE" /><path :d="SILHOUETTE" :transform="MIRROR" /><ellipse v-bind="HEAD" /></g>
         <!-- the level is an attribute, not a class: patching the class of SVG elements inside these lists crashes Vue (3.5) -->
-        <g v-for="[m, d] in v.shapes" :key="m" :data-t="tier(m)" :role="pickable ? 'button' : undefined" :tabindex="pickable ? 0 : undefined"
-          :aria-pressed="pickable ? !!pressed?.includes(m) : undefined" :aria-label="pickable ? label(m) : undefined"
-          @click="pickable && emit('pick', m)" @keydown.enter.space.prevent="pickable && emit('pick', m)">
+        <g v-for="[m, d] in v.shapes" :key="m" :data-t="tier(m)" :data-f="focus?.includes(m) ? 1 : undefined" :role="btn ? 'button' : undefined" :tabindex="btn ? 0 : undefined"
+          :aria-pressed="pickable ? !!pressed?.includes(m) : inspect ? !!focus?.includes(m) : undefined" :aria-label="btn ? label(m) : undefined"
+          @click="btn && emit('pick', m)" @keydown.enter.space.prevent="btn && emit('pick', m)">
           <path class="m" :d="d"><title>{{ label(m) }}</title></path>
           <path class="m" :d="d" :transform="MIRROR"><title>{{ label(m) }}</title></path>
         </g>
       </svg>
     </div>
     <div v-if="legend && used.size" class="bmlegend">
-      <span v-for="t in [1, 2, 3].filter((x) => used.has(x as any))" :key="t"><i :class="'t' + t" />{{ TIER_NAME[t] }}</span>
+      <template v-for="t in [1, 2, 3].filter((x) => used.has(x as any))" :key="t">
+        <button v-if="inspect" type="button" :class="{ on: focusTier === t }" :aria-pressed="focusTier === t" @click="emit('pickTier', t, tierMuscles(t))"><i :class="'t' + t" />{{ TIER_NAME[t] }}</button>
+        <span v-else><i :class="'t' + t" />{{ TIER_NAME[t] }}</span>
+      </template>
     </div>
   </div>
 </template>
