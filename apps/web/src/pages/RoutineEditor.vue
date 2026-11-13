@@ -63,10 +63,18 @@ const exById = computed(() => new Map((all.data.value ?? []).map((e) => [e.id, e
 const nk = () => Math.random().toString(36).slice(2, 10);
 const keyed = (e: any) => { e._k ??= nk(); e.sets.forEach((x: any) => (x._k ??= nk())); return e; };
 const open = ref(new Set<string>());
-// fold: every exercise folded (an existing routine opens as an overview); keep: as they were (a draft reloaded after a live update)
+// fold: every exercise folded (an existing routine opens as an overview); keep: as they were (a draft reloaded after a live
+// update, or this routine refetched after a change made elsewhere, e.g. "Timed sets" from an exercise's ⋮ menu)
 function load(data: any, folds: "fold" | "keep" = "fold") {
-  const was = !!r.value;
+  const prev = r.value, was = !!prev;
   r.value = JSON.parse(JSON.stringify(data));
+  // a refetch comes without screen keys: the same exercise in the same place gets its old key back, so an open card stays open
+  if (prev) r.value.exercises.forEach((e: any, i: number) => {
+    const o = prev.exercises[i];
+    if (e._k || o?.exerciseId !== e.exerciseId) return;
+    e._k = o._k;
+    e.sets.forEach((x: any, j: number) => (x._k ??= o.sets[j]?._k));
+  });
   r.value.exercises.forEach(keyed);
   if (folds === "fold") open.value = new Set();
   else if (!was) open.value = new Set(r.value.exercises.map((e: any) => e._k));
@@ -87,7 +95,9 @@ watch([src.data, isNew, planMode], () => {
   // a planned workout opens straight on the exercise list to pick from
   if (planMode.value) { if (!r.value) { load({ name: "Workout", description: "", folderId: null, color: null, exercises: [] }); picking.value = {}; } }
   else if (isNew.value) { load({ name: "", description: "", folderId: null, color: null, exercises: [] }); starter.value = true; }
-  else if (src.data.value) load(src.data.value);
+  // the routine on screen fetched again (its ⋮ menu's "Timed sets" and "One side at a time" save to the exercise, and the server
+  // updates this routine): folding everything here closed the exercise the menu was used in
+  else if (src.data.value) load(src.data.value, r.value?.id && r.value.id === src.data.value.id ? "keep" : "fold");
 }, { immediate: true });
 watch([r, asRoutine], ([v]) => { if (v && dirty.value) writeJson(draftKey.value, { ...v, __for: planMode.value ? "plan" : id.value, __asRoutine: asRoutine.value }); }, { deep: true });
 const touch = () => { dirty.value = true; };
