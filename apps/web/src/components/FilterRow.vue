@@ -4,15 +4,30 @@
 // Slots: #aside, a picture for the chips: on desktop it stands left of the chips (a two-column grid beside it); on phones
 // it is a full-width tile above them, the chips in the same sideways row as every other filter row.
 // fold (with v-model:open): the label becomes a fold button that hides the picture (never the chips), as the Routines
-// folder headers fold their folders; for a picture too big to keep on a phone screen with the list.
+// folder headers fold their folders; for a picture too big to keep on a phone screen with the list. `open` is the user's own
+// choice (the chevron shows it); `shown`, when given, is whether the picture is in view right now (a search can hide it).
+import { onMounted, ref, watch } from "vue";
 import Icon from "./Icon.vue";
 import Collapse from "./Collapse.vue";
 import { isPhone } from "../core/device";
 
 interface FilterOption { value: string; label: string; icon?: string; count?: number }
-const props = defineProps<{ label: string; options?: FilterOption[]; all?: string; modelValue?: string; fold?: boolean; open?: boolean }>();
+const props = defineProps<{ label: string; options?: FilterOption[]; all?: string; modelValue?: string; fold?: boolean; open?: boolean; shown?: boolean }>();
 const emit = defineEmits<{ "update:modelValue": [v: string]; "update:open": [v: boolean] }>();
 const pick = (v: string) => emit("update:modelValue", props.all != null && props.modelValue === v ? "" : v);
+// the picked chip can sit past the edge of a sideways row (folded on a phone the row is all that says what is set), so
+// it is brought into view sideways only: scrollIntoView would also move the page or the sheet up and down
+const row = ref<HTMLElement>();
+function reveal(smooth: boolean) {
+  const el = row.value, chip = el?.querySelector<HTMLElement>(".fchip.on");
+  if (!el || !chip || el.scrollWidth <= el.clientWidth) return;
+  const box = el.getBoundingClientRect(), r = chip.getBoundingClientRect(), cs = getComputedStyle(el);
+  const pl = parseFloat(cs.paddingLeft) || 0, pr = parseFloat(cs.paddingRight) || 0;
+  const dx = r.left < box.left + pl ? r.left - box.left - pl : r.right > box.right - pr ? r.right - box.right + pr : 0;
+  if (dx) el.scrollBy({ left: dx, behavior: smooth && !matchMedia("(prefers-reduced-motion: reduce)").matches ? "smooth" : "auto" });
+}
+onMounted(() => reveal(false));
+watch(() => props.modelValue, () => reveal(true), { flush: "post" });
 </script>
 
 <template>
@@ -22,9 +37,9 @@ const pick = (v: string) => emit("update:modelValue", props.all != null && props
     </button>
     <div v-else class="flbl">{{ label }}</div>
     <div :class="{ fside: !!$slots.aside, folds: fold }">
-      <Collapse v-if="fold && $slots.aside" :open="!!open"><div class="fasd"><slot name="aside" /></div></Collapse>
+      <Collapse v-if="fold && $slots.aside" :open="shown ?? !!open"><div class="fasd"><slot name="aside" /></div></Collapse>
       <slot v-else name="aside" />
-      <div class="chips" :class="$slots.aside && !isPhone ? 'cgrid' : 'hscroll'">
+      <div ref="row" class="chips" :class="$slots.aside && !isPhone ? 'cgrid' : 'hscroll'">
         <button v-if="all != null" class="fchip" :class="{ on: !modelValue }" @click="emit('update:modelValue', '')">{{ all }}</button>
         <slot>
           <button v-for="o in options" :key="o.value" class="fchip" :class="{ on: modelValue === o.value }" @click="pick(o.value)">
@@ -49,11 +64,8 @@ html:not(.phone) .chips.hscroll { margin-inline: 0; padding-inline: 0; }
 html:not(.phone) .fside { flex-direction: row; align-items: stretch; gap: var(--spg); }
 .cgrid { display: grid; grid-template-columns: repeat(2, 1fr); align-content: center; }
 .cgrid .fchip { justify-content: center; }
-/* the label as a fold button: the label's own type, full width with the chevron at the end (the Routines folder header's),
-   tall enough to tap; the extra height is taken back outside so the gap to what follows stays the plain label's */
-.ffold { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 6px; border: 0; background: none; font: inherit; font-size: 12.5px; font-weight: 600; color: var(--tx2); cursor: pointer; padding: 8px 0; margin-block: -8px calc(6px - 8px); min-height: 32px; text-align: start; border-radius: var(--r-sm); }
-.fc { color: var(--tx2); transition: transform .2s; flex: none; }
-.fc.shut { transform: rotate(-90deg); }
-html.he .fc.shut { transform: rotate(90deg); }
+/* the label as a fold button: the label's own type (from .flbl), full width with the chevron at the end (the Routines folder
+   header's .fc), tall enough to tap; the extra height is taken back outside so the gap to what follows stays the plain label's */
+.ffold { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 6px; border: 0; background: none; cursor: pointer; padding: 8px 0; margin-block: -8px calc(6px - 8px); min-height: 32px; text-align: start; border-radius: var(--r-sm); }
 .n { opacity: .65; font-variant-numeric: tabular-nums; margin-inline-start: 2px; }
 </style>

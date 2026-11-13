@@ -89,6 +89,12 @@ const key = (e: KeyboardEvent) => {
 };
 onMounted(() => addEventListener("keydown", key));
 onBeforeUnmount(() => removeEventListener("keydown", key));
+// the sticky search's real height (it grows with the text size and density), so a pick can scroll the filters to just under it
+const bar = ref<HTMLElement>();
+const barH = ref(0);
+const sizer = new ResizeObserver(([e]) => (barH.value = (e!.target as HTMLElement).offsetHeight));
+onMounted(() => bar.value && sizer.observe(bar.value));
+onBeforeUnmount(() => sizer.disconnect());
 let x0 = 0, y0 = 0, t0 = 0, ok = false;
 function ts(e: TouchEvent) {
   const t = e.touches[0]!; x0 = t.clientX; y0 = t.clientY; t0 = Date.now();
@@ -104,12 +110,12 @@ function te(e: TouchEvent) {
 
 <template>
   <Sheet :title="title ?? 'Add exercises'" size="wide" @close="emit('close')">
-    <div class="row hgap pksearch">
+    <div ref="bar" class="row hgap pksearch">
       <SearchField v-model="q" class="grow" placeholder="Search exercises" autofocus />
       <button class="ib" aria-label="Filters" title="Filters" :aria-expanded="moreOpen" @click="moreOpen = !moreOpen"><Icon name="filter" /><span v-if="moreCount" class="badge">{{ moreCount }}</span></button>
     </div>
-    <FilterPanel :count="showSuggest ? 'Works the same muscles' : `${list.length === 150 ? '150+' : list.length} exercises`" :active="filtered" @clear="clear">
-      <MuscleFilter v-model="group" :groups="PICK_GROUPS" place="picker" :searching="!!q" />
+    <FilterPanel :style="barH ? { '--pkbar': `${barH}px` } : undefined" :count="showSuggest ? 'Works the same muscles' : `${list.length === 150 ? '150+' : list.length} exercises`" :active="filtered" @clear="clear">
+      <MuscleFilter v-model="group" :groups="PICK_GROUPS" place="picker" :search="q" />
       <FilterRow v-if="!gym" v-model="equip" label="Equipment" all="Any" :options="EQUIP_OPTS" />
       <!-- with a gym profile the row starts with what that gym has, then "Any" -->
       <FilterRow v-else label="Equipment">
@@ -160,8 +166,10 @@ function te(e: TouchEvent) {
 /* the search stays on top while the filters and the list scroll under it (-4px cancels the sheet body's top padding),
    on the sheet's own background */
 .pksearch { position: sticky; top: -4px; z-index: 1; background: var(--bg); padding-block: 4px; margin-bottom: var(--hg); }
-/* a pick on the phone's big body scrolls the count line up to just under that search (about 56px tall) */
-:deep(.ffoot) { scroll-margin-top: calc(56px + var(--hg)); }
+/* a pick on the phone's big body scrolls the count line up so the filter card ends exactly under that search: the bar's
+   measured height (its -4px and the body's 4px top padding cancel out) plus the 2px between the card and the count line
+   (FilterPanel .ffoot) */
+:deep(.ffoot) { scroll-margin-top: calc(var(--pkbar, 56px) + 2px); }
 /* the whole preview takes the swipe, even below short content */
 .pvx { min-height: 100%; overflow-x: hidden; }
 /* open like a picked filter chip */

@@ -63,7 +63,7 @@ await loaded(all);
       <button class="ib" aria-label="Filters" title="Filters" @click="filtersOpen = true"><Icon name="filter" /><span v-if="filterCount" class="badge">{{ filterCount }}</span></button>
     </div>
     <FilterPanel :count="`${list.length} exercise${list.length === 1 ? '' : 's'}`" :active="!!group || !!filterCount" @clear="group = ''; clearFilters()">
-      <MuscleFilter v-model="group" :groups="GROUPS" place="page" :searching="!!q" />
+      <MuscleFilter v-model="group" :groups="GROUPS" place="page" :search="q" />
     </FilterPanel>
     <Sheet v-if="filtersOpen" title="Filters" @close="filtersOpen = false">
       <div class="fld"><label>Show</label><div class="seg block"><button v-for="[k, l] in [['', 'All'], ['fav', 'Favourites'], ['done', 'Done before'], ['mine', 'My own']]" :key="k" :class="{ on: only === k }" @click="only = k as any">{{ l }}</button></div></div>

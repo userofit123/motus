@@ -21,14 +21,15 @@ export function valueOf(m: string, groups: MuscleGroup[] = GROUPS): string {
 // chip of its own (lats, calves) gets a chip right after its group's, to show what is set and to clear it like any other.
 // On phones the body is as big as the card allows so small muscles can be hit, which leaves no room for the list: so it folds
 // (remembered per place: the page and the picker), hides while a name is searched, and after a pick the results are scrolled up.
-import { computed, getCurrentInstance, nextTick, ref } from "vue";
+import { computed, getCurrentInstance, nextTick, ref, watch } from "vue";
 import { groupOf, muscleName } from "@motus/shared";
 import FilterRow from "./FilterRow.vue";
 import BodyMap from "./BodyMap.vue";
 import { isPhone } from "../core/device";
 import { readJson, writeJson } from "../core/prefs";
 
-const props = defineProps<{ modelValue: string; groups: MuscleGroup[]; place: "page" | "picker"; searching?: boolean }>();
+// search: the searched text; the body hides while it is set
+const props = defineProps<{ modelValue: string; groups: MuscleGroup[]; place: "page" | "picker"; search?: string }>();
 const emit = defineEmits<{ "update:modelValue": [v: string] }>();
 const FOLD_KEY = "motusMuscleBody";
 const folds = readJson<{ page?: boolean; picker?: boolean }>(FOLD_KEY, {});
@@ -36,6 +37,17 @@ const bodyOpen = ref(folds[props.place] ?? true);
 function setOpen(v: boolean) {
   bodyOpen.value = v;
   writeJson(FOLD_KEY, { ...readJson(FOLD_KEY, {}), [props.place]: v });
+}
+const searching = computed(() => !!props.search);
+// the chevron (and what is saved) stays the user's own choice; a tap on it while searching shows the body for this search
+// only (until the text changes), so the tap always does something visible without changing the saved fold
+const peek = ref(false);
+watch(() => [props.search, searching.value], () => (peek.value = false));
+const shown = computed(() => bodyOpen.value && (!searching.value || peek.value));
+function toggle() {
+  if (!searching.value) return setOpen(!bodyOpen.value);
+  if (!bodyOpen.value) setOpen(true);
+  peek.value = !shown.value;
 }
 const chosen = computed(() => musclesOf(props.modelValue, props.groups));
 const options = computed(() => {
@@ -60,13 +72,14 @@ const self = getCurrentInstance();
 // (only when fewer than about two rows of them are in view; clearing to All stays put)
 async function set(v: string) {
   emit("update:modelValue", v);
-  if (!v || !isPhone.value || !bodyOpen.value || props.searching) return;
+  if (!v || !isPhone.value || !shown.value) return;
   await nextTick();
   const foot = (self?.proxy?.$el as HTMLElement | undefined)?.closest(".fpanel")?.querySelector<HTMLElement>(".ffoot");
   if (!foot) return;
-  // the bottom of what is in view: the sheet's body in the picker, above the phone's tab bar on a page
+  // the bottom of what is in view: the sheet's body in the picker, the top of the phone's tab bar on a page (measured, as the
+  // bar is --tabh plus the safe area --sb, an env() value that reads back unresolved from CSS)
   const sheet = foot.closest(".sh_b")?.getBoundingClientRect().bottom;
-  const bottom = sheet ?? innerHeight - (parseFloat(getComputedStyle(foot).getPropertyValue("--tabh")) || 0);
+  const bottom = sheet ?? document.querySelector(".tabbar")?.getBoundingClientRect().top ?? innerHeight;
   if (foot.getBoundingClientRect().top > bottom - 140)
     foot.scrollIntoView({ block: "start", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
 }
@@ -77,8 +90,8 @@ const tap = (m: string) => {
 </script>
 
 <template>
-  <FilterRow :model-value="modelValue" label="Muscle group" all="All" :options="options" :fold="isPhone" :open="bodyOpen && !searching"
-    @update:model-value="set" @update:open="setOpen">
+  <FilterRow :model-value="modelValue" label="Muscle group" all="All" :options="options" :fold="isPhone" :open="bodyOpen" :shown="shown"
+    @update:model-value="set" @update:open="toggle">
     <template #aside>
       <div class="mfig">
         <BodyMap pickable :values="{}" :highlight="chosen" :pressed="pressed" :height="isPhone ? undefined : 230" @pick="tap" />

@@ -64,8 +64,5 @@ section:first-of-type .sh.fh { margin-top: 0; }
 .fh-b h2 { margin: 0; }
 .fi { width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center; background: var(--s2); color: var(--acc); flex: none; }
 .fn { color: var(--tx2); font-size: 13px; font-weight: 500; }
-.fc { color: var(--tx2); transition: transform .2s; }
-.fc.shut { transform: rotate(-90deg); }
-html.he .fc.shut { transform: rotate(90deg); }
 .go { color: var(--acc); flex: none; }
 </style>
