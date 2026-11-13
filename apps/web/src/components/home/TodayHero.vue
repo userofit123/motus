@@ -41,7 +41,7 @@ const trainedToday = computed(() => (props.h.days ?? []).includes(today));
 const n = (k: number, one: string, many = one + "s") => `${k} ${k === 1 ? one : many}`;
 
 // one big title with one action: a workout in progress, the only plan for today, or what to do with none
-interface Hero { label: string; title: string; sub: string; routine: string | null; plan?: HomePlan; act: { label: string; icon: string; run: () => void } }
+interface Hero { label: string; title: string; sub: string; routine: string | null; plan?: HomePlan; done?: boolean; act: { label: string; icon: string; run: () => void } }
 const hero = computed<Hero | null>(() => {
   const h = props.h;
   if (h.active) return { label: "Workout in progress", title: h.active.name || "Workout", sub: `Started ${ago(h.active.startedAt)}`, routine: null,
@@ -59,9 +59,14 @@ const hero = computed<Hero | null>(() => {
   const sug = trainedToday.value ? null : (h.suggest ?? []).find((x) => x.routineId);
   if (sug) return { label: "Suggested for today", title: sug.title, sub: sug.reason, routine: sug.routineId,
     act: { label: "Start", icon: "play", run: () => router.push(`/routines/${sug.routineId!}/start`) } };
-  // plans that were on today and are all done say so, rather than as if there had been none
-  return { label: (h.plannedToday ?? 0) ? "Nothing else planned for today" : "Nothing planned for today", title: trainedToday.value ? "Done for today" : "Your call today", sub: "", routine: null,
-    act: { label: trainedToday.value ? "Another workout" : "Start a workout", icon: "play", run: () => (startOpen.value = true) } };
+  const another = { label: "Another workout", icon: "play", run: () => (startOpen.value = true) };
+  // trained today with nothing left: one done state. Its label counts what you did (the list under it, which then needs
+  // no heading of its own, as "N plans for today" heads the plan list); only when today had plans, all done now, does it
+  // add that nothing else is planned. "Nothing planned" never shows beside a workout you did
+  if (trainedToday.value) return { label: cal.data.value ? `${n(dayDone.value, "session")} today` : cal.isError.value ? "Trained today" : "\u00a0", title: "Done for today",
+    sub: (h.plannedToday ?? 0) ? "Nothing else planned for today" : "", routine: null, done: true, act: another };
+  return { label: (h.plannedToday ?? 0) ? "Nothing else planned for today" : "Nothing planned for today", title: "Your call today", sub: "", routine: null,
+    act: { ...another, label: "Start a workout" } };
 });
 // today's plans as rows: all of them when there are several, or beside a workout in progress (the one plan otherwise is the title)
 const rows = computed(() => (props.h.active || todays.value.length > 1 ? todays.value : []));
@@ -197,9 +202,10 @@ const doneCount = computed(() => week.value.filter((d) => d.done).length);
     <!-- today or a past day: what you did (each opens), then a past day's missed plans, faded like the calendar's -->
     <!-- today's list holds its place while the calendar is on its way, as a past day's line does -->
     <div v-if="sel <= today && (dayRows.length || (sel === today && trainedToday && !cal.data.value))" class="tlist tsec" aria-live="polite">
-      <div v-if="sel === today && cal.data.value" class="tl">{{ n(dayDone, "session") }} today</div>
+      <!-- the heading counts them, unless the done state's label above already does -->
+      <div v-if="sel === today && cal.data.value && !hero?.done" class="tl">{{ n(dayDone, "session") }} today</div>
       <div v-else-if="sel === today && cal.isError.value" class="ts">Couldn't load today's sessions.</div>
-      <template v-else-if="sel === today"><div class="tl" aria-hidden="true">&nbsp;</div><div class="plist" aria-hidden="true"><div class="prow ph"><div class="pt"><div class="pn">&nbsp;</div><div class="ps">&nbsp;</div></div></div></div></template>
+      <template v-else-if="sel === today && !cal.data.value"><div v-if="!hero?.done" class="tl" aria-hidden="true">&nbsp;</div><div class="plist" aria-hidden="true"><div class="prow ph"><div class="pt"><div class="pn">&nbsp;</div><div class="ps">&nbsp;</div></div></div></div></template>
       <div v-if="dayRows.length" class="plist" role="list">
         <template v-for="r in dayRows" :key="r.key">
           <div v-if="r.kind === 'planned'" role="listitem" class="prow missed">
