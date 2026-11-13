@@ -551,9 +551,12 @@ button.sect-h.go { width: 100%; padding: 0; border: 0; background: none; font: i
 .tabs button.on { color: var(--tx); border-bottom-color: var(--acc); font-weight: 600; }
 
 /* ---------- calendar ---------- */
-.cal { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+/* the calendar stacks its own layers: day surfaces (::before) at the bottom, the sliding selection (.calsel) over them and
+   under each day's number and entries, so the selection can glide across the month while the text stays on top */
+.cal { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; position: relative; isolation: isolate; }
 .cal .dh { font-size: 11px; font-weight: 600; color: var(--tx2); text-transform: uppercase; letter-spacing: .6px; padding: 0 6px 4px; }
-.cal .d { min-height: 104px; border-radius: var(--r-sm); background: var(--s1); border: 1px solid var(--ol); padding: 6px; display: flex; flex-direction: column; gap: 3px; cursor: pointer; min-width: 0; }
+.cal .d { position: relative; min-height: 104px; border-radius: var(--r-sm); border: 1px solid var(--ol); padding: 6px; display: flex; flex-direction: column; gap: 3px; cursor: pointer; min-width: 0; }
+.cal .d::before { content: ""; position: absolute; inset: -1px; z-index: -2; border-radius: inherit; background: var(--s1); }
 .cal .d:hover { border-color: color-mix(in srgb, var(--acc) 40%, var(--ol)); }
 .cal .d.out { opacity: .4; }
 .cal .d.out.sel { opacity: 1; } /* a picked day from the next or previous month shows its selection at full strength */
@@ -564,14 +567,17 @@ button.sect-h.go { width: 100%; padding: 0; border: 0; background: none; font: i
 .cal .ent.missed { opacity: .5; text-decoration: line-through; }
 .cal .ent .ico { width: 12px; height: 12px; }
 html.phone .cal { gap: 2px; }
-/* background-color, not the background shorthand: the shorthand also reset the selected day's tint (this rule is more specific) */
-html.phone .cal .d { min-height: 46px; padding: 4px 2px; align-items: center; background-color: transparent; border-color: transparent; }
-/* the chosen day: an accent tint over the day's own surface (any accent, light or dark, plain or Glass) and the number in the
-   accent; the desktop box gets an accent border, the borderless phone cell a soft accent ring. A grey --s2 alone barely showed
-   on a light background */
-.cal .d.sel { background-image: linear-gradient(color-mix(in srgb, var(--acc) 20%, transparent), color-mix(in srgb, var(--acc) 20%, transparent)); border-color: var(--acc); }
+html.phone .cal .d { min-height: 46px; padding: 4px 2px; align-items: center; border-color: transparent; }
+html.phone .cal .d::before { content: none; }
+/* the chosen day: one highlight (.calsel, placed by HistoryPage) that glides from the old day to the new one, diagonally
+   too, with the tab pill's easing; an accent tint over the day's own surface (any accent, light or dark, plain or Glass), an
+   accent border on the desktop box and a soft accent ring on the borderless phone cell, and the number in the accent. A grey
+   --s2 alone barely showed on a light background. The chosen day's own border steps aside so the highlight's shows */
+.cal .calsel { position: absolute; left: 0; top: 0; z-index: -1; pointer-events: none; box-sizing: border-box; border-radius: var(--r-sm); border: 1px solid var(--acc); background: color-mix(in srgb, var(--acc) 20%, transparent); transition: transform var(--csd, .3s) cubic-bezier(.65, 0, .35, 1), width var(--csd, .3s) cubic-bezier(.65, 0, .35, 1), height var(--csd, .3s) cubic-bezier(.65, 0, .35, 1); }
+html.phone .cal .calsel { border-color: color-mix(in srgb, var(--acc) 45%, transparent); }
+@media (prefers-reduced-motion: reduce) { .cal .calsel { transition: none; } }
+.cal .d.sel { border-color: transparent; }
 .cal .d.sel:not(.today) .n { color: var(--acc); font-weight: 700; }
-html.phone .cal .d.sel { border-color: color-mix(in srgb, var(--acc) 45%, transparent); }
 html.phone .cal .dots { display: flex; gap: 3px; justify-content: center; flex-wrap: wrap; }
 html.phone .cal .dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--ec, var(--acc)); }
 html.phone .cal .dots i.plan { background: none; border: 1px solid var(--ec, var(--acc)); }

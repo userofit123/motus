@@ -6,7 +6,7 @@ const kept: { v: { month: number; sel: string | null } | null } = { v: null };
 <script setup lang="ts">
 // History (requirement 1): a month calendar of workouts, activities and planned days (click a day to list its sessions below, or an entry to open it),
 // or a list. On the phone: a compact month with dots; both show the chosen day's sessions below.
-import { computed, ref, watch } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { daysIntoWeek, weekdayOrder } from "@motus/shared";
 import { useRoute, useRouter } from "vue-router";
 import { useCalendar, useSettings, useWorkouts, useActivities, loaded } from "../api/queries";
@@ -73,6 +73,36 @@ watch(() => route.query.date, (v) => {
   dropDate();
 });
 watch([month, sel], () => { kept.v = { month: month.value.getTime(), sel: sel.value }; }, { flush: "sync" });
+// The chosen day's highlight is one element (.calsel) that glides from the old day to the new one, sideways, up and down
+// or diagonally, with the tab pill's easing and timing (core/segSlide.ts: 250-350ms by distance). A month drawn anew (another
+// month, back from List) puts it in place without sliding over from the old month; so does a size change (window, entries
+// loading, density), which ResizeObserver reports. Reduced motion: the CSS drops the transition, so it jumps.
+let calEl: HTMLElement | null = null, calAt: { x: number; y: number } | null = null;
+const calRo = typeof ResizeObserver !== "undefined" ? new ResizeObserver(() => placeSel(false)) : null;
+function placeSel(slide: boolean) {
+  const box = calEl?.querySelector<HTMLElement>(":scope>.calsel"), d = calEl?.querySelector<HTMLElement>(":scope>.d.sel");
+  if (!box) return;
+  if (!d) { box.hidden = true; calAt = null; return; }
+  const x = d.offsetLeft, y = d.offsetTop;
+  slide = slide && !!calAt && !box.hidden;
+  const dist = calAt ? Math.hypot(x - calAt.x, y - calAt.y) : 0;
+  box.style.setProperty("--csd", Math.round(Math.min(350, 250 + dist * 0.1)) + "ms");
+  if (!slide) box.style.transition = "none";
+  box.hidden = false;
+  box.style.width = d.offsetWidth + "px"; box.style.height = d.offsetHeight + "px";
+  box.style.transform = `translate(${x}px, ${y}px)`;
+  if (!slide) { void box.offsetWidth; box.style.transition = ""; }
+  calAt = { x, y };
+}
+const calRef = (el: unknown) => {
+  const e = (el as HTMLElement | null) ?? null;
+  if (e === calEl) return;
+  if (calEl) calRo?.unobserve(calEl);
+  calEl = e; calAt = null;
+  if (e) { calRo?.observe(e); placeSel(false); }
+};
+watch(sel, () => placeSel(true), { flush: "post" });
+onBeforeUnmount(() => calRo?.disconnect());
 // on the phone a sideways swipe on the month changes the month (elsewhere on the page it changes tab)
 let sx = 0, sy = 0;
 const calStart = (e: TouchEvent) => { sx = e.touches[0]!.clientX; sy = e.touches[0]!.clientY; };
@@ -127,7 +157,8 @@ await loaded(cal, listWorkouts, listActs);
         <button v-if="!isPhone && (!sel || sel < today)" class="qb acc" @click="planDay = today"><Icon name="plus" :size="16" />Plan a workout</button>
       </div>
       <Transition :name="calDir" mode="out-in">
-      <div :key="month.getTime()" class="cal" @touchstart.passive="calStart" @touchend.passive="calEnd">
+      <div :key="month.getTime()" :ref="calRef" class="cal" @touchstart.passive="calStart" @touchend.passive="calEnd">
+        <i class="calsel" aria-hidden="true" hidden />
         <div v-for="d in DOW" :key="d" class="dh">{{ isPhone ? d![0] : d }}</div>
         <div v-for="d in grid" :key="d.getTime()" class="d" :class="{ out: d.getMonth() !== month.getMonth(), today: localYmd(d) === today, sel: sel === localYmd(d) }" @click="sel = localYmd(d)">
           <span class="n">{{ d.getDate() }}</span>
