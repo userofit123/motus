@@ -40,26 +40,41 @@ export function routeStats(route: number[][], breaks: number[] = []) {
   return { distanceM: Math.round(dist), movingS: Math.round(moving), elevationM: !seen ? null : Math.round(climb) };
 }
 
-/** One split: the `n`th km or mile (a fraction for the last, shorter one) and how long it took, moving. */
-export interface Split { n: number; s: number }
+/** One split: the `n`th km or mile and how long it took, moving. The last, shorter part is `partial` (`fraction` of a
+ *  unit long, under 1), with `s` scaled to a full unit so every bar is a pace; it never counts as a full km or mile. */
+export interface Split { n: number; s: number; partial?: boolean; fraction?: number }
 /** Splits of a route of [lat, lon, unix s, altitude] points, per `unitM` metres (1000 for km, a mile's metres for
  *  miles), so they come in the unit the person reads distances in. Each is its moving time, by the same rule as
- *  routeStats, so a pause or a stop at the lights doesn't make that km look slow; a last part under a tenth of a unit
- *  is left out (too short to say anything) and a longer one is scaled to a full unit, so every bar is a pace. A route
- *  without times (some imported files) has none. */
+ *  routeStats, so a pause or a stop at the lights doesn't make that km look slow. A step that crosses a unit's end is
+ *  cut there, its distance and moving time shared in proportion, so each unit gets exactly its share (and a long jump
+ *  closes every unit it crosses). A last part of a tenth of a unit or less is left out (too short to say anything).
+ *  A route without usable times (some imported files store 0 for them, or times that don't increase) has none. */
 export function routeSplits(route: number[][], unitM: number): Split[] {
   const out: Split[] = [];
-  if (route.length < 2 || route.some((p) => !Number.isFinite(p[2]))) return out;
-  let d = 0, moving = 0, from = 0;
+  if (route.length < 2 || unitM <= 0) return out;
+  for (let i = 0; i < route.length; i++) {
+    const t = route[i]![2];
+    if (t == null || !Number.isFinite(t) || t <= 0 || (i && t <= route[i - 1]![2]!)) return out;
+  }
+  let k = 0, cur = 0, moving = 0; // units closed, metres and moving seconds into the open one
   for (let i = 1; i < route.length; i++) {
     const a = route[i - 1]!, b = route[i]!;
     const step = haversine(a, b), dt = b[2]! - a[2]!;
-    d += step;
-    if (dt > 0 && dt < 120 && step / dt > 0.3) moving += dt;
-    if (d - from >= unitM) { out.push({ n: out.length + 1, s: Math.round(moving) }); from += unitM; moving = 0; }
+    if (!(step > 0)) continue;
+    const mdt = dt < 120 && step / dt > 0.3 ? dt : 0; // by the same rule as routeStats
+    let pos = 0;
+    while (step - pos >= unitM - cur) {
+      const take = unitM - cur;
+      moving += (mdt * take) / step;
+      pos += take; cur = 0; k++;
+      if (moving > 0) out.push({ n: k, s: Math.round(moving) });
+      moving = 0;
+    }
+    cur += step - pos;
+    moving += (mdt * (step - pos)) / step;
   }
-  const rest = (d - from) / unitM;
-  if (rest >= 0.1 && moving > 0) out.push({ n: Math.round((out.length + rest) * 10) / 10, s: Math.round(moving / rest) });
+  const rest = cur / unitM;
+  if (rest > 0.1 && moving > 0) out.push({ n: k + 1, s: Math.round(moving / rest), partial: true, fraction: Math.round(rest * 100) / 100 });
   return out;
 }
 

@@ -27,7 +27,7 @@ const a = computed<any>(() => q.data.value);
 const source = computed(() => (a.value?.source === "gps" ? "recorded with GPS" : a.value?.source === "import" ? "imported from a file" : ""));
 // How long each km (or mile) took, moving; only worth a chart with two or more to compare. The fastest full one is marked.
 const splits = computed(() => (a.value?.route?.length ? routeSplits(a.value.route, fmt.value.du === "mi" ? M_PER_MI : 1000) : []));
-const fastest = computed(() => splits.value.filter((t) => Number.isInteger(t.n)).reduce<(typeof splits.value)[number] | null>((b, t) => (!b || t.s < b.s ? t : b), null));
+const fastest = computed(() => splits.value.filter((t) => !t.partial).reduce<(typeof splits.value)[number] | null>((b, t) => (!b || t.s < b.s ? t : b), null));
 async function del() { if (await confirm("Delete this activity?", { ok: "Delete", danger: true })) { await api.del(`/activities/${id.value}`); invalidate(["*"]); toast("Activity deleted"); router.replace("/history"); } }
 async function edit(field: "name" | "notes") { const v = await prompt(field === "name" ? "Name" : "Notes", { value: a.value[field] }); if (v != null) { await api.put(`/activities/${id.value}`, { ...a.value, [field]: v, route: null }); invalidate(["activities"]); toast(field === "name" ? "Activity renamed" : "Notes saved"); } }
 function gpx() {
@@ -53,7 +53,7 @@ await loaded(q);
     </div>
     <div v-if="splits.length > 1" class="card spt">
       <div class="lbl hgap">Pace per {{ fmt.du }}{{ fastest ? ` · fastest ${fmt.clock(fastest.s)} in ${fmt.du} ${fastest.n}` : "" }}</div>
-      <BarChart :bars="splits.map((t) => ({ label: String(t.n), value: t.s, color: t === fastest ? 'var(--pos)' : undefined, tip: Number.isInteger(t.n) ? `${fmt.du} ${t.n}` : `last ${fmt.num(t.n % 1, 1)} ${fmt.du}` }))" :fmt="(v) => `${fmt.clock(v)} /${fmt.du}`" :height="140" />
+      <BarChart :bars="splits.map((t) => ({ label: String(t.n), value: t.s, color: t === fastest ? 'var(--pos)' : undefined, tip: t.partial ? `last ${fmt.num(t.fraction ?? 0, 2)} ${fmt.du}` : `${fmt.du} ${t.n}` }))" :fmt="(v) => `${fmt.clock(v)} /${fmt.du}`" :height="140" />
     </div>
     <div v-if="a.notes" class="banner note spt"><Icon name="note" :size="18" class="note-ic" />{{ a.notes }}</div>
   </div>

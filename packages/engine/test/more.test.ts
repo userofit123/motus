@@ -260,9 +260,10 @@ describe("activities", () => {
   });
   it("splits a route per km by moving time, so a stop doesn't slow its km", () => {
     // ~55.6 m every 20 s (~6 min per km) for ~2.5 km, with a 10-minute stop at the 25th point
-    const r = Array.from({ length: 46 }, (_, i) => [32 + i * 0.0005, 34.8, i * 20 + (i > 25 ? 600 : 0)]);
+    const r = Array.from({ length: 46 }, (_, i) => [32 + i * 0.0005, 34.8, 1_700_000_000 + i * 20 + (i > 25 ? 600 : 0)]);
     const s = routeSplits(r, 1000);
-    expect(s.map((x) => x.n)).toEqual([1, 2, 2.5]);
+    expect(s.map((x) => x.n)).toEqual([1, 2, 3]);
+    expect(s.map((x) => !!x.partial)).toEqual([false, false, true]);
     for (const x of s) expect(Math.abs(x.s - 360)).toBeLessThan(25);
     expect(routeSplits(r.map((p) => p.slice(0, 2)), 1000)).toEqual([]); // no times: no splits
   });
