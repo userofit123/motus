@@ -90,7 +90,8 @@ export function goalLabel(g: { target: number; scope?: string; progress?: { curr
   if (p.unit === "kg") return `${f.w(p.current)} / ${f.w(g.target)} ${f.wu}`;
   if (p.unit === "cm") return `${f.len(p.current)} / ${f.len(g.target)} ${f.lu}`;
   if (p.unit === "km") return `${num(f.distNum(p.current * 1000), 1)} / ${num(f.distNum(g.target * 1000), 1)} ${f.du}`;
-  return p.label;
+  // counts (steps, times, min, reps...) are whole numbers: the engine's label has no thousands separators
+  return `${num(p.current, 0)} / ${num(g.target, 0)} ${p.unit ?? ""}`.trim();
 }
 
 /** The kinds a set can be switched to from its ⋮ menu, each with its own icon (a drop set is added, not switched to). */
