@@ -242,9 +242,8 @@ const doneCount = computed(() => week.value.filter((d) => d.done).length);
 .today > .tweek { grid-column: 3; margin-left: calc(var(--cpx) * 1.5); }
 /* lines inside a section sit closer than the sections do */
 .tsec { min-width: 0; display: flex; flex-direction: column; gap: var(--tdy); }
-/* the block header every Home block has, in the hero's own colours */
+/* the block header every Home block has (its icon tile in the hero's colours comes from app.css) */
 .today .ch { margin-bottom: 0; }
-.today .ch .bi { width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center; flex: none; background: color-mix(in srgb, var(--onc) 14%, transparent); color: var(--onc); }
 .today .ch .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tlnk { flex: none; display: inline-flex; align-items: center; gap: 2px; padding: 0; border: 0; background: none; font: inherit; font-size: var(--fs-sm); font-weight: 600; color: var(--onc); cursor: pointer; }
 .tlnk:hover { text-decoration: underline; }

@@ -99,6 +99,43 @@ hr.sep { border: 0; border-top: 1px solid var(--ol); margin: 14px 0; }
 .card.tight { padding: calc(var(--cpy) - 3px) calc(var(--cpx) - 2px); }
 .card .ch { display: flex; align-items: center; gap: 8px; margin-bottom: var(--hg); }
 .card .ch .t { font-weight: 600; font-size: 14px; }
+/* the block header's icon in its tile (Home's blocks, Stats' reports); in a hero card in the hero's own colours */
+.ch .bi { width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center; background: var(--s2); color: var(--acc); flex: none; }
+.ch .bi.warn { color: var(--warn); }
+.hero .ch .bi { background: color-mix(in srgb, var(--onc) 14%, transparent); color: var(--onc); }
+
+/* stat tiles (Home's This week and Last workout, Stats' reports) side by side split by a faint line, each a label with
+   its icon, the value with its unit set small, and where there is one the change from the period before. The block
+   is the container (class wk): the value scales with one tile's width (the block's width less the gaps and lines,
+   split by the tiles in a row) so the longest values ("105h 20m", "1,234.5 km") still fit at the smallest size; the
+   breakpoints sit where that smallest size stops fitting, so nothing overlaps the next tile or is cut off */
+.wk { container-type: inline-size; min-width: 0; }
+.wstats { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: var(--hg); }
+.wstats .ws { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.wstats .ws + .ws { border-inline-start: 1px solid var(--ol); padding-inline-start: var(--hg); }
+.wstats .wlb { display: flex; align-items: center; gap: 4px; font-size: var(--fs-sm); color: var(--tx2); white-space: nowrap; }
+.wstats .wlb svg { color: var(--acc); flex: none; }
+/* a tile is (block - gaps and lines) / tiles; the value may take a tile / 5.6, room for about 5.6 characters' widths */
+.wstats .wv { font-size: clamp(var(--fs-lg), calc((100cqi - 4 * var(--hg)) / 16.8), calc(var(--fs-lg) * 1.25)); font-weight: 650; line-height: 1.2; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.wstats.n4 .wv { font-size: clamp(var(--fs-lg), calc((100cqi - 6 * var(--hg)) / 22.4), calc(var(--fs-lg) * 1.25)); }
+.wstats .wv small { font-size: var(--fs); font-weight: 500; margin-inline-start: 5px; color: var(--tx2); letter-spacing: 0; }
+/* the line keeps its height when there is no change to show, so the tiles stay level */
+.wstats .wd { font-size: var(--fs-sm); line-height: 1.4; min-height: 1.4em; color: var(--tx2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+@container (max-width: 460px) {
+  .wstats.n4 { grid-auto-flow: row; grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: var(--hg); }
+  .wstats.n4 .ws:nth-child(odd) { border-inline-start: 0; padding-inline-start: 0; }
+  .wstats.n4 .wv { font-size: clamp(var(--fs-lg), calc((100cqi - 2 * var(--hg)) / 11.2), calc(var(--fs-lg) * 1.25)); }
+}
+/* a narrow block (the phone, or a narrow window) can't fit three tiles across without cutting the values, so the stats
+   become rows instead: label on the left, value and change on the right, lined up in columns */
+@container (max-width: 330px) {
+  .wstats, .wstats.n4 { grid-auto-flow: row; grid-template-columns: minmax(0, 1fr) auto auto; column-gap: var(--cpx); row-gap: var(--tdy); align-items: baseline; }
+  .wstats.plain { grid-template-columns: minmax(0, 1fr) auto; }
+  .wstats .ws { display: contents; }
+  .wstats .wlb { align-self: center; }
+  .wstats .wv, .wstats.n4 .wv { font-size: var(--fs-lg); text-align: end; }
+  .wstats .wd { text-align: end; }
+}
 .click { cursor: pointer; }
 
 /* ---------- stat card (sparkline at the bottom right, like the screenshot) ---------- */

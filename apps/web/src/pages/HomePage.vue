@@ -423,8 +423,8 @@ await loaded(home, ach);
         </div>
 
         <!-- suggestions: worked out from your order of routines, the muscles you've worked and what your routines leave out.
-             A routine opens its page; a muscle (or a gap in your routines) opens the exercises for it, and a gap can also
-             start a new routine -->
+             A routine opens its page; a muscle (or a gap in your routines) opens the exercises for it, and its + starts a
+             new routine -->
         <div v-else-if="id === 'suggest'" class="card hb sz-m">
           <div class="ch"><span class="bi"><Icon name="sparkle" :size="15" /></span><span class="t grow">Suggested</span></div>
           <TransitionGroup name="mv" tag="div" class="list">
@@ -433,7 +433,7 @@ await loaded(home, ach);
               <MuscleFig sm :routine="x.routineId ?? undefined" :muscles="x.routineId ? undefined : x.muscles ?? (x.muscle ? [x.muscle] : undefined)" />
               <div class="grow"><div class="t">{{ x.title }}</div><div class="s">{{ x.reason }}</div></div>
               <button v-if="x.routineId" class="ib sm over" aria-label="Plan" title="Plan" @click="planOpen = { rule: 'once', routineId: x.routineId }"><Icon name="calendar" :size="18" /></button>
-              <button v-else-if="x.kind === 'gap' || x.kind === 'target'" class="ib sm over" aria-label="New routine" title="New routine" @click="go('/routines/new/edit')"><Icon name="plus" :size="18" /></button>
+              <button v-else-if="x.muscle" class="ib sm over" aria-label="New routine" title="New routine" @click="go('/routines/new/edit')"><Icon name="plus" :size="18" /></button>
               <button class="ib sm plain over" aria-label="Not now" title="Not now: hide until your next workout" @click="hideSuggestion(x.key)"><Icon name="close" :size="16" /></button>
             </div>
           </TransitionGroup>
@@ -531,13 +531,10 @@ html.phone .hgrid .sz-m { grid-column: 1 / -1; }
 /* a block: its header row (icon, title, its one link), then its content spaced by the header gap */
 .hb { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .hb > .ch { margin-bottom: calc(var(--hg) - 4px); }
-.ch .bi { width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center; background: var(--s2); color: var(--acc); flex: none; }
-.ch .bi.warn { color: var(--warn); }
 .ch .lnk { font-size: var(--fs-sm); font-weight: 600; color: var(--acc); cursor: pointer; background: none; border: 0; display: inline-flex; align-items: center; gap: 2px; padding: 0; }
 .ch .lnk + .lnk { margin-inline-start: var(--hg); }
-.hero .ch .bi { background: color-mix(in srgb, var(--onc) 14%, transparent); color: var(--onc); }
 .big { font-size: var(--fs-val); font-weight: 650; letter-spacing: -.8px; line-height: 1.1; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.big small, .wv small { font-size: var(--fs); font-weight: 500; margin-inline-start: 5px; color: var(--tx2); letter-spacing: 0; }
+.big small { font-size: var(--fs); font-weight: 500; margin-inline-start: 5px; color: var(--tx2); letter-spacing: 0; }
 .hero .big small, .hero .tiny { color: color-mix(in srgb, var(--onc) 75%, transparent); }
 html.phone .sz-s .big { font-size: clamp(22px, 7vw, var(--fs-val)); }
 
@@ -548,37 +545,7 @@ html.phone .sz-s .big { font-size: clamp(22px, 7vw, var(--fs-val)); }
 .sgrid i.fu { background: none; box-shadow: inset 0 0 0 1px var(--ol); }
 .sgrid i.now { box-shadow: 0 0 0 1.5px var(--tx2); }
 
-/* this week and the last workout: stat tiles side by side split by a faint line (as a pinned goal's streak half), each a
-   label with its icon, the value with its unit set small, and for this week the change from last week as a percent.
-   The value scales with one tile's width (the block's width less the gaps and lines, split by the tiles in a row) so the
-   longest values ("105h 20m", "1,234.5 km") still fit at the smallest size; the breakpoints sit where that smallest size
-   stops fitting, so nothing overlaps the next tile or is cut off with an ellipsis */
-.wk { container-type: inline-size; }
-.wstats { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: var(--hg); }
-.ws { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.ws + .ws { border-inline-start: 1px solid var(--ol); padding-inline-start: var(--hg); }
-.wlb { display: flex; align-items: center; gap: 4px; font-size: var(--fs-sm); color: var(--tx2); white-space: nowrap; }
-.wlb :deep(svg) { color: var(--acc); flex: none; }
-/* a tile is (block - gaps and lines) / tiles; the value may take a tile / 5.6, room for about 5.6 characters' widths */
-.wv { font-size: clamp(var(--fs-lg), calc((100cqi - 4 * var(--hg)) / 16.8), calc(var(--fs-lg) * 1.25)); font-weight: 650; line-height: 1.2; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.wstats.n4 .wv { font-size: clamp(var(--fs-lg), calc((100cqi - 6 * var(--hg)) / 22.4), calc(var(--fs-lg) * 1.25)); }
-/* the line keeps its height when there is no change to show, so the tiles stay level */
-.wd { font-size: var(--fs-sm); line-height: 1.4; min-height: 1.4em; color: var(--tx2); font-variant-numeric: tabular-nums; white-space: nowrap; }
-@container (max-width: 460px) {
-  .wstats.n4 { grid-auto-flow: row; grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: var(--hg); }
-  .wstats.n4 .ws:nth-child(odd) { border-inline-start: 0; padding-inline-start: 0; }
-  .wstats.n4 .wv { font-size: clamp(var(--fs-lg), calc((100cqi - 2 * var(--hg)) / 11.2), calc(var(--fs-lg) * 1.25)); }
-}
-/* a narrow block (the phone, or a narrow window) can't fit three tiles across without cutting the values, so the stats
-   become rows instead: label on the left, value and change on the right, lined up in columns */
-@container (max-width: 330px) {
-  .wstats, .wstats.n4 { grid-auto-flow: row; grid-template-columns: minmax(0, 1fr) auto auto; column-gap: var(--cpx); row-gap: var(--tdy); align-items: baseline; }
-  .wstats.plain { grid-template-columns: minmax(0, 1fr) auto; }
-  .ws { display: contents; }
-  .wlb { align-self: center; }
-  .wstats .wv, .wstats.n4 .wv { font-size: var(--fs-lg); text-align: end; }
-  .wd { text-align: end; }
-}
+/* the stat tiles of this week and the last workout are the shared .wk/.wstats ones (app.css) */
 .wbars { display: flex; align-items: flex-end; gap: 6px; height: 34px; margin-top: auto; padding-top: var(--hg); box-sizing: content-box; }
 .wbars i { flex: 1; border-radius: 4px 4px 2px 2px; background: color-mix(in srgb, var(--acc) 28%, transparent); }
 .wbars i.cur { background: var(--acc); }

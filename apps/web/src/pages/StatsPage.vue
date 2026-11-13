@@ -134,7 +134,7 @@ await loaded(st, prev, ach);
         <div class="card stat"><div class="lbl"><span class="bi"><Icon name="walk" :size="15" /></span>Activities</div><div class="val">{{ T!.activities }}</div><div class="sub">{{ fmt.dist(T!.distM, 1) }}</div></div>
       </div>
       <div class="grid g2 spt">
-        <div class="card"><div class="lbl hgap">Workouts per week{{ wkGoal ? ` · goal ${wkGoal}` : "" }}</div><BarChart :bars="weeks.slice(-16).map((w) => ({ label: wlabel(w.week).split(' ')[0]!, value: w.workouts, dim: !!wkGoal && w.workouts < wkGoal }))" :goal="wkGoal ?? undefined" :height="170" /></div>
+        <div class="card"><div class="lbl hgap">Workouts per week{{ wkGoal ? ` · goal ${wkGoal}` : "" }}</div><BarChart :bars="weeks.slice(-16).map((w) => ({ label: wlabel(w.week).split(' ')[0]!, full: wlabel(w.week), value: w.workouts, dim: !!wkGoal && w.workouts < wkGoal }))" :goal="wkGoal ?? undefined" :height="170" /></div>
         <div class="card"><div class="lbl hgap">Consistency · last 6 months</div>
           <div class="heat"><i v-for="c in heat" :key="c.k" :title="`${c.k}: ${c.n}`" :style="c.future ? { opacity: 0 } : c.n ? { background: `color-mix(in srgb, var(--acc) ${Math.min(100, 45 + c.n * 30)}%, var(--s2))` } : undefined" /></div>
           <div class="grid g2" style="margin-top:14px;gap:12px"><div><div class="tiny" style="margin-bottom:4px">By weekday</div><BarChart :bars="dow" :height="90" /></div><div><div class="tiny" style="margin-bottom:4px">By time of day</div><BarChart :bars="hours" :height="90" /></div></div>
@@ -194,7 +194,7 @@ await loaded(st, prev, ach);
     <template v-else-if="tab === 'activities'">
       <div v-if="!d.activities.length && !steps.length" class="card empty"><Icon name="walk" :size="34" /><b>No activities in this period</b></div>
       <div class="grid g3"><div v-for="t in actTypes" :key="t.type" class="card stat"><div class="lbl" style="text-transform:capitalize">{{ t.type }}</div><div class="val">{{ t.m ? fmt.dist(t.m, 1) : fmt.dur(t.s, true) }}</div><div class="sub">{{ t.n }} sessions · {{ fmt.dur(t.s, true) }}{{ t.m && t.s ? " · " + fmt.pace(t.s, t.m) : "" }}</div></div></div>
-      <div v-if="d.activities.length" class="card spt"><div class="lbl hgap">Distance per week ({{ fmt.du }})</div><BarChart :bars="actWeeks.slice(-16).map((w) => ({ ...w, label: w.label.split(' ')[0]! }))" :height="160" :fmt="(v) => fmt.num(v, 1)" /></div>
+      <div v-if="d.activities.length" class="card spt"><div class="lbl hgap">Distance per week ({{ fmt.du }})</div><BarChart :bars="actWeeks.slice(-16).map((w) => ({ ...w, label: w.label.split(' ')[0]!, full: w.label }))" :height="160" :fmt="(v) => fmt.num(v, 1)" /></div>
       <div v-if="steps.length" class="card spt"><div class="lbl hgap">Daily steps{{ stepGoal ? ` · goal ${fmt.num(stepGoal.target, 0)}` : "" }}</div><LineChart :points="steps" :height="160" :fmt="(v) => fmt.num(v, 0)" /></div>
     </template>
 

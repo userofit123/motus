@@ -1,10 +1,11 @@
 <script setup lang="ts">
 // Bars per period (workouts per week, sets per muscle…), with an optional target band. A bar's `tip` names it in the
-// hover tip when its axis label alone ("3") wouldn't say what it is. A bar's `group` ("2026") is a second axis line, shown
+// hover tip when its axis label alone ("3") wouldn't say what it is; its `full` name ("8 Nov") is the axis label when the
+// chart has only a few bars, its `short` one ("N") when a grouped chart is too narrow for the usual one. A bar's `group` ("2026") is a second axis line, shown
 // where it changes, so a run of months says which year each is in; `values` prints each bar's value above it.
 import { computed, ref } from "vue";
 import { useWidth } from "./useWidth";
-const props = defineProps<{ bars: { label: string; value: number; dim?: boolean; color?: string; tip?: string; group?: string }[]; height?: number; fmt?: (v: number) => string; band?: [number, number]; horizontal?: boolean; goal?: number; values?: boolean }>();
+const props = defineProps<{ bars: { label: string; value: number; dim?: boolean; color?: string; tip?: string; group?: string; short?: string; full?: string }[]; height?: number; fmt?: (v: number) => string; band?: [number, number]; horizontal?: boolean; goal?: number; values?: boolean }>();
 const H = computed(() => props.height ?? 160);
 const max = computed(() => Math.max(1, ...props.bars.map((b) => b.value), props.band?.[1] ?? 0, props.goal ?? 0));
 const hover = ref<number | null>(null);
@@ -12,20 +13,37 @@ const box = ref<HTMLElement | null>(null);
 const W = useWidth(box);
 const slot = computed(() => W.value / Math.max(1, props.bars.length));
 const bw = computed(() => Math.max(4, Math.min(28, slot.value * 0.6)));
-// skip labels when they would crowd each other
-const every = computed(() => Math.ceil(34 / slot.value));
+const grouped = computed(() => props.bars.some((b) => b.group));
+// a short range (a lone week) names its bars in full ("8 Nov"), since a bare "8" doesn't say what it is
+const long = computed(() => props.bars.length <= 3 && props.bars.some((b) => b.full));
+// skip labels when they would crowd each other. A chart with a group line (months over years) sizes the room by its
+// labels' length (about 6.5px a character at the axis size), so every month gets its name on a phone; when even that
+// doesn't fit, its narrow names ("J", "F") are used before any are skipped
+const room = (text: (b: (typeof props.bars)[number]) => string) => Math.max(...props.bars.map((b) => text(b).length)) * 6.5 + 4;
+const narrow = computed(() => grouped.value && props.bars.every((b) => b.short) && room((b) => b.label) > slot.value);
+const text = (b: (typeof props.bars)[number]) => (long.value ? b.full ?? b.label : narrow.value ? b.short! : b.label);
+const every = computed(() => Math.max(1, Math.ceil((grouped.value || long.value ? room(text) : 34) / slot.value)));
+const named = (i: number) => i % every.value === (props.bars.length - 1) % every.value;
 // room under the bars for the labels (and the group line), and over them for the values
-const bottom = computed(() => (props.bars.some((b) => b.group) ? 32 : 18));
+const bottom = computed(() => (grouped.value ? 32 : 18));
 const top = computed(() => (props.values ? 18 : 8));
 const y = (v: number) => H.value - bottom.value - (v / max.value) * (H.value - bottom.value - top.value);
-// the bars where the group starts (the first bar, then each change), left out when the next group starts too close for
-// both to fit ("2025" over a lone December beside "2026" on a phone)
-const begins = (i: number) => !!props.bars[i]?.group && (i === 0 || props.bars[i - 1]?.group !== props.bars[i]?.group);
+// the group's name sits under its first named bar (so it always has a label over it), left out when the next group's
+// name comes too close for both to fit ("2025" over a lone December beside "2026" on a phone)
+const begins = (i: number) => {
+  const g = props.bars[i]?.group;
+  if (!g || !named(i)) return false;
+  for (let j = i - 1; j >= 0 && props.bars[j]!.group === g; j--) if (named(j)) return false;
+  return true;
+};
 const starts = (i: number) => {
   if (!begins(i)) return false;
   const next = props.bars.findIndex((_, j) => j > i && begins(j));
   return next < 0 || (next - i) * slot.value >= 34;
 };
+// the group's name starts at its bar's left edge, or ends at its right edge when it would run past the chart's
+const GW = 30;
+const gx = (i: number) => (i * slot.value + (slot.value - bw.value) / 2 + GW > W.value ? { x: i * slot.value + (slot.value + bw.value) / 2, a: "end" } : { x: i * slot.value + (slot.value - bw.value) / 2, a: "start" });
 const f = (v: number) => (props.fmt ? props.fmt(v) : String(Math.round(v * 10) / 10));
 </script>
 
@@ -49,11 +67,11 @@ const f = (v: number) => (props.fmt ? props.fmt(v) : String(Math.round(v * 10) /
         <rect :x="i * slot" :width="slot" y="0" :height="H" fill="transparent" />
         <rect v-if="b.value > 0" class="cbar" :data-dim="b.dim ? 1 : undefined" :x="i * slot + (slot - bw) / 2" :width="bw" :y="y(b.value)" :height="Math.max(2, H - bottom - y(b.value))" :rx="Math.min(5, bw / 3)" :style="b.color ? { fill: b.color } : undefined" />
         <text v-if="values && b.value > 0" class="ax bv" :x="i * slot + slot / 2" :y="y(b.value) - 5" text-anchor="middle">{{ f(b.value) }}</text>
-        <text v-if="i % every === (bars.length - 1) % every" class="ax" :x="i * slot + slot / 2" :y="H - bottom + 14" text-anchor="middle">{{ b.label }}</text>
-        <text v-if="starts(i)" class="ax grp" :x="i * slot + (slot - bw) / 2" :y="H - 4">{{ b.group }}</text>
+        <text v-if="named(i)" class="ax" :x="i * slot + slot / 2" :y="H - bottom + 14" text-anchor="middle">{{ text(b) }}</text>
+        <text v-if="starts(i)" class="ax grp" :x="gx(i).x" :y="H - 4" :text-anchor="gx(i).a">{{ b.group }}</text>
       </g>
     </svg>
-    <div v-if="hover != null" class="ctip" :style="{ left: ((hover + 0.5) / bars.length) * 100 + '%', top: y(bars[hover]!.value) + 'px' }"><b>{{ f(bars[hover]!.value) }}</b> · {{ bars[hover]!.tip ?? bars[hover]!.label }}</div>
+    <div v-if="hover != null" class="ctip" :style="{ left: ((hover + 0.5) / bars.length) * 100 + '%', top: y(bars[hover]!.value) + 'px' }"><b>{{ f(bars[hover]!.value) }}</b> · {{ bars[hover]!.tip ?? bars[hover]!.full ?? bars[hover]!.label }}</div>
   </div>
 </template>
 
