@@ -8,7 +8,7 @@
 import { computed, nextTick, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { plannedRest as plannedRestOf, restForKind, restSummary } from "../core/plannedRest";
-import { usesWeight, usesReps, usesDuration, usesDistance, musclesWorked, estimate, restAfterSet, dropWeightKg, restDefaultsOf, progressionOf, progressionDefaultsOf, oneSideOf, duration, muscleName, sideRounds, sideJoins, toM, fromM, muscleSets, retimeSet, isTimed, type Progression, type Tracking, type RoutineExercise } from "@motus/shared";
+import { usesWeight, usesReps, usesDuration, usesDistance, musclesWorked, estimate, dropWeightKg, restDefaultsOf, progressionOf, progressionDefaultsOf, oneSideOf, duration, muscleName, sideRounds, sideJoins, toM, fromM, muscleSets, retimeSet, isTimed, type Progression, type Tracking, type RoutineExercise } from "@motus/shared";
 import { useRoutine, useRoutines, useFolders, useExercises, useSettings, useTemplates, loaded } from "../api/queries";
 import { api, mediaUrl } from "../api/client";
 import { invalidate } from "../api/live";
