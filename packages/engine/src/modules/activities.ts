@@ -1,5 +1,5 @@
 // Activities (walks, runs, rides…), body measurements and the daily log (steps, sleep, water, mood).
-import { haversine, routeStats, type ActivityType } from "@motus/shared";
+import { routeStats, type ActivityType } from "@motus/shared";
 import type { Router, Ctx } from "../router";
 import type { Sql } from "../db";
 import { camel, id, str, intOrNull, numOrNull, bool, isoTime, dateStr, startOfDay, tzOf } from "../util";
@@ -160,16 +160,8 @@ export function activityRoutes(r: Router) {
     if (!a) throw notFound("Activity not found");
     const x = camel<any>(a);
     delete x.userId;
-    // splits per km from the route
-    const splits: { km: number; s: number }[] = [];
-    if (Array.isArray(a.route) && a.route.length > 1) {
-      let d = 0, lastT = a.route[0][2], k = 1;
-      for (let i = 1; i < a.route.length; i++) {
-        d += haversine(a.route[i - 1], a.route[i]);
-        if (d >= k * 1000) { splits.push({ km: k, s: a.route[i][2] - lastT }); lastT = a.route[i][2]; k++; }
-      }
-    }
-    return { ...x, splits };
+    // the app works out the splits itself (routeSplits), in km or miles, from the route it gets here
+    return x;
   });
   r.post("/activities", async (ctx, _p, b) => {
     const aid = await saveActivity(ctx, b);

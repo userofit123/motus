@@ -4,7 +4,7 @@ import { createEngine, type Engine } from "../src/index";
 import { pgliteDb } from "../src/adapters/pglite";
 import { uuidv7 } from "../src/ids";
 import { occurrences } from "../src/modules/schedule";
-import { routeStats, addStepReading, stepsPaused, takesPoint, MotionSteps, STEP_RUN, type StepState } from "@motus/shared";
+import { routeStats, routeSplits, addStepReading, stepsPaused, takesPoint, MotionSteps, STEP_RUN, type StepState } from "@motus/shared";
 import { parseTrack } from "../src/modules/activities";
 
 let eng: Engine, U: string;
@@ -257,6 +257,14 @@ describe("activities", () => {
     expect(Math.round(all.distanceM / 10)).toBe(72);
     expect(Math.round(split.distanceM / 10)).toBe(17);
     expect(split.movingS).toBe(90);
+  });
+  it("splits a route per km by moving time, so a stop doesn't slow its km", () => {
+    // ~55.6 m every 20 s (~6 min per km) for ~2.5 km, with a 10-minute stop at the 25th point
+    const r = Array.from({ length: 46 }, (_, i) => [32 + i * 0.0005, 34.8, i * 20 + (i > 25 ? 600 : 0)]);
+    const s = routeSplits(r, 1000);
+    expect(s.map((x) => x.n)).toEqual([1, 2, 2.5]);
+    for (const x of s) expect(Math.abs(x.s - 360)).toBeLessThan(25);
+    expect(routeSplits(r.map((p) => p.slice(0, 2)), 1000)).toEqual([]); // no times: no splits
   });
   it("counts a real climb but not GPS wobble, and leaves an unknown climb unset", async () => {
     // as the app sends a route (null: no altitude), and as it's kept (a point without altitude has no 4th value)

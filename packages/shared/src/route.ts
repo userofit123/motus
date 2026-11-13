@@ -40,6 +40,29 @@ export function routeStats(route: number[][], breaks: number[] = []) {
   return { distanceM: Math.round(dist), movingS: Math.round(moving), elevationM: !seen ? null : Math.round(climb) };
 }
 
+/** One split: the `n`th km or mile (a fraction for the last, shorter one) and how long it took, moving. */
+export interface Split { n: number; s: number }
+/** Splits of a route of [lat, lon, unix s, altitude] points, per `unitM` metres (1000 for km, a mile's metres for
+ *  miles), so they come in the unit the person reads distances in. Each is its moving time, by the same rule as
+ *  routeStats, so a pause or a stop at the lights doesn't make that km look slow; a last part under a tenth of a unit
+ *  is left out (too short to say anything) and a longer one is scaled to a full unit, so every bar is a pace. A route
+ *  without times (some imported files) has none. */
+export function routeSplits(route: number[][], unitM: number): Split[] {
+  const out: Split[] = [];
+  if (route.length < 2 || route.some((p) => !Number.isFinite(p[2]))) return out;
+  let d = 0, moving = 0, from = 0;
+  for (let i = 1; i < route.length; i++) {
+    const a = route[i - 1]!, b = route[i]!;
+    const step = haversine(a, b), dt = b[2]! - a[2]!;
+    d += step;
+    if (dt > 0 && dt < 120 && step / dt > 0.3) moving += dt;
+    if (d - from >= unitM) { out.push({ n: out.length + 1, s: Math.round(moving) }); from += unitM; moving = 0; }
+  }
+  const rest = (d - from) / unitM;
+  if (rest >= 0.1 && moving > 0) out.push({ n: Math.round((out.length + rest) * 10) / 10, s: Math.round(moving / rest) });
+  return out;
+}
+
 /** The weakest fix a route takes, in metres: a rougher one zig-zags the route and adds distance you didn't go. */
 export const ROUTE_ROUGH_M = 50;
 /** Whether a new fix goes on the route: not while paused, not a rough one, and not when you've stood still (under 3 m

@@ -1,8 +1,9 @@
 <script setup lang="ts">
-// Bars per period (workouts per week, sets per muscle…), with an optional target band.
+// Bars per period (workouts per week, sets per muscle…), with an optional target band. A bar's `tip` names it in the
+// hover tip when its axis label alone ("3") wouldn't say what it is.
 import { computed, ref } from "vue";
 import { useWidth } from "./useWidth";
-const props = defineProps<{ bars: { label: string; value: number; dim?: boolean; color?: string }[]; height?: number; fmt?: (v: number) => string; band?: [number, number]; horizontal?: boolean; goal?: number }>();
+const props = defineProps<{ bars: { label: string; value: number; dim?: boolean; color?: string; tip?: string }[]; height?: number; fmt?: (v: number) => string; band?: [number, number]; horizontal?: boolean; goal?: number }>();
 const H = computed(() => props.height ?? 160);
 const max = computed(() => Math.max(1, ...props.bars.map((b) => b.value), props.band?.[1] ?? 0, props.goal ?? 0));
 const hover = ref<number | null>(null);
@@ -38,6 +39,6 @@ const f = (v: number) => (props.fmt ? props.fmt(v) : String(Math.round(v * 10) /
         <text v-if="i % every === (bars.length - 1) % every" class="ax" :x="i * slot + slot / 2" :y="H - 4" text-anchor="middle">{{ b.label }}</text>
       </g>
     </svg>
-    <div v-if="hover != null" class="ctip" :style="{ left: ((hover + 0.5) / bars.length) * 100 + '%', top: y(bars[hover]!.value) + 'px' }"><b>{{ f(bars[hover]!.value) }}</b> · {{ bars[hover]!.label }}</div>
+    <div v-if="hover != null" class="ctip" :style="{ left: ((hover + 0.5) / bars.length) * 100 + '%', top: y(bars[hover]!.value) + 'px' }"><b>{{ f(bars[hover]!.value) }}</b> · {{ bars[hover]!.tip ?? bars[hover]!.label }}</div>
   </div>
 </template>

@@ -592,18 +592,20 @@ html.phone .cal .dots i.plan { background: none; border: 1px solid var(--ec, var
 
 .map { height: 320px; border-radius: var(--r); overflow: hidden; background: var(--s2); }
 html.phone .map { height: 240px; }
-.mapw { position: relative; margin-inline: 0; }
+/* the map and its enlarge button are one layer of the page: isolated, so nothing in them (Leaflet's panes go to z-index
+   1000) can rise above the page's menus, sheets, toasts or bars, whatever z-index it has inside */
+.mapw { position: relative; isolation: isolate; margin-inline: 0; }
 /* enlarging and shrinking glide: the box's height, side margins and corners all ease together (RouteMap keeps the map's size in step) */
 @media (prefers-reduced-motion: no-preference) {
   .mapw { transition: margin-inline .3s var(--ease); }
   .map { transition: height .3s var(--ease), border-radius .3s var(--ease); }
 }
-.mapbig { position: absolute; top: 10px; right: 10px; z-index: 500; background: var(--s1); }
+.mapbig { position: absolute; top: 10px; right: 10px; z-index: 1; background: var(--s1); } /* just above the map, inside .mapw */
 /* enlarged: edge to edge - on the computer from the rail to the window's edge (RouteMap measures --mbl/--mbr, since the page is capped and centred), 16px past the phone's padding, about a screen tall, square corners; it stays in the page flow so everything below moves down */
 .mapw.big { margin-inline: var(--mbl, -32px) var(--mbr, -32px); }
 html.phone .mapw.big { margin-inline: -16px; }
 .mapw.big .map, html.phone .mapw.big .map { height: calc(100dvh - var(--st) - var(--sb) - var(--tabh, 0px) - 72px); border-radius: 0; }
-/* the map keeps its own layers (z-index 400-1000) inside itself, so sheets, menus and the + popup stay above it */
+/* the map keeps its own layers (z-index 400-1000) inside itself, so the enlarge button above it needs only z-index 1 */
 .leaflet-container { background: var(--s2) !important; font: inherit !important; isolation: isolate; z-index: 0; }
 
 @media (max-width: 860px) { .ph .acts .btn:not(.keep) { display: none; } }
