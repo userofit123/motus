@@ -135,10 +135,14 @@ const goalUnit = (g: Goal) => { const u = g.progress?.unit; return u === "kg" ? 
 const goalIcon = (g: Goal) => ({ activity: g.scopeId === "workout" ? "dumbbell" : "walk", routine: "routines", exercise: "dumbbell", muscle: "activity", body: "scale" } as Record<string, string>)[g.scope] ?? "target";
 const pct = (g: Goal) => Math.max(0, Math.min(100, g.progress?.pct ?? 0));
 
-// muscles: groups worked in the last 7 days, and the ones resting longest
-const groups = computed<HomeGroup[]>(() => h.value?.groupDays ?? []);
-const worked = computed(() => groups.value.filter((g) => g.days != null && g.days < 7).length);
-const resting = computed(() => [...groups.value].filter((g) => g.days == null || g.days >= 4).sort((a, b) => (b.days ?? 1e9) - (a.days ?? 1e9)).slice(0, 3));
+// "Today", "Yesterday", "3 days ago": the day something was last done, by this device's calendar (as everywhere else)
+const when = (iso: string | null | undefined) => { const a = ago(iso); return a.charAt(0).toUpperCase() + a.slice(1); };
+const calDays = (iso: string) => { const d = new Date(iso), n = new Date(); return Math.round((new Date(n.getFullYear(), n.getMonth(), n.getDate()).getTime() - new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()) / 86400000); };
+
+// muscles: every group with the day it was last worked; one worked today or in the 6 days before counts as this week.
+// Kept in the groups' own order (not by date) so each group stays in its place from one day to the next
+const groups = computed(() => (h.value?.groupDays ?? []).map((g: HomeGroup) => ({ ...g, on: !!g.lastAt && calDays(g.lastAt) < 7, when: g.lastAt ? when(g.lastAt) : "Not yet" })));
+const worked = computed(() => groups.value.filter((g) => g.on).length);
 
 // up next: the first few plans of the coming days. Today's are all listed in Today (also while a workout is in progress)
 const upNext = computed<HomePlan[]>(() => (h.value?.upNext ?? []).filter((p) => p.date !== today).slice(0, 5));
@@ -349,7 +353,8 @@ await loaded(home, ach);
           </div>
         </template>
 
-        <!-- muscles: the header on top as on every block, then the figure on the left (as on every muscle card) and the groups beside it -->
+        <!-- muscles: the header on top as on every block, then the figure on the left (as on every muscle card) and beside it
+             how many groups were worked and every group with when it last was -->
         <div v-else-if="id === 'muscles'" class="card hb sz-m click" v-bind="link('/stats?tab=muscles')">
           <div class="ch"><span class="bi"><Icon name="activity" :size="15" /></span><span class="t grow">Muscles this week</span></div>
           <div class="mfig">
@@ -360,8 +365,9 @@ await loaded(home, ach);
                 <div class="tiny">worked in the last 7 days</div>
               </template>
               <div v-else class="tiny">No workouts in the last 7 days</div>
-              <div v-if="resting.length" class="mrest">
-                <div v-for="g in resting" :key="g.id" class="row tiny"><span class="mn">{{ g.name }}</span><span class="sep">·</span><span>{{ g.days == null ? "not yet" : `${g.days} days` }}</span></div>
+              <!-- every group, a dot filled when worked this week, and when it last was -->
+              <div class="mgrp">
+                <div v-for="g in groups" :key="g.id" class="mg" :class="{ on: g.on }"><i class="mdot" /><span class="mn ellipsis">{{ g.name }}</span><span class="mw">{{ g.when }}</span></div>
               </div>
             </div>
           </div>
@@ -386,15 +392,14 @@ await loaded(home, ach);
         <!-- last workout -->
         <div v-else-if="id === 'previous' && h.last" class="card hb wk sz-m click has-cover">
           <button class="cover" :aria-label="`Open ${h.last.name}`" @click="go(`/workouts/${h.last.id}`)" />
-          <div class="ch"><span class="bi"><Icon name="dumbbell" :size="15" /></span><span class="t grow ellipsis">{{ h.last.name }}</span>
-            <span class="tiny">{{ h.daysSinceLast === 0 ? "Today" : h.daysSinceLast === 1 ? "Yesterday" : `${h.daysSinceLast} days ago` }}</span></div>
+          <div class="ch"><span class="bi"><Icon name="dumbbell" :size="15" /></span><span class="t grow">Last workout</span></div>
+          <div class="row lname"><b class="ellipsis">{{ h.last.name }}</b><span class="sep">·</span><span class="lday">{{ when(h.last.startedAt) }}</span></div>
           <div class="wstats n4 plain">
             <div v-for="x in lastStats" :key="x.key" class="ws">
               <div class="wlb"><Icon :name="x.icon" :size="14" />{{ x.label }}</div>
               <div class="wv">{{ x.value }}<small v-if="x.unit">{{ x.unit }}</small></div>
             </div>
           </div>
-          <button class="lnk inl hall over" @click="router.push('/history?view=list')">All workouts</button>
         </div>
 
         <!-- the first active goals -->
@@ -567,7 +572,10 @@ html.phone .sz-s .big { font-size: clamp(22px, 7vw, var(--fs-val)); }
 .wbars { display: flex; align-items: flex-end; gap: 6px; height: 34px; margin-top: auto; padding-top: var(--hg); box-sizing: content-box; }
 .wbars i { flex: 1; border-radius: 4px 4px 2px 2px; background: color-mix(in srgb, var(--acc) 28%, transparent); }
 .wbars i.cur { background: var(--acc); }
-.hall { margin-top: auto; padding-top: var(--hg); align-self: flex-start; }
+/* the last workout's name and day: its own row under the header, spaced from the stats like the header is */
+.lname { gap: 6px; min-width: 0; margin-bottom: calc(var(--hg) - 4px); font-size: var(--fs-lg); }
+.lname b { font-weight: 600; min-width: 0; }
+.lday { color: var(--tx2); font-size: var(--fs); white-space: nowrap; flex: none; }
 
 .stp { margin-top: auto; }
 
@@ -604,9 +612,15 @@ html.phone .gtile.sz-m { flex-direction: row; }
 .cover:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
 /* a row with a cover button too (Up next): its own controls stay above the cover, so they act instead of the row */
 :is(.has-cover, .li) .over { position: relative; z-index: 1; }
-.mrest { display: flex; flex-direction: column; gap: 2px; margin-top: auto; padding-top: var(--hg); }
-.mrest .row { gap: 6px; }
-.mn { color: var(--tx); }
+/* the groups: name on the left, when on the right; two columns once the side is wide enough, one on the phone.
+   Worked this week shows as a filled accent dot and a full-strength day, not yet as an empty ring and a muted day */
+.mgrp { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); column-gap: var(--cpx); row-gap: var(--tdy); margin-top: auto; padding-top: var(--hg); }
+.mg { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: var(--fs-sm); }
+.mdot { width: 8px; height: 8px; border-radius: 50%; flex: none; box-shadow: inset 0 0 0 1.5px var(--ol); }
+.mg.on .mdot { background: var(--acc); box-shadow: none; }
+.mn { color: var(--tx); flex: 1; min-width: 0; }
+.mw { color: var(--tx2); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.mg.on .mw { color: var(--tx); font-weight: 500; }
 
 .prog { gap: var(--hg); }
 .prog .mchip { margin-inline-start: 8px; }

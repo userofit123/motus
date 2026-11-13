@@ -35,34 +35,42 @@ async function set(k: string, v: string) {
 // the week before the chosen day, newest first, only days with something logged
 const week = computed(() => Array.from({ length: 7 }, (_, i) => localYmd(new Date(new Date(day.value + "T12:00").getTime() - (i + 1) * 86400000)))
   .map((d) => ({ d, v: KINDS.value.map((k) => val(k.id, d)) })).filter((x) => x.v.some((v) => v != null)));
-const show = (k: string, v: number | null) => (v == null ? "-" : k === "steps" ? fmt.value.num(v, 0) : `${fmt.value.num(v, 1)}${k === "mood" ? "" : " " + DAILY_KINDS.find((x) => x.id === k)!.unit}`);
+// the unit is in the column header, so a cell is just the number
+const show = (k: string, v: number | null) => (v == null ? "-" : fmt.value.num(v, k === "steps" || k === "water_ml" ? 0 : 1));
 </script>
 
 <template>
   <div>
-    <div class="grid g4 dl-grid">
-      <div v-for="k in KINDS" :key="k.id" class="fld dl-fld"><label><Icon :name="k.icon" :size="14" />{{ k.name }}{{ k.unit ? ` (${k.unit})` : "" }}</label>
-        <input type="number" :step="k.step" min="0" inputmode="decimal" :value="entered(k.id) ?? ''" @change="set(k.id, ($event.target as HTMLInputElement).value)" />
-        <span v-if="k.id === 'steps' && walked > 0" class="tiny dl-hint">From activities: {{ fmt.num(walked, 0) }}</span></div>
+    <!-- a row per value, as the measurement rows: icon and name on the left, one box of the same size on the right, so
+         every box lines up whatever the name's length or a hint under it -->
+    <div class="list">
+      <div v-for="k in KINDS" :key="k.id" class="li dl-row"><Icon :name="k.icon" :size="18" class="muted" />
+        <div class="grow"><div class="t">{{ k.name }}<span v-if="k.unit" class="tiny"> ({{ k.unit }})</span></div>
+          <div v-if="k.id === 'steps' && walked > 0" class="s">From activities: {{ fmt.num(walked, 0) }}</div></div>
+        <input type="number" :step="k.step" min="0" inputmode="decimal" :aria-label="k.name" :value="entered(k.id) ?? ''" @change="set(k.id, ($event.target as HTMLInputElement).value)" />
+      </div>
     </div>
     <div v-if="s.features.steps && stepGoal" class="dl-goal"><div class="dl-bar"><i :style="{ width: Math.min(100, ((steps ?? 0) / stepGoal.target) * 100) + '%' }" /></div>
       <span class="tiny">{{ fmt.num(steps ?? 0, 0) }} of {{ fmt.num(stepGoal.target, 0) }} steps</span></div>
     <template v-if="history && week.length">
       <div class="lbl dl-wk">Last 7 days</div>
-      <div class="list"><div v-for="w in week" :key="w.d" class="li"><div class="grow t">{{ fmt.date(w.d + "T12:00", { weekday: "short", day: "numeric", month: "short" }) }}</div>
-        <span v-for="(k, i) in KINDS" :key="k.id" class="num tiny dl-v" :title="k.name">{{ show(k.id, w.v[i]!) }}</span></div></div>
+      <!-- a real table with a header row, like the app's other tables (Rep maxes, Next time), so each column says
+           what it is; units sit in the header so the cells stay short and every column fits at phone width -->
+      <table class="sets dl-tbl">
+        <thead><tr><th>Day</th><th v-for="k in KINDS" :key="k.id">{{ k.name }}{{ k.unit && k.id !== "mood" ? ` (${k.unit})` : "" }}</th></tr></thead>
+        <tbody><tr v-for="w in week" :key="w.d"><td class="dl-d">{{ fmt.date(w.d + "T12:00", { weekday: "short", day: "numeric" }) }}</td>
+          <td v-for="(k, i) in KINDS" :key="k.id" :class="{ muted: w.v[i] == null }">{{ show(k.id, w.v[i]!) }}</td></tr></tbody>
+      </table>
     </template>
   </div>
 </template>
 
 <style scoped>
-.dl-grid { gap: 10px; }
-.dl-fld { margin: 0; }
-.dl-fld label { display: flex; align-items: center; gap: 4px; }
+.dl-row input { flex: none; width: 96px; text-align: end; }
 .dl-goal { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
 .dl-bar { flex: 1; height: 6px; border-radius: 3px; background: var(--s2); overflow: hidden; }
 .dl-bar i { display: block; height: 100%; background: var(--acc); border-radius: inherit; }
-.dl-hint { display: block; margin-top: 4px; }
 .dl-wk { margin-top: var(--spg); }
-.dl-v { min-width: 56px; text-align: end; }
+.dl-tbl { margin-top: 2px; }
+.dl-tbl .dl-d { white-space: nowrap; }
 </style>
