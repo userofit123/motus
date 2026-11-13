@@ -55,7 +55,7 @@ const tap = (m: string) => {
   <FilterRow :model-value="modelValue" label="Muscle group" all="All" :options="options" @update:model-value="(v) => emit('update:modelValue', v)">
     <template #aside>
       <div class="mfig">
-        <BodyMap pickable :values="{}" :highlight="chosen" :pressed="pressed" :height="isPhone ? 130 : 230" @pick="tap" />
+        <BodyMap pickable :values="{}" :highlight="chosen" :pressed="pressed" :height="isPhone ? 108 : 230" @pick="tap" />
         <span class="tiny" :class="{ on: !!modelValue }">{{ caption }}</span>
       </div>
     </template>
@@ -64,9 +64,9 @@ const tap = (m: string) => {
 
 <style scoped>
 /* an inner tile in --s2 on the panel's --s1 card (the app's usual tile-in-card shade) at the row's left edge, the body
-   centred in it with what is picked (or the hint) under it; it keeps its width whatever the caption says, so picking a
+   centred in it (it stretches to the chips' height) with what is picked (or the hint) under it; it keeps its width whatever the caption says, so picking a
    muscle never shifts the chips. Phones keep it slimmer (about 45% of the row) so two columns of chips fit beside it */
-.mfig { flex: none; display: flex; flex-direction: column; align-items: center; gap: var(--tdy); padding: var(--cpy) var(--cpx); border-radius: var(--r-md); background: var(--s2); }
+.mfig { flex: none; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--tdy); padding: var(--cpy) var(--cpx); border-radius: var(--r-md); background: var(--s2); }
 html.phone .mfig { padding: var(--lpy); }
 .mfig .tiny { width: 0; min-width: 100%; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mfig .on { color: var(--tx); font-weight: 600; }
