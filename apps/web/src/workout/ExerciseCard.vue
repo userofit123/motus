@@ -129,7 +129,7 @@ function retrack(before: Tracking, after: Tracking) {
 // in groups: what it is and reminders, doing it or not, its rests and tools, then Remove on its own
 const menu = computed(() => [
   { label: "About this exercise", icon: "info", run: () => (exerciseSheet.value = props.e.exerciseId) },
-  { label: "Remind me next time", icon: "bell", run: () => (reminderSheet.value = { targetType: "exercise", targetId: props.e.exerciseId, label: props.e.exercise.name, scopeRoutineId: props.e.routineExerciseId ? W.state.w?.routineId : null, routineName: W.state.w?.name, workoutId: W.state.w?.id }) },
+  { label: "Remind me next time", icon: "bell", run: () => (reminderSheet.value = { targetType: "exercise", targetId: props.e.exerciseId, label: props.e.exercise.name, scopeRoutineId: props.e.routineExerciseId && !props.e.swapped ? W.state.w?.routineId : null, routineName: W.state.w?.name, workoutId: W.state.w?.id }) },
   { label: "Skip", sep: true, icon: "skip", run: skip, hidden: props.e.status === "skipped" },
   { label: "Bring it back", icon: "refresh", run: () => W.setStatus(props.e, props.e.sets.every((s) => s.done) && props.e.sets.length ? "done" : "pending"), hidden: props.e.status !== "skipped" },
   { label: "Swap for another exercise", icon: "swap", run: openReplace },
@@ -222,7 +222,7 @@ const nowId = computed(() => (W.state.active === props.index ? visibleSets.value
       <button class="fchip" :class="{ acc: !sided }" @click="W.addSet(e)"><Icon name="plus" :size="14" />Set</button>
       <button v-if="e.repRestS" class="fchip" :class="{ on: repTimer }" @click="toggleRepTimer"><Icon name="timer" :size="14" />{{ repTimer ? "Stop rep timer" : `Rep timer ${e.repRestS}s` }}</button>
       <div class="grow" />
-      <button class="fchip" @click="noteSheet = { targets: [{ type: 'exercise', id: e.exerciseId, label: `${e.exercise.name}, every time` }, ...(e.routineExerciseId && !e.swapped ? [{ type: 'routine_exercise', id: e.routineExerciseId, label: `${e.exercise.name} in ${W.state.w?.name ?? 'this routine'}` }] : []), ...(W.state.w?.routineId ? [{ type: 'routine', id: W.state.w.routineId, label: `The whole routine` }] : []), { type: 'workout_exercise', id: e.id, label: 'Just today' }], workoutId: W.state.w?.id }"><Icon name="note" :size="14" />Note</button>
+      <button class="fchip" @click="noteSheet = { targets: [...(e.routineExerciseId && !e.swapped ? [{ type: 'routine_exercise', id: e.routineExerciseId, label: `${e.exercise.name} in ${W.state.w?.name || 'this routine'}` }] : []), { type: 'exercise', id: e.exerciseId, label: `${e.exercise.name}, every time` }, ...(W.state.w?.routineId ? [{ type: 'routine', id: W.state.w.routineId, label: `The whole routine` }] : []), { type: 'workout_exercise', id: e.id, label: 'Just today' }], workoutId: W.state.w?.id }"><Icon name="note" :size="14" />Note</button>
     </div>
     <!-- notes for this exercise: under it, where you look after a set -->
     <div v-if="isCur && shownNotes.length" ref="notesEl" class="exnotes">

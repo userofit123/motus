@@ -9,7 +9,7 @@ export const exerciseSheet = ref<string | null>(null);
 /** The note sheet: where the note goes and what it says */
 export const noteSheet = ref<null | { targets: { type: string; id: string; label: string; scopeRoutineId?: string | null }[]; workoutId?: string | null; edit?: any }>(null);
 /** The reminder sheet */
-export const reminderSheet = ref<null | { targetType: "exercise" | "routine"; targetId: string; label: string; scopeRoutineId?: string | null; routineName?: string; routineFirst?: boolean; workoutId?: string | null; preset?: { body?: string; weightKg?: number } }>(null);
+export const reminderSheet = ref<null | { targetType: "exercise" | "routine"; targetId: string; label: string; scopeRoutineId?: string | null; routineName?: string; workoutId?: string | null; preset?: { body?: string; weightKg?: number } }>(null);
 /** One reminder in full (tapped anywhere it shows), with Dismiss; gone() lets a workout drop it from its own copy */
 export const reminderView = ref<null | { r: Reminder; routineName?: string | null; gone?: () => void }>(null);
 export const activitySheet = ref<null | { id?: string; type?: string }>(null);

@@ -773,7 +773,10 @@ time; tapping one shows the routine as it was then, read-only, with "Restore thi
 
 **Notes button during an active session:** opens a sheet with a target selector:
 
-> ◉ This exercise (Bench Press) — always ○ Bench Press in this routine only ○ This routine ○ Just this workout
+> ◉ Bench Press in this routine ○ Bench Press, every time ○ The whole routine ○ Just today
+
+With a routine at hand (a workout from a routine, the routine page) the routine's exercise comes first and is chosen,
+for notes and reminders alike; with none (the exercise page, a free workout) the exercise-wide option leads.
 
 - Each note has text, optional **difficulty rating** (1–5: too easy … too hard) and quick tags
   ("too easy", "too hard", "change next time", "good exercise for me", "pain", "form"). It can be

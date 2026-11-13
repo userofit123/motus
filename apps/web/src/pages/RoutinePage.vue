@@ -68,7 +68,7 @@ const hasSideRounds = (e: any) => !!st.value.features.unilateral && sideRounds(e
 // notes and reminders for one exercise of this routine (they show under it during the workout)
 const exItems = (e: any) => [
   { label: "Add a note", hint: "Shown with this exercise in your workouts", icon: "note", run: () => (noteSheet.value = { targets: [{ type: "routine_exercise", id: e.id, label: `${e.exercise.name} in ${routine.value.name}` }, { type: "exercise", id: e.exerciseId, label: `${e.exercise.name}, every time` }] }) },
-  { label: "Remind me next time", hint: "Pops up when you reach this exercise", icon: "bell", run: () => (reminderSheet.value = { targetType: "exercise", targetId: e.exerciseId, label: e.exercise.name, scopeRoutineId: id.value, routineName: routine.value.name, routineFirst: true }) },
+  { label: "Remind me next time", hint: "Pops up when you reach this exercise", icon: "bell", run: () => (reminderSheet.value = { targetType: "exercise", targetId: e.exerciseId, label: e.exercise.name, scopeRoutineId: id.value, routineName: routine.value.name }) },
 ];
 // the same wording as the schedule popup's summary, without when it started
 const schedLine = (s: any) => { const t = scheduleSummary(s, fmt.value.day, false); return t.charAt(0).toUpperCase() + t.slice(1); };

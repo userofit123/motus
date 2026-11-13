@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // A reminder for next time (requirement 22): e.g. "Increase the weight" on bench press, shown when bench press starts.
-// Like a note, an exercise reminder asks where it comes up when there's a routine to choose (any workout with the
-// exercise, or only this routine); opened from the exercise itself there is no routine, so it is always "anywhere".
+// Like a note, an exercise reminder asks where it comes up when there's a routine to choose (only this routine, first
+// and chosen, or any workout with the exercise); opened from the exercise itself there is no routine, so it is always "anywhere".
 // It can also nudge the numbers (PLAN.md §8.10): the change is added to the pre-filled weight and reps when the exercise
 // comes up. That part is folded away behind its own switch, so a plain reminder stays plain.
 import { computed, ref } from "vue";
@@ -13,18 +13,17 @@ import Sheet from "../components/Sheet.vue";
 import DatePicker from "../components/DatePicker.vue";
 import RadioList from "../components/RadioList.vue";
 
-const props = defineProps<{ o: { targetType: "exercise" | "routine"; targetId: string; label: string; scopeRoutineId?: string | null; routineName?: string; routineFirst?: boolean; workoutId?: string | null; preset?: { body?: string; weightKg?: number } } }>();
+const props = defineProps<{ o: { targetType: "exercise" | "routine"; targetId: string; label: string; scopeRoutineId?: string | null; routineName?: string; workoutId?: string | null; preset?: { body?: string; weightKg?: number } } }>();
 const emit = defineEmits<{ close: [] }>();
 const fmt = useFmt();
 const isEx = props.o.targetType === "exercise";
-const body = ref(props.o.preset?.body ?? ""), trigger = ref("next"), n = ref(2), date = ref(""), onlyRoutine = ref(!!props.o.routineFirst);
-// the same wording as the note sheet's places, so both read alike
-// (same order as the note sheet: from a routine's exercise the routine comes first and is chosen)
-const places = computed(() => {
-  const all = { value: false, label: `${props.o.label}, every time`, hint: "Comes up in every workout with this exercise, in any routine" };
-  const mine = { value: true, label: `${props.o.label} in ${props.o.routineName || "this routine"}`, hint: "Comes up only when you do this exercise in this routine" };
-  return props.o.routineFirst ? [mine, all] : [all, mine];
-});
+const body = ref(props.o.preset?.body ?? ""), trigger = ref("next"), n = ref(2), date = ref(""), onlyRoutine = ref(!!props.o.scopeRoutineId);
+// the same wording and order as the note sheet's places, so both read alike: with a routine at hand, the routine comes
+// first and is chosen (a reminder is usually about how this routine's set-up went), the exercise everywhere second
+const places = computed(() => [
+  { value: true, label: `${props.o.label} in ${props.o.routineName || "this routine"}`, hint: "Comes up when you do this exercise in this routine" },
+  { value: false, label: `${props.o.label}, every time`, hint: "Comes up in every workout with this exercise, in any routine" },
+]);
 const addW = ref<number | null>(props.o.preset?.weightKg != null ? Math.round(fmt.value.fromKg(props.o.preset.weightKg) * 100) / 100 : null), addR = ref<number | null>(null);
 const nudge = ref(addW.value != null);
 const busy = ref(false);

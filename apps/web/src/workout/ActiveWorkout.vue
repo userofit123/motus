@@ -135,7 +135,7 @@ const togglePause = () => W.togglePause();
 const menu = computed(() => [
   { label: "Add exercise", icon: "plus", run: () => (adding.value = true) },
   { label: "Reorder exercises", icon: "routines", run: () => (listOpen.value = true), hidden: !isPhone.value },
-  { label: "Workout note", sep: true, icon: "note", run: () => (noteSheet.value = { targets: [{ type: "workout", id: w.value!.id, label: "This workout" }, ...(w.value!.routineId ? [{ type: "routine", id: w.value!.routineId, label: "The routine" }] : [])], workoutId: w.value!.id }) },
+  { label: "Workout note", sep: true, icon: "note", run: () => (noteSheet.value = { targets: [{ type: "workout", id: w.value!.id, label: "This workout" }, ...(w.value!.routineId ? [{ type: "routine", id: w.value!.routineId, label: "The whole routine" }] : [])], workoutId: w.value!.id }) },
   { label: "Remind me next time (routine)", icon: "bell", run: () => (reminderSheet.value = { targetType: "routine", targetId: w.value!.routineId!, label: w.value!.name, workoutId: w.value!.id }), hidden: !w.value?.routineId },
   { label: "Workout settings", sep: true, icon: "settings", run: () => (settingsOpen.value = true) },
   { label: "Rename", icon: "edit", run: rename },
