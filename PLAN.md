@@ -384,7 +384,7 @@ switching units never corrupts data (a simplefitnessapp bug).
 
 ### 6.2 Exercise catalog
 - `exercises(id, owner_user_id NULL=global, source ['free-exercise-db'|'wger'|'custom'], source_id, name, aliases text[], category, mechanic, force, level, equipment_id, tracking_type, is_unilateral, instructions text[], description_md, default_rest_s, archived)`
-  - `tracking_type`: `weight_reps | bodyweight_reps | weighted_bodyweight | assisted_bodyweight | reps_only | duration | distance_duration | weight_duration | distance_weight`
+  - `tracking_type`: `weight_reps | bodyweight_reps | assisted | reps_only | duration | weight_duration | distance | distance_weight | distance_duration | distance_weight_duration | reps_duration | weight_reps_duration` (two choices: counted by reps, time, distance, distance + time or reps + time; weight none, a load, added to bodyweight or assisted). Each person can choose another per exercise (`exercise_prefs.tracking`, "Track by").
 - `exercise_muscles(exercise_id, muscle_id, role ['primary'|'secondary'])`
 - `muscles(id, slug, name, group_id)` and `muscle_groups(id, slug, name)`: chest, back, shoulders, biceps, triceps, forearms, core, glutes, quads, hamstrings, calves, adductors, abductors, neck, cardio.
 - `equipment(id, slug, name)`

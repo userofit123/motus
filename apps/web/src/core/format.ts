@@ -33,7 +33,7 @@ export function makeFmt(s: Settings) {
     /** one set as done: "80 kg × 8", "12 reps", "1:30", "2.5 km" (what the exercise tracks) */
     set: (x: SetFigures, t: Tracking | null | undefined) => {
       const kg = x.weightKg != null && !!t && usesWeight(t) ? wu_(x.weightKg) : "";
-      // reps logged before the exercise was switched to timed sets still show (a set with no time has nothing else to say)
+      // reps logged before the exercise stopped being counted in reps still show (a set with no time has nothing else to say)
       const r = x.reps != null && !!t && (usesReps(t) || (!!x.reps && !x.durationS)) ? (kg ? `× ${x.reps}` : `${x.reps} rep${x.reps === 1 ? "" : "s"}`) : "";
       return [kg, r, x.durationS ? clock(x.durationS) : "", x.distanceM ? dist(x.distanceM) : ""].filter(Boolean).join(" ");
     },

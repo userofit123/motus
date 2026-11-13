@@ -3,7 +3,7 @@
 // that workout), charts, records, notes and reminders, and which routines use it. Shown as a page and as a sheet.
 import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
-import { strengthLevel, LEVELS, e1rm, weightForReps, usesWeight, usesReps, usesDuration, usesDistance, isTimed, muscleName, categoryName, type Tracking } from "@motus/shared";
+import { strengthLevel, LEVELS, e1rm, weightForReps, usesWeight, usesReps, usesDuration, usesDistance, trackingLabel, muscleName, categoryName, type Tracking } from "@motus/shared";
 import { invalidate } from "../api/live";
 import { useExercise, useExerciseHistory, useNotes, useReminders, useChange, useSettings, useBody } from "../api/queries";
 import { api, mediaUrl } from "../api/client";
@@ -12,7 +12,7 @@ import { noteSheet, reminderSheet, exerciseSheet } from "../core/ui";
 import { confirm } from "../core/ask";
 import { useNoteMenu } from "../core/noteMenu";
 import { sidesItem, SIDES_HINT } from "../core/sides";
-import { timedItem, TRACK_DETAIL, TIMED_HINT } from "../core/timed";
+import { trackItem } from "../core/track";
 import { toast, savedToast } from "../core/toast";
 import Icon from "./Icon.vue";
 import BodyMap from "./BodyMap.vue";
@@ -65,7 +65,7 @@ const noteMenu = useNoteMenu();
 const own = computed(() => !!e.value?.ownerId);
 // left and right sets are an optional feature (Settings → Features)
 const sidesOn = computed(() => !!settings.value?.features?.unilateral);
-const timedOn = computed(() => !!settings.value?.features?.timedSets);
+const trackOn = computed(() => !!settings.value?.features?.timedSets);
 // strength standards (optional feature): needs a body weight
 const bodyQ = useBody("weight");
 const standard = computed(() => {
@@ -85,8 +85,8 @@ const menu = computed<MenuItem[]>(() => [
   { label: "Add a note", icon: "note", run: () => (noteSheet.value = { targets: [{ type: "exercise", id: props.id, label: e.value.name }] }) },
   { label: "Remind me next time", icon: "bell", run: () => (reminderSheet.value = { targetType: "exercise", targetId: props.id, label: e.value.name }) },
   { label: e.value?.favourite ? "Remove from favourites" : "Add to favourites", icon: "star", sep: true, run: () => fav.run(!e.value?.favourite) },
-  // built-in exercises too: whether you do it for time or in reps, and one side at a time, is yours to say
-  { ...timedItem(props.id, tracking.value, timedOn.value), sep: true },
+  // built-in exercises too: what you count it by, and one side at a time, is yours to say
+  { ...trackItem(props.id, tracking.value, trackOn.value), sep: true },
   { ...sidesItem(props.id, !!e.value?.unilateral), hidden: !sidesOn.value },
   { label: "Edit", icon: "edit", sep: true, run: () => (editing.value = true), hidden: !own.value },
   { label: "Make my own copy", icon: "copy", run: async () => { const r = await api.post("/exercises", { ...e.value, name: e.value.name + " (mine)" }); invalidate(["exercises"]); toast("Copy created"); exerciseSheet.value = null; router.push(`/exercises/${r.id}`); }, hidden: own.value },
@@ -104,7 +104,7 @@ const menu = computed<MenuItem[]>(() => [
           <span v-for="m in e.primaryMuscles" :key="m" class="mchip" style="color:var(--tx)">{{ muscleName(m) }}</span>
           <span v-for="m in e.secondaryMuscles" :key="m" class="mchip">{{ muscleName(m) }}</span>
           <span v-if="e.equipment" class="mchip" style="text-transform:capitalize">{{ e.equipment }}</span>
-          <span v-if="timedOn && isTimed(tracking)" class="mchip" :title="TIMED_HINT">Timed sets</span>
+          <span v-if="trackOn && e.prefs?.tracking" class="mchip" title="Your own choice for this exercise">Tracked by {{ trackingLabel(tracking).toLowerCase() }}</span>
           <span v-if="sidesOn && e.unilateral" class="mchip" :title="SIDES_HINT">One side at a time</span>
           <Icon v-if="e.favourite" name="star" :size="16" style="color:var(--acc)" />
         </div>
@@ -140,7 +140,7 @@ const menu = computed<MenuItem[]>(() => [
           <template v-if="e.mechanic"><dt>Type</dt><dd>{{ e.mechanic }}</dd></template>
           <template v-if="e.force"><dt>Force</dt><dd>{{ e.force }}</dd></template>
           <dt>Category</dt><dd class="plain">{{ categoryName(e.category) }}</dd>
-          <dt>Sets</dt><dd class="plain">{{ TRACK_DETAIL[tracking] }}</dd>
+          <dt>Tracked by</dt><dd class="plain">{{ trackingLabel(tracking) }}</dd>
           <template v-if="sidesOn"><dt>Sides</dt><dd class="plain">{{ e.unilateral ? "One at a time: left and right sets, weight for one side" : "Both together: weight is the total moved" }}</dd></template>
           <template v-if="e.routines?.length"><dt>In routines</dt><dd class="plain">{{ e.routines.map((r: any) => r.name).join(", ") }}</dd></template>
         </dl>

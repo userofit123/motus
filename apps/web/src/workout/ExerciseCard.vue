@@ -2,7 +2,7 @@
 // One exercise in the running workout: its reminders and pinned notes when it comes up (and the notes written in it), and the sets table
 // (Previous · kg · Reps · ✓). The routine's numbers are already filled in (last time's in an empty workout); tap Previous to copy it, tick to log the set.
 import { computed, ref, watch, nextTick, onBeforeUnmount } from "vue";
-import { usesWeight, usesReps, usesDuration, usesDistance, toM, fromM, parseQuick, warmups, muscleName, sideJoins, restDefaultsOf, retimeSet, isTimed, type Tracking, type WorkoutExercise, type WorkoutSet } from "@motus/shared";
+import { usesWeight, usesReps, usesDuration, usesDistance, toM, fromM, parseQuick, warmups, muscleName, sideJoins, restDefaultsOf, refitSet, keepsWeight, type Tracking, type WorkoutExercise, type WorkoutSet } from "@motus/shared";
 import { joinRest } from "../core/plannedRest";
 import { SET_KINDS, setNo as setNoOf, sideJoinCls } from "../core/format";
 import { useWorkout } from "./useWorkout";
@@ -14,7 +14,7 @@ import { invalidate } from "../api/live";
 import { beep } from "./runtime";
 import { sidesItem } from "../core/sides";
 import { useNoteMenu } from "../core/noteMenu";
-import { timedItem } from "../core/timed";
+import { trackItem } from "../core/track";
 import Icon from "../components/Icon.vue";
 import Menu from "../components/Menu.vue";
 import NoteItem from "../components/NoteItem.vue";
@@ -104,16 +104,18 @@ async function addWarmups() {
   await api.post(`/workout-exercises/${props.e.id}/sets`, { atStart: true, sets: ws.map((x) => ({ kind: "warmup", weightKg: x.weightKg, reps: x.reps, restPlannedS: 60 })) });
   invalidate(["workouts"]);
 }
-// switched between reps and time: the server has already converted the sets still to do (8 reps or 30 seconds, weight
-// kept; done ones keep what was logged), so this copy only shows the same until the refetch, without saving again
-function retime(t: Tracking) {
-  if (props.e.exercise) props.e.exercise.tracking = t;
+// tracked by something else: the server has already converted the sets still to do (8 reps, 30 seconds, 400 m, weight
+// kept while it stays the same kind; done ones keep what was logged), so this copy only shows the same until the
+// refetch, without saving again
+function retrack(before: Tracking, after: Tracking) {
+  if (props.e.exercise) props.e.exercise.tracking = after;
   for (const s of props.e.sets) {
     if (s.done) continue;
-    Object.assign(s, retimeSet(s, t));
-    // as the server does: timed sets lose their rep target and start; reps start from the new ones
-    if (isTimed(t)) Object.assign(s, { targetReps: null, targetRepsMax: null, startReps: null });
-    else Object.assign(s, { startReps: s.reps, startWeightKg: s.startWeightKg ?? s.targetWeightKg });
+    Object.assign(s, refitSet(s, before, after));
+    // as the server does: sets with no reps lose their rep target and start; new reps are what the set starts with
+    if (!usesReps(after)) Object.assign(s, { targetReps: null, targetRepsMax: null, startReps: null });
+    else if (!usesReps(before)) Object.assign(s, { startReps: s.reps, startWeightKg: s.startWeightKg ?? s.targetWeightKg });
+    if (!keepsWeight(before, after)) Object.assign(s, { targetWeightKg: null, startWeightKg: null });
   }
 }
 // in groups: what it is and reminders, doing it or not, its rests and tools, then Remove on its own
@@ -123,8 +125,8 @@ const menu = computed(() => [
   { label: "Skip", sep: true, icon: "skip", run: skip, hidden: props.e.status === "skipped" },
   { label: "Bring it back", icon: "refresh", run: () => W.setStatus(props.e, props.e.sets.every((s) => s.done) && props.e.sets.length ? "done" : "pending"), hidden: props.e.status !== "skipped" },
   { label: "Swap for another exercise", icon: "swap", run: openReplace },
-  // reps or time: the exercise's own way, switched for every workout from now on (and its sets in every routine)
-  { ...timedItem(props.e.exerciseId, tr.value, !!feat.value.timedSets, retime), sep: true },
+  // what it is counted by: the exercise's own way, chosen for every workout from now on (and its sets in every routine)
+  { ...trackItem(props.e.exerciseId, tr.value, !!feat.value.timedSets, retrack), sep: true },
   // any exercise can be switched to left and right sets (the exercise's default is only a start)
   { ...sidesItem(props.e.exerciseId, sided.value, (on) => { if (props.e.exercise) props.e.exercise.unilateral = on; }), hidden: !feat.value.unilateral },
   // one-sided exercises have this as a button under the sets; any other exercise can still get a left and a right set

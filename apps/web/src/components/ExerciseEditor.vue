@@ -11,7 +11,7 @@ import AppSelect from "./AppSelect.vue";
 import ChoiceTiles from "./ChoiceTiles.vue";
 import Icon from "./Icon.vue";
 import { SIDES_HINT } from "../core/sides";
-import { TRACK } from "../core/timed";
+import TrackChoice from "./TrackChoice.vue";
 
 const props = defineProps<{ exercise?: any; name?: string }>();
 const emit = defineEmits<{ close: []; saved: [id: string] }>();
@@ -54,7 +54,7 @@ async function save() {
 <template>
   <Sheet :title="e ? 'Edit exercise' : 'New exercise'" size="wide" @close="emit('close')">
     <div class="fld"><label>Name</label><input v-model="f.name" placeholder="e.g. Landmine press" /></div>
-    <div class="fld"><label>Track it by</label><AppSelect v-model="f.tracking" :options="Object.entries(TRACK).map(([value, label]) => ({ value, label }))" title="Track it by" /></div>
+    <TrackChoice v-model="f.tracking" />
     <div class="frow">
       <div class="fld"><label>Category</label><AppSelect v-model="f.category" :options="CATEGORIES.map((c) => ({ value: c, label: categoryName(c) }))" title="Category" /></div>
       <div class="fld"><label>Equipment</label><AppSelect v-model="f.equipment" :options="[{ value: '', label: 'None' }, ...EQUIPMENT.map((q) => ({ value: q, label: cap(q) }))]" title="Equipment" /></div>

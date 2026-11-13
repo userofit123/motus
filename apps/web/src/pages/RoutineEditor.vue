@@ -8,7 +8,7 @@
 import { computed, nextTick, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { plannedRest as plannedRestOf, restForKind, restSummary } from "../core/plannedRest";
-import { usesWeight, usesReps, usesDuration, usesDistance, musclesWorked, estimate, dropWeightKg, restDefaultsOf, progressionOf, progressionDefaultsOf, oneSideOf, duration, muscleName, sideRounds, sideJoins, toM, fromM, muscleSets, retimeSet, isTimed, type Progression, type Tracking, type RoutineExercise } from "@motus/shared";
+import { usesWeight, usesReps, usesDuration, usesDistance, musclesWorked, estimate, dropWeightKg, restDefaultsOf, progressionOf, progressionDefaultsOf, oneSideOf, duration, muscleName, sideRounds, sideJoins, toM, fromM, muscleSets, refitSet, newSetFor, progresses, type Progression, type Tracking, type RoutineExercise } from "@motus/shared";
 import { useRoutine, useRoutines, useFolders, useExercises, useSettings, useTemplates, loaded } from "../api/queries";
 import { api, mediaUrl } from "../api/client";
 import { invalidate } from "../api/live";
@@ -20,7 +20,7 @@ import { useLeaveGuard, goBack } from "../core/leave";
 import { startWorkout } from "../workout/start";
 import { exerciseSheet } from "../core/ui";
 import { sidesItem } from "../core/sides";
-import { timedItem } from "../core/timed";
+import { trackItem } from "../core/track";
 import { startDrag } from "../core/drag";
 import Icon from "../components/Icon.vue";
 import Menu from "../components/Menu.vue";
@@ -64,7 +64,7 @@ const nk = () => Math.random().toString(36).slice(2, 10);
 const keyed = (e: any) => { e._k ??= nk(); e.sets.forEach((x: any) => (x._k ??= nk())); return e; };
 const open = ref(new Set<string>());
 // fold: every exercise folded (an existing routine opens as an overview); keep: as they were (a draft reloaded after a live
-// update, or this routine refetched after a change made elsewhere, e.g. "Timed sets" from an exercise's ⋮ menu)
+// update, or this routine refetched after a change made elsewhere, e.g. "Track by" from an exercise's ⋮ menu)
 function load(data: any, folds: "fold" | "keep" = "fold") {
   const prev = r.value, was = !!prev;
   r.value = JSON.parse(JSON.stringify(data));
@@ -95,7 +95,7 @@ watch([src.data, isNew, planMode], () => {
   // a planned workout opens straight on the exercise list to pick from
   if (planMode.value) { if (!r.value) { load({ name: "Workout", description: "", folderId: null, color: null, exercises: [] }); picking.value = {}; } }
   else if (isNew.value) { load({ name: "", description: "", folderId: null, color: null, exercises: [] }); starter.value = true; }
-  // the routine on screen fetched again (its ⋮ menu's "Timed sets" and "One side at a time" save to the exercise, and the server
+  // the routine on screen fetched again (its ⋮ menu's "Track by" and "One side at a time" save to the exercise, and the server
   // updates this routine): folding everything here closed the exercise the menu was used in
   else if (src.data.value) load(src.data.value, r.value?.id && r.value.id === src.data.value.id ? "keep" : "fold");
 }, { immediate: true });
@@ -123,7 +123,7 @@ const toggleAll = () => { open.value = new Set(allOpen.value ? [] : r.value.exer
 
 const blankSet = (e: any) => {
   const last = e.sets.at(-1);
-  return { ...(last ? { ...last, id: undefined, kind: last.kind === "warmup" || last.kind === "drop" ? "normal" : last.kind, restS: null } : { kind: "normal", reps: 8, weightKg: null, durationS: usesDuration(tr(e)) ? 30 : null, distanceM: null, rpe: null, restS: null }), side: null, _k: nk() };
+  return { ...(last ? { ...last, id: undefined, kind: last.kind === "warmup" || last.kind === "drop" ? "normal" : last.kind, restS: null } : { kind: "normal", ...newSetFor(tr(e)), rpe: null, restS: null }), side: null, _k: nk() };
 };
 /** A left and a right set, from the last set of a side (else the last set), as in the workout. */
 function addPair(e: any) {
@@ -143,11 +143,11 @@ function addExercises(ids: string[]) {
     e.exerciseId = ids[0]; e.exercise = exById.value.get(ids[0]!);
   } else for (const eid of ids) {
     const ex = exById.value.get(eid);
-    const timed = usesDuration(ex?.tracking ?? "weight_reps") && !usesReps(ex?.tracking ?? "weight_reps");
+    const first = newSetFor(ex?.tracking ?? "weight_reps");
     // one side at a time: three rounds of a left and a right set; else three sets
     const sides = sidesOn.value && ex?.unilateral ? ["L", "R"] : [null];
     const e = keyed({ exerciseId: eid, exercise: ex, superset: null, restS: null, restAfterS: null, restByKind: null, repRestS: null, fixed: false, progression: null, note: "",
-      sets: [0, 1, 2].flatMap(() => sides.map((side) => ({ kind: "normal", reps: timed ? null : 8, weightKg: null, durationS: timed ? 30 : null, distanceM: null, rpe: null, restS: null, side }))) });
+      sets: [0, 1, 2].flatMap(() => sides.map((side) => ({ kind: "normal", ...first, rpe: null, restS: null, side }))) });
     r.value.exercises.push(e);
     open.value.add(e._k);
   }
@@ -212,7 +212,7 @@ const exOf = (e: any) => exById.value.get(e.exerciseId) ?? e.exercise;
 // Left / right sides (optional feature): an exercise done one side at a time starts with left and right sets and gets a
 // "Left + right" button; any set of any exercise can be made left, right or both from its menu, beside general sets
 const sidesOn = computed(() => !!s.value.features.unilateral);
-const timedOn = computed(() => !!s.value.features.timedSets);
+const trackOn = computed(() => !!s.value.features.timedSets);
 const sidedEx = (e: any) => sidesOn.value && !!exOf(e)?.unilateral;
 // "/ side" only when every set that counts is for one side; in a mix the L and R badges say it
 const perSide = (e: any) => { const w = e.sets.filter((x: any) => x.kind !== "warmup" && x.kind !== "drop"); return sidesOn.value && w.length > 0 && w.every((x: any) => x.side); };
@@ -299,8 +299,8 @@ function setProg(e: any, patch: Partial<Record<ProgKey, unknown>>) {
 const progLine = (e: any) => progPartsOf(progOf(e), e.progression, fmt.value.wu_, { assisted: tr(e) === "assisted" });
 // its own range: both ends move together, the bottom never above the top
 function setRange(e: any, lo: number, hi: number) { setProg(e, { repsMin: Math.min(lo, hi), repsMax: Math.max(lo, hi) }); }
-// Progression moves the weight by reps reached, so it's offered only where an exercise has both
-const progUsable = (e: any) => usesWeight(tr(e)) && usesReps(tr(e)) && (!planMode.value || asRoutine.value);
+// Progression moves the weight by reps reached, so it's offered only where an exercise has both (and no clock)
+const progUsable = (e: any) => progresses(tr(e)) && (!planMode.value || asRoutine.value);
 const wNum = (kg: number | null) => (kg == null ? null : Math.round(fmt.value.fromKg(kg) * 100) / 100);
 const restLine = (e: any) => restSummary(withEx(e), fmt.value.clock, s.value.workout, hasSideRounds(e));
 const wIn = (kg: number | null) => (kg == null ? "" : String(Math.round(fmt.value.fromKg(kg) * 100) / 100));
@@ -372,23 +372,23 @@ const exMenu = (e: any, i: number) => [
   { label: "Move down", icon: "down", run: () => move(i, 1), hidden: i === r.value.exercises.length - 1 },
   { label: "Superset with next", hint: "Do one set of each in turn, resting after the pair", icon: "link", run: () => superset(i), hidden: !s.value.features.supersets || i === r.value.exercises.length - 1 || inSupersetWithNext(i) },
   { label: "Remove from superset", icon: "link", run: () => unsuperset(i), hidden: !e.superset },
-  // reps or time is the exercise's own way, switched here too; its sets in every routine start again like a new exercise's
-  { ...timedItem(e.exerciseId, tr(e), timedOn.value, (t) => retime(e.exerciseId, t)), sep: true },
+  // what it is counted by is the exercise's own way, chosen here too; its sets in every routine start again like a new exercise's
+  { ...trackItem(e.exerciseId, tr(e), trackOn.value, (before, after) => retrack(e.exerciseId, before, after)), sep: true },
   // the exercise's own default, here too (it says what new sets start as); any exercise can get a left and a right set
   { ...sidesItem(e.exerciseId, sidedEx(e)), hidden: !sidesOn.value },
   { label: "Add a left + right set", hint: "One set for each side, beside the others", icon: "plus", run: () => addPair(e), hidden: !sidesOn.value || sidedEx(e) },
   { label: "Keep these numbers fixed", hint: "The numbers don't update after workouts and Progression is off", sep: true, icon: "lock", checked: !!e.fixed, run: () => { e.fixed = !e.fixed; touch(); } },
   { label: "Remove from routine", icon: "trash", danger: true, sep: true, run: () => removeEx(i) },
 ];
-// switched between reps and time: the server has already converted the saved routine (each set gets what a new
-// exercise's sets start with, weight kept), so this copy gets the same, for every entry of that exercise. Nothing
-// unsaved is added by it, so it doesn't count as an edit: leaving without saving leaves the two the same.
-function retime(exerciseId: string, t: Tracking) {
+// tracked by something else: the server has already converted the saved routine (each set gets what a new exercise's
+// sets start with, weight kept while it stays the same kind), so this copy gets the same, for every entry of that
+// exercise. Nothing unsaved is added by it, so it doesn't count as an edit: leaving without saving leaves the two the same.
+function retrack(exerciseId: string, before: Tracking, after: Tracking) {
   for (const x of r.value.exercises as RoutineExercise[]) {
     if (x.exerciseId !== exerciseId) continue;
-    // the server also drops the starting reps of a timed set (what Progression began from), so this copy does too
-    for (const set of x.sets) { Object.assign(set, retimeSet(set, t)); if (isTimed(t)) set.startReps = null; }
-    if (x.exercise) x.exercise.tracking = t;
+    // the server also drops the starting reps once there are no reps (what Progression began from), so this copy does too
+    for (const set of x.sets) { Object.assign(set, refitSet(set, before, after)); if (!usesReps(after)) set.startReps = null; }
+    if (x.exercise) x.exercise.tracking = after;
   }
 }
 const setMenu = (e: any, j: number) => e.sets[j].kind === "drop" ? [

@@ -6,7 +6,7 @@
 //   out or changed in kind or side), which only changes the routine when asked on the Finish screen (structureChanges, applyStructure).
 import type { Progression, WorkoutExercise } from "./types";
 import type { ProgressionDefaults } from "./settings";
-import { e1rm, sideRounds, usesReps, usesWeight, weightForReps } from "./training";
+import { e1rm, progresses, sideRounds, weightForReps } from "./training";
 
 /** One weight step up from `fromKg`, on the step's grid (multiples of the step), so an odd weight lands on a real one. */
 export function stepUp(fromKg: number, stepKg: number): number {
@@ -167,7 +167,7 @@ export function planNext<R extends RoutineItemLike>(exercises: R[], w: { exercis
     const tr = e.exercise?.tracking ?? "weight_reps";
     const p = progressionOf(re.progression, d, { incrementKg: e.exercise?.incrementKg, oneSide: oneSideOf(sets, e.exercise) });
     // the range applies where the weight can move by reps reached; elsewhere a rep target is just a target
-    const ranged = usesWeight(tr) && usesReps(tr);
+    const ranged = progresses(tr);
     const num = (t: number | null | undefined, r: number | null | undefined) => (t ?? r ?? null);
     let next: RoutineSetLike[] = sets.map((rs, i) => {
       const t = pairs[i];

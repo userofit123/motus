@@ -4,7 +4,7 @@ import { goBack } from "../core/leave";
 import { computed, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useQuery } from "@tanstack/vue-query";
-import { restDefaultsOf, progressionOf, progressionDefaultsOf, oneSideOf, usesWeight, usesReps, routineTime, muscleName, muscleSets, musclesWorked, scheduleSummary, sideRounds } from "@motus/shared";
+import { restDefaultsOf, progressionOf, progressionDefaultsOf, oneSideOf, progresses, usesWeight, usesReps, routineTime, muscleName, muscleSets, musclesWorked, scheduleSummary, sideRounds } from "@motus/shared";
 import { useRoutine, useRoutines, useNotes, useReminders, useSchedules, useSettings, loaded } from "../api/queries";
 import { api, mediaUrl } from "../api/client";
 import { progParts as progPartsOf } from "../core/progression";
@@ -50,7 +50,7 @@ const restOn = (e: any) => restSummary(e, fmt.value.clock, st.value.workout, has
 // the editor's own summary lines, one per section: rest, timer between reps, progression
 const progLineOf = (e: any) => {
   const t = e.exercise?.tracking ?? "weight_reps";
-  if (e.fixed || !usesWeight(t) || !usesReps(t)) return null;
+  if (e.fixed || !progresses(t)) return null;
   const p = progressionOf(e.progression, progressionDefaultsOf(st.value), { incrementKg: e.exercise?.incrementKg, oneSide: oneSideOf(e.sets, e.exercise) });
   return { mode: p.mode, parts: progPartsOf(p, e.progression, fmt.value.wu_, { assisted: t === "assisted" }) };
 };

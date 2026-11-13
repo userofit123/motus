@@ -27,42 +27,84 @@ export function setVolume(s: { kind: SetKind; weightKg: number | null; reps: num
   return liftedKg(s.weightKg, s.reps, tracking);
 }
 
-export const usesWeight = (t: Tracking) => t === "weight_reps" || t === "bodyweight_reps" || t === "assisted" || t === "weight_duration" || t === "distance_weight";
-export const usesReps = (t: Tracking) => t === "weight_reps" || t === "bodyweight_reps" || t === "assisted" || t === "reps_only";
-export const usesDuration = (t: Tracking) => t === "duration" || t === "weight_duration" || t === "distance_duration";
-export const usesDistance = (t: Tracking) => t === "distance_duration" || t === "distance_weight";
-
-// Timed sets: any exercise counted in reps can be done for time instead (a hold, a stretch, a timed carry) and the other
-// way round; each person switches it per exercise (exercise_prefs.timed, null keeps the exercise's own way). It stays one
-// way per exercise, so its records, charts and "next time" all read the same kind of number.
-// bodyweight reps keep their optional added weight (a weighted plank or hang); assisted help isn't weight held, so it goes
-const TO_TIME: Partial<Record<Tracking, Tracking>> = { weight_reps: "weight_duration", bodyweight_reps: "weight_duration", assisted: "duration", reps_only: "duration" };
-const TO_REPS: Partial<Record<Tracking, Tracking>> = { weight_duration: "weight_reps", duration: "reps_only" };
-/** Whether the switch applies: distance exercises are neither reps nor a plain hold. */
-export const canTime = (t: Tracking) => !usesDistance(t);
-/** What an exercise tracks once the person's choice (true: for time, false: in reps, null: its own way) is applied. */
-export function trackingFor(t: Tracking, timed: boolean | null | undefined): Tracking {
-  if (timed === true) return TO_TIME[t] ?? t;
-  if (timed === false) return TO_REPS[t] ?? t;
-  return t;
+// What an exercise tracks is two choices: what each set is counted by, and whether weight goes with it (a load, weight
+// added to the body, or help taken off). Every Tracking value is one combination of the two, so the columns, records
+// and conversions all read from this one table.
+export type CountedBy = "reps" | "time" | "distance" | "distance_time" | "reps_time";
+export type WeightKind = "none" | "weight" | "added" | "assisted";
+const GRID: Record<CountedBy, Partial<Record<WeightKind, Tracking>>> = {
+  reps: { none: "reps_only", weight: "weight_reps", added: "bodyweight_reps", assisted: "assisted" },
+  time: { none: "duration", weight: "weight_duration" },
+  distance: { none: "distance", weight: "distance_weight" },
+  distance_time: { none: "distance_duration", weight: "distance_weight_duration" },
+  reps_time: { none: "reps_duration", weight: "weight_reps_duration" },
+};
+const PARTS = Object.fromEntries(Object.entries(GRID).flatMap(([c, ws]) => Object.entries(ws).map(([w, t]) => [t, [c, w]]))) as Record<Tracking, [CountedBy, WeightKind]>;
+/** Every Tracking value, for checking what a request sends. */
+export const TRACKINGS = Object.keys(PARTS) as Tracking[];
+export const COUNTED_BY: { value: CountedBy; label: string }[] = [
+  { value: "reps", label: "Reps" }, { value: "time", label: "Time" }, { value: "distance", label: "Distance" },
+  { value: "distance_time", label: "Distance + time" }, { value: "reps_time", label: "Reps + time" },
+];
+const WEIGHT_LABEL: Record<WeightKind, string> = { none: "None", weight: "Weight", added: "Added to bodyweight", assisted: "Assisted" };
+/** The weight choices that go with a way of counting ("Added to bodyweight" and "Assisted" only with reps). */
+export const weightKindsFor = (c: CountedBy) => (Object.keys(GRID[c]) as WeightKind[]).map((value) => ({ value, label: WEIGHT_LABEL[value] }));
+/** The two choices an exercise's tracking is made of. */
+export const trackingParts = (t: Tracking): { counted: CountedBy; weight: WeightKind } => {
+  const [counted, weight] = PARTS[t] ?? PARTS.weight_reps;
+  return { counted, weight };
+};
+/** The tracking for a pair of choices. A weight kind that doesn't go with the way of counting falls back to the nearest
+ * that does: weight added to the body is a load like any other (a weighted plank), help taken off is no weight held. */
+export function trackingFrom(counted: CountedBy, weight: WeightKind): Tracking {
+  const g = GRID[counted];
+  return g[weight] ?? (weight === "added" ? g.weight : undefined) ?? g.none!;
 }
-/** trackingFor in SQL, for a query with the exercise as `e` and its prefs joined as `p`. */
-export const TRACKING_SQL = `CASE ${[
-  ...Object.entries(TO_TIME).map(([a, b]) => `WHEN p.timed AND e.tracking = '${a}' THEN '${b}'`),
-  ...Object.entries(TO_REPS).map(([a, b]) => `WHEN p.timed = false AND e.tracking = '${a}' THEN '${b}'`),
-].join(" ")} ELSE e.tracking END`;
-/** Whether an exercise is done for time (the "Timed sets" switch is on): a time for each set, no reps and no distance. */
-export const isTimed = (t: Tracking) => usesDuration(t) && canTime(t);
-/** What a set starts with once its exercise switches between reps and time: what a new exercise's sets start with
- * (8 reps or 30 seconds), weight kept. Returns the changed fields only, null when the set already fits. */
-export const NEW_SET_REPS = 8, NEW_SET_S = 30;
-export function retimeSet(s: { reps?: number | null; durationS?: number | null }, t: Tracking): { reps: number | null; durationS: number | null } | null {
-  const next = isTimed(t) ? { reps: null, durationS: s.durationS || NEW_SET_S } : { reps: s.reps || NEW_SET_REPS, durationS: null };
-  return next.reps === (s.reps ?? null) && next.durationS === (s.durationS ?? null) ? null : next;
+/** What it tracks in words, "Time + weight", for menus and Details. */
+export function trackingLabel(t: Tracking): string {
+  const { counted, weight } = trackingParts(t);
+  const c = COUNTED_BY.find((x) => x.value === counted)!.label;
+  return weight === "none" ? c : weight === "added" ? `${c} + added weight` : weight === "assisted" ? `${c} + assistance` : `${c} + weight`;
 }
 
-// weight × reps is lifted only by an exercise counted in reps whose weight is a load (assisted weight is help)
-const LIFTS: Tracking[] = ["weight_reps", "bodyweight_reps", "reps_only"];
+// a value it doesn't know uses nothing, as before
+const part = (t: Tracking | string | null | undefined): [CountedBy | null, WeightKind] => PARTS[t as Tracking] ?? [null, "none"];
+export const usesWeight = (t: Tracking) => part(t)[1] !== "none";
+export const usesReps = (t: Tracking) => part(t)[0] === "reps" || part(t)[0] === "reps_time";
+export const usesDuration = (t: Tracking) => part(t)[0] === "time" || part(t)[0] === "distance_time" || part(t)[0] === "reps_time";
+export const usesDistance = (t: Tracking) => part(t)[0] === "distance" || part(t)[0] === "distance_time";
+/** Whether Progression can move it: weight and reps, not against the clock (as many reps as fit is no range to climb). */
+export const progresses = (t: Tracking) => usesWeight(t) && usesReps(t) && !usesDuration(t);
+
+// Each person can choose what any exercise tracks, built-in ones too (exercise_prefs.tracking, null keeps the exercise's
+// own way). It stays one way per exercise, so its records, charts and "next time" all read the same kind of number.
+/** The tracking in effect, in SQL, for a query with the exercise as `e` and its prefs joined as `p`. */
+export const TRACKING_SQL = "coalesce(p.tracking, e.tracking)";
+/** What a set starts with once its exercise tracks something else: what a new exercise's sets start with (8 reps,
+ * 30 seconds, 400 m; a distance done against the clock takes the time it takes, so it plans none), weight kept while
+ * it stays the same kind of weight (a load stays a load, help stays help). Returns the fields, null when the set already fits. */
+export const NEW_SET_REPS = 8, NEW_SET_S = 30, NEW_SET_M = 400;
+type SetNumbers = { reps: number | null; durationS: number | null; distanceM: number | null; weightKg: number | null };
+export function keepsWeight(before: Tracking, after: Tracking) {
+  return usesWeight(before) && usesWeight(after) && (before === "assisted") === (after === "assisted");
+}
+export function refitSet(s: { reps?: number | null; durationS?: number | null; distanceM?: number | string | null; weightKg?: number | null }, before: Tracking, after: Tracking): SetNumbers | null {
+  const next: SetNumbers = {
+    reps: usesReps(after) ? s.reps || NEW_SET_REPS : null,
+    durationS: usesDuration(after) ? s.durationS || (usesDistance(after) ? null : NEW_SET_S) : null,
+    distanceM: usesDistance(after) ? Number(s.distanceM) || NEW_SET_M : null,
+    weightKg: keepsWeight(before, after) ? s.weightKg ?? null : null,
+  };
+  const same = next.reps === (s.reps ?? null) && next.durationS === (s.durationS ?? null)
+    && next.distanceM === (s.distanceM == null ? null : Number(s.distanceM)) && next.weightKg === (s.weightKg ?? null);
+  return same ? null : next;
+}
+/** A new set's numbers for an exercise that tracks `t` (the routine editor's first sets). */
+export const newSetFor = (t: Tracking) => refitSet({}, "reps_only", t) ?? { reps: NEW_SET_REPS, durationS: null, distanceM: null, weightKg: null };
+
+// weight × reps is lifted only by an exercise counted in reps whose weight is a load (assisted weight is help); reps
+// against the clock (kettlebell swings in 60 s) lift it too
+const LIFTS: Tracking[] = ["weight_reps", "bodyweight_reps", "reps_only", "reps_duration", "weight_reps_duration"];
 /** Whether its sets lift weight × reps (volume, one-rep max): counted in reps, with a load rather than help. */
 export const liftsWeight = (t: Tracking | string | null | undefined) => LIFTS.includes(t as Tracking);
 /** liftedKg in SQL, for a query with the set as `s` and its exercise as `e`: reads the person's own reps-or-time choice. */
@@ -80,7 +122,7 @@ export interface RestDefaults {
   stretchAfterS?: number;
 }
 /** Whether an exercise is a stretch (its catalog category), which rests by the stretch defaults. Keyed on the category,
- * not on timed sets: a plank or a dead hang held for time is effort and rests like any other exercise. */
+ * not on what it tracks: a plank or a dead hang held for time is effort and rests like any other exercise. */
 export const isStretch = (ex: { category?: string | null } | null | undefined) => ex?.category === "stretching";
 type SidedSet = { kind?: string | null; side?: string | null };
 /** For each set, whether it opens a round with the set straight after it: a left set and a right one next to each other

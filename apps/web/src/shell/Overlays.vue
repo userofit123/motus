@@ -1,9 +1,10 @@
 <script setup lang="ts">
-// Panels any screen can open: Start, an exercise, a note, a reminder (new, or one in full), an activity, body weight, Appearance, the schedule editor, a routine's History, a program's start date.
-import { exerciseSheet, noteSheet, reminderSheet, reminderView, activitySheet, bodySheet, dailySheet, startOpen, scheduleSheet, historySheet, programStartSheet } from "../core/ui";
+// Panels any screen can open: Start, an exercise, a note, a reminder (new, or one in full), an activity, body weight, Appearance, the schedule editor, a routine's History, a program's start date, what an exercise is tracked by.
+import { exerciseSheet, noteSheet, reminderSheet, reminderView, activitySheet, bodySheet, dailySheet, startOpen, scheduleSheet, historySheet, programStartSheet, trackSheet } from "../core/ui";
 import ScheduleEditor from "../components/ScheduleEditor.vue";
 import RoutineHistory from "./RoutineHistory.vue";
 import ProgramStartSheet from "./ProgramStartSheet.vue";
+import TrackSheet from "./TrackSheet.vue";
 import Sheet from "../components/Sheet.vue";
 import ExerciseView from "../components/ExerciseView.vue";
 import StartSheet from "./StartSheet.vue";
@@ -46,6 +47,7 @@ onBeforeUnmount(() => removeEventListener("keydown", key));
   <ScheduleEditor v-if="scheduleSheet" :schedule="scheduleSheet" @close="scheduleSheet = null" />
   <RoutineHistory v-if="historySheet" :id="historySheet" @close="historySheet = null" />
   <ProgramStartSheet v-if="programStartSheet" :o="programStartSheet" @close="programStartSheet = null" />
+  <TrackSheet v-if="trackSheet" :o="trackSheet" @close="trackSheet = null" />
   <ActivitySheet v-if="activitySheet" :o="activitySheet" @close="activitySheet = null" />
   <BodySheet v-if="bodySheet" @close="bodySheet = false" />
   <DailySheet v-if="dailySheet" @close="dailySheet = false" />

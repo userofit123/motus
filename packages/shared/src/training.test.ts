@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { estimate, routineTime, setSeconds, usualDuration, CHANGEOVER_S, liftedKg, trackingFor, retimeSet, restAfterSet, planSetRest, isStretch } from "./training";
+import { estimate, routineTime, setSeconds, usualDuration, CHANGEOVER_S, liftedKg, trackingFrom, trackingParts, trackingLabel, weightKindsFor, refitSet, newSetFor, progresses, TRACKINGS, COUNTED_BY, usesWeight, usesReps, usesDuration, usesDistance, restAfterSet, planSetRest, isStretch } from "./training";
 import { restDefaultsOf, withDefaults } from "./settings";
 import { TEMPLATES } from "./templates";
 
@@ -55,20 +55,60 @@ describe("routineTime", () => {
   });
 });
 
-describe("timed sets", () => {
+describe("track by", () => {
   it("lift weight × reps only when counted in reps with a load", () => {
     expect(liftedKg(40, 8, "weight_reps")).toBe(320);
+    expect(liftedKg(16, 30, "weight_reps_duration")).toBe(480);
     expect(liftedKg(40, 8, "weight_duration")).toBe(0);
     expect(liftedKg(40, 8, "assisted")).toBe(0);
   });
-  it("keep a bodyweight exercise's optional added weight when done for time", () => {
-    expect(trackingFor("bodyweight_reps", true)).toBe("weight_duration");
-    expect(trackingFor("assisted", true)).toBe("duration");
+  it("makes every tracking from its two choices and back", () => {
+    for (const t of TRACKINGS) { const p = trackingParts(t); expect(trackingFrom(p.counted, p.weight)).toBe(t); }
+    const all = COUNTED_BY.flatMap((c) => weightKindsFor(c.value).map((w) => trackingFrom(c.value, w.value)));
+    expect(new Set(all).size).toBe(TRACKINGS.length);
+    expect(TRACKINGS).toHaveLength(12);
   });
-  it("start a switched set like a new exercise's, weight kept", () => {
-    expect(retimeSet({ reps: 10, durationS: null }, "weight_duration")).toEqual({ reps: null, durationS: 30 });
-    expect(retimeSet({ reps: null, durationS: 45 }, "weight_reps")).toEqual({ reps: 8, durationS: null });
-    expect(retimeSet({ reps: null, durationS: 45 }, "duration")).toBeNull();
+  it("offers added weight and assistance only with reps, falling back when the counting changes", () => {
+    expect(weightKindsFor("reps").map((w) => w.value)).toEqual(["none", "weight", "added", "assisted"]);
+    expect(weightKindsFor("time").map((w) => w.value)).toEqual(["none", "weight"]);
+    // a weighted push-up done for time keeps its weight (a weighted plank); assisted help isn't weight held
+    expect(trackingFrom("time", "added")).toBe("weight_duration");
+    expect(trackingFrom("time", "assisted")).toBe("duration");
+    expect(trackingFrom("distance_time", "weight")).toBe("distance_weight_duration");
+    expect(trackingFrom("reps_time", "weight")).toBe("weight_reps_duration");
+    expect(trackingFrom("distance", "none")).toBe("distance");
+  });
+  it("answers which columns each combination has", () => {
+    const cols = (t: any) => [usesWeight(t), usesReps(t), usesDuration(t), usesDistance(t)];
+    expect(cols("distance")).toEqual([false, false, false, true]);
+    expect(cols("distance_weight_duration")).toEqual([true, false, true, true]);
+    expect(cols("reps_duration")).toEqual([false, true, true, false]);
+    expect(cols("weight_reps_duration")).toEqual([true, true, true, false]);
+    expect(cols("bodyweight_reps")).toEqual([true, true, false, false]);
+    expect(cols("duration")).toEqual([false, false, true, false]);
+  });
+  it("says it in words", () => {
+    expect(trackingLabel("weight_duration")).toBe("Time + weight");
+    expect(trackingLabel("distance_weight_duration")).toBe("Distance + time + weight");
+    expect(trackingLabel("reps_only")).toBe("Reps");
+  });
+  it("progresses only weight and reps without a clock", () => {
+    expect(progresses("weight_reps")).toBe(true);
+    expect(progresses("assisted")).toBe(true);
+    expect(progresses("weight_reps_duration")).toBe(false);
+    expect(progresses("weight_duration")).toBe(false);
+  });
+  it("starts a changed set like a new exercise's, weight kept while it stays a load", () => {
+    expect(refitSet({ reps: 10, durationS: null, weightKg: 20 }, "weight_reps", "weight_duration")).toEqual({ reps: null, durationS: 30, distanceM: null, weightKg: 20 });
+    expect(refitSet({ reps: null, durationS: 45, weightKg: 20 }, "weight_duration", "duration")).toEqual({ reps: null, durationS: 45, distanceM: null, weightKg: null });
+    expect(refitSet({ reps: null, durationS: 45 }, "duration", "reps_only")).toEqual({ reps: 8, durationS: null, distanceM: null, weightKg: null });
+    expect(refitSet({ reps: null, durationS: 45, weightKg: null }, "duration", "duration")).toBeNull();
+    // help taken off isn't a load
+    expect(refitSet({ reps: 8, weightKg: 20 }, "assisted", "weight_reps")?.weightKg).toBeNull();
+    // a ruck plans its distance, not its time
+    expect(refitSet({ reps: 8, weightKg: 10 }, "weight_reps", "distance_weight_duration")).toEqual({ reps: null, durationS: null, distanceM: 400, weightKg: 10 });
+    expect(newSetFor("reps_duration")).toEqual({ reps: 8, durationS: 30, distanceM: null, weightKg: null });
+    expect(newSetFor("distance")).toEqual({ reps: null, durationS: null, distanceM: 400, weightKg: null });
   });
 });
 

@@ -47,7 +47,7 @@ async function exerciseStats(q: Sql, from: string, to: string) {
      FROM workout_exercises we JOIN workouts w ON w.id = we.workout_id JOIN exercises e ON e.id = we.exercise_id LEFT JOIN exercise_prefs p ON p.exercise_id = e.id
      LEFT JOIN workout_sets s ON s.workout_exercise_id = we.id AND s.done AND s.kind <> 'warmup'
      WHERE w.status = 'completed' AND w.started_at >= $1 AND w.started_at < $2
-     GROUP BY e.id, w.id, we.id, p.timed ORDER BY w.started_at`, [from, to]);
+     GROUP BY e.id, w.id, we.id, p.tracking ORDER BY w.started_at`, [from, to]);
   const by = new Map<string, any>();
   for (const r of rows) {
     const x = by.get(r.id) ?? { exerciseId: r.id, name: r.name, muscles: r.primary_muscles, tracking: r.tracking, times: 0, skipped: 0, lastAt: null, bestE1rm: 0, bestWeightKg: 0, volumeKg: 0, trend: [] as any[] };

@@ -1,15 +1,13 @@
 // The exercise library: the shared catalog plus each person's own exercises, their per-exercise settings,
 // and every exercise's history, charts and records.
-import { e1rm, liftedKg, TRACKING_SQL, isTimed, canTime, NEW_SET_REPS, NEW_SET_S, type Exercise, type Tracking } from "@motus/shared";
+import { e1rm, liftedKg, TRACKING_SQL, TRACKINGS, keepsWeight, usesReps, usesDuration, usesDistance, NEW_SET_REPS, NEW_SET_S, NEW_SET_M, type Exercise, type Tracking } from "@motus/shared";
 import type { Router, Ctx } from "../router";
 import type { Sql } from "../db";
 import { camel, id, str, numOrNull, intOrNull, bool, oneOf } from "../util";
 import { uuidv7 } from "../ids";
 import { notFound, bad } from "../errors";
 
-const TRACKING: Tracking[] = ["weight_reps", "bodyweight_reps", "assisted", "reps_only", "duration", "weight_duration", "distance_duration", "distance_weight"];
-
-// one side at a time and timed sets: the person's own choice for this exercise (exercise_prefs) wins over the exercise's
+// one side at a time and what it is tracked by: the person's own choice for this exercise (exercise_prefs) wins over the exercise's
 // default, so every query here joins the prefs as p
 const SIDES = "coalesce(p.unilateral, e.unilateral) AS unilateral";
 const EX_COLS = `e.id, e.owner_id, e.source, e.name, e.aliases, e.category, e.equipment, e.mechanic, e.force, e.level, ${TRACKING_SQL} AS tracking,
@@ -136,7 +134,7 @@ export function libraryRoutes(r: Router) {
   r.put("/exercises/:id", async (ctx, p, b) => {
     const exId = id(p.id), before = await trackingNow(ctx, exId);
     await saveCustom(ctx, exId, b, false);
-    if (await retimeRoutines(ctx, exId, before)) ctx.changed("exercise", "workout", "routine");
+    if (await retrackRoutines(ctx, exId, before)) ctx.changed("exercise", "workout", "routine");
     else ctx.changed("exercise");
     return { ok: true };
   });
@@ -151,8 +149,8 @@ export function libraryRoutes(r: Router) {
   r.put("/exercises/:id/prefs", async (ctx, p, body) => {
     const exId = id(p.id), before = await trackingNow(ctx, exId);
     await savePrefs(ctx, exId, body);
-    // reps or time also changes how its records, stats and goals count, and every routine's sets of it
-    if (await retimeRoutines(ctx, exId, before)) ctx.changed("exercise", "workout", "routine");
+    // what it is tracked by also changes how its records, stats and goals count, and every routine's sets of it
+    if (await retrackRoutines(ctx, exId, before)) ctx.changed("exercise", "workout", "routine");
     else ctx.changed("exercise");
     return { ok: true };
   });
@@ -184,32 +182,38 @@ export function libraryRoutes(r: Router) {
   });
 }
 
-/** What an exercise tracks for this person (its own way with their reps-or-time choice applied). */
+/** What an exercise tracks for this person (their own choice, else its own way). */
 async function trackingNow(ctx: Ctx, exId: string): Promise<Tracking | null> {
   const row = (await ctx.q.query(`SELECT ${TRACKING_SQL} AS tracking FROM exercises e LEFT JOIN exercise_prefs p ON p.exercise_id = e.id AND p.user_id = $2 WHERE e.id = $1`,
     [exId, ctx.userId])).rows[0];
   return row ? (row.tracking as Tracking) : null;
 }
-/** Once an exercise switches between reps and time, every one of this person's routines moves with it, so no routine
- * keeps reps that are hidden but still saved (and copied into the next workout): each set gets what a new exercise's
- * sets start with (8 reps or 30 seconds, as the routine editor does), weight kept. A workout still going gets the same
- * for its sets still to do (the switch is also in the exercise's own page, opened from the workout); logged sets stay
- * as they were done. True when it switched. */
-async function retimeRoutines(ctx: Ctx, exId: string, before: Tracking | null): Promise<boolean> {
+/** Once an exercise tracks something else, every one of this person's routines moves with it, so no routine keeps
+ * numbers that are hidden but still saved (and copied into the next workout): each set gets what a new exercise's sets
+ * start with (8 reps, 30 seconds, 400 m, as refitSet and the routine editor do), weight kept while it stays the same
+ * kind. A workout still going gets the same for its sets still to do (the choice is also in the exercise's own page,
+ * opened from the workout); logged sets stay as they were done. True when it changed. */
+async function retrackRoutines(ctx: Ctx, exId: string, before: Tracking | null): Promise<boolean> {
   const after = await trackingNow(ctx, exId);
-  if (!before || !after || !canTime(before) || !canTime(after) || isTimed(before) === isTimed(after)) return false;
-  const sets = isTimed(after) ? `reps = NULL, start_reps = NULL, duration_s = coalesce(nullif(s.duration_s, 0), ${NEW_SET_S})`
-    : `duration_s = NULL, reps = coalesce(nullif(s.reps, 0), ${NEW_SET_REPS})`;
-  await ctx.q.query(`UPDATE routine_sets s SET ${sets} FROM routine_exercises re
+  if (!before || !after || before === after) return false;
+  const reps = usesReps(after), keepW = keepsWeight(before, after);
+  const nums = [
+    reps ? `reps = coalesce(nullif(s.reps, 0), ${NEW_SET_REPS})` : "reps = NULL",
+    // a distance against the clock takes the time it takes, so it plans none
+    usesDuration(after) ? `duration_s = coalesce(nullif(s.duration_s, 0)${usesDistance(after) ? "" : `, ${NEW_SET_S}`})` : "duration_s = NULL",
+    usesDistance(after) ? `distance_m = coalesce(nullif(s.distance_m, 0), ${NEW_SET_M})` : "distance_m = NULL",
+    ...(keepW ? [] : ["weight_kg = NULL"]),
+  ];
+  await ctx.q.query(`UPDATE routine_sets s SET ${[...nums, ...(reps ? [] : ["reps_max = NULL", "start_reps = NULL"])].join(", ")} FROM routine_exercises re
     WHERE re.id = s.routine_exercise_id AND re.exercise_id = $1 AND s.user_id = $2`, [exId, ctx.userId]);
-  // a timed set has no rep target (as a planned one never has), so nothing counts it as reps missed or rests it
-  // longer; back on reps, the new reps are what the set starts with, so finishing doesn't take them for typed in
+  // a set with no reps has no rep target (as a planned one never has), so nothing counts it as reps missed or rests it
+  // longer; newly in reps, the new reps are what the set starts with, so finishing doesn't take them for typed in
   // (the weight start falls back to the target, as it did while no start was kept)
-  const live = isTimed(after)
-    ? `reps = NULL, target_reps = NULL, target_reps_max = NULL, start_reps = NULL, duration_s = coalesce(nullif(s.duration_s, 0), ${NEW_SET_S})`
-    : `duration_s = NULL, reps = coalesce(nullif(s.reps, 0), ${NEW_SET_REPS}), start_reps = coalesce(nullif(s.reps, 0), ${NEW_SET_REPS}),
-      start_weight_kg = coalesce(s.start_weight_kg, s.target_weight_kg)`;
-  await ctx.q.query(`UPDATE workout_sets s SET ${live} FROM workout_exercises we JOIN workouts w ON w.id = we.workout_id
+  const live = [...nums,
+    ...(!reps ? ["target_reps = NULL", "target_reps_max = NULL", "start_reps = NULL"]
+      : !usesReps(before) ? [`start_reps = coalesce(nullif(s.reps, 0), ${NEW_SET_REPS})`, ...(keepW ? ["start_weight_kg = coalesce(s.start_weight_kg, s.target_weight_kg)"] : [])] : []),
+    ...(keepW ? [] : ["target_weight_kg = NULL", "start_weight_kg = NULL"])];
+  await ctx.q.query(`UPDATE workout_sets s SET ${live.join(", ")} FROM workout_exercises we JOIN workouts w ON w.id = we.workout_id
     WHERE we.id = s.workout_exercise_id AND we.exercise_id = $1 AND w.status = 'in_progress' AND NOT s.done AND s.user_id = $2`, [exId, ctx.userId]);
   return true;
 }
@@ -220,19 +224,21 @@ export async function savePrefs(ctx: Ctx, exId: string, body: Record<string, unk
   const had = (await ctx.q.query("SELECT * FROM exercise_prefs WHERE exercise_id = $1", [exId])).rows[0];
   const b: any = { ...(had ? camel<any>(had) : {}), ...body };
   await ctx.q.query(
-    `INSERT INTO exercise_prefs (user_id, exercise_id, rest_s, rest_after_s, favourite, hidden, bar_kg, increment_kg, unilateral, timed)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-     ON CONFLICT (user_id, exercise_id) DO UPDATE SET rest_s = $3, rest_after_s = $4, favourite = $5, hidden = $6, bar_kg = $7, increment_kg = $8, unilateral = $9, timed = $10`,
-    // unilateral and timed: null goes back to the exercise's own default
+    `INSERT INTO exercise_prefs (user_id, exercise_id, rest_s, rest_after_s, favourite, hidden, bar_kg, increment_kg, unilateral, tracking)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,
+       (SELECT CASE WHEN $10::text = e.tracking THEN NULL ELSE $10::text END FROM exercises e WHERE e.id = $2))
+     ON CONFLICT (user_id, exercise_id) DO UPDATE SET rest_s = $3, rest_after_s = $4, favourite = $5, hidden = $6, bar_kg = $7, increment_kg = $8, unilateral = $9,
+       tracking = EXCLUDED.tracking`,
+    // unilateral and tracking: null goes back to the exercise's own default (so does choosing its own tracking)
     [ctx.userId, exId, intOrNull(b.restS, 0, 3600), intOrNull(b.restAfterS, 0, 3600), bool(b.favourite), bool(b.hidden), numOrNull(b.barKg, 0, 100), numOrNull(b.incrementKg, 0, 50),
-      b.unilateral == null ? null : bool(b.unilateral), b.timed == null ? null : bool(b.timed)]);
+      b.unilateral == null ? null : bool(b.unilateral), b.tracking == null ? null : oneOf(b.tracking, TRACKINGS, null as any)]);
 }
 
 async function saveCustom(ctx: Ctx, exId: string, b: any, isNew: boolean) {
   const name = str(b.name, 120).trim();
   if (!name) throw bad("Give the exercise a name");
   const arr = (v: unknown, max = 40, len = 1000) => (Array.isArray(v) ? v.filter((x) => typeof x === "string").slice(0, max).map((x: string) => x.slice(0, len)) : []);
-  const vals = [exId, ctx.userId, name, arr(b.aliases), str(b.category, 40, "strength"), b.equipment ? str(b.equipment, 40) : null, oneOf(b.tracking, TRACKING, "weight_reps"),
+  const vals = [exId, ctx.userId, name, arr(b.aliases), str(b.category, 40, "strength"), b.equipment ? str(b.equipment, 40) : null, oneOf(b.tracking, TRACKINGS, "weight_reps"),
     bool(b.unilateral), arr(b.primaryMuscles), arr(b.secondaryMuscles), arr(b.instructions, 60), arr(b.images, 10, 4_000_000) /* local accounts keep photos inline */, b.videoUrl ? str(b.videoUrl, 500) : null];
   if (isNew) {
     await ctx.q.query(
@@ -244,6 +250,6 @@ async function saveCustom(ctx: Ctx, exId: string, b: any, isNew: boolean) {
          instructions=$11, images=$12, video_url=$13, updated_at=now() WHERE id=$1 AND owner_id=$2 RETURNING id`, vals);
     if (!rows.length) throw notFound("Only your own exercises can be edited");
     // the editor shows the side and tracking in effect and saves them onto the exercise, so an earlier per-person choice would hide them
-    await ctx.q.query("UPDATE exercise_prefs SET unilateral = NULL, timed = NULL WHERE exercise_id = $1 AND (unilateral IS NOT NULL OR timed IS NOT NULL)", [exId]);
+    await ctx.q.query("UPDATE exercise_prefs SET unilateral = NULL, tracking = NULL WHERE exercise_id = $1 AND (unilateral IS NOT NULL OR tracking IS NOT NULL)", [exId]);
   }
 }

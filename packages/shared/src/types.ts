@@ -11,7 +11,11 @@ export type Tracking =
   | "duration" // plank
   | "weight_duration" // farmer's carry for time
   | "distance_duration" // run, row
-  | "distance_weight"; // sled push
+  | "distance_weight" // sled push
+  | "distance" // walking lunges for 40 m
+  | "distance_weight_duration" // ruck, weighted vest run
+  | "reps_duration" // most burpees in 60 s
+  | "weight_reps_duration"; // kettlebell swings in 60 s
 
 export interface Exercise {
   id: string;
@@ -55,7 +59,7 @@ export interface RoutineSet {
   distanceM: number | null;
   rpe: number | null;
   restS: number | null;
-  /** read back with the routine (saving leaves it empty); cleared once the exercise switches to timed sets */
+  /** read back with the routine (saving leaves it empty); cleared once the exercise is no longer counted in reps */
   startReps?: number | null;
   /** "L" or "R": a set for one side (any exercise can have them, beside general sets); null or absent: both together */
   side?: string | null;

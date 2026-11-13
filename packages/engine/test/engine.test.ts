@@ -59,15 +59,15 @@ describe("engine", () => {
     await call(A, "DELETE", `/exercises/${mine}`);
   });
 
-  it("any exercise can be done for time instead of reps (and back), for that person only", async () => {
+  it("any exercise can be tracked by time instead of reps (and back), for that person only", async () => {
     const T = uuidv7();
     await eng.db.admin.query("INSERT INTO users (id, username, display_name) VALUES ($1,'timed-tester','T')", [T]);
     const byName = async (u: string) => new Map<string, any>((await call(u, "GET", "/exercises")).map((e: any) => [e.name, e]));
     const a = await byName(T);
     const squat = a.get("Barbell Squat"), stretch = [...a.values()].find((e: any) => e.category === "stretching");
     expect([squat.tracking, stretch.tracking]).toEqual(["weight_reps", "duration"]);
-    await call(T, "PUT", `/exercises/${squat.id}/prefs`, { timed: true });
-    await call(T, "PUT", `/exercises/${stretch.id}/prefs`, { timed: false });
+    await call(T, "PUT", `/exercises/${squat.id}/prefs`, { tracking: "weight_duration" });
+    await call(T, "PUT", `/exercises/${stretch.id}/prefs`, { tracking: "reps_only" });
     expect((await call(T, "GET", `/exercises/${squat.id}`)).tracking).toBe("weight_duration");
     expect((await call(T, "GET", `/exercises/${stretch.id}`)).tracking).toBe("reps_only");
     expect((await byName(B)).get("Barbell Squat").tracking).toBe("weight_reps");
@@ -80,12 +80,12 @@ describe("engine", () => {
     // other settings saved later keep it; null goes back to the exercise's own way
     await call(T, "PUT", `/exercises/${squat.id}/prefs`, { favourite: true });
     expect((await call(T, "GET", `/exercises/${squat.id}`)).tracking).toBe("weight_duration");
-    await call(T, "PUT", `/exercises/${squat.id}/prefs`, { timed: null });
+    await call(T, "PUT", `/exercises/${squat.id}/prefs`, { tracking: null });
     expect((await call(T, "GET", `/exercises/${squat.id}`)).tracking).toBe("weight_reps");
     // switching converts the sets in every routine of that person (8 reps or 30 seconds, weight kept) ...
     const set0 = async () => (await call(T, "GET", `/routines/${r.id}`)).exercises[0].sets[0];
     expect(await set0()).toMatchObject({ reps: 8, durationS: null, weightKg: 40 });
-    await call(T, "PUT", `/exercises/${squat.id}/prefs`, { timed: true });
+    await call(T, "PUT", `/exercises/${squat.id}/prefs`, { tracking: "weight_duration" });
     expect(await set0()).toMatchObject({ reps: null, durationS: 30, weightKg: 40 });
     // ... and a workout started from a routine with leftover reps keeps only what the exercise tracks now
     await eng.db.admin.query("UPDATE routine_sets SET reps = 8 WHERE routine_exercise_id IN (SELECT id FROM routine_exercises WHERE routine_id = $1)", [r.id]);
@@ -95,32 +95,67 @@ describe("engine", () => {
     // the workout still going converts its sets still to do the same way; a logged set keeps what was done
     await call(T, "POST", `/workout-exercises/${w2.exercises[0].id}/sets`, { kind: "normal", weightKg: 40, durationS: 45 });
     await call(T, "PUT", `/workout-sets/${w2.exercises[0].sets[0].id}`, { done: true });
-    await call(T, "PUT", `/exercises/${squat.id}/prefs`, { timed: null });
+    await call(T, "PUT", `/exercises/${squat.id}/prefs`, { tracking: null });
     const live = async () => (await call(T, "GET", `/workouts/${w2.id}`)).exercises[0].sets;
     const [logged, todo] = await live();
     expect(logged).toMatchObject({ done: true, reps: null, durationS: 30 });
     // the new reps are what the set starts with, so finishing doesn't take them for typed in
     expect(todo).toMatchObject({ done: false, reps: 8, durationS: null, weightKg: 40, startReps: 8 });
-    await call(T, "PUT", `/exercises/${squat.id}/prefs`, { timed: true });
+    await call(T, "PUT", `/exercises/${squat.id}/prefs`, { tracking: "weight_duration" });
     expect((await live())[1]).toMatchObject({ reps: null, durationS: 30, weightKg: 40, startReps: null });
-    await call(T, "PUT", `/exercises/${squat.id}/prefs`, { timed: null });
+    await call(T, "PUT", `/exercises/${squat.id}/prefs`, { tracking: null });
     await call(T, "POST", `/workouts/${w2.id}/discard`);
     // a set planned with a rep target loses it once timed (a timed set has none), so it isn't counted as reps missed
     const w3 = await call(T, "POST", "/workouts/start", { routineId: r.id });
     expect(w3.exercises[0].sets[0]).toMatchObject({ reps: 8, targetReps: 8 });
-    await call(T, "PUT", `/exercises/${squat.id}/prefs`, { timed: true });
+    await call(T, "PUT", `/exercises/${squat.id}/prefs`, { tracking: "weight_duration" });
     const [timedSet] = (await call(T, "GET", `/workouts/${w3.id}`)).exercises[0].sets;
     expect(timedSet).toMatchObject({ reps: null, durationS: 30, targetReps: null, startReps: null });
     expect(timedSet.targetRepsMax ?? null).toBeNull();
-    await call(T, "PUT", `/exercises/${squat.id}/prefs`, { timed: null });
+    await call(T, "PUT", `/exercises/${squat.id}/prefs`, { tracking: null });
     await call(T, "POST", `/workouts/${w3.id}/discard`);
-    // editing your own exercise saves "Track it by" onto it and clears the personal switch, so the pick sticks
+    // editing your own exercise saves what it tracks onto it and clears the personal choice, so the pick sticks
     const mine = (await call(T, "POST", "/exercises", { name: "Timed test", tracking: "weight_reps" })).id;
-    await call(T, "PUT", `/exercises/${mine}/prefs`, { timed: true });
+    await call(T, "PUT", `/exercises/${mine}/prefs`, { tracking: "weight_duration" });
     expect((await call(T, "GET", `/exercises/${mine}`)).tracking).toBe("weight_duration");
     await call(T, "PUT", `/exercises/${mine}`, { name: "Timed test", tracking: "weight_reps" });
     const back = await call(T, "GET", `/exercises/${mine}`);
-    expect([back.tracking, back.prefs?.timed ?? null]).toEqual(["weight_reps", null]);
+    expect([back.tracking, back.prefs?.tracking ?? null]).toEqual(["weight_reps", null]);
+  });
+
+  it("Track by: new combinations convert sets, keep weight only as a load, and the exercise's own way stores no choice", async () => {
+    const T = uuidv7();
+    await eng.db.admin.query("INSERT INTO users (id, username, display_name) VALUES ($1,'track-tester','T')", [T]);
+    const ex = new Map<string, any>((await call(T, "GET", "/exercises")).map((e: any) => [e.name, e])).get("Barbell Squat");
+    const r = await call(T, "POST", "/routines", { name: "Track", exercises: [{ exerciseId: ex.id, sets: [{ kind: "normal", reps: 10, weightKg: 20 }] }] });
+    const set0 = async () => (await call(T, "GET", `/routines/${r.id}`)).exercises[0].sets[0];
+    const put = (tracking: string | null) => call(T, "PUT", `/exercises/${ex.id}/prefs`, { tracking });
+    // a ruck: distance and time with weight; the distance is planned, the time is what it takes
+    await put("distance_weight_duration");
+    expect((await call(T, "GET", `/exercises/${ex.id}`)).tracking).toBe("distance_weight_duration");
+    expect(await set0()).toMatchObject({ reps: null, durationS: null, distanceM: 400, weightKg: 20 });
+    // kettlebell swings in 60 s: reps and time, weight kept
+    await put("weight_reps_duration");
+    expect(await set0()).toMatchObject({ reps: 8, durationS: 30, distanceM: null, weightKg: 20 });
+    // walking lunges for distance: no weight column, so the weight goes
+    await put("distance");
+    expect(await set0()).toMatchObject({ reps: null, durationS: null, distanceM: 400, weightKg: null });
+    // the live workout's sets still to do follow, with no rep target or weight target left over
+    const w = await call(T, "POST", "/workouts/start", { routineId: r.id });
+    await put("reps_duration");
+    const [todo] = (await call(T, "GET", `/workouts/${w.id}`)).exercises[0].sets;
+    expect(todo).toMatchObject({ reps: 8, durationS: 30, distanceM: null, weightKg: null, targetWeightKg: null, startReps: 8 });
+    await call(T, "POST", `/workouts/${w.id}/discard`);
+    // assisted help isn't a load: from weight to assisted the weight goes
+    await put("weight_reps");
+    await call(T, "PUT", `/routines/${r.id}`, { name: "Track", exercises: [{ exerciseId: ex.id, sets: [{ kind: "normal", reps: 10, weightKg: 20 }] }] });
+    await put("assisted");
+    expect(await set0()).toMatchObject({ reps: 10, weightKg: null });
+    // choosing the exercise's own way keeps no choice, and nonsense is no choice either
+    await put("weight_reps");
+    expect((await call(T, "GET", `/exercises/${ex.id}`)).prefs.tracking).toBeNull();
+    await put("juggling");
+    expect((await call(T, "GET", `/exercises/${ex.id}`)).tracking).toBe("weight_reps");
   });
 
   it("routine sets can be left, right or both on any exercise; Start copies them, and last time and Progression go side by side", async () => {

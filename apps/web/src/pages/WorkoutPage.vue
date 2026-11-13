@@ -6,7 +6,7 @@ import { startWorkout } from "../workout/start";
 import { goBack } from "../core/leave";
 import { computed, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { usesWeight, usesReps, muscleName, structureChanges, sideJoins, restDefaultsOf, type StructureChange } from "@motus/shared";
+import { usesWeight, usesReps, usesDuration, usesDistance, toM, fromM, muscleName, structureChanges, sideJoins, restDefaultsOf, type StructureChange } from "@motus/shared";
 import { useWorkoutQuery, useSettings, loaded } from "../api/queries";
 import { api, mediaUrl } from "../api/client";
 import { invalidate } from "../api/live";
@@ -185,7 +185,8 @@ await loaded(q);
                 <template v-else>
                   <td v-if="usesWeight(e.exercise.tracking)"><input class="vin" inputmode="decimal" :value="x.weightKg != null ? Math.round(fmt.fromKg(x.weightKg) * 100) / 100 : ''" @change="save(`/workout-sets/${x.id}`, { weightKg: num(($event.target as HTMLInputElement).value) == null ? null : fmt.toKg(num(($event.target as HTMLInputElement).value)!) }).then((ok) => ok && savedToast())" /></td>
                   <td v-if="usesReps(e.exercise.tracking)"><input class="vin" inputmode="numeric" :value="x.reps ?? ''" @change="save(`/workout-sets/${x.id}`, { reps: num(($event.target as HTMLInputElement).value) }).then((ok) => ok && savedToast())" /></td>
-                  <td v-if="e.exercise.tracking === 'duration'"><input class="vin" inputmode="numeric" :value="x.durationS ?? ''" @change="save(`/workout-sets/${x.id}`, { durationS: num(($event.target as HTMLInputElement).value) }).then((ok) => ok && savedToast())" /></td>
+                  <td v-if="usesDuration(e.exercise.tracking)"><input class="vin" inputmode="numeric" :value="x.durationS ?? ''" placeholder="sec" @change="save(`/workout-sets/${x.id}`, { durationS: num(($event.target as HTMLInputElement).value) }).then((ok) => ok && savedToast())" /></td>
+                  <td v-if="usesDistance(e.exercise.tracking)"><input class="vin" inputmode="decimal" :value="x.distanceM != null ? Math.round(fromM(x.distanceM, fmt.du) * 100) / 100 : ''" placeholder="-" @change="save(`/workout-sets/${x.id}`, { distanceM: num(($event.target as HTMLInputElement).value) == null ? null : toM(num(($event.target as HTMLInputElement).value)!, fmt.du) }).then((ok) => ok && savedToast())" /></td>
                   <td><button class="ib sm plain" aria-label="Remove set" @click="save(`/workout-sets/${x.id}`, undefined, 'del').then((ok) => ok && savedToast('Set removed'))"><Icon name="trash" :size="16" /></button></td>
                 </template>
               </tr>

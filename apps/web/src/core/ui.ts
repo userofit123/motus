@@ -1,6 +1,6 @@
 // App-wide panels that any screen can open.
 import { ref } from "vue";
-import type { Reminder } from "@motus/shared";
+import type { Reminder, Tracking } from "@motus/shared";
 
 export const startOpen = ref(false);
 export const appearanceOpen = ref(false);
@@ -23,3 +23,5 @@ export const scheduleSheet = ref<null | { id?: string; routineId?: string | null
 export const historySheet = ref<string | null>(null);
 /** Changing a program's start date, from its ⋮ menu on the Programs list or its own page */
 export const programStartSheet = ref<null | { id: string; startDate: string }>(null);
+/** "Track by" for one exercise, from its ⋮ menu (core/track.ts); `then` shows the change on the screen that opened it */
+export const trackSheet = ref<null | { exerciseId: string; tracking: Tracking; then?: (before: Tracking, after: Tracking) => void }>(null);
