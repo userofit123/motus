@@ -4,11 +4,6 @@
   transition: background .2s, color .2s;
 }
 
-.seg + .hq,
-.tabs + .hq {
-  margin-inline-start: 8px;
-}
-
 .seg {
   display: flex;
   background: var(--s2);

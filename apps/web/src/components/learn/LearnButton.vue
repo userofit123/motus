@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // The learn button (graduation cap) at the right of a block's header: opens the lesson behind the block's numbers.
-// Place it as the last item of a flex header row (`.lbl.lhead`, `.ch`).
+// Place it as the last item of a flex header row (`.lbl`, `.ch`).
 import { ref } from "vue";
 import Icon from "../Icon.vue";
 import LearnSheet from "./LearnSheet.vue";
@@ -8,10 +8,11 @@ import { LESSONS, type LessonId } from "./lessons";
 
 const props = defineProps<{ topic: LessonId }>();
 const open = ref(false);
+const label = `Learn about ${LESSONS[props.topic].title.toLowerCase()}`;
 </script>
 
 <template>
-  <button type="button" class="ib sm plain learn" :aria-label="`Learn about ${LESSONS[props.topic].title.toLowerCase()}`" title="Learn more" @click.stop="open = true"><Icon name="learn" /></button>
+  <button type="button" class="ib sm plain learn" :aria-label="label" :title="label" @click.stop="open = true"><Icon name="learn" /></button>
   <LearnSheet v-if="open" :topic="topic" @close="open = false" />
 </template>
 

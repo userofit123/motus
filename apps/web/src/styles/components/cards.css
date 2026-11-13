@@ -47,15 +47,6 @@
   color: var(--onc);
 }
 
-.card.hero .hq:hover {
-  color: var(--onc);
-  background: color-mix(in srgb, var(--onc) 18%, transparent);
-}
-
-.lbl > .hq {
-  margin-inline-start: -6px;
-}
-
 .lbl {
   font-size: 13px;
   color: var(--tx2);
@@ -63,6 +54,11 @@
   align-items: center;
   gap: 8px;
   font-weight: 500;
+}
+
+/* a header with the learn button: a long title wraps to two lines, and the cap stays on its first line */
+.lbl:has(> .learn) {
+  align-items: flex-start;
 }
 
 .val {

@@ -181,8 +181,8 @@ await loaded(st, prev, ach);
         <div class="card"><div class="lbl hgap">Sets per muscle in this period</div><BodyMap :values="d.muscles" :height="240" legend inspect :focus="mSel?.muscles" :focus-tier="mSel?.tier" @pick="pickMuscle" @pick-tier="pickTier" />
           <div class="grid g2 keep" style="margin-top:12px;gap:6px 28px"><div v-for="[m, n] in Object.entries(d.muscles).sort((a: any, b: any) => b[1] - a[1])" :key="m" class="row tiny mrow" :class="{ on: mSel?.muscles.includes(m) }" role="button" tabindex="0" :aria-pressed="!!mSel?.muscles.includes(m)" @click="pickMuscle(m)" @keydown.enter.space.prevent="pickMuscle(m)"><span class="grow" style="color:var(--tx)">{{ muscleName(m) }}</span>{{ Math.round(Number(n)) }}</div></div></div>
         <div class="stack">
-          <div class="card"><div class="lbl hgap lhead"><span class="grow">Working sets this week · target {{ WEEKLY_SET_RANGE[0] }}-{{ WEEKLY_SET_RANGE[1] }} per group</span><LearnButton topic="weeklySets" /></div><BarChart :bars="groupWeek" horizontal :band="WEEKLY_SET_RANGE" /></div>
-          <div v-if="trainWeeks > 1" class="card"><div class="lbl hgap lhead"><span class="grow">Average per training week · {{ trainWeeks }} training weeks</span><LearnButton topic="weeklySets" /></div><BarChart :bars="groupAvg" horizontal :band="WEEKLY_SET_RANGE" /></div>
+          <div class="card"><div class="lbl hgap"><span class="grow">Working sets this week · target {{ WEEKLY_SET_RANGE[0] }}-{{ WEEKLY_SET_RANGE[1] }} per group</span><LearnButton topic="weeklySets" /></div><BarChart :bars="groupWeek" horizontal :band="WEEKLY_SET_RANGE" /></div>
+          <div v-if="trainWeeks > 1" class="card"><div class="lbl hgap"><span class="grow">Average per training week · {{ trainWeeks }} training weeks</span><LearnButton topic="weeklySets" /></div><BarChart :bars="groupAvg" horizontal :band="WEEKLY_SET_RANGE" /></div>
           <div class="card"><div class="lbl hgap">Balance</div>
             <div class="row tiny" style="margin-bottom:6px"><span style="width:60px">Push</span><div class="pbar grow"><i :style="{ width: (balance.push / Math.max(1, balance.push + balance.pull)) * 100 + '%' }" /></div><span style="width:60px;text-align:end">Pull</span></div>
             <div class="row tiny"><span style="width:60px">Upper</span><div class="pbar grow"><i :style="{ width: (balance.upper / Math.max(1, balance.upper + balance.lower)) * 100 + '%' }" /></div><span style="width:60px;text-align:end">Lower</span></div>
@@ -237,8 +237,6 @@ await loaded(st, prev, ach);
 .ach .t { font-size: 13px; font-weight: 600; color: var(--tx); }
 .ach .s { font-size: 11.5px; }
 .ach .pbar { margin-top: calc(var(--lpy) / 2); height: 6px; background: var(--s1); } /* tile is --s2, so the track needs a different token to show the empty part */
-/* a block header with the learn button at its right */
-.lhead { display: flex; align-items: flex-start; gap: 8px; }
 .mrow { cursor: pointer; border-radius: 6px; outline: none; }
 .mrow.on { font-weight: 600; color: var(--tx); }
 .mrow:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
