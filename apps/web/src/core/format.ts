@@ -30,7 +30,7 @@ export function makeFmt(s: Settings) {
     distNum: (m: number) => fromM(m, du),
     pace: (s: number, m: number) => { if (!m || !s) return ""; const per = s / fromM(m, du); return `${clock(per)} /${du}`; },
     clock, dur,
-    /** one set as done: "80 kg × 8", "12 reps", "1:30", "15 reps in 1:00", "2.5 km" (what the exercise tracks) */
+    /** one set as done: "80 kg × 8", "12 reps", "1:30", "15 reps in 1:00", "2.5 km in 12:00", "20 kg · 1:00" (what the exercise tracks) */
     set: (x: SetFigures, t: Tracking | null | undefined) => {
       const kg = x.weightKg != null && !!t && usesWeight(t) ? wu_(x.weightKg) : "";
       // reps logged before the exercise stopped being counted in reps still show (a set with no time has nothing else to say)
@@ -38,7 +38,9 @@ export function makeFmt(s: Settings) {
       const d = x.distanceM ? dist(x.distanceM) : "";
       // time against reps or distance reads "in": "15 reps in 1:00", "20 kg × 15 in 1:00", "2.5 km in 12:00"; alone it is the plain clock
       const time = x.durationS ? (r || d ? `in ${clock(x.durationS)}` : clock(x.durationS)) : "";
-      return [kg, r, d, time].filter(Boolean).join(" ");
+      // a weight without reps after it is joined by a dot: "20 kg · 1:00", "20 kg · 2.5 km in 12:00"
+      const rest = [r, d, time].filter(Boolean).join(" ");
+      return kg && rest ? (r ? `${kg} ${rest}` : `${kg} · ${rest}`) : kg || rest;
     },
     date: (iso: string | null | undefined, o: Intl.DateTimeFormatOptions = { day: "numeric", month: "short" }) => (iso ? new Date(iso.length === 10 ? iso + "T12:00:00" : iso).toLocaleDateString(locale, o) : ""),
     /** a planned day in words: "today", "tomorrow", else "Tue 10 Nov" (with the year when it isn't this year) */
