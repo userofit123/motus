@@ -1,159 +1,70 @@
-/* Toasts: the small messages at the top (Saved, Undo, errors, suggestions). */
+/* The update notice (shell/UpdateNotice.vue): it has the look of the MiniBar's slim strip (main colour tint, icon tile,
+   bold title, buttons on the right), so it reads as one more Motus bar, not a third kind of notice. The short messages
+   (Saved, Undo) are .tst in app.css. */
 
-.sugg {
-  margin-top: 10px;
-  padding: 10px 12px;
-  border: 1px dashed var(--acc);
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--acc) 7%, transparent);
-}
-
-#toasts {
-  position: fixed;
-  top: calc(18px + var(--st)); /* below the phone's status bar */
-  right: 18px; /* fixed side */
-  z-index: 160;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  width: min(380px, calc(100vw - 36px));
-  pointer-events: none;
-}
-
-.toast {
-  pointer-events: auto;
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  background: var(--s1);
-  border: 1px solid var(--ol);
-  border-inline-start: 4px solid var(--pos);
-  border-radius: 16px;
-  padding: 12px 14px;
-  box-shadow: 0 14px 34px -14px rgba(0, 0, 0, .4);
-  font-size: 14px;
-  animation: tin .22s ease-out;
-}
-
-.toast.err {
-  border-inline-start-color: var(--neg);
-}
-
-.toast.info {
-  border-inline-start-color: var(--acc);
-}
-
-.toast.sugg {
-  border-inline-start-color: #e68a00;
-}
-
-.toast.sugg .ti {
-  background: color-mix(in srgb, #e68a00 20%, transparent);
-  color: color-mix(in srgb, #e68a00 78%, var(--tx));
-}
-
-.toast.sugg .tm .tu {
-  color: color-mix(in srgb, #e68a00 70%, var(--tx));
-}
-
-.toast.alert {
-  border-inline-start-color: var(--neg);
-}
-
-.toast.alert .ti {
-  background: color-mix(in srgb, var(--neg) 18%, transparent);
-  color: var(--neg);
-}
-
-.toast .ti {
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
+.upn {
   display: grid;
-  place-items: center;
-  flex: none;
-  background: color-mix(in srgb, var(--pos) 18%, transparent);
-  color: var(--pos);
-}
-
-.toast.err .ti {
-  background: color-mix(in srgb, var(--neg) 18%, transparent);
-  color: var(--neg);
-}
-
-.toast.info .ti {
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-areas: "ic txt acts x";
+  align-items: center;
+  column-gap: var(--cpx);
+  row-gap: var(--lpy);
+  padding: var(--lpy);
+  border-radius: 14px;
   background: var(--accc);
   color: var(--onc);
-}
-
-.toast .ti svg {
-  width: 16px;
-  height: 16px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2.2;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.toast .tm {
-  flex: 1;
-  min-width: 0;
-  line-height: 1.35;
-}
-
-.toast .tm b {
-  display: block;
   font-size: 13px;
 }
+.upn-ic { grid-area: ic; width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center; background: color-mix(in srgb, var(--onc) 14%, transparent); }
+.upn-txt { grid-area: txt; min-width: 0; }
+.upn-txt b { display: block; font-weight: 600; font-size: 13.5px; }
+.upn-txt .s { font-size: 12px; opacity: .75; margin-top: 2px; }
+.upn-txt .pbar { margin-top: var(--lpy); }
+.upn-acts { grid-area: acts; display: flex; gap: 8px; }
+.upn .ib.plain { grid-area: x; color: inherit; }
+.upn .ib.plain:hover { background: color-mix(in srgb, var(--onc) 10%, transparent); }
 
-.toast .tm div {
-  color: var(--tx2);
-  word-break: break-word;
+/* phone: in the page's flow above everything, with the 16px edges of the page and of the MiniBar strip; the buttons go
+   on their own line under the text, so the title keeps the width */
+html.phone .upn {
+  margin: calc(8px + var(--st)) calc(16px + var(--sr)) 0 calc(16px + var(--sl));
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas: "ic txt x" ". acts acts";
+}
+/* the notice already keeps the status bar's room, so what follows it doesn't again (as under the strip) */
+html.phone .upn + .pshell .strip-host > .mb-strip:first-child { margin-top: 6px; }
+html.phone .upn + .pshell .pmain { padding-top: 10px; }
+
+/* desktop: floating at the bottom in the MiniBar's column (clear of the page header's buttons at the top), above the
+   bars when they show; the short messages and the page's end move up by its height (--upnh, measured) */
+html:not(.phone) .upn {
+  position: fixed;
+  z-index: 45;
+  left: calc(88px + 50%);
+  transform: translateX(-50%);
+  bottom: calc(22px + var(--sb));
+  width: min(560px, calc(100vw - 208px));
+  box-shadow: var(--shadow-pop);
+  animation: su .2s var(--ease);
+}
+html:not(.phone)[data-nav="mini"] .upn { left: calc(68px + 50%); }
+html:not(.phone):has(main.withbar) .upn { bottom: calc(86px + var(--sb)); }
+html:not(.phone):has(main.withbar2) .upn { bottom: calc(150px + var(--sb)); }
+html:not(.phone):has(main.withbar3) .upn { bottom: calc(214px + var(--sb)); }
+html:not(.phone):has(.upn) .tst { bottom: calc(32px + var(--sb) + var(--upnh, 0px)); }
+html:not(.phone):has(.upn):has(main.withbar) .tst { bottom: calc(96px + var(--sb) + var(--upnh, 0px)); }
+html:not(.phone):has(.upn):has(main.withbar2) .tst { bottom: calc(160px + var(--sb) + var(--upnh, 0px)); }
+html:not(.phone):has(.upn):has(main.withbar3) .tst { bottom: calc(224px + var(--sb) + var(--upnh, 0px)); }
+html:not(.phone):has(.upn) main { padding-bottom: calc(90px + var(--sb) + var(--upnh, 0px)); }
+html:not(.phone):has(.upn) main.withbar { padding-bottom: calc(120px + var(--sb) + var(--upnh, 0px)); }
+html:not(.phone):has(.upn) main.withbar2 { padding-bottom: calc(190px + var(--sb) + var(--upnh, 0px)); }
+html:not(.phone):has(.upn) main.withbar3 { padding-bottom: calc(260px + var(--sb) + var(--upnh, 0px)); }
+
+@media (prefers-reduced-motion: reduce) {
+  html:not(.phone) .upn { animation: none; }
 }
 
-.toast .tacts {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin: 6px 0 0 -8px;
-}
-
-.toast .tm .tacts button {
-  white-space: nowrap;
-}
-
-.toast .tu {
-  border: 0;
-  background: none;
-  color: var(--acc);
-  font: inherit;
-  font-weight: 700;
-  cursor: pointer;
-  padding: 6px 8px;
-  border-radius: 10px;
-}
-
-.toast .tu:hover {
-  background: var(--s2);
-}
-
-.toast .tx {
-  border: 0;
-  background: none;
-  color: var(--tx2);
-  font-size: 20px;
-  cursor: pointer;
-  line-height: 1;
-  padding: 2px 6px;
-}
-
-.toast.out {
-  opacity: 0;
-  transform: translateX(12px);
-  transition: .25s;
-}
-
+/* used by the menus (menus.css) */
 @keyframes tin {
   from {
     opacity: 0;
@@ -163,19 +74,4 @@
     opacity: 1;
     transform: none;
   }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .toast {
-    animation: none;
-  }
-}
-
-html.he #toasts {
-  right: auto; /* fixed side */
-  left: 18px; /* fixed side */
-}
-
-html.he .toast.out {
-  transform: translateX(-12px);
 }
