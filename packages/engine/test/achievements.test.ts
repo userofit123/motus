@@ -124,8 +124,8 @@ describe("home on the app's calendar", () => {
     await call("POST", "/schedules", { routineId: r, rule: "once", startDate: "2026-10-07" });
     const home = await call("GET", "/home", undefined, { tz: TZ });
     expect(home.upNext.map((p: any) => p.date)).toEqual(["2026-10-08"]);
-    // the last workout (18:00 UTC on 6 Oct) was the day before yesterday on the app's calendar
-    expect(home.daysSinceLast).toBe(2);
+    // the last workout (18:00 UTC on 6 Oct) falls on 6 Oct on the app's calendar
+    expect(home.days).toContain("2026-10-06");
     NOW = new Date("2026-10-07T10:00:00Z");
   });
 

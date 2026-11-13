@@ -139,7 +139,8 @@ const pct = (g: Goal) => Math.max(0, Math.min(100, g.progress?.pct ?? 0));
 const when = (iso: string | null | undefined) => { const a = ago(iso); return a.charAt(0).toUpperCase() + a.slice(1); };
 const calDays = (iso: string) => { const d = new Date(iso), n = new Date(); return Math.round((new Date(n.getFullYear(), n.getMonth(), n.getDate()).getTime() - new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()) / 86400000); };
 
-// muscles: every group with the day it was last worked; one worked today or in the 6 days before counts as this week.
+// muscles: every group with the day it was last worked; one worked today or in the 6 days before (by this device's
+// calendar) counts as this week. The server's figure (main7, helpers7) uses the same days, so dot and figure agree.
 // Kept in the groups' own order (not by date) so each group stays in its place from one day to the next
 const groups = computed(() => (h.value?.groupDays ?? []).map((g: HomeGroup) => ({ ...g, on: !!g.lastAt && calDays(g.lastAt) < 7, when: g.lastAt ? when(g.lastAt) : "Not yet" })));
 const worked = computed(() => groups.value.filter((g) => g.on).length);
@@ -573,9 +574,10 @@ html.phone .sz-s .big { font-size: clamp(22px, 7vw, var(--fs-val)); }
 .wbars i { flex: 1; border-radius: 4px 4px 2px 2px; background: color-mix(in srgb, var(--acc) 28%, transparent); }
 .wbars i.cur { background: var(--acc); }
 /* the last workout's name and day: its own row under the header, spaced from the stats like the header is */
-.lname { gap: 6px; min-width: 0; margin-bottom: calc(var(--hg) - 4px); font-size: var(--fs-lg); }
-.lname b { font-weight: 600; min-width: 0; }
-.lday { color: var(--tx2); font-size: var(--fs); white-space: nowrap; flex: none; }
+/* the name in plain bold at body size, as the Program block's next workout and the goal rows; the dot at the day's size */
+.lname { gap: 6px; min-width: 0; margin-bottom: calc(var(--hg) - 4px); align-items: baseline; }
+.lname b { min-width: 0; }
+.lday { color: var(--tx2); white-space: nowrap; flex: none; }
 
 .stp { margin-top: auto; }
 
@@ -588,8 +590,10 @@ html.phone .sz-s .big { font-size: clamp(22px, 7vw, var(--fs-val)); }
 .grun { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; padding-inline-start: var(--cpx); border-inline-start: 1px solid var(--ol); }
 .hero .grun { border-color: color-mix(in srgb, var(--onc) 18%, transparent); }
 .gdots { display: flex; gap: 4px; margin-top: auto; padding-top: var(--hg); }
-.gdots i { flex: 1; max-width: 18px; height: 6px; border-radius: 3px; background: color-mix(in srgb, currentColor 14%, transparent); }
-.gdots i.on { background: var(--acc); }
+.gdots i { flex: 1; max-width: 18px; height: 6px; border-radius: 3px; }
+/* off and on look the same for the streak dots and the muscle groups' dots */
+.gdots i, .mdot { background: color-mix(in srgb, currentColor 14%, transparent); }
+.gdots i.on, .mg.on .mdot { background: var(--acc); }
 .hero .gdots i.on { background: var(--onc); }
 /* on the phone a goal with its streak keeps its two halves, stacked */
 html.phone .gtile.sz-m { flex-direction: row; }
@@ -613,11 +617,11 @@ html.phone .gtile.sz-m { flex-direction: row; }
 /* a row with a cover button too (Up next): its own controls stay above the cover, so they act instead of the row */
 :is(.has-cover, .li) .over { position: relative; z-index: 1; }
 /* the groups: name on the left, when on the right; two columns once the side is wide enough, one on the phone.
-   Worked this week shows as a filled accent dot and a full-strength day, not yet as an empty ring and a muted day */
-.mgrp { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); column-gap: var(--cpx); row-gap: var(--tdy); margin-top: auto; padding-top: var(--hg); }
+   Worked this week shows as an accent dot and a full-strength day, not yet as a faint dot (the streak dots' off look)
+   and a muted day. 160px fits the longest name with the longest day ("Shoulders", "3 weeks ago") without cutting it */
+.mgrp { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); column-gap: var(--cpx); row-gap: var(--tdy); margin-top: auto; padding-top: var(--hg); }
 .mg { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: var(--fs-sm); }
-.mdot { width: 8px; height: 8px; border-radius: 50%; flex: none; box-shadow: inset 0 0 0 1.5px var(--ol); }
-.mg.on .mdot { background: var(--acc); box-shadow: none; }
+.mdot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
 .mn { color: var(--tx); flex: 1; min-width: 0; }
 .mw { color: var(--tx2); white-space: nowrap; font-variant-numeric: tabular-nums; }
 .mg.on .mw { color: var(--tx); font-weight: 500; }

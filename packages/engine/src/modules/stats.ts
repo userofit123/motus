@@ -128,8 +128,10 @@ export function statsRoutes(r: Router) {
         walkM: ac.filter((x: any) => x.type === "walk").reduce((t: number, x: any) => t + Number(x.distance_m ?? 0), 0),
       };
     });
-    // condition: sets per muscle in the last 7 days and days since each group was trained
-    const weekAgo = new Date(now.getTime() - 7 * 86400000);
+    // condition: sets per muscle this past week, today and the 6 days before on the app's calendar: the same days Home's
+    // muscle groups count as worked this week, so the figure and the groups' dots never disagree
+    const today = dayIn(now, tzMin);
+    const weekAgo = new Date(new Date(today + "T00:00:00Z").getTime() - 6 * 86400000 + tzMin * 60000);
     const recent = rows.filter((x) => new Date(x.startedAt) >= weekAgo);
     const muscles7: Record<string, number> = {};
     for (const w of recent) for (const [m, n] of Object.entries(w.muscles as Record<string, number>)) muscles7[m] = (muscles7[m] ?? 0) + n;
@@ -141,11 +143,10 @@ export function statsRoutes(r: Router) {
        WHERE w.status = 'completed' AND we.status <> 'skipped' GROUP BY 1`)).rows;
     const groupDays = GROUPS.filter((g) => g.id !== "neck").map((g) => {
       const at = lastByGroup.filter((x: any) => g.muscles.includes(x.m)).map((x: any) => x.at).sort().at(-1) ?? null;
-      return { id: g.id, name: g.name, lastAt: at, days: at ? Math.floor((now.getTime() - new Date(at).getTime()) / 86400000) : null };
+      return { id: g.id, name: g.name, lastAt: at };
     });
     const last = (await workoutSummaries(ctx.q, "w.status = 'completed'", [], 1))[0] ?? null;
     const active = (await ctx.q.query("SELECT id, name, started_at FROM workouts WHERE status = 'in_progress' ORDER BY started_at DESC LIMIT 1")).rows[0] ?? null;
-    const today = dayIn(now, tzMin);
     const end = dayIn(new Date(now.getTime() + 7 * 86400000), tzMin);
     // the same rule as the calendar: a plan done (by its routine, its activity type, or started from it) drops out.
     // The whole week, uncut: Today lists every plan for today and marks the week's planned days; Up next shortens itself
@@ -186,8 +187,7 @@ export function statsRoutes(r: Router) {
     return {
       days, records,
       weeks, thisWeek: weeks.at(-1), lastWeek: weeks.at(-2), streak: await currentStreak(ctx.q, s, now, tzMin), homeGoals,
-      // calendar days, so last night's workout is "Yesterday" even when it was less than 24 hours ago
-      last, daysSinceLast: last ? Math.round((new Date(today).getTime() - new Date(dayIn(last.startedAt, tzMin)).getTime()) / 86400000) : null,
+      last,
       active: active ? camel(active) : null, programs, upNext, plannedToday, suggest, goals, reminders, bodyweight: bw, feed, muscles7, main7, helpers7, groupDays,
       totalWorkouts: Number((await ctx.q.query("SELECT count(*) n FROM workouts WHERE status = 'completed'")).rows[0].n),
       // with no routines and nothing done yet, Home opens with a way to begin

@@ -559,6 +559,9 @@ html.phone .cal .dots i.plan { background: none; border: 1px solid var(--ec, var
 /* hover only with a mouse: on a phone it would stick to the muscle just tapped off */
 @media (hover: hover) { .bodymap.pick g[role]:hover .m { fill: color-mix(in srgb, var(--acc) 45%, transparent); } }
 .bodymap.pick g[role][data-t="1"] .m { fill: var(--acc); }
+/* keyboard focus as a ring round the muscle, after the chosen fill so it shows on a chosen muscle too
+   (the g itself has no box to outline in every browser) */
+.bodymap.pick g[role]:focus-visible .m { stroke: var(--tx); stroke-width: 2px; vector-effect: non-scaling-stroke; }
 /* the little body on the left of a card, info on the right, as on the Routines list's routine cards (CLAUDE.md rule).
    The row never hangs on :has() (where it is missing the whole rule drops and the figure stacks above the info),
    and two classes so it outranks the card's own column (.rcard) whatever order the rules come in.
@@ -648,6 +651,8 @@ html:not(.phone) .chips.hscroll { margin-inline: 0; padding-inline: 0; flex-wrap
 /* a setting row with a control: the label keeps at least ~half the row, the control gives way */
 .li > .grow { min-width: 42%; }
 .li > select, .li > .fpick, .li > input:not([type=checkbox]) { flex: 0 1 auto; min-width: 0; max-width: 56%; }
+/* a number typed into a list row (the daily log, body measurements): one size everywhere, so the boxes line up */
+.li input.num-in { flex: none; width: 76px; text-align: end; }
 main.withbar { padding-bottom: calc(120px + var(--sb)); }
 main.withbar2 { padding-bottom: calc(190px + var(--sb)); }
 main.withbar3 { padding-bottom: calc(260px + var(--sb)); }

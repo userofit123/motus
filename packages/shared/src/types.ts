@@ -450,7 +450,6 @@ export interface HomeRecord {
 export interface HomeToday {
   active: { id: string; name: string; startedAt: string } | null;
   last: WorkoutSummary | null;
-  daysSinceLast: number | null;
   /** the days (app calendar) with a finished workout or an activity */
   days: string[];
   upNext: HomePlan[];
@@ -461,8 +460,8 @@ export interface HomeToday {
 }
 /** Home: a week's totals (the last eight, oldest first). */
 export interface HomeWeek { start: string; workouts: number; volumeKg: number; timeS: number; walkM: number }
-/** Home: a muscle group and how long since it was trained (null: never). */
-export interface HomeGroup { id: string; name: string; lastAt: string | null; days: number | null }
+/** Home: a muscle group and when it was last trained (null: never). */
+export interface HomeGroup { id: string; name: string; lastAt: string | null }
 /** Home: one line of recent activity, a workout summary or an activity. */
 export type HomeFeedItem = ({ kind: "workout" } & WorkoutSummary) | { kind: "activity"; id: string; type: string; name: string | null; startedAt: string; durationS: number; distanceM: number | null; steps: number | null };
 /** Home (/home): everything the blocks read. */

@@ -59,7 +59,7 @@ async function save() {
         <div v-for="r in ROWS" :key="r.key" class="li bs-row">
           <div class="grow"><div class="t">{{ r.name }} <span class="tiny">({{ unit(r.ids[0]!) }})</span></div><div v-if="r.how" class="s">{{ r.how }}</div></div>
           <label v-for="k in r.ids" :key="k" class="bs-in"><span v-if="r.ids.length > 1" class="tiny">{{ k.endsWith("_l") ? "L" : "R" }}</span>
-            <input :id="`bm-${k}`" v-model.number="vals[k]" type="number" inputmode="decimal" step="0.1" :placeholder="shown(k)" :aria-label="`${r.name}${r.ids.length > 1 ? (k.endsWith('_l') ? ' left' : ' right') : ''}`" @keydown.enter="save" /></label>
+            <input :id="`bm-${k}`" class="num-in" v-model.number="vals[k]" type="number" inputmode="decimal" step="0.1" :placeholder="shown(k)" :aria-label="`${r.name}${r.ids.length > 1 ? (k.endsWith('_l') ? ' left' : ' right') : ''}`" @keydown.enter="save" /></label>
         </div>
       </div>
     </template>
@@ -71,5 +71,4 @@ async function save() {
 .bs-hint { margin-top: 4px; }
 .bs-row { gap: 8px; }
 .bs-in { display: flex; align-items: center; gap: 4px; flex: none; }
-.bs-in input { width: 76px; text-align: end; }
 </style>

@@ -44,10 +44,10 @@ const show = (k: string, v: number | null) => (v == null ? "-" : fmt.value.num(v
     <!-- a row per value, as the measurement rows: icon and name on the left, one box of the same size on the right, so
          every box lines up whatever the name's length or a hint under it -->
     <div class="list">
-      <div v-for="k in KINDS" :key="k.id" class="li dl-row"><Icon :name="k.icon" :size="18" class="muted" />
+      <div v-for="k in KINDS" :key="k.id" class="li"><Icon :name="k.icon" :size="18" class="muted" />
         <div class="grow"><div class="t">{{ k.name }}<span v-if="k.unit" class="tiny"> ({{ k.unit }})</span></div>
           <div v-if="k.id === 'steps' && walked > 0" class="s">From activities: {{ fmt.num(walked, 0) }}</div></div>
-        <input type="number" :step="k.step" min="0" inputmode="decimal" :aria-label="k.name" :value="entered(k.id) ?? ''" @change="set(k.id, ($event.target as HTMLInputElement).value)" />
+        <input class="num-in" type="number" :step="k.step" min="0" inputmode="decimal" :aria-label="k.name" :value="entered(k.id) ?? ''" @change="set(k.id, ($event.target as HTMLInputElement).value)" />
       </div>
     </div>
     <div v-if="s.features.steps && stepGoal" class="dl-goal"><div class="dl-bar"><i :style="{ width: Math.min(100, ((steps ?? 0) / stepGoal.target) * 100) + '%' }" /></div>
@@ -57,7 +57,7 @@ const show = (k: string, v: number | null) => (v == null ? "-" : fmt.value.num(v
       <!-- a real table with a header row, like the app's other tables (Rep maxes, Next time), so each column says
            what it is; units sit in the header so the cells stay short and every column fits at phone width -->
       <table class="sets dl-tbl">
-        <thead><tr><th>Day</th><th v-for="k in KINDS" :key="k.id">{{ k.name }}{{ k.unit && k.id !== "mood" ? ` (${k.unit})` : "" }}</th></tr></thead>
+        <thead><tr><th>Day</th><th v-for="k in KINDS" :key="k.id">{{ k.name }}<span v-if="k.unit && k.id !== 'mood'" class="dl-u"> {{ k.unit }}</span></th></tr></thead>
         <tbody><tr v-for="w in week" :key="w.d"><td class="dl-d">{{ fmt.date(w.d + "T12:00", { weekday: "short", day: "numeric" }) }}</td>
           <td v-for="(k, i) in KINDS" :key="k.id" :class="{ muted: w.v[i] == null }">{{ show(k.id, w.v[i]!) }}</td></tr></tbody>
       </table>
@@ -66,11 +66,13 @@ const show = (k: string, v: number | null) => (v == null ? "-" : fmt.value.num(v
 </template>
 
 <style scoped>
-.dl-row input { flex: none; width: 96px; text-align: end; }
-.dl-goal { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+.dl-goal { display: flex; align-items: center; gap: var(--cpx); margin-top: var(--hg); }
 .dl-bar { flex: 1; height: 6px; border-radius: 3px; background: var(--s2); overflow: hidden; }
 .dl-bar i { display: block; height: 100%; background: var(--acc); border-radius: inherit; }
 .dl-wk { margin-top: var(--spg); }
-.dl-tbl { margin-top: 2px; }
+/* the name uppercase as in the other tables, the unit beside it small and as written ("SLEEP h") */
+.dl-tbl { margin-top: var(--tdy); }
+.dl-tbl th { white-space: nowrap; }
+.dl-u { text-transform: none; letter-spacing: 0; font-weight: 500; }
 .dl-tbl .dl-d { white-space: nowrap; }
 </style>

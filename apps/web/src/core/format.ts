@@ -62,10 +62,11 @@ export function ago(iso: string | null | undefined): string {
   if (days <= 0) return "today";
   if (days === 1) return "yesterday";
   if (days < 7) return `${days} days ago`;
-  if (days < 14) return "last week";
-  if (days < 60) return `${Math.round(days / 7)} weeks ago`;
-  if (days < 730) return `${Math.round(days / 30)} months ago`;
-  return `${Math.round(days / 365)} years ago`;
+  // whole weeks, months and years passed (rounded down), so 13 days reads "1 week ago", never "2 weeks ago" or "last week"
+  if (days < 14) return "1 week ago";
+  if (days < 60) return `${Math.floor(days / 7)} weeks ago`;
+  if (days < 730) return `${Math.floor(days / 30)} months ago`;
+  return `${Math.floor(days / 365)} years ago`;
 }
 /** A date as YYYY-MM-DD on this device's calendar (the shared ymd, under the name the screens use). */
 export const localYmd = ymd;
