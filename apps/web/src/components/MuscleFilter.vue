@@ -8,6 +8,11 @@ export function musclesOf(v: string, groups: MuscleGroup[] = GROUPS): string[] {
   if (!v) return [];
   return groups.find((g) => g.id === v)?.muscles ?? [v];
 }
+/** The filter value for one muscle: a group that is only this muscle (Core is the abdominals) stands for it, so picking it
+ *  on the body lights that group's chip instead of adding a second chip that filters the same. */
+export function valueOf(m: string, groups: MuscleGroup[] = GROUPS): string {
+  return groups.find((g) => g.muscles.length === 1 && g.muscles[0] === m)?.id ?? m;
+}
 // shown or hidden for the whole session, on every exercise list alike
 const open = ref(false);
 </script>
@@ -40,7 +45,13 @@ const caption = computed(() => {
   const v = props.modelValue;
   return !v ? "Tap a muscle" : props.groups.find((g) => g.id === v)?.name ?? muscleName(v);
 });
-const tap = (m: string) => emit("update:modelValue", props.modelValue === m ? "" : m);
+// pressed only where a tap would clear: with a group chosen its muscles are lit, but tapping one narrows to it rather than
+// clearing, so they are not "pressed" (a group of one muscle is that muscle, so it is)
+const pressed = computed(() => chosen.value.filter((m) => valueOf(m, props.groups) === props.modelValue));
+const tap = (m: string) => {
+  const v = valueOf(m, props.groups);
+  emit("update:modelValue", props.modelValue === v ? "" : v);
+};
 </script>
 
 <template>
@@ -50,7 +61,7 @@ const tap = (m: string) => emit("update:modelValue", props.modelValue === m ? ""
     </template>
     <template #top>
       <div v-if="open" class="mfig">
-        <BodyMap pickable :values="{}" :highlight="chosen" :height="150" @pick="tap" />
+        <BodyMap pickable :values="{}" :highlight="chosen" :pressed="pressed" :height="150" @pick="tap" />
         <span class="tiny" :class="{ on: !!modelValue }">{{ caption }}</span>
       </div>
     </template>
@@ -58,7 +69,12 @@ const tap = (m: string) => emit("update:modelValue", props.modelValue === m ? ""
 </template>
 
 <style scoped>
-/* a card of its own inside the shaded filter panel, like the chips (on --s1), the body centred */
-.mfig { display: flex; flex-direction: column; align-items: center; gap: var(--tdy); margin-bottom: 10px; /* the panel's gap between rows */ padding: var(--cpy) var(--cpx); border-radius: var(--r-md); background: var(--s1); }
+/* a card of its own on the panel's --s2 shade, in the chips' --s1, the body centred in it; --lpy below it, the panel's own
+   10px gap between rows at the usual density */
+.mfig { display: flex; flex-direction: column; align-items: center; gap: var(--tdy); margin-bottom: var(--lpy); padding: var(--cpy) var(--cpx); border-radius: var(--r-md); background: var(--s1); }
+/* on wider screens the card hugs a taller body at the row's left edge (where the label and chips start) instead of
+   leaving a wide empty card around a small figure; phones keep it full width */
+html:not(.phone) .mfig { width: fit-content; min-width: 240px; }
+html:not(.phone) .mfig :deep(.figs) { height: 220px; }
 .mfig .on { color: var(--tx); font-weight: 600; }
 </style>

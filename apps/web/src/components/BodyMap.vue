@@ -4,11 +4,12 @@
 // values: muscle name (as in the exercise library) → weighted sets (main muscle 1, helper 0.5, see muscleSets()).
 // highlight/secondary: one exercise's main and helper muscles instead of amounts.
 // pickable: each muscle is a button that emits pick (the muscle filter above exercise lists); off, the figure only shows.
+// pressed: with pickable, the muscles whose button is on (a tap clears them); lit muscles are not always pressed.
 import { computed } from "vue";
 import { muscleName } from "@motus/shared";
 import { SILHOUETTE, HEAD, FRONT, BACK } from "./bodyShapes";
 
-const props = defineProps<{ values: Record<string, number>; max?: number; height?: number; highlight?: string[]; secondary?: string[]; legend?: boolean; pickable?: boolean }>();
+const props = defineProps<{ values: Record<string, number>; max?: number; height?: number; highlight?: string[]; secondary?: string[]; legend?: boolean; pickable?: boolean; pressed?: string[] }>();
 const emit = defineEmits<{ pick: [muscle: string] }>();
 const MIRROR = "translate(100 0) scale(-1 1)";
 const VIEWS = [{ name: "Front", shapes: Object.entries(FRONT) }, { name: "Back", shapes: Object.entries(BACK) }];
@@ -39,7 +40,7 @@ const used = computed(() => new Set(VIEWS.flatMap((v) => v.shapes.map(([m]) => t
         <g class="sil"><path :d="SILHOUETTE" /><path :d="SILHOUETTE" :transform="MIRROR" /><ellipse v-bind="HEAD" /></g>
         <!-- the level is an attribute, not a class: patching the class of SVG elements inside these lists crashes Vue (3.5) -->
         <g v-for="[m, d] in v.shapes" :key="m" :data-t="tier(m)" :role="pickable ? 'button' : undefined" :tabindex="pickable ? 0 : undefined"
-          :aria-pressed="pickable ? tier(m) === 1 : undefined" :aria-label="pickable ? label(m) : undefined"
+          :aria-pressed="pickable ? !!pressed?.includes(m) : undefined" :aria-label="pickable ? label(m) : undefined"
           @click="pickable && emit('pick', m)" @keydown.enter.space.prevent="pickable && emit('pick', m)">
           <path class="m" :d="d"><title>{{ label(m) }}</title></path>
           <path class="m" :d="d" :transform="MIRROR"><title>{{ label(m) }}</title></path>

@@ -9,7 +9,7 @@ export const exercisesView = reactive({ q: "", group: "", equip: "", cat: "", si
 // your own exercises, favourites and most used first.
 import { computed, ref, toRefs } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { GROUPS, EQUIPMENT, CATEGORIES, muscleName, groupOf, categoryName } from "@motus/shared";
+import { GROUPS, EQUIPMENT, CATEGORIES, muscleName, categoryName } from "@motus/shared";
 import { useExercises, useSettings, loaded } from "../api/queries";
 import { mediaUrl } from "../api/client";
 import { ago } from "../core/format";
@@ -20,15 +20,15 @@ import ExerciseEditor from "../components/ExerciseEditor.vue";
 import Sheet from "../components/Sheet.vue";
 import AppSelect from "../components/AppSelect.vue";
 import FilterPanel from "../components/FilterPanel.vue";
-import MuscleFilter, { musclesOf } from "../components/MuscleFilter.vue";
+import MuscleFilter, { musclesOf, valueOf } from "../components/MuscleFilter.vue";
 
 const router = useRouter(), route = useRoute();
 const all = useExercises();
 const settings = useSettings();
-// ?muscle=biceps (from a Home suggestion) opens on that muscle's group
+// ?muscle=biceps (from a Home suggestion) opens on that muscle itself, as if picked on the body
 // the filters live outside the component (below) so they survive opening an exercise and coming back, or visiting another tab
 const view = exercisesView;
-if (route.query.muscle) { Object.assign(view, { group: groupOf(String(route.query.muscle)), shown: 60 }); }
+if (route.query.muscle) { Object.assign(view, { group: valueOf(String(route.query.muscle)), shown: 60 }); }
 const { q, group, equip, cat, sides, only, sort, shown } = toRefs(view);
 // one side at a time is an optional feature (Settings → Features): without it the sides filter is gone and ignored
 const sidesOn = computed(() => !!settings.value?.features?.unilateral);
