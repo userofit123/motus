@@ -39,15 +39,14 @@ function setOpen(v: boolean) {
   writeJson(FOLD_KEY, { ...readJson(FOLD_KEY, {}), [props.place]: v });
 }
 const searching = computed(() => !!props.search);
-// the chevron (and what is saved) stays the user's own choice; a tap on it while searching shows the body for this search
-// only (until the text changes), so the tap always does something visible without changing the saved fold
+// outside a search the chevron shows (and a tap changes) the saved fold; while searching the body is hidden unless peeked, and a
+// tap on the chevron only shows or hides it for this search (until the text changes), never touching the saved fold
 const peek = ref(false);
-watch(() => [props.search, searching.value], () => (peek.value = false));
-const shown = computed(() => bodyOpen.value && (!searching.value || peek.value));
+watch(() => props.search, () => (peek.value = false));
+const shown = computed(() => (searching.value ? peek.value : bodyOpen.value));
 function toggle() {
-  if (!searching.value) return setOpen(!bodyOpen.value);
-  if (!bodyOpen.value) setOpen(true);
-  peek.value = !shown.value;
+  if (searching.value) peek.value = !peek.value;
+  else setOpen(!bodyOpen.value);
 }
 const chosen = computed(() => musclesOf(props.modelValue, props.groups));
 const options = computed(() => {
@@ -90,7 +89,7 @@ const tap = (m: string) => {
 </script>
 
 <template>
-  <FilterRow :model-value="modelValue" label="Muscle group" all="All" :options="options" :fold="isPhone" :open="bodyOpen" :shown="shown"
+  <FilterRow :model-value="modelValue" label="Muscle group" all="All" :options="options" :fold="isPhone" :open="searching ? shown : bodyOpen" :shown="shown"
     @update:model-value="set" @update:open="toggle">
     <template #aside>
       <div class="mfig">
