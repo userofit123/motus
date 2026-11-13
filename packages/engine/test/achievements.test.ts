@@ -124,8 +124,6 @@ describe("home on the app's calendar", () => {
     await call("POST", "/schedules", { routineId: r, rule: "once", startDate: "2026-10-07" });
     const home = await call("GET", "/home", undefined, { tz: TZ });
     expect(home.upNext.map((p: any) => p.date)).toEqual(["2026-10-08"]);
-    // the last workout (18:00 UTC on 6 Oct) falls on 6 Oct on the app's calendar
-    expect(home.days).toContain("2026-10-06");
     NOW = new Date("2026-10-07T10:00:00Z");
   });
 
@@ -148,6 +146,23 @@ describe("home on the app's calendar", () => {
     // the count of today's plans keeps the done one, so Today can say "Nothing else planned" once all are done
     expect((await call("GET", "/home", undefined, { tz: TZ })).plannedToday).toBe(6);
     for (const sid of ids) await call("DELETE", `/schedules/${sid}`);
+    NOW = new Date("2026-10-07T10:00:00Z");
+  });
+
+  it("counts this week's muscles from local midnight 6 days back on the app's calendar", async () => {
+    // 10:00 UTC on Tue 15 Dec is 12:00 for the app, so the week is 9-15 Dec and starts at 22:00 UTC on 8 Dec.
+    // With no time zone both workouts below would fall on 8 Dec and neither would count
+    NOW = new Date("2026-12-15T10:00:00Z");
+    const quads = (await call("POST", "/exercises", { name: "Test squat", tracking: "weight_reps", primaryMuscles: ["quadriceps"] })).id;
+    const hams = (await call("POST", "/exercises", { name: "Test curl", tracking: "weight_reps", primaryMuscles: ["hamstrings"] })).id;
+    await log("2026-12-08T21:30:00Z", [{ exerciseId: quads, sets: [{ weightKg: 100, reps: 5 }] }]); // 23:30 on 8 Dec: last week
+    await log("2026-12-08T22:30:00Z", [{ exerciseId: hams, sets: [{ weightKg: 40, reps: 10 }, { weightKg: 40, reps: 10 }] }]); // 00:30 on 9 Dec
+    const home = await call("GET", "/home", undefined, { tz: TZ });
+    expect(home.main7).toEqual(["hamstrings"]);
+    expect(home.muscles7).toEqual({ hamstrings: 2 });
+    expect(home.helpers7).toEqual([]);
+    // the app's own day too: the later workout is on 9 Dec, not 8 Dec
+    expect(home.days).toContain("2026-12-09");
     NOW = new Date("2026-10-07T10:00:00Z");
   });
 });

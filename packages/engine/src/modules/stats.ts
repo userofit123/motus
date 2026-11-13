@@ -2,7 +2,7 @@
 import { e1rm, GROUPS, WEEKLY_SET_RANGE, liftedKg, LIFTED_SQL, TRACKING_SQL } from "@motus/shared";
 import type { Router, Ctx } from "../router";
 import type { Sql } from "../db";
-import { camel, tzOf } from "../util";
+import { camel, startOfDay, tzOf } from "../util";
 import { getSettings } from "./settings";
 import { goalsWithProgress, ensureStarterGoal } from "./goals";
 import { stepsByDay } from "./activities";
@@ -128,10 +128,11 @@ export function statsRoutes(r: Router) {
         walkM: ac.filter((x: any) => x.type === "walk").reduce((t: number, x: any) => t + Number(x.distance_m ?? 0), 0),
       };
     });
-    // condition: sets per muscle this past week, today and the 6 days before on the app's calendar: the same days Home's
-    // muscle groups count as worked this week, so the figure and the groups' dots never disagree
+    // condition: sets per muscle this past week, today and the 6 days before on the app's calendar, the same days Home's
+    // muscle groups count as worked this week. tzMin is today's offset, so in the week after a clock change the window
+    // starts an hour off from that day's real local midnight, and a workout in that hour can disagree with the groups' dots
     const today = dayIn(now, tzMin);
-    const weekAgo = new Date(new Date(today + "T00:00:00Z").getTime() - 6 * 86400000 + tzMin * 60000);
+    const weekAgo = new Date(startOfDay(today, tzMin).getTime() - 6 * 86400000);
     const recent = rows.filter((x) => new Date(x.startedAt) >= weekAgo);
     const muscles7: Record<string, number> = {};
     for (const w of recent) for (const [m, n] of Object.entries(w.muscles as Record<string, number>)) muscles7[m] = (muscles7[m] ?? 0) + n;
