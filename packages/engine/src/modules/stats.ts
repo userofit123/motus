@@ -7,7 +7,7 @@ import { getSettings } from "./settings";
 import { goalsWithProgress, ensureStarterGoal } from "./goals";
 import { stepsByDay } from "./activities";
 import { achievements, currentStreak, dayIn, weekIn } from "./achievements";
-import { plannedOpen } from "./schedule";
+import { plannedMarked } from "./schedule";
 import { workoutSummaries, recentRecords } from "./workouts";
 import { routineSummaries } from "./routines";
 import { suggestions } from "./suggest";
@@ -149,7 +149,10 @@ export function statsRoutes(r: Router) {
     const end = dayIn(new Date(now.getTime() + 7 * 86400000), tzMin);
     // the same rule as the calendar: a plan done (by its routine, its activity type, or started from it) drops out.
     // The whole week, uncut: Today lists every plan for today and marks the week's planned days; Up next shortens itself
-    const upNext = await plannedOpen(ctx.q, today, end, tzMin);
+    const marked = await plannedMarked(ctx.q, today, end, tzMin);
+    const upNext = marked.filter((p) => !p.done).map(({ done: _, ...p }) => p);
+    // today's plans done or not, so Today says "Nothing else planned" once you've done them all, "Nothing planned" otherwise
+    const plannedToday = marked.filter((p) => p.date === today).length;
     // the programs you're following get their own card on Home, so their next workout isn't also a suggestion
     // with Programs switched off they are absent from Home, Today and suggestions included
     const programsOn = !!s.features.programs;
@@ -185,7 +188,7 @@ export function statsRoutes(r: Router) {
       weeks, thisWeek: weeks.at(-1), lastWeek: weeks.at(-2), streak: await currentStreak(ctx.q, s, now, tzMin), homeGoals,
       // calendar days, so last night's workout is "Yesterday" even when it was less than 24 hours ago
       last, daysSinceLast: last ? Math.round((new Date(today).getTime() - new Date(dayIn(last.startedAt, tzMin)).getTime()) / 86400000) : null,
-      active: active ? camel(active) : null, programs, upNext, suggest, goals, reminders, bodyweight: bw, feed, muscles7, main7, helpers7, groupDays,
+      active: active ? camel(active) : null, programs, upNext, plannedToday, suggest, goals, reminders, bodyweight: bw, feed, muscles7, main7, helpers7, groupDays,
       totalWorkouts: Number((await ctx.q.query("SELECT count(*) n FROM workouts WHERE status = 'completed'")).rows[0].n),
       // with no routines and nothing done yet, Home opens with a way to begin
       routineCount: routines.length,

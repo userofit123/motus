@@ -4,8 +4,9 @@
 // none of those it offers a workout of your choice. A new account gets a way to begin instead.
 // Several plans for today are a list of equals, each with its own Start and a ⋮ menu to log it instead, skip it or
 // remove it (a single plan's ⋮ sits top-right in the header); only the earliest one's button is the filled one, so the
-// screen keeps one primary button. Tapping a day in the week shows that day here instead of today; its plans have only
-// the ⋮ to skip or remove them; a past day lists what you did (each opens) and the plans you missed.
+// screen keeps one primary button. What you did today is listed under them (each opens). Tapping a day in the week shows
+// that day here instead of today; its plans have only the ⋮ to skip or remove them; a past day lists what you did and the
+// plans you missed.
 import { computed, ref } from "vue";
 import type { HomePlan, HomeToday } from "@motus/shared";
 import { useRouter } from "vue-router";
@@ -58,7 +59,8 @@ const hero = computed<Hero | null>(() => {
   const sug = trainedToday.value ? null : (h.suggest ?? []).find((x) => x.routineId);
   if (sug) return { label: "Suggested for today", title: sug.title, sub: sug.reason, routine: sug.routineId,
     act: { label: "Start", icon: "play", run: () => router.push(`/routines/${sug.routineId!}/start`) } };
-  return { label: "Nothing planned today", title: trainedToday.value ? "Done for today" : "Your call today", sub: "", routine: null,
+  // plans that were on today and are all done say so, rather than as if there had been none
+  return { label: (h.plannedToday ?? 0) ? "Nothing else planned for today" : "Nothing planned for today", title: trainedToday.value ? "Done for today" : "Your call today", sub: "", routine: null,
     act: { label: trainedToday.value ? "Another workout" : "Start a workout", icon: "play", run: () => (startOpen.value = true) } };
 });
 // today's plans as rows: all of them when there are several, or beside a workout in progress (the one plan otherwise is the title)
@@ -69,34 +71,39 @@ const primary = (i: number) => !props.h.active && i === 0;
 // another day of the week: its plans (no Start or Log it: it isn't that day yet, so the ⋮ only skips or removes), or on
 // a past one what you did and what you missed, like the calendar's day list
 const dayLabel = computed(() => (sel.value === tomorrow ? "Tomorrow" : fmt.value.date(sel.value, { weekday: "long", day: "numeric", month: "long" })));
-// Home's data only says which days you trained, so a past day's sessions come from the calendar, for the whole week at
-// once and only after you first pick a past day (Home itself doesn't wait for it)
+// Home's data only says which days you trained, so a day's sessions come from the calendar, for the whole week at once,
+// once you've trained today or picked a past day (Home itself doesn't wait for it). Finishing a workout or an activity
+// refreshes the calendar too (live.ts), so today's list grows by itself
 const wantPast = ref(false);
+const wantCal = computed(() => wantPast.value || trainedToday.value);
 const weekRange = computed(() => {
   const now = new Date(), back = (now.getDay() - s.value.firstDay + 7) % 7;
   return { from: localYmd(new Date(now.getFullYear(), now.getMonth(), now.getDate() - back)), to: localYmd(new Date(now.getFullYear(), now.getMonth(), now.getDate() - back + 6)) };
 });
-const cal = useCalendar(weekRange, wantPast);
-interface PastRow { key: string; kind: "workout" | "activity" | "planned"; icon: string; name: string; sub: string; x: any }
-const pastRows = computed<PastRow[]>(() => {
+const cal = useCalendar(weekRange, wantCal);
+interface DayRow { key: string; kind: "workout" | "activity" | "planned"; icon: string; name: string; sub: string; x: any }
+// today or a past day: what you did, then (a past day only) the plans you missed. Today leaves out a workout in progress
+// (the title is Resume) and its open plans (they're the title or the plan list above)
+const dayRows = computed<DayRow[]>(() => {
   const c = cal.data.value as any, d = sel.value;
-  if (!c || d >= today) return [];
+  if (!c || d > today) return [];
   const on = (iso: string) => localYmd(new Date(iso)) === d;
-  const done: PastRow[] = [
-    ...c.workouts.filter((w: any) => on(w.startedAt)).map((w: any) => ({ key: w.id, kind: "workout" as const, icon: "dumbbell", name: w.name || "Workout", sub: `${fmt.value.time(w.startedAt)} · Workout`, x: { kind: "workout", ...w } })),
+  const done: DayRow[] = [
+    ...c.workouts.filter((w: any) => on(w.startedAt) && (d < today || w.status !== "in_progress")).map((w: any) => ({ key: w.id, kind: "workout" as const, icon: "dumbbell", name: w.name || "Workout", sub: `${fmt.value.time(w.startedAt)} · Workout`, x: { kind: "workout", ...w } })),
     ...c.activities.filter((a: any) => on(a.startedAt)).map((a: any) => {
       const t = a.type ? a.type[0].toUpperCase() + a.type.slice(1) : "Activity";
       return { key: a.id, kind: "activity" as const, icon: activityIcon(a.type), name: a.name || t, sub: `${fmt.value.time(a.startedAt)} · ${t}`, x: { kind: "activity", ...a } };
     }),
   ].sort((a, b) => a.x.startedAt.localeCompare(b.x.startedAt));
   // plans that day not done (the engine leaves out the done ones): missed, as the calendar shows them
-  const missed: PastRow[] = c.planned.filter((p: any) => p.date === d).map((p: any) => ({ key: p.scheduleId, kind: "planned" as const, icon: kindIcon(p), name: p.name, sub: ["Missed", kindName(p)].join(" · "), x: p }));
+  if (d === today) return done;
+  const missed: DayRow[] = c.planned.filter((p: any) => p.date === d).map((p: any) => ({ key: p.scheduleId, kind: "planned" as const, icon: kindIcon(p), name: p.name, sub: ["Missed", kindName(p)].join(" · "), x: p }));
   return [...done, ...missed];
 });
-const pastDone = computed(() => pastRows.value.filter((r) => r.kind !== "planned").length);
-const pastMissed = computed(() => pastRows.value.length - pastDone.value);
-const pastLabel = computed(() => [pastDone.value ? n(pastDone.value, "session") : "Nothing done", pastMissed.value ? `${pastMissed.value} missed` : ""].filter(Boolean).join(" · "));
-const openPast = (r: PastRow) => router.push(r.kind === "activity" ? `/activities/${r.x.id}` : r.x.status === "in_progress" ? "/workout" : `/workouts/${r.x.id}`);
+const dayDone = computed(() => dayRows.value.filter((r) => r.kind !== "planned").length);
+const pastMissed = computed(() => dayRows.value.length - dayDone.value);
+const pastLabel = computed(() => [dayDone.value ? n(dayDone.value, "session") : "Nothing done", pastMissed.value ? `${pastMissed.value} missed` : ""].filter(Boolean).join(" · "));
+const openRow = (r: DayRow) => router.push(r.kind === "activity" ? `/activities/${r.x.id}` : r.x.status === "in_progress" ? "/workout" : `/workouts/${r.x.id}`);
 const pick = (d: string) => { sel.value = sel.value === d ? today : d; if (sel.value < today) wantPast.value = true; };
 const openDay = () => router.push({ path: "/history", query: { date: sel.value } });
 
@@ -153,7 +160,7 @@ const doneCount = computed(() => week.value.filter((d) => d.done).length);
       </template>
       <template v-else-if="cal.data.value">
         <div class="tl">{{ pastLabel }}</div>
-        <div v-if="!pastRows.length" class="ts">No workout or activity on this day.</div>
+        <div v-if="!dayRows.length" class="ts">No workout or activity on this day.</div>
       </template>
       <!-- the calendar is still on its way: hold the line's place so the block doesn't jump -->
       <div v-else-if="cal.isError.value" class="ts">Couldn't load this day.</div>
@@ -187,21 +194,27 @@ const doneCount = computed(() => week.value.filter((d) => d.done).length);
         <span class="pact"><Menu :items="unplanItems(p)" :label="`Options for ${p.name}`" /></span>
       </div>
     </div>
-    <!-- a past day: what you did (each opens), then the plans you missed, faded like the calendar's -->
-    <div v-else-if="sel < today && pastRows.length" class="tlist plist" role="list" aria-live="polite">
-      <template v-for="r in pastRows" :key="r.key">
-        <div v-if="r.kind === 'planned'" role="listitem" class="prow missed">
-          <span class="pk"><Icon :name="r.icon" :size="18" /></span>
-          <div class="pt"><div class="pn">{{ r.name }}</div><div class="ps">{{ r.sub }}</div></div>
-          <span class="pact"><Menu :items="unplanItems(r.x)" :label="`Options for ${r.name}`" /></span>
-        </div>
-        <div v-else role="listitem" class="prow click" tabindex="0" :aria-label="`Open ${r.name}`" @click="openPast(r)" @keydown.enter.self.prevent="openPast(r)">
-          <span class="pk"><Icon :name="r.icon" :size="18" /></span>
-          <div class="pt"><div class="pn">{{ r.name }}</div><div class="ps">{{ r.sub }}</div></div>
-          <SessionStats :x="r.x" />
-          <Icon name="right" class="pgo" />
-        </div>
-      </template>
+    <!-- today or a past day: what you did (each opens), then a past day's missed plans, faded like the calendar's -->
+    <!-- today's list holds its place while the calendar is on its way, as a past day's line does -->
+    <div v-if="sel <= today && (dayRows.length || (sel === today && trainedToday && !cal.data.value))" class="tlist tsec" aria-live="polite">
+      <div v-if="sel === today && cal.data.value" class="tl">{{ n(dayDone, "session") }} today</div>
+      <div v-else-if="sel === today && cal.isError.value" class="ts">Couldn't load today's sessions.</div>
+      <template v-else-if="sel === today"><div class="tl" aria-hidden="true">&nbsp;</div><div class="plist" aria-hidden="true"><div class="prow ph"><div class="pt"><div class="pn">&nbsp;</div><div class="ps">&nbsp;</div></div></div></div></template>
+      <div v-if="dayRows.length" class="plist" role="list">
+        <template v-for="r in dayRows" :key="r.key">
+          <div v-if="r.kind === 'planned'" role="listitem" class="prow missed">
+            <span class="pk"><Icon :name="r.icon" :size="18" /></span>
+            <div class="pt"><div class="pn">{{ r.name }}</div><div class="ps">{{ r.sub }}</div></div>
+            <span class="pact"><Menu :items="unplanItems(r.x)" :label="`Options for ${r.name}`" /></span>
+          </div>
+          <div v-else role="listitem" class="prow click" tabindex="0" :aria-label="`Open ${r.name}`" @click="openRow(r)" @keydown.enter.self.prevent="openRow(r)">
+            <span class="pk"><Icon :name="r.icon" :size="18" /></span>
+            <div class="pt"><div class="pn">{{ r.name }}</div><div class="ps">{{ r.sub }}</div></div>
+            <SessionStats :x="r.x" />
+            <Icon name="right" class="pgo" />
+          </div>
+        </template>
+      </div>
     </div>
   </div>
 </template>
@@ -256,6 +269,8 @@ const doneCount = computed(() => week.value.filter((d) => d.done).length);
 .prow.click:focus-visible { outline: 2px solid var(--onc); outline-offset: 2px; }
 .prow :deep(.sstats) { color: color-mix(in srgb, var(--onc) 72%, transparent); text-align: end; }
 .pgo { flex: none; color: color-mix(in srgb, var(--onc) 60%, transparent); }
+/* the row that holds today's list's place while it loads: as tall as a real one, not seen */
+.prow.ph { visibility: hidden; }
 /* a plan you missed: faded, as the calendar shows it */
 .prow.missed .pn { opacity: .5; }
 /* a workout in progress: a calm pulse beside its label is the one moving thing on Home */

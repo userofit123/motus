@@ -67,15 +67,21 @@ function planDone(p: Planned, workouts: DoneW[], activities: DoneA[], tzMin: num
 
 /** Planned days between from and to that aren't done yet. */
 export async function plannedOpen(q: Sql, from: string, to: string, tzMin: number) {
+  return (await plannedMarked(q, from, to, tzMin)).filter((p) => !p.done).map(({ done: _, ...p }) => p);
+}
+
+/** Every planned day between from and to, each saying whether it is done (Home's Today tells "nothing planned" from
+ * "nothing else planned"). Skipped days aren't planned at all. */
+export async function plannedMarked(q: Sql, from: string, to: string, tzMin: number) {
   const planned = await plannedBetween(q, from, to);
-  if (!planned.length) return planned;
+  if (!planned.length) return planned.map((p) => ({ ...p, done: false }));
   // a day either side, as the app's day can start up to 14 hours before or after UTC's
   const lo = addDays(from, -1), hi = addDays(to, 2);
   const workouts = (await q.query(
     `SELECT routine_id, schedule_id, scheduled_date, started_at FROM workouts
      WHERE status <> 'discarded' AND ((started_at >= $1::date AND started_at < $2::date) OR scheduled_date BETWEEN $3 AND $4)`, [lo, hi, from, to])).rows.map((x: any) => camel<DoneW>(x));
   const activities = (await q.query("SELECT type, started_at FROM activities WHERE started_at >= $1::date AND started_at < $2::date", [lo, hi])).rows.map((x: any) => camel<DoneA>(x));
-  return planned.filter((p) => !planDone(p, workouts, activities, tzMin));
+  return planned.map((p) => ({ ...p, done: planDone(p, workouts, activities, tzMin) }));
 }
 
 const RULES = ["once", "weekly", "interval", "monthly"];

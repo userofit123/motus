@@ -145,6 +145,8 @@ describe("home on the app's calendar", () => {
     // doing one leaves the others
     await call("POST", "/workouts/log", { startedAt: "2026-10-20T08:00:00Z", routineId: b });
     expect(await todays()).toEqual(["Many A", "Walk", "Run", "Run", "Run"]);
+    // the count of today's plans keeps the done one, so Today can say "Nothing else planned" once all are done
+    expect((await call("GET", "/home", undefined, { tz: TZ })).plannedToday).toBe(6);
     for (const sid of ids) await call("DELETE", `/schedules/${sid}`);
     NOW = new Date("2026-10-07T10:00:00Z");
   });

@@ -454,6 +454,8 @@ export interface HomeToday {
   /** the days (app calendar) with a finished workout or an activity */
   days: string[];
   upNext: HomePlan[];
+  /** how many plans fall on today, done ones included (upNext leaves those out) */
+  plannedToday: number;
   programs: HomeProgram[];
   suggest: HomeSuggestion[];
 }
