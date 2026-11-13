@@ -127,6 +127,15 @@ function restEnded() {
 // pause, skip, a new rest, the workout ending) while in the background schedules them again or takes them off.
 let alarmOn = false;
 const hidden = () => typeof document !== "undefined" && document.hidden;
+// Back in the foreground: the Android app played the cues already due while hidden, so mark them played here or the
+// next tick would play them again.
+function catchUpCues() {
+  if (!rest.endAt || rest.done || rest.pausedLeftS != null) return;
+  const left = (rest.endAt - Date.now()) / 1000;
+  if (left <= 10) warned = true;
+  const s = Math.ceil(left);
+  if (s >= 1 && s <= 3) lastCount = s;
+}
 const alarmCovers = () => alarmOn && hidden();
 const resting = () => !!rest.endAt && !rest.done && rest.pausedLeftS == null && rest.endAt > Date.now();
 function planAlarm() {
@@ -147,7 +156,7 @@ function restTimeSet() {
   showRestCountdown(rest.endAt!, rest.next);
   if (hidden()) planAlarm();
 }
-if (typeof document !== "undefined") document.addEventListener("visibilitychange", () => { if (hidden()) planAlarm(); else dropAlarm(); });
+if (typeof document !== "undefined") document.addEventListener("visibilitychange", () => { if (hidden()) planAlarm(); else { dropAlarm(); catchUpCues(); } });
 // one left from before the app was closed in the background would still sound with the app open again
 if (isNativeApp() && !hidden()) { void cancelRestAlarm(); cancelRestCues(); }
 

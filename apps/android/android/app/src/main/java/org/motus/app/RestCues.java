@@ -11,6 +11,7 @@ import android.media.AudioManager;
 import android.media.AudioTrack;
 import android.os.Build;
 import android.os.Handler;
+import android.os.HandlerThread;
 import android.os.Looper;
 import android.os.PowerManager;
 import android.os.SystemClock;
@@ -30,6 +31,10 @@ public class RestCues extends BroadcastReceiver {
     // the notes waiting to play, so taking the cues off (the app came back) also stops a 3-2-1 already under way
     private static final Object NOTES = new Object();
     private static final Handler main = new Handler(Looper.getMainLooper());
+    // the notes are built (a few thousand samples each) and played on one background thread, not the main one
+    private static final HandlerThread worker = new HandlerThread("motus-restcues");
+    static { worker.start(); }
+    private static final Handler audio = new Handler(worker.getLooper());
 
     private static Intent intent(Context ctx) {
         return new Intent(ctx, RestCues.class).setAction(ACTION);
@@ -58,7 +63,7 @@ public class RestCues extends BroadcastReceiver {
     }
 
     static void cancel(Context ctx) {
-        main.removeCallbacksAndMessages(NOTES);
+        audio.removeCallbacksAndMessages(NOTES);
         AlarmManager am = (AlarmManager) ctx.getSystemService(Context.ALARM_SERVICE);
         for (int code : new int[] { WARN, COUNT }) {
             PendingIntent pi = PendingIntent.getBroadcast(ctx, code, intent(ctx), PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_NO_CREATE);
@@ -83,7 +88,7 @@ public class RestCues extends BroadcastReceiver {
         for (long d : due) {
             if (d < from - 50 || now - d > LATE_MS) continue; // played on screen before the app went away, or long gone
             long wait = Math.max(0, d - now);
-            main.postAtTime(() -> play(sound, freq, warn, volume), NOTES, SystemClock.uptimeMillis() + wait);
+            audio.postAtTime(() -> play(sound, freq, warn, volume), NOTES, SystemClock.uptimeMillis() + wait);
             last = Math.max(last, now + wait);
         }
         // the 3-2-1 takes up to 3 seconds: kept awake (and the broadcast open) until its last note has played
@@ -140,14 +145,18 @@ public class RestCues extends BroadcastReceiver {
         double scale = max > 0.89 ? 0.89 / max : 1; // the limiter's ceiling (-1 dB)
         short[] pcm = new short[n];
         for (int i = 0; i < n; i++) pcm[i] = (short) Math.round(sum[i] * scale * Short.MAX_VALUE);
+        AudioTrack track = null;
         try {
             // the media stream and its volume, like the WebView's sound on screen
             AudioAttributes attrs = new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build();
             AudioFormat fmt = new AudioFormat.Builder().setSampleRate(RATE).setEncoding(AudioFormat.ENCODING_PCM_16BIT).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build();
-            AudioTrack track = new AudioTrack(attrs, fmt, n * 2, AudioTrack.MODE_STATIC, AudioManager.AUDIO_SESSION_ID_GENERATE);
+            track = new AudioTrack(attrs, fmt, n * 2, AudioTrack.MODE_STATIC, AudioManager.AUDIO_SESSION_ID_GENERATE);
             track.write(pcm, 0, n);
             track.play();
-            main.postDelayed(track::release, (long) (len * 1000) + 300);
+            final AudioTrack t = track;
+            track = null; // released later, once it has rung out
+            main.postDelayed(t::release, (long) (len * 1000) + 300);
         } catch (RuntimeException e) { /* no sound */ }
+        finally { if (track != null) track.release(); }
     }
 }

@@ -146,10 +146,10 @@ export function cancelRestCues() {
 // The desktop app slows the timers of a window in the background (after a few minutes to once a minute), so a rest's
 // 10 seconds, 3-2-1 and end would come late or not at all; while a rest or the interval timer runs it doesn't.
 const timing = new Set<string>();
-let unthrottled = false;
+let unthrottled: boolean | null = null; // null: nothing sent yet, so the first state always is
 export function backgroundTimers(who: "rest" | "intervals", on: boolean) {
   if (on) timing.add(who); else timing.delete(who);
-  if (timing.size > 0 === unthrottled) return;
+  if ((timing.size > 0) === unthrottled) return;
   unthrottled = timing.size > 0;
   const set = (globalThis as { motusNative?: { backgroundTimers?: (on: boolean) => Promise<void> } }).motusNative?.backgroundTimers;
   if (set) void set(unthrottled).catch(() => {});
