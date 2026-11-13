@@ -6,14 +6,14 @@ import { computed } from "vue";
 import { useQuery } from "@tanstack/vue-query";
 import { useRouter } from "vue-router";
 import { api } from "../api/client";
-import { updater } from "../core/updater";
-import { detectPlatform, newer } from "../core/releases";
+import { updateAvailable } from "../core/updater";
+import { detectPlatform } from "../core/releases";
 import Icon from "../components/Icon.vue";
 const router = useRouter();
 const app = detectPlatform().app;
 const upd = useQuery({ queryKey: ["static", "update"], queryFn: () => api.get("/update-check"), staleTime: 6 * 3600_000, refetchOnWindowFocus: false, enabled: !app });
 const latest = computed(() => (app
-  ? (updater.latest && updater.appVersion && newer(updater.latest, updater.appVersion) ? updater.latest : "")
+  ? updateAvailable.value
   : upd.data.value?.newer ? upd.data.value.latest : ""));
 </script>
 

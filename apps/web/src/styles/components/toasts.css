@@ -10,7 +10,7 @@
 
 #toasts {
   position: fixed;
-  top: 18px;
+  top: calc(18px + var(--st)); /* below the phone's status bar */
   right: 18px; /* fixed side */
   z-index: 160;
   display: flex;

@@ -11,6 +11,7 @@ import DesktopShell from "./shell/DesktopShell.vue";
 import PhoneShell from "./shell/PhoneShell.vue";
 import Overlays from "./shell/Overlays.vue";
 import Toasts from "./components/Toasts.vue";
+import UpdateNotice from "./shell/UpdateNotice.vue";
 import AskHost from "./components/AskHost.vue";
 import AccountChooser from "./shell/AccountChooser.vue";
 import Logo from "./shell/Logo.vue";
@@ -39,6 +40,7 @@ watch(() => route.query.start, (v) => { if (v) { startOpen.value = true; router.
     <PhoneShell v-if="isPhone" />
     <DesktopShell v-else />
     <Overlays />
+    <UpdateNotice />
   </template>
   <Toasts />
   <AskHost />

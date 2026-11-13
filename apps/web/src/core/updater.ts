@@ -1,6 +1,6 @@
 // In-app updates for the installed apps. The desktop app (Electron) and the Android app (Capacitor) each provide
 // window.motusNative.update; in a browser there is nothing to install (the page simply loads the new version).
-import { reactive, watch, onBeforeUnmount } from "vue";
+import { reactive, computed, watch, onBeforeUnmount } from "vue";
 import { useQueryClient } from "@tanstack/vue-query";
 import { useMe, useSettings } from "../api/queries";
 import { latestRelease, detectPlatform, newer } from "./releases";
@@ -47,6 +47,8 @@ export const updater = reactive({
     try { nat()?.forget?.()?.catch?.(() => {}); } catch { /* nothing to delete */ }
   },
 });
+/** The newer version the app knows of (from a check), or "": what the rail's Update button and the update notice show. */
+export const updateAvailable = computed(() => (updater.latest && updater.appVersion && newer(updater.latest, updater.appVersion) ? updater.latest : ""));
 // what the app knows from the start: its version, and a download that finished before the app was closed (Android
 // keeps the file and remembers it), which is offered as Install, not another download, as the "ready to install"
 // notification promises. Started on first use, not at import: the Android app's bridge appears only once the page runs.
@@ -74,6 +76,9 @@ startUpdater();
 // downloaded in the background and left ready to install; installing is always the person's tap. "Only on Wi-Fi": that
 // download waits while the connection is metered (mobile data); the check itself is a few kilobytes and doesn't wait.
 const CHECK_EVERY = 6 * 3600_000;
+// coming back to the app (a phone unlocked, the window shown again) is "opening" it too: then a check that is this old is
+// done again, so an update is noticed without waiting for the 6 hours (still a few kilobytes, far under GitHub's limits)
+const ON_OPEN_EVERY = 3600_000;
 // how often to look whether a check is due or a waiting download can start (a phone back on Wi-Fi)
 const TICK = 15 * 60_000;
 let lastCheck = 0;
@@ -89,22 +94,26 @@ export function useAutoUpdate() {
   void startUpdater();
   if (!detectPlatform().app) return;
   const me = useMe(), s = useSettings(), qc = useQueryClient();
-  const tick = async () => {
+  const tick = async (every = CHECK_EVERY) => {
     const u = s.value.updates;
     // until the person's settings have arrived, the defaults would speak for them
     if (!me.data.value || !u.autoCheck || busy) return;
     busy = true;
+    // what a check found is made known (the rail's Update button, the update notice) only once it is clear whether an
+    // automatic download starts: otherwise the notice would flash a Download button that turns into progress at once
+    let found = "";
+    const show = () => { if (found) { updater.latest = found; found = ""; } };
     try {
       await startUpdater();
       if (!updater.canTellMetered) await askMetered();
-      if (Date.now() - lastCheck >= CHECK_EVERY && Date.now() - lastFail >= RETRY_GAP) {
+      if (Date.now() - lastCheck >= every && Date.now() - lastFail >= RETRY_GAP) {
         // the same answer App & Versions shows (its "Checked at" follows); a check that failed (offline) is tried
         // again after RETRY_GAP, not 6 hours later
         const r = await qc.fetchQuery({ queryKey: ["static", "release"], queryFn: latestRelease, staleTime: 0 }).catch(() => null);
         const v = r?.latest ?? "";
         if (!v) { lastFail = Date.now(); return; }
         lastCheck = Date.now(); lastFail = 0;
-        updater.latest = v;
+        found = v;
         pending = updater.appVersion && newer(v, updater.appVersion) && !(updater.ready && updater.stagedVersion === v) ? v : "";
       }
       if (!pending || !u.autoDownload || updater.downloading || Date.now() - lastFail < RETRY_GAP) return;
@@ -112,13 +121,13 @@ export function useAutoUpdate() {
       // a ready download of an older release gives way to the newer one
       if (updater.ready && updater.stagedVersion !== pending) updater.forget();
       // pending stays until the file is really downloaded, so a failed download is tried again (after the gap)
-      if (!updater.ready) await updater.install();
+      if (!updater.ready) { const dl = updater.install(); show(); await dl; }
       if (updater.ready) { pending = ""; lastFail = 0; } else lastFail = Date.now();
-    } finally { busy = false; }
+    } finally { show(); busy = false; }
   };
   const run = () => { void tick(); };
   const timer = setInterval(run, TICK);
-  const onShow = () => { if (document.visibilityState === "visible") run(); };
+  const onShow = () => { if (document.visibilityState === "visible") void tick(ON_OPEN_EVERY); };
   document.addEventListener("visibilitychange", onShow);
   window.addEventListener("online", run);
   // at the start (once the settings are in), and when a switch is turned on
