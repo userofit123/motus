@@ -25,6 +25,6 @@ const COL = ["#e55353", "#3b7ddd", "#f0c043", "#3bb273", "#e8e8e8", "#9aa0a6", "
     </div>
     <div class="center" style="font-weight:600">Each side: {{ res.perSide.length ? res.perSide.join(" + ") : "nothing" }} {{ fmt.wu }}</div>
     <div v-if="res.leftover" class="center tiny" style="margin-top:4px">{{ res.leftover }} {{ fmt.wu }} can't be made with your plates</div>
-    <p class="tiny center" style="margin-top:10px">Your bar and plates are in Settings → Workout.</p>
+    <p class="tiny center" style="margin-top:10px">Your bar and plates are in Settings → Workout defaults.</p>
   </Sheet>
 </template>

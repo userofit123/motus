@@ -13,7 +13,7 @@ const props = defineProps<{ row: PrefRow; value: unknown; prefs: WorkoutPrefs; l
 const emit = defineEmits<{ set: [v: unknown] }>();
 const play = (cueSound: unknown) => previewCue({ cueSound: cueSound as WorkoutPrefs["cueSound"], cueVolume: props.prefs.cueVolume });
 // a new volume is played at once, so you hear what you chose
-function setNum(v: number) { emit("set", v); if (props.row.key === "cueVolume") previewCue({ cueSound: props.prefs.cueSound, cueVolume: v }); }
+function setNum(v: number) { emit("set", v); if (props.row.key === "cueVolume" && props.prefs.sound) previewCue({ cueSound: props.prefs.cueSound, cueVolume: v }); }
 const label = (v: unknown) => props.row.options?.find((o) => o.value === v)?.label ?? "";
 </script>
 
