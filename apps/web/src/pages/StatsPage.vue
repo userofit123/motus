@@ -2,7 +2,7 @@
 // Stats (requirement 16): progress over time overall, per routine, per exercise, per muscle group, for activities and the body.
 import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { GROUPS, muscleName, weekStartOf, WEEKLY_SET_RANGE, num, bodyName, bodyMeasure, fromCm, percentChange } from "@motus/shared";
+import { GROUPS, muscleName, weekStartOf, weekStartDate, daysIntoWeek, weekdayOrder, statsPeriod, STATS_PERIODS, ymd, type StatsPeriod, WEEKLY_SET_RANGE, num, bodyName, bodyMeasure, fromCm, percentChange } from "@motus/shared";
 import { useStats, useSettings, useAchievements, useGoals, loaded } from "../api/queries";
 import { useFmt, localYmd } from "../core/format";
 import { startOpen } from "../core/ui";
@@ -26,11 +26,12 @@ const tab = ref(String(route.query.tab ?? "overview"));
 watch(tab, (t) => router.replace({ query: t === "overview" ? {} : { tab: t } }));
 // opened again from elsewhere (Home's muscles card) while this page is still around
 watch(() => route.query.tab, (t) => { if (route.name === "stats") tab.value = String(t ?? "overview"); });
-const RANGES: [string, string, number][] = [["4w", "4 weeks", 28], ["3m", "3 months", 91], ["6m", "6 months", 182], ["1y", "1 year", 365], ["all", "All time", 0]];
-const rk = ref("3m");
-const days = computed(() => RANGES.find((r) => r[0] === rk.value)![2]);
-const range = computed(() => (days.value ? { from: new Date(Date.now() - days.value * 86400000).toISOString() } : {}));
-const prevRange = computed(() => (days.value ? { from: new Date(Date.now() - 2 * days.value * 86400000).toISOString(), to: new Date(Date.now() - days.value * 86400000).toISOString() } : { from: "2999-01-01" }));
+// calendar periods (today, this week, last month…) and rolling ones (the last 3 months…); weeks start on the day chosen in Settings
+const PERIODS = [...STATS_PERIODS];
+const rk = ref<StatsPeriod>("3m");
+const per = computed(() => statsPeriod(rk.value, new Date(), s.value.firstDay));
+const range = computed(() => { const p = per.value; return p.from ? { from: p.from.toISOString(), ...(p.to ? { to: p.to.toISOString() } : {}) } : {}; });
+const prevRange = computed(() => { const p = per.value; return p.prevFrom ? { from: p.prevFrom.toISOString(), to: p.prevTo!.toISOString() } : { from: "2999-01-01" }; });
 const st = useStats(range);
 const prev = useStats(prevRange);
 // the goal line: your weekly gym-workout goal, the first one on Home (else the first there is), when you have one
@@ -55,8 +56,15 @@ const change = (k: string) => { const pc = percentChange((T.value as any)?.[k], 
 const weeks = computed(() => {
   if (!d.value) return [];
   const m = new Map<string, any>();
-  const n = days.value ? Math.ceil(days.value / 7) : Math.max(8, Math.ceil((Date.now() - new Date(d.value.workouts[0]?.startedAt ?? Date.now()).getTime()) / 604800000) + 1);
-  for (let i = Math.min(n, 104) - 1; i >= 0; i--) m.set(weekStartOf(new Date(Date.now() - i * 604800000), s.value.firstDay), { workouts: 0, sets: 0, volumeKg: 0, muscles: {} as Record<string, number>, timeS: 0 });
+  // every week the period touches (the last 104 at most); a rolling period leaves out the week it starts in the middle of,
+  // so "Last 4 weeks" is four bars; All time shows at least 8 weeks
+  const fd = s.value.firstDay, p = per.value, last = weekStartDate(p.to ? new Date(p.to.getTime() - 1) : new Date(), fd);
+  let w = weekStartDate(p.from ?? new Date(d.value.workouts[0]?.startedAt ?? Date.now()), fd);
+  if (p.from && ["4w", "3m", "6m", "1y"].includes(rk.value) && w < p.from) w.setDate(w.getDate() + 7);
+  if (!p.from) w = new Date(Math.min(w.getTime(), new Date(last.getFullYear(), last.getMonth(), last.getDate() - 7 * 7).getTime()));
+  const keys: string[] = [];
+  for (; w <= last; w = new Date(w.getFullYear(), w.getMonth(), w.getDate() + 7)) keys.push(ymd(w));
+  for (const k of keys.slice(-104)) m.set(k, { workouts: 0, sets: 0, volumeKg: 0, muscles: {} as Record<string, number>, timeS: 0 });
   for (const w of d.value.workouts) { const k = weekStartOf(new Date(w.startedAt), s.value.firstDay); const x = m.get(k); if (!x) continue; x.workouts++; x.sets += w.sets; x.volumeKg += w.volumeKg; x.timeS += w.durationS; for (const [mm, v] of Object.entries(w.muscles as Record<string, number>)) x.muscles[mm] = (x.muscles[mm] ?? 0) + v; }
   for (const a of d.value.activities) { const x = m.get(weekStartOf(new Date(a.startedAt), s.value.firstDay)); if (x) x.timeS += a.durationS; }
   return [...m].map(([k, v]) => ({ week: k, ...v }));
@@ -66,10 +74,10 @@ const wlabel = (k: string) => fmt.value.date(k, { day: "numeric", month: "short"
 const heat = computed(() => {
   const on = new Map<string, number>();
   for (const w of [...(d.value?.workouts ?? []), ...(d.value?.activities ?? [])]) { const k = localYmd(new Date(w.startedAt)); on.set(k, (on.get(k) ?? 0) + 1); }
-  const start = new Date(); start.setDate(start.getDate() - 7 * 25 - ((start.getDay() - s.value.firstDay + 7) % 7));
+  const start = new Date(); start.setDate(start.getDate() - 7 * 25 - daysIntoWeek(start.getDay(), s.value.firstDay));
   return Array.from({ length: 26 * 7 }, (_, i) => { const x = new Date(start); x.setDate(start.getDate() + i); const k = localYmd(x); return { k, n: on.get(k) ?? 0, future: x > new Date() }; });
 });
-const dow = computed(() => { const c = [0, 0, 0, 0, 0, 0, 0]; for (const w of d.value?.workouts ?? []) c[new Date(w.startedAt).getDay()]!++; return Array.from({ length: 7 }, (_, i) => { const j = (i + s.value.firstDay) % 7; return { label: "SMTWTFS"[j]!, value: c[j]! }; }); });
+const dow = computed(() => { const c = [0, 0, 0, 0, 0, 0, 0]; for (const w of d.value?.workouts ?? []) c[new Date(w.startedAt).getDay()]!++; return weekdayOrder(s.value.firstDay).map((j) => ({ label: "SMTWTFS"[j]!, value: c[j]! })); });
 const hours = computed(() => { const b = [0, 0, 0, 0, 0, 0]; for (const w of d.value?.workouts ?? []) b[Math.floor(new Date(w.startedAt).getHours() / 4)]!++; return ["0-4", "4-8", "8-12", "12-16", "16-20", "20-24"].map((l, i) => ({ label: l, value: b[i]! })); });
 // exercises
 const exq = ref(""), exSort = ref<"times" | "change" | "stalled">("times");
@@ -109,14 +117,14 @@ await loaded(st, prev, ach);
 <template>
   <div class="page">
     <div class="ph"><div><h1>Stats</h1></div>
-      <div class="acts"><AppSelect v-model="rk" :options="RANGES.map(([value, label]) => ({ value, label }))" title="Period" style="width:auto" /></div></div>
+      <div class="acts"><AppSelect v-model="rk" :options="PERIODS" title="Period" style="width:auto" /></div></div>
     <div class="tabs"><button v-for="[k, l] in TABS" :key="k" :class="{ on: tab === k }" @click="tab = k!">{{ l }}</button></div>
 <Transition name="sw" mode="out-in"><div :key="tab">
     <div v-if="!d && st.isError.value" class="card empty"><Icon name="info" :size="34" /><b>Couldn't load your stats</b>{{ (st.error.value as Error | null)?.message }}<br /><button class="btn tonal" @click="st.refetch()">Try again</button></div>
     <div v-else-if="!d" class="empty">Loading…</div>
 
     <!-- nothing in this period: one message instead of a page of zeros and empty charts -->
-    <div v-else-if="tab === 'overview' && !T!.workouts && !T!.activities" class="card empty"><Icon name="stats" :size="34" /><b>Nothing to show yet</b>{{ days ? "No workouts or activities in this period. Pick a longer one, or" : "Your numbers show here once you" }} finish a workout or log an activity.<br /><button class="btn tonal" @click="startOpen = true">Start a workout</button></div>
+    <div v-else-if="tab === 'overview' && !T!.workouts && !T!.activities" class="card empty"><Icon name="stats" :size="34" /><b>Nothing to show yet</b>{{ rk !== "all" ? "No workouts or activities in this period. Pick a longer one, or" : "Your numbers show here once you" }} finish a workout or log an activity.<br /><button class="btn tonal" @click="startOpen = true">Start a workout</button></div>
 
     <template v-else-if="tab === 'overview'">
       <div class="grid g4">

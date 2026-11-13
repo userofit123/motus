@@ -9,7 +9,7 @@
 // that day here instead of today; its plans have only the ⋮ to skip or remove them; a past day lists what you did and the
 // plans you missed.
 import { computed, ref } from "vue";
-import type { HomePlan, HomeToday } from "@motus/shared";
+import { daysIntoWeek, type HomePlan, type HomeToday } from "@motus/shared";
 import { useRouter } from "vue-router";
 import { useCalendar, useSettings } from "../../api/queries";
 import { useFmt, ago, localYmd, tomorrowYmd, activityIcon } from "../../core/format";
@@ -85,7 +85,7 @@ const dayLabel = computed(() => (sel.value === tomorrow ? "Tomorrow" : fmt.value
 const wantPast = ref(false);
 const wantCal = computed(() => wantPast.value || trainedToday.value);
 const weekRange = computed(() => {
-  const now = new Date(), back = (now.getDay() - s.value.firstDay + 7) % 7;
+  const now = new Date(), back = daysIntoWeek(now.getDay(), s.value.firstDay);
   return { from: localYmd(new Date(now.getFullYear(), now.getMonth(), now.getDate() - back)), to: localYmd(new Date(now.getFullYear(), now.getMonth(), now.getDate() - back + 6)) };
 });
 const cal = useCalendar(weekRange, wantCal);
@@ -120,7 +120,7 @@ const openDay = () => router.push({ path: "/history", query: { date: sel.value }
 
 // this week, from your first day of the week: trained, planned, today, still to come
 const week = computed(() => {
-  const now = new Date(), back = (now.getDay() - s.value.firstDay + 7) % 7;
+  const now = new Date(), back = daysIntoWeek(now.getDay(), s.value.firstDay);
   const planned = new Set((props.h.upNext ?? []).map((p) => p.date));
   const done = new Set(props.h.days ?? []);
   return Array.from({ length: 7 }, (_, i) => {

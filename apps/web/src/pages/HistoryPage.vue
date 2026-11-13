@@ -7,6 +7,7 @@ const kept: { v: { month: number; sel: string | null } | null } = { v: null };
 // History (requirement 1): a month calendar of workouts, activities and planned days (click a day to list its sessions below, or an entry to open it),
 // or a list. On the phone: a compact month with dots; both show the chosen day's sessions below.
 import { computed, ref, watch } from "vue";
+import { daysIntoWeek, weekdayOrder } from "@motus/shared";
 import { useRoute, useRouter } from "vue-router";
 import { useCalendar, useSettings, useWorkouts, useActivities, loaded } from "../api/queries";
 import Menu from "../components/Menu.vue";
@@ -41,7 +42,7 @@ const month = ref(memo ? new Date(memo.month) : new Date(new Date().getFullYear(
 const first = computed(() => s.value.firstDay);
 const grid = computed(() => {
   const m = month.value, start = new Date(m);
-  const lead = (m.getDay() - first.value + 7) % 7;
+  const lead = daysIntoWeek(m.getDay(), first.value);
   start.setDate(1 - lead);
   // only the weeks this month touches (5 or 6, sometimes 4)
   const cells = Math.ceil((lead + new Date(m.getFullYear(), m.getMonth() + 1, 0).getDate()) / 7) * 7;
@@ -61,7 +62,7 @@ const byDay = computed(() => {
   for (const p of c.planned) add(p.date, { kind: "planned", missed: p.date < today, ...p });
   return m;
 });
-const DOW = computed(() => Array.from({ length: 7 }, (_, i) => ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][(i + first.value) % 7]));
+const DOW = computed(() => weekdayOrder(first.value).map((i) => ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][i]));
 const calDir = ref("nx");
 const shift = (n: number) => { calDir.value = n > 0 ? "nx" : "pv"; month.value = new Date(month.value.getFullYear(), month.value.getMonth() + n, 1); };
 const sel = ref<string | null>(memo?.sel ?? today);

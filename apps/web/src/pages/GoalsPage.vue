@@ -3,7 +3,7 @@
 // Active, achieved and archived; each with its progress, pace and trend.
 import { computed, nextTick, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { GROUPS, muscleName, toKg, toM, fromM, BODY_MEASURES, GOAL_DIRECTIONS, bodyMeasure, bodyGoalDirection, orderGoals, GOAL_METRICS, type Goal, type GoalMetric, workdaysOf } from "@motus/shared";
+import { GROUPS, muscleName, toKg, toM, fromM, BODY_MEASURES, GOAL_DIRECTIONS, bodyMeasure, bodyGoalDirection, orderGoals, GOAL_METRICS, type Goal, type GoalMetric, workdaysOf, weekdayOrder } from "@motus/shared";
 import { useGoals, useGoalMetrics, useRoutines, useExercises, useActivityTypes, useChange, useBody, useSettings, saveSettings, loaded } from "../api/queries";
 import { api } from "../api/client";
 import { invalidate } from "../api/live";
@@ -105,7 +105,7 @@ const WHEN = [{ value: "day", label: "Every day" }, { value: "workdays", label: 
 const byDay = (w: string) => w === "day" || w === "workdays" || w === "days";
 watch(() => f.value.when, (w) => { f.value.period = byDay(w) ? "day" : w; });
 // the week's days in the order the week starts on, for picking
-const DAY_OPTS = computed(() => Array.from({ length: 7 }, (_, i) => (i + settings.value.firstDay) % 7).map((d) => ({ value: d, label: WEEKDAYS[d]!.slice(0, 3) })));
+const DAY_OPTS = computed(() => weekdayOrder(settings.value.firstDay).map((d) => ({ value: d, label: WEEKDAYS[d]!.slice(0, 3) })));
 const goalDays = (v: any) => (v.when === "workdays" ? "workdays" : v.when === "days" ? v.days : null);
 const unit = computed(() => metric.value?.unit === "kg" ? fmt.value.wu : metric.value?.unit === "km" ? fmt.value.du : metric.value?.unit);
 // body goals: one chip per measure, left/right pairs pick the side below (as when logging)

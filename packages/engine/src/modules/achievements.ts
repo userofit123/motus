@@ -2,7 +2,7 @@
 // when it was reached. Worked out on request from the logged data, never stored: deleting a workout moves them too.
 // Weeks follow the app's calendar (tz = its getTimezoneOffset()), not the server's, so the server and the copy on a
 // device agree.
-import { ACHIEVEMENTS, achievementName, achievementTarget, e1rm, LIFTED_SQL, TRACKING_SQL, type Settings } from "@motus/shared";
+import { ACHIEVEMENTS, achievementName, achievementTarget, daysIntoWeek, e1rm, LIFTED_SQL, TRACKING_SQL, type Settings } from "@motus/shared";
 import type { Sql } from "../db";
 
 const DAY = 86400000;
@@ -11,7 +11,7 @@ export const dayIn = (at: string | Date, tzMin: number) => new Date(new Date(at)
 /** The first day (YYYY-MM-DD) of the week an instant falls in, on the app's calendar. */
 export function weekIn(at: string | Date, tzMin: number, firstDay: number): string {
   const d = new Date(dayIn(at, tzMin) + "T12:00:00Z");
-  d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() - firstDay + 7) % 7));
+  d.setUTCDate(d.getUTCDate() - daysIntoWeek(d.getUTCDay(), firstDay));
   return d.toISOString().slice(0, 10);
 }
 const nextWeek = (w: string) => new Date(new Date(w + "T12:00:00Z").getTime() + 7 * DAY).toISOString().slice(0, 10);

@@ -3,7 +3,7 @@
 import { goBack } from "../core/leave";
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { READY_FEATURES, EQUIPMENT, NOTE_TAGS_DEFAULT, workdaysOf, fromKg, toKg, progressionDefaultsOf, type Settings } from "@motus/shared";
+import { READY_FEATURES, EQUIPMENT, NOTE_TAGS_DEFAULT, workdaysOf, weekdayOrder, fromKg, toKg, progressionDefaultsOf, type Settings } from "@motus/shared";
 import { WEEKDAYS } from "../core/goals";
 import { useMe, useSettings, saveSettings, loaded } from "../api/queries";
 import { session, signOut } from "../core/session";
@@ -52,7 +52,7 @@ const GROUPS = computed<[string, Section[]][]>(() => [
 ]);
 const SECTIONS = computed(() => GROUPS.value.flatMap(([, xs]) => xs));
 const go = (k: string) => router.push(`/settings/${k}`);
-const DAY_OPTS = computed(() => Array.from({ length: 7 }, (_, i) => (i + s.value.firstDay) % 7).map((d) => ({ value: d, label: WEEKDAYS[d]!.slice(0, 3) })));
+const DAY_OPTS = computed(() => weekdayOrder(s.value.firstDay).map((d) => ({ value: d, label: WEEKDAYS[d]!.slice(0, 3) })));
 const set = (patch: Record<string, unknown>) => saveSettings(patch);
 // Progression's steps are kept in kg and shown in your weight unit
 const wIn = (kg: number) => Math.round(fromKg(kg, s.value.units.weight) * 100) / 100;

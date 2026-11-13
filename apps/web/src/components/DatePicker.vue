@@ -4,6 +4,7 @@
 // The value stays "YYYY-MM-DD" ("" when empty), as the browser's field gave it.
 // Keys while open: arrows move a day or a week, Page Up/Down a month, Enter picks, Esc closes.
 import { computed, ref } from "vue";
+import { daysIntoWeek, weekdayOrder } from "@motus/shared";
 import { useFmt, localYmd } from "../core/format";
 import { isPhone } from "../core/device";
 import Icon from "./Icon.vue";
@@ -24,11 +25,11 @@ const open = ref(false), btn = ref<HTMLButtonElement | null>(null);
 const month = ref(new Date()), hi = ref("");
 const today = ref(localYmd(new Date()));
 const first = computed(() => fmt.value.s.firstDay);
-const DOW = computed(() => Array.from({ length: 7 }, (_, i) => ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][(i + first.value) % 7]!));
+const DOW = computed(() => weekdayOrder(first.value).map((i) => ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][i]!));
 // the weeks this month touches, as on the History calendar
 const grid = computed(() => {
   const m = month.value, start = new Date(m);
-  const lead = (m.getDay() - first.value + 7) % 7;
+  const lead = daysIntoWeek(m.getDay(), first.value);
   start.setDate(1 - lead);
   const cells = Math.ceil((lead + new Date(m.getFullYear(), m.getMonth() + 1, 0).getDate()) / 7) * 7;
   return Array.from({ length: cells }, (_, i) => { const d = new Date(start); d.setDate(start.getDate() + i); return { ymd: localYmd(d), n: d.getDate(), out: d.getMonth() !== m.getMonth() }; });

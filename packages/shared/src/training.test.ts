@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { estimate, routineTime, setSeconds, usualDuration, CHANGEOVER_S, liftedKg, trackingFrom, trackingParts, trackingLabel, weightKindsFor, refitSet, newSetFor, progresses, TRACKINGS, COUNTED_BY, usesWeight, usesReps, usesDuration, usesDistance, restAfterSet, planSetRest, isStretch } from "./training";
+import { estimate, routineTime, setSeconds, usualDuration, CHANGEOVER_S, liftedKg, trackingFrom, trackingParts, trackingLabel, weightKindsFor, refitSet, newSetFor, progresses, TRACKINGS, COUNTED_BY, usesWeight, usesReps, usesDuration, usesDistance, restAfterSet, planSetRest, isStretch, weekStartOf, weekdayOrder, statsPeriod } from "./training";
 import { restDefaultsOf, withDefaults } from "./settings";
 import { TEMPLATES } from "./templates";
 
@@ -149,5 +149,36 @@ describe("stretch rests", () => {
   });
   it("Daily stretch sets no rest of its own, so it follows the stretch defaults", () => {
     expect(TEMPLATES.find((t) => t.name === "Daily stretch")!.exercises.every((e) => e.restS == null)).toBe(true);
+  });
+});
+
+describe("weeks and Stats periods", () => {
+  const wed = new Date(2026, 9, 7, 15, 0); // Wednesday 7 October, local time
+  const ymdOf = (d: Date | null) => d && `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  it("starts the week on Sunday or Monday", () => {
+    expect(weekStartOf(wed, 0)).toBe("2026-10-04");
+    expect(weekStartOf(wed, 1)).toBe("2026-10-05");
+    expect(weekStartOf(new Date(2026, 9, 4, 9), 1)).toBe("2026-09-28"); // a Sunday ends a Monday week
+    expect(weekdayOrder(0)).toEqual([0, 1, 2, 3, 4, 5, 6]);
+    expect(weekdayOrder(1)).toEqual([1, 2, 3, 4, 5, 6, 0]);
+  });
+  it("gives this and last week from the chosen first day", () => {
+    const sun = statsPeriod("week", wed, 0), mon = statsPeriod("week", wed, 1);
+    expect([ymdOf(sun.from), sun.to, ymdOf(sun.prevFrom)]).toEqual(["2026-10-04", null, "2026-09-27"]);
+    expect([ymdOf(mon.from), ymdOf(mon.prevFrom)]).toEqual(["2026-10-05", "2026-09-28"]);
+    // compared with the same stretch of last week: Monday to Wednesday 15:00
+    expect(mon.prevTo!.getTime() - mon.prevFrom!.getTime()).toBe(wed.getTime() - mon.from!.getTime());
+    const last = statsPeriod("lastweek", wed, 1);
+    expect([last.from, last.to, last.prevFrom, last.prevTo].map(ymdOf)).toEqual(["2026-09-28", "2026-10-05", "2026-09-21", "2026-09-28"]);
+  });
+  it("gives today, the last 7 days and calendar months", () => {
+    expect([statsPeriod("today", wed, 0).from, statsPeriod("today", wed, 0).prevFrom].map(ymdOf)).toEqual(["2026-10-07", "2026-10-06"]);
+    expect([statsPeriod("7d", wed, 0).from, statsPeriod("7d", wed, 0).prevFrom].map(ymdOf)).toEqual(["2026-10-01", "2026-09-24"]);
+    const m = statsPeriod("month", wed, 0), lm = statsPeriod("lastmonth", wed, 0);
+    expect([m.from, m.prevFrom, m.prevTo].map(ymdOf)).toEqual(["2026-10-01", "2026-09-01", "2026-09-07"]);
+    expect([lm.from, lm.to, lm.prevFrom, lm.prevTo].map(ymdOf)).toEqual(["2026-09-01", "2026-10-01", "2026-08-01", "2026-09-01"]);
+    // the 31st compared with a 30-day month stops at that month's end
+    expect(ymdOf(statsPeriod("month", new Date(2026, 9, 31, 12), 0).prevTo)).toBe("2026-10-01");
+    expect(statsPeriod("all", wed, 0).from).toBeNull();
   });
 });

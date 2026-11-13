@@ -3,7 +3,7 @@
 // time and reminder, and one line saying what will happen. Nothing is saved until the Plan / Save button.
 // Opened without a routine (from Home or the calendar), it first asks what to plan.
 import { computed, ref, watch } from "vue";
-import { scheduleSummary, type Schedule } from "@motus/shared";
+import { scheduleSummary, weekdayOrder, type Schedule } from "@motus/shared";
 import { useRoutines, useActivityTypes } from "../api/queries";
 import { api } from "../api/client";
 import { invalidate } from "../api/live";
@@ -36,8 +36,8 @@ const part = (k: string) => computed({ get: () => (what.value.startsWith(k) ? wh
 const whatRoutine = part("r:"), whatActivity = part("a:");
 const REMIND = [{ value: 0, label: "At the time" }, { value: 15, label: "15 minutes" }, { value: 30, label: "30 minutes" }, { value: 60, label: "1 hour" }, { value: 120, label: "2 hours" }];
 const REPEATS = [{ value: "once", label: "Once" }, { value: "daily", label: "Every day" }, { value: "weekly", label: "Every week" }, { value: "monthly", label: "Every month" }, { value: "interval", label: "Every few days" }];
-// Sunday is 0, as Date.getDay() counts
-const DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((label, value) => ({ value, label }));
+// Sunday is 0, as Date.getDay() counts; shown from the first day of the week in Settings
+const DAYS = computed(() => weekdayOrder(fmt.value.s.firstDay).map((value) => ({ value, label: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][value]! })));
 const dow = (d: string) => new Date(d + "T12:00:00").getDay();
 // "Every day" is stored as every 1 day, so the engine and its calendar need no rule of their own; a plan that already
 // falls on every day (every 1 day, or all seven weekdays) opens with "Every day" chosen.

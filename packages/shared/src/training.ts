@@ -277,12 +277,51 @@ export function parseQuick(text: string): { weight: number | null; reps: number 
   return null;
 }
 
-/** Monday-or-Sunday start of the week containing a date (local), as YYYY-MM-DD */
-export function weekStartOf(d: Date, firstDay: 0 | 1): string {
-  const x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-  const diff = (x.getDay() - firstDay + 7) % 7;
-  x.setDate(x.getDate() - diff);
-  return ymd(x);
+// ----- weeks: they start on the day chosen in Settings (firstDay, Sunday = 0 or Monday = 1); every week everywhere goes through these -----
+/** How many days into its week a weekday (Sunday = 0, as Date.getDay() counts) falls. */
+export const daysIntoWeek = (dow: number, firstDay: number) => (dow - firstDay + 7) % 7;
+/** The weekdays (Sunday = 0) in the order a week runs, from its first day. */
+export const weekdayOrder = (firstDay: number) => Array.from({ length: 7 }, (_, i) => (i + firstDay) % 7);
+/** The local midnight starting the week a date falls in. */
+export function weekStartDate(d: Date, firstDay: number): Date {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate() - daysIntoWeek(d.getDay(), firstDay));
+}
+/** The start of the week containing a date (local), as YYYY-MM-DD */
+export const weekStartOf = (d: Date, firstDay: number): string => ymd(weekStartDate(d, firstDay));
+
+// ----- Stats periods: calendar ones (today, this week…) and rolling ones (the last 4 weeks…) -----
+export const STATS_PERIODS = [
+  { value: "today", label: "Today" }, { value: "week", label: "This week" }, { value: "lastweek", label: "Last week" },
+  { value: "7d", label: "Last 7 days" }, { value: "month", label: "This month" }, { value: "lastmonth", label: "Last month" },
+  { value: "4w", label: "Last 4 weeks" }, { value: "3m", label: "Last 3 months" }, { value: "6m", label: "Last 6 months" },
+  { value: "1y", label: "Last year" }, { value: "all", label: "All time" },
+] as const;
+export type StatsPeriod = (typeof STATS_PERIODS)[number]["value"];
+/**
+ * The span a Stats period covers (to null: up to now) and the one it is compared with. A period still running (today,
+ * this week, this month) is compared with the same stretch of the one before, so Tuesday isn't measured against a whole week.
+ */
+export function statsPeriod(p: StatsPeriod, now: Date, firstDay: number): { from: Date | null; to: Date | null; prevFrom: Date | null; prevTo: Date | null } {
+  const day = (n: number) => new Date(now.getFullYear(), now.getMonth(), now.getDate() + n);
+  const ago = (n: number) => new Date(now.getTime() - n * 86400000);
+  const month = (n: number) => new Date(now.getFullYear(), now.getMonth() + n, 1);
+  const wk = weekStartDate(now, firstDay), wkAgo = (n: number) => new Date(wk.getFullYear(), wk.getMonth(), wk.getDate() - 7 * n);
+  // the same time into the period before: the length so far, but never past that period's end
+  const sofar = (from: Date, prevFrom: Date) => ({ from, to: null, prevFrom, prevTo: new Date(Math.min(prevFrom.getTime() + (now.getTime() - from.getTime()), from.getTime())) });
+  const rolling = (n: number) => ({ from: ago(n), to: null, prevFrom: ago(2 * n), prevTo: ago(n) });
+  switch (p) {
+    case "today": return sofar(day(0), day(-1));
+    case "week": return sofar(wk, wkAgo(1));
+    case "lastweek": return { from: wkAgo(1), to: wk, prevFrom: wkAgo(2), prevTo: wkAgo(1) };
+    case "7d": return { from: day(-6), to: null, prevFrom: day(-13), prevTo: day(-6) };
+    case "month": return sofar(month(0), month(-1));
+    case "lastmonth": return { from: month(-1), to: month(0), prevFrom: month(-2), prevTo: month(-1) };
+    case "4w": return rolling(28);
+    case "3m": return rolling(91);
+    case "6m": return rolling(182);
+    case "1y": return rolling(365);
+    case "all": return { from: null, to: null, prevFrom: null, prevTo: null };
+  }
 }
 export const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 

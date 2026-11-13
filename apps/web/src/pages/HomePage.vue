@@ -5,7 +5,7 @@
 import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
 import { useQuery } from "@tanstack/vue-query";
-import { num, fromM, percentChange, orderGoals, HOME_BLOCKS, type Goal, type HomePlan, type HomeRecord, type HomeGroup, type HomeWeek } from "@motus/shared";
+import { daysIntoWeek, muscleName, num, fromM, percentChange, orderGoals, HOME_BLOCKS, type Goal, type HomePlan, type HomeRecord, type HomeGroup, type HomeWeek } from "@motus/shared";
 import { useHome, useSettings, saveSettings, useAchievements, useGoals, loaded } from "../api/queries";
 import { api } from "../api/client";
 import { invalidate, queryClient } from "../api/live";
@@ -109,7 +109,7 @@ const lastStats = computed<WStat[]>(() => {
 
 // streak grid: the last five weeks, from your first day of the week, a square per day
 const grid = computed(() => {
-  const now = new Date(), back = (now.getDay() - s.value.firstDay + 7) % 7 + 28, done = new Set(h.value?.days ?? []);
+  const now = new Date(), back = daysIntoWeek(now.getDay(), s.value.firstDay) + 28, done = new Set(h.value?.days ?? []);
   return Array.from({ length: 35 }, (_, i) => { const ymd = localYmd(new Date(now.getFullYear(), now.getMonth(), now.getDate() - back + i)); return { ymd, on: done.has(ymd), future: ymd > today }; });
 });
 const daysTrained = computed(() => grid.value.filter((d) => d.on).length);
@@ -308,8 +308,7 @@ await loaded(home, ach);
           <div class="ch"><span class="bi"><Icon name="steps" :size="15" /></span><span class="t grow">Steps</span></div>
           <div class="row stp">
             <div class="grow"><div class="big">{{ fmt.num(steps, 0) }}</div><div class="tiny">{{ stepTarget ? `of ${fmt.num(stepTarget, 0)} today` : "today - add a daily steps goal in Goals" }}</div></div>
-            <span v-if="stepTarget && steps >= stepTarget" class="rdone" title="Reached"><Ring :pct="1" :size="46" color="currentColor" /><Icon name="check" :size="20" /></span>
-            <Ring v-else-if="stepTarget" :pct="steps / stepTarget" :size="46" />
+            <Ring v-if="stepTarget" :pct="steps / stepTarget" :size="46" :done="steps >= stepTarget" :color="steps >= stepTarget ? 'var(--pos)' : undefined" />
           </div>
         </div>
 
@@ -321,8 +320,8 @@ await loaded(home, ach);
               <div class="row">
                 <div v-if="g.scope === 'body'" class="big grow">{{ goalLabel(g, fmt) }}</div>
                 <div v-else class="big grow">{{ goalVal(g, g.progress?.current ?? 0) }}<small>of {{ goalVal(g, g.target) }}{{ goalUnit(g) ? ` ${goalUnit(g)}` : "" }}</small></div>
-                <span v-if="reached(g)" class="rdone" title="Reached"><Ring :pct="1" :size="40" color="currentColor" /><Icon name="check" :size="18" /></span>
-                <Ring v-else :pct="g.progress?.pct ?? 0" :size="40" />
+                <!-- a reached goal's tile turns accent, so its ring and check take the on-accent colour -->
+                <Ring :pct="g.progress?.pct ?? 0" :size="40" :done="reached(g)" :color="reached(g) ? 'var(--onc)' : undefined" />
               </div>
               <div class="tiny gsub">{{ g.status === "achieved" ? "Achieved" : g.progress?.done ? `Reached ${periodNow(g).toLowerCase()}` : g.progress?.pace ?? periodNow(g) }}</div>
             </div>
@@ -430,7 +429,7 @@ await loaded(home, ach);
           <div class="ch"><span class="bi"><Icon name="sparkle" :size="15" /></span><span class="t grow">Suggested</span></div>
           <TransitionGroup name="mv" tag="div" class="list">
             <div v-for="x in h.suggest" :key="x.kind + (x.routineId ?? x.muscle)" class="li click">
-              <button class="cover" :aria-label="x.routineId ? `Open ${x.title}` : `Exercises: ${x.title}`" @click="go(x.routineId ? `/routines/${x.routineId}` : `/exercises?muscle=${encodeURIComponent(x.muscle ?? '')}`)" />
+              <button class="cover" :aria-label="x.routineId ? `Open ${x.title}` : `Exercises for ${muscleName(x.muscle ?? '').toLowerCase()}`" @click="go(x.routineId ? `/routines/${x.routineId}` : `/exercises?muscle=${encodeURIComponent(x.muscle ?? '')}`)" />
               <MuscleFig sm :routine="x.routineId ?? undefined" :muscles="x.routineId ? undefined : x.muscles ?? (x.muscle ? [x.muscle] : undefined)" />
               <div class="grow"><div class="t">{{ x.title }}</div><div class="s">{{ x.reason }}</div></div>
               <button v-if="x.routineId" class="ib sm over" aria-label="Plan" title="Plan" @click="planOpen = { rule: 'once', routineId: x.routineId }"><Icon name="calendar" :size="18" /></button>
@@ -595,11 +594,6 @@ html.phone .sz-s .big { font-size: clamp(22px, 7vw, var(--fs-val)); }
 .gtile { flex-direction: row; gap: var(--cpx); }
 .gmain { flex: 1.3; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .gsub { margin-top: auto; }
-/* reached (a goal, the step goal): the ring closed all the way round with a thin check inside, in the "reached" green, or
-   in the block's own text colour on a reached goal's accent block; the same ring as one under way, never a filled tick */
-.rdone { position: relative; display: grid; place-items: center; flex: none; color: var(--pos); }
-.rdone > * { grid-area: 1 / 1; }
-.hero .rdone { color: var(--onc); }
 .grun { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; padding-inline-start: var(--cpx); border-inline-start: 1px solid var(--ol); }
 .hero .grun { border-color: color-mix(in srgb, var(--onc) 18%, transparent); }
 .gdots { display: flex; gap: 4px; margin-top: auto; padding-top: var(--hg); }

@@ -249,6 +249,24 @@ describe("goals on the app's calendar", () => {
     expect((await call("GET", `/goals/${sat.id}`, undefined, { tz: "0" })).days).toEqual([6]);
   });
 
+  it("starts weeks on the day chosen in Settings: Sunday or Monday", async () => {
+    NOW = new Date("2026-10-07T12:00:00Z"); // Wednesday 7 October
+    const { call, log } = await user();
+    await log("2026-10-04T10:00:00Z"); // Sunday
+    await log("2026-10-05T10:00:00Z"); // Monday
+    const g = await call("POST", "/goals", { metric: "workouts", target: 3, period: "week" }, { tz: "0" });
+    await call("PUT", "/settings", { firstDay: 1 });
+    expect((await call("GET", `/goals/${g.id}`, undefined, { tz: "0" })).progress.current).toBe(1);
+    let home = await call("GET", "/home", undefined, { tz: "0" });
+    expect(home.thisWeek).toMatchObject({ start: "2026-10-05T00:00:00.000Z", workouts: 1 });
+    expect(home.lastWeek.workouts).toBe(1);
+    await call("PUT", "/settings", { firstDay: 0 });
+    expect((await call("GET", `/goals/${g.id}`, undefined, { tz: "0" })).progress.current).toBe(2);
+    home = await call("GET", "/home", undefined, { tz: "0" });
+    expect(home.thisWeek).toMatchObject({ start: "2026-10-04T00:00:00.000Z", workouts: 2 });
+    expect(home.lastWeek.workouts).toBe(0);
+  });
+
   it("counts a recorded walk's steps toward the day until a count is typed in, which replaces them, never both", async () => {
     NOW = new Date("2026-10-07T22:30:00Z"); // Thursday 8 October, 00:30 for the app; still Wednesday in UTC
     const { call } = await user();
