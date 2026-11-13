@@ -20,7 +20,8 @@ export function valueOf(m: string, groups: MuscleGroup[] = GROUPS): string {
 // Groups and muscles share one value, so a group chip lights its muscles on the body, and a muscle picked on the body that is no
 // chip of its own (lats, calves) gets a chip right after its group's, to show what is set and to clear it like any other.
 // On phones the body is as big as the card allows so small muscles can be hit, which leaves no room for the list: so it folds
-// (remembered per place: the page and the picker), hides while a name is searched, and after a pick the results are scrolled up.
+// (shut until the user opens it, then remembered per place: the page and the picker), hides while a name is searched, and after
+// a pick the results are scrolled up. The fold button shows a small figure, so a shut fold still says there is a body to open.
 import { computed, getCurrentInstance, nextTick, ref, watch } from "vue";
 import { groupOf, muscleName } from "@motus/shared";
 import FilterRow from "./FilterRow.vue";
@@ -33,14 +34,14 @@ const props = defineProps<{ modelValue: string; groups: MuscleGroup[]; place: "p
 const emit = defineEmits<{ "update:modelValue": [v: string] }>();
 const FOLD_KEY = "motusMuscleBody";
 const folds = readJson<{ page?: boolean; picker?: boolean }>(FOLD_KEY, {});
-const bodyOpen = ref(folds[props.place] ?? true);
+const bodyOpen = ref(folds[props.place] ?? false);
 function setOpen(v: boolean) {
   bodyOpen.value = v;
   writeJson(FOLD_KEY, { ...readJson(FOLD_KEY, {}), [props.place]: v });
 }
 const searching = computed(() => !!props.search);
-// outside a search the chevron shows (and a tap changes) the saved fold; while searching the body is hidden unless peeked, and a
-// tap on the chevron only shows or hides it for this search (until the text changes), never touching the saved fold
+// outside a search the fold button shows (and a tap changes) the saved fold; while searching the body is hidden unless peeked, and a
+// tap on it only shows or hides it for this search (until the text changes), never touching the saved fold
 const peek = ref(false);
 watch(() => props.search, () => (peek.value = false));
 const shown = computed(() => (searching.value ? peek.value : bodyOpen.value));
@@ -61,7 +62,7 @@ const options = computed(() => {
 });
 const caption = computed(() => {
   const v = props.modelValue;
-  return !v ? "Tap a muscle" : props.groups.find((g) => g.id === v)?.name ?? muscleName(v);
+  return !v ? "Tap a muscle to filter" : props.groups.find((g) => g.id === v)?.name ?? muscleName(v);
 });
 // pressed only where a tap would clear: with a group chosen its muscles are lit, but tapping one narrows to it rather than
 // clearing, so they are not "pressed" (a group of one muscle is that muscle, so it is)
@@ -89,7 +90,7 @@ const tap = (m: string) => {
 </script>
 
 <template>
-  <FilterRow :model-value="modelValue" label="Muscle group" all="All" :options="options" :fold="isPhone" :open="searching ? shown : bodyOpen" :shown="shown"
+  <FilterRow :model-value="modelValue" label="Muscle group" all="All" :options="options" :fold="isPhone ? 'body' : undefined" :open="searching ? shown : bodyOpen" :shown="shown"
     @update:model-value="set" @update:open="toggle">
     <template #aside>
       <div class="mfig">

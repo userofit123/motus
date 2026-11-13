@@ -3,16 +3,17 @@
 // goes back to it; without, exactly one option is always on (a status or a sort). Scrolls sideways on phones.
 // Slots: #aside, a picture for the chips: on desktop it stands left of the chips (a two-column grid beside it); on phones
 // it is a full-width tile above them, the chips in the same sideways row as every other filter row.
-// fold (with v-model:open): the label becomes a fold button that hides the picture (never the chips), as the Routines
-// folder headers fold their folders; for a picture too big to keep on a phone screen with the list. `open` is the user's own
-// choice (the chevron shows it); `shown`, when given, is whether the picture is in view right now (a search can hide it).
+// fold (with v-model:open): the label becomes a fold button that hides the picture (never the chips); for a picture too big
+// to keep on a phone screen with the list. Its value is the icon at the button's end, a small likeness of the picture (not a
+// chevron), so a shut fold still tells there is something to open; accent while open, muted while shut. `open` is the user's own
+// choice (the icon shows it); `shown`, when given, is whether the picture is in view right now (a search can hide it).
 import { onMounted, ref, watch } from "vue";
 import Icon from "./Icon.vue";
 import Collapse from "./Collapse.vue";
 import { isPhone } from "../core/device";
 
 interface FilterOption { value: string; label: string; icon?: string; count?: number }
-const props = defineProps<{ label: string; options?: FilterOption[]; all?: string; modelValue?: string; fold?: boolean; open?: boolean; shown?: boolean }>();
+const props = defineProps<{ label: string; options?: FilterOption[]; all?: string; modelValue?: string; fold?: string; open?: boolean; shown?: boolean }>();
 const emit = defineEmits<{ "update:modelValue": [v: string]; "update:open": [v: boolean] }>();
 const pick = (v: string) => emit("update:modelValue", props.all != null && props.modelValue === v ? "" : v);
 // the picked chip can sit past the edge of a sideways row (folded on a phone the row is all that says what is set), so
@@ -31,9 +32,9 @@ watch(() => props.modelValue, () => reveal(true), { flush: "post" });
 </script>
 
 <template>
-  <div>
+  <div :class="{ fpic: !!$slots.aside }">
     <button v-if="fold" type="button" class="flbl ffold" :aria-expanded="!!open" @click="emit('update:open', !open)">
-      <span>{{ label }}</span><Icon name="down" :size="16" class="fc" :class="{ shut: !open }" />
+      <span>{{ label }}</span><Icon :name="fold" :size="20" class="ffi" :class="{ on: open }" />
     </button>
     <div v-else class="flbl">{{ label }}</div>
     <div :class="{ fside: !!$slots.aside, folds: fold }">
@@ -64,8 +65,11 @@ html:not(.phone) .chips.hscroll { margin-inline: 0; padding-inline: 0; }
 html:not(.phone) .fside { flex-direction: row; align-items: stretch; gap: var(--spg); }
 .cgrid { display: grid; grid-template-columns: repeat(2, 1fr); align-content: center; }
 .cgrid .fchip { justify-content: center; }
-/* the label as a fold button: the label's own type (from .flbl), full width with the chevron at the end (the Routines folder
-   header's .fc), tall enough to tap; the extra height is taken back outside so the gap to what follows stays the plain label's */
+/* a row with a picture is a section of its own: one step (--tdy) more space before the next row than between plain rows */
+.fpic:not(:last-child) { margin-bottom: var(--tdy); }
+/* the label as a fold button: the label's own type (from .flbl), full width with the icon at the end, tall enough to tap; the extra height is taken back outside so the gap to what follows stays the plain label's */
 .ffold { display: flex; width: 100%; align-items: center; justify-content: space-between; gap: 6px; border: 0; background: none; cursor: pointer; padding: 8px 0; margin-block: -8px calc(6px - 8px); min-height: 32px; text-align: start; border-radius: var(--r-sm); }
+.ffi { flex: none; color: var(--tx2); transition: color .2s; }
+.ffi.on { color: var(--acc); }
 .n { opacity: .65; font-variant-numeric: tabular-nums; margin-inline-start: 2px; }
 </style>
