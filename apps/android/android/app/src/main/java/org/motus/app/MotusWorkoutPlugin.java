@@ -350,6 +350,8 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener2 {
         } catch (JSONException e) { r.fromMs = r.shownAt; }
         // on the main thread, where the step counter's reports and the location fixes arrive, so they never see half of it
         main.post(() -> {
+            // queued before handleOnDestroy: must not bring back rec and the location listener after it
+            if (!live) return;
             synchronized (REC_LOCK) {
                 // going on after a pause: the steps the counter has counted so far were taken while paused, so the count
                 // goes on from here even if the web app's start of it (stepSeen) hasn't caught up with them yet. It
@@ -474,7 +476,6 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener2 {
     // takes them (route.ts takesPoint): not while paused, none rougher than 50 m, none nearer than 3 m to the last.
     private LocationListener fixListener;
     /** a fix from the fused provider has come (fixes(true) starts it over) */
-    private boolean fusedSeen = false;
 
     /** listens to the location fixes while a recording runs with a distance to carry on, stops otherwise (main thread) */
     private void fixes(boolean on) {
@@ -485,7 +486,6 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener2 {
             return;
         }
         if (fixListener != null) return;
-        fusedSeen = false;
         fixListener = new LocationListener() {
             @Override public void onLocationChanged(Location l) { onFix(l); }
             @Override public void onStatusChanged(String provider, int status, Bundle extras) { }
@@ -501,11 +501,10 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener2 {
         // before the web app's last point it has the fix already; paused, it doesn't count
         if (r == null || r.since == null || r.distM == null || l.getTime() <= r.fromMs) return;
         if (!l.hasAccuracy() || l.getAccuracy() > 50) return;
-        // only the fixes the route plugin itself gets (its fused provider, high accuracy, fed by GPS), not some other
-        // app's Wi-Fi or cell ones; the raw GPS ones only until a fused one comes, so the two never zig-zag together
-        String p = l.getProvider();
-        if ("fused".equals(p)) fusedSeen = true;
-        else if (!LocationManager.GPS_PROVIDER.equals(p) || fusedSeen) return;
+        // only raw GPS fixes: the route plugin's high-accuracy fused request keeps the gps provider running, so they
+        // follow the same track. Play Services' own fused fixes never reach this passive listener, and any "fused" fix
+        // that does arrive comes from some other app (Wi-Fi or cell based), so it must not count.
+        if (!LocationManager.GPS_PROVIDER.equals(l.getProvider())) return;
         if (!Double.isNaN(r.lastLat)) {
             float[] d = new float[1];
             Location.distanceBetween(r.lastLat, r.lastLon, l.getLatitude(), l.getLongitude(), d);
