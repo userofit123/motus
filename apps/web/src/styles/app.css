@@ -180,9 +180,10 @@ html[data-mode="light"] .pr { color: #9a6d00; }
 
 /* quiet buttons */
 .qb { border: 0; background: none; color: var(--tx2); cursor: pointer; display: inline-flex; align-items: center; gap: 6px; padding: 8px 10px; border-radius: var(--r-sm); font-size: 13.5px; font-weight: 500; }
-.qb:hover { background: var(--s2); color: var(--tx); }
+.qb:hover:not(:disabled) { background: var(--s2); color: var(--tx); }
 .qb.acc { color: var(--acc); }
 .qb.danger { color: var(--neg); }
+.qb:disabled { opacity: .55; cursor: default; }
 .ib.sm { width: 36px; height: 36px; }
 .ib.sm svg { width: 18px; height: 18px; }
 .ib.plain { border: 0; background: none; }
@@ -711,7 +712,7 @@ html.phone .scr.leaving .sht { animation: up .22s ease-in reverse forwards; }
 }
 /* controls */
 .fchip, .tick, .cal .d, .stt, .qb, .ib, .tabs button { transition: background .2s, color .2s, border-color .2s, transform .15s; }
-.tick:active, .fchip:active, .btn:active, .ib:active, .qb:active { transform: scale(.96); }
+.tick:active, .fchip:active, .btn:active, .ib:active, .qb:active:not(:disabled) { transform: scale(.96); }
 @media (prefers-reduced-motion: no-preference) { .tick.on svg { animation: pop .28s var(--ease); } }
 @keyframes pop { 0% { transform: scale(.4); opacity: 0; } 70% { transform: scale(1.15); } 100% { transform: scale(1); } }
 .pbar i, .bodymap .m { transition: width .5s var(--ease), fill .4s; }

@@ -431,7 +431,9 @@ export function workoutRoutes(r: Router) {
     const nav = (await ctx.q.query(
       `SELECT (SELECT id FROM workouts WHERE status = 'completed' AND started_at < $1 ORDER BY started_at DESC LIMIT 1) AS prev_id,
               (SELECT id FROM workouts WHERE status = 'completed' AND started_at > $1 ORDER BY started_at LIMIT 1) AS next_id`, [w.startedAt])).rows[0];
-    const reminders = (await ctx.q.query("SELECT * FROM reminders WHERE created_workout_id = $1 ORDER BY created_at", [w.id])).rows.map((x: any) => camel(x));
+    const reminders = (await ctx.q.query(
+      `SELECT m.*, e.name AS target_name FROM reminders m LEFT JOIN exercises e ON m.target_type = 'exercise' AND e.id = m.target_id
+        WHERE m.created_workout_id = $1 ORDER BY m.created_at`, [w.id])).rows.map((x: any) => camel(x));
     return { ...w, report, prevId: nav.prev_id, nextId: nav.next_id, createdReminders: reminders };
   });
 

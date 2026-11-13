@@ -91,10 +91,10 @@ await loaded(r, summaries, notes, rems, schedules, history);
       <div class="acts"><Menu :items="menu" /><button class="btn keep" @click="router.push(`/routines/${id}/start`)"><Icon name="play" :size="16" />Start</button></div>
     </div>
     <p v-if="routine.description" class="muted desc">{{ routine.description }}</p>
-    <!-- the notes that show every time and its reminders, as a workout's page shows them; not on the Notes tab, which lists the notes -->
+    <!-- its reminders and the notes that show every time, reminders first as everywhere they show; not on the Notes tab, which lists the notes -->
     <div v-if="tab !== 'notes' && (shown('routine', id).length || myRems.length)" class="nlist spb">
-      <NoteItem v-for="n in shown('routine', id)" :key="n.id" :note="n" :menu="noteMenu(n, routine.name)" />
       <ReminderItem v-for="m in myRems" :key="m.id" :reminder="m" :where="m.targetType === 'exercise' ? m.targetName : null" :routine-name="routine.name" when />
+      <NoteItem v-for="n in shown('routine', id)" :key="n.id" :note="n" :menu="noteMenu(n, routine.name)" />
     </div>
 
     <div class="tabs"><button v-for="[k, l] in [['plan', 'Plan'], ['history', `History · ${sum?.timesDone ?? 0}`], ['notes', `Notes · ${notes.data.value?.length ?? 0}`]]" :key="k" :class="{ on: tab === k }" @click="tab = k as string">{{ l }}</button></div>

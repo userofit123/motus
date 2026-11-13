@@ -155,7 +155,7 @@ const menu = computed(() => [
       <button class="btn" :class="{ o: done === 0 }" @click="finishing = true">Finish</button>
     </div>
     <div v-if="!isPhone" class="aw-prog" aria-hidden="true"><span v-for="g in segs" :key="g.id" :style="{ flexGrow: g.n }"><i :style="{ width: (g.done / g.n) * 100 + '%' }" /></span></div>
-    <div v-if="W.prefs.value.showReminders && w.reminders?.length" class="nlist spb"><ReminderItem v-for="m in w.reminders" :key="m.id" :reminder="m" @gone="w.reminders = w.reminders.filter((x: Reminder) => x.id !== m.id)" /></div>
+    <div v-if="W.prefs.value.showReminders && w.reminders?.length" class="nlist aw-rem"><ReminderItem v-for="m in w.reminders" :key="m.id" :reminder="m" live @gone="w.reminders = w.reminders.filter((x: Reminder) => x.id !== m.id)" /></div>
 
 
     <div v-if="!w.exercises.length" class="card empty"><Icon name="dumbbell" :size="34" /><b>Add your first exercise</b><button class="btn" @click="adding = true">Add exercises</button></div>
@@ -244,10 +244,17 @@ const menu = computed(() => [
 .aw-prog { display: flex; gap: 3px; margin: -4px 0 var(--spg); }
 .aw-prog span { flex-basis: 0; height: 5px; border-radius: 5px; background: var(--s2); overflow: hidden; }
 .aw-prog i { display: block; height: 100%; background: var(--acc); border-radius: inherit; transition: width .3s var(--ease); }
+/* the routine's reminders between the header and the exercises: a block gap below. On a phone the header's --hg gap
+   grows to --spg above, and below the tabs' own top padding (--awtab, inside their bar) counts towards it, so the
+   reminders sit as far from the header as from the tab labels */
+.aw { --awtab: 10px; }
+.aw-rem { margin-bottom: var(--spg); }
+.aw.phone .aw-rem { margin-top: calc(var(--spg) - var(--hg)); }
+.aw.phone .aw-rem:has(+ .aw-tabs) { margin-bottom: calc(var(--spg) - var(--awtab)); }
 /* phone: the exercises as underlined tabs across the top, edge to edge */
 .aw-tabs { display: flex; overflow-x: auto; scrollbar-width: none; margin: 0 -16px var(--spg); padding: 0 10px; border-bottom: 1px solid var(--ol); }
 .aw-tabs::-webkit-scrollbar { display: none; }
-.aw-tabs button { display: inline-flex; align-items: center; gap: 5px; flex: none; max-width: 170px; padding: 10px 10px 9px; border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px; background: none; color: var(--tx2); font: inherit; font-size: 13.5px; cursor: pointer; }
+.aw-tabs button { display: inline-flex; align-items: center; gap: 5px; flex: none; max-width: 170px; padding: var(--awtab) 10px 9px; border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px; background: none; color: var(--tx2); font: inherit; font-size: 13.5px; cursor: pointer; }
 .aw-tabs button.cur { color: var(--tx); font-weight: 600; border-bottom-color: var(--acc); }
 .aw-tabs button.skip { opacity: .55; text-decoration: line-through; }
 .aw-tabs .ok { color: var(--pos); flex: none; }

@@ -12,7 +12,6 @@ import { api, mediaUrl } from "../api/client";
 import { invalidate } from "../api/live";
 import { joinRest } from "../core/plannedRest";
 import { useFmt, localYmd, setLabel, sideJoinCls } from "../core/format";
-import { reminderText } from "../core/reminderText";
 import { exerciseSheet, noteSheet } from "../core/ui";
 import { confirm, prompt } from "../core/ask";
 import { shareWorkoutImage } from "../core/shareImage";
@@ -20,6 +19,7 @@ import { toast, toastError, savedToast } from "../core/toast";
 import { saveFile } from "../core/saveFile";
 import Icon from "../components/Icon.vue";
 import NoteItem from "../components/NoteItem.vue";
+import ReminderItem from "../components/ReminderItem.vue";
 import { useNoteMenu } from "../core/noteMenu";
 import Menu from "../components/Menu.vue";
 import BodyMap from "../components/BodyMap.vue";
@@ -209,7 +209,7 @@ await loaded(q);
         <div v-if="rep.previous" class="card click" @click="router.push(`/workouts/${rep.previous.id}`)"><div class="lbl">Last time ({{ fmt.date(rep.previous.startedAt) }})</div>
           <div class="tiny" style="margin-top:6px">{{ fmt.dur(rep.previous.durationS, true) }} · {{ fmt.vol(rep.previous.volumeKg) }}</div>
           <div class="tiny" :class="rep.totals.durationS <= rep.previous.durationS ? 'pos' : ''">{{ rep.totals.durationS <= rep.previous.durationS ? `${fmt.dur(rep.previous.durationS - rep.totals.durationS, true)} faster` : `${fmt.dur(rep.totals.durationS - rep.previous.durationS, true)} longer` }}</div></div>
-        <div v-if="w.createdReminders?.length" class="card"><div class="lbl hgap">Reminders set</div><div v-for="m in w.createdReminders" :key="m.id" class="row tiny" style="padding:3px 0"><Icon name="bell" :size="14" />{{ reminderText(m, fmt) }}</div></div>
+        <div v-if="w.createdReminders?.length" class="card"><div class="lbl hgap">Reminders set</div><div class="nlist"><ReminderItem v-for="m in w.createdReminders" :key="m.id" :reminder="m" :where="m.targetType === 'exercise' ? m.targetName : null" :routine-name="w.name" when /></div></div>
         <div v-if="rep.totals.avgRestS" class="card tight"><div class="lbl">Average rest</div><div style="font-weight:600;font-size:18px">{{ fmt.clock(rep.totals.avgRestS) }}</div></div>
       </div>
     </div>

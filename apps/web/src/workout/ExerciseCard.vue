@@ -61,7 +61,6 @@ const beat = (s: WorkoutSet) => {
   if (dw > -0.01 && dr > 0) return `+${dr} rep${dr > 1 ? "s" : ""}`;
   return "";
 };
-const remDone = async (id: string, status: string) => { await api.put(`/reminders/${id}`, { status }); props.e.reminders = props.e.reminders?.filter((r) => r.id !== id); invalidate(["reminders"]); toast(status === "done" ? "Reminder done" : status === "pending" ? "It will show next time" : "Reminder dismissed"); };
 
 // timed sets (planks, holds): 3-2-1, count down, then tick the set. Reps against the clock still need their reps typed,
 // so there the timer only fills in the time (the full time, or as far as it got when stopped) and the set stays to tick
@@ -192,7 +191,7 @@ const nowId = computed(() => (W.state.active === props.index ? visibleSets.value
 
     <!-- reminders come first, before the sets they are about; notes go under the exercise -->
     <div v-if="prefs.showReminders && isCur && e.reminders?.length" class="exrem nlist">
-      <ReminderItem v-for="r in e.reminders" :key="r.id" :reminder="r" @gone="e.reminders = e.reminders?.filter((x) => x.id !== r.id)" :actions="[{ label: 'Done', primary: true, run: () => remDone(r.id, 'done') }, { label: 'Next time', run: () => remDone(r.id, 'pending') }, { label: 'Dismiss', run: () => remDone(r.id, 'dismissed') }]" />
+      <ReminderItem v-for="r in e.reminders" :key="r.id" :reminder="r" @gone="e.reminders = e.reminders?.filter((x) => x.id !== r.id)" live />
     </div>
 
     <table class="sets" :class="{ v3: three }">
