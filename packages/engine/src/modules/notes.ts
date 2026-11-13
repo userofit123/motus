@@ -76,16 +76,19 @@ export function noteRoutes(r: Router) {
     ctx.changed("reminder");
     return { id: mid };
   });
-  // done / dismissed; "every" reminders stay pending when marked done for today
+  // done / dismissed; "every" reminders stay pending when marked done for today. "Next time" in a running workout is
+  // pending with its `workoutId`: put off there, so that workout neither shows it again nor ends it on finish
   r.put("/reminders/:id", async (ctx, p, b) => {
     const m = (await ctx.q.query("SELECT * FROM reminders WHERE id = $1", [id(p.id)])).rows[0];
     if (!m) throw notFound("Reminder not found");
     const status = b.status ? oneOf(b.status, ["pending", "done", "dismissed"], m.status) : m.status;
+    const deferIn = status === "pending" && b.workoutId != null ? await seenIn(ctx.q, b.workoutId) : null;
     await ctx.q.query(
       `UPDATE reminders SET status = $2, body = coalesce($3, body), done_at = CASE WHEN $2 = 'pending' THEN NULL ELSE now() END,
-         trigger = coalesce($4, trigger), trigger_date = coalesce($5, trigger_date), trigger_n = coalesce($6, trigger_n) WHERE id = $1`,
+         trigger = coalesce($4, trigger), trigger_date = coalesce($5, trigger_date), trigger_n = coalesce($6, trigger_n),
+         deferred_workout_id = coalesce($7::uuid, deferred_workout_id) WHERE id = $1`,
       [m.id, m.trigger === "every" && status === "done" ? "pending" : status, b.body != null ? str(b.body, 2000) : null,
-        b.trigger ? oneOf(b.trigger, TRIGGERS, m.trigger) : null, dateStr(b.triggerDate), intOrNull(b.triggerN, 1, 100)]);
+        b.trigger ? oneOf(b.trigger, TRIGGERS, m.trigger) : null, dateStr(b.triggerDate), intOrNull(b.triggerN, 1, 100), deferIn]);
     ctx.changed("reminder");
     return { ok: true };
   });

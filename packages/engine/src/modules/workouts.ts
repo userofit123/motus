@@ -204,7 +204,7 @@ export async function loadWorkout(q: Sql, workoutId: string, today: string): Pro
   const prs = await recordsIn(q, workout, workout.exercises);
   for (const e of workout.exercises) for (const s of e.sets) s.pr = prs.get(s.id) ?? [];
   // reminders and notes shown during the workout
-  const rem = await pendingReminders(q, { routineId: w.routine_id, exerciseIds: wes.map((e: any) => e.exercise_id), today });
+  const rem = await pendingReminders(q, { routineId: w.routine_id, exerciseIds: wes.map((e: any) => e.exercise_id), today, workoutId });
   workout.reminders = rem.filter((r) => r.targetType === "routine");
   const noteRows = (await q.query(
     `SELECT n.*, ww.name AS workout_name FROM notes n LEFT JOIN workouts ww ON ww.id = n.workout_id
@@ -778,14 +778,14 @@ export function workoutRoutes(r: Router) {
       await ctx.q.query("INSERT INTO body_metrics (id, user_id, kind, value, measured_at) VALUES ($1,$2,'weight',$3,$4)", [uuidv7(), ctx.userId, numOrNull(b.bodyweightKg, 0, 700), end]);
       ctx.changed("body");
     }
-    // reminders counted "after N sessions" move on one
+    // reminders counted "after N sessions" move on one; ones put off with "Next time" in this workout weren't seen here
     const doneEx = (await ctx.q.query("SELECT DISTINCT exercise_id FROM workout_exercises WHERE workout_id = $1 AND status <> 'skipped'", [wid])).rows.map((x: any) => x.exercise_id);
     await ctx.q.query(
-      `UPDATE reminders SET seen_n = seen_n + 1, last_shown_workout_id = $1 WHERE status = 'pending' AND
+      `UPDATE reminders SET seen_n = seen_n + 1, last_shown_workout_id = $1 WHERE status = 'pending' AND deferred_workout_id IS DISTINCT FROM $1 AND
          ((target_type = 'exercise' AND target_id = ANY($2::uuid[])) OR (target_type = 'routine' AND target_id = $3))`, [wid, doneEx, w.routine_id]);
     // reminders that came up in this workout have done their job ("every" ones keep coming); ones written during it wait for next time
     await ctx.q.query(
-      `UPDATE reminders SET status = 'done', done_at = now() WHERE status = 'pending' AND last_shown_workout_id = $1 AND created_workout_id IS DISTINCT FROM $1
+      `UPDATE reminders SET status = 'done', done_at = now() WHERE status = 'pending' AND last_shown_workout_id = $1 AND created_workout_id IS DISTINCT FROM $1 AND deferred_workout_id IS DISTINCT FROM $1
          AND (trigger = 'next' OR (trigger = 'after_n' AND seen_n >= coalesce(trigger_n, 1)) OR (trigger = 'date' AND trigger_date <= $2::date))`, [wid, end.slice(0, 10)]);
     // the routine always holds where you are now: each exercise done takes today's numbers, then its Progression
     // (`accepted`: the "Suggest" ones switched on with Apply on Finish, by routine exercise id; Automatic ones always

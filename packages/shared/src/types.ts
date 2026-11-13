@@ -312,6 +312,8 @@ export interface Reminder {
   status: "pending" | "done" | "dismissed";
   action: ReminderAction | null;
   createdWorkoutId: string | null;
+  /** put off with "Next time" in this workout: it shows again from the next one */
+  deferredWorkoutId?: string | null;
   createdAt: string;
   doneAt: string | null;
   targetName?: string | null;

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // One reminder, everywhere reminders are shown: a bell, what to remember, a quiet line with what it's about and when
 // it comes up. In a running workout (`live`) every reminder, the routine's and an exercise's alike, has the same buttons in
-// a row under the text (Done first, the others plain); elsewhere it only shows. Tapping it opens the reminder in full,
+// a row under the text (Done first, the others plain), `workoutId` being that workout; elsewhere it only shows. Tapping it opens the reminder in full,
 // where it can be dismissed (the sheet in shell/ReminderView.vue).
 import { computed } from "vue";
 import { api } from "../api/client";
@@ -13,15 +13,16 @@ import Icon from "./Icon.vue";
 import { reminderText, reminderWhen, reminderChange } from "../core/reminderText";
 import { reminderView } from "../core/ui";
 
-const props = defineProps<{ reminder: any; when?: boolean; where?: string | null; routineName?: string | null; live?: boolean }>();
+const props = defineProps<{ reminder: any; when?: boolean; where?: string | null; routineName?: string | null; live?: boolean; workoutId?: string | null }>();
 // done, put off or dismissed (here or from its sheet): lets a workout drop it from its own copy of the reminders
 const emit = defineEmits<{ gone: [] }>();
 const fmt = useFmt();
 const r = computed(() => props.reminder);
 const meta = computed(() => [props.where, props.when ? reminderWhen(r.value, fmt.value) : null, reminderChange(r.value, fmt.value)].filter(Boolean) as string[]);
-// Done and Dismiss end it; Next time takes it off this workout and keeps it waiting
+// Done and Dismiss end it; Next time puts it off in this workout (`workoutId`), so it neither comes back here nor ends
+// on finish, and keeps it waiting for the next one
 const set = useChange(async (status: "done" | "pending" | "dismissed") => {
-  await api.put(`/reminders/${r.value.id}`, { status });
+  await api.put(`/reminders/${r.value.id}`, { status, workoutId: status === "pending" ? props.workoutId ?? null : undefined });
   emit("gone");
   toast(status === "done" ? "Reminder done" : status === "pending" ? "It will show next time" : "Reminder dismissed");
 }, [...TOPICS.reminder]);

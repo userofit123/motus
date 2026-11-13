@@ -49,7 +49,7 @@ const OWNER_COL: Record<string, string> = { exercises: "owner_id" };
 const REFS: Record<string, Table> = {
   folder_id: "folders", routine_id: "routines", routine_exercise_id: "routine_exercises", workout_id: "workouts", workout_exercise_id: "workout_exercises",
   schedule_id: "schedules", program_id: "programs", exercise_id: "exercises", created_workout_id: "workouts",
-  scope_routine_id: "routines", last_shown_workout_id: "workouts",
+  scope_routine_id: "routines", last_shown_workout_id: "workouts", deferred_workout_id: "workouts",
 };
 // what a note, reminder or goal is about: an id without a foreign key, so it is checked here; a row about something
 // this account can't see is left out

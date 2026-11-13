@@ -270,6 +270,48 @@ describe("engine", () => {
     expect((await call(B, "GET", "/routines")).find((x: any) => x.id === r.id)).toBeUndefined();
   });
 
+  it("puts a reminder off with Next time: gone from that workout, not ended on its finish, back in the next one", async () => {
+    // its own account, so these workouts don't change what the other tests count
+    const E = uuidv7();
+    await eng.db.admin.query("INSERT INTO users (id, username, display_name) VALUES ($1,'e','E')", [E]);
+    const r = await call(E, "POST", "/routines", { name: "Later", exercises: [{ exerciseId: benchId, sets: [{ kind: "normal", reps: 8, weightKg: 50 }] }] });
+    const onRoutine = await call(E, "POST", "/reminders", { targetType: "routine", targetId: r.id, body: "Warm up longer" });
+    const onEx = await call(E, "POST", "/reminders", { targetType: "exercise", targetId: benchId, body: "Slower down", trigger: "after_n", triggerN: 1 });
+    const row = async (rid: string) => (await eng.db.admin.query("SELECT status, seen_n, deferred_workout_id FROM reminders WHERE id = $1", [rid])).rows[0];
+    const doSet = async (w: any) => call(E, "PUT", `/workout-sets/${w.exercises[0].sets[0].id}`, { weightKg: 50, reps: 8, done: true });
+
+    const w1 = await call(E, "POST", "/workouts/start", { routineId: r.id });
+    expect(w1.reminders.map((x: any) => x.id)).toEqual([onRoutine.id]);
+    expect(w1.exercises[0].reminders.map((x: any) => x.id)).toEqual([onEx.id]);
+    // someone else's workout id is not taken
+    const other = uuidv7();
+    await eng.db.admin.query("INSERT INTO workouts (id, user_id, name, status, started_at) VALUES ($1,$2,'Theirs','completed', now())", [other, B]);
+    await call(E, "PUT", `/reminders/${onRoutine.id}`, { status: "pending", workoutId: other });
+    expect((await row(onRoutine.id)).deferred_workout_id).toBeNull();
+    await eng.db.admin.query("DELETE FROM workouts WHERE id = $1", [other]);
+    // Next time, on both
+    for (const m of [onRoutine, onEx]) await call(E, "PUT", `/reminders/${m.id}`, { status: "pending", workoutId: w1.id });
+    const live = await call(E, "GET", "/workouts/active");
+    expect(live.reminders).toEqual([]);
+    expect(live.exercises[0].reminders).toEqual([]);
+    await doSet(w1);
+    await call(E, "POST", `/workouts/${w1.id}/finish`, {});
+    // still waiting, and the one counted in sessions didn't count this one
+    expect(await row(onRoutine.id)).toMatchObject({ status: "pending", seen_n: 0, deferred_workout_id: w1.id });
+    expect(await row(onEx.id)).toMatchObject({ status: "pending", seen_n: 0 });
+    // the next workout shows them (its preview too), and its finish ends them
+    const prev = await call(E, "GET", `/routines/${r.id}/preview`);
+    expect(prev.reminders.map((x: any) => x.id)).toEqual([onRoutine.id]);
+    expect(prev.exercises[0].reminders.map((x: any) => x.id)).toEqual([onEx.id]);
+    const w2 = await call(E, "POST", "/workouts/start", { routineId: r.id });
+    expect(w2.reminders.map((x: any) => x.id)).toEqual([onRoutine.id]);
+    expect(w2.exercises[0].reminders.map((x: any) => x.id)).toEqual([onEx.id]);
+    await doSet(w2);
+    await call(E, "POST", `/workouts/${w2.id}/finish`, {});
+    expect((await row(onRoutine.id)).status).toBe("done");
+    expect((await row(onEx.id)).status).toBe("done");
+  });
+
   it("starts the next workout from the routine's numbers (today's, after the finish), with the reminder applied", async () => {
     const prev = await call(A, "GET", `/routines/${routineId}/preview`);
     const bench = prev.exercises[0];

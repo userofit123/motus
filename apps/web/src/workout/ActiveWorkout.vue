@@ -155,7 +155,7 @@ const menu = computed(() => [
       <button class="btn" :class="{ o: done === 0 }" @click="finishing = true">Finish</button>
     </div>
     <div v-if="!isPhone" class="aw-prog" aria-hidden="true"><span v-for="g in segs" :key="g.id" :style="{ flexGrow: g.n }"><i :style="{ width: (g.done / g.n) * 100 + '%' }" /></span></div>
-    <div v-if="W.prefs.value.showReminders && w.reminders?.length" class="nlist aw-rem"><ReminderItem v-for="m in w.reminders" :key="m.id" :reminder="m" live @gone="w.reminders = w.reminders.filter((x: Reminder) => x.id !== m.id)" /></div>
+    <div v-if="W.prefs.value.showReminders && w.reminders?.length" class="nlist aw-rem"><ReminderItem v-for="m in w.reminders" :key="m.id" :reminder="m" live :workout-id="w.id" @gone="w.reminders = w.reminders.filter((x: Reminder) => x.id !== m.id)" /></div>
 
 
     <div v-if="!w.exercises.length" class="card empty"><Icon name="dumbbell" :size="34" /><b>Add your first exercise</b><button class="btn" @click="adding = true">Add exercises</button></div>

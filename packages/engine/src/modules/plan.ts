@@ -55,12 +55,13 @@ export async function loadRoutine(q: Sql, routineId: string) {
   return routine;
 }
 
-export async function pendingReminders(q: Sql, opts: { routineId?: string | null; exerciseIds: string[]; today: string }): Promise<Reminder[]> {
+/** `workoutId`: the running workout, which leaves out the ones put off in it with "Next time". */
+export async function pendingReminders(q: Sql, opts: { routineId?: string | null; exerciseIds: string[]; today: string; workoutId?: string | null }): Promise<Reminder[]> {
   const { rows } = await q.query(
-    `SELECT * FROM reminders WHERE status = 'pending' AND (
+    `SELECT * FROM reminders WHERE status = 'pending' AND ($3::uuid IS NULL OR deferred_workout_id IS DISTINCT FROM $3) AND (
        (target_type = 'routine' AND target_id = $1) OR
        (target_type = 'exercise' AND target_id = ANY($2::uuid[]) AND (scope_routine_id IS NULL OR scope_routine_id = $1)))
-     ORDER BY created_at`, [opts.routineId ?? null, opts.exerciseIds]);
+     ORDER BY created_at`, [opts.routineId ?? null, opts.exerciseIds, opts.workoutId ?? null]);
   return rows.map((r: any) => camel<Reminder>(r)).filter((r) =>
     r.trigger === "date" ? (r.triggerDate ?? "") <= opts.today : r.trigger === "after_n" ? r.seenN + 1 >= (r.triggerN ?? 1) : true);
 }
