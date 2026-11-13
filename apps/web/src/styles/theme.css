@@ -373,3 +373,53 @@ body.glass .exfoot {
 body.glass :is(.txs2 > summary:hover em,.kvd > summary em) {
   background: var(--s2);
 }
+
+/* ===== standalone notes ===== */
+/* A note on a page or a sheet (NoteItem, .banner.note) is a block on the card surface that draws its edge as an inset ring, so
+   it follows every card style below exactly like a .card. Inside a card it stays a quiet inner tile, and the flat Notes row has no box. */
+
+body.outline :is(.nitem,.banner.note):not(.flat,.card *) {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--ol);
+}
+
+body.raised :is(.nitem,.banner.note):not(.flat,.card *) {
+  position: relative;
+  background: linear-gradient(180deg, color-mix(in srgb, #fff 7%, var(--s1)), var(--s1) 60%);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--tx) 9%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, var(--tx) 8%, transparent),
+    0 1px 1px color-mix(in srgb, #000 9%, transparent),
+    0 10px 20px -12px color-mix(in srgb, #000 40%, transparent);
+}
+
+html[data-mode=dark] body.raised :is(.nitem,.banner.note):not(.flat,.card *) {
+  background: linear-gradient(180deg, color-mix(in srgb, #fff 5%, var(--s1)), var(--s1) 60%);
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--tx) 9%, transparent),
+    inset 0 -1px 0 color-mix(in srgb, var(--tx) 8%, transparent),
+    0 1px 1px #0006,
+    0 12px 22px -12px #000c;
+}
+
+body.glass :is(.nitem,.banner.note):not(.flat,.card *) {
+  position: relative;
+  box-shadow: inset 0 0 0 1px var(--ol), 0 1px 1px color-mix(in srgb, #000 6%, transparent), 0 10px 24px -14px color-mix(in srgb, #000 35%, transparent);
+}
+
+html[data-mode=dark] body.glass :is(.nitem,.banner.note):not(.flat,.card *) {
+  box-shadow: inset 0 0 0 1px var(--ol), 0 1px 1px #0005, 0 12px 26px -14px #000b;
+}
+
+body.glass :is(.nitem,.banner.note):not(.flat,.card *)::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
+  -webkit-backdrop-filter: var(--gfx);
+  backdrop-filter: var(--gfx);
+  -webkit-backdrop-filter: var(--gpfx);
+  backdrop-filter: var(--gpfx);
+}
