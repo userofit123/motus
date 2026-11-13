@@ -76,6 +76,34 @@ const weeks = computed<HomeWeek[]>(() => h.value?.weeks ?? []);
 const weekMax = computed(() => Math.max(1, ...weeks.value.map((w) => w.workouts)));
 const walked = computed(() => weeks.value.some((w) => w.walkM > 0));
 
+// a stat tile in This week and Previous: label, value with its unit set small, and for This week the change from last week
+// ("12.3k kg" splits at its space so the number carries the weight and the unit can't push it into an ellipsis)
+interface WStat { key: string; icon: string; label: string; value: string; unit: string; diff?: number; delta?: string; last?: string }
+const unitOf = (s: string) => { const i = s.lastIndexOf(" "); return i < 0 ? { value: s, unit: "" } : { value: s.slice(0, i), unit: s.slice(i + 1) }; };
+const weekStats = computed<WStat[]>(() => {
+  const row = (key: string, icon: string, label: string, now: number, last: number, show: (n: number) => string, split = false): WStat => {
+    const v = show(now), diff = now - last;
+    return { key, icon, label, ...(split ? unitOf(v) : { value: v, unit: "" }), diff, delta: diff ? show(Math.abs(diff)) : "Same", last: show(last) };
+  };
+  const out = [
+    row("workouts", "dumbbell", "Workouts", tw.value.workouts, lw.value.workouts, (n) => String(n)),
+    row("time", "clock", "Time", tw.value.timeS, lw.value.timeS, (n) => fmt.value.dur(n, true)),
+    row("volume", "layers", "Volume", tw.value.volumeKg, lw.value.volumeKg, (n) => fmt.value.vol(n), true),
+  ];
+  if (walked.value) out.push(row("walk", "walk", "Walked", tw.value.walkM, lw.value.walkM, (n) => fmt.value.dist(n, 1), true));
+  return out;
+});
+const lastStats = computed<WStat[]>(() => {
+  const l = h.value?.last;
+  if (!l) return [];
+  return [
+    { key: "time", icon: "clock", label: "Duration", value: fmt.value.dur(l.durationS, true), unit: "" },
+    { key: "ex", icon: "routines", label: "Exercises", value: String(l.exerciseCount), unit: "" },
+    { key: "sets", icon: "check", label: "Sets", value: String(l.setCount), unit: "" },
+    { key: "volume", icon: "layers", label: "Volume", ...unitOf(fmt.value.vol(l.volumeKg)) },
+  ];
+});
+
 // streak grid: the last five weeks, from your first day of the week, a square per day
 const grid = computed(() => {
   const now = new Date(), back = (now.getDay() - s.value.firstDay + 7) % 7 + 28, done = new Set(h.value?.days ?? []);
@@ -247,13 +275,14 @@ await loaded(home, ach);
         </div>
 
         <!-- this week against last week, and workouts per week over eight weeks -->
-        <div v-else-if="id === 'week'" class="card hb sz-m click" v-bind="link('/stats')">
-          <div class="ch"><span class="bi"><Icon name="stats" :size="15" /></span><span class="t grow">This week</span></div>
-          <div class="wstats">
-            <div><div class="wv">{{ tw.workouts }}</div><div class="tiny">{{ tw.workouts === 1 ? "workout" : "workouts" }}</div><div class="wl">last week {{ lw.workouts }}</div></div>
-            <div><div class="wv">{{ fmt.dur(tw.timeS, true) }}</div><div class="tiny">time</div><div class="wl">last week {{ fmt.dur(lw.timeS, true) }}</div></div>
-            <div><div class="wv">{{ fmt.vol(tw.volumeKg) }}</div><div class="tiny">volume</div><div class="wl">last week {{ fmt.vol(lw.volumeKg) }}</div></div>
-            <div v-if="walked"><div class="wv">{{ fmt.dist(tw.walkM, 1) }}</div><div class="tiny">walked</div><div class="wl">last week {{ fmt.dist(lw.walkM, 1) }}</div></div>
+        <div v-else-if="id === 'week'" class="card hb wk sz-m click" v-bind="link('/stats')">
+          <div class="ch"><span class="bi"><Icon name="stats" :size="15" /></span><span class="t grow">This week</span><span class="tiny">vs last week</span></div>
+          <div class="wstats" :class="{ n4: weekStats.length === 4 }">
+            <div v-for="x in weekStats" :key="x.key" class="ws" role="group" :aria-label="`${x.label} ${x.value} ${x.unit}, last week ${x.last}`" :title="`Last week ${x.last}`">
+              <div class="wlb"><Icon :name="x.icon" :size="14" />{{ x.label }}</div>
+              <div class="wv">{{ x.value }}<small v-if="x.unit">{{ x.unit }}</small></div>
+              <div class="wd" :class="{ pos: x.diff! > 0, neg: x.diff! < 0 }"><Icon v-if="x.diff" :name="x.diff > 0 ? 'arrowUp' : 'arrowDown'" :size="12" />{{ x.delta }}</div>
+            </div>
           </div>
           <div class="wbars" role="img" :aria-label="`Workouts per week, last 8 weeks: ${weeks.map((w) => w.workouts).join(', ')}`">
             <i v-for="(w, k) in weeks" :key="w.start" :class="{ cur: k === weeks.length - 1 }" :style="{ height: Math.max(4, (w.workouts / weekMax) * 100) + '%' }" />
@@ -317,18 +346,20 @@ await loaded(home, ach);
           </div>
         </template>
 
-        <!-- muscles: the figure on the left as on every muscle card, the groups on the right -->
-        <div v-else-if="id === 'muscles'" class="card wbody sz-m click" v-bind="link('/stats?tab=muscles')">
-          <BodyMap class="rbody" :values="{}" :highlight="h.main7" :secondary="h.helpers7" />
-          <div class="grow mside">
-            <div class="ch"><span class="bi"><Icon name="activity" :size="15" /></span><span class="t grow">Muscles this week</span></div>
-            <template v-if="worked">
-              <div class="big">{{ worked }}<small>of {{ groups.length }} groups</small></div>
-              <div class="tiny">worked in the last 7 days</div>
-            </template>
-            <div v-else class="tiny">No workouts this week</div>
-            <div v-if="resting.length" class="mrest">
-              <div v-for="g in resting" :key="g.id" class="row tiny"><span class="mn">{{ g.name }}</span><span class="sep">·</span><span>{{ g.days == null ? "not yet" : `${g.days} days` }}</span></div>
+        <!-- muscles: the header on top as on every block, then the figure on the left (as on every muscle card) and the groups beside it -->
+        <div v-else-if="id === 'muscles'" class="card hb sz-m click" v-bind="link('/stats?tab=muscles')">
+          <div class="ch"><span class="bi"><Icon name="activity" :size="15" /></span><span class="t grow">Muscles this week</span></div>
+          <div class="mfig">
+            <BodyMap class="rbody" :values="{}" :highlight="h.main7" :secondary="h.helpers7" />
+            <div class="grow mside">
+              <template v-if="worked">
+                <div class="big">{{ worked }}<small>of {{ groups.length }} groups</small></div>
+                <div class="tiny">worked in the last 7 days</div>
+              </template>
+              <div v-else class="tiny">No workouts this week</div>
+              <div v-if="resting.length" class="mrest">
+                <div v-for="g in resting" :key="g.id" class="row tiny"><span class="mn">{{ g.name }}</span><span class="sep">·</span><span>{{ g.days == null ? "not yet" : `${g.days} days` }}</span></div>
+              </div>
             </div>
           </div>
         </div>
@@ -350,15 +381,15 @@ await loaded(home, ach);
         </div>
 
         <!-- last workout -->
-        <div v-else-if="id === 'previous' && h.last" class="card hb sz-m click has-cover">
+        <div v-else-if="id === 'previous' && h.last" class="card hb wk sz-m click has-cover">
           <button class="cover" :aria-label="`Open ${h.last.name}`" @click="go(`/workouts/${h.last.id}`)" />
           <div class="ch"><span class="bi"><Icon name="dumbbell" :size="15" /></span><span class="t grow ellipsis">{{ h.last.name }}</span>
             <span class="tiny">{{ h.daysSinceLast === 0 ? "Today" : h.daysSinceLast === 1 ? "Yesterday" : `${h.daysSinceLast} days ago` }}</span></div>
-          <div class="wstats">
-            <div><div class="wv">{{ fmt.dur(h.last.durationS, true) }}</div><div class="tiny">duration</div></div>
-            <div><div class="wv">{{ h.last.exerciseCount }}</div><div class="tiny">{{ h.last.exerciseCount === 1 ? "exercise" : "exercises" }}</div></div>
-            <div><div class="wv">{{ h.last.setCount }}</div><div class="tiny">sets</div></div>
-            <div><div class="wv">{{ fmt.vol(h.last.volumeKg) }}</div><div class="tiny">volume</div></div>
+          <div class="wstats n4 plain">
+            <div v-for="x in lastStats" :key="x.key" class="ws">
+              <div class="wlb"><Icon :name="x.icon" :size="14" />{{ x.label }}</div>
+              <div class="wv">{{ x.value }}<small v-if="x.unit">{{ x.unit }}</small></div>
+            </div>
           </div>
           <button class="lnk inl hall over" @click="router.push('/history?view=list')">All workouts</button>
         </div>
@@ -481,7 +512,7 @@ html.phone .hgrid .sz-m { grid-column: 1 / -1; }
 
 /* a block: its header row (icon, title, its one link), then its content spaced by the header gap */
 .hb { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.hb > .ch, .mside > .ch { margin-bottom: calc(var(--hg) - 4px); }
+.hb > .ch { margin-bottom: calc(var(--hg) - 4px); }
 .ch .bi { width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center; background: var(--s2); color: var(--acc); flex: none; }
 .ch .bi.warn { color: var(--warn); }
 .ch .lnk { font-size: var(--fs-sm); font-weight: 600; color: var(--acc); cursor: pointer; background: none; border: 0; display: inline-flex; align-items: center; gap: 2px; padding: 0; }
@@ -499,10 +530,35 @@ html.phone .sz-s .big { font-size: clamp(22px, 7vw, var(--fs-val)); }
 .sgrid i.fu { background: none; box-shadow: inset 0 0 0 1px var(--ol); }
 .sgrid i.now { box-shadow: 0 0 0 1.5px var(--tx2); }
 
-/* this week: the numbers side by side, last week's under each, and the eight-week bars along the bottom */
-.wstats { display: grid; grid-template-columns: repeat(auto-fit, minmax(72px, 1fr)); gap: var(--hg); }
-.wv { font-size: calc(var(--fs-lg) * 1.25); font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.wl { font-size: var(--fs-sm); color: var(--tx2); font-variant-numeric: tabular-nums; margin-top: 2px; }
+/* this week and the last workout: stat tiles side by side split by a faint line (as a pinned goal's streak half), each a
+   label with its icon, the value with its unit set small, and for this week the change from last week as an arrow and amount.
+   The value scales with the block (measured on the card) and four tiles go two by two when the block is narrower, so nothing
+   is cut off with an ellipsis */
+.wk { container-type: inline-size; }
+.wstats { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: var(--hg); }
+.ws { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ws + .ws { border-inline-start: 1px solid var(--ol); padding-inline-start: var(--hg); }
+.wlb { display: flex; align-items: center; gap: 4px; font-size: var(--fs-sm); color: var(--tx2); white-space: nowrap; }
+.wlb :deep(svg) { color: var(--acc); flex: none; }
+.wv { font-size: clamp(var(--fs-lg), 5.4cqi, calc(var(--fs-lg) * 1.25)); font-weight: 650; line-height: 1.2; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.wv small { font-size: var(--fs-sm); font-weight: 500; color: var(--tx2); margin-inline-start: 3px; }
+.wd { display: inline-flex; align-items: center; gap: 2px; font-size: var(--fs-sm); font-weight: 600; color: var(--tx2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.wd.pos { color: var(--pos); }
+.wd.neg { color: var(--neg); }
+@container (max-width: 440px) {
+  .wstats.n4 { grid-auto-flow: row; grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: var(--hg); }
+  .wstats.n4 .ws:nth-child(odd) { border-inline-start: 0; padding-inline-start: 0; }
+}
+/* a narrow block (the phone, or a narrow window) can't fit three tiles across without cutting the values, so the stats
+   become rows instead: label on the left, value and change on the right, lined up in columns */
+@container (max-width: 300px) {
+  .wstats, .wstats.n4 { grid-auto-flow: row; grid-template-columns: minmax(0, 1fr) auto auto; column-gap: var(--cpx); row-gap: var(--tdy); align-items: baseline; }
+  .wstats.plain { grid-template-columns: minmax(0, 1fr) auto; }
+  .ws { display: contents; }
+  .wlb { align-self: center; }
+  .wv { font-size: var(--fs-lg); text-align: end; }
+  .wd { justify-content: flex-end; }
+}
 .wbars { display: flex; align-items: flex-end; gap: 6px; height: 34px; margin-top: auto; padding-top: var(--hg); box-sizing: content-box; }
 .wbars i { flex: 1; border-radius: 4px 4px 2px 2px; background: color-mix(in srgb, var(--acc) 28%, transparent); }
 .wbars i.cur { background: var(--acc); }
@@ -533,8 +589,9 @@ html.phone .gtile.sz-m { flex-direction: row; }
 .due { color: var(--warn); font-weight: 600; }
 .pos { color: var(--pos); }
 
-/* muscles: the figure fills the card's height on the left */
-.mside { display: flex; flex-direction: column; gap: 4px; }
+/* muscles: under the header the figure fills the rest of the block's height on the left, the groups beside it */
+.mfig { flex: 1; display: flex; align-items: stretch; gap: var(--cpx); min-width: 0; }
+.mside { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 /* a card that opens somewhere and also holds its own button: the card's link is a transparent button over the whole
    card, and the inner button sits above it, so the two are siblings rather than one inside the other */
 .has-cover { position: relative; }
