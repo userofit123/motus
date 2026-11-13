@@ -3,6 +3,7 @@
 // counter: where you are comes from how long it has run, so it stays right after the phone sleeps (PLAN.md §8.6).
 import { computed, reactive } from "vue";
 import { intervalPhases, intervalAt, intervalTotalS, cleanInterval, INTERVAL_DEFAULT, type IntervalConfig, type IntervalKind, type IntervalSound } from "@motus/shared";
+import { SOUND_BELL, SOUND_ROUND, SOUND_DIGITAL, SOUND_MARIMBA } from "../core/soundNames";
 import { readJson, writeJson } from "../core/prefs";
 import { now, tone as note, tick, levelOf, SOFT, PURE, WOOD, savedCues, vibrate, type Overtone } from "./runtime";
 import { keepAwake, scheduleIntervalCues, cancelIntervalCues, showIntervalNotice, clearIntervalNotice, onNoticeAction, INTERVAL_CUE_MAX, type IntervalCue } from "./native";
@@ -22,8 +23,8 @@ const save = () => { writeJson(KEY, iv); notice(); };
 export const PHASE_NAME: Record<IntervalKind, string> = { prep: "Get ready", work: "Work", rest: "Rest", setRest: "Rest between sets" };
 
 export const SOUND_NAME: Record<IntervalSound, string> = {
-  beep: "Beep", double: "Double beep", triple: "Three beeps", high: "High", low: "Low", rising: "Rising",
-  softAlarm: "Soft alarm", chime: "Chime", marimba: "Marimba", pulse: "Pulse", gong: "Gong", digital: "Digital", wake: "Wake", none: "None",
+  beep: SOUND_BELL, double: "Double beep", triple: "Three beeps", high: "High", low: SOUND_ROUND, rising: "Rising",
+  softAlarm: "Soft alarm", chime: "Chime", marimba: SOUND_MARIMBA, pulse: "Pulse", gong: "Gong", digital: SOUND_DIGITAL, wake: "Wake", none: "None",
 };
 // notes of a C major chord, so every sound (and any two in a row) sits in tune with the others
 const C4 = 261.63, C5 = 523.25, E5 = 659.25, G5 = 783.99, C6 = 1046.5, E6 = 1318.5, G6 = 1567.98, C7 = 2093;

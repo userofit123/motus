@@ -1,6 +1,7 @@
 // The workout switches in one place, in the groups, order and words both screens show them: Settings → Workout
 // defaults (the saved defaults) and the Workout settings popup (this workout only).
 import type { CueSound, Settings, WorkoutPrefs } from "@motus/shared";
+import { SOUND_BELL, SOUND_ROUND, SOUND_DIGITAL, SOUND_MARIMBA } from "./soundNames";
 
 export interface PrefRow {
   key: keyof WorkoutPrefs;
@@ -10,15 +11,13 @@ export interface PrefRow {
   options?: { value: string; label: string }[];
   /** shown only while this feature is on (Settings → Features) */
   feature?: string;
-  /** shown only while this other setting is on (the sound and volume only with sound on) */
-  needs?: keyof WorkoutPrefs;
   /** with a play button by the choice (and by each option in its list) to hear it */
   preview?: boolean;
   /** a number with − and + instead of a switch */
   num?: { min: number; max: number; step: number; unit: string };
 }
 /** The cue sounds' names, in the order offered (ids: CUE_SOUNDS in @motus/shared) */
-export const CUE_SOUND_NAME: Record<CueSound, string> = { beep: "Bright", bell: "Bell", soft: "Round", digital: "Watch", wood: "Wood" };
+export const CUE_SOUND_NAME: Record<CueSound, string> = { beep: "Bright", bell: SOUND_BELL, soft: SOUND_ROUND, digital: SOUND_DIGITAL, wood: SOUND_MARIMBA };
 export interface PrefGroup { id: "fill" | "timer" | "during"; title: string; rows: PrefRow[] }
 
 export const WORKOUT_PREF_GROUPS: PrefGroup[] = [
@@ -30,9 +29,9 @@ export const WORKOUT_PREF_GROUPS: PrefGroup[] = [
     { key: "autoRest", label: "Start the rest timer when a set is ticked", hint: "" },
     { key: "restEndNext", label: "Go to the next set when the rest ends", hint: "Otherwise it waits on \"Rest over\" until you tap Next set" },
     { key: "sound", label: "Sound when the rest ends", hint: "" },
-    { key: "cueSound", label: "Rest timer sound", hint: "Also for timed sets", needs: "sound", preview: true,
+    { key: "cueSound", label: "Sound", hint: "For every workout cue: rest, 10-second warning and timed sets", preview: true,
       options: (Object.keys(CUE_SOUND_NAME) as CueSound[]).map((value) => ({ value, label: CUE_SOUND_NAME[value] })) },
-    { key: "cueVolume", label: "Sound volume", hint: "How loud the app's own sounds play", needs: "sound", num: { min: 10, max: 100, step: 10, unit: "%" } },
+    { key: "cueVolume", label: "Sound level", hint: "How loud the workout cues play", num: { min: 10, max: 100, step: 10, unit: "%" } },
     { key: "vibrate", label: "Vibrate when the rest ends", hint: "" },
     { key: "warn10", label: "Warn 10 seconds before the rest ends", hint: "" },
     { key: "voice", label: "Voice cues", hint: "Says what's next when a rest ends", feature: "voice" },
