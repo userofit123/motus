@@ -22,6 +22,12 @@ const DAY = 86400000;
 const MAX = 5, PER_KIND = 2;
 // gaps of both sorts count as one kind: two of them at most, so the workouts that are due still find room
 const family = (k: Suggestion["kind"]) => (k === "target" ? "gap" : k);
+// "a back exercise", "an arm exercise": a group or muscle as the word before "exercise"
+const AS_ADJ: Record<string, string> = {
+  chest: "a chest", back: "a back", shoulders: "a shoulder", arms: "an arm", core: "a core", legs: "a leg",
+  lats: "a lat", "middle back": "a middle back", biceps: "a biceps", triceps: "a triceps", abdominals: "an ab", quadriceps: "a quad",
+  hamstrings: "a hamstring", glutes: "a glute", calves: "a calf", forearms: "a forearm",
+};
 
 /** hidden: suggestions you dismissed (key → when); each stays hidden until your next workout */
 export async function suggestions(q: Sql, routines: RoutineSummary[], now: Date, hidden: Record<string, string> = {}): Promise<Suggestion[]> {
@@ -79,8 +85,18 @@ export async function suggestions(q: Sql, routines: RoutineSummary[], now: Date,
     .rows.filter((h) => byId.has(h.routine_id));
   const routineFor = (m: string) => hits.filter((h) => h.main && h.m === m).sort((a, b) => Number(b.n) - Number(a.n))[0]?.routine_id ?? null;
   const helped = (m: string) => hits.some((h) => !h.main && h.m === m);
-  // a muscle's tip opens the routine that works it most; with none, the exercises for it
+  // gaps in your routines (only once you have some, so a new account isn't told everything is missing), leaving out what you
+  // trained outside your routines in the last four weeks: that isn't missing from your training
+  const trained = (m: string) => (sets28.get(m) ?? 0) > 0;
+  // a whole group none of your routines works as a main muscle
+  const gaps = usable.length ? GROUPS.filter((g) => g.id !== "neck" && !g.muscles.some((m) => routineFor(m) || trained(m))) : [];
+  // a muscle whose group is covered but that has no exercise of its own anywhere
+  const targets = usable.length ? WATCH.filter((m) => !routineFor(m) && !trained(m) && !gaps.some((g) => g.muscles.includes(m))) : [];
+  const isGap = (m: string) => targets.includes(m) || gaps.some((g) => g.muscles.includes(m));
+  // a muscle's tip opens the routine that works it most; a muscle no routine works is left to its gap tip, which can also
+  // start a new routine
   const muscleTip = (m: string, kind: "missed" | "rested" | "low", reason: string) => {
+    if (isGap(m)) return;
     const rid = routineFor(m), r = rid ? byId.get(rid)! : null;
     add({ kind, title: r ? r.name : `Work your ${lower(m)}`, reason: r ? `${reason} · works your ${lower(m)}` : reason, routineId: r?.id ?? null, color: r?.color ?? null, muscle: m, muscles: [m] });
   };
@@ -92,18 +108,15 @@ export async function suggestions(q: Sql, routines: RoutineSummary[], now: Date,
       muscleTip(m, "missed", left.length === 1 ? `${muscleName(m)}: the only one not worked this week` : `${muscleName(m)}: not worked this week, unlike most others`);
   }
 
-  // 3. gaps in your routines (only once you have some, so a new account isn't told everything is missing)
-  if (usable.length) {
-    // a whole group none of your routines works as a main muscle: open its exercises, or make a routine for it
-    const gaps = GROUPS.filter((g) => g.id !== "neck" && !g.muscles.some((m) => routineFor(m)));
-    for (const g of gaps) {
-      const name = g.name.toLowerCase();
-      add({ kind: "gap", title: `No routine works your ${name}`, reason: `Add a ${name} exercise to a routine, or make a routine for it`, routineId: null, color: null, muscle: g.id, muscles: g.muscles.filter((m) => WATCH.includes(m)) });
-    }
-    // a muscle whose group is covered but that has no exercise of its own anywhere
-    for (const m of WATCH.filter((x) => !routineFor(x) && !gaps.some((g) => g.muscles.includes(x))))
-      add({ kind: "target", title: `Add a ${lower(m)} exercise`, reason: helped(m) ? `Your routines only work your ${lower(m)} as a helper` : `None of your routines works your ${lower(m)}`, routineId: null, color: null, muscle: m, muscles: [m] });
+  // 3. the gaps: like every muscle tip the title says what to do and the reason why; it opens the exercises for it, or its +
+  // makes a routine. Only a helper somewhere is said so, since the routine's figure shows it worked.
+  const why = (name: string, help: boolean, adj: string) => `${help ? `Your routines only work your ${name} as a helper` : `No routine works your ${name}`} · add ${adj} exercise`;
+  for (const g of gaps) {
+    const name = g.name.toLowerCase();
+    add({ kind: "gap", title: `Work your ${name}`, reason: why(name, g.muscles.some(helped), AS_ADJ[g.id] ?? `a ${name}`), routineId: null, color: null, muscle: g.id, muscles: g.muscles.filter((m) => WATCH.includes(m)) });
   }
+  for (const m of targets)
+    add({ kind: "target", title: `Work your ${lower(m)}`, reason: why(lower(m), helped(m), AS_ADJ[m] ?? `a ${lower(m)}`), routineId: null, color: null, muscle: m, muscles: [m] });
 
   // 4. far fewer sets than the rest lately: under a quarter of what a typical muscle got in four weeks
   const counts = known.map((m) => sets28.get(m) ?? 0).filter((n) => n > 0).sort((a, b) => a - b);
