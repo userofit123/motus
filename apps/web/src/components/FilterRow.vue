@@ -12,7 +12,7 @@ const pick = (v: string) => emit("update:modelValue", props.all != null && props
 
 <template>
   <div>
-    <div class="flbl"><span class="grow">{{ label }}</span></div>
+    <div class="flbl">{{ label }}</div>
     <slot name="top" />
     <div class="chips hscroll">
       <button v-if="all != null" class="fchip" :class="{ on: !modelValue }" @click="emit('update:modelValue', '')">{{ all }}</button>
@@ -26,13 +26,8 @@ const pick = (v: string) => emit("update:modelValue", props.all != null && props
 </template>
 
 <style scoped>
-.flbl { display: flex; align-items: center; margin-bottom: 6px; }
-/* a toggle in the label line keeps the line its usual height */
-.flbl :slotted(.qb) { margin-block: -6px; padding: 4px 8px; font-size: 12.5px; }
 /* chips run to the panel's edge while scrolling on phones; on wider screens they wrap */
 .chips.hscroll { margin-inline: calc(4px - var(--cpx)); padding-inline: calc(var(--cpx) - 4px); }
 html:not(.phone) .chips.hscroll { margin-inline: 0; padding-inline: 0; }
-.fchip, :slotted(.fchip) { background: var(--s1); }
-.fchip.on, :slotted(.fchip.on) { background: var(--accc); }
 .n { opacity: .65; font-variant-numeric: tabular-nums; margin-inline-start: 2px; }
 </style>

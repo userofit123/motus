@@ -24,7 +24,7 @@ import { groupOf, muscleName } from "@motus/shared";
 import FilterRow from "./FilterRow.vue";
 import BodyMap from "./BodyMap.vue";
 
-const props = defineProps<{ modelValue: string; groups: MuscleGroup[] }>();
+const props = defineProps<{ modelValue: string; groups: MuscleGroup[]; compact?: boolean }>();
 const emit = defineEmits<{ "update:modelValue": [v: string] }>();
 const chosen = computed(() => musclesOf(props.modelValue, props.groups));
 const options = computed(() => {
@@ -53,8 +53,8 @@ const tap = (m: string) => {
 <template>
   <FilterRow :model-value="modelValue" label="Muscle group" all="All" :options="options" @update:model-value="(v) => emit('update:modelValue', v)">
     <template #top>
-      <div class="mfig">
-        <BodyMap pickable :values="{}" :highlight="chosen" :pressed="pressed" :height="150" @pick="tap" />
+      <div class="mfig" :class="{ compact }">
+        <BodyMap pickable :values="{}" :highlight="chosen" :pressed="pressed" :height="compact ? 110 : 150" @pick="tap" />
         <span class="tiny" :class="{ on: !!modelValue }">{{ caption }}</span>
       </div>
     </template>
@@ -69,5 +69,7 @@ const tap = (m: string) => {
    leaving a wide empty card around a small figure; phones keep it full width */
 html:not(.phone) .mfig { width: fit-content; min-width: 240px; }
 html:not(.phone) .mfig :deep(.figs) { height: 220px; }
+/* compact (the phone picker sheet, where the list needs the room): a smaller body with the caption beside it */
+.mfig.compact { flex-direction: row; justify-content: center; gap: var(--cpx); }
 .mfig .on { color: var(--tx); font-weight: 600; }
 </style>
