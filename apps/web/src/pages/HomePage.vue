@@ -10,7 +10,7 @@ import { api } from "../api/client";
 import { invalidate, queryClient } from "../api/live";
 import { confirm } from "../core/ask";
 import { toast } from "../core/toast";
-import { onHome, streakOnHome, toggleHomeGoal, setHomeStreak, periodWord, periodNow, periodLabel } from "../core/goals";
+import { onHome, streakOnHome, toggleHomeGoal, setHomeStreak, periodWord, periodLabel } from "../core/goals";
 import { useFmt, ago, goalLabel, localYmd, tomorrowYmd } from "../core/format";
 import { reminderText } from "../core/reminderText";
 import { startPlan, unplanItems } from "../components/home/planActions";
@@ -112,8 +112,13 @@ const dueSoon = computed(() => (allGoals.data.value ?? []).filter((g) => g.statu
   .sort((a, b) => daysLeft(a) - daysLeft(b)).slice(0, 3));
 const dueText = (g: Goal) => { const d = daysLeft(g); return d === 0 ? "Ends today" : d === 1 ? "Ends tomorrow" : `Ends in ${d} days`; };
 const reached = (g: Goal) => g.status === "achieved" || !!g.progress?.done;
-const goalVal = (g: Goal, v: number) => { const u = g.progress?.unit; return u === "kg" ? fmt.value.w(v) : u === "km" ? fmt.value.num(fromM(v * 1000, fmt.value.du), 1) : u === "cm" ? fmt.value.len(v) : fmt.value.num(v, u === "min" ? 0 : 1); };
-const goalUnit = (g: Goal) => { const u = g.progress?.unit; return u === "kg" ? fmt.value.wu : u === "km" ? fmt.value.du : u === "cm" ? fmt.value.lu : u === "sessions" || u === "times" ? "" : u ?? ""; };
+// the unit after a goal's number, as the stat tiles write it ("142.5 kg", "12,500 steps", "1 session")
+const COUNT_UNITS: Record<string, [string, string]> = { sessions: ["session", "sessions"], times: ["time", "times"], workouts: ["workout", "workouts"], weeks: ["week", "weeks"], reps: ["rep", "reps"], sets: ["set", "sets"], steps: ["step", "steps"] };
+const goalVal = (g: Goal, v: number) => { const u = g.progress?.unit; return u === "kg" ? fmt.value.w(v) : u === "km" ? fmt.value.num(fromM(v * 1000, fmt.value.du), 1) : u === "cm" ? fmt.value.len(v) : fmt.value.num(v, u === "min" || !!COUNT_UNITS[u ?? ""] ? 0 : 1); };
+const goalUnit = (g: Goal, v: number) => { const u = g.progress?.unit ?? ""; const c = COUNT_UNITS[u]; return c ? c[v === 1 ? 0 : 1] : u === "kg" ? fmt.value.wu : u === "km" ? fmt.value.du : u === "cm" ? fmt.value.lu : u; };
+// the tile's tiny line names the target the same way for every goal: "of 150 kg" for goals that count up to it,
+// "Target 80 kg" for body goals (which can head up or down) and goals that must stay under it
+const goalTarget = (g: Goal) => `${g.scope === "body" || g.comparator === "<=" ? "Target" : "of"} ${goalVal(g, g.target)} ${goalUnit(g, g.target)}`.trim();
 const goalIcon = (g: Goal) => ({ activity: g.scopeId === "workout" ? "dumbbell" : "walk", routine: "routines", exercise: "dumbbell", muscle: "activity", body: "scale" } as Record<string, string>)[g.scope] ?? "target";
 // progress.pct is a share (0 to 1); the rows show it as a percent and the bar is that wide
 const pct = (g: Goal) => Math.max(0, Math.min(100, (g.progress?.pct ?? 0) * 100));
@@ -129,7 +134,7 @@ const goalSide = (g: Goal & { showStreak?: boolean }): GoalSide => {
     const n = g.progress?.streak ?? 0;
     return { icon: "flame", label: "Streak", big: String(n), small: periodWord(g, n), sub: "In a row" };
   }
-  // the left half already says "Achieved", so this one names the day
+  // the ring's tick shows it is done; this half names the day
   if (g.status === "achieved" && g.achievedAt) return { icon: "check", label: "Done on", big: fmt.value.date(g.achievedAt, { day: "numeric", month: "short" }), sub: when(g.achievedAt) };
   if (g.deadline && !reached(g)) {
     // calendar days left with today counted, as the goal's own pace says
@@ -313,12 +318,12 @@ await loaded(home, ach);
             <div class="gmain">
               <div class="ch"><span class="bi"><Icon :name="goalIcon(g)" :size="15" /></span><span class="t grow ellipsis">{{ g.title }}</span></div>
               <div class="row">
-                <!-- a body goal heads to its target (up or down), the others count up to it -->
-                <div class="big grow">{{ goalVal(g, g.progress?.current ?? 0) }}<small>{{ g.scope === "body" ? "to" : "of" }} {{ goalVal(g, g.target) }}{{ goalUnit(g) ? ` ${goalUnit(g)}` : "" }}</small></div>
-                <!-- a reached goal's tile turns accent, so its ring and check take the on-accent colour -->
-                <Ring :pct="g.progress?.pct ?? 0" :size="40" :done="reached(g)" :color="reached(g) ? 'var(--onc)' : undefined" />
+                <!-- like the stat tiles: the current number big with its unit small, the target on the tiny line -->
+                <div class="big grow">{{ goalVal(g, g.progress?.current ?? 0) }}<small>{{ goalUnit(g, g.progress?.current ?? 0) }}</small></div>
+                <!-- the ring and its check keep the accent gradient on a reached (accent) tile too, as on the goal cards -->
+                <Ring :pct="g.progress?.pct ?? 0" :size="40" :done="reached(g)" />
               </div>
-              <div class="tiny">{{ g.status === "achieved" ? "Achieved" : g.progress?.done ? `Reached ${periodNow(g).toLowerCase()}` : g.progress?.pace ?? periodNow(g) }}</div>
+              <div class="tiny">{{ goalTarget(g) }}</div>
             </div>
             <div class="grun">
               <div class="ch"><span class="bi"><Icon :name="goalSide(g).icon" :size="15" /></span><span class="t">{{ goalSide(g).label }}</span></div>
@@ -538,7 +543,11 @@ html.phone .hgrid .sz-m { grid-column: 1 / -1; }
 .big small { font-size: var(--fs); font-weight: 500; margin-inline-start: 5px; color: var(--tx2); letter-spacing: 0; }
 .hero .big small, .hero .tiny { color: color-mix(in srgb, var(--onc) 75%, transparent); }
 /* small blocks and the goal tiles' halves are narrow on the phone, so their values shrink with the screen */
-html.phone .sz-s .big, html.phone .gtile .big { font-size: clamp(22px, 7vw, var(--fs-val)); }
+html.phone .sz-s .big { font-size: clamp(22px, 7vw, var(--fs-val)); }
+/* a goal's value carries its unit beside the ring ("12,500 steps"), so at 360px the goal half is a little wider and both
+   halves' values a step smaller, the same in both halves so they still line up */
+html.phone .gtile .big { font-size: clamp(20px, 6vw, var(--fs-val)); }
+html.phone .gtile { grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); }
 
 /* the stat tiles of this week and the last workout are the shared .wkc/.wstats ones (app.css) */
 .wbars { display: flex; align-items: flex-end; gap: 6px; height: 34px; margin-top: auto; padding-top: var(--hg); box-sizing: content-box; }
@@ -563,7 +572,7 @@ html.phone .sz-s .big, html.phone .gtile .big { font-size: clamp(22px, 7vw, var(
 /* the bottom box: one height for dots, trend and flat line, so stacked tiles are the same height */
 .gfoot { align-self: end; height: 28px; padding-top: var(--hg); box-sizing: content-box; display: flex; align-items: flex-end; }
 .gdots { flex: 1; display: flex; gap: 4px; }
-.gdots i { flex: 1; max-width: 18px; height: 6px; border-radius: 3px; }
+.gdots i { flex: 1; height: 6px; border-radius: 3px; }
 /* off and on look the same for the streak dots and the muscle groups' dots */
 .gdots i, .mdot { background: color-mix(in srgb, currentColor 14%, transparent); }
 .gdots i.on, .mg.on .mdot { background: var(--acc); }
