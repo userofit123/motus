@@ -18,6 +18,22 @@ function keyOf(sg) {
   c = k + "#" + n; KC.set(sg, c); return c;
 }
 const named = (sg) => { const b = sg.querySelector("button"); return !!(sg.id || (b && (b.dataset.a || b.dataset.t))); };
+// Motus: a tab row wider than the screen scrolls its chosen tab into view, centred where the row allows (the first and
+// last tabs end up just fully shown), so a page opened on a far tab (Stats → Achievements from a button) shows it.
+// Only when the chosen tab changes, the row is drawn anew or the window is resized, so it never fights the person
+// scrolling the row by hand.
+let shown = new WeakMap();
+function centre(row, b) {
+  // a row that fits has nothing to scroll; it is not marked, so it still centres once it outgrows the screen (a tab added)
+  if (row.scrollWidth <= row.clientWidth + 1) return;
+  if (shown.get(row) === b) return;
+  const first = !shown.has(row);
+  shown.set(row, b);
+  // measured on screen, so it works right to left and while the page is still sliding in (scaled)
+  const r = row.getBoundingClientRect(), br = b.getBoundingClientRect(), k = r.width / row.offsetWidth || 1;
+  const d = (br.left + br.width / 2 - (r.left + r.width / 2)) / k;
+  if (Math.abs(d) > 1) row.scrollBy({ left: d, behavior: first || RM.matches ? "instant" : "smooth" });
+}
 const ease = (t) => (t <= 0 ? 0 : t >= 1 ? 1 : t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 const rad = (R, M, L, Rt) => { const a = L ? R : M, b = Rt ? R : M; return a + "px " + b + "px " + b + "px " + a + "px"; };
 function put(p, g, l, r, rd, sy) {
@@ -33,6 +49,7 @@ function sync(sg) {
   if (!b) { if (pill) pill.style.display = "none"; return; }
   if (!sg.offsetWidth) { waiting.add(sg); return; }
   waiting.delete(sg);
+  centre(sg, b);
   if (!pill) { pill = document.createElement("i"); pill.className = "segi"; pill.innerHTML = "<b></b>"; sg.prepend(pill); sg.classList.add("sl"); }
   pill.style.display = "";
   const k = keyOf(sg), idx = bs.indexOf(b), g = { l: b.offsetLeft, r: b.offsetLeft + b.offsetWidth, t: b.offsetTop, b: b.offsetTop + b.offsetHeight }, h = g.b - g.t;
@@ -87,7 +104,7 @@ export function startSegSlide() {
       }
     }
   }).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "style", "hidden"] });
-  addEventListener("resize", () => { st.forEach((s) => { s.snap = true; }); all(); });
+  addEventListener("resize", () => { shown = new WeakMap(); st.forEach((s) => { s.snap = true; }); all(); });
   // the language (right to left) or the look (font, density...) changed without a reload: every pill moves to its tab's new place at once
   new MutationObserver(() => { st.forEach((s) => { s.snap = true; }); all(); }).observe(document.documentElement, { attributes: true, attributeFilter: ["lang", "data-fnt", "data-den", "data-spc", "data-rad", "data-nav"] });
   all();
@@ -107,6 +124,7 @@ function syncTabs(t) {
   bar.style.opacity = "1";
   bar.style.width = b.offsetWidth + "px";
   bar.style.transform = "translateX(" + b.offsetLeft + "px)";
+  centre(t, b);
   if (first) requestAnimationFrame(() => { bar.style.transition = ""; });
 }
 const tflush = () => { traf = 0; const l = [...tq]; tq.clear(); l.forEach(syncTabs); };
@@ -121,6 +139,6 @@ export function startTabSlide() {
       else for (const n of m.addedNodes) { if (n.nodeType != 1 || n.classList?.contains("tabi")) continue; if (n.matches(".tabs")) tqueue(n); else n.querySelectorAll?.(".tabs").forEach(tqueue); if (el.classList?.contains("tabs")) tqueue(el); }
     }
   }).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["class"] });
-  addEventListener("resize", () => document.querySelectorAll(".tabs").forEach(tqueue));
+  addEventListener("resize", () => { shown = new WeakMap(); document.querySelectorAll(".tabs").forEach(tqueue); });
   document.querySelectorAll(".tabs").forEach(tqueue);
 }
