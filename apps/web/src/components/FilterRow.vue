@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // One labelled row of chips inside a FilterPanel. With `all`, the first chip clears the row and tapping the picked chip again
 // goes back to it; without, exactly one option is always on (a status or a sort). Scrolls sideways on phones.
-// Slots: #aside sits at the right end of the label line (a small toggle), #top between the label and the chips.
+// Slots: #top between the label and the chips.
 import Icon from "./Icon.vue";
 
 interface FilterOption { value: string; label: string; icon?: string; count?: number }
@@ -12,7 +12,7 @@ const pick = (v: string) => emit("update:modelValue", props.all != null && props
 
 <template>
   <div>
-    <div class="flbl"><span class="grow">{{ label }}</span><slot name="aside" /></div>
+    <div class="flbl"><span class="grow">{{ label }}</span></div>
     <slot name="top" />
     <div class="chips hscroll">
       <button v-if="all != null" class="fchip" :class="{ on: !modelValue }" @click="emit('update:modelValue', '')">{{ all }}</button>

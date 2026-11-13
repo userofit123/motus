@@ -1,5 +1,4 @@
 <script lang="ts">
-import { ref } from "vue";
 import { GROUPS } from "@motus/shared";
 
 export interface MuscleGroup { id: string; name: string; muscles: string[] }
@@ -13,12 +12,10 @@ export function musclesOf(v: string, groups: MuscleGroup[] = GROUPS): string[] {
 export function valueOf(m: string, groups: MuscleGroup[] = GROUPS): string {
   return groups.find((g) => g.muscles.length === 1 && g.muscles[0] === m)?.id ?? m;
 }
-// shown or hidden for the whole session, on every exercise list alike
-const open = ref(false);
 </script>
 
 <script setup lang="ts">
-// The "Muscle group" row of an exercise list's filters, with the body behind a small toggle in its label line:
+// The "Muscle group" row of an exercise list's filters, with the body always shown above the chips:
 // tap a muscle to show only exercises that work it as a main muscle, tap it again to clear. Groups and muscles share one
 // value, so a group chip lights its muscles on the body, and a muscle picked on the body that is no chip of its own
 // (lats, calves) gets a chip right after its group's, to show what is set and to clear it like any other.
@@ -26,7 +23,6 @@ import { computed } from "vue";
 import { groupOf, muscleName } from "@motus/shared";
 import FilterRow from "./FilterRow.vue";
 import BodyMap from "./BodyMap.vue";
-import Icon from "./Icon.vue";
 
 const props = defineProps<{ modelValue: string; groups: MuscleGroup[] }>();
 const emit = defineEmits<{ "update:modelValue": [v: string] }>();
@@ -56,11 +52,8 @@ const tap = (m: string) => {
 
 <template>
   <FilterRow :model-value="modelValue" label="Muscle group" all="All" :options="options" @update:model-value="(v) => emit('update:modelValue', v)">
-    <template #aside>
-      <button class="qb" :aria-expanded="open" @click="open = !open">{{ open ? "Hide body" : "Show body" }}<Icon :name="open ? 'up' : 'down'" :size="14" /></button>
-    </template>
     <template #top>
-      <div v-if="open" class="mfig">
+      <div class="mfig">
         <BodyMap pickable :values="{}" :highlight="chosen" :pressed="pressed" :height="150" @pick="tap" />
         <span class="tiny" :class="{ on: !!modelValue }">{{ caption }}</span>
       </div>
