@@ -186,7 +186,7 @@ const menu = computed<MenuItem[]>(() => [
         <div style="font-weight:600;font-size:20px;margin-top:4px">{{ standard.level }}</div>
         <div class="tiny">1RM {{ fmt.num(standard.ratio, 2) }}× body weight{{ standard.next ? ` · ${standard.next.level} at ${fmt.wu_(standard.next.kg)}` : "" }}</div>
         <div class="row" style="gap:4px;margin-top:10px"><div v-for="(t, i) in standard.thresholds" :key="i" class="grow" style="text-align:center"><div class="pbar" style="height:6px"><i :style="{ width: best1rm! >= t ? '100%' : '0%' }" /></div><div class="tiny" style="margin-top:3px">{{ LEVELS[i] }}</div></div></div>
-        <p class="tiny" style="margin-top:8px">A rough guide from common gym rules of thumb, using your latest body weight.<template v-if="!settings.profile.sex"> <button class="lnk inl" @click="router.push('/body?tab=details')">Set your sex</button> for a closer match.</template></p>
+        <p class="tiny" style="margin-top:8px">A rough guide from common gym rules of thumb, using your latest body weight. <template v-if="!settings.profile.sex"><button class="lnk inl" @click="router.push('/body?tab=details')">Set your sex</button> for a closer match.</template></p>
       </div>
       <template v-if="best1rm">
         <h2>Rep maxes</h2>

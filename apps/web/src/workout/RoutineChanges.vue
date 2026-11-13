@@ -19,8 +19,7 @@ function toggle(k: string, on: boolean) { picked.value = on ? [...picked.value, 
 
 <template>
   <div>
-    <p class="tiny hgap">This workout was different from the routine. Switch on each change you want to keep; the rest stays as it is.<template v-if="finishing"> Weights and reps are saved either way, as Next time shows.</template>
-      <button v-if="changes.length > 1" class="lnk inl" @click="picked = allOn ? [] : changes.map((c) => c.key)">{{ allOn ? "Clear" : "Select all" }}</button></p>
+    <p class="tiny hgap">This workout was different from the routine. Switch on each change you want to keep; the rest stays as it is.<template v-if="finishing"> Weights and reps are saved either way, as Next time shows.</template> <button v-if="changes.length > 1" class="lnk inl" @click="picked = allOn ? [] : changes.map((c) => c.key)">{{ allOn ? "Clear" : "Select all" }}</button></p>
     <div class="card">
       <template v-for="x in GROUPS" :key="x.g">
         <div class="lbl rc-lbl">{{ x.title }}</div>
