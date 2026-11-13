@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // Home's first block: what to do today, and this week's training days at a glance. It changes with the day:
-// a workout in progress takes it over, then today's plans, then your program's next workout, then a suggestion; with
+// a workout in progress takes it over, then today's plans; once you've trained today with no plans left, the done state
+// (your program's next day only as a quiet line under it); else your program's next workout, then a suggestion; with
 // none of those it offers a workout of your choice. A new account gets a way to begin instead.
 // Several plans for today are a list of equals, each with its own Start and a ⋮ menu to log it instead, skip it or
 // remove it (a single plan's ⋮ sits top-right in the header); only the earliest one's button is the filled one, so the
@@ -54,17 +55,19 @@ const hero = computed<Hero | null>(() => {
   // a program only while Programs is switched on (Settings → Features)
   const prog = s.value.features.programs ? (h.programs ?? []).find((p) => p.calendarWeek > 0 && p.next) : undefined;
   const next = prog?.next;
+  const another = { label: "Another workout", icon: "play", run: () => (startOpen.value = true) };
+  // trained today with nothing left: one done state, for program users too (the program's next day is for another day,
+  // so it is only a quiet line, never a second Start). Its label counts what you did (the list under it, which then needs
+  // no heading of its own, as "N plans for today" heads the plan list). It never says "0 sessions": just after a workout
+  // the calendar may not have it yet (the line holds its place while it loads), and near midnight the server's day and
+  // this device's can differ, so with none found it says "Trained today". "Nothing planned" never shows beside a workout you did
+  if (trainedToday.value) return { label: dayDone.value ? `${n(dayDone.value, "session")} today` : todayWait.value ? "\u00a0" : "Trained today", title: "Done for today",
+    sub: [(h.plannedToday ?? 0) ? "Nothing else planned for today" : "", next ? `Next: ${next.name}` : ""].filter(Boolean).join(" · "), routine: null, done: true, act: another };
   if (prog && next) return { label: `${prog.name}, week ${next.week} of ${prog.weeks}`, title: next.name, sub: "", routine: next.routineId,
     act: { label: "Start", icon: "play", run: () => router.push(`/routines/${next.routineId}/start?program=${prog.id}${next.deload ? `&deload=${prog.deloadPct}` : ""}`) } };
-  const sug = trainedToday.value ? null : (h.suggest ?? []).find((x) => x.routineId);
+  const sug = (h.suggest ?? []).find((x) => x.routineId);
   if (sug) return { label: "Suggested for today", title: sug.title, sub: sug.reason, routine: sug.routineId,
     act: { label: "Start", icon: "play", run: () => router.push(`/routines/${sug.routineId!}/start`) } };
-  const another = { label: "Another workout", icon: "play", run: () => (startOpen.value = true) };
-  // trained today with nothing left: one done state. Its label counts what you did (the list under it, which then needs
-  // no heading of its own, as "N plans for today" heads the plan list); only when today had plans, all done now, does it
-  // add that nothing else is planned. "Nothing planned" never shows beside a workout you did
-  if (trainedToday.value) return { label: cal.data.value ? `${n(dayDone.value, "session")} today` : cal.isError.value ? "Trained today" : "\u00a0", title: "Done for today",
-    sub: (h.plannedToday ?? 0) ? "Nothing else planned for today" : "", routine: null, done: true, act: another };
   return { label: (h.plannedToday ?? 0) ? "Nothing else planned for today" : "Nothing planned for today", title: "Your call today", sub: "", routine: null,
     act: { ...another, label: "Start a workout" } };
 });
@@ -106,6 +109,9 @@ const dayRows = computed<DayRow[]>(() => {
   return [...done, ...missed];
 });
 const dayDone = computed(() => dayRows.value.filter((r) => r.kind !== "planned").length);
+// trained today but the calendar has none of it yet: it is loading, or refetching after the workout you just finished
+// (the old copy doesn't have it). Lines and the list hold their place instead of saying 0
+const todayWait = computed(() => trainedToday.value && dayDone.value === 0 && (cal.isFetching.value || (!cal.data.value && !cal.isError.value)));
 const pastMissed = computed(() => dayRows.value.length - dayDone.value);
 const pastLabel = computed(() => [dayDone.value ? n(dayDone.value, "session") : "Nothing done", pastMissed.value ? `${pastMissed.value} missed` : ""].filter(Boolean).join(" · "));
 const openRow = (r: DayRow) => router.push(r.kind === "activity" ? `/activities/${r.x.id}` : r.x.status === "in_progress" ? "/workout" : `/workouts/${r.x.id}`);
@@ -201,11 +207,11 @@ const doneCount = computed(() => week.value.filter((d) => d.done).length);
     </div>
     <!-- today or a past day: what you did (each opens), then a past day's missed plans, faded like the calendar's -->
     <!-- today's list holds its place while the calendar is on its way, as a past day's line does -->
-    <div v-if="sel <= today && (dayRows.length || (sel === today && trainedToday && !cal.data.value))" class="tlist tsec" aria-live="polite">
+    <div v-if="sel <= today && (dayRows.length || (sel === today && (todayWait || (trainedToday && cal.isError.value))))" class="tlist tsec" aria-live="polite">
       <!-- the heading counts them, unless the done state's label above already does -->
-      <div v-if="sel === today && cal.data.value && !hero?.done" class="tl">{{ n(dayDone, "session") }} today</div>
-      <div v-else-if="sel === today && cal.isError.value" class="ts">Couldn't load today's sessions.</div>
-      <template v-else-if="sel === today && !cal.data.value"><div v-if="!hero?.done" class="tl" aria-hidden="true">&nbsp;</div><div class="plist" aria-hidden="true"><div class="prow ph"><div class="pt"><div class="pn">&nbsp;</div><div class="ps">&nbsp;</div></div></div></div></template>
+      <div v-if="sel === today && dayDone && !hero?.done" class="tl">{{ n(dayDone, "session") }} today</div>
+      <template v-else-if="sel === today && todayWait"><div v-if="!hero?.done" class="tl" aria-hidden="true">&nbsp;</div><div class="plist" aria-hidden="true"><div class="prow ph"><div class="pt"><div class="pn">&nbsp;</div><div class="ps">&nbsp;</div></div></div></div></template>
+      <div v-else-if="sel === today && !dayDone && cal.isError.value" class="ts">Couldn't load today's sessions.</div>
       <div v-if="dayRows.length" class="plist" role="list">
         <template v-for="r in dayRows" :key="r.key">
           <div v-if="r.kind === 'planned'" role="listitem" class="prow missed">
