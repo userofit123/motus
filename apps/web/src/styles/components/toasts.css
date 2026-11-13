@@ -10,19 +10,23 @@
   column-gap: var(--cpx);
   row-gap: var(--lpy);
   padding: var(--lpy);
-  border-radius: 14px;
+  border-radius: 18px; /* the MiniBar's corners (Appearance's corner styles change both, theme.css) */
   background: var(--accc);
   color: var(--onc);
   font-size: 13px;
 }
-.upn-ic { grid-area: ic; width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center; background: color-mix(in srgb, var(--onc) 14%, transparent); }
+.upn-ic { grid-area: ic; width: 36px; height: 36px; border-radius: 11px; display: grid; place-items: center; background: color-mix(in srgb, var(--onc) 14%, transparent); }
 .upn-txt { grid-area: txt; min-width: 0; }
 .upn-txt b { display: block; font-weight: 600; font-size: 13.5px; }
 .upn-txt .s { font-size: 12px; opacity: .75; margin-top: 2px; }
 .upn-txt .pbar { margin-top: var(--lpy); }
 .upn-acts { grid-area: acts; display: flex; gap: 8px; }
+/* View: tonal on the main colour tint, as the Today hero's other buttons on its tint, so only the main button is filled */
+.upn .btn.tonal { background: color-mix(in srgb, var(--onc) 12%, transparent); color: var(--onc); }
 .upn .ib.plain { grid-area: x; color: inherit; }
 .upn .ib.plain:hover { background: color-mix(in srgb, var(--onc) 10%, transparent); }
+/* the always-there status line that screen readers announce when the notice shows; not seen */
+.upn-live { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
 /* phone: in the page's flow above everything, with the 16px edges of the page and of the MiniBar strip; the buttons go
    on their own line under the text, so the title keeps the width */
@@ -43,7 +47,10 @@ html:not(.phone) .upn {
   left: calc(88px + 50%);
   transform: translateX(-50%);
   bottom: calc(22px + var(--sb));
-  width: min(560px, calc(100vw - 208px));
+  /* sized to its content from the MiniBar's 360px up, as the MiniBar under it */
+  width: max-content;
+  min-width: 360px;
+  max-width: calc(100vw - 208px);
   box-shadow: var(--shadow-pop);
   animation: su .2s var(--ease);
 }

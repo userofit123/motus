@@ -23,9 +23,19 @@ const app = detectPlatform().app;
 const active = useActive();
 // a ready download of this version installs; any other ready file is an older one and gives way to this one
 const readyHere = computed(() => updater.ready && updater.stagedVersion === updateAvailable.value);
-// App & Versions says all this itself, so the notice keeps out of its way there
+// App & Versions says all this itself, so the notice keeps out of its way there. The workout check waits for the answer:
+// before it, "no workout" only means "not known yet", and the notice would flash when the app opens during a workout.
 const shown = computed(() => app && !!updateAvailable.value && dismissed.value !== updateAvailable.value
-  && !active.data.value && route.path !== "/settings/versions");
+  && active.isFetched.value && !active.data.value && route.path !== "/settings/versions");
+// screen readers announce a status line whose text changes, not one that arrives already filled, so the line is always
+// there and gets its text a moment after the notice shows (also when it shows as the app opens, once the line exists)
+const announce = ref("");
+let timer: ReturnType<typeof setTimeout> | undefined;
+watch(shown, (on) => {
+  clearTimeout(timer);
+  announce.value = "";
+  if (on) timer = setTimeout(() => { announce.value = `Update available: ${updateAvailable.value}`; }, 150);
+}, { immediate: true });
 const sub = computed(() => (updater.downloading ? updater.status || "Downloading"
   : readyHere.value ? "Downloaded, ready to install"
   : !updater.ready && updater.status ? updater.status // a failed download says why
@@ -47,21 +57,22 @@ watch(el, (n, o) => {
   if (o) ro?.unobserve(o);
   if (n) ro?.observe(n); else root.style.removeProperty("--upnh");
 });
-onBeforeUnmount(() => { ro?.disconnect(); root.style.removeProperty("--upnh"); });
+onBeforeUnmount(() => { clearTimeout(timer); ro?.disconnect(); root.style.removeProperty("--upnh"); });
 </script>
 
 <template>
+  <span class="upn-live" role="status">{{ announce }}</span>
   <div v-if="shown" ref="el" class="upn">
     <span class="upn-ic"><Icon name="download" :size="15" /></span>
     <div class="upn-txt">
-      <b role="status">Update available: {{ updateAvailable }}</b>
+      <b>Update available: {{ updateAvailable }}</b>
       <div class="s">{{ sub }}</div>
       <div v-if="updater.downloading && updater.progress !== null" class="pbar"><i :style="{ width: Math.round(updater.progress * 100) + '%' }"></i></div>
     </div>
     <div class="upn-acts">
-      <button type="button" class="btn o s" @click="view">View</button>
+      <button type="button" class="btn tonal s" @click="view">View</button>
       <button v-if="!updater.downloading" type="button" class="btn s" @click="primary">{{ readyHere ? `Install ${updateAvailable}` : "Download update" }}</button>
     </div>
-    <button type="button" class="ib sm plain" aria-label="Dismiss" title="Dismiss" @click="dismiss"><Icon name="close" :size="16" /></button>
+    <button type="button" class="ib sm plain" aria-label="Close" title="Close" @click="dismiss"><Icon name="close" :size="16" /></button>
   </div>
 </template>
