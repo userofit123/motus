@@ -29,7 +29,10 @@ const save = () => writeJson("motusRest", rest);
 export interface CueVoice { cueSound: CueSound; tickSound: TickSound; cueVolume: number; sound?: boolean }
 export interface Cues extends CueVoice { sound: boolean; vibrate: boolean; warn10: boolean; voice: boolean; countdown: boolean; next?: boolean }
 let cues: Cues = { sound: true, cueSound: "beep", tickSound: "beep", cueVolume: 100, vibrate: true, warn10: true, voice: false, countdown: true, next: true };
-export const setCues = (c: Cues) => { cues = c; };
+// Whether `cues` holds a running workout's effective settings (account settings plus that workout's own overrides).
+// Only then do the background alarm and RestCues use it; otherwise the saved account settings apply.
+let workoutCues = false;
+export const setCues = (c: Cues, forWorkout = true) => { cues = c; workoutCues = forWorkout; };
 /** Sound and vibration as chosen in Settings → Workout, read from the settings the app has loaded, so they are right
  *  on any page (the cues above are only filled once a workout screen has been opened). */
 export function savedCues(): CueVoice & { sound: boolean; vibrate: boolean; warn10: boolean; countdown: boolean } {
@@ -142,8 +145,9 @@ const resting = () => !!rest.endAt && !rest.done && rest.pausedLeftS == null && 
 function planAlarm() {
   if (!isNativeApp()) return;
   if (!resting()) { dropAlarm(); return; }
-  // savedCues: the cues above are only filled once the workout screen has been opened
-  const c = savedCues();
+  // the running workout's own settings when it has set them; else savedCues (the cues above are only filled once the
+  // workout screen has been opened)
+  const c = workoutCues ? cues : savedCues();
   void scheduleRestAlarm(rest.endAt!, rest.next, c); alarmOn = true;
   // the same choices as the in-app cues above: the 10 seconds and the 3-2-1 each have their own switch, and both need
   // the workout sounds on
