@@ -408,12 +408,11 @@ html.phone .sets .rcell .vin { max-width: 44px; }
 /* a set's timer button keeps its width while it counts down; with three numbers a set at phone width it gives that
    room back and Previous steps aside (Copy last time stays in the set's menu), so the row fits 360px */
 .sets .tbtn { min-width: 76px; }
-html.phone .sets.v3 .tbtn { min-width: 0; padding-inline: 8px; }
-html.phone .sets.v3 .tbtn .ico { display: none; }
+html.phone .sets.v3 .tbtn { min-width: 0; padding-inline: 6px; gap: 4px; }
 html.phone .sets.v3 :is(.prev, .prevh) { display: none; }
-/* its PR badge moves under the set badge instead */
+/* its PR badge moves under the reps (or distance) box instead, like Previous's */
 .sets .v3pr { display: none; }
-html.phone .sets.v3 .v3pr { display: block; margin: 2px 0 0; }
+html.phone .sets.v3 .v3pr { display: block; }
 /* RPE is at most "9.5": narrow, so a phone's kg box keeps room for "102.5" with RPE on */
 .sets .rpecell .vin { max-width: 56px; }
 html.phone .sets .rpecell .vin { max-width: 36px; }

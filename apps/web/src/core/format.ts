@@ -35,9 +35,10 @@ export function makeFmt(s: Settings) {
       const kg = x.weightKg != null && !!t && usesWeight(t) ? wu_(x.weightKg) : "";
       // reps logged before the exercise stopped being counted in reps still show (a set with no time has nothing else to say)
       const r = x.reps != null && !!t && (usesReps(t) || (!!x.reps && !x.durationS)) ? (kg ? `× ${x.reps}` : `${x.reps} rep${x.reps === 1 ? "" : "s"}`) : "";
-      // reps against the clock: "15 reps in 1:00", "20 kg × 15 in 1:00"
-      const time = x.durationS ? (r ? `in ${clock(x.durationS)}` : clock(x.durationS)) : "";
-      return [kg, r, time, x.distanceM ? dist(x.distanceM) : ""].filter(Boolean).join(" ");
+      const d = x.distanceM ? dist(x.distanceM) : "";
+      // time against reps or distance reads "in": "15 reps in 1:00", "20 kg × 15 in 1:00", "2.5 km in 12:00"; alone it is the plain clock
+      const time = x.durationS ? (r || d ? `in ${clock(x.durationS)}` : clock(x.durationS)) : "";
+      return [kg, r, d, time].filter(Boolean).join(" ");
     },
     date: (iso: string | null | undefined, o: Intl.DateTimeFormatOptions = { day: "numeric", month: "short" }) => (iso ? new Date(iso.length === 10 ? iso + "T12:00:00" : iso).toLocaleDateString(locale, o) : ""),
     /** a planned day in words: "today", "tomorrow", else "Tue 10 Nov" (with the year when it isn't this year) */
