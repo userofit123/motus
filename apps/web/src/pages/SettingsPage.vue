@@ -67,7 +67,7 @@ const sec2 = (v: number) => `${Math.floor(v / 60)}:${String(v % 60).padStart(2, 
 // the four rests set as m:ss; a stretch has its own pair (back into position, then on to the next stretch)
 type RestKey = "restBetweenSetsS" | "restAfterExerciseS" | "restStretchBetweenS" | "restStretchAfterS";
 const REST_TITLE: Record<RestKey, string> = { restBetweenSetsS: "Rest between sets", restAfterExerciseS: "Rest after an exercise",
-  restStretchBetweenS: "Rest between stretch sets", restStretchAfterS: "Rest after a stretch" };
+  restStretchBetweenS: "Rest between sets", restStretchAfterS: "Rest after a stretch" };
 async function editRest(k: RestKey) {
   const v = await prompt(REST_TITLE[k], { value: sec2(w.value[k]), placeholder: "m:ss" });
   if (!v) return; const m = /^(\d+):(\d{1,2})$/.exec(v.trim()); const secs = m ? +m[1]! * 60 + +m[2]! : Number(v);
@@ -174,17 +174,17 @@ await loaded(me);
           <p class="muted" style="margin:0">How every workout starts out. A routine or an exercise can set its own rest, numbers, timer and progression; these apply wherever it doesn't.</p>
           <div class="sh"><h2>Rest</h2></div>
           <div class="card">
-            <div class="li"><div class="grow"><div class="t">{{ REST_TITLE.restBetweenSetsS }}</div><div class="s">When an exercise other than a stretch has no rest of its own</div></div><button class="qb acc" @click="editRest('restBetweenSetsS')">{{ sec2(w.restBetweenSetsS) }}</button></div>
+            <div class="li"><div class="grow"><div class="t">{{ REST_TITLE.restBetweenSetsS }}</div><div class="s">When an exercise has no rest of its own</div></div><button class="qb acc" @click="editRest('restBetweenSetsS')">{{ sec2(w.restBetweenSetsS) }}</button></div>
             <div class="li"><div class="grow"><div class="t">{{ REST_TITLE.restAfterExerciseS }}</div><div class="s">The longer break before the next exercise</div></div><button class="qb acc" @click="editRest('restAfterExerciseS')">{{ sec2(w.restAfterExerciseS) }}</button></div>
             <template v-if="s.features.setTypes">
-              <div v-for="[k, l] in KIND_REST" :key="k" class="li"><div class="grow"><div class="t">{{ l }}</div><div class="s">{{ w.restByKindS?.[k] == null ? "Same as between sets, not for stretches" : "When a routine doesn't set its own, not for stretches" }}</div></div>
+              <div v-for="[k, l] in KIND_REST" :key="k" class="li"><div class="grow"><div class="t">{{ l }}</div><div class="s">{{ w.restByKindS?.[k] == null ? "Same as between sets" : "When a routine doesn't set its own" }}</div></div>
                 <button class="qb acc" @click="kindRest = k">{{ w.restByKindS?.[k] == null ? sec2(w.restBetweenSetsS) : sec2(w.restByKindS[k]!) }}</button></div>
             </template>
           </div>
-          <div class="sh"><h2>Stretches</h2></div>
+          <div class="sh"><h2>Rest for stretches</h2></div>
           <div class="card">
-            <div class="li"><div class="grow"><div class="t">Rest between sets</div><div class="s">When a stretch has no rest of its own</div></div><button class="qb acc" @click="editRest('restStretchBetweenS')">{{ sec2(w.restStretchBetweenS) }}</button></div>
-            <div class="li"><div class="grow"><div class="t">Rest after a stretch</div><div class="s">The break before the next exercise</div></div><button class="qb acc" @click="editRest('restStretchAfterS')">{{ sec2(w.restStretchAfterS) }}</button></div>
+            <div class="li"><div class="grow"><div class="t">{{ REST_TITLE.restStretchBetweenS }}</div><div class="s">When a stretch has no rest of its own</div></div><button class="qb acc" @click="editRest('restStretchBetweenS')">{{ sec2(w.restStretchBetweenS) }}</button></div>
+            <div class="li"><div class="grow"><div class="t">{{ REST_TITLE.restStretchAfterS }}</div><div class="s">The break before the next exercise</div></div><button class="qb acc" @click="editRest('restStretchAfterS')">{{ sec2(w.restStretchAfterS) }}</button></div>
           </div>
           <template v-for="g in prefs" :key="g.id">
             <div class="sh"><h2>{{ g.title }}</h2></div>
