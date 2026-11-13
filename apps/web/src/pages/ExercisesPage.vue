@@ -14,6 +14,7 @@ import { useExercises, useSettings, loaded } from "../api/queries";
 import { mediaUrl } from "../api/client";
 import { ago } from "../core/format";
 import Icon from "../components/Icon.vue";
+import SearchField from "../components/SearchField.vue";
 import MuscleFig from "../components/MuscleFig.vue";
 import ExerciseEditor from "../components/ExerciseEditor.vue";
 import Sheet from "../components/Sheet.vue";
@@ -59,7 +60,7 @@ await loaded(all);
     <div class="ph"><div><h1>Exercises</h1><div class="sub">{{ all.data.value?.length ?? 0 }} in the library</div></div>
       <div class="acts"><button class="btn keep" @click="creating = true"><Icon name="plus" :size="18" />New exercise</button></div></div>
     <div class="row hgap">
-      <div class="search grow"><Icon name="search" :size="18" /><input v-model="q" placeholder="Search exercises" @input="shown = 60" /></div>
+      <SearchField v-model="q" class="grow" placeholder="Search exercises" @input="shown = 60" />
       <button class="ib" aria-label="Filters" title="Filters" @click="filtersOpen = true"><Icon name="filter" /><span v-if="filterCount" class="badge">{{ filterCount }}</span></button>
     </div>
     <FilterPanel :count="`${list.length} exercise${list.length === 1 ? '' : 's'}`" :active="!!group || !!filterCount" @clear="group = ''; clearFilters()">

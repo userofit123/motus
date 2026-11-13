@@ -7,6 +7,7 @@ import { useRoutines, useFolders } from "../api/queries";
 import { ago } from "../core/format";
 import { readJson, writeJson } from "../core/prefs";
 import Icon from "./Icon.vue";
+import SearchField from "./SearchField.vue";
 import Collapse from "./Collapse.vue";
 
 const emit = defineEmits<{ pick: [r: RoutineSummary] }>();
@@ -34,7 +35,7 @@ function fold(g: { id: string | null }) { const k = fkey(g); folded.value = isFo
 
 <template>
   <div>
-    <div v-if="all.length > 6" class="search hgap"><Icon name="search" :size="18" /><input v-model="q" placeholder="Search routines" /></div>
+    <SearchField v-if="all.length > 6" v-model="q" class="hgap" placeholder="Search routines" />
     <div v-if="routines.data.value && !list.length" class="empty">{{ q ? "No routine matches that" : "No routines yet" }}</div>
     <section v-for="g in groups" :key="g.id ?? 'none'">
       <div v-if="g.name" class="sh fh">

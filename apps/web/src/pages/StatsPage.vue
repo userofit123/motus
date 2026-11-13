@@ -9,6 +9,7 @@ import { startOpen } from "../core/ui";
 import { useStepGoal } from "../core/goals";
 const stepGoal = useStepGoal();
 import Icon from "../components/Icon.vue";
+import SearchField from "../components/SearchField.vue";
 import AppSelect from "../components/AppSelect.vue";
 import LineChart from "../components/LineChart.vue";
 import BarChart from "../components/BarChart.vue";
@@ -143,7 +144,7 @@ await loaded(st, prev, ach);
     </template>
 
     <template v-else-if="tab === 'exercises'">
-      <div class="search hgap"><Icon name="search" :size="18" /><input v-model="exq" placeholder="Find an exercise" /></div>
+      <SearchField v-model="exq" class="hgap" placeholder="Search exercises" />
       <FilterPanel :count="`${exList.length} exercise${exList.length === 1 ? '' : 's'}`" :active="!!exq || exSort !== 'times'" @clear="exq = ''; exSort = 'times'">
         <FilterRow :model-value="exSort" label="Order" :options="EX_ORDER" @update:model-value="(v) => (exSort = v as typeof exSort)" />
       </FilterPanel>

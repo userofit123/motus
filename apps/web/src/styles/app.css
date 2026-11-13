@@ -259,9 +259,13 @@ html.phone .sht .sh_b:last-child { padding-bottom: calc(var(--cpy) + 3px + var(-
 .tgl .s:not(.btn) { font-size: 12.5px; color: var(--tx2); margin-top: 2px; }
 /* fields revealed by a switch sit one row-gap under the switch's separator line instead of touching it */
 .tgl + .fld, .tgl + .frow { margin-top: var(--lpy); }
-.search { position: relative; }
-.search .ico { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--tx2); }
-.search input { padding-inline-start: 38px; width: 100%; }
+/* the search box (components/SearchField.vue). The field paints after the icon, and any look that gives the field its own
+   layer (Glass blurs what is behind a field, so the icon was blurred out) would cover it: the icon always sits above the field.
+   The box is its own stacking context so the raised icon never rises over sticky headers or menus. */
+.search { position: relative; isolation: isolate; display: flex; }
+.search .ico { position: absolute; z-index: 1; inset-inline-start: 12px; top: 50%; transform: translateY(-50%); color: var(--tx2); pointer-events: none; }
+/* as tall as the round buttons (Filters) that sit beside some of them, so every search box has the same height */
+.search input { padding-inline-start: 38px; width: 100%; min-height: 44px; }
 
 /* ---------- toasts ---------- */
 .tst { position: fixed; left: 50%; bottom: calc(24px + var(--sb)); transform: translateX(-50%); z-index: 400; display: flex; flex-direction: column; gap: 8px; align-items: center; pointer-events: none; }

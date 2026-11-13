@@ -15,6 +15,7 @@ import { useFmt, localYmd, activityIcon } from "../core/format";
 import { isPhone } from "../core/device";
 import { activitySheet } from "../core/ui";
 import Icon from "../components/Icon.vue";
+import SearchField from "../components/SearchField.vue";
 import ScheduleEditor from "../components/ScheduleEditor.vue";
 import SessionStats from "../components/SessionStats.vue";
 
@@ -147,7 +148,7 @@ await loaded(cal, listWorkouts, listActs);
     </div>
 
     <div v-else key="list">
-      <div class="search hgap"><Icon name="search" :size="18" /><input v-model="qtext" placeholder="Search" /></div>
+      <SearchField v-model="qtext" class="hgap" placeholder="Search workouts and activities" />
       <div v-if="!list.length" class="card empty"><Icon name="calendar" :size="34" /><b>Nothing yet</b>Finished workouts and activities show here.</div>
       <section v-for="[m, xs] in listGroups" :key="m"><div class="sh"><h2>{{ m }}</h2><span class="tiny">{{ xs.length }}</span></div>
         <div class="card"><div class="list"><div v-for="x in xs" :key="x.id" class="li click" @click="open(x)">

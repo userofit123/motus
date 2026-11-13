@@ -304,7 +304,7 @@ body.glass :is(.rktip,.trtip) {
 /* filled parts that stand on the page by themselves (tab rows, round buttons, fields) blur what is behind them directly;
    inside a block they need not,
    the block already does */
-body.glass :is(.rkbr,.inf,.exo,.exbox,.exd,.exsamp,.txs-c,.jstat3,.stl,.phs > div,.trstats > div,.jstats > div,.exst > div,.cstn > div,.jfs > div,.wct,.bq,.sinfo,.trex,.trtog,.trleg .lgi,.tcs,.hdemo,.jt,.jct,.kvc,.atile,.phb,.phl,.txs2,.rule,.wnc,input:not([type=checkbox],[type=radio],[type=range],[type=color]),textarea,.fpick,.ftools select):not(:is(.card,table:not(.sets),.bgrp,.jhero,.fcard,.setnav,.rkeq,.abar,.sheet,.pop,.askb,.help,.rcal,.dvbox,.tsug,.ddm,.cmenu,.toast,.sugb) *) {
+body.glass :is(.rkbr,.inf,.exo,.exbox,.exd,.exsamp,.txs-c,.jstat3,.stl,.phs > div,.trstats > div,.jstats > div,.exst > div,.cstn > div,.jfs > div,.wct,.bq,.sinfo,.trex,.trtog,.trleg .lgi,.tcs,.hdemo,.jt,.jct,.kvc,.atile,.phb,.phl,.txs2,.rule,.wnc,input:not([type=checkbox],[type=radio],[type=range],[type=color]),textarea,.fpick,.ftools select):not(:is(.card,table:not(.sets),.bgrp,.jhero,.fcard,.setnav,.rkeq,.abar,.sheet,.sht,.pop,.askb,.help,.rcal,.dvbox,.tsug,.ddm,.cmenu,.toast,.sugb) *) {
   -webkit-backdrop-filter: var(--gfx);
   backdrop-filter: var(--gfx);
 }

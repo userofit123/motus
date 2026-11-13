@@ -13,6 +13,7 @@ import { confirm, prompt } from "../core/ask";
 import { toast, toastError } from "../core/toast";
 import { invalidate } from "../api/live";
 import Icon from "../components/Icon.vue";
+import SearchField from "../components/SearchField.vue";
 import Menu from "../components/Menu.vue";
 import Collapse from "../components/Collapse.vue";
 import Sheet from "../components/Sheet.vue";
@@ -121,7 +122,7 @@ await loaded(routines, folders, ...(settings.value.features.programs ? [programs
 <Transition name="sw" mode="out-in">
     <div v-if="onPrograms" key="programs"><ProgramsSection ref="programsRef" /></div>
     <div v-else key="routines">
-    <div v-if="(routines.data.value?.length ?? 0) > 6" class="search hgap"><Icon name="search" :size="18" /><input v-model="q" placeholder="Search routines" /></div>
+    <SearchField v-if="(routines.data.value?.length ?? 0) > 6" v-model="q" class="hgap" placeholder="Search routines" />
     <div v-if="showArchived" class="banner note"><Icon name="archive" />Showing archived routines<button class="qb acc" style="margin-inline-start:auto;padding:0 6px" @click="showArchived = false">Done</button></div>
 
     <div v-if="routines.data.value && !list.length && !showArchived" class="card empty">

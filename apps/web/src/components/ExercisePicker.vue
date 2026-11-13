@@ -7,6 +7,7 @@ import { useExercises, useExercise, useSettings } from "../api/queries";
 import { mediaUrl } from "../api/client";
 import Sheet from "./Sheet.vue";
 import Icon from "./Icon.vue";
+import SearchField from "./SearchField.vue";
 import MuscleFig from "./MuscleFig.vue";
 import ExerciseEditor from "./ExerciseEditor.vue";
 import FilterPanel from "./FilterPanel.vue";
@@ -104,7 +105,7 @@ function te(e: TouchEvent) {
 <template>
   <Sheet :title="title ?? 'Add exercises'" size="wide" @close="emit('close')">
     <div class="row hgap">
-      <div class="search grow"><Icon name="search" :size="18" /><input v-model="q" placeholder="Search exercises" autofocus /></div>
+      <SearchField v-model="q" class="grow" placeholder="Search exercises" autofocus />
       <button class="ib" aria-label="Filters" title="Filters" :aria-expanded="moreOpen" @click="moreOpen = !moreOpen"><Icon name="filter" /><span v-if="moreCount" class="badge">{{ moreCount }}</span></button>
     </div>
     <FilterPanel :count="showSuggest ? 'Works the same muscles' : `${list.length === 150 ? '150+' : list.length} exercises`" :active="filtered" @clear="clear">
