@@ -398,7 +398,7 @@ describe("engine", () => {
   it("builds the home summary, stats and calendar", async () => {
     const home = await call(A, "GET", "/home");
     expect(home.last.name).toBe("Push");
-    expect(home.goals.length).toBe(3); // the two set above and the "Weekly target" A gets for already having workouts
+    expect(home.goals.length).toBe(2); // the two set above: the app makes none by itself
     const stats = await call(A, "GET", "/stats");
     expect(stats.workouts.length).toBe(2);
     expect(stats.muscles.chest).toBeGreaterThan(0);
@@ -421,7 +421,7 @@ describe("engine", () => {
     expect((await call(B, "GET", "/routines")).length).toBe(0);
     expect(await call(B, "GET", "/workouts/active")).toBe(null);
     expect((await call(B, "GET", "/workouts")).length).toBe(0);
-    expect((await call(B, "GET", "/goals")).map((g: any) => g.title)).toEqual([]); // B has no data, so no starter goal, and none of A's
+    expect((await call(B, "GET", "/goals")).map((g: any) => g.title)).toEqual([]); // none of A's
     expect(await status(B, "GET", `/routines/${routineId}`)).toBe(404);
     expect(await status(B, "GET", `/workouts/${workoutId}`)).toBe(404);
     // and cannot change them

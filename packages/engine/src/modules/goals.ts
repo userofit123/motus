@@ -2,7 +2,7 @@
 // Progress is worked out from the data each time, so editing a past workout moves the goal too.
 // Weeks, months and days follow the app's calendar (tz = its getTimezoneOffset(), as for /home and /achievements), not
 // the process's: the server runs in UTC and the copy on a device in the person's zone, and both must agree.
-import { e1rm, GROUPS, LIFTED_SQL, withDefaults, bodyMeasure, bodyUnit, bodyGoalDirection, goalDaysOf, orderGoals, GOAL_METRICS, type Goal, type GoalProgress, type Settings } from "@motus/shared";
+import { e1rm, GROUPS, LIFTED_SQL, bodyMeasure, bodyUnit, bodyGoalDirection, goalDaysOf, orderGoals, GOAL_METRICS, type Goal, type GoalProgress, type Settings } from "@motus/shared";
 import type { Router, Ctx } from "../router";
 import type { Sql } from "../db";
 import { camel, id, str, numOrNull, oneOf, dateStr, startOfDay, tzOf, visible } from "../util";
@@ -207,53 +207,6 @@ async function goalLog(q: Sql, g: Goal, w: Window, tzMin: number): Promise<{ kin
 }
 
 /**
- * The daily step goal used to be a setting (stepGoal); it is now a goal counted every day. Made once (stepGoalSeeded),
- * and only for someone who used steps; everyone else sets one when they want it.
- * with an id from the person's id like the starter goal, so the server and each device make the same one.
- */
-async function ensureStepGoal(q: Sql, userId: string) {
-  const raw = (await q.query<{ data: any }>("SELECT data FROM user_settings WHERE user_id = $1", [userId])).rows[0]?.data ?? {};
-  if (raw.stepGoalSeeded) return;
-  const s = withDefaults(raw);
-  // only for someone who used it: steps logged, or the old setting changed from its default
-  const used = (raw.stepGoal != null && raw.stepGoal !== 8000) || (await q.query("SELECT 1 FROM daily_logs WHERE kind = 'steps' LIMIT 1")).rows.length > 0;
-  const has = (await q.query("SELECT 1 FROM goals WHERE metric = 'steps_avg' AND period = 'day' LIMIT 1")).rows.length;
-  if (used && !has && s.features.steps) {
-    const gid = (await q.query<{ id: string }>("SELECT md5($1::text || ':daily-steps')::uuid AS id", [userId])).rows[0]!.id;
-    await q.query(`INSERT INTO goals (id, user_id, title, scope, scope_id, metric, comparator, target, period, start_date)
-      VALUES ($1, $2, 'Daily steps', 'activity', NULL, 'steps_avg', '>=', $3, 'day', current_date) ON CONFLICT (id) DO NOTHING`, [gid, userId, Math.max(1000, s.stepGoal)]);
-  }
-  await q.query(`INSERT INTO user_settings (user_id, data, updated_at) VALUES ($1, $2, now()) ON CONFLICT (user_id) DO UPDATE SET data = user_settings.data || $2, updated_at = now()`,
-    [userId, JSON.stringify({ stepGoalSeeded: true })]);
-}
-
-/**
- * The old fixed weekly target (settings.weeklyGoal) became a goal, "Weekly target": gym workouts each week, first on Home
- * with its streak. Only someone who already used it gets it (a weekly number set, or workouts / activities logged); someone
- * with only activities logged gets it counting every session instead, as gym workouts alone would never fill it; new
- * people start with no goals. Decided once (goalsSeeded), so deleting it sticks and someone who starts logging later is
- * never handed it. Its id comes from the person's id, so the server and the copy on each device make the same goal.
- */
-export async function ensureStarterGoal(q: Sql, userId: string) {
-  await ensureStepGoal(q, userId);
-  const raw = (await q.query<{ data: any }>("SELECT data FROM user_settings WHERE user_id = $1", [userId])).rows[0]?.data ?? {};
-  if (raw.goalsSeeded) return;
-  const s = withDefaults(raw);
-  const gym = raw.weeklyGoal != null || (await q.query("SELECT 1 FROM workouts LIMIT 1")).rows.length > 0;
-  const used = gym || (await q.query("SELECT 1 FROM activities LIMIT 1")).rows.length > 0;
-  if (!used) {
-    await q.query(`INSERT INTO user_settings (user_id, data, updated_at) VALUES ($1, $2, now()) ON CONFLICT (user_id) DO UPDATE SET data = user_settings.data || $2, updated_at = now()`, [userId, JSON.stringify({ goalsSeeded: true })]);
-    return;
-  }
-  const gid = (await q.query<{ id: string }>("SELECT md5($1::text || ':weekly-target')::uuid AS id", [userId])).rows[0]!.id;
-  await q.query(`INSERT INTO goals (id, user_id, title, scope, scope_id, metric, comparator, target, period, start_date)
-    VALUES ($1, $2, 'Weekly target', 'activity', $4, 'sessions', '>=', $3, 'week', current_date) ON CONFLICT (id) DO NOTHING`, [gid, userId, Math.max(1, s.weeklyGoal), gym ? "workout" : null]);
-  const goals = s.home.goals.some((x) => x.id === gid) ? s.home.goals : [{ id: gid, streak: true }, ...s.home.goals];
-  const next = { goalsSeeded: true, home: { ...(raw.home ?? {}), goals } };
-  await q.query(`INSERT INTO user_settings (user_id, data, updated_at) VALUES ($1, $2, now()) ON CONFLICT (user_id) DO UPDATE SET data = user_settings.data || $2, updated_at = now()`, [userId, JSON.stringify(next)]);
-}
-
-/**
  * Whether an achieved one-off goal that its current value no longer meets was still reached at some point, by the data as
  * it is now. Most one-off measures already cover everything since the goal started (the heaviest set, the most reps, the
  * quickest run of a routine, sessions in total), so not met now means the data that reached it was changed or deleted.
@@ -275,7 +228,6 @@ async function stillReached(q: Sql, g: Goal): Promise<boolean> {
 }
 
 export async function goalsWithProgress(ctx: Ctx, tzMin: number, where = "status <> 'archived'"): Promise<Goal[]> {
-  await ensureStarterGoal(ctx.q, ctx.userId);
   const s = await getSettings(ctx.q, ctx.userId);
   const rows = (await ctx.q.query(`SELECT * FROM goals WHERE ${where} ORDER BY status = 'achieved', created_at DESC`)).rows.map((x: any) => camel<Goal>(x));
   for (const g of rows) {

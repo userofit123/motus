@@ -175,7 +175,7 @@ describe("goals on the app's calendar", () => {
   it("puts a late-Sunday-UTC workout in the week the app is in", async () => {
     NOW = new Date("2026-10-05T10:00:00Z");
     const { call, log } = await user();
-    await call("PUT", "/settings", { firstDay: 1, weeklyGoal: 2 });
+    await call("PUT", "/settings", { firstDay: 1 });
     const g = await call("POST", "/goals", { metric: "workouts", target: 3, period: "week" });
     await log("2026-10-04T22:30:00Z"); // Monday 00:30 for an app two hours ahead; still Sunday in UTC
     await log("2026-10-05T03:00:00Z"); // Sunday 22:00 for an app five hours behind
@@ -194,7 +194,8 @@ describe("goals on the app's calendar", () => {
   it("counts weeks in a row on the app's calendar for the streak goal", async () => {
     NOW = new Date("2026-10-05T10:00:00Z");
     const { call, log } = await user();
-    await call("PUT", "/settings", { firstDay: 1, weeklyGoal: 2 });
+    await call("PUT", "/settings", { firstDay: 1 });
+    await call("POST", "/goals", { metric: "sessions", scopeId: "workout", target: 2, period: "week" }); // the weekly goal the streak follows
     const g = await call("POST", "/goals", { metric: "streak_weeks", target: 4 });
     await log("2026-10-04T22:30:00Z");
     await log("2026-10-05T08:00:00Z");

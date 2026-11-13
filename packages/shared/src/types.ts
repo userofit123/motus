@@ -469,7 +469,6 @@ export type HomeFeedItem = ({ kind: "workout" } & WorkoutSummary) | { kind: "act
 /** Home (/home): everything the blocks read. */
 export interface HomeData extends HomeToday {
   records: HomeRecord[];
-  streak: number;
   weeks: HomeWeek[]; thisWeek: HomeWeek; lastWeek: HomeWeek;
   homeGoals: (Goal & { showStreak: boolean })[];
   goals: Goal[];

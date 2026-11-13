@@ -14,6 +14,11 @@ describe("Home blocks", () => {
     expect(out.find((s) => s.id === "upnext")?.on).toBe(true);
     expect(out.find((s) => s.id === "records")?.on).toBe(false);
   });
+  it("drops the old Streak and Steps blocks from a saved layout, keeping the rest in its order", () => {
+    const out = cleanHomeBlocks([{ id: "today", on: true }, { id: "streak", on: true }, { id: "week", on: false }, { id: "steps", on: true }, { id: "pinned", on: true }]);
+    expect(ids(out).slice(0, 3)).toEqual(["today", "week", "pinned"]);
+    expect(out.some((s) => s.id === "streak" || s.id === "steps")).toBe(false);
+  });
   it("keeps the default on/off when a saved one isn't a boolean", () => {
     expect(cleanHomeBlocks([{ id: "feed", on: "yes" }])[0]).toEqual({ id: "feed", on: false });
     // Today can't be switched off, even from a saved order that says so

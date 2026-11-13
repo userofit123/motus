@@ -1,5 +1,5 @@
-// The weekly target as a goal: people who used the old fixed number get one (taking it), new people start with none, it can be deleted for good, every
-// weekly goal keeps its own streak, "sessions" counts gym workouts, activities or both, and a goal's page lists what went in.
+// Weekly goals: the app makes none by itself (not from the old fixed number, not from logged workouts), Home shows only the
+// goals the person made and pinned, every weekly goal keeps its own streak, "sessions" counts gym workouts, activities or both, and a goal's page lists what went in.
 import { describe, it, expect, beforeAll } from "vitest";
 import { createEngine, type Engine } from "../src/index";
 import { pgliteDb } from "../src/adapters/pglite";
@@ -34,23 +34,34 @@ describe("starting goals", () => {
     expect(await as("GET", "/goals")).toEqual([]);
   });
 
-  it("migrates someone with workout history to the Weekly target", async () => {
+  it("makes no goal for someone with workouts, activities or the old weekly number, and pins nothing to Home", async () => {
     const O = uuidv7();
     await eng.db.admin.query("INSERT INTO users (id, username, display_name) VALUES ($1,'old','Old')", [O]);
     const as = async (method: string, path: string, body?: unknown) => (await eng.handle({ method, path, body, query: { tz: "0" }, userId: O })).body as any;
+    await as("PUT", "/settings", { weeklyGoal: 4, stepGoal: 12000 });
     await as("POST", "/workouts/log", { startedAt: "2026-10-06T08:00:00Z", durationS: 1800, exercises: [], name: "Gym" });
-    const goals = await as("GET", "/goals");
-    expect(goals.map((g: any) => g.title)).toEqual(["Weekly target"]);
+    await as("POST", "/activities", { type: "walk", startedAt: "2026-10-06T18:00:00Z", durationS: 1200 });
+    await as("PUT", "/daily", { date: "2026-10-06", kind: "steps", value: 9000 });
+    expect(await as("GET", "/goals")).toEqual([]);
+    expect((await as("GET", "/home")).homeGoals).toEqual([]);
+    expect((await as("GET", "/me")).settings.home.goals).toEqual([]);
   });
 
-  it("gives someone with only activities logged a Weekly target that counts them", async () => {
-    const A = uuidv7();
-    await eng.db.admin.query("INSERT INTO users (id, username, display_name) VALUES ($1,'walker','Walker')", [A]);
-    const as = async (method: string, path: string, body?: unknown) => (await eng.handle({ method, path, body, query: { tz: "0" }, userId: A })).body as any;
-    await as("POST", "/activities", { type: "walk", startedAt: "2026-10-06T18:00:00Z", durationS: 1200 });
-    const [wt] = await as("GET", "/goals");
-    expect(wt).toMatchObject({ title: "Weekly target", metric: "sessions", scopeId: null });
-    expect(wt.progress.current).toBe(1);
+  it("takes the goals the app made by itself off Home, keeping them and the person's own pins (migration 026)", async () => {
+    const P = uuidv7();
+    await eng.db.admin.query("INSERT INTO users (id, username, display_name) VALUES ($1,'seeded','Seeded')", [P]);
+    const as = async (method: string, path: string, body?: unknown) => (await eng.handle({ method, path, body, query: { tz: "0" }, userId: P })).body as any;
+    const seeded = (await eng.db.admin.query<{ w: string; s: string }>("SELECT md5($1::text || ':weekly-target')::uuid::text w, md5($1::text || ':daily-steps')::uuid::text s", [P])).rows[0]!;
+    await eng.db.admin.query(`INSERT INTO goals (id, user_id, title, scope, scope_id, metric, comparator, target, period) VALUES
+      ($2::uuid, $1::uuid, 'Weekly target', 'activity', 'workout', 'sessions', '>=', 3, 'week'), ($3::uuid, $1::uuid, 'Daily steps', 'activity', NULL, 'steps_avg', '>=', 8000, 'day')`, [P, seeded.w, seeded.s]);
+    const own = await as("POST", "/goals", { title: "Mine", metric: "workouts", target: 2, period: "month" });
+    const pins = [{ id: seeded.w, streak: true }, { id: own.id, streak: false }, { id: seeded.s, streak: true }];
+    await eng.db.admin.query("INSERT INTO user_settings (user_id, data) VALUES ($1, $2) ON CONFLICT (user_id) DO UPDATE SET data = $2", [P, JSON.stringify({ goalsSeeded: true, home: { goals: pins } })]);
+    await eng.db.admin.query("DELETE FROM schema_migrations WHERE name = '026_unpin_seeded_goals'");
+    expect(await migrate(eng.db)).toEqual(["026_unpin_seeded_goals"]);
+    expect((await as("GET", "/me")).settings.home.goals).toEqual([{ id: own.id, streak: false }]);
+    expect((await as("GET", "/home")).homeGoals.map((g: any) => g.id)).toEqual([own.id]);
+    expect((await as("GET", "/goals")).map((g: any) => g.title).sort()).toEqual(["Daily steps", "Mine", "Weekly target"]);
   });
 
   it("switches a Weekly target seeded gym-only before to everything for someone with only activities (migration 010)", async () => {
@@ -84,14 +95,13 @@ describe("starting goals", () => {
 });
 
 describe("weekly goal", () => {
-  it("gives someone who set the old number a Weekly target goal from it, first on Home with its streak", async () => {
+  it("pins a weekly goal the person made to Home, with its streak", async () => {
+    const wt = await call("POST", "/goals", { title: "Weekly target", metric: "sessions", scopeId: "workout", target: 2, period: "week" });
+    await call("PUT", "/settings", { home: { goals: [{ id: wt.id, streak: true }] } });
     const goals = await call("GET", "/goals");
     expect(goals).toHaveLength(1);
-    expect(goals[0]).toMatchObject({ title: "Weekly target", metric: "sessions", scopeId: "workout", target: 2, period: "week" });
-    const me = await call("GET", "/me");
-    expect(me.settings.home.goals).toEqual([{ id: goals[0].id, streak: true }]);
-    // asking again doesn't add another
-    expect(await call("GET", "/goals")).toHaveLength(1);
+    expect((await call("GET", "/me")).settings.home.goals).toEqual([{ id: wt.id, streak: true }]);
+    expect((await call("GET", "/home")).homeGoals).toMatchObject([{ id: wt.id, showStreak: true }]);
   });
 
   it("keeps a streak per weekly goal and counts what the goal says", async () => {
@@ -102,8 +112,8 @@ describe("weekly goal", () => {
     expect(wt.progress.current).toBe(1);
     expect(wt.progress.streak).toBe(2); // this week isn't reached yet, so the run ending last week stands
     const home = await call("GET", "/home");
-    expect(home.homeGoals[0]).toMatchObject({ id: wt.id, showStreak: true });
-    expect(home.streak).toBe(2);
+    expect(home.homeGoals[0]).toMatchObject({ id: wt.id, showStreak: true, progress: { streak: 2 } });
+    expect((await call("GET", "/achievements")).find((a: any) => a.id === "streak").value).toBe(2);
     // everything counts: workouts and walks
     const any = await call("POST", "/goals", { metric: "sessions", scopeId: null, target: 3, period: "week" });
     const walks = await call("POST", "/goals", { metric: "sessions", scopeId: "walk", target: 2, period: "week" });
@@ -123,7 +133,7 @@ describe("weekly goal", () => {
     expect(d.log.map((x: any) => x.kind)).toEqual(["workout"]);
   });
 
-  it("lets the starter goal go for good", async () => {
+  it("lets a pinned goal go for good", async () => {
     const [wt] = (await call("GET", "/goals")).filter((g: any) => g.title === "Weekly target");
     await call("DELETE", `/goals/${wt.id}`);
     expect((await call("GET", "/goals")).some((g: any) => g.title === "Weekly target")).toBe(false);
@@ -132,9 +142,8 @@ describe("weekly goal", () => {
 
   it("has no fixed weekly target behind it: the streak follows the weekly goals there are, and none means no streak", async () => {
     // the oldest weekly sessions goal left, "everything 3 a week", is reached this week only
-    expect((await call("GET", "/home")).streak).toBe(1);
+    expect((await call("GET", "/achievements")).find((a: any) => a.id === "streak").value).toBe(1);
     for (const g of (await call("GET", "/goals")).filter((x: any) => x.period === "week")) await call("PUT", `/goals/${g.id}`, { status: "archived" });
-    expect((await call("GET", "/home")).streak).toBe(0);
     expect((await call("GET", "/achievements")).find((a: any) => a.id === "streak").value).toBe(0);
   });
 
@@ -142,6 +151,6 @@ describe("weekly goal", () => {
     // 3 sessions this week (a workout and two walks) against a target of 2.5
     const g = await call("POST", "/goals", { metric: "sessions", scopeId: null, target: 2.5, period: "week" });
     expect((await call("GET", "/goals")).find((x: any) => x.id === g.id).progress).toMatchObject({ done: true, streak: 1 });
-    expect((await call("GET", "/home")).streak).toBe(1);
+    expect((await call("GET", "/achievements")).find((a: any) => a.id === "streak").value).toBe(1);
   });
 });

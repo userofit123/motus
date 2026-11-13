@@ -59,8 +59,7 @@ describe("sync", () => {
     const there = await S()("GET", `/workouts/${w.id}`);
     expect(there.status).toBe("completed");
     expect(there.exercises[0].sets.every((s: any) => s.done && s.weightKg === 60)).toBe(true);
-    // this one and the starter goal, which both sides made with the same id, so it isn't doubled
-    expect((await S()("GET", "/goals")).length).toBe(2);
+    expect((await S()("GET", "/goals")).length).toBe(1);
   }, 60000);
 
   it("fetches changes made elsewhere", async () => {

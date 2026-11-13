@@ -66,7 +66,7 @@ export interface Settings {
   platesKg: number[];
   platesLb: number[];
   e1rm: "epley" | "brzycki";
-  /** the old fixed weekly target; it became the "Weekly target" goal and is only read once, to give that goal to people who already used it */
+  /** the old fixed weekly and daily step targets, read by nothing now: goals took their place, made only by the person */
   weeklyGoal: number;
   stepGoal: number;
   /** the work week (Sunday = 0); null: from the first day of the week, Sunday to Thursday or Monday to Friday */
@@ -96,7 +96,7 @@ export interface HomeBlock { id: string; on: boolean }
  *  have something to say now and then (a workout in progress is part of Today; reminders, goals due soon, a program), stay
  *  in this list and simply don't draw while there's nothing to show. Ids added later are appended to a saved order. */
 export const HOME_BLOCKS: HomeBlock[] = [
-  { id: "today", on: true }, { id: "streak", on: true }, { id: "week", on: true }, { id: "steps", on: true },
+  { id: "today", on: true }, { id: "week", on: true },
   { id: "pinned", on: true }, { id: "dueSoon", on: true }, { id: "program", on: true },
   { id: "muscles", on: true }, { id: "upnext", on: true }, { id: "previous", on: true }, { id: "goals", on: true },
   { id: "suggest", on: true }, { id: "reminders", on: true },

@@ -23,7 +23,8 @@ beforeAll(async () => {
   bench = (await call("POST", "/exercises", { name: "Test bench", tracking: "weight_reps", primaryMuscles: ["chest"] })).id;
   assist = (await call("POST", "/exercises", { name: "Test assisted pull-up", tracking: "assisted", primaryMuscles: ["lats"] })).id;
   pushup = (await call("POST", "/exercises", { name: "Test push-up", tracking: "bodyweight_reps", primaryMuscles: ["chest"] })).id;
-  await call("PUT", "/settings", { weeklyGoal: 2, firstDay: 1 });
+  await call("PUT", "/settings", { firstDay: 1 });
+  await call("POST", "/goals", { title: "Weekly target", metric: "sessions", scopeId: "workout", target: 2, period: "week" }); // the weekly goal the streak follows
 }, 120000);
 
 describe("achievements", () => {
@@ -72,9 +73,7 @@ describe("achievements", () => {
     expect((await ach()).streak.value).toBe(2);
     // in UTC the 22:30 workout falls in the week of 28 Sep, leaving 5 Oct one short
     expect((await ach("0")).streak.value).toBe(1);
-    const home = await call("GET", "/home", undefined, { tz: TZ });
-    expect(home.streak).toBe(2);
-    expect(home.thisWeek.workouts).toBe(2);
+    expect((await call("GET", "/home", undefined, { tz: TZ })).thisWeek.workouts).toBe(2);
   });
 
   it("adds up walks and hikes in the person's distance unit, and shows running once there is a run", async () => {

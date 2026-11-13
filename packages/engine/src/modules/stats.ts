@@ -4,9 +4,9 @@ import type { Router, Ctx } from "../router";
 import type { Sql } from "../db";
 import { camel, startOfDay, tzOf } from "../util";
 import { getSettings } from "./settings";
-import { goalsWithProgress, ensureStarterGoal } from "./goals";
+import { goalsWithProgress } from "./goals";
 import { stepsByDay } from "./activities";
-import { achievements, currentStreak, dayIn, weekIn } from "./achievements";
+import { achievements, dayIn, weekIn } from "./achievements";
 import { plannedMarked } from "./schedule";
 import { workoutSummaries, recentRecords } from "./workouts";
 import { routineSummaries } from "./routines";
@@ -109,7 +109,6 @@ export function statsRoutes(r: Router) {
   });
 
   r.get("/home", async (ctx, _p, _b, qs) => {
-    await ensureStarterGoal(ctx.q, ctx.userId); // before reading settings: it may add the starter goal to Home
     const s = await getSettings(ctx.q, ctx.userId);
     const now = ctx.now();
     // the app's offset from UTC, so "this week" and "today" match its calendar. Dates are worked out in UTC from the
@@ -182,14 +181,14 @@ export function statsRoutes(r: Router) {
       ...(await workoutSummaries(ctx.q, "w.status = 'completed'", [], 8)).map((w) => ({ kind: "workout", ...w })),
       ...(await ctx.q.query("SELECT id, type, name, started_at, duration_s, distance_m, steps FROM activities ORDER BY started_at DESC LIMIT 8")).rows.map((x: any) => ({ kind: "activity", ...camel<any>(x) })),
     ].sort((a: any, b: any) => b.startedAt.localeCompare(a.startedAt)).slice(0, 8);
-    // the days (in the app's calendar) with a finished workout or an activity: the week strip and the streak grid
+    // the days (in the app's calendar) with a finished workout or an activity: the week strip
     const days = [...new Set([...rows.map((x) => dayIn(x.startedAt, tzMin)), ...acts.map((x: any) => dayIn(x.started_at, tzMin))])].sort();
     // records set in the last 30 days, only while the Records block is on (a bounded number of queries: it reruns on most changes)
     const records = s.home.blocks.some((b) => b.id === "records" && b.on)
       ? await recentRecords(ctx.q, new Date(now.getTime() - 30 * 86400000).toISOString(), 6) : [];
     return {
       days, records,
-      weeks, thisWeek: weeks.at(-1), lastWeek: weeks.at(-2), streak: await currentStreak(ctx.q, s, now, tzMin), homeGoals,
+      weeks, thisWeek: weeks.at(-1), lastWeek: weeks.at(-2), homeGoals,
       last,
       active: active ? camel(active) : null, programs, upNext, plannedToday, suggest, goals, reminders, bodyweight: bw, feed, muscles7, main7, helpers7, groupDays,
       totalWorkouts: Number((await ctx.q.query("SELECT count(*) n FROM workouts WHERE status = 'completed'")).rows[0].n),
@@ -201,7 +200,6 @@ export function statsRoutes(r: Router) {
 
   // registered here, not in achievements.ts: that would need goals.ts, which already imports achievements.ts
   r.get("/achievements", async (ctx, _p, _b, qs) => {
-    await ensureStarterGoal(ctx.q, ctx.userId); // before reading settings: the streak follows the weekly goal it makes
     return achievements(ctx.q, await getSettings(ctx.q, ctx.userId), Number(qs.tz) || 0);
   });
 }

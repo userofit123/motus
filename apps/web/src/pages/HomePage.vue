@@ -4,14 +4,13 @@
 // (no reminder waiting, no goal due soon, no program running) stays away until it has; feature blocks need their feature.
 import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
-import { useQuery } from "@tanstack/vue-query";
-import { daysIntoWeek, muscleName, num, fromM, percentChange, orderGoals, HOME_BLOCKS, type Goal, type HomePlan, type HomeRecord, type HomeGroup, type HomeWeek } from "@motus/shared";
+import { muscleName, num, fromM, percentChange, orderGoals, HOME_BLOCKS, type Goal, type HomePlan, type HomeRecord, type HomeGroup, type HomeWeek } from "@motus/shared";
 import { useHome, useSettings, saveSettings, useAchievements, useGoals, loaded } from "../api/queries";
 import { api } from "../api/client";
 import { invalidate, queryClient } from "../api/live";
 import { confirm } from "../core/ask";
 import { toast } from "../core/toast";
-import { onHome, streakOnHome, toggleHomeGoal, setHomeStreak, periodWord, periodNow, periodLabel, useStepGoal } from "../core/goals";
+import { onHome, streakOnHome, toggleHomeGoal, setHomeStreak, periodWord, periodNow, periodLabel } from "../core/goals";
 import { useFmt, ago, goalLabel, localYmd, tomorrowYmd } from "../core/format";
 import { reminderText } from "../core/reminderText";
 import { startPlan, unplanItems } from "../components/home/planActions";
@@ -43,10 +42,8 @@ const fresh = computed(() => !!h.value && !h.value.routineCount && !h.value.tota
 type Size = "s" | "m" | "l";
 const META: Record<string, { name: string; desc: string; icon: string; size: Size }> = {
   today: { name: "Today", desc: "What to do today and this week's training days", icon: "play", size: "l" },
-  streak: { name: "Streak", desc: "Weeks in a row on your weekly target, and your training days", icon: "flame", size: "s" },
   week: { name: "This week", desc: "Workouts, time and volume against last week", icon: "stats", size: "m" },
-  steps: { name: "Steps", desc: "Today's steps against your step goal", icon: "steps", size: "s" },
-  pinned: { name: "Pinned goals", desc: "The goals you pin, each as its own block", icon: "pin", size: "m" },
+  pinned: { name: "Pinned goals", desc: "The goals you made and pinned, each as its own block", icon: "pin", size: "m" },
   dueSoon: { name: "Goals due soon", desc: "Shows when a goal ends within two weeks", icon: "target", size: "m" },
   program: { name: "Your program", desc: "Shows while you follow a program", icon: "routines", size: "m" },
   muscles: { name: "Muscles this week", desc: "Sets per muscle in the last 7 days, and what's resting", icon: "activity", size: "m" },
@@ -62,14 +59,14 @@ const META: Record<string, { name: string; desc: string; icon: string; size: Siz
   achievements: { name: "Achievements", desc: "The latest reached and the next one", icon: "star", size: "m" },
 };
 // a block whose feature is off is absent everywhere, Edit home included
-const FEATURE: Record<string, string> = { steps: "steps", program: "programs", daily: "dailyLog", achievements: "achievements" };
+const FEATURE: Record<string, string> = { program: "programs", daily: "dailyLog", achievements: "achievements" };
 const available = (id: string) => !!META[id] && (!FEATURE[id] || !!s.value.features[FEATURE[id]!]);
 const listed = computed(() => s.value.home.blocks.filter((x) => available(x.id)));
 const isOn = (id: string) => listed.value.some((x) => x.id === id && x.on);
 // Today is always shown, so Edit home gives it no switch
 const FIXED = new Set(["today"]);
 
-// ---- data the blocks read (all from /home, except steps, goals and achievements, which have their own queries)
+// ---- data the blocks read (all from /home, except goals and achievements, which have their own queries)
 const tw = computed(() => h.value?.thisWeek ?? { workouts: 0, timeS: 0, volumeKg: 0, walkM: 0 });
 const lw = computed(() => h.value?.lastWeek ?? { workouts: 0, timeS: 0, volumeKg: 0, walkM: 0 });
 const weeks = computed<HomeWeek[]>(() => h.value?.weeks ?? []);
@@ -107,21 +104,6 @@ const lastStats = computed<WStat[]>(() => {
   ];
 });
 
-// streak grid: the last five weeks, from your first day of the week, a square per day
-const grid = computed(() => {
-  const now = new Date(), back = daysIntoWeek(now.getDay(), s.value.firstDay) + 28, done = new Set(h.value?.days ?? []);
-  return Array.from({ length: 35 }, (_, i) => { const ymd = localYmd(new Date(now.getFullYear(), now.getMonth(), now.getDate() - back + i)); return { ymd, on: done.has(ymd), future: ymd > today }; });
-});
-const daysTrained = computed(() => grid.value.filter((d) => d.on).length);
-
-// steps today, walks counted in (the daily log's own query, so a typed number shows at once)
-const stepGoal = useStepGoal();
-const stepsQ = useQuery({ queryKey: ["activities", "daily", today], queryFn: () => api.get<any[]>("/daily", { from: today, tz: new Date().getTimezoneOffset() }), enabled: computed(() => isOn("steps")) });
-const steps = computed(() => Number((stepsQ.data.value ?? []).find((x: any) => x.kind === "steps" && String(x.date).slice(0, 10) === today)?.value ?? 0));
-const stepTarget = computed(() => stepGoal.value?.target ?? null);
-// the streak follows a weekly sessions/workouts goal; without one it can't count, so the block says where to make it
-const hasWeeklyGoal = computed(() => (allGoals.data.value ?? []).some((g) => g.status === "active" && g.period === "week" && (g.metric === "sessions" || g.metric === "workouts")));
-
 // goals: pinned ones (settings.home.goals, in that order), the first active ones, and active ones ending soon
 const allGoals = useGoals();
 const pinnedGoals = computed<(Goal & { showStreak: boolean })[]>(() => orderGoals(h.value?.homeGoals ?? [], s.value.home.goals.map((x) => x.id)));
@@ -135,6 +117,21 @@ const goalUnit = (g: Goal) => { const u = g.progress?.unit; return u === "kg" ? 
 const goalIcon = (g: Goal) => ({ activity: g.scopeId === "workout" ? "dumbbell" : "walk", routine: "routines", exercise: "dumbbell", muscle: "activity", body: "scale" } as Record<string, string>)[g.scope] ?? "target";
 // progress.pct is a share (0 to 1); the rows show it as a percent and the bar is that wide
 const pct = (g: Goal) => Math.max(0, Math.min(100, (g.progress?.pct ?? 0) * 100));
+// a pinned goal without its streak fills the same half with when: the day it was achieved, the days left to its deadline,
+// or the day it started; under it the goal's trend (its last periods, or its entries for a one-off goal)
+const noon = (d: string) => d.slice(0, 10) + "T12:00:00"; // a calendar day read on this device's calendar, not as UTC midnight
+const shortDate = (d: string) => fmt.value.date(noon(d), { day: "numeric", month: "short" });
+const goalSide = (g: Goal): { icon: string; label: string; big: string; small?: string; sub: string } => {
+  if (g.status === "achieved" && g.achievedAt) return { icon: "check", label: "Achieved", big: fmt.value.date(g.achievedAt, { day: "numeric", month: "short" }), sub: when(g.achievedAt) };
+  if (g.deadline && !reached(g)) {
+    // calendar days left with today counted, as the goal's own pace says
+    const d = daysLeft(g) + 1;
+    return d > 0 ? { icon: "calendar", label: "Deadline", big: String(d), small: d === 1 ? "day left" : "days left", sub: `Ends ${shortDate(g.deadline)}` }
+      : { icon: "calendar", label: "Deadline", big: shortDate(g.deadline), sub: "Deadline passed" };
+  }
+  return { icon: "calendar", label: "Started", big: shortDate(g.startDate), sub: when(noon(g.startDate)) };
+};
+const trend = (g: Goal) => (g.progress?.history ?? []).map((x) => x.value);
 
 // "Today", "Yesterday", "3 days ago": the day something was last done, by this device's calendar (as everywhere else)
 const when = (iso: string | null | undefined) => { const a = ago(iso); return a.charAt(0).toUpperCase() + a.slice(1); };
@@ -184,7 +181,7 @@ const hideSuggestion = (key: string) => {
 const shows = (id: string): boolean => {
   const x = h.value!; // only asked once Home has loaded
   switch (id) {
-    case "streak": case "week": case "upnext": return !fresh.value;
+    case "week": case "upnext": return !fresh.value;
     case "pinned": return pinnedGoals.value.length > 0;
     case "dueSoon": return dueSoon.value.length > 0;
     case "program": return !!x.programs?.length;
@@ -280,14 +277,6 @@ await loaded(home, ach);
       <template v-for="id in blocks" :key="id">
         <TodayHero v-if="id === 'today'" :h="h" :fresh="fresh" />
 
-        <!-- streak: weeks on target, and the last five weeks of training days -->
-        <div v-else-if="id === 'streak'" class="card hb sz-s click" v-bind="link('/goals')">
-          <div class="ch"><span class="bi"><Icon name="flame" :size="15" /></span><span class="t grow">Streak</span></div>
-          <div class="big">{{ h.streak }}<small>{{ h.streak === 1 ? "week" : "weeks" }}</small></div>
-          <div class="tiny">{{ h.streak ? "in a row on your weekly target" : hasWeeklyGoal ? "Reach your weekly target to start one" : "Add a weekly goal in Goals to count weeks" }}</div>
-          <div class="sgrid" :aria-label="`${daysTrained} training days in the last 5 weeks`" role="img"><i v-for="d in grid" :key="d.ymd" :class="{ on: d.on, fu: d.future, now: d.ymd === today }" /></div>
-        </div>
-
         <!-- this week against last week, and workouts per week over eight weeks -->
         <div v-else-if="id === 'week'" class="card hb wkc sz-m click" v-bind="link('/stats')">
           <div class="ch"><span class="bi"><Icon name="stats" :size="15" /></span><span class="t grow">This week</span><span v-if="anyDelta" class="tiny">Vs last week</span></div>
@@ -303,18 +292,10 @@ await loaded(home, ach);
           </div>
         </div>
 
-        <!-- steps today -->
-        <div v-else-if="id === 'steps'" class="card hb sz-s click" v-bind="link(() => (dailySheet = true))">
-          <div class="ch"><span class="bi"><Icon name="steps" :size="15" /></span><span class="t grow">Steps</span></div>
-          <div class="row stp">
-            <div class="grow"><div class="big">{{ fmt.num(steps, 0) }}</div><div class="tiny">{{ stepTarget ? `of ${fmt.num(stepTarget, 0)} today` : "today - add a daily steps goal in Goals" }}</div></div>
-            <Ring v-if="stepTarget" :pct="steps / stepTarget" :size="46" :done="steps >= stepTarget" :color="steps >= stepTarget ? 'var(--pos)' : undefined" />
-          </div>
-        </div>
-
-        <!-- pinned goals: one block each; with its streak a goal takes two columns and the streak sits inside it -->
+        <!-- pinned goals: one block each, all the same width: the goal on the left, its streak on the right, or for a goal
+             shown without its streak the day it started, ends or was achieved, with its trend -->
         <div v-else-if="id === 'pinned'" class="pins">
-          <div v-for="g in pinnedGoals" :key="g.id" class="card hb gtile click" :class="[g.showStreak ? 'sz-m' : 'sz-s', { hero: reached(g) }]" v-bind="link(() => (goalOpen = g.id))">
+          <div v-for="g in pinnedGoals" :key="g.id" class="card hb gtile sz-m click" :class="{ hero: reached(g) }" v-bind="link(() => (goalOpen = g.id))">
             <div class="gmain">
               <div class="ch"><span class="bi"><Icon :name="goalIcon(g)" :size="15" /></span><span class="t grow ellipsis">{{ g.title }}</span></div>
               <div class="row">
@@ -330,6 +311,12 @@ await loaded(home, ach);
               <div class="big">{{ g.progress?.streak ?? 0 }}<small>{{ periodWord(g, g.progress?.streak ?? 0) }} in a row</small></div>
               <!-- the last eight weeks (or months), oldest first: filled when reached -->
               <div class="gdots" aria-hidden="true"><i v-for="(x, k) in g.progress?.history ?? []" :key="k" :class="{ on: x.value >= g.target }" /></div>
+            </div>
+            <div v-else class="grun">
+              <div class="ch"><span class="bi"><Icon :name="goalSide(g).icon" :size="15" /></span><span class="t">{{ goalSide(g).label }}</span></div>
+              <div class="big">{{ goalSide(g).big }}<small v-if="goalSide(g).small">{{ goalSide(g).small }}</small></div>
+              <div class="tiny">{{ goalSide(g).sub }}</div>
+              <Sparkline v-if="trend(g).length > 1" :values="trend(g)" :color="reached(g) ? 'var(--onc)' : undefined" />
             </div>
           </div>
         </div>
@@ -399,8 +386,8 @@ await loaded(home, ach);
         <!-- last workout -->
         <div v-else-if="id === 'previous' && h.last" class="card hb wkc sz-m click has-cover">
           <button class="cover" :aria-label="`Open ${h.last.name}`" @click="go(`/workouts/${h.last.id}`)" />
-          <div class="ch"><span class="bi"><Icon name="dumbbell" :size="15" /></span><span class="t grow">Last workout</span></div>
-          <div class="row lname"><b class="ellipsis">{{ h.last.name }}</b><span class="sep">·</span><span class="lday">{{ when(h.last.startedAt) }}</span></div>
+          <div class="ch"><span class="bi"><Icon name="dumbbell" :size="15" /></span><span class="t">Last workout</span>
+            <span class="lname"><span class="lnm ellipsis">{{ h.last.name }}</span><span class="sep">·</span><span class="lday">{{ when(h.last.startedAt) }}</span></span></div>
           <div class="wstats n4 plain">
             <div v-for="x in lastStats" :key="x.key" class="ws">
               <div class="wlb"><Icon :name="x.icon" :size="14" />{{ x.label }}</div>
@@ -538,24 +525,15 @@ html.phone .hgrid .sz-m { grid-column: 1 / -1; }
 .hero .big small, .hero .tiny { color: color-mix(in srgb, var(--onc) 75%, transparent); }
 html.phone .sz-s .big { font-size: clamp(22px, 7vw, var(--fs-val)); }
 
-/* streak grid: five rows of a week */
-.sgrid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; margin-top: auto; padding-top: var(--hg); }
-.sgrid i { aspect-ratio: 1; border-radius: 3px; background: color-mix(in srgb, var(--tx) 8%, transparent); max-height: 16px; }
-.sgrid i.on { background: var(--acc); }
-.sgrid i.fu { background: none; box-shadow: inset 0 0 0 1px var(--ol); }
-.sgrid i.now { box-shadow: 0 0 0 1.5px var(--tx2); }
-
 /* the stat tiles of this week and the last workout are the shared .wkc/.wstats ones (app.css) */
 .wbars { display: flex; align-items: flex-end; gap: 6px; height: 34px; margin-top: auto; padding-top: var(--hg); box-sizing: content-box; }
 .wbars i { flex: 1; border-radius: 4px 4px 2px 2px; background: color-mix(in srgb, var(--acc) 28%, transparent); }
 .wbars i.cur { background: var(--acc); }
-/* the last workout's name and day: its own row under the header, spaced from the stats like the header is */
-/* the name in plain bold at body size, as the Program block's next workout and the goal rows; the dot at the day's size */
-.lname { gap: 6px; min-width: 0; margin-bottom: calc(var(--hg) - 4px); align-items: baseline; }
-.lname b { min-width: 0; }
+/* the last workout's name and day at the right of its header, at the size of the other headers' notes ("Vs last week"):
+   the name as strong as Achievements' "Next" name and cut first, so the title and the day always show at 360px */
+.lname { flex: 1; min-width: 0; display: flex; align-items: baseline; justify-content: flex-end; gap: 6px; font-size: var(--fs-xs); }
+.lnm { min-width: 0; color: var(--tx); font-weight: 600; }
 .lday { color: var(--tx2); white-space: nowrap; flex: none; }
-
-.stp { margin-top: auto; }
 
 /* a pinned goal; with its streak the two halves sit side by side, split by a faint line */
 .gtile { flex-direction: row; gap: var(--cpx); }
@@ -569,7 +547,9 @@ html.phone .sz-s .big { font-size: clamp(22px, 7vw, var(--fs-val)); }
 .gdots i, .mdot { background: color-mix(in srgb, currentColor 14%, transparent); }
 .gdots i.on, .mg.on .mdot { background: var(--acc); }
 .hero .gdots i.on { background: var(--onc); }
-/* on the phone a goal with its streak keeps its two halves, stacked */
+/* the trend under a goal shown without its streak sits where the streak's dots do */
+.grun .spark { display: block; width: 100%; height: 28px; margin-top: auto; padding-top: var(--hg); box-sizing: content-box; }
+/* on the phone a goal keeps its two halves side by side */
 html.phone .gtile.sz-m { flex-direction: row; }
 
 /* goal rows: title and state, the bar, the numbers */
