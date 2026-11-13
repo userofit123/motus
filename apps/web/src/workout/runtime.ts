@@ -3,7 +3,7 @@
 // (PLAN.md §8.6). The rest timer is kept on the device so a reload does not lose it.
 import { reactive, ref } from "vue";
 import { readJson, writeJson } from "../core/prefs";
-import { withDefaults } from "@motus/shared";
+import { withDefaults, cleanCueSound, cleanCueVolume, type CueSound } from "@motus/shared";
 import { api } from "../api/client";
 import { queryClient } from "../api/live";
 import { showRestCountdown, clearRestCountdown, scheduleRestAlarm, cancelRestAlarm, notifyRestOverWeb, isNativeApp } from "./native";
@@ -24,14 +24,16 @@ export const rest = reactive<RestState>({ ...EMPTY, ...readJson("motusRest", {})
 export const now = ref(Date.now());
 const save = () => writeJson("motusRest", rest);
 
-export interface Cues { sound: boolean; vibrate: boolean; warn10: boolean; voice: boolean; countdown: boolean; next?: boolean }
-let cues: Cues = { sound: true, vibrate: true, warn10: true, voice: false, countdown: true, next: true };
+/** The sound the cues play, and how loud (10-100 %) */
+export interface CueVoice { cueSound: CueSound; cueVolume: number }
+export interface Cues extends CueVoice { sound: boolean; vibrate: boolean; warn10: boolean; voice: boolean; countdown: boolean; next?: boolean }
+let cues: Cues = { sound: true, cueSound: "beep", cueVolume: 100, vibrate: true, warn10: true, voice: false, countdown: true, next: true };
 export const setCues = (c: Cues) => { cues = c; };
 /** Sound and vibration as chosen in Settings → Workout, read from the settings the app has loaded, so they are right
  *  on any page (the cues above are only filled once a workout screen has been opened). */
-export function savedCues(): { sound: boolean; vibrate: boolean } {
+export function savedCues(): CueVoice & { sound: boolean; vibrate: boolean } {
   const w = withDefaults(queryClient.getQueryData<{ settings?: unknown }>(["settings", "me"])?.settings ?? {}).workout;
-  return { sound: w.sound, vibrate: w.vibrate };
+  return { sound: w.sound, vibrate: w.vibrate, cueSound: w.cueSound, cueVolume: w.cueVolume };
 }
 export function vibrate(pattern: number | number[]) { try { navigator.vibrate?.(pattern); } catch { /* no vibration */ } }
 
@@ -170,6 +172,10 @@ const LOUDER = 2.2;
 const BELL: Overtone[] = [[1, 1, 1], [2, 0.32, 0.6], [2.76, 0.16, 0.4], [5.4, 0.05, 0.2]];
 /** Round and soft: the note with a little warmth on top. */
 export const SOFT: Overtone[] = [[1, 1, 1], [2, 0.18, 0.5]];
+/** A plain sine, like a watch's beep. */
+export const PURE: Overtone[] = [[1, 1, 1]];
+/** A wooden bar: the strong 4th and 10th overtones of a marimba, gone almost at once, so it knocks rather than rings. */
+export const WOOD: Overtone[] = [[1, 1, 1], [4, 0.22, 0.12], [10, 0.04, 0.05]];
 /** The workout's cues: a bright tone (the first harmonics, like a soft square wave) that stays at full loudness for a
  *  moment before it fades. A bell's quick fade leaves almost nothing for the ear to add up (it judges loudness over
  *  about 0.2 s), and a phone's small speaker barely plays notes below 1 kHz, so the old 660-880 Hz bells came out
@@ -178,14 +184,14 @@ export const SOFT: Overtone[] = [[1, 1, 1], [2, 0.18, 0.5]];
 const CUE: Overtone[] = [[1, 1, 1], [2, 0.5, 1], [3, 0.3, 1], [4, 0.15, 1]];
 /** One note starting `delay` seconds from now that rings for `dur` seconds; `attack` is how long it takes to reach full
  *  loudness (a few ms for a struck note, longer for one that swells in); `hold` keeps it at full loudness that long
- *  before the fade starts. */
-export function tone(freq: number, { delay = 0, dur = 0.5, vol = 0.3, partials = BELL, attack = 0.005, hold = 0 }: { delay?: number; dur?: number; vol?: number; partials?: readonly Overtone[]; attack?: number; hold?: number } = {}) {
+ *  before the fade starts; `level` is the chosen volume as a gain (levelOf). */
+export function tone(freq: number, { delay = 0, dur = 0.5, vol = 0.3, partials = BELL, attack = 0.005, hold = 0, level = 1 }: { delay?: number; dur?: number; vol?: number; partials?: readonly Overtone[]; attack?: number; hold?: number; level?: number } = {}) {
   try {
     const { ac, dest } = audio(), t = ac.currentTime + 0.01 + delay;
     for (const [ratio, amp, ring] of partials) {
       const f = freq * ratio;
       if (f > 16000) continue;
-      const o = ac.createOscillator(), g = ac.createGain(), peak = vol * amp * LOUDER, end = t + hold + Math.max(attack + 0.05, dur * ring);
+      const o = ac.createOscillator(), g = ac.createGain(), peak = Math.max(0.0002, vol * amp * LOUDER * level), end = t + hold + Math.max(attack + 0.05, dur * ring);
       o.type = "sine"; o.frequency.value = f;
       // a rise of at least 5 ms takes the click off the start; the exponential fall to near silence takes it off the end
       g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(peak, t + attack);
@@ -195,15 +201,29 @@ export function tone(freq: number, { delay = 0, dur = 0.5, vol = 0.3, partials =
     }
   } catch { /* no sound */ }
 }
+/** The volume setting (10-100 %) as a gain. Squared, because the ear hears loudness roughly by the square: 50 % is
+ *  then about half as loud (-12 dB) rather than barely quieter (-6 dB). */
+export const levelOf = (volume: number) => (cleanCueVolume(volume) / 100) ** 2;
+/** How each cue sound plays one note of a cue; `long` is a "now" note (the last of 3-2-1, a single beep), held a little
+ *  longer. All keep the bright CUE notes' 1-3 kHz pitches, where a phone speaker is loud; the softer ones (a bell
+ *  fades fast, a wooden knock is short) are a choice for those who find the beep harsh. */
+const CUE_NOTE: Record<CueSound, (freq: number, delay: number, long: boolean, level: number) => void> = {
+  beep: (f, delay, long, level) => tone(f, { delay, hold: long ? 0.2 : 0.14, dur: long ? 0.12 : 0.08, vol: 0.23, partials: CUE, level }),
+  bell: (f, delay, long, level) => tone(f, { delay, dur: long ? 0.7 : 0.45, vol: 0.4, level }),
+  soft: (f, delay, long, level) => tone(f, { delay, attack: 0.02, hold: long ? 0.16 : 0.1, dur: long ? 0.2 : 0.14, vol: 0.4, partials: SOFT, level }),
+  digital: (f, delay, long, level) => tone(f, { delay, hold: long ? 0.12 : 0.07, dur: 0.03, vol: 0.45, partials: PURE, attack: 0.003, level }),
+  wood: (f, delay, long, level) => tone(f / 2, { delay, dur: long ? 0.35 : 0.22, vol: 0.45, partials: WOOD, attack: 0.002, level }),
+};
+const note = (v: CueVoice, f: number, delay: number, long: boolean) => CUE_NOTE[cleanCueSound(v.cueSound)](f, delay, long, levelOf(v.cueVolume));
 /** The countdown in the last seconds of a rest or an interval part: a short blip, the last one higher so you know
- *  "now". */
-export function tick(last: boolean) {
-  tone(last ? 2637 : 1318.5, { hold: last ? 0.2 : 0.14, dur: last ? 0.12 : 0.08, vol: 0.23, partials: CUE }); // E7, E6
+ *  "now". `v`: the sound and volume (the running workout's, unless given). */
+export function tick(last: boolean, v: CueVoice = cues) {
+  note(v, last ? 2637 : 1318.5, 0, last); // E7, E6
 }
 /** The plain cue used by the rest timer and timed sets: `times` short beeps. `freq` keeps the callers' pitches apart
  *  (10 seconds 660, rest over 880, …); each sounds an octave higher, where a phone's speaker is loud. */
-export function beep(times = 1, freq = 880) {
-  for (let i = 0; i < times; i++) tone(freq * 2, { delay: i * 0.25, hold: times > 1 ? 0.15 : 0.22, dur: times > 1 ? 0.06 : 0.12, vol: 0.23, partials: CUE });
+export function beep(times = 1, freq = 880, v: CueVoice = cues) {
+  for (let i = 0; i < times; i++) note(v, freq * 2, i * 0.25, times === 1);
 }
 function speak(text: string) {
   try { const u = new SpeechSynthesisUtterance(text); u.rate = 1.05; speechSynthesis.cancel(); speechSynthesis.speak(u); } catch { /* no voice */ }
@@ -213,3 +233,5 @@ export function elapsed(w: { startedAt: string; pausedS: number; pauseStartedAt:
   const end = w.endedAt ? new Date(w.endedAt).getTime() : w.pauseStartedAt ? new Date(w.pauseStartedAt).getTime() : now.value;
   return Math.max(0, Math.round((end - new Date(w.startedAt).getTime()) / 1000) - (w.pausedS ?? 0));
 }
+/** Lets a sound and volume be heard where they are chosen: the rest-over cue, the one heard most. */
+export const previewCue = (v: CueVoice) => beep(3, 880, v);

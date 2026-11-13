@@ -40,3 +40,16 @@ describe("Goal order", () => {
     expect(orderGoals([g("b"), g("a")], []).map((x) => x.id)).toEqual(["b", "a"]);
   });
 });
+
+describe("Workout cue sound and volume", () => {
+  it("defaults to the beep at full level, and drops the old unused top-level sound", () => {
+    const s = withDefaults({ sound: "chime" });
+    expect([s.workout.cueSound, s.workout.cueVolume]).toEqual(["beep", 100]);
+    expect("sound" in s).toBe(false);
+  });
+  it("keeps a valid choice and makes a bad one safe", () => {
+    expect(withDefaults({ workout: { cueSound: "wood", cueVolume: 40 } }).workout).toMatchObject({ cueSound: "wood", cueVolume: 40 });
+    expect(withDefaults({ workout: { cueSound: "nope", cueVolume: 500 } }).workout).toMatchObject({ cueSound: "beep", cueVolume: 100 });
+    expect(withDefaults({ workout: { cueVolume: 0 } }).workout.cueVolume).toBe(10);
+  });
+});

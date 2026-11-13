@@ -188,7 +188,7 @@ await loaded(me);
           </div>
           <template v-for="g in prefs" :key="g.id">
             <div class="sh"><h2>{{ g.title }}</h2></div>
-            <div class="card"><PrefRow v-for="r in g.rows" :key="r.key" :row="r" :value="w[r.key]" @set="set({ workout: { [r.key]: $event } })" /></div>
+            <div class="card"><PrefRow v-for="r in g.rows" :key="r.key" :row="r" :value="w[r.key]" :prefs="w" @set="set({ workout: { [r.key]: $event } })" /></div>
           </template>
           <div class="sh"><h2>Progression</h2></div>
           <div class="card">

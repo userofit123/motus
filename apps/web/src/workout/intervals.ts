@@ -4,7 +4,7 @@
 import { computed, reactive } from "vue";
 import { intervalPhases, intervalAt, intervalTotalS, cleanInterval, INTERVAL_DEFAULT, type IntervalConfig, type IntervalKind, type IntervalSound } from "@motus/shared";
 import { readJson, writeJson } from "../core/prefs";
-import { now, tone, tick, SOFT, savedCues, vibrate, type Overtone } from "./runtime";
+import { now, tone as note, tick, levelOf, SOFT, PURE, WOOD, savedCues, vibrate, type Overtone } from "./runtime";
 import { keepAwake, scheduleIntervalCues, cancelIntervalCues, showIntervalNotice, clearIntervalNotice, onNoticeAction, INTERVAL_CUE_MAX, type IntervalCue } from "./native";
 
 interface IntervalRun {
@@ -27,13 +27,12 @@ export const SOUND_NAME: Record<IntervalSound, string> = {
 };
 // notes of a C major chord, so every sound (and any two in a row) sits in tune with the others
 const C4 = 261.63, C5 = 523.25, E5 = 659.25, G5 = 783.99, C6 = 1046.5, E6 = 1318.5, G6 = 1567.98, C7 = 2093;
-// a wooden bar: the strong 4th and 10th overtones of a marimba, gone almost at once, so it knocks rather than rings
-const WOOD: Overtone[] = [[1, 1, 1], [4, 0.22, 0.12], [10, 0.04, 0.05]];
 // a small gong: a low note with off-key overtones that shimmer and die away slowly
 const GONG: Overtone[] = [[1, 1, 1], [1.5, 0.22, 0.8], [2, 0.3, 0.65], [2.76, 0.16, 0.45], [4.07, 0.05, 0.25]];
-const PURE: Overtone[] = [[1, 1, 1]];
-/** Plays one of the built-in sounds (also the preview when one is chosen). The ids stay as saved in presets. */
+/** Plays one of the built-in sounds (also the preview when one is chosen). The ids stay as saved in presets. Every note
+ *  is at the volume chosen in Settings → Workout defaults. */
 export function playIntervalSound(sound: IntervalSound) {
+  const level = levelOf(savedCues().cueVolume), tone = (f: number, o: Parameters<typeof note>[1] = {}) => note(f, { ...o, level });
   if (sound === "beep") tone(G5, { dur: 0.9 }); // one bell
   else if (sound === "double") [C6, C6].forEach((f, i) => tone(f, { delay: i * 0.17, dur: i ? 0.7 : 0.35 }));
   else if (sound === "triple") [C6, C6, C6].forEach((f, i) => tone(f, { delay: i * 0.17, dur: i === 2 ? 0.8 : 0.3 }));
@@ -137,7 +136,7 @@ setInterval(() => {
     return;
   }
   const s = Math.ceil(leftMs / 1000);
-  if (index < ph.length && s <= 3 && s >= 1 && s !== lastSecond && ph[index]!.durS > 5) { lastSecond = s; if (inAppCues() && savedCues().sound) tick(s === 1); }
+  if (index < ph.length && s <= 3 && s >= 1 && s !== lastSecond && ph[index]!.durS > 5) { lastSecond = s; const c = savedCues(); if (inAppCues() && c.sound) tick(s === 1, c); }
 }, 200);
 
 // In the background the app's own beeps may stop (a locked phone), so the coming changes are scheduled to come as the
