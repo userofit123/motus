@@ -86,6 +86,7 @@ const ICONS: Record<string, string> = {
   server: "M4 4h16v6H4zM4 14h16v6H4zM8 7h.01M8 17h.01",
   device: "M7 2h10a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zM11 18h2",
   key: "M15.5 7.5 19 4M21 2l-2 2 3 3-3 3-3-3M10.6 13.4a5 5 0 1 1-7.1 7.1 5 5 0 0 1 7.1-7.1z",
+  learn: "M2 9l10-5 10 5-10 5zM6 11v5c0 1.7 2.7 3 6 3s6-1.3 6-3v-5M22 9v6",
 };
 </script>
 
