@@ -122,7 +122,7 @@ hr.sep { border: 0; border-top: 1px solid var(--ol); margin: 14px 0; }
 /* the line keeps its height when there is no change to show, so the tiles stay level */
 .wstats .wd { font-size: var(--fs-sm); line-height: 1.4; min-height: 1.4em; color: var(--tx2); font-variant-numeric: tabular-nums; white-space: nowrap; }
 @container (max-width: 460px) {
-  .wstats.n4 { grid-auto-flow: row; grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: var(--hg); }
+  .wstats.n4 { grid-auto-flow: row; grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: var(--cpy); }
   .wstats.n4 .ws:nth-child(odd) { border-inline-start: 0; padding-inline-start: 0; }
   .wstats.n4 .wv { font-size: clamp(var(--fs-lg), calc((100cqi - 2 * var(--hg)) / 11.2), calc(var(--fs-lg) * 1.25)); }
 }

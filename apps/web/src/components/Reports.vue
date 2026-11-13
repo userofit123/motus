@@ -141,11 +141,8 @@ const year = computed(() => {
 
 /* the highlights under the tiles, as list rows: what on the left, its number on the right; a record in the
    accent colour, the way records are marked elsewhere */
-/* a report is dense (four tiles, then rows), so its blocks sit a section gap apart rather than Home's tighter one: the
-   rows of the two-across tiles (not the narrow list form, which keeps its own row gap), and the tiles from the
-   highlights */
-@container (min-width: 331px) and (max-width: 460px) { .wstats.n4 { row-gap: var(--spg); } }
-.hl { margin-top: var(--spg); border-top: 1px solid var(--ol); }
+/* a report is dense (four tiles, then rows), so the highlights sit a block-padding gap below the tiles */
+.hl { margin-top: var(--cpy); border-top: 1px solid var(--ol); }
 .hl .li:last-child { border-bottom: 0; padding-bottom: 0; }
 .hl .s { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hl .grow { min-width: 0; }
