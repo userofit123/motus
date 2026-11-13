@@ -23,6 +23,9 @@ const named = (sg) => { const b = sg.querySelector("button"); return !!(sg.id ||
 // Only when the chosen tab changes, the row is drawn anew or the window is resized, so it never fights the person
 // scrolling the row by hand.
 let shown = new WeakMap();
+// Phone browsers fire resize when the address bar hides or the keyboard opens; only a real width change counts.
+// one checker per listener, so each sees the change
+const widthWatch = () => { let w = innerWidth; return () => { if (innerWidth === w) return false; w = innerWidth; return true; }; };
 function centre(row, b) {
   // a row that fits has nothing to scroll; it is not marked, so it still centres once it outgrows the screen (a tab added)
   if (row.scrollWidth <= row.clientWidth + 1) return;
@@ -104,7 +107,7 @@ export function startSegSlide() {
       }
     }
   }).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["class", "style", "hidden"] });
-  addEventListener("resize", () => { shown = new WeakMap(); st.forEach((s) => { s.snap = true; }); all(); });
+  { const wc = widthWatch(); addEventListener("resize", () => { if (!wc()) return; shown = new WeakMap(); st.forEach((s) => { s.snap = true; }); all(); }); }
   // the language (right to left) or the look (font, density...) changed without a reload: every pill moves to its tab's new place at once
   new MutationObserver(() => { st.forEach((s) => { s.snap = true; }); all(); }).observe(document.documentElement, { attributes: true, attributeFilter: ["lang", "data-fnt", "data-den", "data-spc", "data-rad", "data-nav"] });
   all();
@@ -139,6 +142,6 @@ export function startTabSlide() {
       else for (const n of m.addedNodes) { if (n.nodeType != 1 || n.classList?.contains("tabi")) continue; if (n.matches(".tabs")) tqueue(n); else n.querySelectorAll?.(".tabs").forEach(tqueue); if (el.classList?.contains("tabs")) tqueue(el); }
     }
   }).observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ["class"] });
-  addEventListener("resize", () => { shown = new WeakMap(); document.querySelectorAll(".tabs").forEach(tqueue); });
+  { const wc = widthWatch(); addEventListener("resize", () => { if (!wc()) return; shown = new WeakMap(); document.querySelectorAll(".tabs").forEach(tqueue); }); }
   document.querySelectorAll(".tabs").forEach(tqueue);
 }
