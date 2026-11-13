@@ -23,7 +23,7 @@ const s = useSettings();
         <div style="font-weight:600;line-height:1.3">{{ goal.title }}</div>
         <div class="tiny" style="margin-top:2px">{{ goal.period !== "once" ? periodLabel(goal, s) : goal.deadline ? `By ${fmt.date(goal.deadline, { day: "numeric", month: "short", year: "numeric" })}` : "One-off" }}</div>
       </div>
-      <Ring :pct="goal.progress?.pct ?? 0" :size="46" :done="reached" :color="reached ? 'var(--pos)' : undefined" />
+      <Ring :pct="goal.progress?.pct ?? 0" :size="46" :done="reached" />
     </div>
     <div style="margin-top:10px;font-weight:600;font-variant-numeric:tabular-nums">{{ goalLabel(goal, fmt) }}</div>
     <div class="sub" :class="{ pos: reached }">{{ goal.status === "achieved" ? "Achieved" : goal.progress?.done ? `Reached this ${periodWord(goal)}` : goal.progress?.pace }}</div>

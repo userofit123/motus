@@ -49,7 +49,7 @@ const menu = computed(() => !g.value ? [] : [
     <template #head><b class="grow ellipsis">{{ g?.title ?? "Goal" }}</b><Menu v-if="g" :items="menu" /></template>
     <template v-if="g">
       <div class="gs-top">
-        <Ring :pct="g.progress?.pct ?? 0" :size="64" :stroke="7" :done="reached" :color="reached ? 'var(--pos)' : undefined" />
+        <Ring :pct="g.progress?.pct ?? 0" :size="64" :stroke="7" :done="reached" />
         <div class="grow">
           <div class="gs-val">{{ goalLabel(g, fmt) }}</div>
           <div class="tiny" :class="{ pos: reached }">{{ g.status === "achieved" ? `Achieved ${fmt.date(g.achievedAt)}` : g.progress?.done ? `Reached ${periodNow(g).toLowerCase()}` : g.progress?.pace ?? periodNow(g) }}</div>
