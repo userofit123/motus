@@ -74,7 +74,7 @@ watch(() => route.query.date, (v) => {
 });
 watch([month, sel], () => { kept.v = { month: month.value.getTime(), sel: sel.value }; }, { flush: "sync" });
 // The chosen day's highlight is one element (.calsel) that glides from the old day to the new one, sideways, up and down
-// or diagonally, with the tab pill's easing and timing (core/segSlide.ts: 250-350ms by distance). A month drawn anew (another
+// or diagonally, with the shared ease-out (--ease) over 200-300ms by distance; the tab pill (core/segSlide.ts) eases in-out, but the developer asked for a faster start here. A month drawn anew (another
 // month, back from List) puts it in place without sliding over from the old month; so does a size change (window, entries
 // loading, density), which ResizeObserver reports. Reduced motion: the CSS drops the transition, so it jumps.
 let calEl: HTMLElement | null = null, calAt: { x: number; y: number } | null = null;
@@ -86,7 +86,7 @@ function placeSel(slide: boolean) {
   const x = d.offsetLeft, y = d.offsetTop;
   slide = slide && !!calAt && !box.hidden;
   const dist = calAt ? Math.hypot(x - calAt.x, y - calAt.y) : 0;
-  box.style.setProperty("--csd", Math.round(Math.min(350, 250 + dist * 0.1)) + "ms");
+  box.style.setProperty("--csd", Math.round(Math.min(300, 200 + dist * 0.1)) + "ms");
   if (!slide) box.style.transition = "none";
   box.hidden = false;
   box.style.width = d.offsetWidth + "px"; box.style.height = d.offsetHeight + "px";

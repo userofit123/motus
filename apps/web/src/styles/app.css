@@ -574,10 +574,10 @@ html.phone .cal { gap: 2px; }
 html.phone .cal .d { min-height: 46px; padding: 4px 2px; align-items: center; }
 html.phone .cal .d::before { content: none; }
 /* the chosen day: one highlight (.calsel, placed by HistoryPage) that glides from the old day to the new one, diagonally
-   too, with the tab pill's easing; an accent tint over the day's own surface (any accent, light or dark, plain or Glass), an
+   too, with the shared ease-out (--ease: fast start, gentle settle; the tab pill uses in-out, the developer asked for a faster start here); an accent tint over the day's own surface (any accent, light or dark, plain or Glass), an
    accent border on the desktop box and a soft accent ring on the borderless phone cell, and the number in the accent. A grey
    --s2 alone barely showed on a light background. The chosen day's own border steps aside so the highlight's shows */
-.cal .calsel { position: absolute; left: 0; top: 0; z-index: -1; pointer-events: none; box-sizing: border-box; border-radius: var(--r-sm); border: 1px solid var(--acc); background: color-mix(in srgb, var(--acc) 20%, transparent); transition: transform var(--csd, .3s) cubic-bezier(.65, 0, .35, 1), width var(--csd, .3s) cubic-bezier(.65, 0, .35, 1), height var(--csd, .3s) cubic-bezier(.65, 0, .35, 1); }
+.cal .calsel { position: absolute; left: 0; top: 0; z-index: -1; pointer-events: none; box-sizing: border-box; border-radius: var(--r-sm); border: 1px solid var(--acc); background: color-mix(in srgb, var(--acc) 20%, transparent); transition: transform var(--csd, .25s) var(--ease), width var(--csd, .25s) var(--ease), height var(--csd, .25s) var(--ease); }
 html.phone .cal .calsel { border-color: color-mix(in srgb, var(--acc) 45%, transparent); }
 @media (prefers-reduced-motion: reduce) { .cal .calsel { transition: none; } }
 .cal .d.sel::before { border-color: transparent; }
