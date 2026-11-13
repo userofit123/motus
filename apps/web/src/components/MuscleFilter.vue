@@ -62,14 +62,16 @@ const tap = (m: string) => {
 </template>
 
 <style scoped>
-/* a card of its own on the panel's --s2 shade, in the chips' --s1, the body centred in it; --lpy below it, the panel's own
-   10px gap between rows at the usual density */
-.mfig { display: flex; flex-direction: column; align-items: center; gap: var(--tdy); margin-bottom: var(--lpy); padding: var(--cpy) var(--cpx); border-radius: var(--r-md); background: var(--s1); }
+/* an inner tile in --s2 on the panel's --s1 card (the app's usual tile-in-card shade), the body centred in it; --lpy below
+   it, the panel's own 10px gap between rows at the usual density */
+.mfig { display: flex; flex-direction: column; align-items: center; gap: var(--tdy); margin-bottom: var(--lpy); padding: var(--cpy) var(--cpx); border-radius: var(--r-md); background: var(--s2); }
 /* on wider screens the card hugs a taller body at the row's left edge (where the label and chips start) instead of
    leaving a wide empty card around a small figure; phones keep it full width */
 html:not(.phone) .mfig { width: fit-content; min-width: 240px; }
 html:not(.phone) .mfig :deep(.figs) { height: 220px; }
-/* compact (the phone picker sheet, where the list needs the room): a smaller body with the caption beside it */
-.mfig.compact { flex-direction: row; justify-content: center; gap: var(--cpx); }
+/* compact (the phone picker sheet, where the list needs the room): a smaller body with the caption beside it. The body
+   stays put at the left; the caption takes the rest and is left-aligned, so its changing width never moves the body */
+.mfig.compact { flex-direction: row; justify-content: flex-start; gap: var(--cpx); }
+.mfig.compact .tiny { flex: 1; min-width: 0; text-align: left; }
 .mfig .on { color: var(--tx); font-weight: 600; }
 </style>
