@@ -33,6 +33,37 @@ describe("suggestions", () => {
     expect(home.suggest[0].routineId).toBe(pull);
     expect(home.suggest[0].reason).toContain("after Push");
   }, 60000);
+
+  // a fresh person with one routine of their own exercises, so the gaps are known exactly
+  async function personWith(muscles: string[]) {
+    U = uuidv7();
+    await eng.db.admin.query("INSERT INTO users (id, username, display_name) VALUES ($1,$2,'G')", [U, `g${U.slice(-6)}`]);
+    const exercises = [];
+    for (const m of muscles) {
+      const e = await call("POST", "/exercises", { name: `Only ${m}`, primaryMuscles: [m], secondaryMuscles: m === "biceps" ? ["forearms"] : [], equipment: "dumbbell", category: "strength" });
+      exercises.push({ exerciseId: e.id, sets: [{ reps: 8 }] });
+    }
+    await call("POST", "/routines", { name: "Mine", exercises });
+    return (await call("GET", "/home")).suggest as any[];
+  }
+
+  it("points out a muscle group none of your routines works, at most two gaps", async () => {
+    const sug = await personWith(["chest"]);
+    const gaps = sug.filter((x) => x.kind === "gap" || x.kind === "target");
+    // groups in their usual order: back and shoulders are the first ones nothing works
+    expect(gaps.map((x) => x.muscle)).toEqual(["back", "shoulders"]);
+    expect(gaps[0].routineId).toBeNull();
+    expect(gaps[0].title).toBe("No routine works your back");
+    expect(gaps[0].muscles).toContain("lats");
+  }, 60000);
+
+  it("points out a muscle only ever worked as a helper once every group is covered", async () => {
+    const sug = await personWith(["chest", "lats", "middle back", "shoulders", "biceps", "triceps", "abdominals", "quadriceps", "hamstrings", "glutes", "calves"]);
+    expect(sug.some((x) => x.kind === "gap")).toBe(false);
+    const fa = sug.find((x) => x.kind === "target");
+    expect(fa?.muscle).toBe("forearms");
+    expect(fa?.reason).toBe("Your routines only work your forearms as a helper");
+  }, 60000);
 });
 
 describe("fixes found in the audit", () => {

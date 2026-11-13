@@ -440,7 +440,9 @@ export interface HomePlan { scheduleId: string; date: string; routineId: string 
 /** Home: a program you follow, where you are in it (absent while Programs is switched off). */
 export interface HomeProgram extends Omit<ProgramState, "next"> { next: ProgramSlot; id: string; name: string; weeks: number; deloadPct: number; startDate: string; calendarWeek: number }
 /** Home: a routine or muscle worth doing next. */
-export interface HomeSuggestion { key: string; kind: "program" | "order" | "missed" | "rested" | "oldest"; title: string; reason: string; routineId: string | null; color: string | null; muscle?: string }
+/** A Home suggestion. muscle: what an exercises link filters on (a muscle, or a group's id for "gap"); muscles: what the figure lights.
+ *  gap: a muscle group none of your routines works; target: a muscle only ever worked as a helper; low: far fewer sets than the rest */
+export interface HomeSuggestion { key: string; kind: "program" | "order" | "missed" | "gap" | "target" | "low" | "rested" | "oldest"; title: string; reason: string; routineId: string | null; color: string | null; muscle?: string; muscles?: string[] }
 /** Home: a record from the last 30 days; the set that broke the most records stands for its exercise in that workout. */
 export interface HomeRecord {
   workoutId: string; at: string; exerciseId: string; name: string; tracking: Tracking | undefined; kinds: string[];

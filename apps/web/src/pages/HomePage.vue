@@ -53,7 +53,7 @@ const META: Record<string, { name: string; desc: string; icon: string; size: Siz
   upnext: { name: "Up next", desc: "What's planned for the coming days", icon: "calendar", size: "m" },
   previous: { name: "Last workout", desc: "Your most recent workout", icon: "dumbbell", size: "m" },
   goals: { name: "Goals", desc: "Your first three active goals", icon: "goals", size: "m" },
-  suggest: { name: "Suggested", desc: "Shows when a routine or a muscle is due", icon: "sparkle", size: "m" },
+  suggest: { name: "Suggested", desc: "Routines and muscles that are due, and gaps in your routines", icon: "sparkle", size: "m" },
   reminders: { name: "Reminders", desc: "Shows when a reminder is waiting", icon: "bell", size: "m" },
   bodyweight: { name: "Body weight", desc: "Your latest weight and its trend", icon: "scale", size: "s" },
   records: { name: "Records", desc: "Personal records from the last 30 days", icon: "trophy", size: "m" },
@@ -133,7 +133,8 @@ const reached = (g: Goal) => g.status === "achieved" || !!g.progress?.done;
 const goalVal = (g: Goal, v: number) => { const u = g.progress?.unit; return u === "kg" ? fmt.value.w(v) : u === "km" ? fmt.value.num(fromM(v * 1000, fmt.value.du), 1) : u === "cm" ? fmt.value.len(v) : fmt.value.num(v, u === "min" ? 0 : 1); };
 const goalUnit = (g: Goal) => { const u = g.progress?.unit; return u === "kg" ? fmt.value.wu : u === "km" ? fmt.value.du : u === "cm" ? fmt.value.lu : u === "sessions" || u === "times" ? "" : u ?? ""; };
 const goalIcon = (g: Goal) => ({ activity: g.scopeId === "workout" ? "dumbbell" : "walk", routine: "routines", exercise: "dumbbell", muscle: "activity", body: "scale" } as Record<string, string>)[g.scope] ?? "target";
-const pct = (g: Goal) => Math.max(0, Math.min(100, g.progress?.pct ?? 0));
+// progress.pct is a share (0 to 1); the rows show it as a percent and the bar is that wide
+const pct = (g: Goal) => Math.max(0, Math.min(100, (g.progress?.pct ?? 0) * 100));
 
 // "Today", "Yesterday", "3 days ago": the day something was last done, by this device's calendar (as everywhere else)
 const when = (iso: string | null | undefined) => { const a = ago(iso); return a.charAt(0).toUpperCase() + a.slice(1); };
@@ -257,16 +258,21 @@ await loaded(home, ach);
     <!-- Edit home: every block there is, in order, at its own size so the layout reads as it will -->
     <TransitionGroup v-if="editing" name="mv" tag="div" class="hgrid">
       <div v-for="(x, i) in listed" :key="x.id" class="card etile" :class="[META[x.id]!.size === 's' ? 'sz-s' : META[x.id]!.size === 'l' ? 'sz-l' : 'sz-m', { off: !x.on && !FIXED.has(x.id) }]">
+        <!-- the name and its switch on one row (label left, control right); the arrows have their own row at the foot, so a
+             quarter-width tile has room for the switch on the phone and in a narrow window -->
         <div class="ch">
           <span class="bi"><Icon :name="META[x.id]!.icon" :size="15" /></span>
-          <span v-if="FIXED.has(x.id)" class="t grow ellipsis">{{ META[x.id]!.name }}</span>
-          <label v-else class="t grow ellipsis" :for="`hb-${x.id}`">{{ META[x.id]!.name }}</label>
-          <button class="ib sm plain" :class="{ end: i === 0 }" :aria-disabled="i === 0" :aria-label="`Move ${META[x.id]!.name} earlier`" :title="`Move ${META[x.id]!.name} earlier`" @click="move(x.id, -1)"><Icon name="up" :size="18" /></button>
-          <button class="ib sm plain" :class="{ end: i === listed.length - 1 }" :aria-disabled="i === listed.length - 1" :aria-label="`Move ${META[x.id]!.name} later`" :title="`Move ${META[x.id]!.name} later`" @click="move(x.id, 1)"><Icon name="down" :size="18" /></button>
+          <span v-if="FIXED.has(x.id)" class="t grow">{{ META[x.id]!.name }}</span>
+          <label v-else class="t grow" :for="`hb-${x.id}`">{{ META[x.id]!.name }}</label>
           <span v-if="!FIXED.has(x.id)" class="tg"><input :id="`hb-${x.id}`" type="checkbox" :checked="x.on" @change="setOn(x.id, ($event.target as HTMLInputElement).checked)" /></span>
         </div>
         <div class="tiny">{{ META[x.id]!.desc }}</div>
-        <button v-if="x.id === 'pinned'" class="lnk inl epin" @click="pinOpen = true">{{ picked.length ? `${picked.length} pinned, change` : "Pin goals" }}</button>
+        <div class="emv">
+          <button v-if="x.id === 'pinned'" class="lnk inl" @click="pinOpen = true">{{ picked.length ? `${picked.length} pinned, change` : "Pin goals" }}</button>
+          <span class="grow" />
+          <button class="ib sm plain" :class="{ end: i === 0 }" :aria-disabled="i === 0" :aria-label="`Move ${META[x.id]!.name} earlier`" :title="`Move ${META[x.id]!.name} earlier`" @click="move(x.id, -1)"><Icon name="up" :size="18" /></button>
+          <button class="ib sm plain" :class="{ end: i === listed.length - 1 }" :aria-disabled="i === listed.length - 1" :aria-label="`Move ${META[x.id]!.name} later`" :title="`Move ${META[x.id]!.name} later`" @click="move(x.id, 1)"><Icon name="down" :size="18" /></button>
+        </div>
       </div>
     </TransitionGroup>
 
@@ -302,7 +308,8 @@ await loaded(home, ach);
           <div class="ch"><span class="bi"><Icon name="steps" :size="15" /></span><span class="t grow">Steps</span></div>
           <div class="row stp">
             <div class="grow"><div class="big">{{ fmt.num(steps, 0) }}</div><div class="tiny">{{ stepTarget ? `of ${fmt.num(stepTarget, 0)} today` : "today - add a daily steps goal in Goals" }}</div></div>
-            <Ring v-if="stepTarget" :pct="Math.min(100, (steps / stepTarget) * 100)" :size="46" :color="steps >= stepTarget ? 'var(--pos)' : undefined" />
+            <span v-if="stepTarget && steps >= stepTarget" class="rdone" title="Reached"><Ring :pct="1" :size="46" color="currentColor" /><Icon name="check" :size="20" /></span>
+            <Ring v-else-if="stepTarget" :pct="steps / stepTarget" :size="46" />
           </div>
         </div>
 
@@ -314,7 +321,7 @@ await loaded(home, ach);
               <div class="row">
                 <div v-if="g.scope === 'body'" class="big grow">{{ goalLabel(g, fmt) }}</div>
                 <div v-else class="big grow">{{ goalVal(g, g.progress?.current ?? 0) }}<small>of {{ goalVal(g, g.target) }}{{ goalUnit(g) ? ` ${goalUnit(g)}` : "" }}</small></div>
-                <span v-if="reached(g)" class="tick on gtick" title="Reached"><Icon name="check" :size="20" /></span>
+                <span v-if="reached(g)" class="rdone" title="Reached"><Ring :pct="1" :size="40" color="currentColor" /><Icon name="check" :size="18" /></span>
                 <Ring v-else :pct="g.progress?.pct ?? 0" :size="40" />
               </div>
               <div class="tiny gsub">{{ g.status === "achieved" ? "Achieved" : g.progress?.done ? `Reached ${periodNow(g).toLowerCase()}` : g.progress?.pace ?? periodNow(g) }}</div>
@@ -416,15 +423,18 @@ await loaded(home, ach);
           </div>
         </div>
 
-        <!-- suggestions: worked out from your order of routines and the muscles you've worked -->
+        <!-- suggestions: worked out from your order of routines, the muscles you've worked and what your routines leave out.
+             A routine opens its page; a muscle (or a gap in your routines) opens the exercises for it, and a gap can also
+             start a new routine -->
         <div v-else-if="id === 'suggest'" class="card hb sz-m">
           <div class="ch"><span class="bi"><Icon name="sparkle" :size="15" /></span><span class="t grow">Suggested</span></div>
           <TransitionGroup name="mv" tag="div" class="list">
             <div v-for="x in h.suggest" :key="x.kind + (x.routineId ?? x.muscle)" class="li click">
-              <button class="cover" :aria-label="`Open ${x.title}`" @click="go(x.routineId ? `/routines/${x.routineId}` : `/exercises?muscle=${encodeURIComponent(x.muscle ?? '')}`)" />
-              <MuscleFig sm :routine="x.routineId ?? undefined" :muscles="x.routineId || !x.muscle ? undefined : [x.muscle]" />
+              <button class="cover" :aria-label="x.routineId ? `Open ${x.title}` : `Exercises: ${x.title}`" @click="go(x.routineId ? `/routines/${x.routineId}` : `/exercises?muscle=${encodeURIComponent(x.muscle ?? '')}`)" />
+              <MuscleFig sm :routine="x.routineId ?? undefined" :muscles="x.routineId ? undefined : x.muscles ?? (x.muscle ? [x.muscle] : undefined)" />
               <div class="grow"><div class="t">{{ x.title }}</div><div class="s">{{ x.reason }}</div></div>
               <button v-if="x.routineId" class="ib sm over" aria-label="Plan" title="Plan" @click="planOpen = { rule: 'once', routineId: x.routineId }"><Icon name="calendar" :size="18" /></button>
+              <button v-else-if="x.kind === 'gap' || x.kind === 'target'" class="ib sm over" aria-label="New routine" title="New routine" @click="go('/routines/new/edit')"><Icon name="plus" :size="18" /></button>
               <button class="ib sm plain over" aria-label="Not now" title="Not now: hide until your next workout" @click="hideSuggestion(x.key)"><Icon name="close" :size="16" /></button>
             </div>
           </TransitionGroup>
@@ -585,8 +595,11 @@ html.phone .sz-s .big { font-size: clamp(22px, 7vw, var(--fs-val)); }
 .gtile { flex-direction: row; gap: var(--cpx); }
 .gmain { flex: 1.3; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
 .gsub { margin-top: auto; }
-.gtick { margin: 0; cursor: inherit; flex: none; }
-.hero .gtick { box-shadow: 0 0 0 1.5px var(--onc); }
+/* reached (a goal, the step goal): the ring closed all the way round with a thin check inside, in the "reached" green, or
+   in the block's own text colour on a reached goal's accent block; the same ring as one under way, never a filled tick */
+.rdone { position: relative; display: grid; place-items: center; flex: none; color: var(--pos); }
+.rdone > * { grid-area: 1 / 1; }
+.hero .rdone { color: var(--onc); }
 .grun { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; padding-inline-start: var(--cpx); border-inline-start: 1px solid var(--ol); }
 .hero .grun { border-color: color-mix(in srgb, var(--onc) 18%, transparent); }
 .gdots { display: flex; gap: 4px; margin-top: auto; padding-top: var(--hg); }
@@ -638,11 +651,12 @@ html.phone .gtile.sz-m { flex-direction: row; }
 
 /* Edit home: each tile names its block and says what it shows; switched-off ones fade back */
 .etile { display: flex; flex-direction: column; gap: 4px; min-height: 92px; border: 1px dashed var(--ol); }
-.etile .ch { margin-bottom: 0; gap: 4px; }
-.etile .ch .bi { margin-inline-end: 4px; }
-.etile .t { cursor: pointer; }
+.etile .ch { margin-bottom: 0; }
+/* a long name wraps rather than pushing the switch out of a narrow tile */
+.etile .t { cursor: pointer; min-width: 0; overflow-wrap: anywhere; line-height: 1.25; }
 .etile.off { opacity: .55; }
-.epin { align-self: flex-start; margin-top: auto; }
+/* the foot: the pinned goals' link on the left, the arrows on the right with their icons lined up under the switch's edge */
+.emv { display: flex; align-items: center; gap: 4px; margin-top: auto; margin-inline-end: calc((18px - 36px) / 2); }
 .tgl.sub-t { padding-inline-start: calc(var(--cpx) + var(--hg)); }
 .hsw { cursor: pointer; align-self: stretch; display: flex; align-items: center; }
 </style>

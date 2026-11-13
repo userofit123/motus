@@ -1,30 +1,43 @@
-// Suggestions for Home, worked out from what you actually do:
+// Suggestions for Home, worked out from what you actually do and what your routines hold, best first:
 // - the next workout of a program you're following
 // - your usual order of routines (if Back usually follows Chest and you just did Chest, Back is next)
-// - a muscle left out this week while the rest were worked, or one that hasn't been worked for a long while
+// - a muscle left out this week while the rest were worked
+// - gaps in your routines: a muscle group none of them works (no core exercise anywhere), or a muscle that is only ever a
+//   helper (forearms in rows and curls) with no exercise of its own
+// - a muscle that gets far fewer sets than the others lately, or hasn't been worked for a long while (or ever)
 // - otherwise, the routine you haven't done for the longest
-import { muscleName } from "@motus/shared";
+// At most two of a kind and five in all, so one long list of "not done for N days" can't crowd out the rest.
+import { GROUPS, muscleName } from "@motus/shared";
 import type { Sql } from "../db";
-import type { RoutineSummary } from "@motus/shared";
+import type { RoutineSummary, HomeSuggestion } from "@motus/shared";
 import { programState } from "./programs";
 
-export type Suggestion = { key: string; kind: "program" | "order" | "missed" | "rested" | "oldest"; title: string; reason: string; routineId: string | null; color: string | null; muscle?: string };
+export type Suggestion = HomeSuggestion;
 
-// the muscles worth a nudge; small ones (forearms, neck, adductors…) only show up as part of a routine
+// the muscles worth a nudge; forearms count as one people ask about, the other small ones (neck, adductors…) only show up
+// as part of a routine
 const MAIN = ["chest", "lats", "middle back", "shoulders", "biceps", "triceps", "abdominals", "quadriceps", "hamstrings", "glutes", "calves"];
+const WATCH = [...MAIN, "forearms"];
 const DAY = 86400000;
+const MAX = 5, PER_KIND = 2;
+// gaps of both sorts count as one kind: two of them at most, so the workouts that are due still find room
+const family = (k: Suggestion["kind"]) => (k === "target" ? "gap" : k);
 
 /** hidden: suggestions you dismissed (key → when); each stays hidden until your next workout */
 export async function suggestions(q: Sql, routines: RoutineSummary[], now: Date, hidden: Record<string, string> = {}): Promise<Suggestion[]> {
   const usable = routines.filter((r) => !r.archived && r.exerciseCount > 0);
   const byId = new Map(usable.map((r) => [r.id, r]));
   const out: Suggestion[] = [];
-  const lastWorkout = (await q.query<{ at: string }>("SELECT max(started_at) AS at FROM workouts WHERE status = 'completed'")).rows[0]?.at;
+  const done = (await q.query<{ at: string | null; n: string }>("SELECT max(started_at) AS at, count(*) AS n FROM workouts WHERE status = 'completed'")).rows[0];
+  const lastWorkout = done?.at, workouts = Number(done?.n ?? 0);
   const isHidden = (key: string) => !!hidden[key] && (!lastWorkout || new Date(hidden[key]!) > new Date(lastWorkout));
   const add = (x: Omit<Suggestion, "key">) => {
     const key = `${x.kind}:${x.routineId ?? x.muscle}`;
-    if (out.length < 5 && !isHidden(key) && !out.some((y) => (x.routineId && y.routineId === x.routineId) || (x.muscle && y.muscle === x.muscle))) out.push({ key, ...x });
+    const same = out.some((y) => (x.routineId && y.routineId === x.routineId) || (x.muscle && y.muscle === x.muscle)
+      || (x.muscles && y.muscles?.some((m) => x.muscles!.includes(m))));
+    if (out.length < MAX && out.filter((y) => family(y.kind) === family(x.kind)).length < PER_KIND && !isHidden(key) && !same) out.push({ key, ...x });
   };
+  const lower = (m: string) => muscleName(m).toLowerCase();
 
   // 0. a program you're following says what's next
   for (const p of (await q.query("SELECT * FROM programs WHERE active ORDER BY created_at DESC")).rows) {
@@ -49,33 +62,64 @@ export async function suggestions(q: Sql, routines: RoutineSummary[], now: Date,
     }
   }
 
-  // 2. muscles: when each was last worked, and which routine works it most
+  // muscles: when each was last worked, its sets in the last four weeks, and what your routines do for it
   const lastAt = new Map((await q.query<{ m: string; at: string }>(
     `SELECT unnest(e.primary_muscles) AS m, max(w.started_at) AS at FROM workout_exercises we JOIN workouts w ON w.id = we.workout_id JOIN exercises e ON e.id = we.exercise_id
      WHERE w.status = 'completed' AND we.status <> 'skipped' GROUP BY 1`)).rows.map((x) => [x.m, new Date(x.at).getTime()]));
+  const sets28 = new Map((await q.query<{ m: string; n: string }>(
+    `SELECT unnest(e.primary_muscles) AS m, count(s.id) AS n FROM workout_exercises we JOIN workouts w ON w.id = we.workout_id JOIN exercises e ON e.id = we.exercise_id
+     JOIN workout_sets s ON s.workout_exercise_id = we.id AND s.done AND s.kind <> 'warmup'
+     WHERE w.status = 'completed' AND w.started_at >= $1 GROUP BY 1`, [new Date(now.getTime() - 28 * DAY).toISOString()])).rows.map((x) => [x.m, Number(x.n)]));
   const days = (m: string) => lastAt.has(m) ? Math.floor((now.getTime() - lastAt.get(m)!) / DAY) : null;
   const known = MAIN.filter((m) => lastAt.has(m)); // only muscles you have trained before
   const thisWeek = known.filter((m) => days(m)! < 7);
-  const hits = (await q.query<{ routine_id: string; m: string; n: string }>(
-    `SELECT re.routine_id, unnest(e.primary_muscles) AS m, count(*) AS n FROM routine_exercises re JOIN exercises e ON e.id = re.exercise_id GROUP BY 1, 2`)).rows;
-  const routineFor = (m: string) => hits.filter((h) => h.m === m && byId.has(h.routine_id)).sort((a, b) => Number(b.n) - Number(a.n))[0]?.routine_id ?? null;
-  const muscleTip = (m: string, kind: "missed" | "rested", reason: string) => {
+  const hits = (await q.query<{ routine_id: string; m: string; n: string; main: boolean }>(
+    `SELECT re.routine_id, unnest(e.primary_muscles) AS m, count(*) AS n, true AS main FROM routine_exercises re JOIN exercises e ON e.id = re.exercise_id GROUP BY 1, 2
+     UNION ALL SELECT re.routine_id, unnest(e.secondary_muscles) AS m, count(*) AS n, false AS main FROM routine_exercises re JOIN exercises e ON e.id = re.exercise_id GROUP BY 1, 2`))
+    .rows.filter((h) => byId.has(h.routine_id));
+  const routineFor = (m: string) => hits.filter((h) => h.main && h.m === m).sort((a, b) => Number(b.n) - Number(a.n))[0]?.routine_id ?? null;
+  const helped = (m: string) => hits.some((h) => !h.main && h.m === m);
+  // a muscle's tip opens the routine that works it most; with none, the exercises for it
+  const muscleTip = (m: string, kind: "missed" | "rested" | "low", reason: string) => {
     const rid = routineFor(m), r = rid ? byId.get(rid)! : null;
-    add({ kind, title: r ? r.name : `Work your ${muscleName(m).toLowerCase()}`, reason: r ? `${reason} · works your ${muscleName(m).toLowerCase()}` : reason, routineId: r?.id ?? null, color: r?.color ?? null, muscle: m });
+    add({ kind, title: r ? r.name : `Work your ${lower(m)}`, reason: r ? `${reason} · works your ${lower(m)}` : reason, routineId: r?.id ?? null, color: r?.color ?? null, muscle: m, muscles: [m] });
   };
-  // left out this week, while most of the others were worked
+
+  // 2. left out this week, while most of the others were worked
   if (known.length >= 4 && thisWeek.length >= known.length * 0.6) {
     const left = known.filter((x) => days(x)! >= 7).sort((a, b) => days(b)! - days(a)!);
     for (const m of left.slice(0, 2))
       muscleTip(m, "missed", left.length === 1 ? `${muscleName(m)}: the only one not worked this week` : `${muscleName(m)}: not worked this week, unlike most others`);
   }
-  // not worked for a long while
-  for (const m of known.filter((x) => days(x)! >= 10).sort((a, b) => days(b)! - days(a)!).slice(0, 2))
-    muscleTip(m, "rested", `${muscleName(m)} not worked for ${days(m)} days`);
 
-  // 3. and the routines done longest ago
+  // 3. gaps in your routines (only once you have some, so a new account isn't told everything is missing)
+  if (usable.length) {
+    // a whole group none of your routines works as a main muscle: open its exercises, or make a routine for it
+    const gaps = GROUPS.filter((g) => g.id !== "neck" && !g.muscles.some((m) => routineFor(m)));
+    for (const g of gaps) {
+      const name = g.name.toLowerCase();
+      add({ kind: "gap", title: `No routine works your ${name}`, reason: `Add a ${name} exercise to a routine, or make a routine for it`, routineId: null, color: null, muscle: g.id, muscles: g.muscles.filter((m) => WATCH.includes(m)) });
+    }
+    // a muscle whose group is covered but that has no exercise of its own anywhere
+    for (const m of WATCH.filter((x) => !routineFor(x) && !gaps.some((g) => g.muscles.includes(x))))
+      add({ kind: "target", title: `Add a ${lower(m)} exercise`, reason: helped(m) ? `Your routines only work your ${lower(m)} as a helper` : `None of your routines works your ${lower(m)}`, routineId: null, color: null, muscle: m, muscles: [m] });
+  }
+
+  // 4. far fewer sets than the rest lately: under a quarter of what a typical muscle got in four weeks
+  const counts = known.map((m) => sets28.get(m) ?? 0).filter((n) => n > 0).sort((a, b) => a - b);
+  const typical = counts.length >= 4 ? counts[Math.floor(counts.length / 2)]! : 0;
+  if (typical >= 8)
+    for (const m of known.filter((x) => routineFor(x) && (sets28.get(x) ?? 0) > 0 && (sets28.get(x) ?? 0) < typical / 4).sort((a, b) => (sets28.get(a) ?? 0) - (sets28.get(b) ?? 0)))
+      muscleTip(m, "low", `${muscleName(m)}: ${sets28.get(m)} ${sets28.get(m) === 1 ? "set" : "sets"} in 4 weeks, ${typical} for most others`);
+
+  // 5. not worked for a long while, or never though a routine has it (once there's enough history to tell)
+  for (const m of known.filter((x) => days(x)! >= 10).sort((a, b) => days(b)! - days(a)!))
+    muscleTip(m, "rested", `${muscleName(m)} not worked for ${days(m)} days`);
+  if (workouts >= 5) for (const m of MAIN.filter((x) => !lastAt.has(x) && routineFor(x))) muscleTip(m, "rested", `${muscleName(m)}: not worked yet`);
+
+  // 6. and the routines done longest ago
   const ago = (at: string | null) => (at ? Math.floor((now.getTime() - new Date(at).getTime()) / DAY) : null);
-  for (const r of [...usable].filter((x) => (ago(x.lastDoneAt) ?? 99) >= 3).sort((a, b) => (a.lastDoneAt ?? "").localeCompare(b.lastDoneAt ?? "")).slice(0, 2))
+  for (const r of [...usable].filter((x) => (ago(x.lastDoneAt) ?? 99) >= 3).sort((a, b) => (a.lastDoneAt ?? "").localeCompare(b.lastDoneAt ?? "")))
     add({ kind: "oldest", title: r.name, reason: r.lastDoneAt ? `Not done for ${ago(r.lastDoneAt)} days` : "You haven't done this one yet", routineId: r.id, color: r.color ?? null });
   return out;
 }
