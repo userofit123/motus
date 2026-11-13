@@ -2,6 +2,21 @@
 
 The top entry's version is the one the release workflow publishes. Add a new `## [x.y.z]` section to release.
 
+## [0.1.18] - 2026-11-13
+
+- Track by: any exercise can be tracked by reps, time, distance, distance and time, or reps and time, each with or without weight, from "Track by" in its ⋮ menu (exercise page, routine editor and workout). A plank with plates on your back is Time with Weight, a ruck is Distance + time with Weight, kettlebell swings in a minute are Reps + time with Weight. Switching converts the sets in your routines and the sets still to do in a running workout; sets already done stay as logged. Your own exercises use the same two choices. It replaces Timed sets and can be switched off in Settings → Features → Set tracking.
+- Only reps with weight count toward lifted volume and one-rep max, so a weight left on an exercise that no longer tracks weight no longer shows up in totals or records. Sets with reps or distance and a time read "15 reps in 1:00" and "2.5 km in 12:00".
+- Stretches rest 10 seconds between sets and 15 before the next exercise by default, set in Settings → Rest for stretches. Planks and other effort holds keep your normal rest, and any rest set on a routine, exercise or set still comes first. The Daily stretch template follows these defaults.
+- In the routine editor, using an exercise's ⋮ menu (Track by, One side at a time) keeps that exercise open.
+- Home: picking a past day shows the workouts and activities done that day and any missed plans. Planned items end with the same Start and ⋮ menu, can be skipped for a day or removed, and planned walks start recording with Start. Recent activity shows the same stats column as History, with steps for walks.
+- Workout: finishing a set starts the rest and moves on at once, notes added during a workout scroll into view and can be edited, starting a workout no longer flashes "No workout in progress", and a running workout stays quick with a long history.
+- Changing a rest in a workout offers to keep it in one wording, for any kind of set, and adding or deleting sets re-plans the rests.
+- Workout countdown sounds (10 seconds, 3 2 1, rest over) are short bright beeps, clearly louder on phone speakers.
+- Exercises can be filtered by category and to one side at a time when picking or browsing them.
+- A new routine from a template or based on another is only saved when you press Save.
+- Notes and reminders are spaced the same everywhere, and finished workouts let you edit notes too.
+- Updating adds a small database change on first start. Backups made before this version import as before.
+
 ## [0.1.17] - 2026-11-11
 
 - Tapping a tab while a page is still loading (for example right after opening the app) opens the new page straight away, and every tap after it keeps working. Before, the next page could take a while and a further tap might never open, until the app was restarted.
