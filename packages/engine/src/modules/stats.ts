@@ -103,7 +103,9 @@ export function statsRoutes(r: Router) {
     const daily: { date: string | Date; kind: string; value: number | string }[] = [
       ...(await ctx.q.query<{ date: string | Date; kind: string; value: number | string }>("SELECT date, kind, value FROM daily_logs WHERE date >= $1::date AND kind <> 'steps'", [fromDay])).rows,
       ...(await stepsByDay(ctx.q, fromDay, null, tzOf(qs)))].sort((a, b) => String(a.date).localeCompare(String(b.date)));
-    return { from, to, workouts, activities, exercises, routines: routineList, muscles, groups: GROUPS, weeklyRange: WEEKLY_SET_RANGE, body, daily };
+    // every record set in the range, only when asked (Reports counts them per month; Stats doesn't need them)
+    const records = qs.records ? await recentRecords(ctx.q, from, Infinity) : [];
+    return { from, to, workouts, activities, exercises, routines: routineList, muscles, groups: GROUPS, weeklyRange: WEEKLY_SET_RANGE, body, daily, records };
   });
 
   r.get("/home", async (ctx, _p, _b, qs) => {
