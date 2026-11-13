@@ -17,9 +17,10 @@ const emit = defineEmits<{ clear: [] }>();
 </template>
 
 <style scoped>
-/* sits --hg above the list it filters, like a heading; inside, a smaller card padding (FilterRow bleeds its chips to it) */
+/* sits --hg above the list it filters, like a heading; inside, the plain card padding so its labels share the left edge
+   of the cards below (FilterRow bleeds its chips to it) */
 .fpanel { margin-bottom: var(--hg); }
-.fbox { display: flex; flex-direction: column; gap: 10px; padding: calc(var(--cpy) - 3px) calc(var(--cpx) - 4px); }
+.fbox { display: flex; flex-direction: column; gap: 10px; }
 .ffoot { margin: 2px 0 0; min-height: 28px; }
 .ffoot .qb { padding: 4px 8px; font-size: 12.5px; }
 </style>

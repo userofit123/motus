@@ -41,8 +41,11 @@ const meta = computed(() => [
 </template>
 
 <style scoped>
-.nitem { display: flex; align-items: flex-start; gap: 10px; text-align: start; padding: calc(var(--cpy) - 4px) calc(var(--cpx) - 3px); border-radius: var(--r-sm); background: var(--s2); font-size: 13.5px; color: var(--tx); }
-.nitem.flat { background: none; border-radius: 0; padding: var(--lpy) 4px; border-bottom: 1px solid var(--ol); font-size: 14px; }
+/* on a page or a sheet it is a block of its own on the card surface with the card's edge (an inset ring, so it is as tall as
+   the reminder beside it); inside a card it is a quiet inner tile */
+.nitem { display: flex; align-items: flex-start; gap: 10px; text-align: start; padding: calc(var(--cpy) - 4px) calc(var(--cpx) - 3px); border-radius: var(--r-sm); background: var(--s1); box-shadow: inset 0 0 0 1px var(--ol); font-size: 13.5px; color: var(--tx); }
+.card .nitem { background: var(--s2); box-shadow: none; }
+.nitem.flat, .card .nitem.flat { background: none; box-shadow: none; border-radius: 0; padding: var(--lpy) 4px; border-bottom: 1px solid var(--ol); font-size: 14px; }
 .nitem.flat:last-child { border-bottom: 0; }
 .b { flex: 1; min-width: 0; }
 .tx { white-space: pre-wrap; overflow-wrap: anywhere; }

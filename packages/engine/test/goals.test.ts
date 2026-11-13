@@ -268,4 +268,48 @@ describe("editing a goal", () => {
     await log("thigh_l", 54.5); // reached once for real: a later dip doesn't take it away
     expect(await goal(id)).toMatchObject({ status: "achieved", progress: { done: false } });
   });
+
+  it("keeps an exercise goal achieved when the exercise is merged into another", async () => {
+    const ex = (await call("POST", "/exercises", { name: "Merge press", tracking: "weight_reps", primaryMuscles: ["chest"] })).id;
+    const into = (await call("POST", "/exercises", { name: "Merge press kept", tracking: "weight_reps", primaryMuscles: ["chest"] })).id;
+    const { id } = await call("POST", "/goals", { metric: "max_weight", scopeId: ex, target: 100 });
+    await call("POST", "/workouts/log", { startedAt: new Date(Date.now() - 3600000).toISOString(), durationS: 3600, exercises: [{ exerciseId: ex, sets: [{ weightKg: 100, reps: 5 }] }] });
+    expect((await goal(id)).status).toBe("achieved");
+    await call("POST", `/exercises/${ex}/merge`, { into });
+    expect(await goal(id)).toMatchObject({ scopeId: into, status: "achieved", progress: { current: 100, done: true } });
+  });
+
+  it("keeps a routine goal achieved when the routine is gone for good", async () => {
+    const r = (await call("POST", "/routines", { name: "Gone day" })).id;
+    const { id } = await call("POST", "/goals", { metric: "routine_count", scopeId: r, target: 1, period: "once" });
+    const ex = (await call("POST", "/exercises", { name: "Gone day squat", tracking: "weight_reps", primaryMuscles: ["quads"] })).id;
+    await call("POST", "/workouts/log", { routineId: r, startedAt: new Date(Date.now() - 60000).toISOString(), durationS: 30, exercises: [{ exerciseId: ex, sets: [{ weightKg: 60, reps: 5 }] }] });
+    expect((await goal(id)).status).toBe("achieved");
+    await eng.db.admin.query("DELETE FROM routines WHERE id = $1", [r]); // its workouts lose the link (ON DELETE SET NULL)
+    expect(await goal(id)).toMatchObject({ status: "achieved", progress: { done: false } });
+  });
+
+  it("rounds a body entry the same way when achieving and when re-checking", async () => {
+    await log("calf_l", 50, 5);
+    const { id } = await call("POST", "/goals", { metric: "body_metric", scopeId: "calf_l", target: 55, comparator: ">=" });
+    await log("calf_l", 54.996, 1); // shown as 55: reached
+    expect((await goal(id)).status).toBe("achieved");
+    await log("calf_l", 54);
+    expect(await goal(id)).toMatchObject({ status: "achieved", progress: { done: false } });
+  });
+
+  it("achieves a reopened body goal on an entry since it was set that meets the new target", async () => {
+    await log("forearm_l", 30, 5);
+    const { id } = await call("POST", "/goals", { metric: "body_metric", scopeId: "forearm_l", target: 31, comparator: ">=" });
+    // since it was set: 32 cm, then back to 30.5
+    await new Promise((r) => setTimeout(r, 5));
+    await log("forearm_l", 32);
+    await new Promise((r) => setTimeout(r, 5));
+    await log("forearm_l", 30.5);
+    expect(await goal(id)).toMatchObject({ status: "achieved", progress: { done: false } });
+    await call("PUT", `/goals/${id}`, { target: 32 }); // reopened; the 32 cm since it was set meets it
+    expect((await goal(id)).status).toBe("achieved");
+    await call("PUT", `/goals/${id}`, { target: 33 }); // nothing since then reaches 33
+    expect(await goal(id)).toMatchObject({ status: "active", achievedAt: null });
+  });
 });

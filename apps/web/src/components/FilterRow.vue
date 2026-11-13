@@ -27,7 +27,7 @@ const pick = (v: string) => emit("update:modelValue", props.all != null && props
 
 <style scoped>
 /* chips run to the panel's edge while scrolling on phones; on wider screens they wrap */
-.chips.hscroll { margin-inline: calc(4px - var(--cpx)); padding-inline: calc(var(--cpx) - 4px); }
+.chips.hscroll { margin-inline: calc(-1 * var(--cpx)); padding-inline: var(--cpx); }
 html:not(.phone) .chips.hscroll { margin-inline: 0; padding-inline: 0; }
 .n { opacity: .65; font-variant-numeric: tabular-nums; margin-inline-start: 2px; }
 </style>

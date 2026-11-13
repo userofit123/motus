@@ -163,8 +163,11 @@ export function libraryRoutes(r: Router) {
     for (const t of ["workout_exercises", "routine_exercises"]) await ctx.q.query(`UPDATE ${t} SET exercise_id = $2 WHERE exercise_id = $1`, [from, into]);
     await ctx.q.query("UPDATE notes SET target_id = $2 WHERE target_type = 'exercise' AND target_id = $1", [from, into]);
     await ctx.q.query("UPDATE reminders SET target_id = $2 WHERE target_type = 'exercise' AND target_id = $1", [from, into]);
+    // its goals follow the history they count, so a goal it reached stays reached
+    const goals = (await ctx.q.query("UPDATE goals SET scope_id = $2 WHERE scope = 'exercise' AND scope_id = $1 RETURNING id", [from, into])).rows.length;
     await ctx.q.query("DELETE FROM exercises WHERE id = $1", [from]);
-    ctx.changed("exercise", "workout");
+    if (goals) ctx.changed("exercise", "workout", "goal");
+    else ctx.changed("exercise", "workout");
     return { ok: true };
   });
   // alternatives for "replace exercise": same main muscle, most used first

@@ -259,13 +259,17 @@ export async function ensureStarterGoal(q: Sql, userId: string) {
  * quickest run of a routine, sessions in total), so not met now means the data that reached it was changed or deleted.
  * A body measure goes back and forth: any entry since the goal was set (from the one it started at) still reaching the
  * target keeps it. A streak or an average of steps can slip with time and nothing tells a slip from a typo, so they keep it.
+ * A routine or exercise that is gone for good (its workouts lose the link) took the data with it, which is no correction
+ * of it, so the goal keeps what it reached. Values are rounded as progress rounds them, so both agree on an entry.
  */
 async function stillReached(q: Sql, g: Goal): Promise<boolean> {
   if (g.metric === "streak_weeks" || g.metric === "steps_avg") return true;
+  if (g.scope === "routine" || g.scope === "exercise")
+    return !(await q.query(`SELECT 1 FROM ${g.scope === "routine" ? "routines" : "exercises"} WHERE id::text = $1`, [g.scopeId])).rows.length;
   if (g.scope !== "body") return false;
   const set = (g as Goal & { createdAt?: string }).createdAt ?? `${g.startDate}T23:59:59Z`;
   return (await q.query(
-    `SELECT 1 FROM body_metrics WHERE kind = $1 AND value > 0 AND (CASE WHEN $3::text = '<=' THEN value <= $4::numeric ELSE value >= $4::numeric END)
+    `SELECT 1 FROM body_metrics WHERE kind = $1 AND value > 0 AND (CASE WHEN $3::text = '<=' THEN round(value::numeric, 2) <= $4::numeric ELSE round(value::numeric, 2) >= $4::numeric END)
        AND measured_at >= coalesce((SELECT max(measured_at) FROM body_metrics WHERE kind = $1 AND measured_at <= $2::timestamptz), '-infinity'::timestamptz) LIMIT 1`,
     [bodyKind(g), set, g.comparator, g.target])).rows.length > 0;
 }
@@ -279,8 +283,10 @@ export async function goalsWithProgress(ctx: Ctx, tzMin: number, where = "status
     g.progress = await progressOf(ctx.q, g, s, ctx.now(), tzMin);
     if (g.period !== "once") continue;
     // one-off goals are marked achieved the first time they are met, and re-checked on every read against the data as it
-    // is now: a mistyped set or entry that reached the target and was then corrected (or deleted) no longer holds it
-    if (g.status === "active" && g.progress.done) {
+    // is now: a mistyped set or entry that reached the target and was then corrected (or deleted) no longer holds it.
+    // A body goal takes the same rule both ways: any entry since it was set that reaches the target achieves it (also after
+    // an edit to the target reopened it), and keeps it achieved
+    if (g.status === "active" && (g.progress.done || (g.scope === "body" && await stillReached(ctx.q, g)))) {
       if ((await ctx.q.query("UPDATE goals SET status = 'achieved', achieved_at = now() WHERE id = $1 AND status = 'active' RETURNING id", [g.id])).rows.length) ctx.changed("goal");
       g.status = "achieved"; g.achievedAt = ctx.now().toISOString();
     } else if (g.status === "achieved" && !g.progress.done && !(await stillReached(ctx.q, g))) {
