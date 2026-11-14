@@ -5,7 +5,7 @@ import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { READY_FEATURES, EQUIPMENT, NOTE_TAGS_DEFAULT, workdaysOf, weekdayOrder, fromKg, toKg, progressionDefaultsOf, type Settings } from "@motus/shared";
 import { WEEKDAYS } from "../core/goals";
-import { useMe, useSettings, saveSettings, loaded } from "../api/queries";
+import { useMe, useSettings, useHealthAvailable, saveSettings, loaded } from "../api/queries";
 import { session, signOut } from "../core/session";
 import { isPhone, layoutChoice, setLayout } from "../core/device";
 import { appearanceOpen } from "../core/ui";
@@ -38,11 +38,13 @@ import { native } from "../core/device";
 const route = useRoute(), router = useRouter();
 const me = useMe();
 const s = useSettings();
+// imported data stays reachable (Integrations) when Health Connect is off here, e.g. in a browser
+const avail = useHealthAvailable();
 const sec = computed(() => String(route.params.section || (isPhone.value ? "" : "account")));
 // the sections in groups, so the list reads as a few short ones: [key, name, icon, what's in it]
 type Section = [key: string, name: string, icon: string, hint: string];
 // what Integrations holds, named after the features that are on
-const integrationsHint = computed(() => [s.value.features.healthConnect && "Health Connect", s.value.features.apiTokens && "API tokens", s.value.features.mcp && "Ask Claude"].filter(Boolean).join(", "));
+const integrationsHint = computed(() => [s.value.features.healthConnect && "Health Connect", s.value.features.apiTokens && "API tokens", s.value.features.mcp && "Ask Claude", !s.value.features.healthConnect && avail.data.value?.imports && "Imported data"].filter(Boolean).join(", "));
 const GROUPS = computed<[string, Section[]][]>(() => [
   ["You", [["account", "Account", "user", "Name, password, devices, sync"],
     // the apps keep several servers and on-device accounts; in a browser the server is the site, so this only names it
@@ -51,7 +53,7 @@ const GROUPS = computed<[string, Section[]][]>(() => [
   ["App", [["units", "Units & formats", "scale", "kg or lb, dates, work week"], ["appearance", "Appearance", "palette", "Colours, style, layout"], ["notifications", "Notifications", "bell", "Planned workouts"]]],
   ["Your data", [["backup", "Backup & restore", "download", "A copy of everything"], ["data", "Export & import", "upload", "Motus files, CSV, other apps"], ["log", "Activity log", "history", "Everything you changed"],
     // what comes in from outside (Health Connect) or goes out (API tokens, Ask Claude) is your data too
-    ...(s.value.features.apiTokens || s.value.features.mcp || s.value.features.healthConnect ? [["integrations", "Integrations", "link", integrationsHint.value] as Section] : [])]],
+    ...(s.value.features.apiTokens || s.value.features.mcp || s.value.features.healthConnect || avail.data.value?.imports ? [["integrations", "Integrations", "link", integrationsHint.value] as Section] : [])]],
   ["About", [["versions", "App & Versions", "refresh", "Installed version, downloads"], ["changelog", "What's new", "sparkle", "Release notes"],
     ...(session.user?.role === "admin" ? [["admin", "Server admin", "server", "People, invites, sign-ups"] as Section] : []), ["about", "About Motus", "info", "Version, credits"]]],
 ]);

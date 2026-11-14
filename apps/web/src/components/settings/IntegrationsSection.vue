@@ -9,11 +9,14 @@ import { prompt, confirm, choose } from "../../core/ask";
 import { useRouter } from "vue-router";
 import Icon from "../Icon.vue";
 import { toast } from "../../core/toast";
-import { useSettings } from "../../api/queries";
+import { useSettings, useHealthAvailable } from "../../api/queries";
 import { computed, onMounted, onBeforeUnmount, ref } from "vue";
 import { HEALTH_KINDS, healthSupported, healthStatus, connectHealth, openHealthSettings, syncHealth, healthAdded, lastSync, syncing, type HealthStatus, type HealthResult } from "../../native/health";
 
 const s = useSettings();
+const avail = useHealthAvailable();
+// imports that exist while Health Connect is off here (a browser, another device) stay reachable
+const importsOnly = computed(() => !s.value.features.healthConnect && !!avail.data.value?.imports);
 const router = useRouter();
 const sessions = useQuery({ queryKey: ["settings", "sessions"], queryFn: () => api.get("/auth/sessions") });
 async function create() {
@@ -92,23 +95,24 @@ const lastText = computed(() => lastSync.value ? `${fmt.value.date(lastSync.valu
 
 <template>
   <div class="stack">
-    <template v-if="s.features.healthConnect">
-      <div class="sh first"><h2>Health Connect</h2><button v-if="connected" class="lnk" :disabled="syncing" @click="sync">Sync now</button></div>
+    <template v-if="s.features.healthConnect || importsOnly">
+      <div class="sh first"><h2>Health Connect</h2><button v-if="connected && s.features.healthConnect" class="lnk" :disabled="syncing" @click="sync">Sync now</button></div>
       <div class="card">
-        <div class="li"><div class="grow"><div class="t">Health Connect on this device</div><div class="s">{{ hcText }}</div></div>
+        <div v-if="s.features.healthConnect" class="li"><div class="grow"><div class="t">Health Connect on this device</div><div class="s">{{ hcText }}</div></div>
           <button v-if="hc?.available === 'yes' && !connected" class="btn s" @click="connect">Allow</button>
           <button v-else-if="connected" class="btn o s" @click="changeAccess">Change</button></div>
-        <div v-if="missing.length" class="li"><div class="grow"><div class="t">More to read</div><div class="s">{{ missingText }}</div></div>
+        <div v-if="s.features.healthConnect && missing.length" class="li"><div class="grow"><div class="t">More to read</div><div class="s">{{ missingText }}</div></div>
           <button class="btn s" @click="connect">Allow</button></div>
-        <div v-if="connected" class="li"><div class="grow"><div class="t">Last sync</div><div class="s">{{ lastText }}</div></div></div>
-        <div v-if="connected" class="li"><div class="grow"><div class="t">Import past data</div><div class="s">{{ pastText }}</div></div>
+        <div v-if="s.features.healthConnect && connected" class="li"><div class="grow"><div class="t">Last sync</div><div class="s">{{ lastText }}</div></div></div>
+        <div v-if="s.features.healthConnect && connected" class="li"><div class="grow"><div class="t">Import past data</div><div class="s">{{ pastText }}</div></div>
           <button class="btn o s" :disabled="syncing" @click="importPast">Import</button></div>
         <div class="li click" role="button" tabindex="0" @click="router.push('/settings/health')" @keydown.enter="router.push('/settings/health')"><div class="grow"><div class="t">Imported data</div><div class="s">Everything that came in, to correct or delete</div></div><Icon name="right" :size="16" class="muted" /></div>
       </div>
-      <p class="tiny">Motus reads what other apps wrote to Health Connect, such as a band connected through Gadgetbridge (its Settings → External integrations → Health Connect). It reads when you open the app; steps and sleep you type in yourself stay as they are.</p>
+      <p v-if="importsOnly" class="tiny">{{ healthSupported() ? "Health Connect is switched off in Settings → Features; what it already brought in stays here." : "Connecting Health Connect happens in the Motus app for Android; what it already brought in stays here." }}</p>
+      <p v-else class="tiny">Motus reads what other apps wrote to Health Connect, such as a band connected through Gadgetbridge (its Settings → External integrations → Health Connect). It reads when you open the app; steps and sleep you type in yourself stay as they are.</p>
     </template>
     <template v-if="s.features.apiTokens">
-      <div class="sh" :class="{ first: !s.features.healthConnect }"><h2>API tokens</h2><button class="lnk" @click="create">New token</button></div>
+      <div class="sh" :class="{ first: !s.features.healthConnect && !importsOnly }"><h2>API tokens</h2><button class="lnk" @click="create">New token</button></div>
       <div class="card">
         <div v-for="t in (sessions.data.value ?? []).filter((x: any) => x.platform === 'api')" :key="t.id" class="li"><div class="grow"><div class="t">{{ t.deviceName }}</div><div class="s">Created {{ fmt.date(t.createdAt) }}</div></div><button class="qb danger" @click="revoke(t.id)">Remove</button></div>
         <div v-if="!(sessions.data.value ?? []).some((x: any) => x.platform === 'api')" class="tiny">No tokens yet. Every page of Motus is backed by the same API under {{ origin }}/api.</div>
@@ -119,6 +123,6 @@ const lastText = computed(() => lastSync.value ? `${fmt.value.date(lastSync.valu
         <p class="tiny" style="margin-top:6px">with the header <code>Authorization: Bearer &lt;token&gt;</code> and the file as the body.</p></div>
     </template>
     <div v-if="s.features.mcp" class="card"><div class="t" style="font-weight:600">Ask Claude</div><p class="tiny" style="margin-top:4px">A finished workout's ⋮ menu has "Copy for an AI assistant": paste it into Claude or any assistant to talk it through. With an API token, an MCP server or script can read your history from the API.</p></div>
-    <p v-if="!s.features.apiTokens && !s.features.mcp && !s.features.healthConnect" class="muted">Switch on Health Connect, Personal API or Ask Claude in Settings → Features.</p>
+    <p v-if="!s.features.apiTokens && !s.features.mcp && !s.features.healthConnect && !importsOnly" class="muted">Switch on Health Connect, Personal API or Ask Claude in Settings → Features.</p>
   </div>
 </template>

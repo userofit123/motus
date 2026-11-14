@@ -13,10 +13,14 @@ const user = computed(() => me.data.value?.user);
 const initials = computed(() => (user.value?.displayName || user.value?.username || "?").split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join(""));
 // Sleep and Heart are Stats' tabs, listed here (the one tap to them on the phone) only once a band has handed that over
 const avail = useHealthAvailable();
+// the subtitles name only what is there: "Nights, stages and bedtimes" only with night details, and so on
+const list = (xs: string[]) => { const t = xs.length > 1 ? `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}` : xs[0] ?? ""; return t.charAt(0).toUpperCase() + t.slice(1); };
+const sleepHint = computed(() => avail.data.value?.nights ? "Nights, stages and bedtimes" : "Hours slept each night");
+const heartHint = computed(() => { const a = avail.data.value; return list([a?.restingHr && "resting heart rate", a?.hrv && "HRV", a?.spo2 && "blood oxygen"].filter(Boolean) as string[]) || "Heart rate from workouts and activities"; });
 const PAGES = computed<[to: string, label: string, icon: string, hint: string][]>(() => [
   ["/exercises", "Exercises", "dumbbell", "The library, and your own"], ["/body", "Body", "scale", "Weight, measurements, photos, about you"],
-  ...(avail.data.value?.sleep ? [["/stats?tab=sleep", "Sleep", "moon", "Nights, stages and bedtimes"] as [string, string, string, string]] : []),
-  ...(avail.data.value?.heart ? [["/stats?tab=heart", "Heart", "heart", "Resting heart rate, HRV and blood oxygen"] as [string, string, string, string]] : [])]);
+  ...(avail.data.value?.sleep ? [["/stats?tab=sleep", "Sleep", "moon", sleepHint.value] as [string, string, string, string]] : []),
+  ...(avail.data.value?.heart ? [["/stats?tab=heart", "Heart", "heart", heartHint.value] as [string, string, string, string]] : [])]);
 </script>
 
 <template>

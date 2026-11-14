@@ -50,7 +50,7 @@ export const useSchedules = () => useQuery({ queryKey: ["schedules"], queryFn: (
 export const useTemplates = () => useQuery({ queryKey: ["static", "templates"], queryFn: () => api.get("/templates"), staleTime: Infinity });
 // What a band handed over through Health Connect (or a script through the API): which kinds there are at all, so Stats
 // shows its Sleep and Heart tabs only when there is something to put in them; filed under "health", which imports announce
-export type HealthAvailable = { sleep: boolean; heart: boolean; distance: boolean; calories: boolean; vo2max?: boolean; hrDay?: boolean; bodyFat?: boolean; hydration?: boolean };
+export type HealthAvailable = { sleep: boolean; heart: boolean; distance: boolean; calories: boolean; vo2max?: boolean; hrDay?: boolean; bodyFat?: boolean; hydration?: boolean; nights?: boolean; restingHr?: boolean; hrv?: boolean; spo2?: boolean; imports?: boolean };
 export const useHealthAvailable = () => useQuery({ queryKey: ["health", "available"], queryFn: () => api.get<HealthAvailable>("/health/available"), staleTime: 60_000 });
 /** One night from a band: minutes in each stage (null when it only told asleep from awake) and what it read meanwhile */
 export interface SleepNight {

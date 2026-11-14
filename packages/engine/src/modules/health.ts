@@ -514,11 +514,17 @@ export function healthRoutes(r: Router) {
       EXISTS (SELECT 1 FROM daily_logs WHERE kind = 'vo2max') AS vo2max,
       EXISTS (SELECT 1 FROM hr_days) AS hr_day,
       EXISTS (SELECT 1 FROM health_imports h JOIN body_metrics b ON b.id::text = h.ref WHERE h.kind = 'body_fat' AND h.deleted_at IS NULL) AS body_fat,
-      EXISTS (SELECT 1 FROM daily_logs WHERE kind = 'water_ml' AND source = $1) AS hydration`, [HEALTH_SOURCE]);
+      EXISTS (SELECT 1 FROM daily_logs WHERE kind = 'water_ml' AND source = $1) AS hydration,
+      EXISTS (SELECT 1 FROM sleep_nights) AS nights,
+      EXISTS (SELECT 1 FROM daily_logs WHERE kind = 'resting_hr') AS resting_hr,
+      EXISTS (SELECT 1 FROM daily_logs WHERE kind = 'hrv') AS hrv,
+      EXISTS (SELECT 1 FROM daily_logs WHERE kind = 'spo2') AS spo2,
+      EXISTS (SELECT 1 FROM health_imports WHERE deleted_at IS NULL) AS imports`, [HEALTH_SOURCE]);
     const x = rows[0] as any;
     return {
       sleep: !!x.sleep, heart: !!x.heart, distance: !!x.distance, calories: !!x.calories,
       vo2max: !!x.vo2max, hrDay: !!x.hr_day, bodyFat: !!x.body_fat, hydration: !!x.hydration,
+      nights: !!x.nights, restingHr: !!x.resting_hr, hrv: !!x.hrv, spo2: !!x.spo2, imports: !!x.imports,
     };
   });
 
