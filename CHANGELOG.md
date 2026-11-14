@@ -2,6 +2,10 @@
 
 The top entry's version is the one the release workflow publishes. Add a new `## [x.y.z]` section to release.
 
+## [0.1.22] - 2026-11-14
+
+- Health Connect (Android app): switch it on in Settings → Features, then allow it in Settings → Integrations. Motus then reads daily steps, sleep, weight and workouts that other apps wrote to Health Connect, such as a band connected through Gadgetbridge (its Settings → External integrations → Health Connect). It reads when you open the app, at most every 15 minutes, or when you tap Sync now. Steps and sleep you typed in yourself stay as they are, each weight reading is added once, and each workout becomes an activity once, with its heart rate, distance, steps and calories. Gym sessions are left out, since those are logged in Motus.
+
 ## [0.1.21] - 2026-11-14
 
 - Workout sounds come from one library of 12 short sounds, the same list everywhere: the Rest over sound, the Countdown sound and every part of the interval timer. Eight are clean recorded sounds (Hover, Step, Check, Ping, Checkpoint, Alert, Success, Level up) and four are the old single notes remade to match them (Round, Marimba, Bell, High). Each sound plays once, sounds the same wherever you pick it, and works as a countdown beep in the app and on Android in the background. Sounds you picked before switch to the closest new one. The rest over sound is now Success by default, and the interval timer starts work with Ping and ends with Level up.
