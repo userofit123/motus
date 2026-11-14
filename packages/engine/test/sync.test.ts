@@ -86,6 +86,23 @@ describe("sync", () => {
     expect((await server.db.admin.query("SELECT has_steps FROM activity_types WHERE id = $1", [walk.id])).rows[0].has_steps).toBe(true);
   }, 60000);
 
+  it("keeps a day's band word when an older app sends the row without it (M-220)", async () => {
+    await S()("POST", "/health/import", { steps: [{ date: "2026-08-03", value: 4100, worn: false }] });
+    await sync();
+    const worn = async (e: Engine) => (await e.db.admin.query("SELECT worn FROM daily_logs WHERE user_id = $1 AND date = '2026-08-03' AND kind = 'steps'", [U])).rows[0]?.worn;
+    expect(await worn(device)).toBe(false);
+    // an app from before 036 doesn't know the column: its row changes the number and leaves the word as it is
+    const at = new Date().toISOString();
+    const res = await S()("POST", "/sync/push", { device: deviceId, changes: [{ tbl: "daily_logs", op: "upsert", pk: { user_id: U, date: "2026-08-03", kind: "steps" }, at,
+      row: { user_id: U, date: "2026-08-03", kind: "steps", value: 4200, source: "health_connect" } }] });
+    expect(res).toMatchObject({ applied: 1, failed: [] });
+    expect(await worn(server)).toBe(false);
+    // and a new row from it is taken as a band's, as that app has always shown it
+    await S()("POST", "/sync/push", { device: deviceId, changes: [{ tbl: "daily_logs", op: "upsert", pk: { user_id: U, date: "2026-08-04", kind: "steps" }, at,
+      row: { user_id: U, date: "2026-08-04", kind: "steps", value: 5000, source: "health_connect" } }] });
+    expect((await server.db.admin.query("SELECT worn FROM daily_logs WHERE user_id = $1 AND date = '2026-08-04' AND kind = 'steps'", [U])).rows[0].worn).toBe(true);
+  }, 60000);
+
   it("keeps the newest of two changes to the same thing", async () => {
     await D()("PUT", `/routines/${routineId}`, { name: "Older, from the device" });
     await new Promise((r) => setTimeout(r, 20));

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { estimate, routineTime, setSeconds, usualDuration, CHANGEOVER_S, liftedKg, trackingFrom, trackingParts, trackingLabel, weightKindsFor, refitSet, newSetFor, progresses, TRACKINGS, COUNTED_BY, usesWeight, usesReps, usesDuration, usesDistance, restAfterSet, planSetRest, isStretch, weekStartOf, weekdayOrder, statsPeriod } from "./training";
+import { estimate, routineTime, setSeconds, usualDuration, CHANGEOVER_S, liftedKg, trackingFrom, trackingParts, trackingLabel, weightKindsFor, refitSet, newSetFor, progresses, TRACKINGS, COUNTED_BY, usesWeight, usesReps, usesDuration, usesDistance, restAfterSet, planSetRest, isStretch, weekStartOf, weekdayOrder, statsPeriod, sameSpanBefore } from "./training";
 import { restDefaultsOf, withDefaults } from "./settings";
 import { TEMPLATES } from "./templates";
 
@@ -170,6 +170,22 @@ describe("weeks and Stats periods", () => {
     expect(mon.prevTo!.getTime() - mon.prevFrom!.getTime()).toBe(wed.getTime() - mon.from!.getTime());
     const last = statsPeriod("lastweek", wed, 1);
     expect([last.from, last.to, last.prevFrom, last.prevTo].map(ymdOf)).toEqual(["2026-09-28", "2026-10-05", "2026-09-21", "2026-09-28"]);
+  });
+  it("compares a running period with the same time into the one before, never past its end", () => {
+    const mon = new Date(2026, 9, 12), lastMon = new Date(2026, 9, 5);
+    // the first minutes of a week: last week's first minutes, not all of it
+    expect(sameSpanBefore(mon, lastMon, new Date(2026, 9, 12, 0, 30))).toEqual(new Date(2026, 9, 5, 0, 30));
+    expect(sameSpanBefore(mon, lastMon, new Date(2026, 9, 14, 15))).toEqual(new Date(2026, 9, 7, 15));
+    // a longer period than the one before (31 October against September) stops at its end
+    expect(sameSpanBefore(new Date(2026, 9, 1), new Date(2026, 8, 1), new Date(2026, 9, 31, 12))).toEqual(new Date(2026, 9, 1));
+    // a clock running behind the period's start gives an empty span
+    expect(sameSpanBefore(mon, lastMon, new Date(2026, 9, 11))).toEqual(lastMon);
+    // a week start worked out in milliseconds (an hour off midnight across a clock change) still goes back 7 days
+    const wkFrom = new Date(2026, 2, 30), wkPrev = new Date(wkFrom.getTime() - 7 * 86400000 - 3600000);
+    expect(sameSpanBefore(wkFrom, wkPrev, new Date(2026, 3, 1, 10)).getDate()).toBe(25);
+    // a leap year in between moves nothing: 1 Mar is compared up to 1 Mar, by calendar date
+    expect(sameSpanBefore(new Date(2025, 0, 1), new Date(2024, 0, 1), new Date(2025, 2, 1, 9))).toEqual(new Date(2024, 2, 1, 9));
+    expect(sameSpanBefore(new Date(2028, 0, 1), new Date(2027, 0, 1), new Date(2028, 2, 1, 9))).toEqual(new Date(2027, 2, 1, 9));
   });
   it("gives today, the last 7 days and calendar months", () => {
     expect([statsPeriod("today", wed, 0).from, statsPeriod("today", wed, 0).prevFrom].map(ymdOf)).toEqual(["2026-10-07", "2026-10-06"]);

@@ -289,6 +289,31 @@ export function weekStartDate(d: Date, firstDay: number): Date {
 /** The start of the week containing a date (local), as YYYY-MM-DD */
 export const weekStartOf = (d: Date, firstDay: number): string => ymd(weekStartDate(d, firstDay));
 
+/**
+ * Where a period still running is compared up to: the same time into the period before (the length so far), but never
+ * past that period's end. Every "so far" comparison (Stats, Home's This week, Reports' month and year) goes through
+ * this, so the first morning of a week is measured against last week's first morning, not a whole week ("-100%").
+ */
+export function sameSpanBefore(from: Date, prevFrom: Date, now: Date): Date {
+  // stepped back by calendar fields, not milliseconds, so a leap day or a clock change in between doesn't move the cut:
+  // a month or year (both starting on the 1st) goes back whole months to the same date and clock time (the 31st takes
+  // a shorter month whole), a day or week goes back whole days
+  const t = [now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds()] as const;
+  let cut: Date;
+  if (from.getDate() === 1 && prevFrom.getDate() === 1 && from.getMonth() + from.getFullYear() * 12 !== prevFrom.getMonth() + prevFrom.getFullYear() * 12) {
+    const months = (from.getFullYear() - prevFrom.getFullYear()) * 12 + from.getMonth() - prevFrom.getMonth();
+    const y = now.getFullYear(), m = now.getMonth() - months, last = new Date(y, m + 1, 0).getDate();
+    // past a shorter month's last day (the 31st against a 30-day month): the whole of that month
+    cut = now.getDate() > last ? new Date(y, m + 1, 1) : new Date(y, m, now.getDate(), ...t);
+  } else {
+    // the gap in whole days, rounded: a clock change between them is under 12 hours, and a prevFrom worked out in
+    // milliseconds (a week before a local midnight, across a clock change) lands an hour off midnight
+    const days = Math.round((from.getTime() - prevFrom.getTime()) / 86400000);
+    cut = new Date(now.getFullYear(), now.getMonth(), now.getDate() - days, ...t);
+  }
+  return new Date(Math.min(Math.max(cut.getTime(), prevFrom.getTime()), from.getTime()));
+}
+
 // ----- Stats periods: calendar ones (today, this week…) and rolling ones (the last 4 weeks…) -----
 export const STATS_PERIODS = [
   { value: "today", label: "Today" }, { value: "week", label: "This week" }, { value: "lastweek", label: "Last week" },
@@ -306,8 +331,7 @@ export function statsPeriod(p: StatsPeriod, now: Date, firstDay: number): { from
   const ago = (n: number) => new Date(now.getTime() - n * 86400000);
   const month = (n: number) => new Date(now.getFullYear(), now.getMonth() + n, 1);
   const wk = weekStartDate(now, firstDay), wkAgo = (n: number) => new Date(wk.getFullYear(), wk.getMonth(), wk.getDate() - 7 * n);
-  // the same time into the period before: the length so far, but never past that period's end
-  const sofar = (from: Date, prevFrom: Date) => ({ from, to: null, prevFrom, prevTo: new Date(Math.min(prevFrom.getTime() + (now.getTime() - from.getTime()), from.getTime())) });
+  const sofar = (from: Date, prevFrom: Date) => ({ from, to: null, prevFrom, prevTo: sameSpanBefore(from, prevFrom, now) });
   const rolling = (n: number) => ({ from: ago(n), to: null, prevFrom: ago(2 * n), prevTo: ago(n) });
   switch (p) {
     case "today": return sofar(day(0), day(-1));

@@ -260,12 +260,30 @@ describe("goals on the app's calendar", () => {
     expect((await call("GET", `/goals/${g.id}`, undefined, { tz: "0" })).progress.current).toBe(1);
     let home = await call("GET", "/home", undefined, { tz: "0" });
     expect(home.thisWeek).toMatchObject({ start: "2026-10-05T00:00:00.000Z", workouts: 1 });
-    expect(home.lastWeek.workouts).toBe(1);
+    // the bars count last week whole; the comparison only up to Wednesday noon, before that Sunday
+    expect(home.weeks.at(-2).workouts).toBe(1);
+    expect(home.lastWeek.workouts).toBe(0);
     await call("PUT", "/settings", { firstDay: 0 });
     expect((await call("GET", `/goals/${g.id}`, undefined, { tz: "0" })).progress.current).toBe(2);
     home = await call("GET", "/home", undefined, { tz: "0" });
     expect(home.thisWeek).toMatchObject({ start: "2026-10-04T00:00:00.000Z", workouts: 2 });
     expect(home.lastWeek.workouts).toBe(0);
+  });
+
+  it("compares This week with last week up to the same day and time, not a whole week", async () => {
+    NOW = new Date("2026-10-12T06:00:00Z"); // Monday 12 October, before any workout this week
+    const { call, log } = await user();
+    await call("PUT", "/settings", { firstDay: 1 });
+    await log("2026-10-05T07:00:00Z"); // last Monday, later in the day than now
+    await log("2026-10-07T10:00:00Z"); // last Wednesday
+    let home = await call("GET", "/home", undefined, { tz: "0" });
+    // nothing done by this time last week either: nothing to compare, so no "-100%"
+    expect(home.thisWeek.workouts).toBe(0);
+    expect(home.lastWeek).toMatchObject({ start: "2026-10-05T00:00:00.000Z", workouts: 0, timeS: 0 });
+    expect(home.weeks.at(-2).workouts).toBe(2);
+    NOW = new Date("2026-10-12T09:00:00Z"); // later that Monday: last Monday's workout is now behind the same point
+    home = await call("GET", "/home", undefined, { tz: "0" });
+    expect(home.lastWeek).toMatchObject({ workouts: 1, timeS: 3600 });
   });
 
   it("counts a recorded walk's steps toward the day until a count is typed in, which replaces them, never both", async () => {

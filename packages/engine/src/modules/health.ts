@@ -294,16 +294,18 @@ export function healthRoutes(r: Router) {
      */
     const open = (key: string) => !imps.get(key)?.deleted;
 
-    // a typed value (source "manual", or null on rows from before sources) is never replaced
-    const day = async (kind: Daily, date: unknown, value: number | null) => {
+    // a typed value (source "manual", or null on rows from before sources) is never replaced. worn: a band, watch or
+    // ring counted the day (036); the phone says so for steps, distance and active calories, and one that doesn't
+    // (an older app) is taken as worn, as before
+    const day = async (kind: Daily, date: unknown, value: number | null, worn = true) => {
       const d = dateStr(date);
       if (!d || value == null) return false;
       const key = `${kind}:${d}`, dk = `${DAILY_KIND[kind]}:${d}`;
       if (!open(key)) return false;
       const { rows } = await ctx.q.query(
-        `INSERT INTO daily_logs (user_id, date, kind, value, source) VALUES ($1,$2,$3,$4,$5)
-         ON CONFLICT (user_id, date, kind) DO UPDATE SET value = $4, source = $5
-         WHERE daily_logs.source = $5 AND daily_logs.value <> $4 RETURNING 1`, [ctx.userId, d, DAILY_KIND[kind], value, HEALTH_SOURCE]);
+        `INSERT INTO daily_logs (user_id, date, kind, value, source, worn) VALUES ($1,$2,$3,$4,$5,$6)
+         ON CONFLICT (user_id, date, kind) DO UPDATE SET value = $4, source = $5, worn = $6
+         WHERE daily_logs.source = $5 AND (daily_logs.value <> $4 OR daily_logs.worn <> $6) RETURNING 1`, [ctx.userId, d, DAILY_KIND[kind], value, HEALTH_SOURCE, worn]);
       const known = imps.has(key);
       // noted when it came from the phone: now, or by an app from before the log (a typed day is not an import)
       if (rows.length || (!known && daily.get(dk) === HEALTH_SOURCE)) {
@@ -313,13 +315,13 @@ export function healthRoutes(r: Router) {
       }
       return rows.length > 0;
     };
-    for (const e of list(b.steps, 400)) if (await day("steps", e?.date, intOrNull(e?.value, 0, 1e6))) out.steps++;
+    for (const e of list(b.steps, 400)) if (await day("steps", e?.date, intOrNull(e?.value, 0, 1e6), e?.worn !== false)) out.steps++;
     for (const e of list(b.sleep, 400)) {
       const h = numOrNull(e?.hours, 0, 24);
       if (await day("sleep", e?.date, h == null ? null : Math.round(h * 10) / 10)) out.sleep++;
     }
     for (const [field, kind] of [["restingHr", "resting_hr"], ["spo2", "spo2"], ["hrv", "hrv"], ["distance", "distance"], ["activeKcal", "active_kcal"], ["vo2max", "vo2max"]] as const)
-      for (const e of list(b[field], 400)) if (await day(kind, e?.date, lenient(kind, e?.value))) out[field]++;
+      for (const e of list(b[field], 400)) if (await day(kind, e?.date, lenient(kind, e?.value), e?.worn !== false)) out[field]++;
     for (const e of list(b.hydration, 400)) if (await day("water", e?.date, lenient("water", e?.ml))) out.hydration++;
 
     // nights: after the daily sleep, whose key they share
@@ -541,11 +543,14 @@ export function healthRoutes(r: Router) {
     const next = new Date(Date.parse(d + "T12:00:00Z") + 86400000).toISOString().slice(0, 10);
     const steps = (await stepsByDay(ctx.q, d, next, tzOf(qs)))[0]?.value ?? null;
     const v = (k: string) => vals.get(k) ?? null;
+    // worn: false when any of the day's steps, distance and active calories from Health Connect came without a band (036)
+    const worn = !(await ctx.q.query("SELECT 1 FROM daily_logs WHERE date = $1::date AND kind IN ('steps', 'distance_m', 'active_kcal') AND source = $2 AND NOT worn LIMIT 1",
+      [d, HEALTH_SOURCE])).rows.length;
     return {
       date: d, sleep, sleepH: v("sleep_h"),
       hr: h ? { min: h.min_hr as number | null, max: h.max_hr as number | null, avg: h.avg_hr as number | null, series: (h.hr ?? null) as [number, number][] | null } : null,
       restingHr: v("resting_hr"), hrv: v("hrv"), spo2: v("spo2"), vo2max: v("vo2max"), steps,
-      distanceM: v("distance_m"), activeKcal: v("active_kcal"), waterMl: v("water_ml"),
+      distanceM: v("distance_m"), activeKcal: v("active_kcal"), waterMl: v("water_ml"), worn,
     };
   });
 

@@ -575,7 +575,7 @@ describe("body fat, water, VO2 max and a day's heart rate from Health Connect", 
     expect(d.hr.series.length).toBe(288);
     expect(d.sleep.hr).toBeUndefined();
     expect(await call("GET", "/health/day/2026-12-09", undefined, { tz: "0" })).toEqual({
-      date: "2026-12-09", sleep: null, sleepH: null, hr: null, restingHr: null, hrv: null, spo2: null, vo2max: null, steps: null, distanceM: null, activeKcal: null, waterMl: null,
+      date: "2026-12-09", sleep: null, sleepH: null, hr: null, restingHr: null, hrv: null, spo2: null, vo2max: null, steps: null, distanceM: null, activeKcal: null, waterMl: null, worn: true,
     });
     // a day with only its sleep hours (synced before nights came in, or typed) still has its sleep
     await call("POST", "/health/import", { sleep: [{ date: "2026-12-08", hours: 6.5 }] });

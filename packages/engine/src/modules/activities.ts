@@ -53,7 +53,8 @@ export function parseTrack(text: string): { name: string; type: string; route: n
 
 /** A day's steps: value is what counts; logged is the daily log's own count (typed or from the phone, null when none),
  *  walked what the day's activities add up to, so the log box can show what was entered and the walks under it. */
-export interface StepsDay { date: string; kind: "steps"; value: number; source: string | null; logged: number | null; walked: number }
+/** worn: false when Health Connect's count came without a band, watch or ring (036) */
+export interface StepsDay { date: string; kind: "steps"; value: number; source: string | null; logged: number | null; walked: number; worn: boolean }
 
 /**
  * Steps per calendar day (the app's calendar: tzMin as for goals), newest first. Never the log's count and the walks added
@@ -66,9 +67,9 @@ export interface StepsDay { date: string; kind: "steps"; value: number; source: 
  * toDay is exclusive; null runs to the end.
  */
 export async function stepsByDay(q: Sql, fromDay: string, toDay: string | null, tzMin: number): Promise<StepsDay[]> {
-  const { rows } = await q.query<{ date: string; logged: string | number | null; walked: string | number; source: string | null }>(
-    `SELECT to_char(coalesce(l.date, a.date), 'YYYY-MM-DD') AS date, l.value AS logged, coalesce(a.steps, 0) AS walked, l.source
-     FROM (SELECT date, value, source FROM daily_logs WHERE kind = 'steps' AND date >= $1::date AND ($2::date IS NULL OR date < $2::date)) l
+  const { rows } = await q.query<{ date: string; logged: string | number | null; walked: string | number; source: string | null; worn: boolean | null }>(
+    `SELECT to_char(coalesce(l.date, a.date), 'YYYY-MM-DD') AS date, l.value AS logged, coalesce(a.steps, 0) AS walked, l.source, l.worn
+     FROM (SELECT date, value, source, worn FROM daily_logs WHERE kind = 'steps' AND date >= $1::date AND ($2::date IS NULL OR date < $2::date)) l
      FULL JOIN (SELECT (started_at AT TIME ZONE 'UTC' - $3::float8 * interval '1 minute')::date AS date, sum(steps) AS steps FROM activities
        WHERE steps > 0 AND started_at >= $4::timestamptz AND ($5::timestamptz IS NULL OR started_at < $5::timestamptz) GROUP BY 1) a ON a.date = l.date
      ORDER BY 1 DESC`, [fromDay, toDay, tzMin, startOfDay(fromDay, tzMin).toISOString(), toDay ? startOfDay(toDay, tzMin).toISOString() : null]);
@@ -76,7 +77,7 @@ export async function stepsByDay(q: Sql, fromDay: string, toDay: string | null, 
     const logged = r.logged == null ? null : Number(r.logged), walked = Number(r.walked);
     const typed = logged != null && (r.source == null || r.source === "manual");
     const value = typed ? logged : Math.max(logged ?? 0, walked);
-    return { date: r.date, kind: "steps", value, source: typed ? "manual" : walked > (logged ?? 0) ? "activities" : r.source, logged, walked };
+    return { date: r.date, kind: "steps", value, source: typed ? "manual" : walked > (logged ?? 0) ? "activities" : r.source, logged, walked, worn: r.worn !== false };
   });
 }
 
@@ -235,7 +236,7 @@ export function activityRoutes(r: Router) {
   // steps: a typed count, else the day's recorded activities (stepsByDay); tz: the app's calendar, as for goals
   r.get("/daily", async ({ q }, _p, _b, qs) => {
     const from = dateStr(qs.from) ?? "1970-01-01";
-    const { rows } = await q.query<{ date: string | Date; kind: string; value: number | string; source: string | null }>(`SELECT date, kind, value, source FROM daily_logs WHERE date >= $1::date AND kind <> 'steps' ORDER BY date DESC`, [from]);
+    const { rows } = await q.query<{ date: string | Date; kind: string; value: number | string; source: string | null; worn: boolean }>(`SELECT date, kind, value, source, worn FROM daily_logs WHERE date >= $1::date AND kind <> 'steps' ORDER BY date DESC`, [from]);
     // band: Health Connect brought this day's value in (an import log entry not deleted), so a value typed over it can
     // go back to the band's (PUT with band: true); the daily log marks it either way
     const banded = new Set((await q.query<{ k: string }>(

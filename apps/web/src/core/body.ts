@@ -1,4 +1,4 @@
-// Body numbers worked out and shown the same way on the Body page and Stats → Body, so the two never disagree.
+// Body numbers worked out in one place for the Body page: the smoothed weight trend, the change over a period, signs.
 import { num } from "@motus/shared";
 
 export interface Pt { x: number; y: number }

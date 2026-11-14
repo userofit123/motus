@@ -1,5 +1,5 @@
 // Stats and the home summary. Sessions come back with their times; the apps group them into days and weeks in their own time zone.
-import { e1rm, GROUPS, WEEKLY_SET_RANGE, liftedKg, LIFTED_SQL, TRACKING_SQL, MIN_NIGHT_H } from "@motus/shared";
+import { e1rm, GROUPS, WEEKLY_SET_RANGE, liftedKg, LIFTED_SQL, TRACKING_SQL, MIN_NIGHT_H, sameSpanBefore } from "@motus/shared";
 import type { Router, Ctx } from "../router";
 import type { Sql } from "../db";
 import { camel, startOfDay, tzOf } from "../util";
@@ -110,15 +110,15 @@ export function statsRoutes(r: Router) {
     const routineList = [...routines.values()].map((x) => ({ ...x, name: est.get(x.routineId)?.name ?? x.name, avgDurationS: Math.round(x.totalS / x.times), estimateS: est.get(x.routineId)?.estimateS ?? null, skipRate: x.exercises ? x.skipped / x.exercises : 0 }));
     const muscles: Record<string, number> = {};
     for (const w of workouts) for (const [m, n] of Object.entries(w.muscles as Record<string, number>)) muscles[m] = (muscles[m] ?? 0) + n;
-    const body = (await ctx.q.query("SELECT kind, value, measured_at FROM body_metrics ORDER BY measured_at")).rows.map((x: any) => camel(x));
     // steps with the recorded activities counted in, by the app's calendar (tz), as on Home and in goals
     const fromDay = from === "1970-01-01" ? "2000-01-01" : dayIn(from, tzOf(qs));
-    const daily: { date: string | Date; kind: string; value: number | string }[] = [
-      ...(await ctx.q.query<{ date: string | Date; kind: string; value: number | string }>("SELECT date, kind, value FROM daily_logs WHERE date >= $1::date AND kind <> 'steps'", [fromDay])).rows,
+    // worn: false for a number from Health Connect that no band, watch or ring counted (036)
+    const daily: { date: string | Date; kind: string; value: number | string; worn?: boolean }[] = [
+      ...(await ctx.q.query<{ date: string | Date; kind: string; value: number | string; worn: boolean }>("SELECT date, kind, value, worn FROM daily_logs WHERE date >= $1::date AND kind <> 'steps'", [fromDay])).rows,
       ...(await stepsByDay(ctx.q, fromDay, null, tzOf(qs)))].sort((a, b) => String(a.date).localeCompare(String(b.date)));
     // every record set in the range, only when asked (Reports counts them per month; Stats doesn't need them)
     const records = qs.records ? await recentRecords(ctx.q, from, Infinity) : [];
-    return { from, to, workouts, activities, exercises, routines: routineList, muscles, groups: GROUPS, weeklyRange: WEEKLY_SET_RANGE, body, daily, records,
+    return { from, to, workouts, activities, exercises, routines: routineList, muscles, groups: GROUPS, weeklyRange: WEEKLY_SET_RANGE, daily, records,
       health: await healthIn(ctx.q, from, to, fromDay, dayIn(to, tzOf(qs))) };
   });
 
@@ -133,8 +133,8 @@ export function statsRoutes(r: Router) {
     const eightAgo = new Date(ws.getTime() - 7 * 7 * 86400000);
     const rows = await workoutRows(ctx.q, eightAgo.toISOString(), new Date(now.getTime() + 86400000).toISOString());
     const acts = (await ctx.q.query("SELECT type, started_at, duration_s, distance_m, steps FROM activities WHERE started_at >= $1", [eightAgo.toISOString()])).rows;
-    const weeks = Array.from({ length: 8 }, (_, i) => {
-      const a = new Date(eightAgo.getTime() + i * 7 * 86400000), b = new Date(a.getTime() + 7 * 86400000);
+    // a week's totals from a up to b (the bars: whole weeks; the comparison: last week up to the same point)
+    const totals = (a: Date, b: Date) => {
       const w = rows.filter((x) => new Date(x.startedAt) >= a && new Date(x.startedAt) < b);
       const ac = acts.filter((x: any) => new Date(x.started_at) >= a && new Date(x.started_at) < b);
       return {
@@ -142,7 +142,14 @@ export function statsRoutes(r: Router) {
         timeS: w.reduce((t, x) => t + x.durationS, 0) + ac.reduce((t: number, x: any) => t + x.duration_s, 0),
         walkM: ac.filter((x: any) => x.type === "walk").reduce((t: number, x: any) => t + Number(x.distance_m ?? 0), 0),
       };
+    };
+    const weeks = Array.from({ length: 8 }, (_, i) => {
+      const a = new Date(eightAgo.getTime() + i * 7 * 86400000);
+      return totals(a, new Date(a.getTime() + 7 * 86400000));
     });
+    // This week is compared with last week up to the same day and time, so a week just begun isn't "-100%"
+    const lastWs = new Date(ws.getTime() - 7 * 86400000);
+    const lastWeek = totals(lastWs, sameSpanBefore(ws, lastWs, now));
     // condition: sets per muscle this past week, today and the 6 days before on the app's calendar, the same days Home's
     // muscle groups count as worked this week. tzMin is today's offset, so in the week after a clock change the window
     // starts an hour off from that day's real local midnight, and a workout in that hour can disagree with the groups' dots
@@ -208,7 +215,7 @@ export function statsRoutes(r: Router) {
     const records = recordsOn ? await recentRecords(ctx.q, monthAgo, 6, found) : [];
     return {
       days, records,
-      weeks, thisWeek: weeks.at(-1), lastWeek: weeks.at(-2), homeGoals,
+      weeks, thisWeek: weeks.at(-1), lastWeek, homeGoals,
       last,
       active: active ? camel(active) : null, programs, upNext, plannedToday, suggest, goals, reminders, feed, muscles7, main7, helpers7, groupDays,
       totalWorkouts: Number((await ctx.q.query("SELECT count(*) n FROM workouts WHERE status = 'completed'")).rows[0].n),

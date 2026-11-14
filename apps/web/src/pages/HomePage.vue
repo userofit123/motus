@@ -63,7 +63,7 @@ const META: Record<string, { name: string; desc: string; icon: string; size: Siz
   readiness: { name: "Readiness", desc: "How ready you are to train, from last night's sleep and your heart", icon: "heartPulse", size: "m" },
   sleep: { name: "Last night", desc: "Time asleep and its stages, from your band", icon: "moon", size: "m" },
   heart: { name: "Heart", desc: "Resting heart rate, HRV and today's range, from your band", icon: "heart", size: "m" },
-  activityToday: { name: "Today from your band", desc: "Steps, distance and active calories today, and your last 7 days, from your band", icon: "steps", size: "m" },
+  activityToday: { name: "Activity today", desc: "Steps, distance and active calories today, and your last 7 days", icon: "steps", size: "m" },
 };
 // a block whose feature is off is absent everywhere, Edit home included
 const FEATURE: Record<string, string> = { program: "programs", daily: "dailyLog", achievements: "achievements" };
@@ -85,7 +85,8 @@ const weekMax = computed(() => Math.max(1, ...weeks.value.map((w) => w.workouts)
 const walked = computed(() => weeks.value.some((w) => w.walkM > 0));
 
 // a stat tile in This week and Previous: label, value with its unit set small, and for This week the change from last week
-// as a percent, the same way Stats shows it (nothing when last week had none to compare with)
+// up to this point of it (the server's lastWeek), as a percent, the same way Stats shows it (nothing when last week had
+// none by now to compare with, so a week just begun says nothing rather than "-100%")
 // ("12.3k kg" splits at its space so the number carries the weight and the unit is set small beside it)
 interface WStat { note?: string; key: string; icon: string; label: string; value: string; unit: string; delta?: string; last?: string; tone?: string }
 const weekStats = computed<WStat[]>(() => {
@@ -450,7 +451,7 @@ await loaded(home, ach, avail, hDay, ready, nightsQ, dailyQ);
         <div v-else-if="id === 'week'" class="card hb wkc sz-m click" :data-solo="solo.has(id) || undefined" v-bind="link('/stats')">
           <div class="ch"><span class="bi"><Icon name="stats" :size="15" /></span><span class="t grow">This week</span><span v-if="anyDelta" class="tiny">Vs last week</span></div>
           <div class="wstats" :class="{ n4: weekStats.length === 4, plain: !anyDelta }">
-            <div v-for="x in weekStats" :key="x.key" class="ws" role="group" :aria-label="`${[x.label, x.value, x.unit, x.delta].filter(Boolean).join(' ')}, last week ${x.last}`" :title="`${x.note ? x.note + ' · ' : ''}Last week ${x.last}`">
+            <div v-for="x in weekStats" :key="x.key" class="ws" role="group" :aria-label="`${[x.label, x.value, x.unit, x.delta].filter(Boolean).join(' ')}, by this time last week: ${x.last}`" :title="`${x.note ? x.note + ' · ' : ''}By this time last week: ${x.last}`">
               <div class="wlb"><Icon :name="x.icon" :size="14" />{{ x.label }}</div>
               <div class="wv">{{ x.value }} <small v-if="x.unit">{{ x.unit }}</small></div>
               <div v-if="anyDelta" class="wd">{{ x.delta }}</div>
@@ -667,7 +668,7 @@ await loaded(home, ach, avail, hDay, ready, nightsQ, dailyQ);
         <!-- what the band counted today, the steps against the steps goal when there is one, then the last 7 days' bars
              with their weekday letters and the goal's line -->
         <div v-else-if="id === 'activityToday'" class="card hb wkc sz-m click" :data-solo="solo.has(id) || undefined" v-bind="link('/stats?tab=activities')">
-          <div class="ch"><span class="bi"><Icon name="steps" :size="15" /></span><span class="t grow">Today from your band</span><span v-if="stepGoal" class="tiny">Goal {{ fmt.num(stepGoal.target, 0) }} a day</span></div>
+          <div class="ch"><span class="bi"><Icon name="steps" :size="15" /></span><span class="t grow">Activity today</span><span v-if="stepGoal" class="tiny">Goal {{ fmt.num(stepGoal.target, 0) }} a day</span></div>
           <div class="wstats hrows" :class="{ plain: !stepGoal }">
             <div v-for="x in actStats" :key="x.key" class="ws" role="group" :aria-label="[x.label, x.value, x.unit, x.delta].filter(Boolean).join(' ')">
               <div class="wlb"><Icon :name="x.icon" :size="14" />{{ x.label }}</div>

@@ -73,6 +73,8 @@ export interface HealthDay {
   date: string; sleep: SleepNight | null; sleepH: number | null; hr: { min: number; max: number; avg: number; series: [number, number][] } | null;
   restingHr: number | null; hrv: number | null; spo2: number | null; vo2max: number | null;
   steps: number | null; distanceM: number | null; activeKcal: number | null; waterMl: number | null;
+  /** false when any of the day's steps, distance and active calories from Health Connect came without a band (absent from an older server) */
+  worn?: boolean;
 }
 export const useHealthDay = (date: MaybeRef<string | null>, enabled: MaybeRef<boolean> = true) => useQuery({ queryKey: computed(() => ["health", "day", unref(date)]),
   queryFn: () => api.get<HealthDay>(`/health/day/${unref(date)}`), enabled: computed(() => !!unref(date) && unref(enabled)) });

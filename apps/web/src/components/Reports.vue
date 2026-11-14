@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // Monthly report and year in review (optional feature): what each month and year added up to.
 import { computed, ref } from "vue";
-import { GROUPS, groupOf, percentChange, isNight, type HomeRecord } from "@motus/shared";
+import { GROUPS, groupOf, percentChange, isNight, sameSpanBefore, type HomeRecord } from "@motus/shared";
 import { useStats } from "../api/queries";
 import { useFmt, unitOf } from "../core/format";
 import { mins } from "../core/sleep";
@@ -88,8 +88,27 @@ const span = (k: string) => {
   const mn = (x: string) => fmt.value.date(monthOf(x), { month: "short" });
   return ks.length < 2 ? k : `${mn(ks[0]!)}-${mn(ks.at(-1)!)} ${k}`;
 };
-const build = (m: Period, p: Period | undefined, prev: string) => {
-  const tile = (key: string, icon: string, lbl: string, get: (x: Period) => number, show: (n: number) => string, split = false): Tile => {
+// what the tiles compare: a whole period, or the one before a running month or year cut to the same point
+type Totals = Pick<Period, "workouts" | "timeS" | "volumeKg" | "days">;
+const totalsIn = (from: Date, to: Date): Totals => {
+  const d = all.data.value as { workouts: StatsWorkout[]; activities: StatsActivity[] } | undefined;
+  const inside = (at: string) => { const t = new Date(at); return t >= from && t < to; };
+  const ws = (d?.workouts ?? []).filter((w) => inside(w.startedAt)), as = (d?.activities ?? []).filter((a) => inside(a.startedAt));
+  return { workouts: ws.length, timeS: ws.reduce((t, w) => t + w.durationS, 0) + as.reduce((t, a) => t + a.durationS, 0),
+    volumeKg: ws.reduce((t, w) => t + w.volumeKg, 0), days: new Set([...ws, ...as].map((x) => x.startedAt.slice(0, 10))).size };
+};
+// the month or year still going is compared with the one before up to the same day and time (as Stats and Home's This
+// week do), so the 2nd of a month isn't measured against a whole month; the note names the days it is compared with
+const sameSoFar = (from: Date, prevFrom: Date, withYear: boolean) => {
+  const to = sameSpanBefore(from, prevFrom, new Date()), last = new Date(Math.max(prevFrom.getTime(), to.getTime() - 1));
+  const a = fmt.value.date(prevFrom), b = fmt.value.date(last), y = withYear ? ` ${prevFrom.getFullYear()}` : "";
+  // inside one month the month is written once, where the date format puts it: "1-15 Oct", "Oct 1-15"
+  const one = prevFrom.getMonth() === last.getMonth(), d1 = String(prevFrom.getDate());
+  const range = a === b ? a : !one ? `${a}-${b}` : /^\d/.test(b) ? `${d1}-${b}` : b.replace(/\d+/, `${d1}-$&`);
+  return { p: totalsIn(prevFrom, to), prev: `${range}${y}` };
+};
+const build = (m: Period, p: Totals | undefined, prev: string) => {
+  const tile = (key: string, icon: string, lbl: string, get: (x: Totals) => number, show: (n: number) => string, split = false): Tile => {
     const v = show(get(m));
     return { key, icon, label: lbl, ...(split ? unitOf(v) : { value: v, unit: "" }), delta: percentChange(get(m), p ? get(p) : 0), last: show(p ? get(p) : 0) };
   };
@@ -117,7 +136,12 @@ const build = (m: Period, p: Period | undefined, prev: string) => {
 };
 const report = computed(() => {
   const byK = new Map(months.value.map((m) => [m.k, m]));
-  return months.value.map((m) => build(m, byK.get(prevKey(m.k)), fmt.value.date(monthOf(prevKey(m.k)), { month: "long" })));
+  const now = new Date();
+  return months.value.map((m) => {
+    if (m.k !== monthKey(now)) return build(m, byK.get(prevKey(m.k)), fmt.value.date(monthOf(prevKey(m.k)), { month: "long" }));
+    const c = sameSoFar(new Date(now.getFullYear(), now.getMonth(), 1), new Date(now.getFullYear(), now.getMonth() - 1, 1), false);
+    return build(m, c.p, c.prev);
+  });
 });
 // a year card (against the year before it) when this year has two months with data; early in the year, last year's instead
 // (if it has two), never an older one. One month alone would only repeat that month's own report.
@@ -127,7 +151,9 @@ const year = computed(() => {
     .find((x) => x && months.value.filter((m) => m.k.startsWith(x.k)).length >= 2);
   if (!y) return null;
   const before = String(Number(y.k) - 1);
-  return build(y, years.value.find((x) => x.k === before), before);
+  if (y.k !== String(now)) return build(y, years.value.find((x) => x.k === before), before);
+  const c = sameSoFar(new Date(now, 0, 1), new Date(now - 1, 0, 1), true);
+  return build(y, c.p, c.prev);
 });
 </script>
 
@@ -143,9 +169,9 @@ const year = computed(() => {
       </div>
       <template v-for="r in [...(year ? [year] : []), ...report]" :key="r.k">
         <div class="card wkc" :class="{ full: r === year || !year && report.length === 1 }">
-          <div class="ch"><span class="bi"><Icon :name="r === year ? 'star' : 'calendar'" :size="15" /></span><span class="grow"><span class="t">{{ r.title }}</span><span v-if="r.sub || r.k.length === 7" class="s sub" :class="{ ghost: !r.sub }">{{ r.sub || "\u00a0" }}</span></span><span v-if="r.anyDelta" class="tiny">Compared with {{ r.prev }}</span></div>
+          <div class="ch"><span class="bi"><Icon :name="r === year ? 'star' : 'calendar'" :size="15" /></span><span class="grow"><span class="t">{{ r.title }}</span><span v-if="r.sub || r.k.length === 7" class="s sub" :class="{ ghost: !r.sub }">{{ r.sub || "\u00a0" }}</span></span><span v-if="r.anyDelta" class="tiny">Vs {{ r.prev }}</span></div>
           <div class="wstats n4" :class="{ plain: !r.anyDelta }">
-            <div v-for="x in r.tiles" :key="x.key" class="ws" role="group" :aria-label="`${[x.label, x.value, x.unit, x.delta].filter(Boolean).join(' ')}, ${r.prev} ${x.last}`" :title="`${r.prev} ${x.last}`">
+            <div v-for="x in r.tiles" :key="x.key" class="ws" role="group" :aria-label="`${[x.label, x.value, x.unit, x.delta].filter(Boolean).join(' ')}, ${r.prev}: ${x.last}`" :title="`${r.prev}: ${x.last}`">
               <div class="wlb"><Icon :name="x.icon" :size="14" />{{ x.label }}</div>
               <div class="wv">{{ x.value }} <small v-if="x.unit">{{ x.unit }}</small></div>
               <div v-if="r.anyDelta" class="wd">{{ x.delta }}</div>

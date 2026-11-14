@@ -9,7 +9,7 @@ import { useSettings } from "../api/queries";
 import { localYmd, useFmt } from "../core/format";
 import { mins } from "../core/sleep";
 import { savedToast, savedError, toast } from "../core/toast";
-import { healthSupported, syncHealth } from "../native/health";
+import { healthSupported, syncHealth, fromWhere } from "../native/health";
 import { DAILY_KINDS } from "@motus/shared";
 import Icon from "./Icon.vue";
 import { useStepGoal } from "../core/goals";
@@ -20,7 +20,7 @@ const s = useSettings();
 const stepGoal = useStepGoal();
 const fmt = useFmt();
 const from = localYmd(new Date(Date.now() - 8 * 86400000));
-interface Row { date: string; kind: string; value: number | string | null; source: string | null; band?: boolean; waiting?: boolean; logged?: number | null; walked?: number }
+interface Row { date: string; kind: string; value: number | string | null; source: string | null; band?: boolean; waiting?: boolean; logged?: number | null; walked?: number; worn?: boolean }
 const q = useQuery({ queryKey: ["activities", "daily", from], queryFn: () => api.get<Row[]>("/daily", { from, tz: new Date().getTimezoneOffset() }) });
 const day = computed(() => props.day ?? localYmd(new Date()));
 const row = (k: string, d: string) => (q.data.value ?? []).find((x) => x.kind === k && String(x.date).slice(0, 10) === d);
@@ -32,6 +32,11 @@ const typed = (r?: Row) => !!r && !r.waiting && (r.source == null || r.source ==
 const fromBand = (k: string, d = day.value) => { const r = row(k, d); return !!r?.band && !r.waiting && !typed(r); };
 const overBand = (k: string) => { const r = row(k, day.value); return !!r?.band && typed(r); };
 const waiting = (k: string) => !!row(k, day.value)?.waiting;
+// where the day's value came from, in words: "your band", or "Health Connect" when no band, watch or ring counted it
+// (only steps can be such a day here; a value typed over it keeps the word, for the way back)
+// water comes from an app you log drinks in, never from a band, so it always says Health Connect
+const wornOf = (k: string, d = day.value) => (k === "water_ml" ? false : row(k, d)?.worn);
+const where = (k: string) => fromWhere(wornOf(k));
 // Home's block asks only for what the band doesn't bring: steps and sleep from a band show in their own Home blocks, so
 // a kind the band filled in on any recent day is left out there (also before today's value arrives); the sheet keeps all
 const banded = computed(() => new Set((q.data.value ?? []).filter((r) => r.band && !typed(r)).map((r) => r.kind)));
@@ -56,7 +61,7 @@ async function put(k: string, value: number | null) {
   try {
     await api.put("/daily", { date: day.value, kind: k, value });
     invalidate(["activities", "stats", "goals", "home"]);
-    savedToast(band && value != null ? "Band updates stopped" : "Saved");
+    savedToast(band && value != null ? "Updates stopped" : "Saved");
   } catch (e) { savedError(e); }
 }
 function set(k: string, e: Event) {
@@ -77,25 +82,34 @@ function setSleep(e: Event) {
 }
 // back to the band's value: sleep comes back at once from the night the band recorded; otherwise the typed value goes and
 // the band's comes with its next read of that day, which the Android app does right away
+// the words say "synced", not the source, so the row's line fits on one line at phone width whichever it was
 async function useBand(k: string) {
   try {
     const r = await api.put<{ restored?: boolean }>("/daily", { date: day.value, kind: k, band: true });
     invalidate(["activities", "stats", "goals", "home"]);
-    if (r.restored) return toast("Band value back");
+    if (r.restored) return toast("Synced value back");
     // the phone reads the band's day now; only say it is back when the read actually brought it
     if (healthSupported() && s.value.features.healthConnect) {
       // from the evening before: that day's night began then
       await syncHealth({ from: new Date(new Date(day.value + "T00:00").getTime() - 86_400_000) });
       const back = await q.refetch();
-      if (!(back.data ?? []).find((x) => x.kind === k && String(x.date).slice(0, 10) === day.value)?.waiting) return toast("Band value back");
+      if (!(back.data ?? []).find((x) => x.kind === k && String(x.date).slice(0, 10) === day.value)?.waiting) return toast("Synced value back");
     }
-    toast("The band's value comes back with your phone's next sync");
+    toast("The synced value comes back with your phone's next sync");
   } catch (e) { savedError(e); }
 }
 // the week before the chosen day, newest first, only days with something logged
 const week = computed(() => Array.from({ length: 7 }, (_, i) => localYmd(new Date(new Date(day.value + "T12:00").getTime() - (i + 1) * 86400000)))
-  .map((d) => ({ d, v: KINDS.value.map((k) => val(k.id, d)), b: KINDS.value.map((k) => fromBand(k.id, d)) })).filter((x) => x.v.some((v) => v != null)));
+  .map((d) => ({ d, v: KINDS.value.map((k) => val(k.id, d)), b: KINDS.value.map((k) => fromBand(k.id, d)), w: KINDS.value.map((k) => wornOf(k.id, d) !== false) }))
+  .filter((x) => x.v.some((v) => v != null)));
 const anyBand = computed(() => week.value.some((w) => w.b.some(Boolean)));
+// the grey numbers' sources: "your band" for those a band counted, "Health Connect" for the rest (water, unworn days);
+// both named when both show, so a band user's grey steps and logged water each find theirs
+const greyFrom = computed(() => {
+  const grey = week.value.flatMap((w) => w.w.filter((_, i) => w.b[i]));
+  const band = grey.some(Boolean), hc = grey.some((x) => !x);
+  return band && hc ? "your band and Health Connect" : fromWhere(band);
+});
 // a cell is just the number, as the rows write it: "2,434", "7h 48m"; the unit, when it needs one, is in the header.
 // A band's value is grey (as the rows say "From your band"), so typed and band values tell apart without a mark that
 // would crowd the columns at phone width
@@ -110,9 +124,9 @@ const show = (k: string, v: number | null) => (v == null ? "-" : k === "sleep_h"
     <div class="list">
       <div v-for="k in KINDS" :key="k.id" class="li"><Icon :name="k.icon" :size="18" class="muted" />
         <div class="grow"><div class="t">{{ k.name }}<span v-if="k.unit" class="tiny"> ({{ k.unit }})</span></div>
-          <div v-if="fromBand(k.id)" class="s">{{ focused === k.id ? "Typing stops band updates" : "From your band" }}</div>
-          <div v-else-if="waiting(k.id)" class="s">Waiting for your band</div>
-          <div v-else-if="overBand(k.id)" class="s">Typed in · <button class="lnk inl" @click="useBand(k.id)">Use band value</button></div>
+          <div v-if="fromBand(k.id)" class="s">{{ focused === k.id ? "Typing stops updates" : `From ${where(k.id)}` }}</div>
+          <div v-else-if="waiting(k.id)" class="s">Waiting for your phone's next sync</div>
+          <div v-else-if="overBand(k.id)" class="s dl-src"><span>Typed in</span><span class="sep">·</span><button class="lnk inl" @click="useBand(k.id)">Use synced value</button></div>
           <div v-else-if="k.id === 'steps' && walked > 0" class="s">{{ entered('steps') != null ? "Recorded" : "From activities" }}: {{ fmt.num(walked, 0) }}</div></div>
         <div v-if="k.id === 'sleep_h'" class="dl-hm">
           <input class="num-in" type="text" inputmode="numeric" placeholder="h" aria-label="Sleep hours" :value="sleepH" @focus="focused = k.id" @blur="focused = null" @change="setSleep" />
@@ -132,7 +146,7 @@ const show = (k: string, v: number | null) => (v == null ? "-" : k === "sleep_h"
         <tbody><tr v-for="w in week" :key="w.d"><td class="dl-d">{{ fmt.date(w.d + "T12:00", { weekday: "short", day: "numeric" }) }}</td>
           <td v-for="(k, i) in KINDS" :key="k.id" :class="{ muted: w.v[i] == null || w.b[i] }">{{ show(k.id, w.v[i]!) }}</td></tr></tbody>
       </table>
-      <div v-if="anyBand" class="tiny muted dl-leg">Grey numbers are from your band.</div>
+      <div v-if="anyBand" class="tiny muted dl-leg">Grey numbers are from {{ greyFrom }}.</div>
     </template>
   </div>
 </template>
@@ -154,4 +168,6 @@ const show = (k: string, v: number | null) => (v == null ? "-" : k === "sleep_h"
 .dl-tbl .dl-d { white-space: nowrap; }
 .dl-tbl td { white-space: nowrap; }
 .dl-leg { margin-top: var(--tdy); }
+/* "Typed in · Use synced value": the dot its own element, spaced by the gap, so it never ends a line */
+.dl-src { display: flex; align-items: baseline; column-gap: .25em; }
 </style>

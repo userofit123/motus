@@ -137,7 +137,8 @@ class MotusHealthPlugin : Plugin() {
      * for anything older than 30 days before the first grant). Days are the phone's calendar days.
      * { steps: [{date, value}], sleep: [{date, hours}], weight: [{id, at, kg}], sessions: [{id, type, title, start, end, avgHr?, distanceM?, steps?, calories?}],
      *   restingHr: [{date, value}], spo2: [{date, value}], hrv: [{date, value}], (daily averages in bpm, % and ms)
-     *   distance: [{date, value}], activeKcal: [{date, value}], (daily totals in metres and kcal)
+     *   distance: [{date, value}], activeKcal: [{date, value}], (daily totals in metres and kcal; these two and steps
+     *   also have worn: whether a band, watch or ring counted that day)
      *   sleepNights: [{date, start, end, asleepMin, awakeMin, lightMin?, deepMin?, remMin?, avgHr?, minHr?, hr?, avgSpo2?, minSpo2?, respRate?}] }
      * (one per wake-up day; hr: [[unixSeconds, bpm], ...], at most 300 points)
      *   bodyFat: [{id, at, pct}], hydration: [{date, ml}] (daily totals), vo2max: [{date, value}] (the day's latest reading),
@@ -346,6 +347,8 @@ class MotusHealthPlugin : Plugin() {
     // counted anything then (the largest, if two apps write for the same band), else Health Connect's own count for it:
     // the time the band was off (charging, not yet put on) keeps the phone's count, as Health Connect's screen does.
     // With no worn device among them, or when Health Connect refuses the quarter hours, its own daily total stands.
+    // Each of these days also says whether a worn device counted it (worn), so the app says "from your band" only then
+    // and not for a day only the phone's own counter or Google Fit wrote.
     // A long range (years) is asked for 90 days at a time: one request for thousands of day buckets can fail; quarter
     // hours are asked a week at a time, and only for weeks with such days.
     private suspend fun <R : Record, T : Any> dailyTotal(c: HealthConnectClient, from: Instant, zone: ZoneId, type: KClass<R>, startOf: (R) -> Instant,
@@ -365,7 +368,7 @@ class MotusHealthPlugin : Plugin() {
             val fixed = mutableMapOf<LocalDate, Double>()
             if (num != null) {
                 val mixed = res.filter { it.result.dataOrigins.size > 1 }
-                for (o in mixed.flatMap { it.result.dataOrigins }.toSet())
+                for (o in res.flatMap { it.result.dataOrigins }.toSet())
                     if (o.packageName !in worn) worn[o.packageName] = isWorn(c, type, range, o)
                 val days = mixed.map { it.startTime.toLocalDate() }.filter { d -> res.first { it.startTime.toLocalDate() == d }.result.dataOrigins.any { worn[it.packageName] == true } }
                 for ((wk, ds) in days.groupBy { it.toEpochDay() / 7 }) {
@@ -389,7 +392,9 @@ class MotusHealthPlugin : Plugin() {
                 val date = r.startTime.toLocalDate()
                 val f = fixed[date]
                 val n = r.result[metric] ?: continue
-                arr.put(JSObject().put("date", date.toString()).put(key, if (f != null) Math.round(f) else value(n)))
+                val o = JSObject().put("date", date.toString()).put(key, if (f != null) Math.round(f) else value(n))
+                if (num != null) o.put("worn", r.result.dataOrigins.any { worn[it.packageName] == true })
+                arr.put(o)
             }
             day = next
         }

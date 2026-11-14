@@ -26,7 +26,8 @@ export const router = createRouter({
     { path: "/exercises", name: "exercises", component: () => import("./pages/ExercisesPage.vue") },
     { path: "/exercises/:id", name: "exercise", component: () => import("./pages/ExercisePage.vue") },
     { path: "/goals", name: "goals", component: () => import("./pages/GoalsPage.vue") },
-    { path: "/stats", name: "stats", component: () => import("./pages/StatsPage.vue") },
+    // the old Stats → Body tab was folded into the Body page: links to it (bookmarks, notes) land there
+    { path: "/stats", name: "stats", component: () => import("./pages/StatsPage.vue"), beforeEnter: (to) => (to.query.tab === "body" ? "/body" : true) },
     { path: "/timer", name: "timer", component: () => import("./pages/IntervalTimerPage.vue") },
     { path: "/activities/record", name: "record", component: () => import("./pages/RecordActivity.vue") },
     { path: "/activities/:id", name: "activity", component: () => import("./pages/ActivityPage.vue") },

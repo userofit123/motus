@@ -17,13 +17,14 @@ type Kind = (typeof HEALTH_KINDS)[number];
 export interface HealthStatus { available: "yes" | "update" | "no"; granted: Kind[]; history: boolean; historyAvailable: boolean }
 /** What the plugin's read() hands over, passed to POST /health/import as it is */
 export interface HealthData {
-  steps: { date: string; value: number }[]; sleep: { date: string; hours: number }[]; weight: { id: string; at: string; kg: number }[];
+  // worn (steps, distance, active calories): whether a band, watch or ring counted the day; absent from an older app build
+  steps: { date: string; value: number; worn?: boolean }[]; sleep: { date: string; hours: number }[]; weight: { id: string; at: string; kg: number }[];
   sessions: { id: string; type: string; title: string; start: string; end: string; avgHr?: number; distanceM?: number; steps?: number; calories?: number }[];
   // a day's resting heart rate (bpm), blood oxygen (%) and heart rate variability (ms); absent from an older app build
   restingHr?: { date: string; value: number }[]; spo2?: { date: string; value: number }[]; hrv?: { date: string; value: number }[];
   // each night in full (its stages, and the heart rate, blood oxygen and breathing read meanwhile), a day's distance
   // (metres) and active calories, the band's whole-day totals; passed on as they come, absent from an older app build
-  sleepNights?: unknown[]; distance?: { date: string; value: number }[]; activeKcal?: { date: string; value: number }[];
+  sleepNights?: unknown[]; distance?: { date: string; value: number; worn?: boolean }[]; activeKcal?: { date: string; value: number; worn?: boolean }[];
   // body fat, water drunk, VO2 max and each day's heart rate: passed on as they come, absent from an older app build
   bodyFat?: unknown[]; hydration?: unknown[]; vo2max?: unknown[]; hrDays?: unknown[];
 }
@@ -48,6 +49,10 @@ export function healthAdded(r: HealthResult): string {
 type Range = { kind: "activity" | "workout"; id: string; start: string; end: string };
 type RangeResult = { kind: "activity" | "workout"; id: string; steps?: number; covered: boolean; hr?: [number, number][] };
 
+/** Where a day's steps, distance or active calories came from, in words: "your band" when a band, watch or ring counted
+ *  it (worn; a value from before Motus knew, or from an older app, counts as one), else "Health Connect" */
+export const fromWhere = (worn: boolean | undefined) => (worn === false ? "Health Connect" : "your band");
+
 const plugin = () => (globalThis as any).Capacitor?.Plugins?.MotusHealth;
 export const healthSupported = () => !!plugin() && (globalThis as any).Capacitor?.getPlatform?.() === "android";
 
@@ -61,8 +66,9 @@ const remember = (at: string) => { const all = readJson<Record<string, string>>(
 const READ_KEY = "motusHealthRead";
 // what a version reads of a kind beyond its first: bumped when one starts handing over more (sleep: each night in
 // detail, 0.1.25; heart rate: the day's heart rate, 0.1.26; steps, distance and active calories: one app's count a day,
-// not the band's plus the phone's in between, so days saved too high are read again and corrected)
-const READS: Partial<Record<Kind, number>> = { sleep: 2, heartRate: 2, steps: 2, distance: 2, activeKcal: 2 };
+// not the band's plus the phone's in between, so days saved too high are read again and corrected; then whether a band
+// counted each day, so days no band counted stop saying "from your band")
+const READS: Partial<Record<Kind, number>> = { sleep: 2, heartRate: 2, steps: 3, distance: 3, activeKcal: 3 };
 const readsOf = (granted: readonly string[]) => HEALTH_KINDS.filter((k) => granted.includes(k)).map((k) => (READS[k] ? `${k}.${READS[k]}` : k));
 const readBefore = () => readJson<Record<string, string[]>>(READ_KEY, {})[key()] ?? [];
 const rememberRead = (reads: string[]) => { const all = readJson<Record<string, string[]>>(READ_KEY, {}); all[key()] = reads; writeJson(READ_KEY, all); };

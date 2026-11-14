@@ -1455,15 +1455,15 @@ until switched on in Settings → Features (§10.0), and absent from the UI unti
 | A8 | Strength standards | Exercise view Records | Optional | 7 |
 | A9 | Achievements | Stats → "Achievements"; optional Home card | Optional | 10 |
 | A10 | Shareable summary image | Workout ⋮ "Share image" | Optional | 10 |
-| B1 | Body weight with smoothed trend | Stats → Body; quick-add on Home | Core | 8 |
-| B2 | Body measurements | Stats → Body | Optional | 8 |
-| B3 | Progress photos | Stats → Body → Photos | Optional | 8 |
+| B1 | Body weight with smoothed trend | Body page (Weight: trend, change over a period, chart, entries); quick-add on Home | Core | 8 |
+| B2 | Body measurements | Body page → Measurements | Optional | 8 |
+| B3 | Progress photos | Body page → Photos | Optional | 8 |
 | B4 | Health Connect read (steps, weight, HR, watch workouts) | Settings → Integrations | Optional | 8 |
 | B5 | Health Connect write | Settings → Integrations | Optional | 8 |
 | B6 | GPX/FIT auto-upload endpoint | Settings → Integrations (server accounts) | Optional | 8 |
 | B7 | Strava sync | Settings → Integrations | Optional | 11 |
 | B8 | Daily step goal + history | Goals; Stats → Activities | Optional (with B4) | 8 |
-| B9 | Sleep / water / mood logging | Stats → Body → "Daily log"; quick-add sheet | Optional | 11 |
+| B9 | Sleep / water / mood logging | Home's "Daily log" card; + → Daily log (also More → Daily log) quick-add sheet | Optional | 11 |
 | B10 | Mobility/stretching routines with timed holds | Normal routines with timed sets | Core | 8 |
 | D1 | Import from Strong / Hevy / FitNotes CSV | Settings → Export & Import | Core | 9 |
 | D2 | Strong-compatible CSV export | Settings → Export & Import | Core | 9 |
