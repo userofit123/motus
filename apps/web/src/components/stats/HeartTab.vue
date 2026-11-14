@@ -1,7 +1,8 @@
 <script setup lang="ts">
 // Stats → Heart, there only once a band has handed over heart data: the day's resting heart rate, blood oxygen and HRV
-// (each a tile with its trend, then its chart), and the heart rate during workouts and activities (the average of each
-// session over the period, and the sessions themselves). Only what has data in the period.
+// (each a tile with its trend, then its chart), and the heart rate during workouts and activities: how hard each one was
+// over the period (the average of each, its chart, the sessions themselves), and how many of the period's have one.
+// The vitals only with data in the period.
 import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
 import { ymd } from "@motus/shared";
@@ -39,12 +40,16 @@ const vitals = computed(() => {
   }).filter((v) => v.pts.length);
 });
 
-// workouts and activities with a heart rate, oldest first
+// workouts and activities with a heart rate, oldest first. A session only has one when a band was worn while it was
+// recorded and has synced since (or Health Connect handed it over), so often few of the period's sessions do: the
+// section says how many, and shows the chart only from three on (one or two points draw no trend)
 const typeName = (slug: string) => (types.data.value ?? []).find((t: any) => t.slug === slug)?.name ?? slug[0]!.toUpperCase() + slug.slice(1);
 const sessions = computed(() => [
   ...((ws.data.value ?? []) as any[]).filter((w) => w.avgHr).map((w) => ({ key: `w${w.id}`, path: `/workouts/${w.id}`, icon: "dumbbell", name: w.name || "Workout", at: w.startedAt as string, durationS: Number(w.durationS), avg: Number(w.avgHr), max: w.maxHr ? Number(w.maxHr) : null })),
   ...((as.data.value ?? []) as any[]).filter((a) => a.avgHr).map((a) => ({ key: `a${a.id}`, path: `/activities/${a.id}`, icon: activityIcon(a.type), name: a.name || typeName(a.type), at: a.startedAt as string, durationS: Number(a.durationS), avg: Number(a.avgHr), max: a.maxHr ? Number(a.maxHr) : null })),
 ].sort((a, b) => a.at.localeCompare(b.at)));
+// every workout and activity in the period, with a heart rate or not
+const total = computed(() => ((ws.data.value ?? []) as any[]).length + ((as.data.value ?? []) as any[]).length);
 const sAvg = computed(() => sessions.value.length ? Math.round(sessions.value.reduce((t, x) => t + x.avg, 0) / sessions.value.length) : 0);
 const top = computed(() => sessions.value.filter((x) => x.max != null).reduce<(typeof sessions.value)[number] | null>((m, x) => (!m || x.max! > m.max! ? x : m), null));
 // newest first: ten of them, then all on request (as Stats → Sleep's nights)
@@ -65,27 +70,32 @@ const tiles = computed(() => vitals.value.length + (sessions.value.length ? 1 : 
       <div v-for="(v, i) in vitals" :key="v.id" class="card stat" :class="{ hero: i === 0 }"><div class="lbl"><span class="bi"><Icon :name="v.icon" :size="15" /></span>{{ v.short }}</div>
         <div class="val">{{ v.f(v.latest) }}<small>{{ v.unit }}</small></div><div class="sub">average {{ v.avg }}</div><Sparkline v-if="v.pts.length > 1" :values="v.pts.map((p) => p.y)" :color="i === 0 ? 'var(--onc)' : undefined" /></div>
       <div v-if="sessions.length" class="card stat" :class="{ hero: !vitals.length }"><div class="lbl"><span class="bi"><Icon name="dumbbell" :size="15" /></span>Exercise</div>
-        <div class="val">{{ sAvg }}<small>bpm</small></div><div class="sub">average of {{ sessions.length }} {{ sessions.length === 1 ? "session" : "sessions" }}</div><Sparkline v-if="sessions.length > 1" :values="sessions.map((x) => x.avg)" :color="!vitals.length ? 'var(--onc)' : undefined" /></div>
+        <div class="val">{{ sAvg }}<small>bpm</small></div><div class="sub">{{ sessions.length }} {{ sessions.length === 1 ? "session" : "sessions" }}</div><Sparkline v-if="sessions.length > 2" :values="sessions.map((x) => x.avg)" :color="!vitals.length ? 'var(--onc)' : undefined" /></div>
     </div>
 
     <!-- each a card as the body measurements' -->
     <div v-if="vitals.length" class="grid g2 spt"><div v-for="v in vitals" :key="v.id" class="card"><div class="lbl hgap">{{ v.name }} ({{ v.unit }})</div>
       <LineChart :points="v.pts" :height="140" :fmt="v.f" /><div class="tiny ht-line">{{ v.line }}</div></div></div>
 
+    <!-- how hard each workout and activity was, over the period: its average heart rate -->
+    <div class="sh"><h2>Heart rate during exercise</h2><span v-if="sessions.length" class="tiny">{{ sessions.length }}</span></div>
     <template v-if="sessions.length">
-      <div v-if="sessions.length > 1" class="card spt"><div class="lbl hgap">Average heart rate per workout and activity (bpm)</div>
+      <p class="tiny">How hard each workout and activity was: its average and highest heart rate.{{ total > sessions.length ? ` ${total - sessions.length} more in this period have none: wear your band while you record to add it.` : "" }}</p>
+      <div v-if="sessions.length > 2" class="card"><div class="lbl hgap">Average per session (bpm)</div>
         <LineChart :points="sessions.map((x) => ({ x: new Date(x.at).getTime(), y: x.avg, id: x.key, label: x.name }))" :height="160" :fmt="(v) => fmt.num(v, 0)" @pick="open" />
         <div v-if="top" class="tiny ht-line">Highest {{ top.max }} bpm in {{ top.name }} on {{ fmt.date(top.at) }}</div></div>
-      <div class="sh"><h2>Workouts and activities</h2><span class="tiny">{{ sessions.length }}</span></div>
-      <div class="card"><div class="list">
+      <div class="card" :class="{ spt: sessions.length > 2 }"><div class="list">
         <div v-for="x in newest" :key="x.key" class="li click" role="button" tabindex="0" @click="router.push(x.path)" @keydown.enter="router.push(x.path)">
           <span class="bi sg"><Icon :name="x.icon" :size="16" /></span>
-          <div class="grow"><div class="t">{{ x.name }}</div><div class="s">{{ fmt.date(x.at, { weekday: "short", day: "numeric", month: "short" }) }} · {{ fmt.dur(x.durationS, true) }}{{ x.max ? ` · up to ${x.max} bpm` : "" }}</div></div>
-          <b class="num">{{ x.avg }} bpm</b>
+          <div class="grow"><div class="t">{{ x.name }}</div><div class="s">{{ fmt.date(x.at, { weekday: "short", day: "numeric", month: "short" }) }} · {{ fmt.dur(x.durationS, true) }}</div></div>
+          <!-- the average, and the highest under it: on the left with the date and time it wrapped on a phone -->
+          <div class="r"><b class="num">{{ x.avg }} bpm</b><div v-if="x.max" class="s">up to {{ x.max }}</div></div>
         </div>
       </div></div>
       <div v-if="sessions.length > 10 && !showAll" class="center spt"><button class="qb" @click="showAll = true">Show all {{ sessions.length }} sessions</button></div>
     </template>
+    <div v-else-if="total" class="card empty"><Icon name="heart" :size="34" /><b>No exercise heart rate yet</b>Workouts and activities you record while wearing your band show their heart rate here once it has synced.</div>
+    <div v-else class="card empty"><Icon name="heart" :size="34" /><b>No workouts in this period</b>Pick a longer period, or record one while wearing your band.</div>
   </template>
 </template>
 
