@@ -52,18 +52,14 @@ hr.sep { border: 0; border-top: 1px solid var(--ol); margin: 14px 0; }
 .ph { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: var(--phgap); }
 .ph h1 { font-size: var(--fs-h1); font-weight: 600; letter-spacing: -.6px; line-height: 1.15; }
 .ph .sub { color: var(--tx2); font-size: 13px; margin-top: 4px; }
-/* a title with tabs beside it, centred on each other, and its one-line summary on a row of its own below (History) */
-.ph.sub2 { flex-wrap: wrap; align-items: center; row-gap: 0; }
-/* the tabs' own margins (made for tabs above content) would centre their margin box, not the tabs, and push the summary down */
-.ph.sub2 .seg { margin: 0; }
-/* the tabs (40px) are taller than the title's line (34.5px), so they would set the row's height and push the title down
-   from where every other page has it; a zero-height tab box leaves the row to the title and still centres the tabs on it */
-.ph.sub2 .acts { height: 0; }
-/* ...so the summary keeps its usual 4px from the tabs' bottom, which hangs half the height difference below the title's line.
-   40px is the .seg's height (tabs.css: 34px buttons + 3px padding each side) and 26px the phone title (.pmain .ph h1);
-   change these if those change */
-.ph.sub2 .sub { flex: 0 0 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: calc(4px + (40px - 1.15 * var(--fs-h1)) / 2); }
-.pmain .ph.sub2 .sub { margin-top: calc(4px + (40px - 1.15 * 26px) / 2); }
+/* a title with tabs beside it (History's Calendar and List). The tabs are taller than the title's line, so as a normal
+   row item they would set the row's height and push the title below where every other page has it: they sit in a
+   zero-height box centred on the title instead, and hang out of it equally above and below. Their own margins (made for
+   tabs above content) are dropped so the tabs themselves are centred, not their margin box. Nothing else shares the
+   header, so nothing can end up behind them */
+.ph.tabbed { align-items: center; }
+.ph.tabbed .acts { height: 0; }
+.ph.tabbed .seg { margin: 0; }
 /* a page header's buttons and ⋮; a plan row's Start and ⋮ on Home (.pact) is the same pair */
 .ph .acts, .pact { display: flex; gap: 8px; align-items: center; flex: none; }
 /* a page's Back: a small pill, the chevron on its own tinted dot; same height as the old text link */

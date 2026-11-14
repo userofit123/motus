@@ -120,17 +120,18 @@ const monthStats = computed(() => {
   return { workouts: w.length, activities: a.length, timeS: [...w, ...a].reduce((t, x) => t + (x.durationS ?? 0), 0), days: inMonth.filter(([, v]) => v.some((x) => x.kind !== "planned")).length };
 });
 const planDay = ref<string | null>(null);
-const n = (k: number, one: string, many = one + "s") => `${k} ${k === 1 ? one : many}`;
-// the shown month's finished workouts and activities and their time together; it follows the month you are looking at,
-// so it names that month (a bare "6 workouts · 7h 2m" under the title read as a riddle)
-const summary = computed(() => {
-  const m = monthStats.value, mk = localYmd(month.value).slice(0, 7);
-  // the month alone: the month bar right below shows the year, and the year would push the line past a phone's width
-  const name = mk === today.slice(0, 7) ? "This month" : month.value.toLocaleDateString(undefined, { month: "long" });
-  if (!m.workouts && !m.activities) return { head: `${name}:`, parts: [mk >= today.slice(0, 7) ? "nothing yet" : "nothing logged"] };
-  // one line under the title even on a phone, so the time stands bare: after the counts it reads as their total
-  return { head: `${name}:`, parts: [m.workouts ? n(m.workouts, "workout") : "", m.activities ? n(m.activities, "activity", "activities") : "", m.timeS ? fmt.value.dur(m.timeS, true) : ""].filter(Boolean) };
+// the shown month's totals, as stat tiles at the end of the calendar (they follow the month you are looking at); the
+// tiles of Home's This week and Stats' month reports, in their order (Activities in Volume's place), without a change column: the calendar loads only this month
+const monthTiles = computed(() => {
+  const m = monthStats.value;
+  return [
+    { key: "workouts", icon: "dumbbell", label: "Workouts", value: String(m.workouts) },
+    { key: "time", icon: "clock", label: "Time", value: fmt.value.dur(m.timeS, true) },
+    { key: "activities", icon: "walk", label: "Activities", value: String(m.activities) },
+    { key: "days", icon: "calendar", label: "Active days", value: String(m.days) },
+  ];
 });
+const monthTitle = computed(() => (localYmd(month.value).slice(0, 7) === today.slice(0, 7) ? "This month" : month.value.toLocaleDateString(undefined, { month: "long", year: "numeric" })));
 // list view
 const listWorkouts = useWorkouts(computed(() => ({ limit: 300 })));
 const listActs = useActivities(computed(() => ({ limit: 300 })));
@@ -144,12 +145,11 @@ await loaded(cal, listWorkouts, listActs);
 
 <template>
   <div class="page">
-    <div class="ph sub2">
+    <div class="ph tabbed">
       <h1>Calendar</h1>
       <div class="acts">
         <div class="seg"><button :class="{ on: view === 'calendar' }" @click="view = 'calendar'">Calendar</button><button :class="{ on: view === 'list' }" @click="view = 'list'">List</button></div>
       </div>
-      <div class="sub"><template v-if="view === 'calendar'">{{ summary.head }} {{ summary.parts.join(" · ") }}</template><template v-else>{{ n(list.length, "session") }}</template></div>
     </div>
 
     <Transition name="sw" mode="out-in">
@@ -187,6 +187,16 @@ await loaded(cal, listWorkouts, listActs);
           <div v-if="!(byDay.get(sel) ?? []).length" class="tiny">{{ sel >= today ? "Nothing planned. Use Plan to put a routine on this day." : "Nothing on this day." }}</div>
           <div class="list"><div v-for="x in byDay.get(sel) ?? []" :key="x.id ?? x.scheduleId" class="li click" @click="open(x)">
             <Icon :name="icon(x)" :size="18" :style="{ color: x.color ?? 'var(--acc)' }" /><div class="grow"><div class="t" :style="x.missed ? { opacity: .5 } : undefined">{{ label(x) }}</div><div class="s">{{ x.kind === "planned" ? (x.missed ? "Missed" : "Planned") : fmt.time(x.startedAt) }}</div></div><SessionStats v-if="x.kind !== 'planned'" :x="x" /><span v-if="x.kind === 'planned'" @click.stop><Menu :items="unplanItems(x)" :label="`Options for ${x.name}`" /></span><Icon v-else name="right" class="muted" /></div></div>
+        </div>
+      </div>
+      <!-- the month's totals, after everything else; List needs none, each of its months has its count beside its name -->
+      <div class="card wkc spt">
+        <div class="ch"><span class="bi"><Icon name="calendar" :size="15" /></span><span class="t grow">{{ monthTitle }}</span></div>
+        <div class="wstats n4 plain">
+          <div v-for="x in monthTiles" :key="x.key" class="ws" role="group" :aria-label="`${x.label} ${x.value}`">
+            <div class="wlb"><Icon :name="x.icon" :size="14" />{{ x.label }}</div>
+            <div class="wv">{{ x.value }}</div>
+          </div>
         </div>
       </div>
     </div>
