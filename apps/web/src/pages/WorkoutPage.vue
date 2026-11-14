@@ -18,6 +18,7 @@ import { shareWorkoutImage } from "../core/shareImage";
 import { toast, toastError, savedToast } from "../core/toast";
 import { saveFile } from "../core/saveFile";
 import Icon from "../components/Icon.vue";
+import DotLine from "../components/DotLine.vue";
 import NoteItem from "../components/NoteItem.vue";
 import ReminderItem from "../components/ReminderItem.vue";
 import { useNoteMenu } from "../core/noteMenu";
@@ -41,7 +42,7 @@ const rep = computed<any>(() => w.value?.report);
 // rather than to the calendar. No button of its own in that word: it only duplicated the back link and vanished on return.
 const justDone = computed(() => route.query.done === "1");
 const doneLine = computed(() => { const t = rep.value?.totals; if (!t) return "";
-  return [fmt.value.dur(t.durationS, true), `${t.workingSets} set${t.workingSets === 1 ? "" : "s"}`, t.volumeKg ? fmt.value.vol(t.volumeKg) : "", t.records ? `${t.records} new record${t.records === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · "); });
+  return [fmt.value.dur(t.durationS, true), `${t.workingSets} set${t.workingSets === 1 ? "" : "s"}`, t.volumeKg ? fmt.value.vol(t.volumeKg) : "", t.records ? `records on ${t.records} exercise${t.records === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · "); });
 const editing = ref(false), adding = ref(false);
 const verdict = (weId: string) => rep.value?.perExercise.find((p: any) => p.workoutExerciseId === weId);
 // a left and right round with no rest between its sides (the rest it planned, else the workout's rule): a bar joins the
@@ -161,11 +162,11 @@ await loaded(q);
     <div v-if="justDone" class="card done-hi spb"><span class="bi sg"><Icon name="check" :size="20" /></span>
       <div class="grow" style="min-width:0"><div class="t">Well done - workout saved</div><div class="tiny">{{ doneLine }}{{ rep?.compared ? ` · beat last time on ${rep.beat} of ${rep.compared} exercises` : "" }}</div></div></div>
     <div class="grid g4">
-      <div class="card hero stat"><div class="lbl"><span class="bi"><Icon name="clock" :size="15" /></span>Duration</div><div class="val">{{ fmt.dur(rep.totals.durationS, true) }}</div><div class="sub">{{ fmt.dur(rep.totals.activeS, true) }}&nbsp;active&nbsp;· {{ fmt.dur(rep.totals.restS, true) }}&nbsp;rest</div></div>
+      <div class="card hero stat"><div class="lbl"><span class="bi"><Icon name="clock" :size="15" /></span>Duration</div><div class="val">{{ fmt.dur(rep.totals.durationS, true) }}</div><DotLine class="sub" :parts="[`${fmt.dur(rep.totals.activeS, true)} active`, `${fmt.dur(rep.totals.restS, true)} rest`]" /></div>
       <div class="card stat"><div class="lbl"><span class="bi"><Icon name="layers" :size="15" /></span>Volume</div><div class="val">{{ fmt.vol(rep.totals.volumeKg) }}</div>
         <div class="sub">{{ rep.previous ? `${rep.totals.volumeKg >= rep.previous.volumeKg ? "+" : ""}${fmt.vol(rep.totals.volumeKg - rep.previous.volumeKg)} vs last time` : `${rep.totals.reps} reps` }}</div></div>
-      <div class="card stat"><div class="lbl"><span class="bi"><Icon name="dumbbell" :size="15" /></span>Sets</div><div class="val">{{ rep.totals.workingSets }}</div><div class="sub">{{ rep.totals.exercises }}&nbsp;exercises{{ rep.totals.skipped ? ` · ${rep.totals.skipped} skipped` : "" }}</div></div>
-      <div class="card stat"><div class="lbl"><span class="bi"><Icon name="trophy" :size="15" /></span>Records</div><div class="val">{{ rep.totals.records }}</div><div class="sub">{{ rep.compared ? `Better than last time on ${rep.beat} of ${rep.compared} exercises` : "First time doing these exercises" }}</div></div>
+      <div class="card stat"><div class="lbl"><span class="bi"><Icon name="dumbbell" :size="15" /></span>Sets</div><div class="val">{{ rep.totals.workingSets }}</div><DotLine class="sub" :parts="[`${rep.totals.exercises} exercises`, rep.totals.skipped ? `${rep.totals.skipped} skipped` : ''].filter(Boolean)" /></div>
+      <div class="card stat"><div class="lbl"><span class="bi"><Icon name="trophy" :size="15" /></span>Records</div><div class="val">{{ rep.totals.records }}<small>{{ rep.totals.records === 1 ? "exercise" : "exercises" }}</small></div><div class="sub">{{ rep.compared ? `Better than last time on ${rep.beat} of ${rep.compared} exercises` : "First time doing these exercises" }}</div></div>
     </div>
 
     <div v-if="w.notes" class="banner note spt"><Icon name="note" :size="18" class="note-ic" /><div style="white-space:pre-wrap">{{ w.notes }}</div></div>
@@ -204,8 +205,7 @@ await loaded(q);
             </tbody>
           </table>
           <div v-if="verdict(e.id)?.last && e.status !== 'skipped'" class="tiny lastt">
-            Last time ({{ fmt.date(verdict(e.id).last.startedAt) }}): {{ verdict(e.id).last.e1rm ? `estimated 1RM ${fmt.w(verdict(e.id).last.e1rm)} ${fmt.wu}` : `${verdict(e.id).last.reps} reps` }} · volume {{ fmt.vol(verdict(e.id).last.volumeKg).replace(' ', ' ') }}
-            <template v-if="delta(verdict(e.id).now.e1rm, verdict(e.id).last.e1rm)">. Now <span :class="delta(verdict(e.id).now.e1rm, verdict(e.id).last.e1rm)! > 0 ? 'pos' : 'neg'">{{ delta(verdict(e.id).now.e1rm, verdict(e.id).last.e1rm)! > 0 ? "+" : "" }}{{ fmt.w(delta(verdict(e.id).now.e1rm, verdict(e.id).last.e1rm)!) }} {{ fmt.wu }} estimated 1RM</span></template>
+            Last time ({{ fmt.date(verdict(e.id).last.startedAt) }}): {{ verdict(e.id).last.e1rm ? `estimated 1RM ${fmt.w(verdict(e.id).last.e1rm)} ${fmt.wu}` : `${verdict(e.id).last.reps} reps` }} · volume {{ fmt.vol(verdict(e.id).last.volumeKg).replace(' ', ' ') }}<template v-if="delta(verdict(e.id).now.e1rm, verdict(e.id).last.e1rm)"> · Now <span :class="delta(verdict(e.id).now.e1rm, verdict(e.id).last.e1rm)! > 0 ? 'pos' : 'neg'">{{ delta(verdict(e.id).now.e1rm, verdict(e.id).last.e1rm)! > 0 ? "+" : "" }}{{ fmt.w(delta(verdict(e.id).now.e1rm, verdict(e.id).last.e1rm)!) }} {{ fmt.wu }} estimated 1RM</span></template>
           </div>
           <div v-if="e.notes?.some((x: any) => x.workoutId === w.id)" class="exnotes">
             <NoteItem v-for="n in e.notes.filter((x: any) => x.workoutId === w.id)" :key="n.id" :note="n" :menu="noteMenu(n, e.exercise?.name ?? '')" />

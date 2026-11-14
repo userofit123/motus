@@ -17,7 +17,7 @@ import RouteMap from "../components/RouteMap.vue";
 import DotLine from "../components/DotLine.vue";
 import BarChart from "../components/BarChart.vue";
 import HeartRate from "../components/HeartRate.vue";
-import { routeSplits, M_PER_MI } from "@motus/shared";
+import { routeSplits, M_PER_MI, fromM } from "@motus/shared";
 
 const route = useRoute(), router = useRouter();
 const id = computed(() => String(route.params.id));
@@ -34,6 +34,8 @@ const fastest = computed(() => splits.value.filter((t) => !t.partial).reduce<(ty
 // steps the band counted replace the phone's (a phone in a pocket or bag misses many): said under the number, with the
 // phone's own count beside it when there was one
 const stepsSub = computed(() => a.value?.stepsSource !== "band" ? "" : a.value.stepsApp ? `From your band · phone ${fmt.value.num(a.value.stepsApp, 0)}` : "From your band");
+// the pace as the value with its unit small beside it ("5:12" /km), as the other tiles' units
+const pace = computed(() => { const x = a.value; if (!x?.distanceM || !(x.movingS || x.durationS)) return null; return fmt.value.clock((x.movingS || x.durationS) / fromM(x.distanceM, fmt.value.du)); });
 async function del() { if (await confirm("Delete this activity?", { ok: "Delete", danger: true })) { await api.del(`/activities/${id.value}`); invalidate(["*"]); toast("Activity deleted"); router.replace("/history"); } }
 async function edit(field: "name" | "notes") { const v = await prompt(field === "name" ? "Name" : "Notes", { value: a.value[field] }); if (v != null) { await api.put(`/activities/${id.value}`, { ...a.value, [field]: v, route: null }); invalidate(["activities"]); toast(field === "name" ? "Activity renamed" : "Notes saved"); } }
 function gpx() {
@@ -52,10 +54,10 @@ await loaded(q);
       <div class="acts"><Menu :items="[{ label: 'Rename', icon: 'edit', run: () => edit('name') }, { label: 'Notes', icon: 'note', run: () => edit('notes') }, { label: 'Export GPX', icon: 'download', sep: true, run: gpx, hidden: !a.route?.length }, { label: 'Delete', icon: 'trash', danger: true, sep: true, run: del }]" /></div></div>
     <RouteMap v-if="a.route?.length" :route="a.route" />
     <div class="grid g4 spt">
-      <div class="card stat hero"><div class="lbl">Duration</div><div class="val">{{ fmt.dur(a.durationS) }}</div><div class="sub">{{ a.movingS ? `${fmt.dur(a.movingS)} moving` : "" }}</div></div>
-      <div class="card stat"><div class="lbl">Distance</div><div class="val">{{ a.distanceM ? fmt.num(fmt.distNum(a.distanceM), 2) : "-" }}<small>{{ fmt.du }}</small></div></div>
-      <div class="card stat"><div class="lbl">Average pace</div><div class="val" style="font-size:26px">{{ a.distanceM ? fmt.pace(a.movingS || a.durationS, a.distanceM) : "-" }}</div></div>
-      <div class="card stat"><div class="lbl">{{ a.steps ? "Steps" : "Climb" }}</div><div class="val">{{ a.steps ? fmt.num(a.steps, 0) : a.elevationM != null ? Math.round(a.elevationM) : "-" }}<small v-if="!a.steps && a.elevationM != null">m</small></div><div v-if="a.steps && stepsSub" class="sub">{{ stepsSub }}</div></div>
+      <div class="card stat hero"><div class="lbl"><span class="bi"><Icon name="clock" :size="15" /></span>Duration</div><div class="val">{{ fmt.dur(a.durationS, true) }}</div><div v-if="a.movingS" class="sub">{{ fmt.dur(a.movingS, true) }} moving</div></div>
+      <div class="card stat"><div class="lbl"><span class="bi"><Icon name="map" :size="15" /></span>Distance</div><div class="val">{{ a.distanceM ? fmt.num(fmt.distNum(a.distanceM), 2) : "-" }}<small v-if="a.distanceM">{{ fmt.du }}</small></div></div>
+      <div class="card stat"><div class="lbl"><span class="bi"><Icon name="timer" :size="15" /></span>Average pace</div><div class="val">{{ pace ?? "-" }}<small v-if="pace">/{{ fmt.du }}</small></div></div>
+      <div class="card stat"><div class="lbl"><span class="bi"><Icon :name="a.steps ? 'steps' : 'arrowUp'" :size="15" /></span>{{ a.steps ? "Steps" : "Climb" }}</div><div class="val">{{ a.steps ? fmt.num(a.steps, 0) : a.elevationM != null ? Math.round(a.elevationM) : "-" }}<small v-if="!a.steps && a.elevationM != null">m</small></div><div v-if="a.steps && stepsSub" class="sub">{{ stepsSub }}</div></div>
     </div>
     <div v-if="splits.length > 1" class="card spt">
       <div class="lbl hgap">Pace per {{ fmt.du }}{{ fastest ? ` · fastest ${fmt.clock(fastest.s)} in ${fmt.du} ${fastest.n}` : "" }}</div>

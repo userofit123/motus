@@ -103,7 +103,7 @@ const build = (m: Period, p: Period | undefined, prev: string) => {
   const highlights: Highlight[] = [
     ...(m.records.length ? [{ key: "rec", icon: "trophy", t: "New records", s: names.length > 2 ? `${names.slice(0, 2).join(", ")} and ${names.length - 2} more` : names.join(", "), r: String(m.records.length), pr: true }] : []),
     ...(m.top ? [{ key: "routine", icon: "routines", t: "Most done routine", s: m.top[0], r: `${m.top[1]}×` }] : []),
-    ...(m.group ? [{ key: "group", icon: "activity", t: "Top muscle group", s: `${m.group.name} · most sets`, r: `${m.group.sets} sets` }] : []),
+    ...(m.group ? [{ key: "group", icon: "activity", t: "Top muscle group", s: m.group.name, r: `${m.group.sets} sets` }] : []),
     // the count on the right as Records has it; the distance under the name only when there is one
     ...(m.activities ? [{ key: "act", icon: "walk", t: "Activities", s: m.distM > 0 ? `${fmt.value.dist(m.distM, 1)} in total` : "", r: String(m.activities) }] : []),
     // then what a band handed over, each only when there: sleep a night, resting heart rate (with HRV under it), and the

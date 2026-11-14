@@ -189,6 +189,8 @@ const planOpen = ref<any>(null);
 const typeName = useTypeName();
 // records
 const KIND: Record<string, string> = { weight: "Heaviest", e1rm: "Best estimated 1RM", volume: "Most volume", reps: "Most reps", duration: "Longest", distance: "Farthest" };
+// a sentence: only the first name capitalised ("Best estimated 1RM, most volume, most reps"), as Stats lists them
+const kindList = (ks: string[]) => ks.map((k, i) => { const w = KIND[k] ?? k; return i ? w[0]!.toLowerCase() + w.slice(1) : w; }).join(", ");
 const recordText = (r: HomeRecord) => r.distanceM ? fmt.value.dist(r.distanceM, 1) : r.durationS && !r.reps ? fmt.value.dur(r.durationS, true)
   : fmt.value.set(r, r.tracking ?? "weight_reps");
 
@@ -603,7 +605,7 @@ await loaded(home, ach, avail, hDay, ready, nightsQ, dailyQ);
           <div class="ch"><span class="bi"><Icon name="trophy" :size="15" /></span><span class="t grow">Records</span><span class="tiny">Last 30 days</span></div>
           <div class="list">
             <div v-for="(r, i) in h.records" :key="`${r.workoutId}-${r.exerciseId}-${r.kinds.join()}-${i}`" class="li click" v-bind="link(`/exercises/${r.exerciseId}`)">
-              <div class="grow"><div class="t">{{ r.name }}</div><div class="s">{{ r.kinds.map((k: string) => KIND[k] ?? k).join(", ") }} · {{ fmt.date(r.at, { day: "numeric", month: "short" }) }}</div></div>
+              <div class="grow"><div class="t">{{ r.name }}</div><div class="s">{{ kindList(r.kinds) }} · {{ fmt.date(r.at, { day: "numeric", month: "short" }) }}</div></div>
               <b class="rv">{{ recordText(r) }}</b>
             </div>
           </div>

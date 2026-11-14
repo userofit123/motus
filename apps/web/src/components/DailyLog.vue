@@ -144,8 +144,9 @@ const show = (k: string, v: number | null) => (v == null ? "-" : k === "sleep_h"
 .dl-wk { margin-top: var(--spg); }
 /* hours and minutes side by side, the units in the label ("Sleep (hours and minutes)") as in the other rows, so the minutes box
    ends on the same right edge as every other box */
-.dl-hm { display: flex; align-items: center; gap: 4px; flex: none; }
-.li .dl-hm input.num-in { width: 44px; }
+.dl-hm { display: flex; align-items: center; gap: var(--tdy); flex: none; }
+/* wide enough for two digits ("30") inside the input's 14px side padding and border */
+.li .dl-hm input.num-in { width: calc(2ch + 32px); }
 /* the name uppercase as in the other tables, the unit beside it small and as written ("WATER (ml)") */
 .dl-tbl { margin-top: var(--tdy); }
 .dl-tbl th { white-space: nowrap; }

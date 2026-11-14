@@ -147,8 +147,10 @@ const inPeriod = (x: any) => { const k = String(x.date).slice(0, 10), p = per.va
 const dayPts = (kind: string, f: (v: number) => number) => (d.value?.daily ?? []).filter((x: any) => x.kind === kind && inPeriod(x)).map((x: any) => ({ x: new Date(String(x.date).slice(0, 10) + "T12:00").getTime(), y: f(Number(x.value)) })).sort((a: any, b: any) => a.x - b.x) as { x: number; y: number }[];
 const bandDist = computed(() => dayPts("distance_m", (m) => Math.round(fmt.value.distNum(m) * 100) / 100));
 const bandKcal = computed(() => dayPts("active_kcal", (v) => Math.round(v)));
-// steps carry no source in the stats; a connected band (any of its data kinds) is what fills them in
-const fromBand = computed(() => !!(avail.data.value?.distance || avail.data.value?.calories || avail.data.value?.sleep || avail.data.value?.heart));
+// the chart says "from your band" only when every plotted day's steps came from it: not typed (manual, or no source on
+// old rows) and not the recorded activities' count
+const fromBand = computed(() => { const r = (d.value?.daily ?? []).filter((x: any) => x.kind === "steps");
+  return r.length > 0 && r.every((x: any) => x.source != null && x.source !== "manual" && x.source !== "activities"); });
 const avgOf = (pts: { y: number }[]) => pts.reduce((t, p) => t + p.y, 0) / Math.max(1, pts.length);
 // show the page once its data is in, all at once
 await loaded(st, prev, ach, avail);
@@ -210,7 +212,7 @@ watch(() => avail.data.value, () => { if (!TABS.value.some(([k]) => k === tab.va
       <div v-else class="card"><div class="list">
         <div v-for="e in exList" :key="e.exerciseId" class="li click" @click="router.push(`/exercises/${e.exerciseId}?tab=charts`)">
           <div class="grow"><div class="t">{{ e.name }} <span v-if="e.stalled" class="mchip" title="No progress in the last 4 sessions">stalled</span></div><DotLine class="s" :parts="[`Done ${e.times}×`, `last ${fmt.date(e.lastAt)}`, e.bestE1rm ? `best estimated 1RM ${fmt.wu_(e.bestE1rm)}` : ''].filter(Boolean)" /></div>
-          <div class="exspark"><Sparkline :values="e.trend.map((t: any) => t.e1rm || t.reps)" style="width:100%;height:100%" /></div>
+          <div class="exspark"><Sparkline v-if="e.trend.length > 1" :values="e.trend.map((t: any) => t.e1rm || t.reps)" style="width:100%;height:100%" /></div>
           <div class="r tiny exchg" :title="e.change ? `Estimated 1RM ${e.change > 0 ? '+' : ''}${Math.round(e.change * 100)}% over this period` : undefined" :class="e.change > 0.005 ? 'pos' : e.change < -0.005 ? 'neg' : ''">{{ e.change ? `${e.change > 0 ? "+" : ""}${Math.round(e.change * 100)}%` : "" }}</div>
         </div>
       </div></div>
@@ -238,7 +240,7 @@ watch(() => avail.data.value, () => { if (!TABS.value.some(([k]) => k === tab.va
       <div v-if="!d.activities.length && !steps.length && !bandDist.length && !bandKcal.length" class="card empty"><Icon name="walk" :size="34" /><b>No activities in this period</b></div>
       <div class="grid g3"><div v-for="t in actTypes" :key="t.type" class="card stat"><div class="lbl"><span class="bi"><Icon :name="activityIcon(t.type)" :size="15" /></span>{{ typeName(t.type) }}</div><div class="val">{{ t.m ? fmt.dist(t.m, 1) : fmt.dur(t.s, true) }}</div><div class="sub">{{ t.n }} {{ t.n === 1 ? "time" : "times" }} · {{ fmt.dur(t.s, true) }}{{ t.m && t.ps ? " · average pace " + fmt.pace(t.ps, t.m) : "" }}</div></div></div>
       <div v-if="d.activities.length" class="card spt"><div class="lbl hgap">Distance per week ({{ fmt.du }})</div><BarChart :bars="actWeeks.slice(-16).map((w) => ({ ...w, label: w.label.split(' ')[0]!, full: w.label, group: monthOf(w.week) }))" :height="160" :fmt="(v) => fmt.num(v, 1)" /></div>
-      <div v-if="steps.length" class="card spt"><div class="lbl hgap">Daily steps{{ fromBand ? " from your band" : "" }}{{ stepGoal ? ` · goal ${fmt.num(stepGoal.target, 0)}` : "" }}</div><LineChart :points="steps" :height="160" :fmt="(v) => fmt.num(v, 0)" /><div class="tiny" style="margin-top:6px">Average {{ fmt.num(avgOf(steps), 0) }} steps a day</div></div>
+      <div v-if="steps.length" class="card spt"><div class="lbl hgap">Steps per day{{ fromBand ? " · from your band" : "" }}{{ stepGoal ? ` · goal ${fmt.num(stepGoal.target, 0)}` : "" }}</div><LineChart :points="steps" :height="160" :fmt="(v) => fmt.num(v, 0)" /><div class="tiny" style="margin-top:6px">Average {{ fmt.num(avgOf(steps), 0) }} steps a day</div></div>
       <!-- the band's whole-day totals: everything the person did that day, recorded activities included -->
       <div v-if="bandDist.length || bandKcal.length" class="spt" :class="bandDist.length && bandKcal.length ? 'grid g2' : ''">
         <div v-if="bandDist.length" class="card"><div class="lbl hgap">Distance per day ({{ fmt.du }}) · from your band</div><LineChart :points="bandDist" :height="bandDist.length && bandKcal.length ? 140 : 160" :fmt="(v) => fmt.num(v, 1)" /><div class="tiny" style="margin-top:6px">Average {{ fmt.num(avgOf(bandDist), 1) }} {{ fmt.du }} a day · {{ fmt.num(bandDist.reduce((t, p) => t + p.y, 0), 1) }} {{ fmt.du }} in total</div></div>
