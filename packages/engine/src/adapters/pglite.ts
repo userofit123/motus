@@ -6,7 +6,11 @@ import { PARSERS, type Db, type Sql } from "../db";
 const ANALYZE_EVERY = 500;
 
 export async function pgliteDb(dataDir = "memory://"): Promise<Db> {
-  const lite = await PGlite.create(dataDir, { parsers: PARSERS as any });
+  // In a browser the files live in IndexedDB, and by default every query waits until PGlite has compared all its files
+  // with IndexedDB and written back the changed ones: about 50 ms per read and 80 ms per write in Chromium (under 1 ms
+  // without it), so a page that asks for a few things took a second or more. Relaxed, the query answers at once and
+  // the write-back starts straight after it in the background (a closed tab can lose only the last fraction of a second).
+  const lite = await PGlite.create(dataDir, { parsers: PARSERS as any, relaxedDurability: dataDir.startsWith("idb://") });
   // PGlite runs one query at a time; queue transactions so they never interleave
   let chain: Promise<unknown> = Promise.resolve();
   const run = <T>(fn: () => Promise<T>): Promise<T> => {
