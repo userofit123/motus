@@ -9,6 +9,8 @@ import androidx.health.connect.client.PermissionController
 import androidx.health.connect.client.aggregate.AggregateMetric
 import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.*
+import androidx.health.connect.client.records.metadata.DataOrigin
+import androidx.health.connect.client.records.metadata.Device
 import androidx.health.connect.client.request.AggregateGroupByPeriodRequest
 import androidx.health.connect.client.request.AggregateRequest
 import androidx.health.connect.client.request.ReadRecordsRequest
@@ -171,7 +173,7 @@ class MotusHealthPlugin : Plugin() {
                 out.put("bodyFat", if (has(BodyFatRecord::class)) JSArray().also { a -> for (b in readAll(c, BodyFatRecord::class, from))
                     a.put(JSObject().put("id", b.metadata.id).put("at", b.time.toString()).put("pct", Math.round(b.percentage.value * 10) / 10.0)) } else JSArray())
                 out.put("hydration", if (has(HydrationRecord::class)) dailyTotal(c, from, zone, HydrationRecord::class, { it.startTime },
-                    HydrationRecord.VOLUME_TOTAL, "ml") { Math.round(it.inMilliliters) } else JSArray())
+                    HydrationRecord.VOLUME_TOTAL, "ml", oneSource = false) { Math.round(it.inMilliliters) } else JSArray())
                 out.put("vo2max", if (has(Vo2MaxRecord::class)) vo2max(readAll(c, Vo2MaxRecord::class, from), zone) else JSArray())
                 out.put("hrDays", if (has(HeartRateRecord::class)) hrDays(c, from, zone) else JSArray())
                 call.resolve(out)
@@ -333,11 +335,16 @@ class MotusHealthPlugin : Plugin() {
         if (perm(Vo2MaxRecord::class) in granted) add("vo2max")
     }
 
-    // Daily totals (steps, distance, active calories): Health Connect adds up each day itself and leaves out what two
-    // apps both wrote (a band and the phone). A long range (years) is asked for 90 days at a time: one request for
-    // thousands of day buckets can fail.
-    private suspend fun <R : Record, T : Any> dailyTotal(c: HealthConnectClient, from: Instant, zone: ZoneId, type: KClass<R>, startOf: (R) -> Instant,
-                                                       metric: AggregateMetric<T>, key: String = "value", value: (T) -> Any): JSArray {
+    // Daily totals (steps, distance, active calories; water with oneSource false). Health Connect adds up each day itself,
+    // but its priority list only decides who wins where two apps both have a record for the same moment: where the first
+    // app has none, the next one's count is added in. A band app writes a record per minute with steps (Gadgetbridge does)
+    // and the phone's own step counter writes longer ones, so every quiet minute between the band's took a share of the
+    // phone's count and a day read 1,000+ steps more than the band and Health Connect's own screen. So on a day more than
+    // one app counted, one app's total is taken: a worn device's (band, watch, ring) if any counted, the larger if several
+    // did (two apps for the same band), else the app with the most. Never a mix of apps.
+    // A long range (years) is asked for 90 days at a time: one request for thousands of day buckets can fail.
+    private suspend fun <R : Record, T : Comparable<T>> dailyTotal(c: HealthConnectClient, from: Instant, zone: ZoneId, type: KClass<R>, startOf: (R) -> Instant,
+                                                       metric: AggregateMetric<T>, key: String = "value", oneSource: Boolean = true, value: (T) -> Any): JSArray {
         // start at the oldest record Health Connect will give us, not at `from`: "everything" asks from 2000, and
         // one aggregate call per 90 days since then would run into Health Connect's rate limit and fail the whole read
         val first = c.readRecords(ReadRecordsRequest(type, TimeRangeFilter.after(from), ascendingOrder = true, pageSize = 1)).records.firstOrNull()
@@ -345,18 +352,35 @@ class MotusHealthPlugin : Plugin() {
         var day = LocalDate.ofInstant(maxOf(from, startOf(first)), zone)
         val end = LocalDate.now(zone).plusDays(1)
         val arr = JSArray()
+        val worn = mutableMapOf<String, Boolean>()
         while (day.isBefore(end)) {
             val next = minOf(day.plusDays(90), end)
-            val res = c.aggregateGroupByPeriod(AggregateGroupByPeriodRequest(setOf(metric),
-                TimeRangeFilter.between(day.atStartOfDay(), next.atStartOfDay()), Period.ofDays(1)))
+            val range = TimeRangeFilter.between(day.atStartOfDay(), next.atStartOfDay())
+            val res = c.aggregateGroupByPeriod(AggregateGroupByPeriodRequest(setOf(metric), range, Period.ofDays(1)))
+            // the apps that counted on days with more than one, each one's own daily totals (one request per app, not per day)
+            val mixed = if (oneSource) res.filter { it.result.dataOrigins.size > 1 } else emptyList()
+            val byApp = mutableMapOf<String, Map<LocalDate, T>>()
+            for (o in mixed.flatMap { it.result.dataOrigins }.toSet()) {
+                byApp[o.packageName] = c.aggregateGroupByPeriod(AggregateGroupByPeriodRequest(setOf(metric), range, Period.ofDays(1), setOf(o)))
+                    .mapNotNull { r -> r.result[metric]?.let { r.startTime.toLocalDate() to it } }.toMap()
+                if (o.packageName !in worn) worn[o.packageName] = isWorn(c, type, range, o)
+            }
             for (r in res) {
-                val n = r.result[metric] ?: continue
-                arr.put(JSObject().put("date", r.startTime.toLocalDate().toString()).put(key, value(n)))
+                val date = r.startTime.toLocalDate()
+                val counts = if (r.result.dataOrigins.size > 1) byApp.mapNotNull { (app, days) -> days[date]?.let { app to it } } else emptyList()
+                val n = if (counts.isEmpty()) r.result[metric] ?: continue
+                    else counts.filter { worn[it.first] == true }.ifEmpty { counts }.maxOf { it.second }
+                arr.put(JSObject().put("date", date.toString()).put(key, value(n)))
             }
             day = next
         }
         return arr
     }
+
+    // whether an app's records come from something worn (band, watch, ring, chest strap), going by its first one in the range
+    private val WORN = setOf(Device.TYPE_WATCH, Device.TYPE_FITNESS_BAND, Device.TYPE_RING, Device.TYPE_CHEST_STRAP)
+    private suspend fun <R : Record> isWorn(c: HealthConnectClient, type: KClass<R>, range: TimeRangeFilter, o: DataOrigin): Boolean =
+        c.readRecords(ReadRecordsRequest(type, range, dataOriginFilter = setOf(o), pageSize = 1)).records.firstOrNull()?.metadata?.device?.type in WORN
 
     private suspend fun <T : Record> readAll(c: HealthConnectClient, type: KClass<T>, from: Instant): List<T> {
         val all = mutableListOf<T>()

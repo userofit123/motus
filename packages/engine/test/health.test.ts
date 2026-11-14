@@ -822,3 +822,13 @@ describe("readiness from the daily log", () => {
     expect(short.building).toEqual([]);
   }, 120000);
 });
+
+describe("a day's steps read again", () => {
+  it("lowers a day saved too high when a later read brings a smaller count, in the daily log and the import log", async () => {
+    // an older app added the phone's steps in between the band's (M-219); the read after the fix brings the band's alone
+    await call("POST", "/health/import", { steps: [{ date: "2026-10-20", value: 9850 }] });
+    expect(await call("POST", "/health/import", { steps: [{ date: "2026-10-20", value: 8640 }] })).toMatchObject({ steps: 1 });
+    expect((await daily("steps")).find((x: any) => x.date === "2026-10-20")).toMatchObject({ value: 8640, source: "health_connect" });
+    expect(await entry("steps:2026-10-20")).toMatchObject({ value: 8640, edited: false });
+  });
+});
