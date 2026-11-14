@@ -42,8 +42,8 @@ const rep = computed<any>(() => w.value?.report);
 // rather than to the calendar. No button of its own in that word: it only duplicated the back link and vanished on return.
 const justDone = computed(() => route.query.done === "1");
 const doneLine = computed(() => { const t = rep.value?.totals; if (!t) return [];
-  return [fmt.value.dur(t.durationS, true), `${t.workingSets} set${t.workingSets === 1 ? "" : "s"}`, t.volumeKg ? fmt.value.vol(t.volumeKg) : "", t.records ? `records on ${t.records} exercise${t.records === 1 ? "" : "s"}` : "",
-    rep.value?.compared ? `better than last time on ${rep.value.beat} of ${rep.value.compared} exercises` : ""].filter(Boolean); });
+  return [fmt.value.dur(t.durationS, true), `${t.workingSets} set${t.workingSets === 1 ? "" : "s"}`, t.volumeKg ? fmt.value.vol(t.volumeKg) : "", t.records ? `records on ${t.records} exercise${t.records === 1 ? "" : "s"}` : ""].filter(Boolean); });
+// "better than last time" is the Records tile's own line just below, so the banner leaves it out
 // an exercise's "Last time" line as DotLine parts, so a narrow screen wraps between whole parts with no dot opening a line
 const lastLine = (id: string) => { const v = verdict(id); if (!v?.last) return [];
   const d = delta(v.now.e1rm, v.last.e1rm);
