@@ -3,17 +3,18 @@
 // file wherever it is picked (workout/runtime.ts); the ids are SOUND_IDS in @motus/shared, which also moves the ids
 // saved before these sounds to the nearest of them.
 //
-// The sounds are from the uisfx "Minimal" pack (https://github.com/romainsimon/uisfx, packages/uisfx/sounds/minimal),
-// CC0 1.0 (public domain), each levelled to -1 dB peak so they carry over a gym on a phone's speaker. The same
+// Most sounds are from the uisfx "Minimal" pack (https://github.com/romainsimon/uisfx, packages/uisfx/sounds/minimal),
+// CC0 1.0 (public domain). Round, Marimba, Bell and High are the single notes the app used to make in
+// Web Audio, rendered from their old recipes (the same partials and envelopes) at the pack's length, pitch range and
+// loudness. Each is levelled to -1 dB peak so they carry over a gym on a phone's speaker. The same
 // sounds as .ogg are in the Android app (res/raw), which plays the countdown sound in the background (RestCues.java).
 import { SOUND_IDS, type IntervalSound, type SoundId } from "@motus/shared";
 
 const NAMES: Record<SoundId, string> = {
-  hover: "Hover", press: "Tap", focus: "Blip", progressStep: "Step", select: "Pip", check: "Check", toggleOn: "Switch", info: "Ping",
-  start: "Start", wake: "Wake", checkpoint: "Checkpoint", notification: "Alert", reward: "Reward", warning: "Warning",
-  success: "Success", streak: "Streak", complete: "Complete", levelUp: "Level up", achievement: "Achievement",
+  hover: "Hover", soft: "Round", progressStep: "Step", check: "Check", marimba: "Marimba",
+  bell: "Bell", high: "High", info: "Ping", checkpoint: "Checkpoint", notification: "Alert", success: "Success", levelUp: "Level up",
 };
-/** short ones first, then the ones with two or more notes, the longest last */
+/** shortest first, the longest last */
 export const SOUNDS = SOUND_IDS.map((id) => ({ id, name: NAMES[id] }));
 /** The rest over and countdown sounds' choices */
 export const CUE_SOUND_OPTIONS = SOUNDS.map((s) => ({ value: s.id as string, label: s.name }));

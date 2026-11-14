@@ -20,8 +20,8 @@ export const WORKOUT_SOUNDS = SOUND_IDS;
 export type WorkoutSound = SoundId;
 /** The sounds there were while one choice played both the rest over and the countdown (see withDefaults). */
 const FIRST_SOUNDS: readonly unknown[] = ["beep", "bell", "soft", "digital", "wood"];
-/** The rest over sound for new accounts and for anything unknown: two notes going up, done. */
-export const REST_OVER_SOUND_DEFAULT: WorkoutSound = "complete";
+/** The rest over sound for new accounts and for anything unknown: three notes, done. */
+export const REST_OVER_SOUND_DEFAULT: WorkoutSound = "success";
 /** The countdown sound for new accounts and for anything unknown: short and high, where a phone's speaker is loud. */
 export const COUNTDOWN_SOUND_DEFAULT: WorkoutSound = "progressStep";
 /** A cue sound and volume as saved anywhere (also a workout's own override), made safe: an id from before the recorded

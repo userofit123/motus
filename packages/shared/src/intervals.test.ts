@@ -44,22 +44,25 @@ describe("interval timer", () => {
   });
   it("keeps each part's sound, and gives old or bad setups the usual ones", () => {
     expect(cleanInterval({}).sounds).toEqual(INTERVAL_SOUNDS_DEFAULT);
-    expect(cleanInterval({ sounds: { work: "bell", rest: "none", done: 5 } as never }).sounds).toEqual({ ...INTERVAL_SOUNDS_DEFAULT, rest: "none" });
+    expect(cleanInterval({ sounds: { work: "siren", rest: "none", done: 5 } as never }).sounds).toEqual({ ...INTERVAL_SOUNDS_DEFAULT, rest: "none" });
     const [p] = cleanIntervalPresets([{ id: "a", name: "A", sounds: { prep: "info", work: "levelUp" } }, { id: "b", name: "B" }]);
-    expect(p!.sounds).toMatchObject({ prep: "info", work: "levelUp", done: "achievement" });
-    expect(cleanSounds({ work: "warning", rest: "complete", done: "wake", prep: "siren" })).toEqual({ ...INTERVAL_SOUNDS_DEFAULT, work: "warning", rest: "complete", done: "wake" });
+    expect(p!.sounds).toMatchObject({ prep: "info", work: "levelUp", done: "levelUp" });
+    expect(cleanSounds({ work: "bell", rest: "success", done: "high", prep: "siren" })).toEqual({ ...INTERVAL_SOUNDS_DEFAULT, work: "bell", rest: "success", done: "high" });
     for (const id of INTERVAL_SOUNDS) expect(cleanSounds({ work: id }).work).toBe(id);
     expect(cleanIntervalPresets([{ id: "b", name: "B", sounds: "loud" }])[0]!.sounds).toEqual(INTERVAL_SOUNDS_DEFAULT);
   });
   it("moves the sounds made in the app before the recorded ones to the nearest recorded one, never to silence", () => {
     // the interval timer's own old ids: its "beep" was Bell and its "gong" the small one (the rest timer's differ)
     expect(cleanSounds({ prep: "beep", work: "double", rest: "low", setRest: "gong", done: "triple" }))
-      .toEqual({ prep: "notification", work: "checkpoint", rest: "select", setRest: "complete", done: "streak" });
+      .toEqual({ prep: "bell", work: "checkpoint", rest: "soft", setRest: "bell", done: "success" });
     expect(cleanSounds({ prep: "bright", work: "deepGong", rest: "marimba", setRest: "none", done: "softAlarm" }))
-      .toEqual({ prep: "progressStep", work: "achievement", rest: "press", setRest: "none", done: "warning" });
+      .toEqual({ prep: "soft", work: "bell", rest: "marimba", setRest: "none", done: "notification" });
     const old = ["beep", "double", "triple", "high", "low", "rising", "softAlarm", "chime", "marimba", "pulse", "gong", "digital", "wake", "handBell", "shipBell", "tubular", "temple", "bowl", "deepGong", "bright", "click"];
     for (const id of old) expect(SOUND_IDS).toContain(cleanSounds({ work: id }).work);
-    expect(cleanIntervalPresets([{ id: "a", name: "A", sounds: { work: "rising", rest: "temple" } }])[0]!.sounds).toMatchObject({ work: "levelUp", rest: "achievement" });
+    // the recorded sounds taken out of the library again
+    expect(cleanSounds({ prep: "start", work: "press", rest: "warning", setRest: "toggleOn", done: "complete" }))
+      .toEqual({ prep: "info", work: "hover", rest: "notification", setRest: "check", done: "success" });
+    expect(cleanIntervalPresets([{ id: "a", name: "A", sounds: { work: "rising", rest: "temple" } }])[0]!.sounds).toMatchObject({ work: "levelUp", rest: "bell" });
   });
   it("sums the setup up in plain words, leaving out what is 0", () => {
     expect(intervalSummary({ prepS: 10, workS: 40, restS: 20, rounds: 8, sets: 3, setRestS: 60 }))

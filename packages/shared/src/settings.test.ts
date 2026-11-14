@@ -58,20 +58,20 @@ describe("Goal order", () => {
 });
 
 describe("Workout cue sound and volume", () => {
-  it("defaults to Complete and Step at full level, and drops the old unused top-level sound", () => {
+  it("defaults to Success and Step at full level, and drops the old unused top-level sound", () => {
     const s = withDefaults({ sound: "chime" });
-    expect([s.workout.cueSound, s.workout.tickSound, s.workout.cueVolume]).toEqual(["complete", "progressStep", 100]);
+    expect([s.workout.cueSound, s.workout.tickSound, s.workout.cueVolume]).toEqual(["success", "progressStep", 100]);
     expect("sound" in s).toBe(false);
   });
   it("keeps a valid choice and makes a bad one safe", () => {
-    expect(withDefaults({ workout: { cueSound: "success", cueVolume: 40 } }).workout).toMatchObject({ cueSound: "success", cueVolume: 40 });
-    expect(withDefaults({ workout: { cueSound: "nope", cueVolume: 500 } }).workout).toMatchObject({ cueSound: "complete", cueVolume: 100 });
+    expect(withDefaults({ workout: { cueSound: "levelUp", cueVolume: 40 } }).workout).toMatchObject({ cueSound: "levelUp", cueVolume: 40 });
+    expect(withDefaults({ workout: { cueSound: "nope", cueVolume: 500 } }).workout).toMatchObject({ cueSound: "success", cueVolume: 100 });
     expect(withDefaults({ workout: { cueVolume: 0 } }).workout.cueVolume).toBe(10);
   });
   it("gives the countdown the one sound chosen before there were two, until one is chosen for it", () => {
-    expect(withDefaults({ workout: { cueSound: "wood" } }).workout).toMatchObject({ cueSound: "press", tickSound: "press" });
-    expect(withDefaults({ workout: { cueSound: "gong" } }).workout).toMatchObject({ cueSound: "achievement", tickSound: "progressStep" });
-    expect(withDefaults({ workout: { cueSound: "wood", tickSound: "click" } }).workout.tickSound).toBe("press");
+    expect(withDefaults({ workout: { cueSound: "wood" } }).workout).toMatchObject({ cueSound: "marimba", tickSound: "marimba" });
+    expect(withDefaults({ workout: { cueSound: "gong" } }).workout).toMatchObject({ cueSound: "bell", tickSound: "progressStep" });
+    expect(withDefaults({ workout: { cueSound: "wood", tickSound: "click" } }).workout.tickSound).toBe("hover");
     expect(withDefaults({ workout: { tickSound: "nope" } }).workout.tickSound).toBe("progressStep");
   });
   it("offers every sound for both the rest over and the countdown", () => {
@@ -80,12 +80,14 @@ describe("Workout cue sound and volume", () => {
   it("moves the sounds made in the app before the recorded ones to the nearest recorded one", () => {
     // the rest timer's own old ids: its "beep" was Bright and its "gong" the deep one (the interval timer's differ)
     const old: Record<string, string> = {
-      beep: "progressStep", bell: "notification", soft: "select", digital: "focus", wood: "press", click: "press", double: "checkpoint", triple: "streak",
-      high: "info", rising: "levelUp", chime: "reward", pulse: "start", softAlarm: "warning", wake: "wake", handBell: "success", shipBell: "complete",
-      tubular: "complete", smallGong: "complete", temple: "achievement", bowl: "achievement", gong: "achievement",
+      beep: "soft", bell: "bell", soft: "soft", digital: "progressStep", wood: "marimba", click: "hover", double: "checkpoint", triple: "success",
+      high: "high", rising: "levelUp", chime: "success", pulse: "checkpoint", softAlarm: "notification", wake: "info", handBell: "success", shipBell: "success",
+      tubular: "bell", smallGong: "bell", temple: "bell", bowl: "bell", gong: "bell",
+      // the recorded sounds taken out of the library again
+      press: "hover", focus: "marimba", select: "check", toggleOn: "check", start: "info", reward: "success", warning: "notification", streak: "levelUp", complete: "success", achievement: "levelUp",
     };
     for (const [from, to] of Object.entries(old)) expect(withDefaults({ workout: { cueSound: from, tickSound: from } }).workout).toMatchObject({ cueSound: to, tickSound: to });
     expect(cleanWorkoutSound("double")).toBe("checkpoint");
-    expect(cleanWorkoutSound("toString")).toBe("complete");
+    expect(cleanWorkoutSound("toString")).toBe("success");
   });
 });

@@ -209,7 +209,7 @@ if (typeof window !== "undefined") setTimeout(() => SOUND_IDS.forEach((id) => vo
 /** How late a cue may still play; later than this it is dropped (a beep for a moment long gone only confuses). */
 export const LATE_MS = 1000;
 /** A countdown sound is cut off after this long (fading out over the last FADE_S), so it is over before the next
- *  second's: of the library only Achievement is longer, and only its fading tail goes. */
+ *  second's. Every sound in the library is shorter (Level up, the longest, is 0.73 s): a guard for a longer one. */
 const COUNT_MAX_S = 0.8, FADE_S = 0.08;
 /** Plays a sound once, `delay` seconds from now at `level` (levelOf), cut to `maxS` when given. A context that isn't running (the page was hidden, the phone slept) holds its clock still, so it is woken
  *  first, and the sound dropped if that (or loading it) took longer than LATE_MS: a cue is only worth playing on time. */

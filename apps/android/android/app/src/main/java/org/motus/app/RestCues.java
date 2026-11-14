@@ -122,23 +122,16 @@ public class RestCues extends BroadcastReceiver {
         if (sound == null) return R.raw.progress_step;
         switch (sound) {
             case "hover": return R.raw.hover;
-            case "press": return R.raw.press;
-            case "focus": return R.raw.focus;
-            case "select": return R.raw.select;
+            case "soft": return R.raw.soft;
             case "check": return R.raw.check;
-            case "toggleOn": return R.raw.toggle_on;
+            case "marimba": return R.raw.marimba;
+            case "bell": return R.raw.bell;
+            case "high": return R.raw.high;
             case "info": return R.raw.info;
-            case "start": return R.raw.start;
-            case "wake": return R.raw.wake;
             case "checkpoint": return R.raw.checkpoint;
             case "notification": return R.raw.notification;
-            case "reward": return R.raw.reward;
-            case "warning": return R.raw.warning;
             case "success": return R.raw.success;
-            case "streak": return R.raw.streak;
-            case "complete": return R.raw.complete;
             case "levelUp": return R.raw.level_up;
-            case "achievement": return R.raw.achievement;
             default: return R.raw.progress_step; // "progressStep"
         }
     }
