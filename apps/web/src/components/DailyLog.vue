@@ -84,7 +84,8 @@ async function useBand(k: string) {
     if (r.restored) return toast("Band value back");
     // the phone reads the band's day now; only say it is back when the read actually brought it
     if (healthSupported() && s.value.features.healthConnect) {
-      await syncHealth({ from: new Date(day.value + "T00:00") });
+      // from the evening before: that day's night began then
+      await syncHealth({ from: new Date(new Date(day.value + "T00:00").getTime() - 86_400_000) });
       const back = await q.refetch();
       if (!(back.data ?? []).find((x) => x.kind === k && String(x.date).slice(0, 10) === day.value)?.waiting) return toast("Band value back");
     }

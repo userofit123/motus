@@ -60,8 +60,9 @@ const remember = (at: string) => { const all = readJson<Record<string, string>>(
 // last one, so a kind allowed since, or one this version reads more of, would never get its older days without this.
 const READ_KEY = "motusHealthRead";
 // what a version reads of a kind beyond its first: bumped when one starts handing over more (sleep: each night in
-// detail, 0.1.25; heart rate: the day's heart rate, 0.1.26)
-const READS: Partial<Record<Kind, number>> = { sleep: 2, heartRate: 2 };
+// detail, 0.1.25; heart rate: the day's heart rate, 0.1.26; steps, distance and active calories: one app's count a day,
+// not the band's plus the phone's in between, so days saved too high are read again and corrected)
+const READS: Partial<Record<Kind, number>> = { sleep: 2, heartRate: 2, steps: 2, distance: 2, activeKcal: 2 };
 const readsOf = (granted: readonly string[]) => HEALTH_KINDS.filter((k) => granted.includes(k)).map((k) => (READS[k] ? `${k}.${READS[k]}` : k));
 const readBefore = () => readJson<Record<string, string[]>>(READ_KEY, {})[key()] ?? [];
 const rememberRead = (reads: string[]) => { const all = readJson<Record<string, string[]>>(READ_KEY, {}); all[key()] = reads; writeJson(READ_KEY, all); };
@@ -108,8 +109,9 @@ async function read(past?: Date): Promise<HealthResult | null> {
     const usual = lastSync.value ? new Date(Date.parse(lastSync.value) - OVERLAP_MS) : null;
     const since = !usual ? back : fresh && back < usual ? back : usual;
     // a day whose typed value went back to the band's ("Use band value", maybe on another device) waits for a read of
-    // that day, which the usual overlap may no longer reach
-    const wait = await oldestWaiting();
+    // that day, which the usual overlap may no longer reach; from the day before, as the usual overlap does, so the
+    // night that ends on that day (it began the evening before) is read whole
+    const w = await oldestWaiting(), wait = w && new Date(w.getTime() - DAY_MS);
     const start = wait && wait < since ? wait : since;
     const from = past && past < start ? past : start;
     const data: HealthData = await plugin().read({ from: from.toISOString() });
