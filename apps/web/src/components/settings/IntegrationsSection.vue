@@ -50,14 +50,10 @@ const connected = computed(() => !!hc.value?.granted.length);
 const missing = computed(() => connected.value ? HEALTH_KINDS.filter((k) => !hc.value!.granted.includes(k)) : []);
 const missingText = computed(() => { const n = missing.value.map((k) => KIND_NAMES[k]!); const t = n.length > 1 ? `${n.slice(0, -1).join(", ")} and ${n.at(-1)}` : n[0] ?? ""; return t.charAt(0).toUpperCase() + t.slice(1); });
 async function connect() {
-  const before = new Set(hc.value?.granted ?? []);
   try {
     hc.value = await connectHealth();
-    if (!hc.value.granted.length) return;
-    // newly allowed kinds start with the last 30 days, as a first connection does (a plain sync reads only from the last one)
-    const added = before.size && hc.value.granted.some((k) => !before.has(k));
-    if (added) report(await syncHealth({ from: new Date(Date.now() - 30 * 86_400_000) }));
-    else await sync();
+    // newly allowed kinds start with their older days, as a first connection does: syncHealth notices them itself
+    if (hc.value.granted.length) await sync();
   } catch (e) { toast((e as Error).message || "Health Connect could not be read"); }
 }
 // what a read added, as a toast: "3 days of steps, 2 nights of sleep, steps from your band for 2 activities, heart rate for 3 sessions added"

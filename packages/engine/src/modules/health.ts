@@ -218,6 +218,7 @@ const median = (a: number[]) => {
 const BASELINE_DAYS = 28, MIN_BASELINE = 7;
 type Effect = "up" | "down" | "flat";
 export interface ReadinessPart { key: "sleep" | "restingHr" | "hrv"; value: number; baseline: number; change: number; effect: Effect }
+export interface ReadinessBuilding { key: ReadinessPart["key"]; value: number; days: number }
 /**
  * How ready for training the body looks today, from last night's sleep, today's resting heart rate and HRV, each against
  * the person's own usual (the median of the 28 days before, with at least 7 of them). Kept simple so it can be explained:
@@ -228,15 +229,18 @@ export interface ReadinessPart { key: "sleep" | "restingHr" | "hrv"; value: numb
  *   clamped to 0-100. Ready from 75, Normal from 50, else Take it easy. No score with fewer than 2 parts.
  * change: sleep in minutes, resting heart rate and HRV in % (signed). effect: which way the part moves the score; flat
  * within a small margin (15 min of sleep, 3 % resting heart rate, 5 % HRV) that is everyday noise.
+ * building: the parts with today's value but too few days for a usual yet (days of the `need`), so Home can show the
+ * baseline filling up instead of nothing while a new band's first weeks come in.
  */
-export function readiness(parts: { key: ReadinessPart["key"]; value: number; history: number[] }[]): { score: number | null; label: "Ready" | "Normal" | "Take it easy" | null; parts: ReadinessPart[] } {
+export function readiness(parts: { key: ReadinessPart["key"]; value: number; history: number[] }[]): {
+  score: number | null; label: "Ready" | "Normal" | "Take it easy" | null; parts: ReadinessPart[]; building: ReadinessBuilding[]; need: number;
+} {
   const clamp = (x: number, a: number, b: number) => Math.max(a, Math.min(b, x));
-  const out: ReadinessPart[] = [];
+  const out: ReadinessPart[] = [], building: ReadinessBuilding[] = [];
   let score = 70;
   for (const p of parts) {
-    if (p.history.length < MIN_BASELINE) continue;
-    const base = median(p.history)!;
-    if (!base) continue;
+    const base = p.history.length >= MIN_BASELINE ? median(p.history)! : 0;
+    if (!base) { building.push({ key: p.key, value: p.value, days: Math.min(p.history.length, MIN_BASELINE - 1) }); continue; }
     let change: number, pts: number, flat: boolean;
     if (p.key === "sleep") {
       change = Math.round((p.value - base) * 60);
@@ -250,9 +254,9 @@ export function readiness(parts: { key: ReadinessPart["key"]; value: number; his
     score += pts;
     out.push({ key: p.key, value: p.value, baseline: Math.round(base * 10) / 10, change, effect: flat ? "flat" : pts > 0 ? "up" : "down" });
   }
-  if (out.length < 2) return { score: null, label: null, parts: out };
+  if (out.length < 2) return { score: null, label: null, parts: out, building, need: MIN_BASELINE };
   const s = Math.round(clamp(score, 0, 100));
-  return { score: s, label: s >= 75 ? "Ready" : s >= 50 ? "Normal" : "Take it easy", parts: out };
+  return { score: s, label: s >= 75 ? "Ready" : s >= 50 ? "Normal" : "Take it easy", parts: out, building, need: MIN_BASELINE };
 }
 
 /** Whether the band's count for an activity is believable next to the app's own (null or 0: the app counted none). */
@@ -520,6 +524,7 @@ export function healthRoutes(r: Router) {
   });
 
   // Everything the band had for one day, for Home, the calendar and a day's view. null where there is nothing.
+  // sleepH: the day's sleep hours, there also for a day without a night's detail (typed, or synced before nights were)
   // tz: the app's calendar, for the day's steps (recorded activities count in, as on Home)
   r.get("/health/day/:date", async (ctx, p, _b, qs) => {
     const d = dateStr(p.date);
@@ -532,7 +537,7 @@ export function healthRoutes(r: Router) {
     const steps = (await stepsByDay(ctx.q, d, next, tzOf(qs)))[0]?.value ?? null;
     const v = (k: string) => vals.get(k) ?? null;
     return {
-      date: d, sleep,
+      date: d, sleep, sleepH: v("sleep_h"),
       hr: h ? { min: h.min_hr as number | null, max: h.max_hr as number | null, avg: h.avg_hr as number | null, series: (h.hr ?? null) as [number, number][] | null } : null,
       restingHr: v("resting_hr"), hrv: v("hrv"), spo2: v("spo2"), vo2max: v("vo2max"), steps,
       distanceM: v("distance_m"), activeKcal: v("active_kcal"), waterMl: v("water_ml"),

@@ -41,14 +41,25 @@ const KEY = "motusHealthSync";
 const key = () => accounts.active ?? "web";
 export const lastSync = ref<string | null>(readJson<Record<string, string>>(KEY, {})[key()] ?? null);
 const remember = (at: string) => { const all = readJson<Record<string, string>>(KEY, {}); all[key()] = at; writeJson(KEY, all); lastSync.value = at; };
+// and what that read took in: each allowed kind, with what this version reads of it. A plain read goes back only to the
+// last one, so a kind allowed since, or one this version reads more of, would never get its older days without this.
+const READ_KEY = "motusHealthRead";
+// what a version reads of a kind beyond its first: bumped when one starts handing over more (sleep: each night in
+// detail, 0.1.25; heart rate: the day's heart rate, 0.1.26)
+const READS: Partial<Record<Kind, number>> = { sleep: 2, heartRate: 2 };
+const readsOf = (granted: readonly string[]) => HEALTH_KINDS.filter((k) => granted.includes(k)).map((k) => (READS[k] ? `${k}.${READS[k]}` : k));
+const readBefore = () => readJson<Record<string, string[]>>(READ_KEY, {})[key()] ?? [];
+const rememberRead = (reads: string[]) => { const all = readJson<Record<string, string[]>>(READ_KEY, {}); all[key()] = reads; writeJson(READ_KEY, all); };
 
 export const healthStatus = async (): Promise<HealthStatus> => healthSupported() ? plugin().status() : { available: "no", granted: [], history: false, historyAvailable: false };
 export const connectHealth = async (): Promise<HealthStatus> => plugin().connect();
 export const openHealthSettings = () => plugin()?.openSettings();
 
 // the first read goes back 30 days (as far as Health Connect lets a newly allowed app see); later ones overlap a day,
-// since a band often hands over yesterday's sleep and steps only when it next connects
-const FIRST_DAYS = 30, OVERLAP_MS = 86_400_000;
+// since a band often hands over yesterday's sleep and steps only when it next connects. A read that takes in something
+// the last one didn't (a kind allowed since, or more of one after an update) goes back as a first one does, or 90 days
+// when past data is allowed; the engine keeps typed values and adds nothing twice, so the days read again stay as they are.
+const FIRST_DAYS = 30, MORE_DAYS = 90, OVERLAP_MS = 86_400_000, DAY_MS = 86_400_000;
 let running: Promise<HealthResult | null> | null = null;
 export const syncing = ref(false);
 
@@ -65,11 +76,16 @@ async function read(past?: Date): Promise<HealthResult | null> {
     const st = await healthStatus();
     if (st.available !== "yes" || !st.granted.length) return null;
     const started = new Date().toISOString();
-    const from = past ?? (lastSync.value ? new Date(Date.parse(lastSync.value) - OVERLAP_MS) : new Date(Date.now() - FIRST_DAYS * 86_400_000));
+    const reads = readsOf(st.granted), before = readBefore();
+    const fresh = reads.some((k) => !before.includes(k));
+    const back = new Date(Date.now() - (fresh && st.history ? MORE_DAYS : FIRST_DAYS) * DAY_MS);
+    const since = lastSync.value && !fresh ? new Date(Date.parse(lastSync.value) - OVERLAP_MS) : back;
+    const from = past && past < since ? past : since;
     const data: HealthData = await plugin().read({ from: from.toISOString() });
     const r = await api.post<HealthResult>("/health/import", data);
     // a read of the past also reads up to now, so the next one may start here; never earlier than a read already done
     if (!lastSync.value || started > lastSync.value) remember(started);
+    rememberRead(reads);
     // then what the band saw during activities and workouts recorded in Motus over the same days: its steps (a phone in
     // a pocket counts fewer) and heart rate. A failure here keeps the import above; the next sync asks again.
     try { r.ranges = await readRanges(from); } catch (e) { console.warn("Health Connect ranges", e); }

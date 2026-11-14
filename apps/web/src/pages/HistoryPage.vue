@@ -133,7 +133,9 @@ const dayTiles = computed(() => {
   const d = hDay.data.value;
   if (!d || d.date !== sel.value) return [];
   const out: { key: string; icon: string; label: string; value: string; unit: string; sub: string; open?: () => void }[] = [];
+  // a night's detail opens it; a day with only its sleep hours (synced before nights came in, or typed) shows those
   if (d.sleep) { const n = d.sleep; out.push({ key: "sleep", icon: "moon", label: "Sleep", value: mins(asleepMin(n)), unit: "", sub: `${fmt.value.time(n.startAt)}-${fmt.value.time(n.endAt)}`, open: () => (nightOpen.value = n.date) }); }
+  else if (d.sleepH) out.push({ key: "sleep", icon: "moon", label: "Sleep", value: mins(d.sleepH * 60), unit: "", sub: "" });
   if (d.restingHr != null) out.push({ key: "rhr", icon: "heart", label: "Resting", value: String(Math.round(d.restingHr)), unit: "bpm", sub: d.hrv != null ? `HRV ${Math.round(d.hrv)} ms` : "" });
   const dist = d.distanceM ? fmt.value.dist(d.distanceM, 1) : "";
   if (d.steps) out.push({ key: "steps", icon: "steps", label: "Steps", value: fmt.value.num(d.steps, 0), unit: "", sub: dist });

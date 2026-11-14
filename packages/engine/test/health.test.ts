@@ -372,6 +372,27 @@ describe("nights of sleep, daily distance and active calories from a band", () =
     await send(404, "GET", "/health/sleep/2026-11-24");
   });
 
+  it("fills in a night for a day synced before nights were, once, on a read of the past", async () => {
+    // someone else, so this test's nights stay out of the other tests' lists and backups
+    const W = uuidv7();
+    await eng.db.admin.query("INSERT INTO users (id, username) VALUES ($1, 'backfill')", [W]);
+    const as = async (method: string, path: string, body?: unknown, query?: Record<string, string>) => (await eng.handle({ method, path, body, query, userId: W })).body as any;
+    // an app from before nights handed over the day's hours only; a later read of the same days sends hours and night
+    expect(await as("POST", "/health/import", { sleep: [{ date: "2026-10-05", hours: 7.5 }, { date: "2026-10-06", hours: 6 }] })).toMatchObject({ sleep: 2 });
+    await as("PUT", "/daily", { date: "2026-10-06", kind: "sleep_h", value: 6.5 });
+    const again = { sleep: [{ date: "2026-10-05", hours: 7.5 }, { date: "2026-10-06", hours: 6 }], sleepNights: [
+      { date: "2026-10-05", start: "2026-10-04T23:00:00Z", end: "2026-10-05T07:00:00Z", asleepMin: 450, awakeMin: 30 },
+      { date: "2026-10-06", start: "2026-10-05T23:30:00Z", end: "2026-10-06T06:00:00Z", asleepMin: 360, awakeMin: 30 },
+    ] };
+    expect(await as("POST", "/health/import", again)).toMatchObject({ sleep: 0, sleepNights: 2 });
+    expect(await as("POST", "/health/import", again)).toMatchObject({ sleep: 0, sleepNights: 0 });
+    // one entry per day in the log, the typed hours kept
+    const items = (await as("GET", "/health/imports", undefined, { tz: "0", limit: "200" })).items.filter((x: any) => x.kind === "sleep");
+    expect(items.map((x: any) => x.date).sort()).toEqual(["2026-10-05", "2026-10-06"]);
+    expect(items.find((x: any) => x.date === "2026-10-06")).toMatchObject({ value: 6.5, edited: true });
+    expect((await as("GET", "/health/sleep", undefined, { from: "2026-10-01" })).nights.map((x: any) => x.date)).toEqual(["2026-10-06", "2026-10-05"]);
+  });
+
   it("deletes a night with its day's sleep for good, from the log or elsewhere", async () => {
     await call("DELETE", "/health/imports/sleep:2026-11-20");
     await send(404, "GET", "/health/sleep/2026-11-20");
@@ -524,13 +545,16 @@ describe("body fat, water, VO2 max and a day's heart rate from Health Connect", 
     const d = await call("GET", "/health/day/2026-12-01", undefined, { tz: "0" });
     expect(d).toMatchObject({
       date: "2026-12-01", restingHr: 55, hrv: 48, spo2: 97, vo2max: 46, steps: 9000, distanceM: 6500, activeKcal: 420, waterMl: null,
-      sleep: { date: "2026-12-01", asleepMin: 420, deepMin: 80, sleepH: 7 }, hr: { min: 47, max: 162, avg: 71 },
+      sleep: { date: "2026-12-01", asleepMin: 420, deepMin: 80, sleepH: 7 }, sleepH: 7, hr: { min: 47, max: 162, avg: 71 },
     });
     expect(d.hr.series.length).toBe(288);
     expect(d.sleep.hr).toBeUndefined();
     expect(await call("GET", "/health/day/2026-12-09", undefined, { tz: "0" })).toEqual({
-      date: "2026-12-09", sleep: null, hr: null, restingHr: null, hrv: null, spo2: null, vo2max: null, steps: null, distanceM: null, activeKcal: null, waterMl: null,
+      date: "2026-12-09", sleep: null, sleepH: null, hr: null, restingHr: null, hrv: null, spo2: null, vo2max: null, steps: null, distanceM: null, activeKcal: null, waterMl: null,
     });
+    // a day with only its sleep hours (synced before nights came in, or typed) still has its sleep
+    await call("POST", "/health/import", { sleep: [{ date: "2026-12-08", hours: 6.5 }] });
+    expect(await call("GET", "/health/day/2026-12-08", undefined, { tz: "0" })).toMatchObject({ sleep: null, sleepH: 6.5 });
     await send(400, "GET", "/health/day/nope");
   });
 
@@ -568,12 +592,22 @@ describe("readiness", () => {
     expect(readiness([P("sleep", 8, 7, 6), P("hrv", 60, 50)]).parts.map((p) => p.key)).toEqual(["hrv"]);
   });
 
+  it("says which parts are still building their usual, and how far", () => {
+    // the developer's case: a month of sleep, a new band's 5 days of resting heart rate, no HRV
+    const r = readiness([P("sleep", 7.8, 7.2, 28), P("restingHr", 57, 58, 5)]);
+    expect(r).toMatchObject({ score: null, need: 7, building: [{ key: "restingHr", value: 57, days: 5 }] });
+    expect(r.parts.map((p) => p.key)).toEqual(["sleep"]);
+    // a score with one part still building keeps telling about it
+    expect(readiness([P("sleep", 8, 7), P("hrv", 60, 50), P("restingHr", 55, 55, 2)])).toMatchObject({ score: 90, building: [{ key: "restingHr", days: 2 }] });
+    expect(readiness([P("sleep", 8, 7), P("hrv", 60, 50)]).building).toEqual([]);
+  });
+
   it("reads today's values, else yesterday's, against the 28 days before", async () => {
     const W = uuidv7();
     await eng.db.admin.query("INSERT INTO users (id, username) VALUES ($1, 'w')", [W]);
     const as = async (method: string, path: string, body?: unknown, query?: Record<string, string>) => (await eng.handle({ method, path, body, query, userId: W })).body as any;
     const day = (n: number) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
-    expect(await as("GET", "/health/readiness", undefined, { tz: "0" })).toEqual({ score: null, label: null, parts: [], date: day(0) });
+    expect(await as("GET", "/health/readiness", undefined, { tz: "0" })).toEqual({ score: null, label: null, parts: [], building: [], need: 7, date: day(0) });
     const entries = [];
     for (let i = 1; i <= 20; i++) entries.push({ date: day(i), kind: "sleep_h", value: 7 }, { date: day(i + 1), kind: "resting_hr", value: 55 });
     // long before: not part of the usual

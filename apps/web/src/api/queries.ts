@@ -64,7 +64,8 @@ export const useSleepNight = (date: MaybeRef<string>) => useQuery({ queryKey: co
 /** One day from a band: its night (the one that ended that morning), the heart rate through the day (series: [unix
  *  seconds, bpm]), the day's vitals and totals; each null when the band handed nothing over for it */
 export interface HealthDay {
-  date: string; sleep: SleepNight | null; hr: { min: number; max: number; avg: number; series: [number, number][] } | null;
+  /** sleepH: the day's sleep hours, also on a day without a night's detail */
+  date: string; sleep: SleepNight | null; sleepH: number | null; hr: { min: number; max: number; avg: number; series: [number, number][] } | null;
   restingHr: number | null; hrv: number | null; spo2: number | null; vo2max: number | null;
   steps: number | null; distanceM: number | null; activeKcal: number | null; waterMl: number | null;
 }
@@ -72,7 +73,9 @@ export const useHealthDay = (date: MaybeRef<string | null>, enabled: MaybeRef<bo
   queryFn: () => api.get<HealthDay>(`/health/day/${unref(date)}`), enabled: computed(() => !!unref(date) && unref(enabled)) });
 /** How ready for training today, from last night's sleep, resting heart rate and HRV against your usual (baseline) */
 export interface ReadinessPart { key: "sleep" | "restingHr" | "hrv"; value: number | null; baseline: number | null; change: number | null; effect: "up" | "down" | "flat" }
-export interface Readiness { score: number | null; label: "Ready" | "Normal" | "Take it easy" | null; parts: ReadinessPart[]; date: string }
+// building: parts with today's value but fewer than `need` days for a usual yet
+export interface ReadinessBuilding { key: ReadinessPart["key"]; value: number; days: number }
+export interface Readiness { score: number | null; label: "Ready" | "Normal" | "Take it easy" | null; parts: ReadinessPart[]; building: ReadinessBuilding[]; need: number; date: string }
 export const useReadiness = (enabled: MaybeRef<boolean> = true) => useQuery({ queryKey: ["health", "readiness"], queryFn: () => api.get<Readiness>("/health/readiness", { tz: new Date().getTimezoneOffset() }), enabled });
 /** The daily log from a day on (newest first), steps with the recorded activities counted in; the key Home's Today's log uses */
 export const useDaily = (from: string) => useQuery({ queryKey: ["activities", "daily", from], queryFn: () => api.get<{ date: string; kind: string; value: number | string }[]>("/daily", { from, tz: new Date().getTimezoneOffset() }) });
