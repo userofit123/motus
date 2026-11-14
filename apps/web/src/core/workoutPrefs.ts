@@ -35,10 +35,10 @@ export const WORKOUT_PREF_GROUPS: PrefGroup[] = [
   // the switch first, then which cues play, then how they sound: the two sounds and the level
   { id: "sounds", title: "Workout sounds", rows: [
     { key: "sound", label: "Play sounds", hint: "For the rest timer, timed sets and the interval timer" },
-    { key: "warn10", label: "Warn 10 seconds before the rest ends", hint: "One beep, in the countdown sound, 10 seconds before the rest ends", under: "sound" },
-    { key: "countdown", label: "3-2-1 countdown", hint: "Three beeps in the countdown sound, 3 seconds before a rest ends and before a timed set starts; the rest over sound then plays at 0", under: "sound" },
-    { key: "cueSound", label: "Rest over sound", hint: "Plays once when a rest or a timed set reaches 0, right after the last countdown beep", preview: true, under: "sound", options: CUE_SOUND_OPTIONS },
-    { key: "tickSound", label: "Countdown sound", hint: "The beeps of the 10 second warning and of the 3-2-1 (rests, timed sets and the interval timer)", preview: true, under: "sound", options: TICK_SOUND_OPTIONS },
+    { key: "warn10", label: "Warn 10 seconds before the rest ends", hint: "One beep in the countdown sound", under: "sound" },
+    { key: "countdown", label: "3-2-1 countdown", hint: "Three beeps in the countdown sound before a rest ends or a timed set starts", under: "sound" },
+    { key: "cueSound", label: "Rest over sound", hint: "When a rest or a timed set reaches 0", preview: true, under: "sound", options: CUE_SOUND_OPTIONS },
+    { key: "tickSound", label: "Countdown sound", hint: "The 10 second warning and every 3-2-1", preview: true, under: "sound", options: TICK_SOUND_OPTIONS },
     { key: "cueVolume", label: "Sound level", hint: "How loud all workout and timer sounds play", under: "sound", num: { min: 10, max: 100, step: 10, unit: "%" } },
   ] },
   { id: "during", title: "During a workout", rows: [

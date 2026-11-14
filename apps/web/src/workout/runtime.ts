@@ -322,8 +322,9 @@ const TUNES: Record<TuneSound, (level: number) => void> = {
   smallGong: (level) => tone(C4, { dur: 2.2, vol: 0.4, partials: GONG, attack: 0.02, level }), // long, so it sits under an interval's next part
 };
 const note = (v: CueVoice, f: number, delay: number, long: boolean) => TICK_NOTE[cleanTickSound(v.tickSound)](f, delay, long, levelOf(v.cueVolume));
-/** The countdown in the last seconds of a rest or an interval part: a short blip, the last one higher so you know
- *  "now". `v`: the sound and volume (the running workout's, unless given). */
+/** A countdown note in the last seconds of a rest or an interval part. A rest's 3-2-1 is three identical short notes
+ *  (the same as the Android app plays in the background); only the interval timer passes `last` for a higher, longer
+ *  final note that marks the change to the next part. `v`: the sound and volume (the running workout's, unless given). */
 export function tick(last: boolean, v: CueVoice = cues) {
   if (v.sound !== false) note(v, last ? TICK_F * 2 : TICK_F, 0, last); // E7, E6
 }
@@ -350,9 +351,9 @@ export function elapsed(w: { startedAt: string; pausedS: number; pauseStartedAt:
   return Math.max(0, Math.round((end - new Date(w.startedAt).getTime()) / 1000) - (w.pausedS ?? 0));
 }
 /** Lets a sound and volume be heard where they are chosen: the rest over sound as at a rest's end, the countdown
- *  sound as the 3-2-1 of a rest, a second apart. */
+ *  sound as the 3-2-1 of a rest: three identical short notes, a second apart. */
 export const previewCue = (v: CueVoice) => restOver({ ...v, sound: true });
 export function previewTick(v: CueVoice) {
   const w = { ...v, sound: true };
-  [0, 1].forEach((d) => note(w, TICK_F, d, false)); note(w, TICK_F * 2, 2, true);
+  [0, 1, 2].forEach((d) => note(w, TICK_F, d, false));
 }
