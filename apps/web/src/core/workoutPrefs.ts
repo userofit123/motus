@@ -36,7 +36,7 @@ export const WORKOUT_PREF_GROUPS: PrefGroup[] = [
   { id: "sounds", title: "Workout sounds", rows: [
     { key: "sound", label: "Play sounds", hint: "For the rest timer, timed sets and the interval timer" },
     { key: "warn10", label: "Warn 10 seconds before the rest ends", hint: "", under: "sound" },
-    { key: "countdown", label: "3-2-1 countdown", hint: "Before timed sets, and in the last seconds of a rest or an interval", under: "sound" },
+    { key: "countdown", label: "3-2-1 countdown", hint: "Before timed sets, and in the last seconds of a rest", under: "sound" },
     { key: "cueSound", label: "Rest over sound", hint: "When a rest or a timed set ends", preview: true, under: "sound", options: CUE_SOUND_OPTIONS },
     { key: "tickSound", label: "Countdown sound", hint: "The warning, the 3-2-1 of a rest or an interval, and a timed set's start", preview: true, under: "sound", options: TICK_SOUND_OPTIONS },
     { key: "cueVolume", label: "Sound level", hint: "How loud all workout and timer sounds play", under: "sound", num: { min: 10, max: 100, step: 10, unit: "%" } },

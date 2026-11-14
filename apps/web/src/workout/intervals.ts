@@ -83,7 +83,7 @@ export function skipInterval(dir: 1 | -1) {
 }
 
 // Cues at each change: the sound chosen for that part (by default two high beeps to work, one low beep to rest, three
-// when it's all done), and a short tick in the last three seconds of each phase. Whether sound, the 3-2-1 and vibration
+// when it's all done), and a short tick in the last three seconds of each phase. Whether sound and vibration
 // play at all follows Settings → Workout, read fresh each time, as for a rest.
 // After the app was asleep nothing plays for a change that happened a while ago: on Android it already came as a
 // notification, and a late beep would only confuse.
@@ -121,7 +121,7 @@ setInterval(() => {
     return;
   }
   const s = Math.ceil(leftMs / 1000);
-  if (index < ph.length && s <= 3 && s >= 1 && s !== lastSecond && ph[index]!.durS > 5) { lastSecond = s; const c = savedCues(); if (inAppCues() && c.sound && c.countdown) tick(s === 1, c); }
+  if (index < ph.length && s <= 3 && s >= 1 && s !== lastSecond && ph[index]!.durS > 5) { lastSecond = s; const c = savedCues(); if (inAppCues() && c.sound) tick(s === 1, c); }
 }, 200);
 
 // In the background the app's own beeps may stop (a locked phone), so the coming changes are scheduled to come as the
