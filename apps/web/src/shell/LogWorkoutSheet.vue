@@ -41,16 +41,21 @@ watch(() => f.value.routineId, async (id) => {
   // a stale link (a routine deleted since): start from no routine instead
   catch (e) {
     toastError(e);
-    // the user changed something (maybe picked another routine) meanwhile: leave it alone
-    if (snap() !== whole) { opening = false; return; }
-    f.value.routineId = ""; if (opening) { opening = false; start = snap(); }
+    // clear the routine only if it is still the failed one (another may have been picked meanwhile), and take the
+    // emptied form as the starting point only when nothing else was edited during the load
+    const untouched = snap() === whole;
+    if (f.value.routineId === id) f.value.routineId = "";
+    if (opening) { opening = false; if (untouched) start = snap(); }
     return;
   }
-  if (mine() !== before) { opening = false; return; }
+  // another routine was picked meanwhile (its own load fills the sheet), or the name or exercises were edited
+  if (f.value.routineId !== id || mine() !== before) { opening = false; return; }
   f.value.name = r.name;
   exs.value = r.exercises.map((e) => ({ exerciseId: e.exerciseId, sets: e.sets.filter((s) => s.kind !== "warmup").map((s) => ({ weight: s.weightKg != null ? Math.round(fmt.value.fromKg(s.weightKg) * 100) / 100 : null, reps: s.reps, durationS: s.durationS })) }));
-  // only the routine it was opened with counts as the starting point; picking one later is a change
-  if (opening) { opening = false; start = snap(); }
+  // only the routine it was opened with counts as the starting point; picking one later is a change. The baseline is
+  // the form as the load began with just the loaded name and exercises in, so notes or minutes typed during the load
+  // still count as changes
+  if (opening) { opening = false; start = JSON.stringify([{ ...JSON.parse(whole)[0], name: f.value.name }, exs.value]); }
 }, { immediate: true });
 const add = (ids: string[]) => { for (const id of ids) exs.value.push({ exerciseId: id, sets: [{ weight: null, reps: null, durationS: null }, { weight: null, reps: null, durationS: null }, { weight: null, reps: null, durationS: null }] }); picking.value = false; };
 // closing with changes asks first

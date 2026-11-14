@@ -52,7 +52,8 @@ export function usePullDown(sheet: () => HTMLElement | null, scrim: () => HTMLEl
       if (b) b.style.backgroundColor = "transparent";
       setTimeout(() => {
         close();
-        // contract: close() must unmount the sheet synchronously (or refuse); the 50ms check below decides "still open"
+        // contract: close() must unmount the sheet within 50ms (e.g. by the next Vue flush) or refuse/ask; the 50ms check
+        // below decides "still open"
         setTimeout(() => {
           state.pulledAway = false;
           // still there and open: the caller refused (or first asks, "Discard this workout?"), so it slides back
