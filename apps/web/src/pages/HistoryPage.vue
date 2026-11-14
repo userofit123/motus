@@ -157,8 +157,8 @@ const dayTiles = computed(() => {
   const out: { key: string; icon: string; label: string; value: string; unit: string; sub: string; open?: () => void }[] = [];
   // a night's detail opens it; a day with only its sleep hours (synced before nights came in, or typed) shows those
   if (d.sleep) { const n = d.sleep; out.push({ key: "sleep", icon: "moon", label: "Sleep", value: mins(asleepMin(n)), unit: "", sub: `${fmt.value.time(n.startAt)}-${fmt.value.time(n.endAt)}`, open: () => (nightOpen.value = n.date) }); }
-  else if (d.sleepH) out.push({ key: "sleep", icon: "moon", label: "Sleep", value: mins(d.sleepH * 60), unit: "", sub: "" });
-  if (d.restingHr != null) out.push({ key: "rhr", icon: "heart", label: "Resting", value: String(Math.round(d.restingHr)), unit: "bpm", sub: d.hrv != null ? `HRV ${Math.round(d.hrv)} ms` : "" });
+  else if (d.sleepH) out.push({ key: "sleep", icon: "moon", label: "Sleep", value: mins(d.sleepH * 60), unit: "", sub: "Daily log" });
+  if (d.restingHr != null) out.push({ key: "rhr", icon: "heart", label: "Resting heart rate", value: String(Math.round(d.restingHr)), unit: "bpm", sub: d.hrv != null ? `HRV ${Math.round(d.hrv)} ms` : "" });
   const dist = d.distanceM ? fmt.value.dist(d.distanceM, 1) : "";
   if (d.steps) out.push({ key: "steps", icon: "steps", label: "Steps", value: fmt.value.num(d.steps, 0), unit: "", sub: dist });
   else if (dist) { const i = dist.lastIndexOf(" "); out.push({ key: "dist", icon: "walk", label: "Distance", value: dist.slice(0, i), unit: dist.slice(i + 1), sub: "" }); }
@@ -172,7 +172,7 @@ const monthTiles = computed(() => {
   const m = monthStats.value;
   return [
     { key: "workouts", icon: "dumbbell", label: "Workouts", value: String(m.workouts) },
-    { key: "time", icon: "clock", label: "Time", value: fmt.value.dur(m.timeS, true) },
+    { key: "time", icon: "clock", label: "Training time", value: fmt.value.dur(m.timeS, true) },
     { key: "activities", icon: "walk", label: "Activities", value: String(m.activities) },
     { key: "days", icon: "calendar", label: "Active days", value: String(m.days) },
   ];
@@ -242,7 +242,7 @@ await loaded(cal, listWorkouts, listActs);
           <div :class="{ dsess: dayTiles.length }">
           <div v-if="!(byDay.get(sel) ?? []).length" class="tiny">{{ sel >= today ? "Nothing planned. Use Plan to put a routine on this day." : "Nothing on this day." }}</div>
           <div class="list"><div v-for="x in byDay.get(sel) ?? []" :key="x.id ?? x.scheduleId" class="li click" @click="open(x)">
-            <Icon :name="icon(x)" :size="18" :style="{ color: x.color ?? 'var(--acc)' }" /><div class="grow"><div class="t" :style="x.missed ? { opacity: .5 } : undefined">{{ label(x) }}</div><div class="s">{{ x.kind === "planned" ? (x.missed ? "Missed" : "Planned") : fmt.time(x.startedAt) }}<template v-if="hrOf(x)"> · <span class="hr"><Icon name="heart" :size="12" />{{ hrOf(x) }} bpm</span></template></div></div><SessionStats v-if="x.kind !== 'planned'" :x="x" /><span v-if="x.kind === 'planned'" @click.stop><Menu :items="unplanItems(x)" :label="`Options for ${x.name}`" /></span><Icon v-else name="right" class="muted" /></div></div>
+            <Icon :name="icon(x)" :size="18" :style="{ color: x.color ?? 'var(--acc)' }" /><div class="grow"><div class="t" :style="x.missed ? { opacity: .5 } : undefined">{{ label(x) }}</div><div class="s">{{ x.kind === "planned" ? (x.missed ? "Missed" : "Planned workout") : fmt.time(x.startedAt) }}<template v-if="hrOf(x)"> · <span class="hr"><Icon name="heart" :size="12" />{{ hrOf(x) }} bpm</span></template></div></div><SessionStats v-if="x.kind !== 'planned'" :x="x" /><span v-if="x.kind === 'planned'" @click.stop><Menu :items="unplanItems(x)" :label="`Options for ${x.name}`" /></span><Icon v-else name="right" class="muted" /></div></div>
           </div>
         </div>
       </div>
@@ -281,6 +281,9 @@ await loaded(cal, listWorkouts, listActs);
 .dsess { margin-top: var(--cpy); border-top: 1px solid var(--ol); }
 .dsess .li:last-child { border-bottom: 0; padding-bottom: 0; }
 .dsess > .tiny { padding-top: var(--cpy); }
+/* the phone shows these as rows whose label column is what the subtitles leave over: with the tighter gap "Resting heart rate" still fits beside a night's times; a longer label wraps instead of running under its value */
+.dtiles { column-gap: var(--hg); }
+.dtiles .wlb { white-space: normal; }
 .dtiles .ws.click { border-radius: var(--r-sm); cursor: pointer; }
 /* a workout's heart rate in its row's line: the small heart in the line's colour, beside its number */
 .hr { display: inline-flex; align-items: center; gap: 2px; white-space: nowrap; }

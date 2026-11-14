@@ -50,9 +50,9 @@ await loaded(q);
       <div class="acts"><Menu :items="[{ label: 'Rename', icon: 'edit', run: () => edit('name') }, { label: 'Notes', icon: 'note', run: () => edit('notes') }, { label: 'Export GPX', icon: 'download', sep: true, run: gpx, hidden: !a.route?.length }, { label: 'Delete', icon: 'trash', danger: true, sep: true, run: del }]" /></div></div>
     <RouteMap v-if="a.route?.length" :route="a.route" />
     <div class="grid g4 spt">
-      <div class="card stat hero"><div class="lbl">Time</div><div class="val">{{ fmt.clock(a.durationS) }}</div><div class="sub">{{ a.movingS ? `${fmt.clock(a.movingS)} moving` : "" }}</div></div>
+      <div class="card stat hero"><div class="lbl">Duration</div><div class="val">{{ fmt.dur(a.durationS) }}</div><div class="sub">{{ a.movingS ? `${fmt.dur(a.movingS)} moving` : "" }}</div></div>
       <div class="card stat"><div class="lbl">Distance</div><div class="val">{{ a.distanceM ? fmt.num(fmt.distNum(a.distanceM), 2) : "-" }}<small>{{ fmt.du }}</small></div></div>
-      <div class="card stat"><div class="lbl">Pace</div><div class="val" style="font-size:26px">{{ a.distanceM ? fmt.pace(a.movingS || a.durationS, a.distanceM) : "-" }}</div></div>
+      <div class="card stat"><div class="lbl">Average pace</div><div class="val" style="font-size:26px">{{ a.distanceM ? fmt.pace(a.movingS || a.durationS, a.distanceM) : "-" }}</div></div>
       <div class="card stat"><div class="lbl">{{ a.steps ? "Steps" : "Climb" }}</div><div class="val">{{ a.steps ? fmt.num(a.steps, 0) : a.elevationM != null ? Math.round(a.elevationM) : "-" }}<small v-if="!a.steps && a.elevationM != null">m</small></div><div v-if="a.steps && stepsSub" class="sub">{{ stepsSub }}</div></div>
     </div>
     <div v-if="splits.length > 1" class="card spt">

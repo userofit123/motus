@@ -55,7 +55,8 @@ const exHr = (weId: string) => { const h = (w.value?.exerciseHr ?? []).find((x: 
 // a set's records: one kind keeps its own word; two or more become one "3 PRs" badge, as the workout's exercise list
 // counts them, so the set's value never gets squeezed onto several lines on a phone (the kinds stay in the tooltip)
 const prName = (p: string, tracking?: string) => p === "e1rm" ? "1RM PR" : p === "weight" ? (tracking === "assisted" ? "Least help" : "Heaviest") : p === "reps" ? "Rep PR" : p === "volume" ? "Volume PR" : "PR";
-const prNames = (ps: string[], tracking?: string) => ps.map((p) => prName(p, tracking)).join(", ");
+const prWord = (p: string, tracking?: string) => p === "e1rm" ? "best estimated 1RM" : p === "weight" ? (tracking === "assisted" ? "least help" : "heaviest weight") : p === "reps" ? "most reps" : p === "volume" ? "most volume" : "record";
+const prNames = (ps: string[], tracking?: string) => `${ps.length} records: ${ps.map((p) => prWord(p, tracking)).join(", ")}`;
 const delta = (a: number | null | undefined, b: number | null | undefined) => (a == null || b == null || !b ? null : a - b);
 
 async function save(path: string, body: unknown, method: "put" | "del" | "post" = "put") {
@@ -153,18 +154,18 @@ await loaded(q);
       <button class="ib sm plain" :disabled="!w.nextId" aria-label="Later workout" @click="router.push(`/workouts/${w.nextId}`)"><Icon name="right" :size="18" /></button>
     </div>
     <div class="ph">
-      <div><h1>{{ w.name }}</h1><div class="sub">{{ fmt.dateLong(w.startedAt) }} · {{ fmt.time(w.startedAt) }}-{{ fmt.time(w.endedAt) }}<template v-if="w.rating"> · felt {{ RATE[w.rating - 1]?.toLowerCase() }}</template></div></div>
+      <div><h1>{{ w.name }}</h1><div class="sub">{{ fmt.dateLong(w.startedAt) }} · {{ fmt.time(w.startedAt) }}-{{ fmt.time(w.endedAt) }}<template v-if="w.rating"> · Felt {{ RATE[w.rating - 1] }}</template></div></div>
       <div class="acts"><button v-if="editing" class="btn keep" @click="editing = false">Done</button><Menu :items="menu" /></div>
     </div>
 
     <div v-if="justDone" class="card done-hi spb"><span class="bi sg"><Icon name="check" :size="20" /></span>
       <div class="grow" style="min-width:0"><div class="t">Well done - workout saved</div><div class="tiny">{{ doneLine }}{{ rep?.compared ? ` · beat last time on ${rep.beat} of ${rep.compared} exercises` : "" }}</div></div></div>
     <div class="grid g4">
-      <div class="card hero stat"><div class="lbl"><span class="bi"><Icon name="clock" :size="15" /></span>Duration</div><div class="val">{{ fmt.dur(rep.totals.durationS, true) }}</div><div class="sub">{{ fmt.dur(rep.totals.activeS, true) }} active · {{ fmt.dur(rep.totals.restS, true) }} rest</div></div>
+      <div class="card hero stat"><div class="lbl"><span class="bi"><Icon name="clock" :size="15" /></span>Duration</div><div class="val">{{ fmt.dur(rep.totals.durationS, true) }}</div><div class="sub">{{ fmt.dur(rep.totals.activeS, true) }}&nbsp;active&nbsp;· {{ fmt.dur(rep.totals.restS, true) }}&nbsp;rest</div></div>
       <div class="card stat"><div class="lbl"><span class="bi"><Icon name="layers" :size="15" /></span>Volume</div><div class="val">{{ fmt.vol(rep.totals.volumeKg) }}</div>
         <div class="sub">{{ rep.previous ? `${rep.totals.volumeKg >= rep.previous.volumeKg ? "+" : ""}${fmt.vol(rep.totals.volumeKg - rep.previous.volumeKg)} vs last time` : `${rep.totals.reps} reps` }}</div></div>
-      <div class="card stat"><div class="lbl"><span class="bi"><Icon name="dumbbell" :size="15" /></span>Sets</div><div class="val">{{ rep.totals.workingSets }}</div><div class="sub">{{ rep.totals.exercises }} exercises{{ rep.totals.skipped ? ` · ${rep.totals.skipped} skipped` : "" }}</div></div>
-      <div class="card stat"><div class="lbl"><span class="bi"><Icon name="trophy" :size="15" /></span>Records</div><div class="val">{{ rep.totals.records }}</div><div class="sub">{{ rep.compared ? `Beat last time on ${rep.beat} of ${rep.compared}` : "First time for these" }}</div></div>
+      <div class="card stat"><div class="lbl"><span class="bi"><Icon name="dumbbell" :size="15" /></span>Sets</div><div class="val">{{ rep.totals.workingSets }}</div><div class="sub">{{ rep.totals.exercises }}&nbsp;exercises{{ rep.totals.skipped ? ` · ${rep.totals.skipped} skipped` : "" }}</div></div>
+      <div class="card stat"><div class="lbl"><span class="bi"><Icon name="trophy" :size="15" /></span>Records</div><div class="val">{{ rep.totals.records }}</div><div class="sub">{{ rep.compared ? `Better than last time on ${rep.beat} of ${rep.compared} exercises` : "First time doing these exercises" }}</div></div>
     </div>
 
     <div v-if="w.notes" class="banner note spt"><Icon name="note" :size="18" class="note-ic" /><div style="white-space:pre-wrap">{{ w.notes }}</div></div>
@@ -178,7 +179,7 @@ await loaded(q);
           <div class="row hgap">
             <div class="thumb sm click" @click="exerciseSheet = e.exerciseId"><img v-if="e.exercise?.images?.[0]" :src="mediaUrl(e.exercise.images[0])" alt="" /><Icon v-else name="dumbbell" :size="16" /></div>
             <div class="grow click" @click="exerciseSheet = e.exerciseId"><div style="font-weight:600" :style="e.status === 'skipped' ? { textDecoration: 'line-through', opacity: .6 } : undefined">{{ e.exercise?.name }}</div>
-              <div class="tiny">{{ e.status === "skipped" ? `Skipped${e.skipReason ? " · " + e.skipReason : ""}` : verdict(e.id)?.verdict === "better" ? "Better than last time" : verdict(e.id)?.verdict === "worse" ? "Below last time" : verdict(e.id)?.verdict === "first" ? "First time" : "Same as last time" }}{{ e.status === "skipped" ? "" : exHr(e.id) }}</div></div>
+              <div class="tiny">{{ e.status === "skipped" ? `Skipped${e.skipReason && e.skipReason !== "Not done" ? " · " + e.skipReason : ""}` : verdict(e.id)?.verdict === "better" ? "Better than last time" : verdict(e.id)?.verdict === "worse" ? "Below last time" : verdict(e.id)?.verdict === "first" ? "First time" : "Same as last time" }}{{ e.status === "skipped" ? "" : exHr(e.id) }}</div></div>
             <span v-if="verdict(e.id)?.verdict === 'better'" class="pos"><Icon name="arrowUp" :size="18" /></span>
             <span v-else-if="verdict(e.id)?.verdict === 'worse'" class="neg"><Icon name="arrowDown" :size="18" /></span>
             <Menu v-if="editing" :items="[{ label: 'Add a set', icon: 'plus', run: () => save(`/workout-exercises/${e.id}/sets`, { kind: 'normal', done: true }, 'post').then((ok) => ok && savedToast('Set added')) }, { label: e.status === 'skipped' ? 'Mark as done' : 'Mark as skipped', icon: 'skip', run: () => { const st = e.status === 'skipped' ? 'done' : 'skipped'; save(`/workout-exercises/${e.id}`, { status: st }).then((ok) => ok && savedToast(st === 'done' ? 'Marked as done' : 'Marked as skipped')); } }, { label: 'Remove from workout', icon: 'trash', danger: true, sep: true, run: () => save(`/workout-exercises/${e.id}`, undefined, 'del').then((ok) => ok && savedToast('Exercise removed')) }]" />
@@ -189,7 +190,7 @@ await loaded(q);
                 <td :class="sideJoinCls(e.sets, joins.get(e.id) ?? [], j)"><span class="sk" :class="{ w: x.kind === 'warmup', d: x.kind === 'drop', f: x.kind === 'failure' }">{{ setLabel(e.sets, j, !!s.features.unilateral) }}</span></td>
                 <template v-if="!editing">
                   <td style="text-align:start;font-weight:500;white-space:nowrap">{{ fmt.set(x, e.exercise?.tracking) }}<span v-if="x.rpe" class="tiny"> @ {{ x.rpe }}</span></td>
-                  <td class="tiny" style="text-align:end;white-space:nowrap" :title="x.restPlannedS != null ? `Planned rest ${fmt.clock(x.restPlannedS)}` : undefined">{{ x.restActualS != null ? `Rest ${fmt.clock(x.restActualS)}` : "" }}</td>
+                  <td class="tiny" style="text-align:end;white-space:nowrap" :title="x.restPlannedS != null ? `Planned rest ${fmt.clock(x.restPlannedS)}` : undefined">{{ x.restActualS != null && x.restActualS >= 5 ? `Rest ${fmt.clock(x.restActualS)}` : "" }}</td>
                   <td style="text-align:end"><span v-if="x.pr?.length" class="pr" :role="x.pr.length > 1 ? 'img' : undefined" :title="x.pr.length > 1 ? prNames(x.pr, e.exercise?.tracking) : undefined" :aria-label="x.pr.length > 1 ? prNames(x.pr, e.exercise?.tracking) : undefined">{{ x.pr.length > 1 ? `${x.pr.length} PRs` : prName(x.pr[0], e.exercise?.tracking) }}</span></td>
                 </template>
                 <template v-else>
@@ -203,8 +204,8 @@ await loaded(q);
             </tbody>
           </table>
           <div v-if="verdict(e.id)?.last && e.status !== 'skipped'" class="tiny lastt">
-            Last time {{ fmt.date(verdict(e.id).last.startedAt) }}: {{ verdict(e.id).last.e1rm ? `1RM ${fmt.w(verdict(e.id).last.e1rm)}` : `${verdict(e.id).last.reps} reps` }} · {{ fmt.vol(verdict(e.id).last.volumeKg) }}
-            <template v-if="delta(verdict(e.id).now.e1rm, verdict(e.id).last.e1rm)"> · <span :class="delta(verdict(e.id).now.e1rm, verdict(e.id).last.e1rm)! > 0 ? 'pos' : 'neg'">{{ delta(verdict(e.id).now.e1rm, verdict(e.id).last.e1rm)! > 0 ? "+" : "" }}{{ fmt.w(delta(verdict(e.id).now.e1rm, verdict(e.id).last.e1rm)!) }} {{ fmt.wu }} 1RM</span></template>
+            Last time ({{ fmt.date(verdict(e.id).last.startedAt) }}): {{ verdict(e.id).last.e1rm ? `estimated 1RM ${fmt.w(verdict(e.id).last.e1rm)} ${fmt.wu}` : `${verdict(e.id).last.reps} reps` }} · volume {{ fmt.vol(verdict(e.id).last.volumeKg).replace(' ', ' ') }}
+            <template v-if="delta(verdict(e.id).now.e1rm, verdict(e.id).last.e1rm)">. Now <span :class="delta(verdict(e.id).now.e1rm, verdict(e.id).last.e1rm)! > 0 ? 'pos' : 'neg'">{{ delta(verdict(e.id).now.e1rm, verdict(e.id).last.e1rm)! > 0 ? "+" : "" }}{{ fmt.w(delta(verdict(e.id).now.e1rm, verdict(e.id).last.e1rm)!) }} {{ fmt.wu }} estimated 1RM</span></template>
           </div>
           <div v-if="e.notes?.some((x: any) => x.workoutId === w.id)" class="exnotes">
             <NoteItem v-for="n in e.notes.filter((x: any) => x.workoutId === w.id)" :key="n.id" :note="n" :menu="noteMenu(n, e.exercise?.name ?? '')" />
@@ -218,7 +219,7 @@ await loaded(q);
         <!-- from a band worn during it, through Health Connect -->
         <HeartRate v-if="w.hr?.length || w.avgHr" :avg="w.avgHr" :max="w.maxHr" :hr="w.hr" />
         <div v-if="rep.previous" class="card click" @click="router.push(`/workouts/${rep.previous.id}`)"><div class="lbl">Last time ({{ fmt.date(rep.previous.startedAt) }})</div>
-          <div class="tiny" style="margin-top:6px">{{ fmt.dur(rep.previous.durationS, true) }} · {{ fmt.vol(rep.previous.volumeKg) }}</div>
+          <div class="tiny" style="margin-top:6px">{{ fmt.dur(rep.previous.durationS, true) }} · {{ fmt.vol(rep.previous.volumeKg) }} volume</div>
           <div class="tiny" :class="rep.totals.durationS <= rep.previous.durationS ? 'pos' : ''">{{ rep.totals.durationS <= rep.previous.durationS ? `${fmt.dur(rep.previous.durationS - rep.totals.durationS, true)} faster` : `${fmt.dur(rep.totals.durationS - rep.previous.durationS, true)} longer` }}</div></div>
         <div v-if="w.createdReminders?.length" class="card"><div class="lbl hgap">Reminders set</div><div class="nlist"><ReminderItem v-for="m in w.createdReminders" :key="m.id" :reminder="m" :where="m.targetType === 'exercise' ? m.targetName : null" :routine-name="null" when /></div></div>
         <div v-if="rep.totals.avgRestS" class="card tight"><div class="lbl">Average rest</div><div style="font-weight:600;font-size:18px">{{ fmt.clock(rep.totals.avgRestS) }}</div></div>
