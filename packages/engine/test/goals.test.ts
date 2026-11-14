@@ -12,6 +12,9 @@ const call = async (method: string, path: string, body?: unknown) => {
 };
 const log = (kind: string, value: number, daysAgo = 0) => call("POST", "/body", { kind, value, measuredAt: new Date(Date.now() - daysAgo * 86400000).toISOString() });
 const goal = async (id: string) => call("GET", `/goals/${id}`);
+// A one-off goal counts workouts from its start day on, and a new goal starts today: a workout logged a little while ago
+// falls on yesterday just after midnight. Goals that count such a workout start two days back, so the test holds at any hour.
+const before = () => new Date(Date.now() - 2 * 86400000).toISOString().slice(0, 10);
 beforeAll(async () => {
   eng = await createEngine(await pgliteDb("memory://"));
   U = uuidv7();
@@ -245,7 +248,7 @@ describe("editing a goal", () => {
 
   it("re-checks an achieved one-off goal when the data that reached it is corrected", async () => {
     const ex = (await call("POST", "/exercises", { name: "Typo bench", tracking: "weight_reps", primaryMuscles: ["chest"] })).id;
-    const { id } = await call("POST", "/goals", { metric: "max_weight", scopeId: ex, target: 100 });
+    const { id } = await call("POST", "/goals", { metric: "max_weight", scopeId: ex, target: 100, startDate: before() });
     const w = await call("POST", "/workouts/log", { startedAt: new Date(Date.now() - 3600000).toISOString(), durationS: 3600, exercises: [{ exerciseId: ex, sets: [{ weightKg: 1000, reps: 5 }] }] });
     expect((await goal(id)).status).toBe("achieved"); // 1000 kg: a typo for 100
     const set = (await call("GET", `/workouts/${w.id}`)).exercises[0].sets[0];
@@ -272,7 +275,7 @@ describe("editing a goal", () => {
   it("keeps an exercise goal achieved when the exercise is merged into another", async () => {
     const ex = (await call("POST", "/exercises", { name: "Merge press", tracking: "weight_reps", primaryMuscles: ["chest"] })).id;
     const into = (await call("POST", "/exercises", { name: "Merge press kept", tracking: "weight_reps", primaryMuscles: ["chest"] })).id;
-    const { id } = await call("POST", "/goals", { metric: "max_weight", scopeId: ex, target: 100 });
+    const { id } = await call("POST", "/goals", { metric: "max_weight", scopeId: ex, target: 100, startDate: before() });
     await call("POST", "/workouts/log", { startedAt: new Date(Date.now() - 3600000).toISOString(), durationS: 3600, exercises: [{ exerciseId: ex, sets: [{ weightKg: 100, reps: 5 }] }] });
     expect((await goal(id)).status).toBe("achieved");
     await call("POST", `/exercises/${ex}/merge`, { into });
@@ -281,7 +284,7 @@ describe("editing a goal", () => {
 
   it("keeps a routine goal achieved when the routine is gone for good", async () => {
     const r = (await call("POST", "/routines", { name: "Gone day" })).id;
-    const { id } = await call("POST", "/goals", { metric: "routine_count", scopeId: r, target: 1, period: "once" });
+    const { id } = await call("POST", "/goals", { metric: "routine_count", scopeId: r, target: 1, period: "once", startDate: before() });
     const ex = (await call("POST", "/exercises", { name: "Gone day squat", tracking: "weight_reps", primaryMuscles: ["quads"] })).id;
     await call("POST", "/workouts/log", { routineId: r, startedAt: new Date(Date.now() - 60000).toISOString(), durationS: 30, exercises: [{ exerciseId: ex, sets: [{ weightKg: 60, reps: 5 }] }] });
     expect((await goal(id)).status).toBe("achieved");
