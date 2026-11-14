@@ -137,4 +137,28 @@ describe("sync", () => {
     await server.db.admin.query("INSERT INTO user_settings (user_id, data) VALUES ($1, $2) ON CONFLICT (user_id) DO UPDATE SET data = $2", [U, JSON.stringify({ features: { progression: false } })]);
     expect(await push(uuidv7())).toBeNull();
   }, 60000);
+  // a server account's backup and restore are done on the server (apps/web api/replica.ts sends what's waiting first):
+  // a replace there deletes and writes every row again, and the device's copy follows through the ordinary pull
+  it("brings a restore done on the server to the device's copy, with what the device had sent first", async () => {
+    const before = (await D()("POST", "/goals", { metric: "workouts", target: 4, period: "week" })).id;
+    await sync(); // what the app does before a backup
+    expect(await replica.waitingCount(device.db)).toBe(0);
+    const file = await S()("GET", "/export");
+    expect(file.tables.goals.some((g: any) => g.id === before)).toBe(true);
+    // after the backup: a routine added on the device (sent), one renamed on the server
+    const later = (await D()("POST", "/routines", { name: "After the backup", exercises: [] })).id;
+    await sync();
+    await S()("PUT", `/routines/${routineId}`, { name: "Renamed after the backup" });
+    await S()("POST", "/import", { data: file, mode: "replace" });
+    await sync();
+    const rows = async (e: Engine) => {
+      const t = (await on(e)("GET", "/export")).tables as Record<string, any[]>;
+      return Object.fromEntries(Object.entries(t).map(([k, v]) => [k, v.map((r) => JSON.stringify(r)).sort()]));
+    };
+    expect(await rows(device)).toEqual(await rows(server));
+    expect((await D()("GET", "/routines")).some((r: any) => r.id === later)).toBe(false);
+    expect((await D()("GET", `/routines/${routineId}`)).name).not.toBe("Renamed after the backup");
+    expect((await D()("GET", "/goals")).some((g: any) => g.id === before)).toBe(true);
+    expect(await replica.waitingCount(device.db)).toBe(0);
+  }, 120000);
 });

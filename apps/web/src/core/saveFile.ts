@@ -3,13 +3,15 @@
 // save through window.motusNative.saveFile: Android writes into Downloads, the desktop app asks where with a save dialog.
 import { toast } from "./toast";
 
-/** Saves the file and says where it went. False when the person cancelled the desktop app's save dialog. */
-export async function saveFile(blob: Blob, name: string): Promise<boolean> {
+/** Saves the file and says where it went (and `note`, something to know about the file). False when the person
+ * cancelled the desktop app's save dialog. */
+export async function saveFile(blob: Blob, name: string, note = ""): Promise<boolean> {
+  const say = (text: string) => toast(note ? `${text}. ${note}` : text, { ms: 6000 });
   const native = (globalThis as { motusNative?: { saveFile?: (name: string, bytes: Uint8Array) => Promise<string | null> } }).motusNative?.saveFile;
   if (native) {
     const where = await native(name, new Uint8Array(await blob.arrayBuffer()));
     if (!where) return false;
-    toast(`Saved to ${where}`, { ms: 6000 });
+    say(`Saved to ${where}`);
     return true;
   }
   // some browsers only follow a link that is in the page
@@ -17,6 +19,6 @@ export async function saveFile(blob: Blob, name: string): Promise<boolean> {
   a.href = URL.createObjectURL(blob); a.download = name;
   document.body.append(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(a.href), 60000);
-  toast(`Downloading ${name}`, { ms: 6000 });
+  say(`Downloading ${name}`);
   return true;
 }

@@ -22,9 +22,10 @@ export const httpTransport: Transport = {
     else if (body !== undefined) { payload = JSON.stringify(body); headers["content-type"] = "application/json"; }
     let r: Response;
     // A switched-off server (behind Tailscale, on the LAN) often never answers instead of refusing, and the request
-    // would hang for minutes: no answer at all within a while counts as no connection. Uploads can take longer.
+    // would hang for minutes: no answer at all within a while counts as no connection. Uploads can take longer, and so
+    // can a backup or a restore, which carry the photos (up to 256 MB, apps/server).
     const stop = new AbortController();
-    const wait = body instanceof Blob ? 0 : opts?.wait ?? ANSWER_WAIT;
+    const wait = body instanceof Blob || /^\/(export|import)(\?|$)/.test(path) ? 0 : opts?.wait ?? ANSWER_WAIT;
     const timer = wait ? setTimeout(() => stop.abort(), wait) : 0;
     try {
       r = await Promise.race([

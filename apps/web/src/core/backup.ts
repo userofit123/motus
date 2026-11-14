@@ -23,13 +23,34 @@ async function key(password: string, salt: Uint8Array) {
   return crypto.subtle.deriveKey({ name: "PBKDF2", salt, iterations: 310000, hash: "SHA-256" }, base, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
 }
 
-async function makeBackup(password?: string): Promise<Blob> {
+/** What POST /import/preview reads from a Motus file: its head, each table's row count and the workouts' start times.
+ * Not the rows: a backup with photos can be far larger than an ordinary request may be (only POST /import takes it). */
+export function fileHead(data: any): any {
+  if (!data || typeof data !== "object") return data;
+  const tables = data.tables && typeof data.tables === "object" ? data.tables : {};
+  return {
+    app: data.app, format: data.format, schema: data.schema, exportedAt: data.exportedAt, parts: data.parts, settings: data.settings ? {} : undefined,
+    tables: Object.fromEntries(Object.entries(tables).map(([k, v]) => [k, !Array.isArray(v) ? 0 : k === "workouts" ? v.map((w: any) => ({ started_at: w?.started_at })) : v.length])),
+  };
+}
+
+/** What an export left out to stay small enough to restore (apps/server: GET /api/export), in words, or "". */
+export function leftOutText(data: any): string {
+  const p = Number(data?.leftOut?.photos) || 0, v = Number(data?.leftOut?.videos) || 0;
+  if (!p && !v) return "";
+  const n = (k: number, one: string) => `${k} ${one}${k === 1 ? "" : "s"}`;
+  const what = [p ? n(p, "photo") : "", v ? n(v, "video") : ""].filter(Boolean).join(" and ");
+  return `Left out ${what}: too large to restore`;
+}
+
+async function makeBackup(password?: string): Promise<{ blob: Blob; leftOut: string }> {
   const data = await api.get("/export");
+  const leftOut = leftOutText(data);
   const body = await gzip(enc.encode(JSON.stringify(data)));
-  if (!password) return new Blob([new Uint8Array([...MAGIC, 1, 0]), body], { type: "application/octet-stream" });
+  if (!password) return { blob: new Blob([new Uint8Array([...MAGIC, 1, 0]), body], { type: "application/octet-stream" }), leftOut };
   const salt = crypto.getRandomValues(new Uint8Array(16)), iv = crypto.getRandomValues(new Uint8Array(12));
   const ct = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, await key(password, salt), body));
-  return new Blob([new Uint8Array([...MAGIC, 1, 1]), salt, iv, ct], { type: "application/octet-stream" });
+  return { blob: new Blob([new Uint8Array([...MAGIC, 1, 1]), salt, iv, ct], { type: "application/octet-stream" }), leftOut };
 }
 
 /** Reads a .motusbackup (or a plain .json export). Asks for the password through the callback when needed. */
@@ -75,11 +96,12 @@ export async function folderName(): Promise<string | null> { try { return (await
 /** Writes a backup now: into the chosen folder (keeping the newest `keep`), or as a download. Made by hand
  * (`interactive`), it says where the file went. */
 export async function backupNow(o: { password?: string; keep?: number; interactive?: boolean } = {}): Promise<string> {
-  const blob = await makeBackup(o.password);
   const name = backupName();
   const native = (globalThis as any).motusNative?.saveBackup;
+  // made inside the try: a backup that can't be made (no connection to the server) is logged like one that can't be saved
   try {
-    const say = (where: string) => { if (o.interactive !== false) toast(`Saved to ${where}`, { ms: 6000 }); };
+    const { blob, leftOut } = await makeBackup(o.password);
+    const say = (where: string) => { if (o.interactive !== false) toast(leftOut ? `Saved to ${where}. ${leftOut}` : `Saved to ${where}`, { ms: 6000 }); };
     if (native) say(await native(name, new Uint8Array(await blob.arrayBuffer()), o.keep ?? 14));
     else {
       const h = await idb<any>((s) => s.get("dir")).catch(() => null);
@@ -90,7 +112,7 @@ export async function backupNow(o: { password?: string; keep?: number; interacti
         for await (const [n] of h.entries()) if (String(n).endsWith(".motusbackup")) names.push(String(n));
         for (const old of names.sort().reverse().slice(o.keep ?? 14)) await h.removeEntry(old);
         say(`${h.name}/${name}`);
-      } else if (o.interactive !== false) await saveFile(blob, name);
+      } else if (o.interactive !== false) await saveFile(blob, name, leftOut);
       else throw new Error("Pick a backup folder in Settings → Backup");
     }
     setLog({ lastAt: new Date().toISOString(), lastName: name, error: null });

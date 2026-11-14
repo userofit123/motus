@@ -11,6 +11,8 @@
 // their app-given names too, unless renamed since.
 // Names are written out as they were, not read from the shared lists, so a later rename there can't change what this
 // migration did.
+import { seededIds, type SeededGoals } from "./026_unpin_seeded_goals";
+
 const q = (s: string) => `'${s.replace(/'/g, "''")}'`;
 const arr = (xs: string[]) => `ARRAY[${xs.map(q).join(", ")}]::text[]`;
 // metric → its old name, lower-cased as the old title had it, the units it was shown in, and whether it said "under"
@@ -35,10 +37,12 @@ const BODY: [string, string][] = [
 ];
 const values = (rows: string[][]) => rows.map((r) => `(${r.join(", ")})`).join(", ");
 
-export default /* sql */ `
--- not logged for sync (motus.sync_apply, 004): every copy runs this migration and clears its own titles, and a logged
--- change would travel as the whole row and could overwrite a newer edit made on another copy meanwhile
-SELECT set_config('motus.sync_apply', '1', true);
+/** The clearing itself; `ids`: only these goals (a restore of a backup from before this migration, modules/data.ts), and
+ * `seeded`: the two app-made goals' ids as restored (from the file's account, not the one restoring it, see 026). */
+export function clearAutoTitles(ids?: string[], seeded?: SeededGoals): string {
+  const [weekly, steps] = seeded ? seededIds(seeded) : ["md5(user_id::text || ':weekly-target')::uuid::text", "md5(user_id::text || ':daily-steps')::uuid::text"];
+  const only = (col: string) => (ids ? ` AND ${col} = ANY (ARRAY[${ids.map(q).join(", ")}]::uuid[])` : "");
+  return /* sql */ `
 WITH m(metric, name, units, under) AS (VALUES ${values(OLD.map(([m, n, u, under]) => [q(m), q(n), arr(u), String(under)]))}),
 grp(k, n) AS (VALUES ${values(GROUPS.map(([k, n]) => [q(k), q(n)]))}),
 body(k, n) AS (VALUES ${values(BODY.map(([k, n]) => [q(k), q(n)]))}),
@@ -62,7 +66,7 @@ g AS (
             (ARRAY['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'])[d::int + 1], ', ' ORDER BY (d::int - f + 7) % 7)
           FROM jsonb_array_elements_text(x.days) d) FROM generate_series(0, 1) f)
         ELSE ARRAY[' a day'] END END AS pers
-  FROM goals x WHERE x.title <> ''
+  FROM goals x WHERE x.title <> ''${only("x.id")}
 ),
 -- the old title around its number: "<about>: <under >" + n + " <unit> <measure><per>", "<about>: " + n + "<per>" for
 -- sessions, "<measure> to " + n + " <unit>" for the body; runs of spaces were made one
@@ -77,11 +81,19 @@ shapes AS (
   SELECT g.id, g.title, a || ' to ', ' ' || u
     FROM g, unnest(g.abouts) a, unnest(ARRAY['kg', 'lb', 'cm', 'in', '%']) u WHERE g.metric IN ('body_weight', 'body_metric')
 )
-UPDATE goals SET title = '' WHERE id IN (
+UPDATE goals SET title = '' WHERE (id IN (
   SELECT s.id FROM shapes s
   WHERE length(s.title) > length(s.pre) + length(s.suf) AND left(s.title, length(s.pre)) = s.pre AND right(s.title, length(s.suf)) = s.suf
     AND substr(s.title, length(s.pre) + 1, length(s.title) - length(s.pre) - length(s.suf)) ~ '^[0-9]+(\\.[0-9]+)?$'
-) OR (id = md5(user_id::text || ':weekly-target')::uuid AND title = 'Weekly target')
-  OR (id = md5(user_id::text || ':daily-steps')::uuid AND title = 'Daily steps');
+) OR (id::text = ${weekly} AND title = 'Weekly target')
+  OR (id::text = ${steps} AND title = 'Daily steps'))${only("id")};
+`;
+}
+
+export default /* sql */ `
+-- not logged for sync (motus.sync_apply, 004): every copy runs this migration and clears its own titles, and a logged
+-- change would travel as the whole row and could overwrite a newer edit made on another copy meanwhile
+SELECT set_config('motus.sync_apply', '1', true);
+${clearAutoTitles()}
 SELECT set_config('motus.sync_apply', '', true);
 `;

@@ -3,7 +3,7 @@
 // Every change is saved here first and sent to the server when it can be reached; changes made on your other
 // devices come back the same way. The newest change to a row wins (packages/engine/src/sync).
 import { reactive } from "vue";
-import { ApiError, httpTransport, server, setTransport, type Transport } from "./client";
+import { ApiError, httpTransport, server, setTransport, type RequestOptions, type Transport } from "./client";
 import { invalidate, setRemoteHandler } from "./live";
 import { readStr, writeStr } from "../core/prefs";
 
@@ -11,6 +11,9 @@ export const sync = reactive({ on: false, online: true, syncing: false, waiting:
 
 // what only the server can do: signing in, the admin pages, files, and sync itself
 const SERVER_ONLY = /^\/(auth|admin|media|upload|share|version|update-check|events|sync)(\/|\?|$)/;
+// A backup is made and restored on the server, not from the copy here: only the server has the uploaded photos (they go
+// into the file), and a restore done there once reaches every device the usual way. The copy's changes go first.
+const ON_SERVER = /^\/(export|import|import\/preview)(\?|$)/;
 const PAGE_WAIT = 30_000;
 // A failed sync isn't shown as Offline at once: coming back to the app after another one, the phone often hasn't got
 // its connection back yet (or a request cut off while the app was in the background fails as it wakes up), and a
@@ -64,6 +67,7 @@ const http = <T = any>(method: string, path: string, body?: unknown) => httpTran
 const transport: Transport = {
   async request(method, path, body, opts) {
     if (SERVER_ONLY.test(path) || body instanceof Blob) return httpTransport.request(method, path, body, opts);
+    if (ON_SERVER.test(path)) return onServer(method, path, body, opts);
     // your name lives with your sign-in on the server; the copy here follows it
     if (method === "PUT" && path === "/me") {
       const r = await httpTransport.request(method, path, body);
@@ -80,6 +84,33 @@ const transport: Transport = {
     return r.body;
   },
 };
+
+/** A backup or restore (ON_SERVER): what this device hasn't sent yet goes first, or the backup would miss it and a
+ *  restore would be undone by it arriving afterwards; after a restore the copy fetches the result. Without a connection
+ *  it says so rather than making a backup without the photos. */
+async function onServer(method: string, path: string, body?: unknown, opts?: RequestOptions) {
+  const restore = method === "POST" && path === "/import";
+  const preview = path.startsWith("/import/preview");
+  const offline = () => new ApiError(0, `${restore || preview ? "Restoring" : "A backup"} needs a connection to your server. Check your connection.`);
+  if (!preview) {
+    const err = await syncNow();
+    if (err) throw err instanceof ApiError && err.status === 0 ? offline() : err;
+  }
+  try {
+    const r = await httpTransport.request(method, path, body, opts);
+    // the restored data is on the screens when this answers (a big one carries on fetching behind it)
+    if (restore) await Promise.race([syncNow(), new Promise((ok) => setTimeout(ok, 30_000))]);
+    return r;
+  } catch (e) { throw e instanceof ApiError && e.status === 0 ? offline() : e; }
+}
+
+/** A sync now, after the one running (if any). Its error, or null when everything here reached the server. */
+async function syncNow(): Promise<Error | null> {
+  if (timer) { clearTimeout(timer); timer = null; }
+  while (running) await new Promise((ok) => setTimeout(ok, 100));
+  const err = await run();
+  return err ?? (sync.waiting ? new Error("Some changes on this device haven't reached your server yet. Try again in a moment.") : null);
+}
 
 /** One database per server and person. False when this browser can't (or another tab already has it open). */
 export async function startReplica(user: { id: string }): Promise<boolean> {
@@ -160,16 +191,16 @@ export function schedule(ms = 400) {
   timer = setTimeout(run, ms);
 }
 
-/** Send what changed here, then fetch what changed elsewhere. */
-async function run() {
-  if (running) { again = true; return; }
+/** Send what changed here, then fetch what changed elsewhere. Returns what went wrong, if anything. */
+async function run(): Promise<Error | null> {
+  if (running) { again = true; return null; }
   running = true; sync.syncing = true;
   // when the request now in flight began: the grace counts from there, not from the start of a long sync
   let tried = Date.now();
   const call = <T = any>(method: string, path: string, body?: unknown) => { tried = Date.now(); return http<T>(method, path, body); };
   let changed = false, failed = 0;
   // set before each local write (so a write that fails midway counts too): a run that wrote nothing needs no save
-  let wrote = false, ok = false;
+  let wrote = false, ok = false, err: Error | null = null;
   try {
     const meta = await R.replicaMeta(db);
     for (;;) {
@@ -199,9 +230,10 @@ async function run() {
     failingSince = 0;
     Object.assign(sync, { online: true, error: failed ? `${failed} change${failed === 1 ? "" : "s"} from this device didn't fit the server's data` : "", lastAt: Date.now() });
   } catch (e) {
+    err = e as Error;
     // someone else signed in (in another tab): this copy is not theirs, so it stops here and the app opens again as
     // them. The copy stays, with anything not yet sent, for when its person signs in again.
-    if (e instanceof ApiError && e.status === 409) { sync.on = false; location.reload(); return; }
+    if (e instanceof ApiError && e.status === 409) { sync.on = false; location.reload(); return err; }
     if (e instanceof ApiError && e.status === 0) unreachable(tried);
     else {
       // the server answered (with an error), so it is reachable: a later network failure gets its own grace
@@ -218,6 +250,7 @@ async function run() {
     if (changed) invalidate(["*"]);
     if (again) { again = false; schedule(0); }
   }
+  return err;
 }
 
 /** The server didn't answer (or the device says it has no network): Offline once that has lasted OFFLINE_GRACE. */

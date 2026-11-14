@@ -6,8 +6,47 @@ import type { Sql } from "../db";
 import { uuidv7, isUuid } from "../ids";
 import { bad } from "../errors";
 import { oneOf, visible } from "../util";
+import { historyNow } from "../migrations/016_history_now";
+import { repRangeMove } from "../migrations/022_progression_rep_range";
+import { unpinSeededGoals, type SeededGoals } from "../migrations/026_unpin_seeded_goals";
+import { clearAutoTitles } from "../migrations/033_goal_names_only";
 
 const EXPORT_FORMAT = 1;
+// The schema a file was written with: the number of migrations (migrate.ts) when it was made, so a restore knows which
+// of their changes to existing rows the file's rows still need. A test keeps it equal to the number of migrations, so a
+// new one is checked against backups (does the file carry it, does an older file need converting).
+const BACKUP_SCHEMA = 36;
+const NEWER = "This backup is from a newer version of Motus. Update the app first.";
+const DAMAGED = "This backup is damaged and can't be restored.";
+/** The schema a file says it has (refused when newer than this version, or not a whole number from 0 up), or
+ * undefined for a file from before files said it. */
+function fileSchema(data: any): number | undefined {
+  if (data.schema === undefined) return undefined;
+  if (!Number.isSafeInteger(data.schema) || data.schema < 0) throw bad(DAMAGED);
+  // its rows may hold what this version has no place for (new tables and columns), which a restore would drop for good
+  if (data.schema > BACKUP_SCHEMA) throw bad(NEWER);
+  return data.schema;
+}
+// The migrations that changed rows (not only added columns or tables), with the first release that had each (the time
+// of its tag, v0.1.12 / v0.1.15 / v0.1.20 / v0.1.27): a file from before one (its schema, or for a file from before
+// files said their schema, made before that release) gets that change on the way in, only on its own rows. A file made
+// after the release by an app not yet updated still has the old form: 016 and 022 also run on whatever rows of a file
+// without a schema still show it. 015 and 024 are converted row by row below.
+const SINCE = {
+  reminderBody: [14, "2026-11-08T23:55:39Z"], history: [16, "2026-11-08T23:55:39Z"], repRange: [22, "2026-11-10T23:52:11Z"],
+  homePins: [26, "2026-11-13T23:53:22Z"], goalTitles: [33, "2026-11-14T22:32:54Z"],
+} as const;
+const madeBefore = (data: any, [n, at]: readonly [number, string]) =>
+  data.schema !== undefined ? Number(data.schema) < n : String(data.exportedAt ?? "") < at;
+// a v7 id as Motus makes them (ids.ts): version 7, its variant, and a time from 2024 up to a year from now; an id made
+// from md5 has all of these by chance almost never (about once in 200,000)
+const madeAsV7 = (id: string) => {
+  const t = parseInt(id.slice(0, 8) + id.slice(9, 13), 16);
+  return id[14] === "7" && /[89ab]/i.test(id[19]!) && t >= Date.UTC(2024, 0, 1) && t <= Date.now() + 365 * 86400000;
+};
+// an uploaded photo (on a server, a file beside the database) in a file: "media:<id>" in an exercise's images or a
+// progress photo's note, carried in the file's media as a data: URL (apps/server adds them to an export)
+const DATA_URL = /^data:[\w.+-]+\/[\w.+-]+;base64,[A-Za-z0-9+/=]*$/;
 // in the order they are restored (a table only points at tables above it; programs list their routines; notes can be on activities)
 const TABLES = [
   "exercises", "exercise_prefs", "folders", "routines", "routine_exercises", "routine_sets", "routine_versions", "programs", "schedules", "schedule_exceptions",
@@ -92,13 +131,15 @@ export async function exportAll(q: Sql, userId: string, partsAsked?: unknown) {
   for (const g of tables.goals ?? []) if (g.scope === "exercise" && g.scope_id) used.add(g.scope_id);
   const refs = (await q.query("SELECT id, source, source_id FROM exercises WHERE owner_id IS NULL AND id = ANY($1::uuid[])", [[...used]])).rows;
   const settings = parts.includes("other") ? ((await q.query("SELECT data FROM user_settings")).rows[0]?.data ?? {}) : undefined;
-  const user = (await q.query("SELECT username, display_name, email FROM users WHERE id = $1", [userId])).rows[0];
-  return { app: "motus", format: EXPORT_FORMAT, exportedAt: new Date().toISOString(), parts, user, settings, catalogRefs: Object.fromEntries(refs.map((r: any) => [r.id, `${r.source}:${r.source_id}`])), tables };
+  // the account's id too: the goals the app once made by itself have ids from it (026), which a restore elsewhere needs
+  const user = (await q.query("SELECT id, username, display_name, email FROM users WHERE id = $1", [userId])).rows[0];
+  return { app: "motus", format: EXPORT_FORMAT, schema: BACKUP_SCHEMA, exportedAt: new Date().toISOString(), parts, user, settings, catalogRefs: Object.fromEntries(refs.map((r: any) => [r.id, `${r.source}:${r.source_id}`])), tables };
 }
 
 export async function importAll(ctx: Ctx, data: any, mode: "replace" | "merge") {
   if (!data || data.app !== "motus" || !data.tables) throw bad("This is not a Motus export");
   if (data.format > EXPORT_FORMAT) throw bad("This export is from a newer version of Motus. Update the app first.");
+  fileSchema(data);
   if (mode === "replace" && readParts(data.parts).length < PARTS.length) throw bad("This file holds only part of an account, so it can only be added to what you have");
   const q = ctx.q;
   // old id → id here: catalog exercises by their catalog id, custom ones by name, and rows whose id another account uses
@@ -108,6 +149,16 @@ export async function importAll(ctx: Ctx, data: any, mode: "replace" | "merge") 
     const { rows } = await q.query("SELECT id, source || ':' || source_id AS k FROM exercises WHERE owner_id IS NULL");
     const local = new Map(rows.map((r: any) => [r.k, r.id]));
     for (const [oldId, key] of Object.entries(refs)) { const l = local.get(key); if (l) map.set(oldId, l); }
+  }
+  // a photo uploaded to the server the file came from: kept as data in the row (as a local account keeps photos), unless
+  // this server has that upload for this account already (a restore into the same account). A server makes each photo an
+  // upload again before this (apps/server POST /api/import) and leaves none here: only an app without uploads gets here.
+  if (data.media && typeof data.media === "object") {
+    for (const [mid, url] of Object.entries(data.media)) {
+      if (!isUuid(mid) || typeof url !== "string" || !DATA_URL.test(url)) continue;
+      if ((await q.query("SELECT 1 FROM media WHERE id = $1", [mid])).rows.length) continue;
+      map.set(`media:${mid}`, `media:${url}`);
+    }
   }
   // every id in a row (json columns included) is swapped for its id here
   const fix = (v: unknown): unknown => typeof v === "string" ? (map.get(v) ?? v) : Array.isArray(v) ? v.map(fix)
@@ -120,19 +171,29 @@ export async function importAll(ctx: Ctx, data: any, mode: "replace" | "merge") 
     seen.add(rowId);
     return true;
   };
+  let settingsWritten = false;
   if (mode === "replace") {
     for (const t of [...TABLES].reverse()) {
       if (t === "exercises") await q.query("DELETE FROM exercises WHERE owner_id = $1 AND id NOT IN (SELECT exercise_id FROM workout_exercises UNION SELECT exercise_id FROM routine_exercises)", [ctx.userId]);
       else await q.query(`DELETE FROM ${t}`);
     }
-    if (data.settings) await q.query("INSERT INTO user_settings (user_id, data) VALUES ($1, $2) ON CONFLICT (user_id) DO UPDATE SET data = $2", [ctx.userId, JSON.stringify(data.settings)]);
+    if (data.settings) {
+      await q.query("INSERT INTO user_settings (user_id, data) VALUES ($1, $2) ON CONFLICT (user_id) DO UPDATE SET data = $2", [ctx.userId, JSON.stringify(data.settings)]);
+      settingsWritten = true;
+    }
   }
+  // merged into an account whose settings were never changed (a new one, e.g. a local account moved to a server): the
+  // file's settings come along; settings someone chose here are theirs and stay
+  else if (data.settings && typeof data.settings === "object" && !Array.isArray(data.settings))
+    settingsWritten = (await q.query("INSERT INTO user_settings (user_id, data) VALUES ($1, $2) ON CONFLICT (user_id) DO NOTHING RETURNING user_id", [ctx.userId, JSON.stringify(data.settings)])).rows.length > 0;
   const counts: Record<string, number> = {};
-  const jsonCols = new Map<string, Set<string>>();
+  const added: Partial<Record<Table, string[]>> = {};
   for (const t of TABLES) {
     const rows: any[] = Array.isArray(data.tables[t]) ? data.tables[t] : [];
-    const json = jsonCols.get(t) ?? new Set((await q.query("SELECT column_name FROM information_schema.columns WHERE table_name = $1 AND data_type IN ('json', 'jsonb')", [t])).rows.map((x: any) => x.column_name));
-    jsonCols.set(t, json);
+    const colRows = (await q.query("SELECT column_name, data_type FROM information_schema.columns WHERE table_schema = current_schema() AND table_name = $1", [t])).rows;
+    // a column this version doesn't have any more (an older file; a newer one is refused above) is left out rather than failing the restore
+    const known = new Set<string>(colRows.map((x: any) => x.column_name));
+    const json = new Set<string>(colRows.filter((x: any) => x.data_type === "json" || x.data_type === "jsonb").map((x: any) => x.column_name));
     const insert = async (row: Record<string, unknown>) => {
       const cols = Object.keys(row);
       // json columns get JSON (an empty list included); text[] columns get the list as it is
@@ -149,6 +210,9 @@ export async function importAll(ctx: Ctx, data: any, mode: "replace" | "merge") 
       if (!raw || typeof raw !== "object") continue;
       const row: Record<string, unknown> = {};
       for (const [k, v] of Object.entries(raw)) if (/^[a-z_0-9]+$/.test(k)) row[k] = fix(v);
+      // a backup from before 014: "Ready for more weight" reminders carried their numbers in the body too
+      if (t === "reminders" && madeBefore(data, SINCE.reminderBody) && row.action && typeof row.action === "object" && "setWeightKg" in row.action
+        && typeof row.body === "string" && row.body.startsWith("Ready for more weight:")) row.body = "Ready for more weight";
       if (t === "routines") row.based_on_id = null;
       // a set's side is "L", "R" or both together (null), as writeRoutineBody keeps it (021_routine_set_side_check)
       if ((t === "routine_sets" || t === "workout_sets") && "side" in row) row.side = row.side === "L" || row.side === "R" ? row.side : null;
@@ -167,6 +231,7 @@ export async function importAll(ctx: Ctx, data: any, mode: "replace" | "merge") 
       if (t === "exercises") row.tracking = oneOf(row.tracking, TRACKINGS, "weight_reps");
       row[OWNER_COL[t] ?? "user_id"] = ctx.userId;
       if (t === "exercises") row.source = "custom";
+      for (const k of Object.keys(row)) if (!known.has(k)) delete row[k];
       // a note or reminder limited to one routine means nothing without it: left out rather than made unlimited
       if (row.scope_routine_id != null && !(await canSee("routines", row.scope_routine_id))) continue;
       for (const [c, table] of Object.entries(REFS)) if (row[c] != null && !(await canSee(table, row[c]))) row[c] = null;
@@ -181,19 +246,51 @@ export async function importAll(ctx: Ctx, data: any, mode: "replace" | "merge") 
           if (same) { map.set(oldId, same.id); seen.add(same.id); continue; }
         }
       }
-      let added = await insert(row);
-      if (!added && oldId && isUuid(oldId)) {
+      let ok = await insert(row);
+      if (!ok && oldId && isUuid(oldId)) {
         // another account on this server has this id (a copy into a second account): a new id, the same one each time,
         // so importing the file again finds it and adds nothing twice
         const nid = (await q.query<IdRow>("SELECT md5($1 || ':' || $2)::uuid AS id", [ctx.userId, oldId])).rows[0]!;
         map.set(oldId, nid.id); row.id = nid.id;
         if (await canSee(t, nid.id)) continue;
-        added = await insert(row);
+        ok = await insert(row);
       }
-      if (added && typeof row.id === "string") seen.add(row.id);
-      n += added;
+      if (ok && typeof row.id === "string") { seen.add(row.id); (added[t] ??= []).push(row.id); }
+      n += ok;
     }
     counts[t] = n;
+  }
+  // what the migrations since an older file did to existing rows, done to the rows it brought, in the migrations' order
+  const here = (id: unknown) => (typeof id === "string" ? map.get(id) ?? id : null);
+  const showing = (ids: string[] | undefined, since: readonly [number, string], oldForm: Set<string | null>) =>
+    !ids ? [] : madeBefore(data, since) ? ids : data.schema === undefined ? ids.filter((id) => oldForm.has(id)) : [];
+  // History from before 016 kept whole exercises ("exercise", "prefill") rather than their names and muscles
+  const oldHistory = new Set<string | null>((Array.isArray(data.tables.routine_versions) ? data.tables.routine_versions : [])
+    .filter((v: any) => Array.isArray(v?.snapshot?.exercises) && v.snapshot.exercises.some((e: any) => e && typeof e === "object" && ("exercise" in e || "prefill" in e || !("primary" in e))))
+    .map((v: any) => here(v.routine_id)));
+  // sets from before 022 carried the rep range themselves
+  const oldRanges = new Set<string | null>((Array.isArray(data.tables.routine_sets) ? data.tables.routine_sets : [])
+    .filter((x: any) => x && (x.reps_max != null || x.start_reps != null)).map((x: any) => here(x.routine_exercise_id)));
+  const history = showing(added.routines, SINCE.history, oldHistory), ranges = showing(added.routine_exercises, SINCE.repRange, oldRanges);
+  if (history.length) await q.exec(historyNow(history));
+  if (ranges.length) await q.exec(repRangeMove(ranges));
+  // the goals the app once made have ids from the account the file was made in: found by that id, or in a file without
+  // it by their id (not a v7 one, which every goal made by hand has) and what they count
+  const unpin = settingsWritten && madeBefore(data, SINCE.homePins), titles = !!added.goals && madeBefore(data, SINCE.goalTitles);
+  if (unpin || titles) {
+    const goals: any[] = Array.isArray(data.tables.goals) ? data.tables.goals : [];
+    const fileUser = typeof data.user?.id === "string" && isUuid(data.user.id) ? data.user.id : null;
+    const pick = async (key: string, looks: (g: any) => boolean) => {
+      if (fileUser) return (await q.query<IdRow>("SELECT md5($1 || ':' || $2)::uuid::text AS id", [fileUser, key])).rows[0]!.id;
+      return goals.find((g) => g && typeof g.id === "string" && isUuid(g.id) && !madeAsV7(g.id) && looks(g))?.id ?? null;
+    };
+    const fileIds: SeededGoals = {
+      weekly: await pick("weekly-target", (g) => g.scope === "activity" && g.metric === "sessions" && g.period === "week"),
+      steps: await pick("daily-steps", (g) => g.scope === "activity" && g.scope_id == null && g.metric === "steps_avg" && g.period === "day"),
+    };
+    // pins in the file's settings name the file's ids; the goals themselves may have been given new ones here
+    if (unpin) await q.exec(unpinSeededGoals(fileIds));
+    if (titles) await q.exec(clearAutoTitles(added.goals!, { weekly: here(fileIds.weekly), steps: here(fileIds.steps) }));
   }
   ctx.changed("everything");
   return counts;
@@ -335,8 +432,10 @@ export function dataRoutes(r: Router) {
   r.post("/import/preview", async (_ctx, _p, b) => {
     const d = b.data;
     if (!d || d.app !== "motus") throw bad("This is not a Motus export");
-    const counts = Object.fromEntries(Object.entries(d.tables ?? {}).map(([k, v]) => [k, Array.isArray(v) ? v.length : 0]));
-    const dates = (d.tables?.workouts ?? []).map((w: any) => w.started_at).sort();
+    fileSchema(d);
+    // the app sends only the file's head (apps/web core/backup.ts fileHead): counts for tables, workouts' start times
+    const counts = Object.fromEntries(Object.entries(d.tables ?? {}).map(([k, v]) => [k, typeof v === "number" ? v : Array.isArray(v) ? v.length : 0]));
+    const dates = (Array.isArray(d.tables?.workouts) ? d.tables.workouts : []).map((w: any) => w?.started_at).filter(Boolean).sort();
     return { exportedAt: d.exportedAt, format: d.format, parts: readParts(d.parts), whole: readParts(d.parts).length === PARTS.length, counts, settings: !!d.settings, from: dates[0] ?? null, to: dates.at(-1) ?? null };
   });
 

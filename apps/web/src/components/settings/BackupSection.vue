@@ -6,7 +6,7 @@ import { ref } from "vue";
 import { useSettings, saveSettings } from "../../api/queries";
 import { api } from "../../api/client";
 import { invalidate } from "../../api/live";
-import { backupNow, backupLog, readBackup, canPickFolder, pickFolder, folderName } from "../../core/backup";
+import { backupNow, backupLog, readBackup, canPickFolder, pickFolder, folderName, fileHead } from "../../core/backup";
 import { prompt, choose, confirm } from "../../core/ask";
 import { toast, toastError } from "../../core/toast";
 import { native } from "../../core/device";
@@ -36,7 +36,7 @@ async function restore(ev: Event) {
   if (!file) return;
   try {
     const data = await readBackup(file, () => prompt("This backup is encrypted", { text: "Enter its password.", secret: true }));
-    const pv = await api.post("/import/preview", { data });
+    const pv = await api.post("/import/preview", { data: fileHead(data) });
     const mode = await choose(`Restore backup from ${`${fmt.value.date(pv.exportedAt)} ${fmt.value.time(pv.exportedAt)}`}?`, [
       { label: "Merge: add what's missing, keep everything you have", value: "merge" },
       // a file with only some parts (Export & import) can't stand in for everything

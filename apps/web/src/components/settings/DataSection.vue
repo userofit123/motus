@@ -7,6 +7,7 @@ import { useFmt } from "../../core/format";
 import { api } from "../../api/client";
 import { invalidate } from "../../api/live";
 import { saveFile } from "../../core/saveFile";
+import { fileHead, leftOutText } from "../../core/backup";
 import { toast, toastError } from "../../core/toast";
 import { choose, confirm } from "../../core/ask";
 import { useSettings } from "../../api/queries";
@@ -20,7 +21,7 @@ const PART_LABELS = [
   { id: "routines", t: "Routines and folders", s: "With any custom exercises they use" },
   { id: "programs", t: "Programs", s: "Their routines come along" },
   { id: "workouts", t: "Workouts", s: "Finished workouts with their sets and notes" },
-  { id: "other", t: "Everything else", s: "Notes on exercises and activities, reminders, goals, body, settings" },
+  { id: "other", t: "Everything else", s: "Activities, daily log, band data, notes, reminders, goals, body, settings" },
 ];
 // with Programs switched off its choice is hidden, and any programs simply go along with the routines
 const partList = () => PART_LABELS.filter((p) => parts.value![p.id === "programs" && !s.value.features.programs ? "routines" : p.id]).map((p) => p.id);
@@ -30,7 +31,7 @@ async function exportJson() {
     const d = await api.get("/export", { parts: list.join(",") });
     const what = list.length === PART_LABELS.length ? "export" : list.join("-");
     // the choice stays open when the desktop app's save dialog is cancelled
-    if (await saveFile(new Blob([JSON.stringify(d, null, 2)], { type: "application/json" }), `motus-${what}-${new Date().toISOString().slice(0, 10)}.json`)) parts.value = null;
+    if (await saveFile(new Blob([JSON.stringify(d, null, 2)], { type: "application/json" }), `motus-${what}-${new Date().toISOString().slice(0, 10)}.json`, leftOutText(d))) parts.value = null;
   } catch (e) { toastError(e); }
 }
 const plural = (n: number, one: string, many = one + "s") => `${n} ${n === 1 ? one : many}`;
@@ -50,7 +51,7 @@ async function importJson(ev: Event) {
   try {
     const data = JSON.parse(await f.text());
     if (data.motusRoutine) { await importRoutine(data); return; }
-    const pv = await api.post("/import/preview", { data });
+    const pv = await api.post("/import/preview", { data: fileHead(data) });
     const c = pv.counts;
     const what = summary(c) || (anyRows(c) || pv.settings ? "Settings and other details" : "Nothing to add");
     // a file with only some parts can only be added; replacing would empty everything it doesn't hold

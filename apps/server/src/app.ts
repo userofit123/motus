@@ -1,5 +1,6 @@
 // The self-hosted server: sign-in and accounts, the engine behind /api, live updates over SSE,
 // uploaded media, the exercise photos, update checks, and (in production) the web app itself.
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from "fastify";
@@ -9,7 +10,16 @@ import { createEngine, uuidv7, withUser, type Db, type Engine } from "@motus/eng
 import { hashPassword, checkPassword, createSession, deviceLabel, userForToken, tooManyTries, recordFail, validUsername, passwordProblem, newInviteCode, COOKIE, SESSION_DAYS, type SessionUser } from "./auth";
 import { VERSION, API_LEVEL, checkForUpdate } from "./version";
 
-export interface Options { db: Db; dataDir: string; webDir?: string; imagesDir?: string; logger?: boolean; host?: string }
+// the largest Motus file a restore takes (photos and videos in it as data); an export is kept within it
+const RESTORE_LIMIT = 256 * 1024 * 1024;
+// what an upload may be (POST /api/media, and the photos a restore brings)
+const MEDIA_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif", "image/avif", "image/heic", "image/heif", "video/mp4", "application/octet-stream"];
+const MEDIA_LIMIT = 30 * 1024 * 1024;
+// backups and restores running at once: each can hold a whole file in memory (up to RESTORE_LIMIT)
+const BACKUPS_AT_ONCE = 2;
+const BUSY = "A backup or restore is already running. Try again in a moment.";
+
+export interface Options { db: Db; dataDir: string; webDir?: string; imagesDir?: string; logger?: boolean; host?: string; /** tests: a smaller restore limit */ restoreLimit?: number }
 
 /** A local (on-device) account: one person, signed in automatically by the desktop app. Returns a session token for them. */
 export async function localSession(db: Db, name = "Me"): Promise<string> {
@@ -20,14 +30,16 @@ export async function localSession(db: Db, name = "Me"): Promise<string> {
 
 declare module "fastify" { interface FastifyRequest { user: SessionUser | null } }
 
+const asUuid = (hex: string) => `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
+
 export async function buildApp(o: Options): Promise<{ app: FastifyInstance; engine: Engine }> {
   const engine = await createEngine(o.db, { mode: "server" });
   const db = o.db;
+  const restoreLimit = o.restoreLimit ?? RESTORE_LIMIT;
   const app = Fastify({ logger: o.logger ?? false, bodyLimit: 30 * 1024 * 1024, trustProxy: true });
   await app.register(cookie);
   app.decorateRequest("user", null);
-  for (const t of ["image/jpeg", "image/png", "image/webp", "image/gif", "image/avif", "image/heic", "image/heif", "video/mp4", "application/octet-stream"])
-    app.addContentTypeParser(t, { parseAs: "buffer", bodyLimit: 30 * 1024 * 1024 }, (_r, body, done) => done(null, body));
+  for (const t of MEDIA_TYPES) app.addContentTypeParser(t, { parseAs: "buffer", bodyLimit: MEDIA_LIMIT }, (_r, body, done) => done(null, body));
 
   const meta = async (k: string, fallback: unknown) => (await db.admin.query("SELECT value FROM app_meta WHERE key = $1", [k])).rows[0]?.value ?? fallback;
   const setMeta = (k: string, v: unknown) => db.admin.query("INSERT INTO app_meta (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2", [k, JSON.stringify(v)]);
@@ -271,15 +283,33 @@ export async function buildApp(o: Options): Promise<{ app: FastifyInstance; engi
     if (!need(req, reply)) return;
     const buf = req.body as Buffer;
     if (!Buffer.isBuffer(buf) || !buf.length) return reply.code(400).send({ error: "Send the file as the request body" });
-    const mime = String(req.headers["content-type"]);
     const id = uuidv7();
-    const dir = path.join(mediaDir, req.user!.id);
-    fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(path.join(dir, id), buf, { mode: 0o600 });
-    await withUser(db, req.user!.id, (q) => q.query("INSERT INTO media (id, user_id, kind, mime, size, path) VALUES ($1,$2,$3,$4,$5,$6)",
-      [id, req.user!.id, mime.startsWith("video") ? "video" : "image", mime, buf.length, `${req.user!.id}/${id}`]));
+    await saveMedia(req.user!.id, id, String(req.headers["content-type"]), buf);
     return { id, url: `/api/media/${id}` };
   });
+  /** Keeps an upload: the file beside the database, its row in media. True when this call made the row; false when the
+   *  row was there already (a restore's id made from the account and the photo), which is then used as it is. The file is
+   *  written under a name of its own and moved into place only once the row is ours, so a path a kept row points at is
+   *  never removed: a second writer of the same id only drops its own copy (or puts it in place when the file is missing). */
+  async function saveMedia(userId: string, id: string, mime: string, buf: Buffer): Promise<boolean> {
+    const dir = path.join(mediaDir, userId);
+    fs.mkdirSync(dir, { recursive: true });
+    const tmp = path.join(dir, `.${id}.${crypto.randomUUID()}.part`), file = path.join(dir, id);
+    try {
+      // inside the try: a write that fails partway (a full disk) leaves no part file behind
+      fs.writeFileSync(tmp, buf, { mode: 0o600 });
+      const made = await withUser(db, userId, async (q) => (await q.query("INSERT INTO media (id, user_id, kind, mime, size, path) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (id) DO NOTHING RETURNING id",
+        [id, userId, mime.startsWith("video") ? "video" : "image", mime, buf.length, `${userId}/${id}`])).rows.length > 0);
+      if (made) {
+        try { fs.renameSync(tmp, file); } catch (e) { await withUser(db, userId, (q) => q.query("DELETE FROM media WHERE id = $1", [id])); throw e; }
+        return true;
+      }
+      const kept = await withUser(db, userId, async (q) => (await q.query("SELECT path FROM media WHERE id = $1", [id])).rows[0]) as { path: string } | undefined;
+      if (!kept) throw new Error("A media id is taken by another account"); // can't happen: restore ids are made from the account
+      if (!fs.existsSync(path.join(mediaDir, kept.path))) fs.renameSync(tmp, path.join(mediaDir, kept.path)); // the row lost its file: heal it
+      return false;
+    } finally { fs.rmSync(tmp, { force: true }); }
+  }
   app.get("/api/media/:id", async (req, reply) => {
     if (!need(req, reply)) return;
     const id = (req.params as any).id;
@@ -289,6 +319,111 @@ export async function buildApp(o: Options): Promise<{ app: FastifyInstance; engi
     reply.header("content-type", m.mime).header("cache-control", "private, max-age=31536000, immutable");
     return reply.send(fs.createReadStream(path.join(mediaDir, m.path)));
   });
+
+  // One backup or restore at a time per person, and a few on the whole server: each holds a whole file in memory. Taken
+  // before a restore's body is read (onRequest) and held until the handler is done, even when the client goes away
+  // meanwhile (Fastify doesn't stop a handler then, and a retry must not run beside it). Before the handler starts, a
+  // dropped request or an answer sent without it (413, a bad body) gives it back.
+  const running = new Set<string>(), holding = new WeakSet<FastifyRequest>(), working = new WeakSet<FastifyRequest>();
+  const take = (req: FastifyRequest) => {
+    if (running.has(req.user!.id) || running.size >= BACKUPS_AT_ONCE) return false;
+    running.add(req.user!.id); holding.add(req);
+    return true;
+  };
+  const release = (req: FastifyRequest) => { if (holding.delete(req)) running.delete(req.user!.id); };
+  const unlessWorking = async (req: FastifyRequest) => { if (!working.has(req)) release(req); };
+  const oneAtATime = {
+    onRequest: async (req: FastifyRequest, reply: FastifyReply) => {
+      if (!req.user) return reply.code(401).send({ error: "Sign in first" });
+      if (!take(req)) return reply.code(429).send({ error: BUSY });
+      reply.raw.once("close", () => void unlessWorking(req));
+    },
+    onResponse: unlessWorking, onRequestAbort: unlessWorking,
+  };
+  const locked = (handler: (req: FastifyRequest, reply: FastifyReply) => Promise<unknown>) => async (req: FastifyRequest, reply: FastifyReply) => {
+    // given back between the body and the handler (the client left just then): take it again, or wait your turn
+    if (!holding.has(req) && !take(req)) return reply.code(429).send({ error: BUSY });
+    working.add(req);
+    try { return await handler(req, reply); } finally { release(req); }
+  };
+
+  // a Motus file (export or backup) carries the photos its rows point at ("media:<id>"), which live here as files and not
+  // in the database, so they come back on another server or in a local account (modules/data.ts keeps them as data there)
+  app.get("/api/export", oneAtATime, locked(async (req, reply) => {
+    if (!need(req, reply)) return;
+    const res = await engine.handle({ method: "GET", path: "/export", query: req.query as Record<string, string>, userId: req.user!.id });
+    if (res.status !== 200) return reply.code(res.status).send(res.body);
+    const data = res.body as any;
+    const ids = new Set<string>();
+    const walk = (v: unknown): void => {
+      if (typeof v === "string") { const m = /^media:([0-9a-f-]{36})$/.exec(v); if (m) ids.add(m[1]!); }
+      else if (Array.isArray(v)) v.forEach(walk);
+      else if (v && typeof v === "object") Object.values(v).forEach(walk);
+    };
+    walk(data.tables);
+    if (ids.size) {
+      const rows = await withUser(db, req.user!.id, async (q) => (await q.query("SELECT id, mime, path FROM media WHERE id = ANY($1::uuid[])", [[...ids]])).rows) as { id: string; mime: string; path: string }[];
+      // every file must fit the restore's limit (below), sent whole: what doesn't fit is left out, photos before videos
+      // and small before large so the most of them stay, and the file says how many were left out (the app tells you)
+      const sized = (await Promise.all(rows.map(async (m) => {
+        try { return { ...m, size: (await fs.promises.stat(path.join(mediaDir, m.path))).size }; } catch { return null; } // a file gone from disk: the row keeps its reference
+      }))).filter((m) => m != null);
+      const video = (m: { mime: string }) => (m.mime.startsWith("video/") ? 1 : 0);
+      sized.sort((x, y) => video(x) - video(y) || x.size - y.size);
+      let room = restoreLimit - Buffer.byteLength(JSON.stringify(data)) - 1024 * 1024; // the request's own wrapping, with room to spare
+      const media: Record<string, string> = {}, left = { photos: 0, videos: 0 };
+      for (const m of sized) {
+        const cost = Math.ceil(m.size / 3) * 4 + m.mime.length + m.id.length + 24;
+        if (cost > room) { left[video(m) ? "videos" : "photos"]++; continue; }
+        try { media[m.id] = `data:${m.mime};base64,${(await fs.promises.readFile(path.join(mediaDir, m.path))).toString("base64")}`; room -= cost; } catch { /* gone meanwhile */ }
+      }
+      data.media = media;
+      if (left.photos || left.videos) data.leftOut = left;
+    }
+    return data;
+  }));
+  // restoring a backup sends it whole, photos included: each photo becomes an upload here again (the engine would
+  // otherwise keep it as data inside the row, as a local account without uploads does), under an id made from this
+  // account and the photo's id in the file, so restoring the same file again finds it and keeps no second copy
+  app.post("/api/import", { bodyLimit: restoreLimit, ...oneAtATime }, locked(async (req, reply) => {
+    if (!need(req, reply)) return;
+    const userId = req.user!.id;
+    const data = (req.body as any)?.data;
+    const made: string[] = [];
+    const undo = async () => {
+      if (!made.length) return;
+      await withUser(db, userId, (q) => q.query("DELETE FROM media WHERE id = ANY($1::uuid[])", [made]));
+      for (const id of made) fs.rmSync(path.join(mediaDir, userId, id), { force: true });
+    };
+    try {
+      if (data && typeof data === "object" && data.media && typeof data.media === "object" && !Array.isArray(data.media)) {
+        const swap = new Map<string, string>();
+        const have = async (id: string) => (await withUser(db, userId, async (q) => (await q.query("SELECT 1 FROM media WHERE id = $1", [id])).rows)).length > 0;
+        for (const [mid, url] of Object.entries(data.media as Record<string, unknown>)) {
+          delete data.media[mid];
+          if (!/^[0-9a-f-]{36}$/.test(mid) || typeof url !== "string") continue;
+          if (await have(mid)) continue; // this account's own upload (a restore into the same account): the rows point at it already
+          const m = /^data:([\w.+-]+\/[\w.+-]+);base64,([A-Za-z0-9+/=]*)$/.exec(url);
+          // what an upload couldn't be is left out, as is a file too large for one
+          if (!m || !MEDIA_TYPES.includes(m[1]!)) continue;
+          const buf = Buffer.from(m[2]!, "base64");
+          if (!buf.length || buf.length > MEDIA_LIMIT) continue;
+          const id = asUuid(crypto.createHash("md5").update(`${userId}:media:${mid}`).digest("hex"));
+          // only what this restore made is removed again if it fails; a row it found (an earlier restore of the file) stays
+          if (await saveMedia(userId, id, m[1]!, buf)) made.push(id);
+          swap.set(`media:${mid}`, `media:${id}`);
+        }
+        if (swap.size) {
+          const fix = (v: unknown): unknown => typeof v === "string" ? (swap.get(v) ?? v) : Array.isArray(v) ? v.map(fix)
+            : v && typeof v === "object" ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, fix(x)])) : v;
+          data.tables = fix(data.tables);
+        }
+      }
+      const res = await engine.handle({ method: "POST", path: "/import", body: req.body, userId });
+      if (res.status !== 200) await undo();
+      return reply.code(res.status).send(res.body);
+    } catch (e) { await undo(); throw e; }
+  }));
 
   // ----- everything else under /api: the engine -----
   app.all("/api/*", async (req, reply) => {

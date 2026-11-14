@@ -9,7 +9,10 @@ const slimSet = /* sql */ `jsonb_build_object('kind', coalesce(s->'kind', '"norm
   'durationS', s->'durationS', 'distanceM', s->'distanceM', 'rpe', s->'rpe', 'restS', s->'restS')`;
 const arr = (x: string) => `CASE WHEN jsonb_typeof(${x}) = 'array' THEN ${x} ELSE '[]'::jsonb END`;
 
-export default /* sql */ `
+/** `ids`: only these routines' history (a restore of a backup from before this migration, modules/data.ts). */
+export function historyNow(ids?: string[]): string {
+  const only = (col: string) => (ids ? ` AND ${col} = ANY (ARRAY[${ids.map((i) => `'${i.replace(/'/g, "''")}'`).join(", ")}]::uuid[])` : "");
+  return /* sql */ `
 UPDATE routine_versions v SET snapshot = jsonb_build_object(
   'name', coalesce(v.snapshot->'name', '""'), 'description', coalesce(v.snapshot->'description', '""'),
   'exercises', coalesce((SELECT jsonb_agg(jsonb_build_object(
@@ -22,7 +25,8 @@ UPDATE routine_versions v SET snapshot = jsonb_build_object(
       'fixed', to_jsonb(coalesce(e->>'fixed' = 'true', false) OR coalesce(e->>'prefill' = 'target', false)),
       'progression', e->'progression', 'note', coalesce(e->'note', '""'),
       'sets', coalesce((SELECT jsonb_agg(${slimSet} ORDER BY i) FROM jsonb_array_elements(${arr("e->'sets'")}) WITH ORDINALITY AS x(s, i)), '[]'::jsonb)
-    ) ORDER BY n) FROM jsonb_array_elements(${arr("v.snapshot->'exercises'")}) WITH ORDINALITY AS y(e, n)), '[]'::jsonb));
+    ) ORDER BY n) FROM jsonb_array_elements(${arr("v.snapshot->'exercises'")}) WITH ORDINALITY AS y(e, n)), '[]'::jsonb))
+WHERE true${only("v.routine_id")};
 
 INSERT INTO routine_versions (id, user_id, routine_id, snapshot, reason, created_at)
 SELECT md5(r.id::text || ':016_history_now')::uuid, r.user_id, r.id, jsonb_build_object(
@@ -36,6 +40,9 @@ SELECT md5(r.id::text || ':016_history_now')::uuid, r.user_id, r.id, jsonb_build
         FROM routine_sets s WHERE s.routine_exercise_id = re.id), '[]'::jsonb)
     ) ORDER BY re.position) FROM routine_exercises re JOIN exercises e ON e.id = re.exercise_id WHERE re.routine_id = r.id), '[]'::jsonb)),
   'edit', now()
-FROM routines r WHERE r.deleted_at IS NULL
+FROM routines r WHERE r.deleted_at IS NULL${only("r.id")}
 ON CONFLICT (id) DO NOTHING;
 `;
+}
+
+export default historyNow();
