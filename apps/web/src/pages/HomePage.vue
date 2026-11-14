@@ -2,7 +2,7 @@
 // Home (requirement 9): one board of blocks in your order (Edit home, from the ⋮ menu). Today leads; blocks are half a row on
 // a computer (a whole row on the phone) or the whole row; a half-size block left alone in its row takes the whole row. A block with nothing to say right now
 // (no reminder waiting, no goal due soon, no program running) stays away until it has; feature blocks need their feature.
-import { computed, ref, onMounted, onUpdated } from "vue";
+import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
 import { muscleName, num, fromM, percentChange, orderGoals, HOME_BLOCKS, type Goal, type HomePlan, type HomeRecord, type HomeGroup, type HomeWeek } from "@motus/shared";
 import { useHome, useSettings, saveSettings, useAchievements, useGoals, loaded } from "../api/queries";
@@ -35,21 +35,6 @@ const s = useSettings();
 const fmt = useFmt();
 const h = computed(() => home.data.value);
 
-// a half-size block that would be alone in its row (an odd run before a wide block or the end) is marked to take the whole
-// row. Counted on the rendered tiles, since Pinned goals and Your program draw several tiles for one block.
-const grid = ref<HTMLElement | { $el: HTMLElement } | null>(null);
-function markSolo() {
-  const el = grid.value instanceof HTMLElement ? grid.value : grid.value?.$el;
-  if (!el) return;
-  const tiles: HTMLElement[] = [];
-  for (const c of Array.from(el.children) as HTMLElement[]) tiles.push(...(c.classList.contains("pins") ? (Array.from(c.children) as HTMLElement[]) : [c]));
-  let run: HTMLElement[] = [];
-  const close = () => { run.forEach((t, i) => { if (i === run.length - 1 && i % 2 === 0) t.setAttribute("data-solo", ""); else t.removeAttribute("data-solo"); }); run = []; };
-  for (const t of tiles) { if (t.classList.contains("sz-m")) run.push(t); else { t.removeAttribute("data-solo"); close(); } }
-  close();
-}
-onMounted(markSolo);
-onUpdated(markSolo);
 const today = localYmd(new Date());
 // nothing made or done yet: Today says how to begin and the summing-up blocks wait
 const fresh = computed(() => !!h.value && !h.value.routineCount && !h.value.totalWorkouts && !h.value.activityCount && !(s.value.features.programs && h.value.programs?.length));
@@ -239,6 +224,23 @@ function move(id: string, dir: -1 | 1) {
   [all[a], all[b]] = [all[b]!, all[a]!];
   saveSettings({ home: { blocks: all } }, { quiet: true });
 }
+// a half-size tile that would be alone in its row (the last of an odd run before a wide tile or the end) takes the whole row.
+// Counted on the tiles as drawn, in order: Pinned goals draws one tile per goal and Your program one per program; in Edit
+// home every block is one tile. Worked out here rather than read from the page, so it follows every reorder at once
+const solo = computed(() => {
+  const tile = (key: string, id: string) => ({ key, wide: META[id]!.size === "l" });
+  const tiles = editing.value ? listed.value.map((x) => tile(x.id, x.id))
+    : blocks.value.flatMap((id) => id === "pinned" ? pinnedGoals.value.map((g) => tile(`pinned:${g.id}`, id))
+      : id === "program" ? (h.value?.programs ?? []).map((p) => tile(`program:${p.id}`, id)) : [tile(id, id)]);
+  const out = new Set<string>();
+  let run = 0, last = "";
+  for (const t of [...tiles, { key: "", wide: true }]) {
+    if (!t.wide) { run++; last = t.key; continue; }
+    if (run % 2) out.add(last);
+    run = 0;
+  }
+  return out;
+});
 async function reset() {
   if (await confirm("Put Home back the way it started?", { text: "Blocks go back to their first order and switches. Pinned goals stay.", ok: "Reset" })) saveSettings({ home: { blocks: HOME_BLOCKS } });
 }
@@ -276,10 +278,10 @@ await loaded(home, ach);
     </div>
 
     <!-- Edit home: every block there is, in order, at its own size so the layout reads as it will -->
-    <TransitionGroup v-if="editing" ref="grid" name="mv" tag="div" class="hgrid">
-      <div v-for="(x, i) in listed" :key="x.id" class="card etile" :class="[META[x.id]!.size === 'l' ? 'sz-l' : 'sz-m', { off: !x.on && !FIXED.has(x.id) }]">
+    <TransitionGroup v-if="editing" name="mv" tag="div" class="hgrid">
+      <div v-for="(x, i) in listed" :key="x.id" class="card etile" :class="[META[x.id]!.size === 'l' ? 'sz-l' : 'sz-m', { off: !x.on && !FIXED.has(x.id) }]" :data-solo="solo.has(x.id) || undefined">
         <!-- the name and its switch on one row (label left, control right); the arrows have their own row at the foot, so a
-             quarter-width tile has room for the switch on the phone and in a narrow window -->
+             half-width tile has room for the switch in a narrow window -->
         <div class="ch">
           <span class="bi"><Icon :name="META[x.id]!.icon" :size="15" /></span>
           <span v-if="FIXED.has(x.id)" class="t grow">{{ META[x.id]!.name }}</span>
@@ -296,12 +298,12 @@ await loaded(home, ach);
       </div>
     </TransitionGroup>
 
-    <div v-else-if="h" ref="grid" class="hgrid">
+    <div v-else-if="h" class="hgrid">
       <template v-for="id in blocks" :key="id">
         <TodayHero v-if="id === 'today'" :h="h" :fresh="fresh" />
 
         <!-- this week against last week, and workouts per week over eight weeks -->
-        <div v-else-if="id === 'week'" class="card hb wkc sz-m click" v-bind="link('/stats')">
+        <div v-else-if="id === 'week'" class="card hb wkc sz-m click" :data-solo="solo.has(id) || undefined" v-bind="link('/stats')">
           <div class="ch"><span class="bi"><Icon name="stats" :size="15" /></span><span class="t grow">This week</span><span v-if="anyDelta" class="tiny">Vs last week</span></div>
           <div class="wstats" :class="{ n4: weekStats.length === 4, plain: !anyDelta }">
             <div v-for="x in weekStats" :key="x.key" class="ws" role="group" :aria-label="`${[x.label, x.value, x.unit, x.delta].filter(Boolean).join(' ')}, last week ${x.last}`" :title="`Last week ${x.last}`">
@@ -319,7 +321,7 @@ await loaded(home, ach);
              shown without its streak the day it started, ends or was done; both halves end on its periods' dots
              (recurring goals) or its trend (one-off goals) -->
         <div v-else-if="id === 'pinned'" class="pins">
-          <div v-for="g in pinnedGoals" :key="g.id" class="card hb gtile sz-m click" :class="{ hero: reached(g) }" v-bind="link(() => (goalOpen = g.id))">
+          <div v-for="g in pinnedGoals" :key="g.id" class="card hb gtile sz-m click" :class="{ hero: reached(g) }" :data-solo="solo.has(`pinned:${g.id}`) || undefined" v-bind="link(() => (goalOpen = g.id))">
             <div class="gmain">
               <div class="ch"><span class="bi"><Icon :name="goalIcon(g)" :size="15" /></span><span class="t grow ellipsis">{{ g.title }}</span></div>
               <div class="row">
@@ -346,7 +348,7 @@ await loaded(home, ach);
         </div>
 
         <!-- goals ending within two weeks that aren't reached yet -->
-        <div v-else-if="id === 'dueSoon'" class="card hb sz-m">
+        <div v-else-if="id === 'dueSoon'" class="card hb sz-m" :data-solo="solo.has(id) || undefined">
           <div class="ch"><span class="bi warn"><Icon name="target" :size="15" /></span><span class="t grow">Goals due soon</span></div>
           <div class="glist">
             <div v-for="g in dueSoon" :key="g.id" class="grow-row click" v-bind="link(() => (goalOpen = g.id))">
@@ -359,7 +361,7 @@ await loaded(home, ach);
 
         <!-- the program you're following: where you are and the workout it says to do next -->
         <template v-else-if="id === 'program'">
-          <div v-for="p in h.programs" :key="p.id" class="card hb sz-m click prog has-cover" :class="{ dl: p.next?.deload }">
+          <div v-for="p in h.programs" :key="p.id" class="card hb sz-m click prog has-cover" :class="{ dl: p.next?.deload }" :data-solo="solo.has(`program:${p.id}`) || undefined">
             <button class="cover" :aria-label="`Open ${p.name}`" @click="go(`/programs/${p.id}`)" />
             <div class="ch"><span class="bi"><Icon name="routines" :size="15" /></span><span class="t grow ellipsis">{{ p.name }}</span><span class="tiny">{{ p.done }} of {{ p.total }}</span></div>
             <div class="pbar"><i :style="{ width: (p.done / p.total) * 100 + '%' }" /></div>
@@ -373,7 +375,7 @@ await loaded(home, ach);
 
         <!-- muscles: the header on top as on every block, then the figure on the left (as on every muscle card) and beside it
              how many groups were worked and every group with when it last was -->
-        <div v-else-if="id === 'muscles'" class="card hb sz-m click" v-bind="link('/stats?tab=muscles')">
+        <div v-else-if="id === 'muscles'" class="card hb sz-m click" :data-solo="solo.has(id) || undefined" v-bind="link('/stats?tab=muscles')">
           <div class="ch"><span class="bi"><Icon name="activity" :size="15" /></span><span class="t grow">Muscles this week</span></div>
           <div class="mfig">
             <BodyMap class="rbody" :values="{}" :highlight="h.main7" :secondary="h.helpers7" />
@@ -392,7 +394,7 @@ await loaded(home, ach);
         </div>
 
         <!-- up next: what's planned after today's -->
-        <div v-else-if="id === 'upnext'" class="card hb sz-m">
+        <div v-else-if="id === 'upnext'" class="card hb sz-m" :data-solo="solo.has(id) || undefined">
           <div class="ch"><span class="bi"><Icon name="calendar" :size="15" /></span><span class="t grow">Up next</span>
             <button class="lnk" @click="planOpen = { rule: 'once' }"><Icon name="plus" :size="14" />Plan</button><button class="lnk" @click="router.push('/history')">Calendar</button></div>
           <div v-if="!upNext.length" class="tiny">Nothing else planned this week. Plan a routine for certain days and it shows here and in the calendar.</div>
@@ -408,7 +410,7 @@ await loaded(home, ach);
         </div>
 
         <!-- last workout -->
-        <div v-else-if="id === 'previous' && h.last" class="card hb wkc sz-m click has-cover">
+        <div v-else-if="id === 'previous' && h.last" class="card hb wkc sz-m click has-cover" :data-solo="solo.has(id) || undefined">
           <button class="cover" :aria-label="`Open ${h.last.name}`" @click="go(`/workouts/${h.last.id}`)" />
           <div class="ch"><span class="bi"><Icon name="dumbbell" :size="15" /></span><span class="t">Last workout</span>
             <span class="lname"><span class="lnm ellipsis">{{ h.last.name }}</span><span class="sep">·</span><span class="lday">{{ when(h.last.startedAt) }}</span></span></div>
@@ -421,7 +423,7 @@ await loaded(home, ach);
         </div>
 
         <!-- the first active goals -->
-        <div v-else-if="id === 'goals'" class="card hb sz-m">
+        <div v-else-if="id === 'goals'" class="card hb sz-m" :data-solo="solo.has(id) || undefined">
           <div class="ch"><span class="bi"><Icon name="goals" :size="15" /></span><span class="t grow">Goals</span><button class="lnk" @click="router.push('/goals')">All</button></div>
           <div v-if="!h.goals.length" class="tiny">Set one for a lift, a routine, a muscle group, walking or your body. <button class="lnk inl" @click="router.push('/goals?new=1')">Set a goal</button></div>
           <div v-else class="glist">
@@ -436,7 +438,7 @@ await loaded(home, ach);
         <!-- suggestions: worked out from your order of routines, the muscles you've worked and what your routines leave out.
              A routine opens its page; a muscle (or a gap in your routines) opens the exercises for it, and its + starts a
              new routine -->
-        <div v-else-if="id === 'suggest'" class="card hb sz-m">
+        <div v-else-if="id === 'suggest'" class="card hb sz-m" :data-solo="solo.has(id) || undefined">
           <div class="ch"><span class="bi"><Icon name="sparkle" :size="15" /></span><span class="t grow">Suggested</span></div>
           <TransitionGroup name="mv" tag="div" class="list">
             <div v-for="x in h.suggest" :key="x.kind + (x.routineId ?? x.muscle)" class="li click">
@@ -450,12 +452,12 @@ await loaded(home, ach);
           </TransitionGroup>
         </div>
 
-        <div v-else-if="id === 'reminders'" class="card hb sz-m">
+        <div v-else-if="id === 'reminders'" class="card hb sz-m" :data-solo="solo.has(id) || undefined">
           <div class="ch"><span class="bi"><Icon name="bell" :size="15" /></span><span class="t grow">Reminders</span></div>
           <div class="list"><div v-for="r in h.reminders" :key="r.id" class="li click" v-bind="link(() => (reminderView = { r }))"><div class="grow"><div class="t">{{ reminderText(r, fmt) }}</div><div class="s">{{ r.targetName }}</div></div><Icon name="right" :size="16" class="muted" /></div></div>
         </div>
 
-        <div v-else-if="id === 'records'" class="card hb sz-m">
+        <div v-else-if="id === 'records'" class="card hb sz-m" :data-solo="solo.has(id) || undefined">
           <div class="ch"><span class="bi"><Icon name="trophy" :size="15" /></span><span class="t grow">Records</span><span class="tiny">Last 30 days</span></div>
           <div class="list">
             <div v-for="(r, i) in h.records" :key="`${r.workoutId}-${r.exerciseId}-${r.kinds.join()}-${i}`" class="li click" v-bind="link(`/exercises/${r.exerciseId}`)">
@@ -465,19 +467,19 @@ await loaded(home, ach);
           </div>
         </div>
 
-        <div v-else-if="id === 'feed'" class="card hb sz-m">
+        <div v-else-if="id === 'feed'" class="card hb sz-m" :data-solo="solo.has(id) || undefined">
           <div class="ch"><span class="bi"><Icon name="history" :size="15" /></span><span class="t grow">Recent activity</span><button class="lnk" @click="router.push('/history?view=list')">All</button></div>
           <div class="list"><div v-for="x in h.feed.slice(0, 5)" :key="x.id" class="li click" v-bind="link(x.kind === 'workout' ? `/workouts/${x.id}` : `/activities/${x.id}`)">
             <Icon :name="x.kind === 'workout' ? 'dumbbell' : x.type === 'walk' ? 'walk' : 'activity'" :size="18" class="muted" /><div class="grow"><div class="t">{{ x.kind === "workout" ? x.name : x.name || x.type }}</div><div class="s">{{ fmt.date(x.startedAt, { weekday: "short", day: "numeric", month: "short" }) }}</div></div>
             <SessionStats :x="x" /></div></div>
         </div>
 
-        <div v-else-if="id === 'daily'" class="card hb sz-m">
+        <div v-else-if="id === 'daily'" class="card hb sz-m" :data-solo="solo.has(id) || undefined">
           <div class="ch"><span class="bi"><Icon name="moon" :size="15" /></span><span class="t grow">Today's log</span><button class="lnk" @click="dailySheet = true">Other days</button></div>
           <DailyLog />
         </div>
 
-        <div v-else-if="id === 'achievements'" class="card hb sz-m click" v-bind="link('/stats?tab=achievements')">
+        <div v-else-if="id === 'achievements'" class="card hb sz-m click" :data-solo="solo.has(id) || undefined" v-bind="link('/stats?tab=achievements')">
           <div class="ch"><span class="bi"><Icon name="star" :size="15" /></span><span class="t grow">Achievements</span></div>
           <div v-if="!achRecent.length" class="tiny">Finish your first workout for your first one.</div>
           <div class="list"><div v-for="a in achRecent" :key="a.id" class="li"><Icon name="trophy" :size="18" class="ach-on" /><div class="grow"><div class="t">{{ a.name }}</div><div class="s">{{ fmt.date(a.reachedAt, { day: "numeric", month: "short", year: "numeric" }) }}</div></div></div></div>
@@ -518,8 +520,8 @@ await loaded(home, ach);
    keeping the setting rows' 42%, so the row fits at phone width */
 .uprow > .grow { min-width: 0; }
 /* the board: four columns on a computer (blocks span two, wide ones all four), two on the phone. A half-size block left alone
-   in its row (marked data-solo by markSolo) takes the whole row, so any order lays out without holes */
-.hgrid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--spg); grid-auto-flow: row dense; align-items: stretch; }
+   in its row (data-solo, worked out in solo) takes the whole row, so any order lays out without holes, in the order given */
+.hgrid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--spg); align-items: stretch; }
 .sz-m { grid-column: span 2; }
 .sz-l, .sz-m[data-solo] { grid-column: 1 / -1; }
 /* pinned goals are one block in the order but each goal is its own tile in the grid */
@@ -536,7 +538,6 @@ html.phone .hgrid .sz-m { grid-column: 1 / -1; }
 .big { font-size: var(--fs-val); font-weight: 650; letter-spacing: -.8px; line-height: 1.1; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .big small { font-size: var(--fs); font-weight: 500; margin-inline-start: 5px; color: var(--tx2); letter-spacing: 0; }
 .hero .big small, .hero .tiny { color: color-mix(in srgb, var(--onc) 75%, transparent); }
-/* small blocks and the goal tiles' halves are narrow on the phone, so their values shrink with the screen */
 /* a goal's value carries its unit beside the ring ("12,500 steps"), so at 360px the goal half is a little wider and both
    halves' values a step smaller, the same in both halves so they still line up */
 html.phone .gtile .big { font-size: clamp(20px, 6vw, var(--fs-val)); }
