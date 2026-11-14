@@ -333,8 +333,8 @@ nav .navb .acct { width: 40px; height: 40px; border-radius: 50%; background: var
 nav .navb .upd { color: var(--acc); }
 main { position: relative; }
 /* the floating + sits 22px from the edge and is 58px wide: keep that strip free so it never covers a card's right edge
-   (wider than 1480px the centred page leaves it room anyway) */
-@media (max-width: 1480px) { main { padding-right: calc(96px + var(--sr)); } }
+   (wider than 1480px the centred page leaves it room anyway). Both sides, so the page stays centred. */
+@media (max-width: 1480px) { main { padding-left: calc(96px + var(--sr)); padding-right: calc(96px + var(--sr)); } }
 .fab.pos2 { bottom: 22px; }
 
 /* what's running (the workout, a recording), shown on every other page; one bar each, stacked */

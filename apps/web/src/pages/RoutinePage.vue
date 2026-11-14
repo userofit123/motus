@@ -178,6 +178,7 @@ await loaded(r, summaries, notes, rems, schedules, history);
 
     </Transition>
   </div>
+  <div v-else-if="r.isError.value" class="page"><div class="card empty"><b>Routine not found</b><button class="btn tonal" @click="router.push('/routines')">Back to routines</button></div></div>
 </template>
 
 <style scoped>
