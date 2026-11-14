@@ -208,15 +208,12 @@ function bufferOf(ac: AudioContext, id: SoundId) {
 if (typeof window !== "undefined") setTimeout(() => SOUND_IDS.forEach((id) => void fileOf(id)), 2000);
 /** How late a cue may still play; later than this it is dropped (a beep for a moment long gone only confuses). */
 export const LATE_MS = 1000;
-/** A rest over sound shorter than this plays three times in a row (0.25 s apart), so a tap is not missed. */
-const SHORT_S = 0.3;
 /** A countdown sound is cut off after this long (fading out over the last FADE_S), so it is over before the next
  *  second's: of the library only Achievement is longer, and only its fading tail goes. */
 const COUNT_MAX_S = 0.8, FADE_S = 0.08;
-/** Plays a sound `delay` seconds from now at `level` (levelOf), cut to `maxS` when given, and three times 0.25 s apart
- *  when `repeatShort` and it is shorter than SHORT_S. A context that isn't running (the page was hidden, the phone slept) holds its clock still, so it is woken
+/** Plays a sound once, `delay` seconds from now at `level` (levelOf), cut to `maxS` when given. A context that isn't running (the page was hidden, the phone slept) holds its clock still, so it is woken
  *  first, and the sound dropped if that (or loading it) took longer than LATE_MS: a cue is only worth playing on time. */
-function playSound(id: SoundId, o: { level: number; delay?: number; maxS?: number; repeatShort?: boolean }) {
+function playSound(id: SoundId, o: { level: number; delay?: number; maxS?: number }) {
   try {
     const ac = audio(), asked = Date.now();
     void bufferOf(ac, id).then(async (buf) => {
@@ -225,16 +222,13 @@ function playSound(id: SoundId, o: { level: number; delay?: number; maxS?: numbe
       const late = Date.now() - asked;
       if (ac.state !== "running" || late > LATE_MS) return;
       const start = ac.currentTime + 0.01 + Math.max(0, (o.delay ?? 0) - late / 1000);
-      const n = o.repeatShort && buf.duration < SHORT_S ? 3 : 1;
-      for (let i = 0; i < n; i++) {
-        const t = start + i * 0.25, src = ac.createBufferSource(), g = ac.createGain();
-        src.buffer = buf; g.gain.value = o.level;
-        if (o.maxS && buf.duration > o.maxS) {
-          g.gain.setValueAtTime(o.level, t + o.maxS - FADE_S); g.gain.linearRampToValueAtTime(0.0001, t + o.maxS);
-          src.stop(t + o.maxS + 0.01);
-        }
-        src.connect(g).connect(ac.destination); src.start(t);
+      const t = start, src = ac.createBufferSource(), g = ac.createGain();
+      src.buffer = buf; g.gain.value = o.level;
+      if (o.maxS && buf.duration > o.maxS) {
+        g.gain.setValueAtTime(o.level, t + o.maxS - FADE_S); g.gain.linearRampToValueAtTime(0.0001, t + o.maxS);
+        src.stop(t + o.maxS + 0.01);
       }
+      src.connect(g).connect(ac.destination); src.start(t);
     });
   } catch { /* no sound */ }
 }
@@ -250,10 +244,10 @@ export function beep(v: CueVoice = cues) {
   if (v.sound !== false) note(v, 0);
 }
 /** The end of a rest or a timed set, and the start of an interval part, in the rest over sound (or the one given):
- *  played whole, a short one three times in a row. */
+ *  played once, whole. */
 export function restOver(v: CueVoice = cues) {
   if (v.sound === false) return;
-  playSound(cleanWorkoutSound(v.cueSound), { level: levelOf(v.cueVolume), repeatShort: true });
+  playSound(cleanWorkoutSound(v.cueSound), { level: levelOf(v.cueVolume) });
 }
 function speak(text: string) {
   try { const u = new SpeechSynthesisUtterance(text); u.rate = 1.05; speechSynthesis.cancel(); speechSynthesis.speak(u); } catch { /* no voice */ }
@@ -264,8 +258,6 @@ export function elapsed(w: { startedAt: string; pausedS: number; pauseStartedAt:
   return Math.max(0, Math.round((end - new Date(w.startedAt).getTime()) / 1000) - (w.pausedS ?? 0));
 }
 /** Lets a sound and volume be heard where they are chosen: the rest over sound as at a rest's end, the countdown
- *  sound as the 3-2-1 of a rest: three alike, a second apart. */
+ *  sound as one of the 3-2-1 beeps: each plays once. */
 export const previewCue = (v: CueVoice) => restOver({ ...v, sound: true });
-export function previewTick(v: CueVoice) {
-  [0, 1, 2].forEach((d) => note(v, d));
-}
+export const previewTick = (v: CueVoice) => note({ ...v, sound: true }, 0);
