@@ -51,7 +51,16 @@ export function usePullDown(sheet: () => HTMLElement | null, scrim: () => HTMLEl
       setTimeout(() => {
         close();
         // after the caller has had a tick to unmount or hide it, so the sheet is ready for next time
-        setTimeout(() => { s.style.transform = ""; s.style.transition = ""; state.pulledAway = false; }, 50);
+        setTimeout(() => {
+          state.pulledAway = false;
+          // still there and open: the caller refused (or first asks, "Discard this workout?"), so it slides back
+          // and the backdrop dims again, as when a pull falls short
+          if (s.isConnected && enabled()) {
+            s.style.transform = "";
+            if (b) b.style.backgroundColor = "";
+            setTimeout(() => { s.style.transition = ""; if (b) b.style.transition = ""; }, 240);
+          } else { s.style.transform = ""; s.style.transition = ""; if (b) { b.style.transition = ""; b.style.backgroundColor = ""; } }
+        }, 50);
       }, 200);
     } else {
       s.style.transform = "";

@@ -2,7 +2,7 @@
 // Logging a workout after the fact (from a routine or from scratch), on any day. A sheet like the other Log entries
 // (activity, body weight, daily log); wide like the program editor, since it holds exercises and their sets.
 import { computed, ref, watch } from "vue";
-import { usesWeight, usesReps, usesDuration } from "@motus/shared";
+import { usesWeight, usesReps, usesDuration, type Routine } from "@motus/shared";
 import { useRoutines, useExercises } from "../api/queries";
 import { api } from "../api/client";
 import { invalidate } from "../api/live";
@@ -32,19 +32,22 @@ const snap = () => JSON.stringify([f.value, exs.value]);
 let start = snap(), opening = !!props.o.routineId;
 watch(() => f.value.routineId, async (id) => {
   if (!id) return;
-  let r;
-  try { r = await api.get(`/routines/${id}`); }
+  // what the sheet held when the load began: edits made while it loads win over the routine's numbers
+  const before = snap();
+  let r: Routine;
+  try { r = await api.get<Routine>(`/routines/${id}`); }
   // a stale link (a routine deleted since): start from no routine instead
   catch (e) { toastError(e); f.value.routineId = ""; if (opening) { opening = false; start = snap(); } return; }
+  if (snap() !== before) { opening = false; return; }
   f.value.name = r.name;
-  exs.value = r.exercises.map((e: any) => ({ exerciseId: e.exerciseId, sets: e.sets.filter((s: any) => s.kind !== "warmup").map((s: any) => ({ weight: s.weightKg != null ? Math.round(fmt.value.fromKg(s.weightKg) * 100) / 100 : null, reps: s.reps, durationS: s.durationS })) }));
+  exs.value = r.exercises.map((e) => ({ exerciseId: e.exerciseId, sets: e.sets.filter((s) => s.kind !== "warmup").map((s) => ({ weight: s.weightKg != null ? Math.round(fmt.value.fromKg(s.weightKg) * 100) / 100 : null, reps: s.reps, durationS: s.durationS })) }));
   // only the routine it was opened with counts as the starting point; picking one later is a change
   if (opening) { opening = false; start = snap(); }
 }, { immediate: true });
 const add = (ids: string[]) => { for (const id of ids) exs.value.push({ exerciseId: id, sets: [{ weight: null, reps: null, durationS: null }, { weight: null, reps: null, durationS: null }, { weight: null, reps: null, durationS: null }] }); picking.value = false; };
 // closing with changes asks first
 async function close() {
-  if (snap() !== start && !(await confirm("Discard this workout?", { ok: "Discard", danger: true, noHistory: true }))) return;
+  if (snap() !== start && !(await confirm("Discard this workout?", { ok: "Discard", danger: true }))) return;
   emit("close");
 }
 async function save() {
@@ -64,6 +67,7 @@ async function save() {
     <div class="frow"><div class="fld"><label>Day</label><DatePicker v-model="f.date" title="Day" /></div><div class="fld"><label>Start</label><TimePicker v-model="f.time" title="Start" /></div><div class="fld"><label>Minutes</label><input v-model.number="f.minutes" type="number" inputmode="numeric" min="1" /></div></div>
     <div class="fld"><label>Notes</label><input v-model="f.notes" /></div>
     <div class="flbl">Exercises</div>
+    <div v-if="!exs.length" class="tiny lnone">No exercises yet.</div>
     <div v-for="(e, i) in exs" :key="i" class="card tight lex">
       <div class="row hgap"><b class="grow">{{ exById.get(e.exerciseId)?.name }}</b><Menu :items="[{ label: 'Remove this exercise', icon: 'trash', danger: true, run: () => exs.splice(i, 1) }]" /></div>
       <table class="sets"><thead><tr><th>Set</th><th v-if="usesWeight(exById.get(e.exerciseId)?.tracking ?? 'weight_reps')">{{ fmt.wu }}</th><th v-if="usesReps(exById.get(e.exerciseId)?.tracking ?? 'weight_reps')">Reps</th><th v-if="usesDuration(exById.get(e.exerciseId)?.tracking ?? 'weight_reps')">Sec</th><th /></tr></thead>
@@ -85,4 +89,6 @@ async function save() {
 .lex { display: flex; flex-direction: column; gap: var(--hg); margin-bottom: var(--hg); }
 .lex .row.hgap { margin: 0; }
 .lex .qb { align-self: flex-start; }
+/* the empty line keeps the same gap above "Add exercises" as an exercise card does */
+.lnone { margin-bottom: var(--hg); }
 </style>
