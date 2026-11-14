@@ -14,14 +14,8 @@ const props = defineProps<{ goal: Goal }>();
 const reached = computed(() => props.goal.status === "achieved" || !!props.goal.progress?.done);
 const fmt = useFmt();
 const s = useSettings();
-// under the title: how often it counts (or what a named goal measures), and a one-off goal's deadline
-const by = (d: string) => `By ${fmt.value.date(d, { day: "numeric", month: "short", year: "numeric" })}`;
-const sub = computed(() => {
-  const g = props.goal;
-  if (g.period !== "once") return goalSub(g, s.value);
-  if (g.name && g.summary) return g.deadline ? `${g.summary} · ${by(g.deadline)}` : g.summary;
-  return g.deadline ? by(g.deadline) : "One-off";
-});
+// under the title: what a named goal measures and a one-off goal's deadline; nothing when the title says it all
+const sub = computed(() => goalSub(props.goal, s.value));
 </script>
 
 <template>
@@ -29,7 +23,7 @@ const sub = computed(() => {
     <div class="row" style="align-items:flex-start">
       <div class="grow">
         <div style="font-weight:600;line-height:1.3">{{ goal.title }}</div>
-        <div class="tiny" style="margin-top:2px">{{ sub }}</div>
+        <div v-if="sub" class="tiny" style="margin-top:2px">{{ sub }}</div>
       </div>
       <Ring :pct="goal.progress?.pct ?? 0" :size="46" :done="reached" />
     </div>

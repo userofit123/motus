@@ -55,7 +55,7 @@ const menu = computed(() => !g.value ? [] : [
           <div class="tiny">{{ g.status === "achieved" ? `Achieved ${fmt.date(g.achievedAt)}` : g.progress?.done ? `Reached ${periodNow(g).toLowerCase()}` : g.progress?.pace ?? periodNow(g) }}</div>
         </div>
       </div>
-      <div class="tiny gs-when">{{ goalSub(g, s) }} · since {{ fmt.date(g.startDate, { day: "numeric", month: "short", year: "numeric" }) }}{{ g.deadline ? ` · deadline ${fmt.date(g.deadline, { day: "numeric", month: "short", year: "numeric" })}` : "" }}</div>
+      <div class="tiny gs-when">{{ goalSub(g, s) }}{{ goalSub(g, s) ? " · since " : "Since " }}{{ fmt.date(g.startDate, { day: "numeric", month: "short", year: "numeric" }) }}{{ g.deadline && g.period !== "once" ? ` · deadline ${fmt.date(g.deadline, { day: "numeric", month: "short", year: "numeric" })}` : "" }}</div>
 
       <div v-if="periodic" class="grid g2 gs-runs">
         <div class="card stat"><div class="lbl"><span class="bi"><Icon name="flame" :size="15" /></span>Streak</div><div class="val">{{ d.streak }}<small>{{ periodWord(g, d.streak) }}</small></div><div class="sub">in a row</div></div>

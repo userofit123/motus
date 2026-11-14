@@ -1,5 +1,5 @@
 // Stats and the home summary. Sessions come back with their times; the apps group them into days and weeks in their own time zone.
-import { e1rm, GROUPS, WEEKLY_SET_RANGE, liftedKg, LIFTED_SQL, TRACKING_SQL } from "@motus/shared";
+import { e1rm, GROUPS, WEEKLY_SET_RANGE, liftedKg, LIFTED_SQL, TRACKING_SQL, MIN_NIGHT_H } from "@motus/shared";
 import type { Router, Ctx } from "../router";
 import type { Sql } from "../db";
 import { camel, startOfDay, tzOf } from "../util";
@@ -78,13 +78,14 @@ async function exerciseStats(q: Sql, from: string, to: string) {
 }
 
 /** A range's sleep, resting heart rate, HRV and workout heart rate, for Reports: averages over the days (or workouts)
- *  that have them, null when none do. Days run from fromDay up to toDay (not included) on the app's calendar. */
+ *  that have them, null when none do. Days run from fromDay up to toDay (not included) on the app's calendar. Sleep
+ *  averages and counts nights only (MIN_NIGHT_H hours or more), not naps and partial records. */
 async function healthIn(q: Sql, from: string, to: string, fromDay: string, toDay: string) {
   const r = (await q.query(
-    `SELECT avg(value) FILTER (WHERE kind = 'sleep_h') * 60 AS sleep_min, count(*) FILTER (WHERE kind = 'sleep_h') AS nights,
+    `SELECT avg(value) FILTER (WHERE kind = 'sleep_h' AND value >= $5) * 60 AS sleep_min, count(*) FILTER (WHERE kind = 'sleep_h' AND value >= $5) AS nights,
        avg(value) FILTER (WHERE kind = 'resting_hr') AS rhr, avg(value) FILTER (WHERE kind = 'hrv') AS hrv,
        (SELECT avg(avg_hr) FROM workouts WHERE status = 'completed' AND avg_hr IS NOT NULL AND started_at >= $3 AND started_at < $4) AS whr
-     FROM daily_logs WHERE kind IN ('sleep_h', 'resting_hr', 'hrv') AND value > 0 AND date >= $1::date AND date < $2::date`, [fromDay, toDay, from, to])).rows[0] as any;
+     FROM daily_logs WHERE kind IN ('sleep_h', 'resting_hr', 'hrv') AND value > 0 AND date >= $1::date AND date < $2::date`, [fromDay, toDay, from, to, MIN_NIGHT_H])).rows[0] as any;
   const n = (v: unknown) => (v == null ? null : Math.round(Number(v)));
   return { sleepAvgMin: n(r.sleep_min), sleepNights: Number(r.nights), restingHrAvg: n(r.rhr), hrvAvg: n(r.hrv), workoutAvgHr: n(r.whr) };
 }
