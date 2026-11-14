@@ -81,16 +81,15 @@ public class RestCues extends BroadcastReceiver {
         long endAt = intent.getLongExtra("endAt", 0), from = intent.getLongExtra("from", 0);
         String sound = intent.getStringExtra("sound");
         int volume = intent.getIntExtra("volume", 100);
-        // as on screen: the 10 seconds is one long note at 1320 Hz (beep(660)), the 3-2-1 short ones at 1318.5 Hz with the
-        // last ("1") an octave up and long (tick)
+        // as on screen: the 10 seconds is one long note at 1320 Hz (beep(660)), the 3-2-1 short ones at 1318.5 Hz, all
+        // alike (tick(false)): the rest over sound is the "now", so the "1" gets no different note of its own
         long[] due = warn ? new long[] { endAt - 10_000 } : new long[] { endAt - 3000, endAt - 2000, endAt - 1000 };
         long now = System.currentTimeMillis(), last = now;
         for (long d : due) {
             if (d < from - 50 || now - d > LATE_MS) continue; // played on screen before the app went away, or long gone
             long wait = Math.max(0, d - now);
-            boolean one = !warn && d == endAt - 1000;
-            double freq = warn ? 1320 : one ? TICK_F * 2 : TICK_F;
-            audio.postAtTime(() -> play(sound, freq, warn || one, volume), NOTES, SystemClock.uptimeMillis() + wait);
+            double freq = warn ? 1320 : TICK_F;
+            audio.postAtTime(() -> play(sound, freq, warn, volume), NOTES, SystemClock.uptimeMillis() + wait);
             last = Math.max(last, now + wait);
         }
         // the 3-2-1 takes up to 3 seconds: kept awake (and the broadcast open) until its last note has played
