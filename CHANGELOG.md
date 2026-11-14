@@ -2,6 +2,17 @@
 
 The top entry's version is the one the release workflow publishes. Add a new `## [x.y.z]` section to release.
 
+## [0.1.26] - 2026-11-14
+
+- Home has four new blocks that appear once your band's data comes in: Readiness (a score from last night's sleep, resting heart rate and HRV against your usual), Last night (time asleep, bed and wake time, stages), Heart (resting heart rate, HRV and today's heart rate) and Steps today (steps, distance and active calories).
+- During a workout or a recorded activity, the band's latest heart rate shows on the screen and in the bar at the bottom, read every minute (Gadgetbridge passes it on when it syncs with the band, so it can be a few minutes behind).
+- Finished workouts show heart rate per exercise, routines show heart rate per session with a chart, and an exercise's history shows the heart rate of each session.
+- The Calendar shows a day's sleep, resting heart rate and steps, and workouts list their average heart rate. Monthly reports and the year in review show sleep and heart rate. More has Sleep and Heart when there's data.
+- New goal: average sleep per night.
+- Health Connect also brings in body fat, water (into the daily log), VO2 max and your heart rate through the day.
+- A finished workout's set rows keep the weight and reps on one line on phones; a set with several records shows one "N PRs" badge.
+- Updating adds a small database change on first start.
+
 ## [0.1.25] - 2026-11-14
 
 - Stats has a Sleep tab when your band sends sleep: last night with its stages (deep, light, REM, awake), heart rate, blood oxygen and breathing, averages for bedtime, wake time and time asleep, how regular your sleep is, short insights, and every night with its own detail.
