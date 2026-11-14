@@ -10,6 +10,8 @@ export interface Db {
   /** One transaction. */
   tx<T>(fn: (q: Sql) => Promise<T>): Promise<T>;
   close(): Promise<void>;
+  /** Waits until every change is on disk, where saving runs behind the queries (PGlite in a browser). */
+  flush?(): Promise<void>;
   kind: "pg" | "pglite";
 }
 

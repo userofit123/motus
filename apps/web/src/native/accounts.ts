@@ -33,6 +33,8 @@ async function localTransport(acc: Account): Promise<Transport> {
       const [p, qs] = path.split("?");
       const r = await engine.handle({ method, path: p, query: Object.fromEntries(new URLSearchParams(qs ?? "")), body, userId });
       if (r.status !== 200) throw new ApiError(r.status, r.body?.error ?? "Something went wrong");
+      // this phone holds the only copy: a change counts as saved only once it is on disk (reads skip this)
+      if (method !== "GET") await db.flush?.();
       return r.body;
     },
   };

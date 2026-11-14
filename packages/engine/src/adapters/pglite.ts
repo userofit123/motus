@@ -8,8 +8,10 @@ const ANALYZE_EVERY = 500;
 export async function pgliteDb(dataDir = "memory://"): Promise<Db> {
   // In a browser the files live in IndexedDB, and by default every query waits until PGlite has compared all its files
   // with IndexedDB and written back the changed ones: about 50 ms per read and 80 ms per write in Chromium (under 1 ms
-  // without it), so a page that asks for a few things took a second or more. Relaxed, the query answers at once and
-  // the write-back starts straight after it in the background (a closed tab can lose only the last fraction of a second).
+  // without it), so a page that asks for a few things took a second or more. Relaxed, a query answers at once and the
+  // write-back runs behind it. Reads stay that way; a change must not be lost once the app shows it saved (the
+  // replica's unsent changes and a local account's only copy live in this database), so the web transports call
+  // flush() after every change, which waits for the write-back.
   const lite = await PGlite.create(dataDir, { parsers: PARSERS as any, relaxedDurability: dataDir.startsWith("idb://") });
   // PGlite runs one query at a time; queue transactions so they never interleave
   let chain: Promise<unknown> = Promise.resolve();
@@ -32,6 +34,9 @@ export async function pgliteDb(dataDir = "memory://"): Promise<Db> {
       if (++txs % ANALYZE_EVERY === 0) analyze();
       return run(async () => (await lite.transaction((tx) => fn({ query: (t, p) => tx.query(t, p as any[]) as any, exec: async (t) => { await tx.exec(t); } })))!);
     },
+    // straight to the file system's save: lite.syncToFs() doesn't wait when relaxed. Queued so no query changes the
+    // files while they are saved.
+    flush: () => run(async () => { await lite.fs?.syncToFs(); }),
     close: () => lite.close(),
   };
 }

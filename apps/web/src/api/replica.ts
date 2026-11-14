@@ -71,6 +71,8 @@ const transport: Transport = {
     const r = await eng.handle({ method, path: p, query: Object.fromEntries(new URLSearchParams(qs ?? "")), body, userId });
     if (r.status === 404 && r.body?.error === "Not found") return httpTransport.request(method, path, body); // not one of the engine's
     if (r.status !== 200) throw new ApiError(r.status, r.body?.error ?? "Something went wrong");
+    // a change counts as saved only once it is on disk: until sent it exists nowhere else (reads skip this)
+    if (method !== "GET") await db.flush?.();
     return r.body;
   },
 };
@@ -119,7 +121,12 @@ export async function startReplica(user: { id: string }): Promise<boolean> {
   addEventListener("online", () => schedule(0), { signal });
   addEventListener("offline", () => unreachable(), { signal });
   // whatever failed while the app was in the background (the phone cuts its network) says nothing about now
-  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") { failingSince = 0; shownAt = Date.now(); schedule(0); } }, { signal });
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") { failingSince = 0; shownAt = Date.now(); schedule(0); }
+    // the app going to the background may be the last chance for a while to send what is waiting
+    // (noted unsent at once on every change, while sync.waiting is only counted by the next sync)
+    else if (readStr(UNSENT(), "0") !== "0") schedule(0);
+  }, { signal });
   tick = setInterval(() => schedule(0), PAGE_WAIT);
   sync.waiting = await R.waitingCount(db);
   noteUnsent(sync.waiting);
