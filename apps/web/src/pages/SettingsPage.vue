@@ -40,6 +40,8 @@ const s = useSettings();
 const sec = computed(() => String(route.params.section || (isPhone.value ? "" : "account")));
 // the sections in groups, so the list reads as a few short ones: [key, name, icon, what's in it]
 type Section = [key: string, name: string, icon: string, hint: string];
+// what Integrations holds, named after the features that are on
+const integrationsHint = computed(() => [s.value.features.healthConnect && "Health Connect", s.value.features.apiTokens && "API tokens", s.value.features.mcp && "Ask Claude"].filter(Boolean).join(", "));
 const GROUPS = computed<[string, Section[]][]>(() => [
   ["You", [["account", "Account", "user", "Name, password, devices, sync"],
     // the apps keep several servers and on-device accounts; in a browser the server is the site, so this only names it
@@ -47,7 +49,7 @@ const GROUPS = computed<[string, Section[]][]>(() => [
   ["Training", [["workout", "Workout defaults", "dumbbell", "Rest times, sets, timer, sounds, progression"], ["activities", "Activity types", "walk", "Walk, run, ride and your own"], ["features", "Features", "sparkle", "Switch extras on or off"]]],
   ["App", [["units", "Units & formats", "scale", "kg or lb, dates, work week"], ["appearance", "Appearance", "palette", "Colours, style, layout"], ["notifications", "Notifications", "bell", "Planned workouts"]]],
   ["Your data", [["backup", "Backup & restore", "download", "A copy of everything"], ["data", "Export & import", "upload", "Motus files, CSV, other apps"], ["log", "Activity log", "history", "Everything you changed"]]],
-  ["About", [["versions", "App & Versions", "refresh", "Installed version, downloads"], ["changelog", "What's new", "sparkle", "Release notes"], ...(s.value.features.apiTokens || s.value.features.mcp ? [["integrations", "Integrations", "link", "API tokens, Ask Claude"] as Section] : []),
+  ["About", [["versions", "App & Versions", "refresh", "Installed version, downloads"], ["changelog", "What's new", "sparkle", "Release notes"], ...(s.value.features.apiTokens || s.value.features.mcp || s.value.features.healthConnect ? [["integrations", "Integrations", "link", integrationsHint.value] as Section] : []),
     ...(session.user?.role === "admin" ? [["admin", "Server admin", "server", "People, invites, sign-ups"] as Section] : []), ["about", "About Motus", "info", "Version, credits"]]],
 ]);
 const SECTIONS = computed(() => GROUPS.value.flatMap(([, xs]) => xs));

@@ -31,7 +31,7 @@ export const FEATURES: FeatureDef[] = [
   { id: "standards", group: "Insights", name: "Strength standards", desc: "How your lifts compare, relative to body weight.", on: true },
   { id: "shareImage", group: "Insights", name: "Share image", desc: "Make an image of a finished workout.", on: false },
   // Integrations
-  { id: "healthConnect", group: "Integrations", name: "Health Connect", desc: "Read steps, weight and watch workouts on Android, and write your workouts back.", on: false, ready: false },
+  { id: "healthConnect", group: "Integrations", name: "Health Connect", desc: "Steps, sleep, weight and workouts from a band, scale or watch, such as one connected through Gadgetbridge. Android app only.", on: false },
   { id: "strava", group: "Integrations", name: "Strava", desc: "Import walks and runs.", on: false, ready: false },
   { id: "apiTokens", group: "Integrations", name: "Personal API", desc: "Tokens for scripts and dashboards, and a file-upload address for GPX/FIT.", on: false },
   { id: "mcp", group: "Integrations", name: "Ask Claude", desc: "Copy a workout as text for an AI assistant, or connect one over MCP.", on: false },

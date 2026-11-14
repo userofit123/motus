@@ -21,6 +21,7 @@ import { dataRoutes } from "./modules/data";
 import { programRoutes } from "./modules/programs";
 import { syncRoutes } from "./modules/sync";
 import { activityLogRoutes } from "./modules/activitylog";
+import { healthRoutes } from "./modules/health";
 
 export type { Db, Sql } from "./db";
 export { withUser } from "./db";
@@ -48,7 +49,7 @@ export async function createEngine(db: Db, opts: { mode: "server" | "local"; now
   await migrate(db);
   if (opts.seed !== false) await seedCatalog(db);
   const router = new Router();
-  for (const add of [settingsRoutes, libraryRoutes, routineRoutes, workoutRoutes, noteRoutes, goalRoutes, activityRoutes, scheduleRoutes, statsRoutes, dataRoutes, programRoutes, syncRoutes, activityLogRoutes]) add(router);
+  for (const add of [settingsRoutes, libraryRoutes, routineRoutes, workoutRoutes, noteRoutes, goalRoutes, activityRoutes, scheduleRoutes, statsRoutes, dataRoutes, programRoutes, syncRoutes, activityLogRoutes, healthRoutes]) add(router);
   const listeners = new Set<Listener>();
   const now = opts.now ?? (() => new Date());
 

@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- Health Connect's client needs Android 8; the plugin checks the version and reports it missing below Android 9 -->
+    <uses-sdk tools:overrideLibrary="androidx.health.connect.client" />
 
     <application
         android:allowBackup="false"
@@ -25,6 +29,19 @@
             </intent-filter>
 
         </activity>
+
+        <!-- Health Connect asks for permissions only from an app that explains its use: this screen opens from its
+             "privacy policy" link (Android 13 and older look for the action, 14 and newer for the alias below) -->
+        <activity android:name=".HealthRationaleActivity" android:exported="true" android:label="Motus and Health Connect">
+            <intent-filter><action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" /></intent-filter>
+        </activity>
+        <activity-alias android:name="ViewPermissionUsageActivity" android:exported="true"
+            android:targetActivity=".HealthRationaleActivity" android:permission="android.permission.START_VIEW_PERMISSION_USAGE">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW_PERMISSION_USAGE" />
+                <category android:name="android.intent.category.HEALTH_PERMISSIONS" />
+            </intent-filter>
+        </activity-alias>
 
         <!-- the interval timer's changes while the app is in the background (MotusWorkoutPlugin.TimerCue) -->
         <receiver android:name=".MotusWorkoutPlugin$TimerCue" android:exported="false" />
@@ -69,6 +86,15 @@
     <!-- the step counter while a walk is recorded -->
     <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
     <uses-feature android:name="android.hardware.sensor.stepcounter" android:required="false" />
+    <!-- reading what a band, scale or watch app wrote to Health Connect (MotusHealthPlugin); each is asked for on its own -->
+    <uses-permission android:name="android.permission.health.READ_STEPS" />
+    <uses-permission android:name="android.permission.health.READ_SLEEP" />
+    <uses-permission android:name="android.permission.health.READ_WEIGHT" />
+    <uses-permission android:name="android.permission.health.READ_EXERCISE" />
+    <uses-permission android:name="android.permission.health.READ_HEART_RATE" />
+    <uses-permission android:name="android.permission.health.READ_DISTANCE" />
+    <uses-permission android:name="android.permission.health.READ_ACTIVE_CALORIES_BURNED" />
+    <queries><package android:name="com.google.android.apps.healthdata" /></queries>
     <!-- installing updates downloaded from GitHub (sideloaded app; not for a Play Store build) -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 </manifest>

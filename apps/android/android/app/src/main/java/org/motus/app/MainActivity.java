@@ -9,6 +9,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(MotusUpdaterPlugin.class);
         registerPlugin(MotusWorkoutPlugin.class);
         registerPlugin(MotusBarsPlugin.class);
+        registerPlugin(MotusHealthPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

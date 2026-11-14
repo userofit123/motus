@@ -22,6 +22,7 @@ import { useSettings } from "../api/queries";
 import { maybeAutoBackup } from "../core/backup";
 import { toast } from "../core/toast";
 import { schedulePlanned } from "../native/plannedNotifications";
+import { watchHealth } from "../native/health";
 import CommandPalette from "./CommandPalette.vue";
 
 const ex = useExercise(computed(() => exerciseSheet.value ?? ""));
@@ -34,6 +35,8 @@ let checked = false;
 watch(settings, (s) => {
   if (checked || !s) return; checked = true;
   schedulePlanned(s.notifications.scheduled);
+  // steps, sleep, weight and workouts from Health Connect (Android app), while the feature is on
+  watchHealth(() => !!settings.value.features.healthConnect);
   setTimeout(() => maybeAutoBackup(s.backup, false, (run) => toast("A backup is due", { action: { label: "Download", run }, ms: 12000 })), 4000);
 });
 onBeforeUnmount(() => removeEventListener("keydown", key));

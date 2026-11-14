@@ -35,10 +35,10 @@ What is built, what is left, and what needs you. Updated 1 November 2026.
 **Optional features (Settings → Features)**
 Set types, RPE/RIR, supersets, plate calculator, warm-up sets, left/right sides, quick entry, voice cues, adaptive rest, progression rules,
 programs with deload weeks, gym profiles, sharing routines, body measurements, progress photos, steps, sleep/water/mood, achievements,
-monthly report and year in review, strength standards, share image, buttons on the rest notification, personal API tokens and GPX upload address, "Ask Claude" text copy, command palette.
+monthly report and year in review, strength standards, share image, buttons on the rest notification, Health Connect (Android app: reads steps, sleep, weight and workouts, e.g. a band through Gadgetbridge), personal API tokens and GPX upload address, "Ask Claude" text copy, command palette.
 
 ## Planned (not built yet, hidden from Settings → Features)
-- Health Connect (read steps, weight, watch workouts; write workouts) — needs a native plugin.
+- Health Connect: writing your workouts back (reading is built).
 - Strava sync — needs a Strava API app (client id and secret).
 - Wear OS app.
 - Instant (web-bundle) updates without a new APK.
