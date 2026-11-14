@@ -176,7 +176,6 @@ export function statsRoutes(r: Router) {
     const reminders = (await ctx.q.query(
       `SELECT m.*, coalesce(e.name, r.name) AS target_name FROM reminders m LEFT JOIN exercises e ON m.target_type='exercise' AND e.id = m.target_id
        LEFT JOIN routines r ON m.target_type='routine' AND r.id = m.target_id WHERE m.status = 'pending' ORDER BY m.created_at DESC LIMIT 5`)).rows.map((x: any) => camel(x));
-    const bw = (await ctx.q.query("SELECT value, measured_at FROM body_metrics WHERE kind = 'weight' ORDER BY measured_at DESC LIMIT 30")).rows.map((x: any) => ({ value: Number(x.value), at: x.measured_at }));
     const feed = [
       ...(await workoutSummaries(ctx.q, "w.status = 'completed'", [], 8)).map((w) => ({ kind: "workout", ...w })),
       ...(await ctx.q.query("SELECT id, type, name, started_at, duration_s, distance_m, steps FROM activities ORDER BY started_at DESC LIMIT 8")).rows.map((x: any) => ({ kind: "activity", ...camel<any>(x) })),
@@ -190,7 +189,7 @@ export function statsRoutes(r: Router) {
       days, records,
       weeks, thisWeek: weeks.at(-1), lastWeek: weeks.at(-2), homeGoals,
       last,
-      active: active ? camel(active) : null, programs, upNext, plannedToday, suggest, goals, reminders, bodyweight: bw, feed, muscles7, main7, helpers7, groupDays,
+      active: active ? camel(active) : null, programs, upNext, plannedToday, suggest, goals, reminders, feed, muscles7, main7, helpers7, groupDays,
       totalWorkouts: Number((await ctx.q.query("SELECT count(*) n FROM workouts WHERE status = 'completed'")).rows[0].n),
       // with no routines and nothing done yet, Home opens with a way to begin
       routineCount: routines.length,

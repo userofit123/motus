@@ -473,7 +473,6 @@ export interface HomeData extends HomeToday {
   homeGoals: (Goal & { showStreak: boolean })[];
   goals: Goal[];
   reminders: Reminder[];
-  bodyweight: { value: number; at: string }[];
   feed: HomeFeedItem[];
   muscles7: Record<string, number>; main7: string[]; helpers7: string[];
   groupDays: HomeGroup[];

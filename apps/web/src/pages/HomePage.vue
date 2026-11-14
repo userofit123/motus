@@ -14,7 +14,7 @@ import { onHome, streakOnHome, toggleHomeGoal, setHomeStreak, periodWord, period
 import { useFmt, ago, goalLabel, localYmd, tomorrowYmd } from "../core/format";
 import { reminderText } from "../core/reminderText";
 import { startPlan, unplanItems } from "../components/home/planActions";
-import { startOpen, bodySheet, dailySheet, reminderView } from "../core/ui";
+import { startOpen, dailySheet, reminderView } from "../core/ui";
 import { isPhone } from "../core/device";
 import Icon from "../components/Icon.vue";
 import Menu from "../components/Menu.vue";
@@ -52,7 +52,6 @@ const META: Record<string, { name: string; desc: string; icon: string; size: Siz
   goals: { name: "Goals", desc: "Your first three active goals", icon: "goals", size: "m" },
   suggest: { name: "Suggested", desc: "Routines and muscles that are due, and gaps in your routines", icon: "sparkle", size: "m" },
   reminders: { name: "Reminders", desc: "Shows when a reminder is waiting", icon: "bell", size: "m" },
-  bodyweight: { name: "Body weight", desc: "Your latest weight and its trend", icon: "scale", size: "s" },
   records: { name: "Records", desc: "Personal records from the last 30 days", icon: "trophy", size: "m" },
   feed: { name: "Recent activity", desc: "Your latest workouts and activities", icon: "history", size: "m" },
   daily: { name: "Today's log", desc: "Sleep, water and mood for today", icon: "moon", size: "m" },
@@ -165,16 +164,6 @@ const worked = computed(() => groups.value.filter((g) => g.on).length);
 const upNext = computed<HomePlan[]>(() => (h.value?.upNext ?? []).filter((p) => p.date !== today).slice(0, 5));
 const dayName = (d: string) => { const tm = tomorrowYmd(); return d === today ? "Today" : d === tm ? "Tomorrow" : fmt.value.date(d, { weekday: "long" }); };
 const planOpen = ref<any>(null);
-
-// body weight: the latest and the change over the last 30 days
-const bw = computed<any[]>(() => h.value?.bodyweight ?? []);
-const bwTrend = computed(() => [...bw.value].reverse().map((x) => x.value));
-const bwChange = computed(() => {
-  const since = Date.now() - 30 * 86400000, base = bw.value.filter((x) => Date.parse(x.at) >= since).at(-1), last = bw.value[0];
-  if (!last || !base || base === last) return null;
-  const d = last.value - base.value;
-  return `${d > 0 ? "+" : d < 0 ? "-" : ""}${fmt.value.w(Math.abs(d))} ${fmt.value.wu} in 30 days`;
-});
 
 // records
 const KIND: Record<string, string> = { weight: "Heaviest", e1rm: "Best 1RM", volume: "Most volume", reps: "Most reps", duration: "Longest", distance: "Farthest" };
@@ -448,16 +437,6 @@ await loaded(home, ach);
         <div v-else-if="id === 'reminders'" class="card hb sz-m">
           <div class="ch"><span class="bi"><Icon name="bell" :size="15" /></span><span class="t grow">Reminders</span></div>
           <div class="list"><div v-for="r in h.reminders" :key="r.id" class="li click" v-bind="link(() => (reminderView = { r }))"><div class="grow"><div class="t">{{ reminderText(r, fmt) }}</div><div class="s">{{ r.targetName }}</div></div><Icon name="right" :size="16" class="muted" /></div></div>
-        </div>
-
-        <!-- body weight: the latest, the change over 30 days and the trend -->
-        <div v-else-if="id === 'bodyweight'" class="card hb stat sz-s click has-cover">
-          <button class="cover" aria-label="Open body weight" @click="go('/body')" />
-          <div class="ch"><span class="bi"><Icon name="scale" :size="15" /></span><span class="t grow">Weight</span>
-            <button class="ib sm plain over" aria-label="Log weight" title="Log weight" @click="bodySheet = true"><Icon name="plus" :size="16" /></button></div>
-          <div class="big">{{ bw[0] ? fmt.w(bw[0].value) : "-" }}<small>{{ fmt.wu }}</small></div>
-          <div class="tiny">{{ bwChange ?? (bw[0] ? ago(bw[0].at) : "Not logged yet") }}</div>
-          <Sparkline v-if="bwTrend.length > 1" :values="bwTrend" />
         </div>
 
         <div v-else-if="id === 'records'" class="card hb sz-m">
