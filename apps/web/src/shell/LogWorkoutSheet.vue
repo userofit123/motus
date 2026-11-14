@@ -32,13 +32,21 @@ const snap = () => JSON.stringify([f.value, exs.value]);
 let start = snap(), opening = !!props.o.routineId;
 watch(() => f.value.routineId, async (id) => {
   if (!id) return;
-  // what the sheet held when the load began: edits made while it loads win over the routine's numbers
-  const before = snap();
+  // what the load would overwrite (name and exercises) as it was when the load began: edits to those win over the
+  // routine's numbers, while unrelated fields (notes, minutes) don't block it
+  const mine = () => JSON.stringify([f.value.name, exs.value]);
+  const before = mine(), whole = snap();
   let r: Routine;
   try { r = await api.get<Routine>(`/routines/${id}`); }
   // a stale link (a routine deleted since): start from no routine instead
-  catch (e) { toastError(e); f.value.routineId = ""; if (opening) { opening = false; start = snap(); } return; }
-  if (snap() !== before) { opening = false; return; }
+  catch (e) {
+    toastError(e);
+    // the user changed something (maybe picked another routine) meanwhile: leave it alone
+    if (snap() !== whole) { opening = false; return; }
+    f.value.routineId = ""; if (opening) { opening = false; start = snap(); }
+    return;
+  }
+  if (mine() !== before) { opening = false; return; }
   f.value.name = r.name;
   exs.value = r.exercises.map((e) => ({ exerciseId: e.exerciseId, sets: e.sets.filter((s) => s.kind !== "warmup").map((s) => ({ weight: s.weightKg != null ? Math.round(fmt.value.fromKg(s.weightKg) * 100) / 100 : null, reps: s.reps, durationS: s.durationS })) }));
   // only the routine it was opened with counts as the starting point; picking one later is a change

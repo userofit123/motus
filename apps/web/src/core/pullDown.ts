@@ -8,6 +8,7 @@ import { isPhone } from "./device";
 
 export function usePullDown(sheet: () => HTMLElement | null, scrim: () => HTMLElement | null, enabled: () => boolean, close: () => void) {
   const state = { pulledAway: false };
+  let clearT: ReturnType<typeof setTimeout> | undefined;
   let x0 = 0, y0 = 0, t0 = 0, dy = 0, mode: "" | "pull" | "no" = "", scroller: HTMLElement | null = null;
   function scrollParent(t: EventTarget | null) {
     for (let el = t as HTMLElement | null; el && el !== sheet(); el = el.parentElement) {
@@ -30,6 +31,7 @@ export function usePullDown(sheet: () => HTMLElement | null, scrim: () => HTMLEl
       if (Math.abs(d) < 8 && Math.abs(dx) < 8) return;
       if (d <= 0 || Math.abs(dx) > Math.abs(d) || (scroller && scroller.scrollTop > 0)) { mode = "no"; return; }
       mode = "pull"; y0 = t.clientY;
+      clearTimeout(clearT); // a pull started within the last 240ms must keep its own transition
       s.style.transition = "none";
     }
     e.preventDefault();
@@ -50,7 +52,7 @@ export function usePullDown(sheet: () => HTMLElement | null, scrim: () => HTMLEl
       if (b) b.style.backgroundColor = "transparent";
       setTimeout(() => {
         close();
-        // after the caller has had a tick to unmount or hide it, so the sheet is ready for next time
+        // contract: close() must unmount the sheet synchronously (or refuse); the 50ms check below decides "still open"
         setTimeout(() => {
           state.pulledAway = false;
           // still there and open: the caller refused (or first asks, "Discard this workout?"), so it slides back
@@ -58,7 +60,7 @@ export function usePullDown(sheet: () => HTMLElement | null, scrim: () => HTMLEl
           if (s.isConnected && enabled()) {
             s.style.transform = "";
             if (b) b.style.backgroundColor = "";
-            setTimeout(() => { s.style.transition = ""; if (b) b.style.transition = ""; }, 240);
+            clearT = setTimeout(() => { s.style.transition = ""; if (b) b.style.transition = ""; }, 240);
           } else { s.style.transform = ""; s.style.transition = ""; if (b) { b.style.transition = ""; b.style.backgroundColor = ""; } }
         }, 50);
       }, 200);
