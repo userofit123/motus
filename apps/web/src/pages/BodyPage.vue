@@ -1,13 +1,14 @@
 <script setup lang="ts">
 // Body: the one home for everything about your body. Tabs (shown only when there is more than one):
-//  · Weight: latest weight, smoothed trend and the weight entries.
-//  · Measurements (Body measurements feature): the latest of each tape measure and body fat with the change since the one before;
-//    tap one for its chart and entries.
+//  · Weight: latest weight, smoothed trend (with a small sparkline) and the weight entries.
+//  · Measurements (Body measurements feature): the latest of each tape measure and body fat with the change since the one before
+//    and a sparkline of its recent entries; tap one for its entries.
 //  · Photos (Progress photos feature).
 //  · About you (always there, last): year of birth, sex and height, edited in place (components/BodyProfile.vue). Nothing to
 //    log there, so the Log button is hidden (one primary button per screen, and it would have no meaning).
-// Logging: the Log button here, or + → Body weight / Measurements. Stats → Body charts the same numbers
-// over a chosen period and links back here. Steps, sleep, water and mood are not body measurements: they are the daily log
+// Body = your numbers now and every entry (log, edit, delete); Stats → Body = how they changed over a chosen period, with
+// the full charts. Nothing is shown in both places: each page links to the other. Logging: the Log button here, or
+// + → Body weight / Measurements. Steps, sleep, water and mood are not body measurements: they are the daily log
 // (+ → Steps / Daily log, Home's Today card, Stats → Activities).
 import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
@@ -20,7 +21,7 @@ import { bodySheet } from "../core/ui";
 import { toast } from "../core/toast";
 import { BODY_MEASURES, bodyName, bodyUnit, fromCm } from "@motus/shared";
 import Icon from "../components/Icon.vue";
-import LineChart from "../components/LineChart.vue";
+import Sparkline from "../components/Sparkline.vue";
 import ProgressPhotos from "../components/ProgressPhotos.vue";
 import BodyProfile from "../components/BodyProfile.vue";
 
@@ -56,7 +57,8 @@ const order = (k: string) => { const i = BODY_MEASURES.findIndex((m) => m.id ===
 const byKind = computed(() => { const m = new Map<string, any[]>(); for (const b of all.value) if (b.kind !== "weight") m.set(b.kind, [...(m.get(b.kind) ?? []), b]); return m; });
 const latest = computed(() => [...byKind.value].sort((a, b) => order(a[0]) - order(b[0])).map(([k, l]) => ({ k, b: l[0], d: l[1] ? disp(k, Number(l[0].value)) - disp(k, Number(l[1].value)) : null, n: l.length })));
 const picked = computed(() => (kind.value && byKind.value.has(kind.value) ? kind.value : ""));
-const pts = computed(() => (byKind.value.get(picked.value) ?? []).slice().reverse().map((b) => ({ x: new Date(b.measuredAt).getTime(), y: Math.round(disp(picked.value, Number(b.value)) * 10) / 10 })));
+// the row's sparkline: up to the last 10 entries, oldest first
+const spark = (k: string) => (byKind.value.get(k) ?? []).slice(0, 10).reverse().map((b) => disp(k, Number(b.value)));
 
 const entries = computed(() => { const l = cur.value === "measurements" ? byKind.value.get(picked.value) ?? [] : weights.value; return more.value ? l : l.slice(0, 20); });
 const total = computed(() => (cur.value === "measurements" ? byKind.value.get(picked.value)?.length ?? 0 : weights.value.length));
@@ -70,15 +72,13 @@ await loaded(body);
     <div class="ph"><div><h1>Body</h1><div class="sub">Weight{{ s.features.measurements ? ", measurements" : "" }}{{ s.features.photos ? ", photos" : "" }}, about you</div></div>
       <div class="acts"><button v-if="cur === 'weight' || cur === 'measurements'" class="btn keep" @click="log"><Icon name="plus" :size="18" />Log</button></div></div>
     <div class="tabs"><button v-for="[k, l] in TABS" :key="k" :class="{ on: cur === k }" @click="tab = k">{{ l }}</button></div>
+    <div v-if="cur === 'weight' ? weights.length : cur === 'measurements' && latest.length" class="row hgap"><div class="grow tiny">Your latest numbers and every entry. How they change over time is in Stats.</div><button class="qb" @click="router.push('/stats?tab=body')">Trends <Icon name="right" :size="14" /></button></div>
 
     <template v-if="cur === 'weight'">
-      <div class="grid g2">
-        <div class="card stat"><div class="lbl">Latest</div><div class="val">{{ weights.length ? fmt.w(weights[0].value) : "-" }}<small>{{ fmt.wu }}</small></div><div class="sub">{{ weights.length ? ago(weights[0].measuredAt) : "Not logged yet" }}</div></div>
-        <div class="card stat"><div class="lbl">Trend</div><div class="val">{{ trend.length ? fmt.num(trend.at(-1)!.y, 1) : "-" }}<small>{{ fmt.wu }}</small></div><div class="sub">{{ month != null ? `${signed(month, "weight")} over 30 days` : "Smoothed, so one day's water weight doesn't swing it" }}</div></div>
+      <div class="grid g4 n2">
+        <div class="card stat"><div class="lbl"><span class="bi"><Icon name="scale" :size="15" /></span>Latest</div><div class="val">{{ weights.length ? fmt.w(weights[0].value) : "-" }}<small>{{ fmt.wu }}</small></div><div class="sub">{{ weights.length ? ago(weights[0].measuredAt) : "Not logged yet" }}</div></div>
+        <div class="card stat"><div class="lbl"><span class="bi"><Icon name="stats" :size="15" /></span>Trend</div><div class="val">{{ trend.length ? fmt.num(trend.at(-1)!.y, 1) : "-" }}<small>{{ fmt.wu }}</small></div><div class="sub">{{ month != null ? `${signed(month, "weight")} over 30 days` : "Smoothed, so one day's water weight doesn't swing it" }}</div><Sparkline :values="trend.slice(-30).map((p) => p.y)" /></div>
       </div>
-      <div class="card spt"><div class="lbl hgap">Body weight ({{ fmt.wu }}) · smoothed trend</div>
-        <div v-if="!trend.length" class="empty sm"><b>No body weight yet</b>Log it now and then, ideally at the same time of day.</div>
-        <LineChart v-else :points="trend" :height="220" :fmt="(v) => fmt.num(v, 1)" /></div>
     </template>
 
     <template v-else-if="cur === 'measurements'">
@@ -86,10 +86,9 @@ await loaded(body);
       <div v-else class="card flush"><div class="list">
         <div v-for="x in latest" :key="x.k" class="li click" :class="{ 'bp-on': picked === x.k }" @click="kind = picked === x.k ? '' : x.k">
           <div class="grow"><div class="t">{{ bodyName(x.k) }}</div><div class="s">{{ ago(x.b.measuredAt) }} · {{ x.n }} entr{{ x.n === 1 ? "y" : "ies" }}</div></div>
-          <span v-if="x.d != null" class="tiny num">{{ signed(x.d, x.k) }}</span><b class="num">{{ val(x.b) }}</b><Icon :name="picked === x.k ? 'down' : 'right'" :size="16" class="muted" />
+          <div class="exspark"><Sparkline :values="spark(x.k)" style="width:100%;height:100%" /></div><span v-if="x.d != null" class="tiny num">{{ signed(x.d, x.k) }}</span><b class="num">{{ val(x.b) }}</b><Icon :name="picked === x.k ? 'down' : 'right'" :size="16" class="muted" />
         </div></div></div>
-      <div v-if="picked" class="card spt"><div class="lbl hgap">{{ bodyName(picked) }} ({{ unit(picked) }})</div><LineChart :points="pts" :height="180" :fmt="(v) => fmt.num(v, 1)" /></div>
-      <p v-else-if="latest.length" class="tiny spt">Tap a measurement to see its chart and entries.</p>
+      <p v-if="!picked && latest.length" class="tiny spt">Tap a measurement to see its entries.</p>
     </template>
 
     <ProgressPhotos v-else-if="cur === 'photos'" />
@@ -98,7 +97,7 @@ await loaded(body);
 
     <template v-if="cur === 'weight' || picked">
       <div class="sh"><h2>Entries</h2></div>
-      <div class="card"><div v-if="!entries.length" class="tiny">No entries yet.</div>
+      <div class="card"><div v-if="!entries.length" class="empty sm"><b>No body weight yet</b>Log it now and then, ideally at the same time of day.</div>
         <div class="list"><div v-for="b in entries" :key="b.id" class="li"><div class="grow"><div class="t">{{ fmt.date(b.measuredAt, { day: "numeric", month: "short", year: "numeric" }) }}</div></div><b class="num">{{ val(b) }}</b><button class="ib sm plain" aria-label="Delete" @click="del(b.id)"><Icon name="trash" :size="16" /></button></div></div>
         <div v-if="total > 20 && !more" class="center spt"><button class="qb" @click="more = true">Show all {{ total }}</button></div></div>
     </template>

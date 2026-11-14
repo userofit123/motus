@@ -108,15 +108,31 @@ const pickMuscle = (m: string) => { mSel.value = !mSel.value?.tier && mSel.value
 const pickTier = (t: number, ms: string[]) => { mSel.value = mSel.value?.tier === t ? null : { tier: t, muscles: ms }; };
 const neglected = computed(() => GROUPS.filter((g) => g.id !== "neck" && g.muscles.every((m) => !(d.value?.muscles?.[m]))).map((g) => g.name));
 // activities
-const actTypes = computed(() => { const m = new Map<string, any>(); for (const a of d.value?.activities ?? []) { const x = m.get(a.type) ?? { type: a.type, n: 0, s: 0, m: 0 }; x.n++; x.s += a.durationS; x.m += Number(a.distanceM ?? 0); m.set(a.type, x); } return [...m.values()].sort((a, b) => b.n - a.n); });
+const actTypes = computed(() => { const m = new Map<string, any>(); for (const a of d.value?.activities ?? []) { const x = m.get(a.type) ?? { type: a.type, n: 0, s: 0, m: 0, ps: 0 }; x.n++; x.s += a.durationS; x.m += Number(a.distanceM ?? 0);
+    // pace as the activity page shows it: moving time where known, else total, over the sessions that have a distance
+    if (a.distanceM) x.ps += a.movingS || a.durationS; m.set(a.type, x); } return [...m.values()].sort((a, b) => b.n - a.n); });
 const actWeeks = computed(() => weeks.value.map((w) => ({ label: wlabel(w.week), value: (d.value?.activities ?? []).filter((a: any) => weekStartOf(new Date(a.startedAt), s.value.firstDay) === w.week).reduce((t: number, a: any) => t + Number(a.distanceM ?? 0), 0) / (fmt.value.du === "km" ? 1000 : 1609.344) })));
 const steps = computed(() => (d.value?.daily ?? []).filter((x: any) => x.kind === "steps").map((x: any) => ({ x: new Date(x.date).getTime(), y: Number(x.value) })));
 // body
-const bw = computed(() => (d.value?.body ?? []).filter((b: any) => b.kind === "weight").map((b: any) => ({ x: new Date(b.measuredAt).getTime(), y: Math.round(fmt.value.fromKg(Number(b.value)) * 10) / 10 })));
-const bwTrend = computed(() => { let ema: number | null = null; return bw.value.map((p: any) => { ema = ema == null ? p.y : ema + 0.15 * (p.y - ema); return { x: p.x, y: Math.round(ema! * 10) / 10 }; }); });
+const weightPts = (x: any) => (x?.body ?? []).filter((b: any) => b.kind === "weight").map((b: any) => ({ x: new Date(b.measuredAt).getTime(), y: Math.round(fmt.value.fromKg(Number(b.value)) * 10) / 10 }));
+// the stats call hands over every body entry (oldest first), so the period is cut here; the trend is smoothed over the
+// whole history so it doesn't restart (and jump) at the start of a period
+const within = (t: number, a?: Date | null, b?: Date | null) => (!a || t >= a.getTime()) && (!b || t < b.getTime());
+const smooth = (pts: { x: number; y: number }[]) => { let ema: number | null = null; return pts.map((p) => { ema = ema == null ? p.y : ema + 0.15 * (p.y - ema); return { x: p.x, y: Math.round(ema! * 10) / 10 }; }); };
+const allW = computed(() => weightPts(d.value));
+const allTrend = computed(() => smooth(allW.value));
+const bw = computed(() => allW.value.filter((q: any) => within(q.x, per.value.from, per.value.to)));
+const bwTrend = computed(() => allTrend.value.filter((q) => within(q.x, per.value.from, per.value.to)));
+const pbw = computed(() => (per.value.prevFrom ? allW.value.filter((q: any) => within(q.x, per.value.prevFrom, per.value.prevTo)) : []));
+// how far the trend moved over a period: from the last trend value before it (else its first) to its last
+const moved = (a?: Date | null, b?: Date | null) => { const t = allTrend.value, i = t.findIndex((q) => within(q.x, a, b)); if (i < 0) return null; let j = i; while (j + 1 < t.length && within(t[j + 1]!.x, a, b)) j++; const from = t[i > 0 ? i - 1 : i]!; return j > i || i > 0 ? t[j]!.y - from.y : null; };
+const bwMoved = computed(() => moved(per.value.from, per.value.to));
+const pMoved = computed(() => (per.value.prevFrom ? moved(per.value.prevFrom, per.value.prevTo) : null));
+// signed with a real minus, as on the Body page; weight change is neither good nor bad, so it stays neutral in colour
+const signed = (v: number, u = "") => `${v > 0 ? "+" : v < 0 ? "−" : "±"}${fmt.value.num(Math.abs(v), 1)}${u ? " " + u : ""}`;
 // lengths are kept in cm: shown in the person's unit; body fat stays in %
 const mUnit = (k: string) => (bodyMeasure(k)?.unit ?? "cm") === "cm" ? fmt.value.lu : "%";
-const measures = computed(() => { const m = new Map<string, any[]>(); for (const b of d.value?.body ?? []) if (b.kind !== "weight" && b.kind !== "photo") m.set(b.kind, [...(m.get(b.kind) ?? []), { x: new Date(b.measuredAt).getTime(), y: mUnit(b.kind) === "%" ? Number(b.value) : Math.round(fromCm(Number(b.value), fmt.value.lu) * 10) / 10 }]); return [...m]; });
+const measures = computed(() => { const m = new Map<string, any[]>(); for (const b of d.value?.body ?? []) if (b.kind !== "weight" && b.kind !== "photo" && within(new Date(b.measuredAt).getTime(), per.value.from, per.value.to)) m.set(b.kind, [...(m.get(b.kind) ?? []), { x: new Date(b.measuredAt).getTime(), y: mUnit(b.kind) === "%" ? Number(b.value) : Math.round(fromCm(Number(b.value), fmt.value.lu) * 10) / 10 }]); return [...m]; });
 // a band's whole-day distance and active calories (Health Connect), each only when it has data in the period: the day's
 // total, so recorded activities are already in it and aren't added on top
 const inPeriod = (x: any) => { const k = String(x.date).slice(0, 10), p = per.value; return (!p.from || k >= ymd(p.from)) && (!p.to || k < ymd(p.to)); };
@@ -208,9 +224,9 @@ watch(() => avail.data.value, () => { if (!TABS.value.some(([k]) => k === tab.va
 
     <template v-else-if="tab === 'activities'">
       <div v-if="!d.activities.length && !steps.length && !bandDist.length && !bandKcal.length" class="card empty"><Icon name="walk" :size="34" /><b>No activities in this period</b></div>
-      <div class="grid g3"><div v-for="t in actTypes" :key="t.type" class="card stat"><div class="lbl" style="text-transform:capitalize">{{ t.type }}</div><div class="val">{{ t.m ? fmt.dist(t.m, 1) : fmt.dur(t.s, true) }}</div><div class="sub">{{ t.n }} sessions · {{ fmt.dur(t.s, true) }}{{ t.m && t.s ? " · " + fmt.pace(t.s, t.m) : "" }}</div></div></div>
+      <div class="grid g3"><div v-for="t in actTypes" :key="t.type" class="card stat"><div class="lbl" style="text-transform:capitalize">{{ t.type }}</div><div class="val">{{ t.m ? fmt.dist(t.m, 1) : fmt.dur(t.s, true) }}</div><div class="sub">{{ t.n }} sessions · {{ fmt.dur(t.s, true) }}{{ t.m && t.ps ? " · " + fmt.pace(t.ps, t.m) : "" }}</div></div></div>
       <div v-if="d.activities.length" class="card spt"><div class="lbl hgap">Distance per week ({{ fmt.du }})</div><BarChart :bars="actWeeks.slice(-16).map((w) => ({ ...w, label: w.label.split(' ')[0]!, full: w.label }))" :height="160" :fmt="(v) => fmt.num(v, 1)" /></div>
-      <div v-if="steps.length" class="card spt"><div class="lbl hgap">Daily steps{{ stepGoal ? ` · goal ${fmt.num(stepGoal.target, 0)}` : "" }}</div><LineChart :points="steps" :height="160" :fmt="(v) => fmt.num(v, 0)" /></div>
+      <div v-if="steps.length" class="card spt"><div class="lbl hgap">Daily steps{{ stepGoal ? ` · goal ${fmt.num(stepGoal.target, 0)}` : "" }}</div><LineChart :points="steps" :height="160" :fmt="(v) => fmt.num(v, 0)" /><div class="tiny" style="margin-top:6px">Average {{ fmt.num(avgOf(steps), 0) }} steps a day</div></div>
       <!-- the band's whole-day totals: everything the person did that day, recorded activities included -->
       <div v-if="bandDist.length || bandKcal.length" class="spt" :class="bandDist.length && bandKcal.length ? 'grid g2' : ''">
         <div v-if="bandDist.length" class="card"><div class="lbl hgap">Daily distance from your band ({{ fmt.du }})</div><LineChart :points="bandDist" :height="bandDist.length && bandKcal.length ? 140 : 160" :fmt="(v) => fmt.num(v, 1)" /><div class="tiny" style="margin-top:6px">Average {{ fmt.num(avgOf(bandDist), 1) }} {{ fmt.du }} a day · {{ fmt.num(bandDist.reduce((t, p) => t + p.y, 0), 1) }} {{ fmt.du }} in all</div></div>
@@ -219,13 +235,20 @@ watch(() => avail.data.value, () => { if (!TABS.value.some(([k]) => k === tab.va
     </template>
 
     <template v-else-if="tab === 'body'">
-      <!-- charts only: logging, entries and height live on the Body page -->
-      <div class="row hgap"><div class="grow tiny">Your body over this period. Log and edit entries on the Body page.</div><button class="qb" @click="router.push('/body')">Body page <Icon name="right" :size="14" /></button></div>
-      <div class="card"><div class="lbl hgap">Body weight ({{ fmt.wu }}) · smoothed trend</div>
-        <div v-if="!bw.length" class="empty sm"><b>No body weight yet</b></div>
-        <LineChart v-else :points="bwTrend" :height="220" :fmt="(v) => fmt.num(v, 1)" />
-        <div v-if="bw.length" class="tiny" style="margin-top:6px">Latest {{ bw.at(-1)!.y }} {{ fmt.wu }} · trend {{ bwTrend.at(-1)!.y }} {{ fmt.wu }}{{ bwTrend.length > 7 ? ` · ${bwTrend.at(-1)!.y - bwTrend.at(-8)!.y >= 0 ? "+" : ""}${fmt.num(bwTrend.at(-1)!.y - bwTrend.at(-8)!.y, 1)} over the last 7 entries` : "" }}</div></div>
-      <div v-if="s.features.measurements" class="grid g2 spt"><div v-for="[k, pts] in measures" :key="k" class="card click" role="button" tabindex="0" @click="router.push(`/body?tab=measurements&kind=${k}`)" @keydown.enter="router.push(`/body?tab=measurements&kind=${k}`)"><div class="lbl hgap">{{ bodyName(k) }} ({{ mUnit(k) }})</div><LineChart :points="pts" :height="140" /></div></div>
+      <!-- how the numbers changed over the period: logging, entries, photos and about you live on the Body page -->
+      <div class="row hgap"><div class="grow tiny">How your body changed over this period. Log and edit entries on the Body page.</div><button class="qb" @click="router.push('/body')">Body page <Icon name="right" :size="14" /></button></div>
+      <div v-if="!bw.length && !(s.features.measurements && measures.length)" class="card empty"><Icon name="scale" :size="34" /><b>No body entries in this period</b>Pick a longer period, or log your weight on the Body page.</div>
+      <template v-else>
+        <div v-if="bw.length" class="grid g4 n3">
+          <div class="card hero stat"><div class="lbl"><span class="bi"><Icon name="scale" :size="15" /></span>Trend</div><div class="val">{{ fmt.num(bwTrend.at(-1)!.y, 1) }}<small>{{ fmt.wu }}</small></div><div class="sub">Latest {{ fmt.num(bw.at(-1)!.y, 1) }} {{ fmt.wu }}</div><Sparkline :values="bwTrend.map((t) => t.y)" color="var(--onc)" /></div>
+          <div class="card stat"><div class="lbl"><span class="bi"><Icon name="stats" :size="15" /></span>Change</div><div class="val">{{ bwMoved != null ? signed(bwMoved) : "-" }}<small>{{ bwMoved != null ? fmt.wu : "" }}</small></div><div class="sub">{{ pMoved != null ? `${signed(pMoved, fmt.wu)} vs previous` : "Nothing to compare with" }}</div></div>
+          <div class="card stat"><div class="lbl"><span class="bi"><Icon name="calendar" :size="15" /></span>Weigh-ins</div><div class="val">{{ bw.length }}</div><div class="sub">{{ percentChange(bw.length, pbw.length) ? `${percentChange(bw.length, pbw.length)} vs previous` : "in this period" }}</div></div>
+        </div>
+        <div class="card" :class="{ spt: bw.length }"><div class="lbl hgap">Body weight ({{ fmt.wu }}) · smoothed trend</div>
+          <div v-if="!bw.length" class="empty sm"><b>No body weight in this period</b></div>
+          <LineChart v-else :points="bwTrend" :height="220" :fmt="(v) => fmt.num(v, 1)" /></div>
+        <div v-if="s.features.measurements && measures.length" class="grid g2 spt"><div v-for="[k, pts] in measures" :key="k" class="card click" role="button" tabindex="0" @click="router.push(`/body?tab=measurements&kind=${k}`)" @keydown.enter="router.push(`/body?tab=measurements&kind=${k}`)"><div class="lbl hgap"><span class="grow">{{ bodyName(k) }} ({{ mUnit(k) }})</span><span v-if="pts.length > 1" class="tiny num">{{ signed(pts.at(-1).y - pts[0].y, mUnit(k)) }}</span></div><LineChart :points="pts" :height="140" :fmt="(v) => fmt.num(v, 1)" /></div></div>
+      </template>
     </template>
 
     <SleepTab v-else-if="tab === 'sleep'" :from="per.from" :to="per.to" :daily="d.daily" />
