@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // A calm body (front and back) with each muscle coloured by how much it was worked:
-// red for the main muscles, yellow for those that helped, blue for those that did a little.
+// red for the busiest, yellow for some, blue for a little (or, in highlight, red main and yellow helper muscles).
 // values: muscle name (as in the exercise library) → weighted sets (main muscle 1, helper 0.5, see muscleSets()).
 // highlight/secondary: one exercise's main and helper muscles instead of amounts.
 // pickable: each muscle is a button that emits pick (the muscle filter above exercise lists), with a wider invisible tap ring; off, the figure only shows.
@@ -25,12 +25,16 @@ function tier(m: string): 0 | 1 | 2 | 3 {
   const share = v / top.value;
   return share >= 0.6 ? 1 : share >= 0.25 ? 2 : 3;
 }
-const TIER_NAME = ["", "Main muscle", "Helper", "Small muscle"];
+// highlight shows roles (an exercise's main and helper muscles); amounts show shares of the busiest muscle's sets,
+// where a main muscle can land in any band, so those bands are named by amount, not role
+const ROLE_NAME = ["", "Main muscle", "Helper", ""];
+const AMOUNT_NAME = ["", "Most sets", "Some sets", "Few sets"];
+const tierName = (t: number) => (props.highlight ? ROLE_NAME : AMOUNT_NAME)[t];
 const label = (m: string) => {
   // as a filter the name is all it needs; "Main" would only echo whether it is picked
   if (props.pickable) return muscleName(m);
   const v = props.values[m];
-  return `${m[0]!.toUpperCase()}${m.slice(1)}${tier(m) ? ` · ${TIER_NAME[tier(m)]}` : ""}${v ? ` · ${Math.round(v * 10) / 10} sets` : ""}`;
+  return `${m[0]!.toUpperCase()}${m.slice(1)}${tier(m) ? ` · ${tierName(tier(m))}` : ""}${v ? ` · ${Math.round(v * 10) / 10} sets` : ""}`;
 };
 const used = computed(() => new Set(VIEWS.flatMap((v) => v.shapes.map(([m]) => tier(m))).filter(Boolean)));
 const btn = computed(() => props.pickable || props.inspect);
@@ -58,8 +62,8 @@ const tierMuscles = (t: number) => [...new Set(VIEWS.flatMap((v) => v.shapes.map
     </div>
     <div v-if="legend && used.size" class="bmlegend">
       <template v-for="t in [1, 2, 3].filter((x) => used.has(x as any))" :key="t">
-        <button v-if="inspect" type="button" :class="{ on: focusTier === t }" :aria-pressed="focusTier === t" @click="emit('pickTier', t, tierMuscles(t))"><i :class="'t' + t" />{{ TIER_NAME[t] }}</button>
-        <span v-else><i :class="'t' + t" />{{ TIER_NAME[t] }}</span>
+        <button v-if="inspect" type="button" :class="{ on: focusTier === t }" :aria-pressed="focusTier === t" @click="emit('pickTier', t, tierMuscles(t))"><i :class="'t' + t" />{{ tierName(t) }}</button>
+        <span v-else><i :class="'t' + t" />{{ tierName(t) }}</span>
       </template>
     </div>
   </div>

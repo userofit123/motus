@@ -41,8 +41,14 @@ const rep = computed<any>(() => w.value?.report);
 // straight after Finish: the summary opens with a word of what you did, and the back link says Home and goes there
 // rather than to the calendar. No button of its own in that word: it only duplicated the back link and vanished on return.
 const justDone = computed(() => route.query.done === "1");
-const doneLine = computed(() => { const t = rep.value?.totals; if (!t) return "";
-  return [fmt.value.dur(t.durationS, true), `${t.workingSets} set${t.workingSets === 1 ? "" : "s"}`, t.volumeKg ? fmt.value.vol(t.volumeKg) : "", t.records ? `records on ${t.records} exercise${t.records === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · "); });
+const doneLine = computed(() => { const t = rep.value?.totals; if (!t) return [];
+  return [fmt.value.dur(t.durationS, true), `${t.workingSets} set${t.workingSets === 1 ? "" : "s"}`, t.volumeKg ? fmt.value.vol(t.volumeKg) : "", t.records ? `records on ${t.records} exercise${t.records === 1 ? "" : "s"}` : "",
+    rep.value?.compared ? `better than last time on ${rep.value.beat} of ${rep.value.compared} exercises` : ""].filter(Boolean); });
+// an exercise's "Last time" line as DotLine parts, so a narrow screen wraps between whole parts with no dot opening a line
+const lastLine = (id: string) => { const v = verdict(id); if (!v?.last) return [];
+  const d = delta(v.now.e1rm, v.last.e1rm);
+  return [`Last time (${fmt.value.date(v.last.startedAt)}): ${v.last.e1rm ? `estimated 1RM ${fmt.value.w(v.last.e1rm)} ${fmt.value.wu}` : `${v.last.reps} reps`}`, `volume ${fmt.value.vol(v.last.volumeKg).replace(" ", "\u00a0")}`,
+    ...(d ? [{ lead: "now", text: `${d > 0 ? "+" : ""}${fmt.value.w(d)} ${fmt.value.wu} estimated 1RM`, tcls: d > 0 ? "pos" : "neg" }] : [])]; };
 const editing = ref(false), adding = ref(false);
 const verdict = (weId: string) => rep.value?.perExercise.find((p: any) => p.workoutExerciseId === weId);
 // a left and right round with no rest between its sides (the rest it planned, else the workout's rule): a bar joins the
@@ -160,7 +166,7 @@ await loaded(q);
     </div>
 
     <div v-if="justDone" class="card done-hi spb"><span class="bi sg"><Icon name="check" :size="20" /></span>
-      <div class="grow" style="min-width:0"><div class="t">Well done - workout saved</div><div class="tiny">{{ doneLine }}{{ rep?.compared ? ` · beat last time on ${rep.beat} of ${rep.compared} exercises` : "" }}</div></div></div>
+      <div class="grow" style="min-width:0"><div class="t">Well done - workout saved</div><DotLine class="tiny" :parts="doneLine" /></div></div>
     <div class="grid g4">
       <div class="card hero stat"><div class="lbl"><span class="bi"><Icon name="clock" :size="15" /></span>Duration</div><div class="val">{{ fmt.dur(rep.totals.durationS, true) }}</div><DotLine class="sub" :parts="[`${fmt.dur(rep.totals.activeS, true)} active`, `${fmt.dur(rep.totals.restS, true)} rest`]" /></div>
       <div class="card stat"><div class="lbl"><span class="bi"><Icon name="layers" :size="15" /></span>Volume</div><div class="val">{{ fmt.vol(rep.totals.volumeKg) }}</div>
@@ -204,9 +210,7 @@ await loaded(q);
               </tr>
             </tbody>
           </table>
-          <div v-if="verdict(e.id)?.last && e.status !== 'skipped'" class="tiny lastt">
-            Last time ({{ fmt.date(verdict(e.id).last.startedAt) }}): {{ verdict(e.id).last.e1rm ? `estimated 1RM ${fmt.w(verdict(e.id).last.e1rm)} ${fmt.wu}` : `${verdict(e.id).last.reps} reps` }} · volume {{ fmt.vol(verdict(e.id).last.volumeKg).replace(' ', ' ') }}<template v-if="delta(verdict(e.id).now.e1rm, verdict(e.id).last.e1rm)"> · Now <span :class="delta(verdict(e.id).now.e1rm, verdict(e.id).last.e1rm)! > 0 ? 'pos' : 'neg'">{{ delta(verdict(e.id).now.e1rm, verdict(e.id).last.e1rm)! > 0 ? "+" : "" }}{{ fmt.w(delta(verdict(e.id).now.e1rm, verdict(e.id).last.e1rm)!) }} {{ fmt.wu }} estimated 1RM</span></template>
-          </div>
+          <DotLine v-if="verdict(e.id)?.last && e.status !== 'skipped'" class="tiny lastt" :parts="lastLine(e.id)" />
           <div v-if="e.notes?.some((x: any) => x.workoutId === w.id)" class="exnotes">
             <NoteItem v-for="n in e.notes.filter((x: any) => x.workoutId === w.id)" :key="n.id" :note="n" :menu="noteMenu(n, e.exercise?.name ?? '')" />
           </div>

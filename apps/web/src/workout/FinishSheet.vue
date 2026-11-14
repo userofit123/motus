@@ -217,7 +217,7 @@ async function finish() {
       accepted: d.accepted.filter((x) => plan.value.changes.some((c) => c.routineExerciseId === x && c.mode === "suggest")),
     });
     keepAwake(false);
-    if (prs) toast(`${prs} new record${prs > 1 ? "s" : ""}!`, { kind: "pr" });
+    if (prs) toast(`Records on ${prs} exercise${prs > 1 ? "s" : ""}!`, { kind: "pr" });
     // leave first, then drop it everywhere (this sheet lives on the workout screen, which needs it until then)
     await router.replace(`/workouts/${id}?done=1`);
     endWorkout(id);

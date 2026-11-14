@@ -84,7 +84,7 @@ const rows = computed(() => r.value.perExercise.map((p, i) => {
       <div class="card stat wsf-tile"><div class="lbl"><span class="bi"><Icon name="layers" :size="15" /></span>Volume</div>
         <div class="val">{{ fmt.vol(r.volumeKg) }}</div><div class="sub">{{ plural(r.reps, "rep") }}</div></div>
       <div class="card stat wsf-tile" :class="{ rec: r.records }"><div class="lbl"><span class="bi"><Icon name="trophy" :size="15" /></span>Records</div>
-        <div class="val">{{ r.records }}</div><div class="sub">{{ recordsSub }}</div></div>
+        <div class="val">{{ r.records }}<small>{{ r.records === 1 ? "exercise" : "exercises" }}</small></div><div class="sub">{{ recordsSub }}</div></div>
       <div v-if="r.targets" class="card stat wsf-tile" :class="{ hit: r.targetsHit >= r.targets }"><div class="lbl"><span class="bi"><Icon name="check" :size="15" /></span>Rep targets</div>
         <div class="val">{{ r.targetsHit }}<small>/{{ r.targets }}</small></div>
         <div class="sub">Sets on target</div>
