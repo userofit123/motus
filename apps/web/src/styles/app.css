@@ -268,7 +268,8 @@ html[data-mode="light"] .pr { color: #9a6d00; }
 /* a sheet's sides follow the density like a card's (a little wider on a computer), so its content lines up with cards in it */
 .sht .sh_h { display: flex; align-items: center; gap: 10px; padding: 16px calc(var(--cpx) + 2px) 12px calc(var(--cpx) + 6px); flex: none; }
 .sht .sh_h b { font-size: 17px; font-weight: 600; flex: 1; letter-spacing: -.2px; }
-.sht .sh_b { padding: 4px calc(var(--cpx) + 6px) calc(var(--cpy) + 3px); overflow: auto; overscroll-behavior: contain; flex: 1; min-height: 0; }
+.sht { --shx: calc(var(--cpx) + 6px); }
+.sht .sh_b { padding: 4px var(--shx) calc(var(--cpy) + 3px); overflow: auto; overscroll-behavior: contain; flex: 1; min-height: 0; }
 .sht .sh_f { padding: 12px calc(var(--cpx) + 6px) calc(16px + var(--sb)); border-top: 1px solid var(--ol); display: flex; gap: 10px; justify-content: flex-end; flex: none; }
 @keyframes su { from { transform: translateY(16px); opacity: 0; } }
 html.phone .scr { padding: 0 var(--sr) 0 var(--sl); align-items: flex-end; }
@@ -277,7 +278,8 @@ html.phone .sht { width: 100%; max-height: min(92vh, calc(100vh - var(--st) - 8p
 html.phone .sht.full { height: min(92vh, calc(100vh - var(--st) - 8px)); }
 html.phone .sht .sh_h::before { content: ""; position: absolute; left: 50%; top: 7px; width: 36px; height: 4px; border-radius: 4px; background: var(--ol); transform: translateX(-50%); }
 html.phone .sht .sh_h { position: relative; padding-top: 22px; }
-html.phone .sht .sh_b { padding: 4px var(--cpx) calc(var(--cpy) + 3px); }
+html.phone .sht { --shx: var(--cpx); }
+html.phone .sht .sh_b { padding: 4px var(--shx) calc(var(--cpy) + 3px); }
 html.phone .sht .sh_f { padding: 12px var(--cpx) calc(12px + var(--sb)); }
 /* the sheet runs to the screen's bottom edge, its background under the navigation bar; when it has no footer to lift,
    its body ends that far up instead, so its last row stays clear of the bar (--sb: env() or the Android app's bar size) */

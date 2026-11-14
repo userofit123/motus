@@ -166,8 +166,10 @@ function te(e: TouchEvent) {
 /* the search stays on top while the filters and the list scroll under it (-4px cancels the sheet body's top padding).
    It runs the sheet's full width (negative margin = the body's side padding, put back as its own padding so the field
    still lines up with the list) so rows never show at its sides. Its colour must be solid, so this one sheet drops the
-   frosted see-through colour of glass themes and shows the same solid --bg as the bar */
-.pksearch { position: sticky; top: -4px; z-index: 1; background: var(--bg); padding: 4px calc(var(--cpx) + 6px); margin: 0 calc(-1 * (var(--cpx) + 6px)) var(--hg); }
+   frosted see-through colour of glass themes and shows the same solid --bg as the bar. The opaque sheet is a deliberate exception: a see-through bar can't match a see-through
+   sheet once rows scroll under it. --shx is the sheet body's side padding (app.css, differs on phone); .row.pksearch
+   beats the global .row:not(.card){padding:0} */
+.row.pksearch { position: sticky; top: -4px; z-index: 1; background: var(--bg); padding: 4px var(--shx); margin: 0 calc(-1 * var(--shx)) var(--hg); }
 :global(body.glass .sht:has(.pksearch)) { background: var(--bg); }
 /* a pick on the phone's big body scrolls the count line up so the filter card ends exactly under that search: the bar's
    measured height (its -4px and the body's 4px top padding cancel out) plus the 2px between the card and the count line
