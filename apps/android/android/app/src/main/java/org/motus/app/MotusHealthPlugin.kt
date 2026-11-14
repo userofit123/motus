@@ -354,7 +354,7 @@ class MotusHealthPlugin : Plugin() {
         // one aggregate call per 90 days since then would run into Health Connect's rate limit and fail the whole read
         val first = c.readRecords(ReadRecordsRequest(type, TimeRangeFilter.after(from), ascendingOrder = true, pageSize = 1)).records.firstOrNull()
             ?: return JSArray()
-        var day = LocalDate.ofInstant(maxOf(from, startOf(first)), zone)
+        var day = maxOf(from, startOf(first)).atZone(zone).toLocalDate()
         val end = LocalDate.now(zone).plusDays(1)
         val arr = JSArray()
         val worn = mutableMapOf<String, Boolean>()
@@ -378,7 +378,7 @@ class MotusHealthPlugin : Plugin() {
                         quarters(c, metric, wr, emptySet(), num) to band
                     } catch (e: Exception) { if (e is kotlinx.coroutines.CancellationException) throw e; continue }
                     for ((h, v) in all) {
-                        val d = LocalDate.ofInstant(h, zone)
+                        val d = h.atZone(zone).toLocalDate()
                         if (d !in ds) continue
                         val b = band[h]
                         fixed[d] = (fixed[d] ?: 0.0) + (if (b != null && b > 0) b else v)
@@ -603,7 +603,7 @@ class MotusHealthPlugin : Plugin() {
      */
     private suspend fun hrDays(c: HealthConnectClient, from: Instant, zone: ZoneId): JSArray {
         val today = LocalDate.now(zone)
-        val firstDay = maxOf(LocalDate.ofInstant(from, zone), today.minusDays(399))
+        val firstDay = maxOf(from.atZone(zone).toLocalDate(), today.minusDays(399))
         val start = firstDay.atStartOfDay(zone).toInstant()
         val end = Instant.now()
         if (!end.isAfter(start)) return JSArray()
@@ -620,7 +620,7 @@ class MotusHealthPlugin : Plugin() {
                     val t = smp.time.toEpochMilli()
                     if (t < start.toEpochMilli() || t > end.toEpochMilli()) continue
                     if (curDay == null || t < curS || t >= curE) {
-                        val d = LocalDate.ofInstant(smp.time, zone)
+                        val d = smp.time.atZone(zone).toLocalDate()
                         curDay = d; curS = d.atStartOfDay(zone).toInstant().toEpochMilli(); curE = d.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
                         curAcc = days.getOrPut(d) { DayHr(curS) }
                     }
