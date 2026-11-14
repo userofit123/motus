@@ -88,7 +88,10 @@ watch(() => [w.value?.id, ...workoutNotes.value.map((n: any) => n.id)], async ([
   seenNotes = new Set(ids);
   if (fresh) { await nextTick(); notesEl.value?.querySelector(`[data-note="${fresh.id}"]`)?.scrollIntoView({ block: "nearest", behavior: "smooth" }); }
 });
-const segs = computed(() => (w.value?.exercises ?? []).filter((e) => e.status !== "skipped").map((e) => ({ id: e.id, n: Math.max(1, e.sets.length), done: e.sets.filter((s) => s.done).length })));
+// working sets, as the header counts them (workoutSoFar): warm-ups are neither planned nor done sets. The started dot
+// still lights on a warm-up, as in the Summary panel (WorkoutSoFar): ticking one has started the exercise
+const per = computed(() => soFar.value.perExercise);
+const segs = computed(() => per.value.filter((p) => p.status !== "skipped").map((p) => ({ id: p.id, n: Math.max(1, p.setsPlanned), done: p.setsDone })));
 // the tabs of exercises on the phone keep the current one in view
 const strip = ref<HTMLElement | null>(null);
 // the action bar's height, so the page can always scroll its last note clear of it
@@ -196,7 +199,7 @@ const menu = computed(() => [
         <TransitionGroup name="mv">
         <div v-for="(e, i) in w.exercises" :key="e.id" class="li" :class="{ cur: i === W.state.cur, act: i === W.state.active, skip: e.status === 'skipped' }" @click="go(i)">
           <span class="stt" :class="{ done: e.status === 'done', part: e.status === 'partial' || (e.status === 'pending' && e.sets.some((s) => s.done)) }"><Icon v-if="e.status === 'done'" name="check" :size="13" /></span>
-          <div class="grow"><div class="t ellipsis">{{ e.exercise?.name }}</div><div class="s">{{ e.sets.filter((s) => s.done).length }} of {{ e.sets.length }} sets{{ e.superset ? `, superset ${e.superset}` : "" }}</div></div>
+          <div class="grow"><div class="t ellipsis">{{ e.exercise?.name }}</div><div class="s">{{ per[i]?.setsDone ?? 0 }} of {{ per[i]?.setsPlanned ?? 0 }} sets{{ e.superset ? `, superset ${e.superset}` : "" }}</div></div>
           <span v-if="i === W.state.cur" class="col" style="gap:0" @click.stop><button class="ib sm plain" style="width:26px;height:22px" aria-label="Move up" @click="move(i, -1)"><Icon name="up" :size="14" /></button><button class="ib sm plain" style="width:26px;height:22px" aria-label="Move down" @click="move(i, 1)"><Icon name="down" :size="14" /></button></span>
         </div>
         </TransitionGroup>
@@ -241,7 +244,7 @@ const menu = computed(() => [
     <FinishSheet v-if="finishing" @close="finishing = false" @cancel="finishing = false; discard()" @open="(i) => { finishing = false; go(i); }" />
     <ExercisePicker v-if="adding" multi :exclude="w.exercises.map((e) => e.exerciseId)" @close="adding = false" @pick="(ids) => { adding = false; W.addExercises(ids); }" />
     <Sheet v-if="settingsOpen" title="Workout settings" @close="settingsOpen = false"><WorkoutSettings v-model="overrides" /></Sheet>
-    <ReorderSheet v-if="listOpen" title="Reorder exercises" hint="Drag to reorder, or use the arrows. Tap an exercise to open it." :items="w.exercises.map((e, i) => ({ id: e.id, title: e.exercise.name, sub: `${e.sets.filter((s) => s.done).length}/${e.sets.length} sets`, cur: i === W.state.cur, active: i === W.state.active, muted: e.status === 'skipped' }))" @move="moveTo" @select="(i) => { go(i); listOpen = false; }" @close="listOpen = false" />
+    <ReorderSheet v-if="listOpen" title="Reorder exercises" hint="Drag to reorder, or use the arrows. Tap an exercise to open it." :items="w.exercises.map((e, i) => ({ id: e.id, title: e.exercise.name, sub: `${per[i]?.setsDone ?? 0} of ${per[i]?.setsPlanned ?? 0} sets`, cur: i === W.state.cur, active: i === W.state.active, muted: e.status === 'skipped' }))" @move="moveTo" @select="(i) => { go(i); listOpen = false; }" @close="listOpen = false" />
   </div>
   <!-- only once we know: while the app opens, or a reload is queued, the workout may still be on its way -->
   <div v-else-if="W.active.isFetched.value && !W.active.isFetching.value && !reloadQueued" class="page"><div class="empty"><b>No workout in progress</b><button class="btn" @click="router.push('/')">Home</button></div></div>

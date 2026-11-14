@@ -8,7 +8,7 @@ import { goalsWithProgress } from "./goals";
 import { stepsByDay } from "./activities";
 import { achievements, dayIn, weekIn } from "./achievements";
 import { plannedMarked } from "./schedule";
-import { workoutSummaries, recentRecords } from "./workouts";
+import { workoutSummaries, recentRecords, findRecords, countRecords, oldestOf } from "./workouts";
 import { routineSummaries } from "./routines";
 import { suggestions } from "./suggest";
 import { programState } from "./programs";
@@ -95,7 +95,7 @@ export function statsRoutes(r: Router) {
     const from = qs.from || "1970-01-01";
     const workouts = await workoutRows(ctx.q, from, to);
     const activities = (await ctx.q.query(
-      "SELECT id, type, name, started_at, duration_s, distance_m, steps, elevation_m FROM activities WHERE started_at >= $1 AND started_at < $2 ORDER BY started_at", [from, to])).rows.map((x: any) => camel(x));
+      "SELECT id, type, name, started_at, duration_s, moving_s, distance_m, steps, elevation_m FROM activities WHERE started_at >= $1 AND started_at < $2 ORDER BY started_at", [from, to])).rows.map((x: any) => camel(x));
     const exercises = await exerciseStats(ctx.q, from, to);
     const routines = new Map<string, any>();
     for (const w of workouts) {
@@ -161,7 +161,13 @@ export function statsRoutes(r: Router) {
       return { id: g.id, name: g.name, lastAt: at };
     });
     // the feed's workouts, newest first: the last one is the first of them (one summary read, records included)
-    const done = await workoutSummaries(ctx.q, "w.status = 'completed'", [], 8);
+    const done = await workoutSummaries(ctx.q, "w.status = 'completed'", [], 8, false);
+    // records read once for the feed's counts and the Records block (last 30 days, only while it is on): from the
+    // older of the two starts, so both see the same records (what is found for a workout doesn't depend on the start)
+    const recordsOn = s.home.blocks.some((b) => b.id === "records" && b.on), monthAgo = new Date(now.getTime() - 30 * 86400000).toISOString();
+    const start = [...(done.length ? [oldestOf(done)] : []), ...(recordsOn ? [monthAgo] : [])].sort()[0];
+    const found = start ? await findRecords(ctx.q, start, recordsOn ? undefined : done.map((w) => w.id)) : [];
+    countRecords(done, found);
     const last = done[0] ?? null;
     const active = (await ctx.q.query("SELECT id, name, started_at FROM workouts WHERE status = 'in_progress' ORDER BY started_at DESC LIMIT 1")).rows[0] ?? null;
     const end = dayIn(new Date(now.getTime() + 7 * 86400000), tzMin);
@@ -198,8 +204,7 @@ export function statsRoutes(r: Router) {
     // the days (in the app's calendar) with a finished workout or an activity: the week strip
     const days = [...new Set([...rows.map((x) => dayIn(x.startedAt, tzMin)), ...acts.map((x: any) => dayIn(x.started_at, tzMin))])].sort();
     // records set in the last 30 days, only while the Records block is on (a bounded number of queries: it reruns on most changes)
-    const records = s.home.blocks.some((b) => b.id === "records" && b.on)
-      ? await recentRecords(ctx.q, new Date(now.getTime() - 30 * 86400000).toISOString(), 6) : [];
+    const records = recordsOn ? await recentRecords(ctx.q, monthAgo, 6, found) : [];
     return {
       days, records,
       weeks, thisWeek: weeks.at(-1), lastWeek: weeks.at(-2), homeGoals,

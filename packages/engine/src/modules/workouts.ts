@@ -22,20 +22,31 @@ export const SET_COUNT_SQL = `(SELECT count(*) FROM workout_sets s JOIN workout_
   WHERE we.workout_id = w.id AND s.done AND s.kind <> 'warmup')`;
 export const DURATION_SQL = `greatest(0, extract(epoch FROM coalesce(w.ended_at, now()) - w.started_at)::int - w.paused_s)`;
 
-export async function workoutSummaries(q: Sql, where: string, params: unknown[], limit = 100): Promise<WorkoutSummary[]> {
-  const { rows } = await q.query(
+export async function workoutSummaries(q: Sql, where: string, params: unknown[], limit = 100, withRecords = true): Promise<WorkoutSummary[]> {
+  const { rows } = await q.query<{ id: string; started_at: string | Date; exercise_count: string; set_count: string; volume_kg: string }>(
     `SELECT w.id, w.routine_id, w.name, w.status, w.started_at, w.ended_at, ${DURATION_SQL} AS duration_s, r.color, w.avg_hr, w.max_hr,
        (SELECT count(*) FROM workout_exercises we WHERE we.workout_id = w.id AND we.status <> 'skipped') AS exercise_count,
        ${SET_COUNT_SQL} AS set_count, ${VOLUME_SQL} AS volume_kg
      FROM workouts w LEFT JOIN routines r ON r.id = w.routine_id WHERE ${where} ORDER BY w.started_at DESC LIMIT ${limit}`, params);
-  // records as the workout page and Home count them: the exercises that set one (from the oldest workout listed on)
-  const prs = new Map<string, number>();
-  if (rows.length) {
-    const since = new Date(Math.min(...rows.map((r: any) => new Date(r.started_at).getTime()))).toISOString();
-    for (const x of await findRecords(q, since)) prs.set(x.workoutId, (prs.get(x.workoutId) ?? 0) + 1);
-  }
-  return rows.map((r: any) => ({ ...camel<WorkoutSummary>(r), exerciseCount: Number(r.exercise_count), setCount: Number(r.set_count), volumeKg: Number(r.volume_kg), prCount: prs.get(r.id) ?? 0 }));
+  const list = rows.map((r) => ({ ...camel<WorkoutSummary>(r), exerciseCount: Number(r.exercise_count), setCount: Number(r.set_count), volumeKg: Number(r.volume_kg), prCount: 0 }));
+  // records as the workout page and Home count them: only the listed workouts' exercises, from the oldest listed on
+  if (withRecords && list.length) countRecords(list, await findRecords(q, oldestOf(list), list.map((w) => w.id)));
+  return list;
 }
+
+/** The start of the oldest of `list`. */
+export const oldestOf = (list: { startedAt: string }[]) => new Date(Math.min(...list.map((w) => new Date(w.startedAt).getTime()))).toISOString();
+
+/** Sets each summary's record count: the exercises in it that set one (findRecords). */
+export function countRecords(list: WorkoutSummary[], records: Omit<HomeRecord, "name">[]) {
+  const n = new Map<string, number>();
+  for (const x of records) n.set(x.workoutId, (n.get(x.workoutId) ?? 0) + 1);
+  for (const w of list) w.prCount = n.get(w.id) ?? 0;
+}
+
+/** How many of an exercise's earlier sessions a record is checked against: the last 500 before it. One rule for the
+ * workout page, lists, Home, Stats and Achievements, so their counts can't differ; it keeps the check bounded. */
+const RECORD_WINDOW = 500;
 
 /** A set as the record check reads it. */
 interface RecSet { id: string; kind: string; done?: boolean; weightKg: number | string | null; reps: number | null; durationS: number | null; distanceM: number | string | null }
@@ -78,19 +89,20 @@ export function flagRecords(tracking: string | undefined, prev: RecSet[], sets: 
 }
 
 /** Records set in this workout: each done set compared with the best of every earlier session of that exercise (its
- * last 500, as on Home) and the sets before it in this one. One query whatever the history: the record check only
+ * last RECORD_WINDOW before it, the one rule of findRecords) and the sets before it in this one. One query whatever the history: the record check only
  * looks at bests (and most reps at a weight), so each exercise's earlier done sets come grouped by weight and reps. */
 async function recordsIn(q: Sql, w: any, exercises: any[]): Promise<Map<string, string[]>> {
   const out = new Map<string, string[]>();
   const ids = [...new Set(exercises.map((we) => we.exerciseId))];
   if (!ids.length) return out;
   const { rows } = await q.query<{ exercise_id: string; warmup: boolean; weight_kg: string | null; reps: number | null; duration_s: number | null; distance_m: string | null }>(
-    `WITH sess AS (SELECT we.id, w.id AS workout_id, w.started_at, row_number() OVER (PARTITION BY we.exercise_id ORDER BY w.started_at DESC, w.id DESC) AS rn
+    `WITH sess AS (SELECT we.id, row_number() OVER (PARTITION BY we.exercise_id ORDER BY w.started_at DESC, w.id DESC) AS rn
        FROM workout_exercises we JOIN workouts w ON w.id = we.workout_id
-       WHERE we.exercise_id = ANY($1::uuid[]) AND w.status = 'completed' AND EXISTS (SELECT 1 FROM workout_sets d WHERE d.workout_exercise_id = we.id AND d.done))
+       WHERE we.exercise_id = ANY($1::uuid[]) AND w.status = 'completed' AND w.started_at < $2 AND w.id <> $3
+         AND EXISTS (SELECT 1 FROM workout_sets d WHERE d.workout_exercise_id = we.id AND d.done))
      SELECT we.exercise_id, s.kind = 'warmup' AS warmup, s.weight_kg, s.reps, max(s.duration_s) AS duration_s, max(s.distance_m) AS distance_m
      FROM sess x JOIN workout_exercises we ON we.id = x.id JOIN workout_sets s ON s.workout_exercise_id = x.id AND s.done
-     WHERE x.rn <= 500 AND x.started_at < $2 AND x.workout_id <> $3
+     WHERE x.rn <= ${RECORD_WINDOW}
      GROUP BY 1, 2, 3, 4`, [ids, w.startedAt, w.id]);
   // per exercise: whether it was done before (a session of only warm-ups counts) and its earlier working sets
   const hist = new Map<string, RecSet[]>();
@@ -108,19 +120,27 @@ async function recordsIn(q: Sql, w: any, exercises: any[]): Promise<Map<string, 
 
 /** Records set since `since`, one per exercise of a workout (its set that broke the most kinds), in time order: the one
  * meaning of "a record" that workout lists, Home, Stats and Achievements count, and the workout page counts from its own
- * per set flags (an exercise with any flagged set). Two passes whatever the history: every done set of the exercises
- * done since then (their whole history, as a record is against all of it, or their last `window` sessions), then the
- * same check as a workout's own records, worked out in memory. */
-export async function findRecords(q: Sql, since: string, window = 500): Promise<Omit<HomeRecord, "name">[]> {
+ * per set flags (an exercise with any flagged set). Each session is checked against the RECORD_WINDOW sessions of its
+ * exercise before it (as recordsIn), so what is found for a session doesn't depend on `since`. With `workoutIds`, only
+ * the exercises of those workouts are read. Two passes whatever the history: the done sets of those exercises since then
+ * plus the RECORD_WINDOW sessions before it, then the same check as a workout's own records, worked out in memory. */
+export async function findRecords(q: Sql, since: string, workoutIds?: string[]): Promise<Omit<HomeRecord, "name">[]> {
   const { rows } = await q.query<{ id: string; kind: string; weight_kg: string | null; reps: number | null; duration_s: number | null; distance_m: string | null;
     we_id: string; exercise_id: string; tracking: Tracking; workout_id: string; started_at: string | Date }>(
-    `SELECT s.id, s.kind, s.weight_kg, s.reps, s.duration_s, s.distance_m, we.id AS we_id, we.exercise_id, ${TRACKING_SQL} AS tracking, w.id AS workout_id, w.started_at
+    // the exercise filter sits inside the ranked sessions, so the window function only reads those exercises' history
+    `WITH ex AS (SELECT DISTINCT x.exercise_id FROM workout_exercises x JOIN workouts y ON y.id = x.workout_id
+       WHERE y.status = 'completed' AND ${workoutIds ? "y.id = ANY($2::uuid[])" : "y.started_at >= $1"}),
+     sess AS (SELECT we.id, we.exercise_id, w.id AS workout_id, w.started_at FROM workout_exercises we JOIN workouts w ON w.id = we.workout_id
+       WHERE w.status = 'completed' AND we.exercise_id IN (SELECT exercise_id FROM ex)
+         AND EXISTS (SELECT 1 FROM workout_sets d WHERE d.workout_exercise_id = we.id AND d.done)),
+     keep AS (SELECT id FROM sess WHERE started_at >= $1
+       UNION ALL SELECT id FROM (SELECT id, row_number() OVER (PARTITION BY exercise_id ORDER BY started_at DESC, workout_id DESC) AS rn
+         FROM sess WHERE started_at < $1) z WHERE z.rn <= ${RECORD_WINDOW})
+     SELECT s.id, s.kind, s.weight_kg, s.reps, s.duration_s, s.distance_m, we.id AS we_id, we.exercise_id, ${TRACKING_SQL} AS tracking, w.id AS workout_id, w.started_at
      FROM workout_sets s JOIN workout_exercises we ON we.id = s.workout_exercise_id JOIN workouts w ON w.id = we.workout_id JOIN exercises e ON e.id = we.exercise_id LEFT JOIN exercise_prefs p ON p.exercise_id = e.id
-     WHERE s.done AND w.status = 'completed' AND we.exercise_id IN (
-       SELECT x.exercise_id FROM workout_exercises x JOIN workouts y ON y.id = x.workout_id WHERE y.status = 'completed' AND y.started_at >= $1)
-       ${Number.isFinite(window) ? `AND we.id IN (SELECT id FROM (SELECT we2.id, row_number() OVER (PARTITION BY we2.exercise_id ORDER BY w2.started_at DESC, w2.id DESC) AS rn
-         FROM workout_exercises we2 JOIN workouts w2 ON w2.id = we2.workout_id WHERE w2.status = 'completed') z WHERE z.rn <= ${Math.floor(window)})` : ""}
-     ORDER BY w.started_at, w.id, we.position, s.position`, [since]);
+     WHERE s.done AND we.id IN (SELECT id FROM keep)
+     ORDER BY w.started_at, w.id, we.position, s.position`, workoutIds ? [since, workoutIds] : [since]);
+  const only = workoutIds && new Set(workoutIds);
   // per exercise, its sessions (one per workout exercise) in time order
   const byEx = new Map<string, { weId: string; workoutId: string; at: string; tracking: Tracking; sets: RecSet[] }[]>();
   for (const r of rows) {
@@ -133,10 +153,10 @@ export async function findRecords(q: Sql, since: string, window = 500): Promise<
   const found: Omit<HomeRecord, "name">[] = [];
   for (const [exerciseId, list] of byEx) {
     list.forEach((sess, i) => {
-      if (sess.at < since) return;
-      // as in a workout (recordsIn): earlier sessions of other workouts, and the first time is not a record (an
-      // earlier session of only warm-ups was a time before)
-      const before = list.slice(0, i).filter((p) => p.at < sess.at && p.workoutId !== sess.workoutId);
+      if (sess.at < since || (only && !only.has(sess.workoutId))) return;
+      // as in a workout (recordsIn): the last RECORD_WINDOW earlier sessions of other workouts, and the first time is
+      // not a record (an earlier session of only warm-ups was a time before)
+      const before = list.slice(0, i).filter((p) => p.at < sess.at && p.workoutId !== sess.workoutId).slice(-RECORD_WINDOW);
       if (!before.length) return;
       const flags = new Map<string, string[]>();
       flagRecords(sess.tracking, before.flatMap((p) => p.sets).filter((s) => s.kind !== "warmup"), sess.sets, flags);
@@ -149,8 +169,9 @@ export async function findRecords(q: Sql, since: string, window = 500): Promise<
 }
 
 /** Records set since `since` with their exercise names, newest first, at most `limit` (Home's Records block, Stats). */
-export async function recentRecords(q: Sql, since: string, limit = 6): Promise<HomeRecord[]> {
-  const out = (await findRecords(q, since)).reverse().slice(0, limit);
+export async function recentRecords(q: Sql, since: string, limit = 6, found?: Omit<HomeRecord, "name">[]): Promise<HomeRecord[]> {
+  // `found`: records already read from `since` or earlier (Home reads them once for its feed and this block)
+  const out = (found ?? await findRecords(q, since)).filter((x) => x.at >= since).reverse().slice(0, limit);
   const names = await getExercises(q, [...new Set(out.map((x) => x.exerciseId))]);
   return out.map((x) => ({ ...x, name: names.get(x.exerciseId)?.name ?? "" }));
 }
@@ -251,7 +272,7 @@ async function workoutReport(q: Sql, w: any) {
       .reduce((b: number, s: any) => b + liftedKg(s.weightKg, s.reps, e.exercise?.tracking), 0), 0),
     exercises: w.exercises.filter((e: any) => e.status !== "skipped").length, skipped: w.exercises.filter((e: any) => e.status === "skipped").length,
     // one per exercise that set a record, as lists, Home and Achievements count (findRecords), not one per flagged set
-    records: w.exercises.filter((e: any) => e.sets.some((s: any) => s.done && s.pr?.length)).length,
+    records: (w.exercises as WorkoutExercise[]).filter((e) => e.sets.some((s) => s.done && s.pr?.length)).length,
     avgRestS: done.filter((s: any) => s.restActualS != null).length ? Math.round(restS / done.filter((s: any) => s.restActualS != null).length) : null,
   };
   // the previous time this routine was done

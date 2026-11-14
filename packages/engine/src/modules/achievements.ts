@@ -59,9 +59,9 @@ type Series = [at: string, total: number][];
 const running = (ev: { at: string; v: number }[]): Series => { let t = 0; return ev.filter((e) => e.v > 0).map((e) => [e.at, (t += e.v)]); };
 
 /** Records as the workout lists, the workout page and Home count them (findRecords): one per exercise of a workout that
- * beat its earlier sessions; the first time doing one is not a record. The whole history, not only recent sessions. */
+ * beat its earlier sessions (the same last 500 before it); the first time doing one is not a record. Every record ever set. */
 async function recordSeries(q: Sql): Promise<Series> {
-  return running((await findRecords(q, new Date(0).toISOString(), Infinity)).map((r) => ({ at: r.at, v: 1 })));
+  return running((await findRecords(q, new Date(0).toISOString())).map((r) => ({ at: r.at, v: 1 })));
 }
 
 /** Best run of weeks in a row reaching the weekly target, as it grew. */
