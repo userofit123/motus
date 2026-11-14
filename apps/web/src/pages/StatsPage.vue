@@ -3,7 +3,7 @@
 import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { GROUPS, muscleName, weekStartOf, weekStartDate, daysIntoWeek, weekdayOrder, statsPeriod, STATS_PERIODS, ymd, type StatsPeriod, WEEKLY_SET_RANGE, num, bodyName, bodyMeasure, fromCm, percentChange } from "@motus/shared";
-import { useStats, useSettings, useAchievements, useGoals, loaded } from "../api/queries";
+import { useStats, useSettings, useAchievements, useGoals, useHealthAvailable, loaded } from "../api/queries";
 import { useFmt, localYmd } from "../core/format";
 import { startOpen } from "../core/ui";
 import { useStepGoal } from "../core/goals";
@@ -19,6 +19,8 @@ import Reports from "../components/Reports.vue";
 import FilterPanel from "../components/FilterPanel.vue";
 import FilterRow from "../components/FilterRow.vue";
 import LearnButton from "../components/learn/LearnButton.vue";
+import SleepTab from "../components/stats/SleepTab.vue";
+import HeartTab from "../components/stats/HeartTab.vue";
 
 const route = useRoute(), router = useRouter();
 const s = useSettings();
@@ -43,7 +45,11 @@ const ach = useAchievements(computed(() => !!s.value.features.achievements));
 const achAmount = (unit: string, v: number) => unit === "kg" ? fmt.value.vol(v) : unit === "m" ? fmt.value.dist(v, v < 10000 ? 1 : 0) : unit === "s" ? `${num(v / 3600, 0)}h` : unit === "weeks" ? `${num(v, 0)} wk` : num(v, 0);
 const d = computed<any>(() => st.data.value);
 const p = computed<any>(() => prev.data.value);
-const TABS = computed(() => [["overview", "Overview"], ["routines", "Routines"], ["exercises", "Exercises"], ["muscles", "Muscles"], ["activities", "Activities"], ["body", "Body"], ...(s.value.features.reports ? [["reports", "Reports"]] : []), ...(s.value.features.achievements ? [["achievements", "Achievements"]] : [])]);
+// Sleep and Heart only once a band (or a script) has handed over that kind of data: never an empty tab for something
+// this person doesn't track
+const avail = useHealthAvailable();
+const TABS = computed(() => [["overview", "Overview"], ["routines", "Routines"], ["exercises", "Exercises"], ["muscles", "Muscles"], ["activities", "Activities"], ["body", "Body"],
+  ...(avail.data.value?.sleep ? [["sleep", "Sleep"]] : []), ...(avail.data.value?.heart ? [["heart", "Heart"]] : []), ...(s.value.features.reports ? [["reports", "Reports"]] : []), ...(s.value.features.achievements ? [["achievements", "Achievements"]] : [])]);
 
 const totals = (x: any) => x ? {
   workouts: x.workouts.length, timeS: x.workouts.reduce((a: number, w: any) => a + w.durationS, 0) + x.activities.reduce((a: number, w: any) => a + w.durationS, 0),
@@ -111,22 +117,17 @@ const bwTrend = computed(() => { let ema: number | null = null; return bw.value.
 // lengths are kept in cm: shown in the person's unit; body fat stays in %
 const mUnit = (k: string) => (bodyMeasure(k)?.unit ?? "cm") === "cm" ? fmt.value.lu : "%";
 const measures = computed(() => { const m = new Map<string, any[]>(); for (const b of d.value?.body ?? []) if (b.kind !== "weight" && b.kind !== "photo") m.set(b.kind, [...(m.get(b.kind) ?? []), { x: new Date(b.measuredAt).getTime(), y: mUnit(b.kind) === "%" ? Number(b.value) : Math.round(fromCm(Number(b.value), fmt.value.lu) * 10) / 10 }]); return [...m]; });
-// a day's resting heart rate, blood oxygen and HRV from a band through Health Connect, each only when it has data.
-// Each chart has the same line under it as body weight: the latest, the smoothed trend and how far the trend moved over
-// the last 7 entries.
-const VITALS = [{ id: "resting_hr", name: "Resting heart rate", unit: "bpm", dp: 0 }, { id: "spo2", name: "Blood oxygen", unit: "%", dp: 0 }, { id: "hrv", name: "HRV", unit: "ms", dp: 0 }] as const;
-const vitals = computed(() => VITALS.map((v) => {
-  const pts = (d.value?.daily ?? []).filter((x: any) => x.kind === v.id).map((x: any) => ({ x: new Date(String(x.date).slice(0, 10) + "T12:00").getTime(), y: Number(x.value) })).sort((a: any, b: any) => a.x - b.x) as { x: number; y: number }[];
-  let ema: number | null = null;
-  const trend = pts.map((p) => (ema = ema == null ? p.y : ema + 0.15 * (p.y - ema)));
-  // rounded before its sign is chosen, so a small move reads "+0", never "-0"; no unit, as the body weight line
-  const moved = trend.length > 7 ? Math.round(trend.at(-1)! - trend.at(-8)!) : null;
-  // whole numbers: "58 bpm", "97%" (a percent sits right after its number, as elsewhere in Stats), "45 ms"
-  const f = (n: number) => fmt.value.num(n, v.dp), u = (n: number) => `${f(n)}${v.unit === "%" ? "" : " "}${v.unit}`;
-  return { ...v, pts, f, line: pts.length ? `Latest ${u(pts.at(-1)!.y)} · trend ${u(trend.at(-1)!)}${moved != null ? ` · ${moved >= 0 ? "+" : "-"}${f(Math.abs(moved))} over the last 7 entries` : ""}` : "" };
-}).filter((v) => v.pts.length));
+// a band's whole-day distance and active calories (Health Connect), each only when it has data in the period: the day's
+// total, so recorded activities are already in it and aren't added on top
+const inPeriod = (x: any) => { const k = String(x.date).slice(0, 10), p = per.value; return (!p.from || k >= ymd(p.from)) && (!p.to || k < ymd(p.to)); };
+const dayPts = (kind: string, f: (v: number) => number) => (d.value?.daily ?? []).filter((x: any) => x.kind === kind && inPeriod(x)).map((x: any) => ({ x: new Date(String(x.date).slice(0, 10) + "T12:00").getTime(), y: f(Number(x.value)) })).sort((a: any, b: any) => a.x - b.x) as { x: number; y: number }[];
+const bandDist = computed(() => dayPts("distance_m", (m) => Math.round(fmt.value.distNum(m) * 100) / 100));
+const bandKcal = computed(() => dayPts("active_kcal", (v) => Math.round(v)));
+const avgOf = (pts: { y: number }[]) => pts.reduce((t, p) => t + p.y, 0) / Math.max(1, pts.length);
 // show the page once its data is in, all at once
-await loaded(st, prev, ach);
+await loaded(st, prev, ach, avail);
+// a tab that isn't there (Sleep in a link, after its data was deleted) falls back to Overview
+watch(() => avail.data.value, () => { if (!TABS.value.some(([k]) => k === tab.value)) tab.value = "overview"; }, { immediate: true });
 </script>
 
 <template>
@@ -206,10 +207,15 @@ await loaded(st, prev, ach);
     </template>
 
     <template v-else-if="tab === 'activities'">
-      <div v-if="!d.activities.length && !steps.length" class="card empty"><Icon name="walk" :size="34" /><b>No activities in this period</b></div>
+      <div v-if="!d.activities.length && !steps.length && !bandDist.length && !bandKcal.length" class="card empty"><Icon name="walk" :size="34" /><b>No activities in this period</b></div>
       <div class="grid g3"><div v-for="t in actTypes" :key="t.type" class="card stat"><div class="lbl" style="text-transform:capitalize">{{ t.type }}</div><div class="val">{{ t.m ? fmt.dist(t.m, 1) : fmt.dur(t.s, true) }}</div><div class="sub">{{ t.n }} sessions · {{ fmt.dur(t.s, true) }}{{ t.m && t.s ? " · " + fmt.pace(t.s, t.m) : "" }}</div></div></div>
       <div v-if="d.activities.length" class="card spt"><div class="lbl hgap">Distance per week ({{ fmt.du }})</div><BarChart :bars="actWeeks.slice(-16).map((w) => ({ ...w, label: w.label.split(' ')[0]!, full: w.label }))" :height="160" :fmt="(v) => fmt.num(v, 1)" /></div>
       <div v-if="steps.length" class="card spt"><div class="lbl hgap">Daily steps{{ stepGoal ? ` · goal ${fmt.num(stepGoal.target, 0)}` : "" }}</div><LineChart :points="steps" :height="160" :fmt="(v) => fmt.num(v, 0)" /></div>
+      <!-- the band's whole-day totals: everything the person did that day, recorded activities included -->
+      <div v-if="bandDist.length || bandKcal.length" class="spt" :class="bandDist.length && bandKcal.length ? 'grid g2' : ''">
+        <div v-if="bandDist.length" class="card"><div class="lbl hgap">Daily distance from your band ({{ fmt.du }})</div><LineChart :points="bandDist" :height="bandDist.length && bandKcal.length ? 140 : 160" :fmt="(v) => fmt.num(v, 1)" /><div class="tiny" style="margin-top:6px">Average {{ fmt.num(avgOf(bandDist), 1) }} {{ fmt.du }} a day · {{ fmt.num(bandDist.reduce((t, p) => t + p.y, 0), 1) }} {{ fmt.du }} in all</div></div>
+        <div v-if="bandKcal.length" class="card"><div class="lbl hgap">Daily active calories from your band (kcal)</div><LineChart :points="bandKcal" :height="bandDist.length && bandKcal.length ? 140 : 160" :fmt="(v) => fmt.num(v, 0)" /><div class="tiny" style="margin-top:6px">Average {{ fmt.num(avgOf(bandKcal), 0) }} kcal a day</div></div>
+      </div>
     </template>
 
     <template v-else-if="tab === 'body'">
@@ -220,10 +226,10 @@ await loaded(st, prev, ach);
         <LineChart v-else :points="bwTrend" :height="220" :fmt="(v) => fmt.num(v, 1)" />
         <div v-if="bw.length" class="tiny" style="margin-top:6px">Latest {{ bw.at(-1)!.y }} {{ fmt.wu }} · trend {{ bwTrend.at(-1)!.y }} {{ fmt.wu }}{{ bwTrend.length > 7 ? ` · ${bwTrend.at(-1)!.y - bwTrend.at(-8)!.y >= 0 ? "+" : ""}${fmt.num(bwTrend.at(-1)!.y - bwTrend.at(-8)!.y, 1)} over the last 7 entries` : "" }}</div></div>
       <div v-if="s.features.measurements" class="grid g2 spt"><div v-for="[k, pts] in measures" :key="k" class="card click" role="button" tabindex="0" @click="router.push(`/body?tab=measurements&kind=${k}`)" @keydown.enter="router.push(`/body?tab=measurements&kind=${k}`)"><div class="lbl hgap">{{ bodyName(k) }} ({{ mUnit(k) }})</div><LineChart :points="pts" :height="140" /></div></div>
-      <!-- a day's resting heart rate, blood oxygen and HRV from a band: the same cards as the measurements above -->
-      <div v-if="vitals.length" class="grid g2 spt"><div v-for="v in vitals" :key="v.id" class="card"><div class="lbl hgap">{{ v.name }} ({{ v.unit }})</div>
-        <LineChart :points="v.pts" :height="140" :fmt="v.f" /><div class="tiny" style="margin-top:6px">{{ v.line }}</div></div></div>
     </template>
+
+    <SleepTab v-else-if="tab === 'sleep'" :from="per.from" :to="per.to" :daily="d.daily" />
+    <HeartTab v-else-if="tab === 'heart'" :from="per.from" :to="per.to" :daily="d.daily" />
 
     <Reports v-else-if="tab === 'reports'" />
 

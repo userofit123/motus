@@ -9,7 +9,9 @@ import { invalidate } from "../api/live";
 import { readJson, writeJson } from "../core/prefs";
 import { accounts } from "./accounts";
 
-type Kind = "steps" | "sleep" | "weight" | "sessions" | "heartRate" | "restingHr" | "spo2" | "hrv";
+/** Everything the plugin asks Health Connect for: someone who allowed an earlier version lacks the kinds added since */
+export const HEALTH_KINDS = ["steps", "sleep", "weight", "sessions", "heartRate", "restingHr", "spo2", "hrv", "respiratoryRate", "distance", "activeKcal"] as const;
+type Kind = (typeof HEALTH_KINDS)[number];
 // history: Motus may read further back than 30 days; historyAvailable: this phone's Health Connect can allow that at all
 // (someone who allowed Motus before past data could be asked for has historyAvailable but not history until connect() again)
 export interface HealthStatus { available: "yes" | "update" | "no"; granted: Kind[]; history: boolean; historyAvailable: boolean }
@@ -19,10 +21,13 @@ export interface HealthData {
   sessions: { id: string; type: string; title: string; start: string; end: string; avgHr?: number; distanceM?: number; steps?: number; calories?: number }[];
   // a day's resting heart rate (bpm), blood oxygen (%) and heart rate variability (ms); absent from an older app build
   restingHr?: { date: string; value: number }[]; spo2?: { date: string; value: number }[]; hrv?: { date: string; value: number }[];
+  // each night in full (its stages, and the heart rate, blood oxygen and breathing read meanwhile), a day's distance
+  // (metres) and active calories, the band's whole-day totals; passed on as they come, absent from an older app build
+  sleepNights?: unknown[]; distance?: { date: string; value: number }[]; activeKcal?: { date: string; value: number }[];
 }
 /** What POST /health/import added, and ranges: what POST /health/ranges filled in on activities and workouts recorded in
  *  Motus (the band's steps, its heart rate) */
-export interface HealthResult { steps: number; sleep: number; weight: number; activities: number; restingHr?: number; spo2?: number; hrv?: number; ranges?: { steps: number; hr: number } }
+export interface HealthResult { steps: number; sleep: number; weight: number; activities: number; restingHr?: number; spo2?: number; hrv?: number; sleepNights?: number; distance?: number; activeKcal?: number; ranges?: { steps: number; hr: number } }
 type Range = { kind: "activity" | "workout"; id: string; start: string; end: string };
 type RangeResult = { kind: "activity" | "workout"; id: string; steps?: number; covered: boolean; hr?: [number, number][] };
 
@@ -66,7 +71,7 @@ async function read(past?: Date): Promise<HealthResult | null> {
     // then what the band saw during activities and workouts recorded in Motus over the same days: its steps (a phone in
     // a pocket counts fewer) and heart rate. A failure here keeps the import above; the next sync asks again.
     try { r.ranges = await readRanges(from); } catch (e) { console.warn("Health Connect ranges", e); }
-    if (r.steps || r.sleep || r.activities || r.weight || r.restingHr || r.spo2 || r.hrv) invalidate([...TOPICS.health]);
+    if (r.steps || r.sleep || r.activities || r.weight || r.restingHr || r.spo2 || r.hrv || r.sleepNights || r.distance || r.activeKcal) invalidate([...TOPICS.health]);
     if (r.ranges?.steps || r.ranges?.hr) invalidate([...TOPICS.health, "workouts"]);
     return r;
   } finally { syncing.value = false; running = null; }

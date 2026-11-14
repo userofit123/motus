@@ -3,7 +3,9 @@
 // for a local account and for a server account's copy on the phone alike.
 // - Daily steps and sleep go into the daily log as source "health_connect". A value typed in by hand stays: the person's
 //   own number wins over a device's (as for steps, PLAN.md decision M-155). The same for a band's daily resting heart
-//   rate, SpO2 and HRV (028).
+//   rate, SpO2 and HRV (028), daily distance (metres) and active calories (029).
+// - A night of sleep in detail (stages, heart rate, SpO2, breathing) goes into sleep_nights (029), under the day's
+//   sleep key: the night is the detail, the daily sleep hours stay the person's when typed.
 // - Weight goes into the body log once: by its Health Connect id, or (from an app that doesn't send one) a reading
 //   already logged at the same minute is the same reading.
 // - Exercise sessions become activities keyed by their Health Connect id, so a second sync never adds them twice and an
@@ -19,13 +21,15 @@ import { bad, notFound } from "../errors";
 import { ensureTypes, saveActivity } from "./activities";
 
 export const HEALTH_SOURCE = "health_connect";
-type Daily = "steps" | "sleep" | "resting_hr" | "spo2" | "hrv";
+type Daily = "steps" | "sleep" | "resting_hr" | "spo2" | "hrv" | "distance" | "active_kcal";
 type Kind = Daily | "weight" | "activity";
 /** The daily log's kind for each daily import. */
-const DAILY_KIND: Record<Daily, string> = { steps: "steps", sleep: "sleep_h", resting_hr: "resting_hr", spo2: "spo2", hrv: "hrv" };
+const DAILY_KIND: Record<Daily, string> = { steps: "steps", sleep: "sleep_h", resting_hr: "resting_hr", spo2: "spo2", hrv: "hrv", distance: "distance_m", active_kcal: "active_kcal" };
 const isDaily = (k: string): k is Daily => k in DAILY_KIND;
-/** What a day's value may be, and how it is kept: bpm and ms whole, sleep hours and SpO2 % to one decimal. */
-const DAILY_RANGE: Record<Daily, [number, number, number]> = { steps: [0, 1e6, 1], sleep: [0, 24, 10], resting_hr: [25, 200, 1], spo2: [50, 100, 10], hrv: [1, 500, 1] };
+/** What a day's value may be, and how it is kept: bpm, ms, metres and kcal whole, sleep hours and SpO2 % to one decimal. */
+const DAILY_RANGE: Record<Daily, [number, number, number]> = {
+  steps: [0, 1e6, 1], sleep: [0, 24, 10], resting_hr: [25, 200, 1], spo2: [50, 100, 10], hrv: [1, 500, 1], distance: [0, 500000, 1], active_kcal: [0, 20000, 1],
+};
 const dailyValue = (k: Daily, v: unknown) => {
   const [min, max, f] = DAILY_RANGE[k];
   const n = numOrNull(v, min, max);
@@ -34,6 +38,8 @@ const dailyValue = (k: Daily, v: unknown) => {
 /** A value from a band that is out of range (a glitch, a reading taken off the wrist) is skipped, not the whole batch. */
 const lenient = (k: Daily, v: unknown) => { try { return dailyValue(k, v); } catch { return null; } };
 const DAILY_SQL = `(${Object.values(DAILY_KIND).map((k) => `'${k}'`).join(", ")})`;
+/** The daily log's kind for an import log row's kind, in SQL (h: health_imports). */
+const DAILY_CASE = `CASE h.kind ${Object.entries(DAILY_KIND).map(([i, d]) => `WHEN '${i}' THEN '${d}'`).join(" ")} END`;
 interface Imp { kind: Kind; date: string | null; ref: string | null; deleted: boolean }
 
 const remember = (ctx: Ctx, key: string, kind: Kind, date: string | null, ref: string | null) => ctx.q.query(
@@ -60,7 +66,7 @@ const HR_POINTS = 600;
  * clocks a little apart), sorted, at most HR_POINTS (averaged in even runs, so a long session keeps its shape).
  * Average and max come from every reading, before thinning. Readings out of 25-250 bpm are glitches and left out.
  */
-export function heartRate(v: unknown, startS: number, endS: number): { hr: [number, number][]; avg: number; max: number } | null {
+export function heartRate(v: unknown, startS: number, endS: number, points = HR_POINTS): { hr: [number, number][]; avg: number; max: number; min: number } | null {
   if (!Array.isArray(v)) return null;
   const pts = new Map<number, number>();
   for (const p of v.slice(0, 100000)) {
@@ -71,15 +77,51 @@ export function heartRate(v: unknown, startS: number, endS: number): { hr: [numb
   }
   const all = [...pts].sort((a, b) => a[0] - b[0]);
   if (all.length < 2) return null;
-  const avg = Math.round(all.reduce((s, p) => s + p[1], 0) / all.length), max = Math.max(...all.map((p) => p[1]));
-  if (all.length <= HR_POINTS) return { hr: all, avg, max };
+  const avg = Math.round(all.reduce((s, p) => s + p[1], 0) / all.length);
+  const max = all.reduce((m, p) => Math.max(m, p[1]), 0), min = all.reduce((m, p) => Math.min(m, p[1]), 999);
+  if (all.length <= points) return { hr: all, avg, max, min };
   const hr: [number, number][] = [];
-  for (let i = 0; i < HR_POINTS; i++) {
-    const run = all.slice(Math.floor((i * all.length) / HR_POINTS), Math.floor(((i + 1) * all.length) / HR_POINTS));
+  for (let i = 0; i < points; i++) {
+    const run = all.slice(Math.floor((i * all.length) / points), Math.floor(((i + 1) * all.length) / points));
     hr.push([Math.round(run.reduce((s, p) => s + p[0], 0) / run.length), Math.round(run.reduce((s, p) => s + p[1], 0) / run.length)]);
   }
-  return { hr, avg, max };
+  return { hr, avg, max, min };
 }
+
+/** The most heart rate points kept per night: a night is long and calm, so fewer than a workout. */
+const NIGHT_HR_POINTS = 300;
+/** A value from a band, or null when missing or out of range (a glitch is dropped, not the night). */
+const soft = (v: unknown, min: number, max: number, f = 1) => {
+  try { const n = numOrNull(v, min, max); return n == null ? null : Math.round(n * f) / f; } catch { return null; }
+};
+const MIN_PER_NIGHT = 24 * 60;
+interface Night {
+  date: string; start: string; end: string; asleep: number; awake: number; light: number | null; deep: number | null; rem: number | null;
+  avgHr: number | null; minHr: number | null; hr: [number, number][] | null; avgSpo2: number | null; minSpo2: number | null; respRate: number | null;
+}
+/** A night as the phone sent it, checked; null when it can't be a night (no day, no asleep time, times the wrong way round, over a day long). */
+export function readNight(e: any): Night | null {
+  if (!e || typeof e !== "object") return null;
+  let date: string | null, start: string, end: string;
+  try { date = dateStr(e.date); start = isoTime(e.start); end = isoTime(e.end); } catch { return null; }
+  const s = Date.parse(start) / 1000, t = Date.parse(end) / 1000;
+  if (!date || t <= s || t - s > MIN_PER_NIGHT * 60) return null;
+  const asleep = soft(e.asleepMin, 0, MIN_PER_NIGHT), awake = soft(e.awakeMin, 0, MIN_PER_NIGHT) ?? 0;
+  if (asleep == null) return null;
+  const h = heartRate(e.hr, s, t, NIGHT_HR_POINTS);
+  return {
+    date, start, end, asleep, awake,
+    light: soft(e.lightMin, 0, MIN_PER_NIGHT), deep: soft(e.deepMin, 0, MIN_PER_NIGHT), rem: soft(e.remMin, 0, MIN_PER_NIGHT),
+    // the phone's own figures when it sent them (from every reading), else worked out from the series
+    avgHr: soft(e.avgHr, 25, 250) ?? h?.avg ?? null, minHr: soft(e.minHr, 25, 250) ?? h?.min ?? null, hr: h?.hr ?? null,
+    avgSpo2: soft(e.avgSpo2, 50, 100, 10), minSpo2: soft(e.minSpo2, 50, 100, 10), respRate: soft(e.respRate, 4, 60, 10),
+  };
+}
+const NIGHT_COLS = ["start_at", "end_at", "asleep_min", "awake_min", "light_min", "deep_min", "rem_min", "avg_hr", "min_hr", "hr", "avg_spo2", "min_spo2", "resp_rate"];
+const UPSERT_NIGHT = `INSERT INTO sleep_nights (user_id, date, ${NIGHT_COLS.join(", ")}, source) VALUES (${[...NIGHT_COLS, 0, 0, 0].map((_, i) => `$${i + 1}`).join(",")})
+  ON CONFLICT (user_id, date) DO UPDATE SET ${NIGHT_COLS.map((c) => `${c} = EXCLUDED.${c}`).join(", ")}, source = EXCLUDED.source
+  WHERE (${NIGHT_COLS.map((c) => `sleep_nights.${c}`).join(", ")}) IS DISTINCT FROM (${NIGHT_COLS.map((c) => `EXCLUDED.${c}`).join(", ")})
+  RETURNING 1`;
 
 /** Whether the band's count for an activity is believable next to the app's own (null or 0: the app counted none). */
 export function plausibleSteps(band: number, app: number | null) {
@@ -95,7 +137,7 @@ export function plausibleSteps(band: number, app: number | null) {
 export function healthRoutes(r: Router) {
   r.post("/health/import", async (ctx, _p, b) => {
     const list = (v: unknown, max: number): any[] => (Array.isArray(v) ? v.slice(0, max) : []);
-    const out = { steps: 0, sleep: 0, restingHr: 0, spo2: 0, hrv: 0, weight: 0, activities: 0 };
+    const out = { steps: 0, sleep: 0, sleepNights: 0, restingHr: 0, spo2: 0, hrv: 0, distance: 0, activeKcal: 0, weight: 0, activities: 0 };
     let touched = false; // the log changed (a row noted or marked deleted), even when no number did
 
     const imps = new Map<string, Imp>((await ctx.q.query("SELECT key, kind, to_char(date, 'YYYY-MM-DD') AS date, ref, deleted_at IS NOT NULL AS deleted FROM health_imports")).rows
@@ -144,8 +186,31 @@ export function healthRoutes(r: Router) {
       const h = numOrNull(e?.hours, 0, 24);
       if (await day("sleep", e?.date, h == null ? null : Math.round(h * 10) / 10)) out.sleep++;
     }
-    for (const [field, kind] of [["restingHr", "resting_hr"], ["spo2", "spo2"], ["hrv", "hrv"]] as const)
+    for (const [field, kind] of [["restingHr", "resting_hr"], ["spo2", "spo2"], ["hrv", "hrv"], ["distance", "distance"], ["activeKcal", "active_kcal"]] as const)
       for (const e of list(b[field], 400)) if (await day(kind, e?.date, lenient(kind, e?.value))) out[field]++;
+
+    // nights: after the daily sleep, whose key they share
+    const sleepDays = new Set(list(b.sleep, 400).map((e) => e?.date));
+    for (const n of list(b.sleepNights, 400).map(readNight)) {
+      if (!n) continue;
+      const key = `sleep:${n.date}`;
+      // a night without the day's hours alongside: its asleep time is the day's sleep (a typed day stays as it is)
+      if (!sleepDays.has(n.date)) await day("sleep", n.date, Math.round(n.asleep / 6) / 10);
+      if (imps.get(key)?.deleted) continue; // its night is cleared below
+      if (!imps.has(key)) {
+        // the day's sleep is typed, so day() noted nothing: the night still came in, and is noted so a deletion sticks
+        const typed = (await ctx.q.query("SELECT 1 FROM daily_logs WHERE date = $1 AND kind = 'sleep_h'", [n.date])).rows.length > 0;
+        if (!typed) continue;
+        await remember(ctx, key, "sleep", n.date, null);
+        imps.set(key, { kind: "sleep", date: n.date, ref: null, deleted: false });
+        touched = true;
+      }
+      const { rows } = await ctx.q.query(UPSERT_NIGHT, [ctx.userId, n.date, n.start, n.end, n.asleep, n.awake, n.light, n.deep, n.rem,
+        n.avgHr, n.minHr, n.hr && JSON.stringify(n.hr), n.avgSpo2, n.minSpo2, n.respRate, HEALTH_SOURCE]);
+      if (rows.length) out.sleepNights++;
+    }
+    // a night whose day was deleted (here, or on a copy whose deletion synced in) goes too
+    if ((await ctx.q.query("DELETE FROM sleep_nights n USING health_imports h WHERE h.kind = 'sleep' AND h.deleted_at IS NOT NULL AND h.date = n.date RETURNING 1")).rows.length) touched = true;
 
     for (const e of list(b.weight, 1000)) {
       const kg = numOrNull(e?.kg, 1, 700);
@@ -259,7 +324,47 @@ export function healthRoutes(r: Router) {
     return out;
   });
 
-  // The import log, newest first. A day's numbers (steps, sleep, resting heart rate, SpO2, HRV) sort at the end of their day, above that day's readings.
+  // Nights of sleep, newest first. Shown only while the day's sleep is there: not once its import is deleted, nor when
+  // the day's sleep was cleared elsewhere (the next sync notes that as a deletion). edited/sleepH: the day's own number.
+  const nights = async (ctx: Ctx, where: string, args: unknown[], withHr: boolean) => (await ctx.q.query(
+    `SELECT to_char(n.date, 'YYYY-MM-DD') AS date, n.start_at, n.end_at, n.asleep_min, n.awake_min, n.light_min, n.deep_min, n.rem_min,
+       n.avg_hr, n.min_hr, n.avg_spo2, n.min_spo2, n.resp_rate, d.value AS sleep_h, d.source AS d_source ${withHr ? ", n.hr" : ""}
+     FROM sleep_nights n JOIN daily_logs d ON d.user_id = n.user_id AND d.date = n.date AND d.kind = 'sleep_h'
+     WHERE ${where} AND NOT EXISTS (SELECT 1 FROM health_imports h WHERE h.key = 'sleep:' || to_char(n.date, 'YYYY-MM-DD') AND h.deleted_at IS NOT NULL)
+     ORDER BY n.date DESC LIMIT 400`, args)).rows.map((x: any) => {
+    const num = (v: unknown) => (v == null ? null : Number(v));
+    return {
+      date: x.date as string, startAt: new Date(x.start_at).toISOString(), endAt: new Date(x.end_at).toISOString(),
+      asleepMin: x.asleep_min as number, awakeMin: x.awake_min as number, lightMin: x.light_min as number | null, deepMin: x.deep_min as number | null, remMin: x.rem_min as number | null,
+      avgHr: x.avg_hr as number | null, minHr: x.min_hr as number | null, avgSpo2: num(x.avg_spo2), minSpo2: num(x.min_spo2), respRate: num(x.resp_rate),
+      edited: x.d_source !== HEALTH_SOURCE, sleepH: Number(x.sleep_h),
+      ...(withHr ? { hr: (x.hr ?? null) as [number, number][] | null } : {}),
+    };
+  });
+  r.get("/health/sleep", async (ctx, _p, _b, qs) => {
+    const from = dateStr(qs.from) ?? "1970-01-01", to = dateStr(qs.to);
+    return { nights: await nights(ctx, to ? "n.date >= $1::date AND n.date < $2::date" : "n.date >= $1::date", to ? [from, to] : [from], false) };
+  });
+  r.get("/health/sleep/:date", async (ctx, p) => {
+    const night = (await nights(ctx, "n.date = $1::date", [dateStr(p.date)], true))[0];
+    if (!night) throw notFound("No night for this day");
+    return night;
+  });
+
+  // Which kinds of band data this person has at all, so screens only offer what there is to show
+  r.get("/health/available", async (ctx) => {
+    const { rows } = await ctx.q.query(`SELECT
+      EXISTS (SELECT 1 FROM sleep_nights) OR EXISTS (SELECT 1 FROM daily_logs WHERE kind = 'sleep_h' AND source = $1) AS sleep,
+      EXISTS (SELECT 1 FROM daily_logs WHERE kind IN ('resting_hr', 'spo2', 'hrv'))
+        OR EXISTS (SELECT 1 FROM activities WHERE hr IS NOT NULL OR (source = $1 AND avg_hr IS NOT NULL))
+        OR EXISTS (SELECT 1 FROM workouts WHERE hr IS NOT NULL) AS heart,
+      EXISTS (SELECT 1 FROM daily_logs WHERE kind = 'distance_m') AS distance,
+      EXISTS (SELECT 1 FROM daily_logs WHERE kind = 'active_kcal') AS calories`, [HEALTH_SOURCE]);
+    const x = rows[0] as any;
+    return { sleep: !!x.sleep, heart: !!x.heart, distance: !!x.distance, calories: !!x.calories };
+  });
+
+  // The import log, newest first. A day's numbers (steps, sleep, resting heart rate, SpO2, HRV, distance, active calories) sort at the end of their day, above that day's readings.
   r.get("/health/imports", async (ctx, _p, _b, qs) => {
     const limit = intOrNull(qs.limit, 1, 200) ?? 50;
     const tz = tzOf(qs);
@@ -276,7 +381,7 @@ export function healthRoutes(r: Router) {
           coalesce(bm.measured_at, a.started_at, ((h.date + 1)::timestamp AT TIME ZONE 'UTC') + $1::float8 * interval '1 minute' - interval '1 millisecond') AS sort_at
         FROM health_imports h
         LEFT JOIN daily_logs d ON h.kind NOT IN ('weight', 'activity') AND d.user_id = h.user_id AND d.date = h.date
-          AND d.kind = CASE h.kind WHEN 'sleep' THEN 'sleep_h' ELSE h.kind END
+          AND d.kind = ${DAILY_CASE}
         LEFT JOIN body_metrics bm ON h.kind = 'weight' AND bm.id::text = h.ref
         LEFT JOIN activities a ON h.kind = 'activity' AND a.id::text = h.ref
         WHERE h.deleted_at IS NULL AND (d.date IS NOT NULL OR bm.id IS NOT NULL OR a.id IS NOT NULL)
@@ -324,6 +429,8 @@ export function healthRoutes(r: Router) {
     const h = await entry(ctx, p.key!);
     if (!h) throw notFound("This import is gone");
     if (isDaily(h.kind)) await ctx.q.query("DELETE FROM daily_logs WHERE date = $1 AND kind = $2", [h.date, DAILY_KIND[h.kind]]);
+    // a day's sleep takes its night's detail with it
+    if (h.kind === "sleep") await ctx.q.query("DELETE FROM sleep_nights WHERE date = $1", [h.date]);
     else await ctx.q.query(`DELETE FROM ${h.kind === "weight" ? "body_metrics" : "activities"} WHERE id::text = $1`, [h.ref]);
     await forget(ctx, p.key!);
     ctx.changed("health");

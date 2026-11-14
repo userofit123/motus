@@ -82,8 +82,6 @@ const menu = computed(() => !g.value ? [] : [
 </template>
 
 <style scoped>
-.gs-top { display: flex; align-items: center; gap: var(--spg); }
-.gs-val { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.2; }
 .gs-when { margin: var(--hg) 0 var(--spg); }
 .gs-runs { margin-bottom: var(--spg); }
 .gs-runs .stat { min-height: 0; }

@@ -48,6 +48,19 @@ export const useActivityTypes = () => useQuery({ queryKey: ["activities", "types
 export const useBody = (kind?: string) => useQuery({ queryKey: ["body", kind ?? "all"], queryFn: () => api.get("/body", { kind }) });
 export const useSchedules = () => useQuery({ queryKey: ["schedules"], queryFn: () => api.get("/schedules") });
 export const useTemplates = () => useQuery({ queryKey: ["static", "templates"], queryFn: () => api.get("/templates"), staleTime: Infinity });
+// What a band handed over through Health Connect (or a script through the API): which kinds there are at all, so Stats
+// shows its Sleep and Heart tabs only when there is something to put in them; filed under "health", which imports announce
+export type HealthAvailable = { sleep: boolean; heart: boolean; distance: boolean; calories: boolean };
+export const useHealthAvailable = () => useQuery({ queryKey: ["health", "available"], queryFn: () => api.get<HealthAvailable>("/health/available"), staleTime: 60_000 });
+/** One night from a band: minutes in each stage (null when it only told asleep from awake) and what it read meanwhile */
+export interface SleepNight {
+  date: string; startAt: string; endAt: string; asleepMin: number; awakeMin: number | null;
+  lightMin: number | null; deepMin: number | null; remMin: number | null;
+  avgHr: number | null; minHr: number | null; avgSpo2: number | null; minSpo2: number | null; respRate: number | null;
+  edited: boolean; sleepH: number;
+}
+export const useSleep = (range: MaybeRef<{ from?: string; to?: string }>, enabled: MaybeRef<boolean> = true) => useQuery({ queryKey: computed(() => ["health", "sleep", unref(range)]), queryFn: () => api.get<{ nights: SleepNight[] }>("/health/sleep", unref(range)), enabled });
+export const useSleepNight = (date: MaybeRef<string>) => useQuery({ queryKey: computed(() => ["health", "sleep", "night", unref(date)]), queryFn: () => api.get<SleepNight & { hr: [number, number][] | null }>(`/health/sleep/${unref(date)}`), enabled: computed(() => !!unref(date)) });
 export const useAchievements = (enabled: MaybeRef<boolean> = true) => useQuery({ queryKey: ["stats", "achievements"], queryFn: () => api.get<any[]>("/achievements", { tz: new Date().getTimezoneOffset() }), enabled });
 
 // The activity log, newest first, a page at a time. With an offline copy it comes from the server when it can be

@@ -712,6 +712,15 @@ html.phone .apscr { z-index: 200; }
 /* on the phone, two- and three-column sections stack (stat cards stay two across) */
 html.phone .grid.g2:not(.keep), html.phone .grid.g3:not(.keep) { grid-template-columns: minmax(0, 1fr); }
 html.phone .grid.g4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+/* a row of stat tiles with fewer than four (Stats → Sleep and Heart show only those with data): as wide as the row on a
+   computer; on the phone two across as four are, three putting the first (the hero) across the top */
+.grid.g4.n3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.grid.g4.n2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.grid.g4.n1 { grid-template-columns: minmax(0, 1fr); }
+html.phone .grid.g4.n3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+html.phone .grid.g4.n3 > :first-child { grid-column: 1 / -1; }
+html.phone .grid.g4.n1 { grid-template-columns: minmax(0, 1fr); }
+@media (max-width: 1100px) { .grid.g4.n3 { grid-template-columns: repeat(2, minmax(0, 1fr)); } .grid.g4.n3 > :first-child { grid-column: 1 / -1; } }
 /* History's month bar: the month and its arrows in the middle, Today and Plan at the right; the two side columns share
    the leftover width equally so the middle stays centred */
 .calnav { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; margin-bottom: var(--hg); }
@@ -768,6 +777,22 @@ html.phone .pshell.withbar .syncpill { bottom: calc(var(--tabh) + var(--sb) + 80
 html.phone .pshell.withbar2 .syncpill { bottom: calc(var(--tabh) + var(--sb) + 132px); }
 html.phone .pshell.withbar3 .syncpill { bottom: calc(var(--tabh) + var(--sb) + 184px); }
 html.phone:has(.pshell.withbar2) .tst { bottom: calc(var(--tabh) + 132px + var(--sb)); }
+/* pull to refresh (shell/PullRefresh.vue): a round bubble (the offline pill's surface and border, the menus' and toasts'
+   shadow) that comes down under the top bar with
+   the finger (--ptr, after resistance) and fades in over the first part of the pull (--ptrp: 0-1, 1 = a release refreshes);
+   phones only, where the browser's own overscroll glow is switched off so it doesn't show under it */
+html.phone, html.phone body { overscroll-behavior-y: contain; }
+.ptr { position: fixed; top: var(--st); left: 50%; z-index: 150; width: 36px; height: 36px; margin-left: -18px; display: grid; place-items: center; pointer-events: none;
+  border-radius: 999px; background: var(--s2); border: 1px solid var(--ol); box-shadow: var(--shadow-pop); color: var(--acc); backdrop-filter: blur(16px) saturate(1.4);
+  transform: translateY(calc(var(--ptr, 0px) - 40px)) scale(calc(.7 + .3 * var(--ptrp, 0))); opacity: min(1, calc(var(--ptrp, 0) * 2));
+  transition: transform .26s var(--ease), opacity .2s var(--ease), border-color .15s; }
+.ptr.drag { transition: border-color .15s; }
+.ptr.ready:not(.busy, .done) { border-color: var(--acc); }
+.ptr.done { transition: transform .2s ease-in, opacity .2s; transform: translateY(calc(var(--ptr, 0px) - 40px)) scale(0); opacity: 0; }
+.ptr svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2.4; stroke-linecap: round; }
+.ptr circle { transform-origin: center; transform: rotate(-90deg); }
+.ptr.busy svg { animation: sp .8s linear infinite; }
+@media (prefers-reduced-motion: reduce) { .ptr, .ptr.done { transition: opacity .2s; } .ptr.busy svg { animation-duration: 3s; } }
 .sp-enter-active, .sp-leave-active { transition: opacity .25s, transform .25s var(--ease); }
 .sp-enter-from, .sp-leave-to { opacity: 0; transform: translateY(8px); }
 
@@ -847,3 +872,8 @@ html.phone .scr.leaving .sht { animation: up .22s ease-in reverse forwards; }
 /* the Appearance sheet's grab handle, as on the other sheets */
 html.phone #pop .aph { position: relative; padding-top: 22px; }
 html.phone #pop .aph::before { content: ""; position: absolute; left: 50%; top: 7px; width: 36px; height: 4px; border-radius: 4px; background: var(--ol); transform: translateX(-50%); }
+
+/* the top of a sheet that shows one thing in full (a goal, a night): its ring with the value beside it */
+.gs-top { display: flex; align-items: center; gap: var(--spg); }
+.gs-val { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.2; }
+.gs-val small { font-size: 15px; font-weight: 500; margin-inline-start: 6px; color: var(--tx2); }

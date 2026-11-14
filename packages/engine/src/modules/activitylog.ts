@@ -52,7 +52,12 @@ const BURST = 3 * 3600_000; // changes to one thing this close together are one 
 const NEAR = 10 * 60_000; // a deleted child row can't be traced to its parent: it joins whatever of its kind changed with it
 const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? "" : "s"}`;
 const snip = (s: string | null | undefined) => { const t = String(s ?? "").replace(/\s+/g, " ").trim(); return t ? (t.length > 60 ? t.slice(0, 57) + "…" : t) : null; };
-const label = (k: string) => k === "weight" ? "body weight" : k.replace(/_/g, " ");
+// a daily log kind's plain name (its id carries the unit: sleep_h, distance_m)
+const NAMES: Record<string, string> = {
+  weight: "body weight", sleep_h: "sleep", water_ml: "water", distance_m: "distance", active_kcal: "active calories",
+  resting_hr: "resting heart rate", spo2: "blood oxygen", hrv: "HRV",
+};
+const label = (k: string) => NAMES[k] ?? k.replace(/_/g, " ");
 
 export function activityLogRoutes(r: Router) {
   r.get("/activity-log", async ({ q }, _p, _b, qs) => {

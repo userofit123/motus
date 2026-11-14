@@ -11,7 +11,7 @@ import Icon from "../Icon.vue";
 import { toast } from "../../core/toast";
 import { useSettings } from "../../api/queries";
 import { computed, onMounted, onBeforeUnmount, ref } from "vue";
-import { healthSupported, healthStatus, connectHealth, openHealthSettings, syncHealth, lastSync, syncing, type HealthStatus, type HealthResult } from "../../native/health";
+import { HEALTH_KINDS, healthSupported, healthStatus, connectHealth, openHealthSettings, syncHealth, lastSync, syncing, type HealthStatus, type HealthResult } from "../../native/health";
 
 const s = useSettings();
 const router = useRouter();
@@ -32,7 +32,7 @@ const hc = ref<HealthStatus | null>(null);
 const readHc = async () => { if (healthSupported() && s.value.features.healthConnect) hc.value = await healthStatus().catch(() => null); };
 onMounted(() => { void readHc(); document.addEventListener("visibilitychange", readHc); });
 onBeforeUnmount(() => document.removeEventListener("visibilitychange", readHc));
-const KIND_NAMES: Record<string, string> = { steps: "steps", sleep: "sleep", weight: "weight", sessions: "workouts", heartRate: "heart rate", restingHr: "resting heart rate", spo2: "blood oxygen", hrv: "HRV" };
+const KIND_NAMES: Record<string, string> = { steps: "steps", sleep: "sleep", weight: "weight", sessions: "workouts", heartRate: "heart rate", restingHr: "resting heart rate", spo2: "blood oxygen", hrv: "HRV", respiratoryRate: "breathing rate", distance: "distance", activeKcal: "active calories" };
 const allowed = computed(() => {
   const names = (hc.value?.granted ?? []).map((k) => KIND_NAMES[k]).filter(Boolean) as string[];
   return names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names.at(-1)}` : names[0] ?? "";
@@ -45,17 +45,30 @@ const hcText = computed(() => {
   return hc.value.granted.length ? `Allowed: ${allowed.value}` : "Not allowed yet";
 });
 const connected = computed(() => !!hc.value?.granted.length);
+// allowed before Motus read some kinds (heart data, distance, sleep details came later): Health Connect only asks again
+// when Motus does, so the row offers it
+const missing = computed(() => connected.value ? HEALTH_KINDS.filter((k) => !hc.value!.granted.includes(k)) : []);
+const missingText = computed(() => { const n = missing.value.map((k) => KIND_NAMES[k]!); const t = n.length > 1 ? `${n.slice(0, -1).join(", ")} and ${n.at(-1)}` : n[0] ?? ""; return t.charAt(0).toUpperCase() + t.slice(1); });
 async function connect() {
-  try { hc.value = await connectHealth(); if (hc.value.granted.length) await sync(); } catch (e) { toast((e as Error).message); }
+  const before = new Set(hc.value?.granted ?? []);
+  try {
+    hc.value = await connectHealth();
+    if (!hc.value.granted.length) return;
+    // newly allowed kinds start with the last 30 days, as a first connection does (a plain sync reads only from the last one)
+    const added = before.size && hc.value.granted.some((k) => !before.has(k));
+    if (added) report(await syncHealth({ from: new Date(Date.now() - 30 * 86_400_000) }));
+    else await sync();
+  } catch (e) { toast((e as Error).message || "Health Connect could not be read"); }
 }
 // what a read added, as a toast: "3 days of steps, 2 nights of sleep, steps from your band for 2 activities, heart rate for 3 sessions added"
 const many = (n: number, one: string, more: string) => `${n} ${n === 1 ? one : more}`;
 function report(r: HealthResult | null) {
   if (!r) return;
-  const parts = [r.steps && `${many(r.steps, "day", "days")} of steps`, r.sleep && `${many(r.sleep, "night", "nights")} of sleep`,
+  const parts = [r.steps && `${many(r.steps, "day", "days")} of steps`, (r.sleep || r.sleepNights) && `${many(Math.max(r.sleep, r.sleepNights ?? 0), "night", "nights")} of sleep`,
     r.weight && `${r.weight} weight ${r.weight === 1 ? "entry" : "entries"}`, r.activities && many(r.activities, "activity", "activities"),
     r.restingHr && `${many(r.restingHr, "day", "days")} of resting heart rate`, r.spo2 && `${many(r.spo2, "day", "days")} of blood oxygen`,
     r.hrv && `${many(r.hrv, "day", "days")} of HRV`,
+    r.distance && `${many(r.distance, "day", "days")} of distance`, r.activeKcal && `${many(r.activeKcal, "day", "days")} of active calories`,
     r.ranges?.steps && `steps from your band for ${many(r.ranges.steps, "activity", "activities")}`,
     r.ranges?.hr && `heart rate for ${many(r.ranges.hr, "session", "sessions")}`].filter(Boolean);
   toast(parts.length ? `${parts.join(", ")} added` : "Up to date");
@@ -81,6 +94,10 @@ async function importPast() {
     report(await syncHealth({ from }));
   } catch (e) { toast((e as Error).message || "Health Connect could not be read"); }
 }
+// Health Connect's own screen for what Motus may read; if the phone can't open it, say why
+async function changeAccess() {
+  try { await openHealthSettings(); } catch (e) { toast((e as Error)?.message || "Health Connect could not be opened"); }
+}
 const lastText = computed(() => lastSync.value ? `${fmt.value.date(lastSync.value)} ${fmt.value.time(lastSync.value)}` : "Not yet");
 </script>
 
@@ -91,7 +108,9 @@ const lastText = computed(() => lastSync.value ? `${fmt.value.date(lastSync.valu
       <div class="card">
         <div class="li"><div class="grow"><div class="t">Health Connect on this device</div><div class="s">{{ hcText }}</div></div>
           <button v-if="hc?.available === 'yes' && !connected" class="btn s" @click="connect">Allow</button>
-          <button v-else-if="connected" class="btn o s" @click="openHealthSettings">Change</button></div>
+          <button v-else-if="connected" class="btn o s" @click="changeAccess">Change</button></div>
+        <div v-if="missing.length" class="li"><div class="grow"><div class="t">More to read</div><div class="s">{{ missingText }}</div></div>
+          <button class="btn s" @click="connect">Allow</button></div>
         <div v-if="connected" class="li"><div class="grow"><div class="t">Last sync</div><div class="s">{{ lastText }}</div></div></div>
         <div v-if="connected" class="li"><div class="grow"><div class="t">Import past data</div><div class="s">{{ pastText }}</div></div>
           <button class="btn o s" :disabled="syncing" @click="importPast">Import</button></div>

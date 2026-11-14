@@ -1,12 +1,13 @@
 <script setup lang="ts">
 // Heart rate during one activity or workout, from a band through Health Connect: average and highest as small tiles
 // (laid out as Stats → Routines' cards, the value as a workout's Average rest), then the beats per minute over the
-// session's time. Only the tiles when the band handed over an average and no readings.
+// session's time. Only the tiles when the band handed over an average and no readings. chart: the line alone, for a
+// night's sheet (Stats → Sleep), whose numbers are already in its tiles above.
 import { computed } from "vue";
 import { useFmt } from "../core/format";
 import LineChart from "./LineChart.vue";
 
-const props = defineProps<{ avg?: number | null; max?: number | null; hr?: [number, number][] | null }>();
+const props = defineProps<{ avg?: number | null; max?: number | null; hr?: [number, number][] | null; chart?: boolean }>();
 const fmt = useFmt();
 // a band reads every few seconds: an hour is over a thousand points, so they're averaged down to at most 240 (the line
 // looks the same and the tooltip stays quick)
@@ -27,9 +28,9 @@ const maxV = computed(() => props.max ?? (ys.value.length ? ys.value.reduce((m, 
 </script>
 
 <template>
-  <div v-if="avgV != null || points.length" class="card">
-    <div class="lbl hgap">Heart rate</div>
-    <div class="grid g2 keep hr-tiles" :class="{ hgap: points.length > 1 }">
+  <div v-if="chart ? points.length > 1 : avgV != null || points.length" class="card">
+    <div class="lbl hgap">Heart rate{{ chart ? " (bpm)" : "" }}</div>
+    <div v-if="!chart" class="grid g2 keep hr-tiles" :class="{ hgap: points.length > 1 }">
       <div v-if="avgV != null"><div class="lbl">Average (bpm)</div><div class="hr-v">{{ Math.round(avgV) }}</div></div>
       <div v-if="maxV != null"><div class="lbl">Highest (bpm)</div><div class="hr-v">{{ Math.round(maxV) }}</div></div>
     </div>

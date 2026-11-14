@@ -2,10 +2,16 @@
 // Bars per period (workouts per week, sets per muscle…), with an optional target band. A bar's `tip` names it in the
 // hover tip when its axis label alone ("3") wouldn't say what it is; its `full` name ("8 Nov") is the axis label when the
 // chart has only a few bars, its `short` one ("N") when a grouped chart is too narrow for the usual one. A bar's `group` ("2026") is a second axis line, shown
-// where it changes, so a run of months says which year each is in; `values` prints each bar's value above it.
-import { computed, ref } from "vue";
+// where it changes, so a run of months says which year each is in; `values` prints each bar's value above it. A bar's
+// `parts` stack inside it from the bottom (a night's sleep stages), each in its own colour; a bar with an `id` can be
+// clicked (pick), as a LineChart's points.
+import { computed, ref, useId } from "vue";
 import { useWidth } from "./useWidth";
-const props = defineProps<{ bars: { label: string; value: number; dim?: boolean; color?: string; tip?: string; group?: string; short?: string; full?: string }[]; height?: number; fmt?: (v: number) => string; band?: [number, number]; horizontal?: boolean; goal?: number; values?: boolean }>();
+const props = defineProps<{ bars: { label: string; value: number; dim?: boolean; color?: string; tip?: string; group?: string; short?: string; full?: string; parts?: { value: number; color: string }[]; id?: string }[]; height?: number; fmt?: (v: number) => string; band?: [number, number]; horizontal?: boolean; goal?: number; values?: boolean }>();
+const emit = defineEmits<{ pick: [id: string] }>();
+const uid = useId();
+// a stacked bar's parts, bottom up: where each starts and ends
+const stack = (parts: { value: number; color: string }[]) => { let at = 0; return parts.filter((p) => p.value > 0).map((p) => ({ color: p.color, lo: at, hi: (at += p.value) })); };
 const H = computed(() => props.height ?? 160);
 const max = computed(() => Math.max(1, ...props.bars.map((b) => b.value), props.band?.[1] ?? 0, props.goal ?? 0));
 const hover = ref<number | null>(null);
@@ -63,9 +69,13 @@ const f = (v: number) => (props.fmt ? props.fmt(v) : String(Math.round(v * 10) /
       <rect v-if="band" x="0" :width="W" :y="y(band[1])" :height="y(band[0]) - y(band[1])" fill="var(--pos)" opacity=".08" />
       <line class="gl" x1="0" :x2="W" :y1="H - bottom" :y2="H - bottom" />
       <line v-if="goal" class="goal" x1="0" :x2="W" :y1="y(goal)" :y2="y(goal)" />
-      <g v-for="(b, i) in bars" :key="i" @mouseenter="hover = i" @mouseleave="hover = null">
+      <g v-for="(b, i) in bars" :key="i" :style="b.id ? { cursor: 'pointer' } : undefined" @mouseenter="hover = i" @mouseleave="hover = null" @click="b.id && emit('pick', b.id)">
         <rect :x="i * slot" :width="slot" y="0" :height="H" fill="transparent" />
-        <rect v-if="b.value > 0" class="cbar" :data-dim="b.dim ? 1 : undefined" :x="i * slot + (slot - bw) / 2" :width="bw" :y="y(b.value)" :height="Math.max(2, H - bottom - y(b.value))" :rx="Math.min(5, bw / 3)" :style="b.color ? { fill: b.color } : undefined" />
+        <template v-if="b.parts && b.value > 0">
+          <clipPath :id="`${uid}-${i}`"><rect :x="i * slot + (slot - bw) / 2" :width="bw" :y="y(b.value)" :height="Math.max(2, H - bottom - y(b.value))" :rx="Math.min(5, bw / 3)" /></clipPath>
+          <g :clip-path="`url(#${uid}-${i})`"><rect v-for="(p, j) in stack(b.parts)" :key="j" :x="i * slot + (slot - bw) / 2" :width="bw" :y="y(p.hi)" :height="y(p.lo) - y(p.hi)" :style="{ fill: p.color }" /></g>
+        </template>
+        <rect v-else-if="b.value > 0" class="cbar" :data-dim="b.dim ? 1 : undefined" :x="i * slot + (slot - bw) / 2" :width="bw" :y="y(b.value)" :height="Math.max(2, H - bottom - y(b.value))" :rx="Math.min(5, bw / 3)" :style="b.color ? { fill: b.color } : undefined" />
         <text v-if="values && b.value > 0" class="ax bv" :x="i * slot + slot / 2" :y="y(b.value) - 5" text-anchor="middle">{{ f(b.value) }}</text>
         <text v-if="named(i)" class="ax" :x="i * slot + slot / 2" :y="H - bottom + 14" text-anchor="middle">{{ text(b) }}</text>
         <text v-if="starts(i)" class="ax grp" :x="gx(i).x" :y="H - 4" :text-anchor="gx(i).a">{{ b.group }}</text>

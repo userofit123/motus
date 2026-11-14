@@ -48,6 +48,7 @@ class MotusHealthPlugin : Plugin() {
         perm(StepsRecord::class), perm(SleepSessionRecord::class), perm(WeightRecord::class), perm(ExerciseSessionRecord::class),
         perm(HeartRateRecord::class), perm(DistanceRecord::class), perm(ActiveCaloriesBurnedRecord::class),
         perm(RestingHeartRateRecord::class), perm(OxygenSaturationRecord::class), perm(HeartRateVariabilityRmssdRecord::class),
+        perm(RespiratoryRateRecord::class),
     )
 
     // Health Connect is part of Android 14+, an app from the Play Store on 9-13, and missing below 9
@@ -113,20 +114,28 @@ class MotusHealthPlugin : Plugin() {
     /** Opens Health Connect's settings, where permissions can be changed or taken back */
     @PluginMethod
     fun openSettings(call: PluginCall) {
-        val action = if (Build.VERSION.SDK_INT >= 34) "android.health.connect.action.MANAGE_HEALTH_PERMISSIONS" else "androidx.health.ACTION_HEALTH_CONNECT_SETTINGS"
-        try {
-            val i = Intent(action).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            if (Build.VERSION.SDK_INT >= 34) i.putExtra(Intent.EXTRA_PACKAGE_NAME, context.packageName)
-            context.startActivity(i)
-            call.resolve()
-        } catch (e: Exception) { call.reject("Health Connect's settings could not be opened") }
+        // Android's own "manage permissions" screen for an app is only for the system to open (it did nothing from
+        // Motus), so: Health Connect's data and access screen, then its main settings, then Motus's app info page
+        val tries = mutableListOf<Intent>()
+        if (sdk() == HealthConnectClient.SDK_AVAILABLE) tries += HealthConnectClient.getHealthConnectManageDataIntent(context)
+        tries += Intent(HealthConnectClient.ACTION_HEALTH_CONNECT_SETTINGS)
+        tries += Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.fromParts("package", context.packageName, null))
+        val host = activity ?: context
+        for (i in tries) {
+            if (host === context) i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            try { host.startActivity(i); call.resolve(); return } catch (e: Exception) { /* next */ }
+        }
+        call.reject("Health Connect's settings could not be opened")
     }
 
     /**
      * Everything since `from` (an ISO time; years back are fine, Health Connect then needs the history permission
      * for anything older than 30 days before the first grant). Days are the phone's calendar days.
      * { steps: [{date, value}], sleep: [{date, hours}], weight: [{id, at, kg}], sessions: [{id, type, title, start, end, avgHr?, distanceM?, steps?, calories?}],
-     *   restingHr: [{date, value}], spo2: [{date, value}], hrv: [{date, value}] } (the last three: daily averages in bpm, % and ms)
+     *   restingHr: [{date, value}], spo2: [{date, value}], hrv: [{date, value}], (daily averages in bpm, % and ms)
+     *   distance: [{date, value}], activeKcal: [{date, value}], (daily totals in metres and kcal)
+     *   sleepNights: [{date, start, end, asleepMin, awakeMin, lightMin?, deepMin?, remMin?, avgHr?, minHr?, hr?, avgSpo2?, minSpo2?, respRate?}] }
+     * (one per wake-up day; hr: [[unixSeconds, bpm], ...], at most 300 points)
      */
     @PluginMethod
     fun read(call: PluginCall) {
@@ -139,14 +148,21 @@ class MotusHealthPlugin : Plugin() {
                 val has = { k: KClass<out Record> -> perm(k) in granted }
                 val zone = ZoneId.systemDefault()
                 val out = JSObject()
-                out.put("steps", if (has(StepsRecord::class)) steps(c, from, zone) else JSArray())
-                out.put("sleep", if (has(SleepSessionRecord::class)) sleep(c, from, zone) else JSArray())
+                out.put("steps", if (has(StepsRecord::class)) dailyTotal(c, from, zone, StepsRecord::class, { it.startTime }, StepsRecord.COUNT_TOTAL) { it } else JSArray())
+                out.put("distance", if (has(DistanceRecord::class)) dailyTotal(c, from, zone, DistanceRecord::class, { it.startTime }, DistanceRecord.DISTANCE_TOTAL) {
+                    Math.round(it.inMeters) } else JSArray())
+                out.put("activeKcal", if (has(ActiveCaloriesBurnedRecord::class)) dailyTotal(c, from, zone, ActiveCaloriesBurnedRecord::class, { it.startTime },
+                    ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL) { Math.round(it.inKilocalories) } else JSArray())
+                val sleeps = if (has(SleepSessionRecord::class)) readAll(c, SleepSessionRecord::class, from) else emptyList()
+                val spo2 = if (has(OxygenSaturationRecord::class)) readAll(c, OxygenSaturationRecord::class, from) else emptyList()
+                out.put("sleep", sleep(sleeps, zone))
+                out.put("sleepNights", sleepNights(c, sleeps, zone, has(HeartRateRecord::class), spo2,
+                    if (has(RespiratoryRateRecord::class)) readAll(c, RespiratoryRateRecord::class, from) else emptyList()))
                 out.put("weight", if (has(WeightRecord::class)) weight(c, from) else JSArray())
                 out.put("sessions", if (has(ExerciseSessionRecord::class)) sessions(c, from, has) else JSArray())
                 out.put("restingHr", if (has(RestingHeartRateRecord::class)) daily(readAll(c, RestingHeartRateRecord::class, from).map {
                     Triple(it.time, it.zoneOffset, it.beatsPerMinute.toDouble()) }, zone, 0) else JSArray())
-                out.put("spo2", if (has(OxygenSaturationRecord::class)) daily(readAll(c, OxygenSaturationRecord::class, from).map {
-                    Triple(it.time, it.zoneOffset, it.percentage.value) }, zone, 1) else JSArray())
+                out.put("spo2", daily(spo2.map { Triple(it.time, it.zoneOffset, it.percentage.value) }, zone, 1))
                 out.put("hrv", if (has(HeartRateVariabilityRmssdRecord::class)) daily(readAll(c, HeartRateVariabilityRmssdRecord::class, from).map {
                     Triple(it.time, it.zoneOffset, it.heartRateVariabilityMillis) }, zone, 1) else JSArray())
                 call.resolve(out)
@@ -271,25 +287,30 @@ class MotusHealthPlugin : Plugin() {
         if (perm(RestingHeartRateRecord::class) in granted) add("restingHr")
         if (perm(OxygenSaturationRecord::class) in granted) add("spo2")
         if (perm(HeartRateVariabilityRmssdRecord::class) in granted) add("hrv")
+        if (perm(RespiratoryRateRecord::class) in granted) add("respiratoryRate")
+        if (perm(DistanceRecord::class) in granted) add("distance")
+        if (perm(ActiveCaloriesBurnedRecord::class) in granted) add("activeKcal")
     }
 
-    // Health Connect adds up each day itself and leaves out steps two apps both wrote (a band and the phone).
-    // A long range (years) is asked for 90 days at a time: one request for thousands of day buckets can fail.
-    private suspend fun steps(c: HealthConnectClient, from: Instant, zone: ZoneId): JSArray {
-        // start at the oldest step record Health Connect will give us, not at `from`: "everything" asks from 2000, and
+    // Daily totals (steps, distance, active calories): Health Connect adds up each day itself and leaves out what two
+    // apps both wrote (a band and the phone). A long range (years) is asked for 90 days at a time: one request for
+    // thousands of day buckets can fail.
+    private suspend fun <R : Record, T : Any> dailyTotal(c: HealthConnectClient, from: Instant, zone: ZoneId, type: KClass<R>, startOf: (R) -> Instant,
+                                                       metric: AggregateMetric<T>, value: (T) -> Any): JSArray {
+        // start at the oldest record Health Connect will give us, not at `from`: "everything" asks from 2000, and
         // one aggregate call per 90 days since then would run into Health Connect's rate limit and fail the whole read
-        val first = c.readRecords(ReadRecordsRequest(StepsRecord::class, TimeRangeFilter.after(from), ascendingOrder = true, pageSize = 1)).records.firstOrNull()
+        val first = c.readRecords(ReadRecordsRequest(type, TimeRangeFilter.after(from), ascendingOrder = true, pageSize = 1)).records.firstOrNull()
             ?: return JSArray()
-        var day = LocalDate.ofInstant(maxOf(from, first.startTime), zone)
+        var day = LocalDate.ofInstant(maxOf(from, startOf(first)), zone)
         val end = LocalDate.now(zone).plusDays(1)
         val arr = JSArray()
         while (day.isBefore(end)) {
             val next = minOf(day.plusDays(90), end)
-            val res = c.aggregateGroupByPeriod(AggregateGroupByPeriodRequest(setOf(StepsRecord.COUNT_TOTAL),
+            val res = c.aggregateGroupByPeriod(AggregateGroupByPeriodRequest(setOf(metric),
                 TimeRangeFilter.between(day.atStartOfDay(), next.atStartOfDay()), Period.ofDays(1)))
             for (r in res) {
-                val n = r.result[StepsRecord.COUNT_TOTAL] ?: continue
-                arr.put(JSObject().put("date", r.startTime.toLocalDate().toString()).put("value", n))
+                val n = r.result[metric] ?: continue
+                arr.put(JSObject().put("date", r.startTime.toLocalDate().toString()).put("value", value(n)))
             }
             day = next
         }
@@ -309,12 +330,15 @@ class MotusHealthPlugin : Plugin() {
 
     // A night counts on the day you wake up. Time awake or out of bed is left out, and two apps writing the same
     // night (overlapping sessions) count it once: the asleep stretches are merged before they are added up.
-    private suspend fun sleep(c: HealthConnectClient, from: Instant, zone: ZoneId): JSArray {
-        val awake = setOf(SleepSessionRecord.STAGE_TYPE_AWAKE, SleepSessionRecord.STAGE_TYPE_OUT_OF_BED, SleepSessionRecord.STAGE_TYPE_AWAKE_IN_BED)
+    private val AWAKE = setOf(SleepSessionRecord.STAGE_TYPE_AWAKE, SleepSessionRecord.STAGE_TYPE_OUT_OF_BED, SleepSessionRecord.STAGE_TYPE_AWAKE_IN_BED)
+    private fun wakeDay(s: SleepSessionRecord, zone: ZoneId): LocalDate =
+        LocalDateTime.ofInstant(s.endTime, s.endZoneOffset ?: zone.rules.getOffset(s.endTime)).toLocalDate()
+
+    private fun sleep(sessions: List<SleepSessionRecord>, zone: ZoneId): JSArray {
         val byDay = sortedMapOf<LocalDate, MutableList<Pair<Instant, Instant>>>()
-        for (s in readAll(c, SleepSessionRecord::class, from)) {
-            val day = LocalDateTime.ofInstant(s.endTime, s.endZoneOffset ?: zone.rules.getOffset(s.endTime)).toLocalDate()
-            val parts = if (s.stages.isEmpty()) listOf(s.startTime to s.endTime) else s.stages.filter { it.stage !in awake }.map { it.startTime to it.endTime }
+        for (s in sessions) {
+            val day = wakeDay(s, zone)
+            val parts = if (s.stages.isEmpty()) listOf(s.startTime to s.endTime) else s.stages.filter { it.stage !in AWAKE }.map { it.startTime to it.endTime }
             byDay.getOrPut(day) { mutableListOf() }.addAll(parts)
         }
         val arr = JSArray()
@@ -326,6 +350,119 @@ class MotusHealthPlugin : Plugin() {
             }
             if (curS != null) ms += curE!!.toEpochMilli() - curS.toEpochMilli()
             if (ms > 0) arr.put(JSObject().put("date", day.toString()).put("hours", ms / 3_600_000.0))
+        }
+        return arr
+    }
+
+    // Stage kinds of a night: light, deep, REM, asleep with no stage (SLEEPING, UNKNOWN or a session without stages), awake
+    private fun stageKind(stage: Int): Int = when (stage) {
+        SleepSessionRecord.STAGE_TYPE_LIGHT -> 0
+        SleepSessionRecord.STAGE_TYPE_DEEP -> 1
+        SleepSessionRecord.STAGE_TYPE_REM -> 2
+        in AWAKE -> 4
+        else -> 3
+    }
+
+    // Night accumulators for heart rate: avg and min over every sample, plus at most 300 time buckets for the chart
+    private class NightHr(val s: Long, val e: Long) {
+        var sum = 0.0; var n = 0; var min = Long.MAX_VALUE
+        val bt = DoubleArray(300); val bb = DoubleArray(300); val bn = IntArray(300)
+        fun add(ms: Long, bpm: Long) {
+            sum += bpm; n++; if (bpm < min) min = bpm
+            val b = ((ms - s) * 300 / (e - s).coerceAtLeast(1)).toInt().coerceIn(0, 299)
+            bt[b] += ms.toDouble(); bb[b] += bpm.toDouble(); bn[b]++
+        }
+    }
+
+    /**
+     * One entry per wake-up day (same day rule as `sleep`): from the earliest session start to the latest session end
+     * that day, minutes per stage, and heart rate, SpO2 and breathing rate in that window. Two apps writing the same
+     * night (overlapping sessions) count each moment once: sessions with stages go first, and a later session only
+     * fills time the earlier ones left uncovered.
+     */
+    private suspend fun sleepNights(c: HealthConnectClient, sessions: List<SleepSessionRecord>, zone: ZoneId, hasHr: Boolean,
+                                    spo2: List<OxygenSaturationRecord>, resp: List<RespiratoryRateRecord>): JSArray {
+        val byDay = sessions.groupBy { wakeDay(it, zone) }.toSortedMap()
+        class Night(val day: LocalDate, val s: Long, val e: Long, val ms: LongArray, val staged: Boolean)
+        val nights = mutableListOf<Night>()
+        for ((day, list) in byDay) {
+            val ordered = list.sortedWith(compareBy<SleepSessionRecord>({ it.stages.isEmpty() }, { -(it.endTime.toEpochMilli() - it.startTime.toEpochMilli()) }))
+            val claimed = mutableListOf<LongArray>() // merged, sorted [start, end] already counted
+            val ms = LongArray(5)
+            for (sess in ordered) {
+                val segs = if (sess.stages.isEmpty()) listOf(Triple(sess.startTime.toEpochMilli(), sess.endTime.toEpochMilli(), 3))
+                    else sess.stages.map { Triple(it.startTime.toEpochMilli(), it.endTime.toEpochMilli(), stageKind(it.stage)) }
+                for ((a, b, k) in segs) {
+                    if (b <= a) continue
+                    var cur = a
+                    for (iv in claimed) {
+                        if (iv[1] <= cur) continue
+                        if (iv[0] >= b) break
+                        if (iv[0] > cur) ms[k] += iv[0] - cur
+                        cur = maxOf(cur, iv[1])
+                        if (cur >= b) break
+                    }
+                    if (cur < b) ms[k] += b - cur
+                    claimed += longArrayOf(a, b)
+                    claimed.sortBy { it[0] }
+                    val merged = mutableListOf<LongArray>()
+                    for (iv in claimed) { val last = merged.lastOrNull(); if (last != null && iv[0] <= last[1]) last[1] = maxOf(last[1], iv[1]) else merged += longArrayOf(iv[0], iv[1]) }
+                    claimed.clear(); claimed += merged
+                }
+            }
+            if (ms[0] + ms[1] + ms[2] + ms[3] <= 0) continue
+            nights += Night(day, list.minOf { it.startTime.toEpochMilli() }, list.maxOf { it.endTime.toEpochMilli() }, ms, ms[0] + ms[1] + ms[2] > 0)
+        }
+        if (nights.isEmpty()) return JSArray()
+        val starts = LongArray(nights.size) { nights[it].s }
+        // the night whose window holds time t (windows do not normally overlap; the later one wins if they do)
+        fun at(t: Long): Int? {
+            val i = java.util.Arrays.binarySearch(starts, t).let { if (it >= 0) it else -it - 2 }
+            for (j in i downTo maxOf(i - 1, 0)) if (t <= nights[j].e && t >= nights[j].s) return j
+            return null
+        }
+
+        // heart rate: one paged read over the span of all nights (newest first, so a cap drops the oldest nights),
+        // samples bucketed into their night in memory: one read per night would hit Health Connect's rate limit
+        val hr = arrayOfNulls<NightHr>(nights.size)
+        // (a refused page, e.g. the rate limit, keeps what was read so far rather than failing the whole read)
+        if (hasHr) try {
+            var token: String? = null; var count = 0
+            do {
+                val res = c.readRecords(ReadRecordsRequest(HeartRateRecord::class,
+                    TimeRangeFilter.between(Instant.ofEpochMilli(nights.first().s), Instant.ofEpochMilli(nights.last().e)),
+                    ascendingOrder = false, pageSize = 1000, pageToken = token))
+                for (r in res.records) for (smp in r.samples) {
+                    val t = smp.time.toEpochMilli()
+                    val i = at(t) ?: continue
+                    (hr[i] ?: NightHr(nights[i].s, nights[i].e).also { hr[i] = it }).add(t, smp.beatsPerMinute)
+                }
+                count += res.records.size
+                token = res.pageToken
+            } while (token != null && count < 200_000)
+        } catch (e: Exception) { if (e is kotlinx.coroutines.CancellationException) throw e }
+        val ox = arrayOfNulls<MutableList<Double>>(nights.size)
+        for (o in spo2) { val i = at(o.time.toEpochMilli()) ?: continue; (ox[i] ?: mutableListOf<Double>().also { ox[i] = it }) += o.percentage.value }
+        val rr = arrayOfNulls<MutableList<Double>>(nights.size)
+        for (o in resp) { val i = at(o.time.toEpochMilli()) ?: continue; (rr[i] ?: mutableListOf<Double>().also { rr[i] = it }) += o.rate }
+
+        val one = { v: Double -> Math.round(v * 10) / 10.0 }
+        val arr = JSArray()
+        for ((i, n) in nights.withIndex()) {
+            val min = { k: Int -> Math.round(n.ms[k] / 60_000.0) }
+            val o = JSObject().put("date", n.day.toString())
+                .put("start", Instant.ofEpochMilli(n.s).toString()).put("end", Instant.ofEpochMilli(n.e).toString())
+                .put("asleepMin", Math.round((n.ms[0] + n.ms[1] + n.ms[2] + n.ms[3]) / 60_000.0)).put("awakeMin", min(4))
+            if (n.staged) o.put("lightMin", min(0)).put("deepMin", min(1)).put("remMin", min(2))
+            hr[i]?.let { h ->
+                o.put("avgHr", Math.round(h.sum / h.n)).put("minHr", h.min)
+                val pts = JSArray()
+                for (b in 0 until 300) if (h.bn[b] > 0) pts.put(JSArray().put(Math.round(h.bt[b] / h.bn[b] / 1000)).put(Math.round(h.bb[b] / h.bn[b])))
+                o.put("hr", pts)
+            }
+            ox[i]?.let { o.put("avgSpo2", one(it.average())).put("minSpo2", one(it.min())) }
+            rr[i]?.let { o.put("respRate", one(it.average())) }
+            arr.put(o)
         }
         return arr
     }
