@@ -10,9 +10,9 @@ import { api } from "../api/client";
 import { invalidate, queryClient } from "../api/live";
 import { confirm } from "../core/ask";
 import { toast } from "../core/toast";
-import { onHome, streakOnHome, toggleHomeGoal, setHomeStreak, periodWord, periodLabel, useStepGoal } from "../core/goals";
+import { onHome, streakOnHome, toggleHomeGoal, setHomeStreak, periodWord, goalSub } from "../core/goals";
 import { asleepMin, inBedMin, efficiency, hasStages, mins } from "../core/sleep";
-import { useFmt, ago, goalLabel, localYmd, tomorrowYmd } from "../core/format";
+import { useFmt, unitOf, ago, goalLabel, localYmd, tomorrowYmd } from "../core/format";
 import { reminderText } from "../core/reminderText";
 import { startPlan, unplanItems } from "../components/home/planActions";
 import { startOpen, dailySheet, reminderView } from "../core/ui";
@@ -88,7 +88,6 @@ const walked = computed(() => weeks.value.some((w) => w.walkM > 0));
 // as a percent, the same way Stats shows it (nothing when last week had none to compare with)
 // ("12.3k kg" splits at its space so the number carries the weight and the unit is set small beside it)
 interface WStat { key: string; icon: string; label: string; value: string; unit: string; delta?: string; last?: string; tone?: string }
-const unitOf = (s: string) => { const i = s.lastIndexOf(" "); return i < 0 ? { value: s, unit: "" } : { value: s.slice(0, i), unit: s.slice(i + 1) }; };
 const weekStats = computed<WStat[]>(() => {
   const row = (key: string, icon: string, label: string, now: number, last: number, show: (n: number) => string, split = false): WStat => {
     const v = show(now);
@@ -122,6 +121,9 @@ const daysLeft = (g: Goal) => Math.round((Date.parse(g.deadline!.slice(0, 10)) -
 const dueSoon = computed(() => (allGoals.data.value ?? []).filter((g) => g.status === "active" && g.deadline && !g.progress?.done && daysLeft(g) >= 0 && daysLeft(g) <= 14)
   .sort((a, b) => daysLeft(a) - daysLeft(b)).slice(0, 3));
 const dueText = (g: Goal) => { const d = daysLeft(g); return d === 0 ? "Ends today" : d === 1 ? "Ends tomorrow" : `Ends in ${d} days`; };
+// a goal row's line after its progress: the automatic title of a goal with its own name, else how often it counts
+// (nothing for a one-off goal, whose progress says it all); the same in Goals and Goals due soon
+const listSub = (g: Goal) => (g.period !== "once" || (g.name && g.summary) ? goalSub(g, s.value) : "");
 const reached = (g: Goal) => g.status === "achieved" || !!g.progress?.done;
 // the unit after a goal's number, as the stat tiles write it ("142.5 kg", "12,500 steps", "1 session")
 const COUNT_UNITS: Record<string, [string, string]> = { sessions: ["session", "sessions"], times: ["time", "times"], workouts: ["workout", "workouts"], weeks: ["week", "weeks"], reps: ["rep", "reps"], sets: ["set", "sets"], steps: ["step", "steps"] };
@@ -255,11 +257,13 @@ const heartStats = computed<WStat[]>(() => {
   };
   vital("restingHr", "heart", "Resting", "bpm");
   vital("hrv", "heartPulse", "HRV", "ms");
+  // blood oxygen whole, its percent right after the number, as the Heart tab writes it; it has no usual to compare with
+  if (day.value?.spo2 != null) out.push({ key: "spo2", icon: "water", label: "Blood oxygen", value: `${Math.round(day.value.spo2)}%`, unit: "", delta: "" });
   const hr = day.value?.hr;
-  if (hr) out.push({ key: "today", icon: "activity", label: "Today", value: `${Math.round(hr.min)}-${Math.round(hr.max)}`, unit: "bpm", delta: "" });
+  if (hr) out.push({ key: "today", icon: "activity", label: "Today", value: `${Math.round(hr.min)}-${Math.round(hr.max)}`, unit: "bpm", delta: `${Math.round(hr.avg)} on average` });
   return out;
 });
-const heartDelta = computed(() => heartStats.value.some((x) => x.key !== "today" && x.delta));
+const heartDelta = computed(() => heartStats.value.some((x) => (x.key === "restingHr" || x.key === "hrv") && !!x.delta));
 // a band reads every few seconds: the day's line is averaged down to at most 96 points, enough for a block's width
 const hrLine = computed(() => {
   const xs = day.value?.hr?.series ?? [];
@@ -267,27 +271,37 @@ const hrLine = computed(() => {
   for (let i = 0; i < xs.length; i += step) { const part = xs.slice(i, i + step); out.push(part.reduce((t, p) => t + p[1], 0) / part.length); }
   return out;
 });
-// today's steps, distance and active calories as the band counted them, each only when there; the steps against a daily
-// steps goal when there is one
-const stepGoal = useStepGoal();
+// today's steps, distance and active calories as the band counted them, each only when there; the steps against the
+// steps goal when there is one. An average daily steps goal's target is a day's steps whatever its period (a weekly or
+// monthly one averages its days), so any active one counts, a daily one first
+const stepGoal = computed(() => {
+  const gs = (allGoals.data.value ?? []).filter((g) => g.status === "active" && g.metric === "steps_avg");
+  return gs.find((g) => g.period === "day") ?? gs[0] ?? null;
+});
 const actStats = computed<WStat[]>(() => {
-  const d = day.value, out: WStat[] = [];
+  const d = day.value, g = stepGoal.value, out: WStat[] = [];
   if (!d) return out;
-  if (d.steps != null) out.push({ key: "steps", icon: "steps", label: "Steps", value: fmt.value.num(d.steps, 0), unit: "" });
+  if (d.steps != null) out.push({ key: "steps", icon: "steps", label: "Steps", value: fmt.value.num(d.steps, 0), unit: "",
+    ...(g ? { delta: `of ${fmt.value.num(g.target, 0)}`, tone: d.steps >= g.target ? "pos" : undefined } : {}) });
   if (d.distanceM) out.push({ key: "dist", icon: "walk", label: "Distance", ...unitOf(fmt.value.dist(d.distanceM, 1)) });
   if (d.activeKcal) out.push({ key: "kcal", icon: "flame", label: "Active", value: fmt.value.num(d.activeKcal, 0), unit: "kcal" });
   return out;
 });
-// without a goal, the last 7 days' steps as This week's bars, today in full colour
+// the last 7 days' steps as This week's bars, each under its weekday's letter, today in full colour; with a goal its
+// target is a dashed line across them and the days that reached it are green
 const weekAgo = localYmd(new Date(Date.now() - 6 * 86400000));
 const dailyQ = useDaily(weekAgo);
+// without today's heart line, the resting heart rate of the last 7 days in its place (days without one left out)
+const restLine = computed(() => (dailyQ.data.value ?? []).filter((r) => r.kind === "resting_hr").map((r) => ({ d: String(r.date).slice(0, 10), v: Number(r.value) }))
+  .sort((a, b) => a.d.localeCompare(b.d)).map((x) => x.v));
 const stepDays = computed(() => Array.from({ length: 7 }, (_, i) => {
   const d = localYmd(new Date(Date.now() - (6 - i) * 86400000));
   const x = (dailyQ.data.value ?? []).find((r) => r.kind === "steps" && String(r.date).slice(0, 10) === d);
-  return { d, n: d === today && day.value?.steps != null ? day.value.steps : Number(x?.value ?? 0) };
+  const n = d === today && day.value?.steps != null ? day.value.steps : Number(x?.value ?? 0);
+  return { d, n, letter: fmt.value.date(d, { weekday: "narrow" }), ok: !!stepGoal.value && n >= stepGoal.value.target };
 }));
-const stepMax = computed(() => Math.max(1, ...stepDays.value.map((x) => x.n)));
-const stepPct = computed(() => (stepGoal.value && day.value?.steps != null ? Math.min(100, (day.value.steps / stepGoal.value.target) * 100) : null));
+// the scale reaches the target too, so its line is always inside the bars' height
+const stepMax = computed(() => Math.max(1, stepGoal.value?.target ?? 0, ...stepDays.value.map((x) => x.n)));
 
 // a dismissed suggestion stays away until your next workout; the list redraws without waiting for the server
 const hideSuggestion = (key: string) => {
@@ -422,7 +436,7 @@ await loaded(home, ach, avail, hDay, ready, nightsQ, dailyQ);
           <div class="wstats" :class="{ n4: weekStats.length === 4, plain: !anyDelta }">
             <div v-for="x in weekStats" :key="x.key" class="ws" role="group" :aria-label="`${[x.label, x.value, x.unit, x.delta].filter(Boolean).join(' ')}, last week ${x.last}`" :title="`Last week ${x.last}`">
               <div class="wlb"><Icon :name="x.icon" :size="14" />{{ x.label }}</div>
-              <div class="wv">{{ x.value }}<small v-if="x.unit">{{ x.unit }}</small></div>
+              <div class="wv">{{ x.value }} <small v-if="x.unit">{{ x.unit }}</small></div>
               <div v-if="anyDelta" class="wd">{{ x.delta }}</div>
             </div>
           </div>
@@ -468,7 +482,7 @@ await loaded(home, ach, avail, hDay, ready, nightsQ, dailyQ);
             <div v-for="g in dueSoon" :key="g.id" class="grow-row click" v-bind="link(() => (goalOpen = g.id))">
               <div class="row"><b class="grow ellipsis">{{ g.title }}</b><span class="tiny due">{{ dueText(g) }}</span></div>
               <div class="pbar"><i :style="{ width: pct(g) + '%' }" /></div>
-              <div class="tiny">{{ goalLabel(g, fmt) }}</div>
+              <div class="tiny ellipsis">{{ goalLabel(g, fmt) }}<template v-if="listSub(g)"> · {{ listSub(g) }}</template></div>
             </div>
           </div>
         </div>
@@ -531,7 +545,7 @@ await loaded(home, ach, avail, hDay, ready, nightsQ, dailyQ);
           <div class="wstats n4 plain">
             <div v-for="x in lastStats" :key="x.key" class="ws">
               <div class="wlb"><Icon :name="x.icon" :size="14" />{{ x.label }}</div>
-              <div class="wv">{{ x.value }}<small v-if="x.unit">{{ x.unit }}</small></div>
+              <div class="wv">{{ x.value }} <small v-if="x.unit">{{ x.unit }}</small></div>
             </div>
           </div>
         </div>
@@ -544,7 +558,7 @@ await loaded(home, ach, avail, hDay, ready, nightsQ, dailyQ);
             <div v-for="g in h.goals" :key="g.id" class="grow-row click" v-bind="link(() => (goalOpen = g.id))">
               <div class="row"><b class="grow ellipsis">{{ g.title }}</b><span class="tiny" :class="{ pos: g.progress?.done }">{{ g.progress?.done ? "Reached" : `${Math.round(pct(g))}%` }}</span></div>
               <div class="pbar" :class="{ ok: g.progress?.done }"><i :style="{ width: pct(g) + '%' }" /></div>
-              <div class="tiny">{{ goalLabel(g, fmt) }}<template v-if="g.period !== 'once'"> · {{ periodLabel(g, s) }}</template></div>
+              <div class="tiny ellipsis">{{ goalLabel(g, fmt) }}<template v-if="listSub(g)"> · {{ listSub(g) }}</template></div>
             </div>
           </div>
         </div>
@@ -618,32 +632,39 @@ await loaded(home, ach, avail, hDay, ready, nightsQ, dailyQ);
           <div v-if="hasStages(night) || night.awakeMin" class="hstages"><StageBar :night="night" /></div>
         </div>
 
-        <!-- heart: resting heart rate and HRV against your usual and today's range as This week's tiles, then today's line -->
+        <!-- heart: resting heart rate and HRV against your usual, blood oxygen and today's range with its average as This
+             week's tiles, each only when there, then today's line filling the rest of the block -->
         <div v-else-if="id === 'heart'" class="card hb wkc sz-m click" :data-solo="solo.has(id) || undefined" v-bind="link('/stats?tab=heart')">
           <div class="ch"><span class="bi"><Icon name="heart" :size="15" /></span><span class="t grow">Heart</span><span v-if="heartDelta" class="tiny">Vs your usual</span></div>
-          <div class="wstats">
+          <div class="wstats hrows" :class="{ n4: heartStats.length === 4 }">
             <div v-for="x in heartStats" :key="x.key" class="ws" role="group" :aria-label="[x.label, x.value, x.unit, x.delta].filter(Boolean).join(' ')">
               <div class="wlb"><Icon :name="x.icon" :size="14" />{{ x.label }}</div>
-              <div class="wv">{{ x.value }}<small v-if="x.unit">{{ x.unit }}</small></div>
+              <div class="wv">{{ x.value }} <small v-if="x.unit">{{ x.unit }}</small></div>
               <div class="wd" :class="x.tone">{{ x.delta }}</div>
             </div>
           </div>
           <div v-if="hrLine.length > 1" class="hfoot" aria-hidden="true"><Sparkline :values="hrLine" /></div>
+          <div v-else-if="restLine.length > 1" class="hfoot"><Sparkline :values="restLine" /><div class="tiny hcap">Resting heart rate, last 7 days</div></div>
         </div>
 
-        <!-- what the band counted today; the steps against a daily steps goal as a bar when there is one -->
+        <!-- what the band counted today, the steps against the steps goal when there is one, then the last 7 days' bars
+             with their weekday letters and the goal's line -->
         <div v-else-if="id === 'activityToday'" class="card hb wkc sz-m click" :data-solo="solo.has(id) || undefined" v-bind="link('/stats?tab=activities')">
-          <div class="ch"><span class="bi"><Icon name="steps" :size="15" /></span><span class="t grow">Steps today</span><span v-if="stepPct != null" class="tiny">Goal {{ fmt.num(stepGoal!.target, 0) }}</span></div>
-          <div class="wstats plain">
-            <div v-for="x in actStats" :key="x.key" class="ws" role="group" :aria-label="[x.label, x.value, x.unit].filter(Boolean).join(' ')">
+          <div class="ch"><span class="bi"><Icon name="steps" :size="15" /></span><span class="t grow">Steps today</span><span v-if="stepGoal" class="tiny">Goal {{ fmt.num(stepGoal.target, 0) }} a day</span></div>
+          <div class="wstats hrows" :class="{ plain: !stepGoal }">
+            <div v-for="x in actStats" :key="x.key" class="ws" role="group" :aria-label="[x.label, x.value, x.unit, x.delta].filter(Boolean).join(' ')">
               <div class="wlb"><Icon :name="x.icon" :size="14" />{{ x.label }}</div>
-              <div class="wv">{{ x.value }}<small v-if="x.unit">{{ x.unit }}</small></div>
+              <div class="wv">{{ x.value }} <small v-if="x.unit">{{ x.unit }}</small></div>
+              <div v-if="stepGoal" class="wd" :class="x.tone">{{ x.delta }}</div>
             </div>
           </div>
-          <div v-if="stepPct != null" class="hgoal"><div class="pbar" :class="{ ok: stepPct >= 100 }"><i :style="{ width: stepPct + '%' }" /></div></div>
-          <div v-else-if="stepDays.some((x) => x.n)" class="wbars" role="img" :aria-label="`Steps per day, last 7 days: ${stepDays.map((x) => x.n).join(', ')}`">
-            <i v-for="x in stepDays" :key="x.d" :class="{ cur: x.d === today }" :style="{ height: Math.max(4, (x.n / stepMax) * 100) + '%' }" />
-          </div>
+          <template v-if="stepDays.some((x) => x.n)">
+            <div class="wbars sbars" role="img" :aria-label="`Steps per day, last 7 days: ${stepDays.map((x) => x.n).join(', ')}${stepGoal ? `; goal ${stepGoal.target}` : ''}`">
+              <i v-for="x in stepDays" :key="x.d" :class="{ cur: x.d === today, ok: x.ok }" :style="{ height: Math.max(4, (x.n / stepMax) * 100) + '%' }" />
+              <b v-if="stepGoal" class="tgt" :style="{ '--f': stepGoal.target / stepMax }" />
+            </div>
+            <div class="wdays" aria-hidden="true"><span v-for="x in stepDays" :key="x.d" :class="{ cur: x.d === today }">{{ x.letter }}</span></div>
+          </template>
         </div>
 
         <div v-else-if="id === 'achievements'" class="card hb sz-m click" :data-solo="solo.has(id) || undefined" v-bind="link('/stats?tab=achievements')">
@@ -668,7 +689,7 @@ await loaded(home, ach, avail, hDay, ready, nightsQ, dailyQ);
              keys each child from the template's key plus its place -->
         <template v-for="g in goalRows" :key="g.id">
           <div class="tgl">
-            <label class="grow hsw" :for="`hg-${g.id}`"><div><div class="t">{{ g.title }}</div><div class="s">{{ periodLabel(g, s) }}</div></div></label>
+            <label class="grow hsw" :for="`hg-${g.id}`"><div><div class="t">{{ g.title }}</div><div class="s">{{ goalSub(g, s) }}</div></div></label>
             <template v-if="onHome(s, g.id)">
               <button class="ib sm plain" :class="{ end: picked[0]?.id === g.id }" :aria-disabled="picked[0]?.id === g.id" :aria-label="`Move ${g.title} up`" :title="`Move ${g.title} up`" @click="movePin(g.id, -1)"><Icon name="up" :size="18" /></button>
               <button class="ib sm plain" :class="{ end: picked.at(-1)?.id === g.id }" :aria-disabled="picked.at(-1)?.id === g.id" :aria-label="`Move ${g.title} down`" :title="`Move ${g.title} down`" @click="movePin(g.id, 1)"><Icon name="down" :size="18" /></button>
@@ -715,6 +736,15 @@ html.phone .gtile { grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); }
 .wbars { display: flex; align-items: flex-end; gap: 6px; height: 34px; margin-top: auto; padding-top: var(--hg); box-sizing: content-box; }
 .wbars i { flex: 1; border-radius: 4px 4px 2px 2px; background: color-mix(in srgb, var(--acc) 28%, transparent); }
 .wbars i.cur { background: var(--acc); }
+/* the steps bars: a day that reached the steps goal in green (today solid), the goal as a dashed line at its height
+   (--f, the target's share of the bars' 34px), and each day's weekday letter under its bar, spaced as the bars */
+.sbars { position: relative; }
+.sbars i.ok { background: color-mix(in srgb, var(--pos) 28%, transparent); }
+.sbars i.cur.ok { background: var(--pos); }
+.sbars .tgt { position: absolute; inset-inline: 0; bottom: calc(var(--f) * 34px); border-top: 1px dashed color-mix(in srgb, var(--tx2) 60%, transparent); pointer-events: none; }
+.wdays { display: flex; gap: 6px; margin-top: 4px; }
+.wdays span { flex: 1; text-align: center; font-size: var(--fs-xs); line-height: 1; color: var(--tx2); }
+.wdays .cur { color: var(--tx); font-weight: 600; }
 /* the last workout's name and day at the right of its header, at the size of the other headers' notes ("Vs last week"):
    the name as strong as Achievements' "Next" name and cut first, so the title and the day always show at 360px */
 .lname { flex: 1; min-width: 0; display: flex; align-items: baseline; justify-content: flex-end; gap: 6px; font-size: var(--fs-xs); }
@@ -790,9 +820,20 @@ html.phone .gtile { grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); }
 /* last night's stages under a faint line, as on Stats → Sleep's last-night card */
 .hstages { margin-top: var(--cpy); padding-top: var(--cpy); border-top: 1px solid var(--ol); }
 /* heart's line and the steps goal's bar sit at the foot of the block, as This week's bars */
-.hfoot { margin-top: auto; padding-top: var(--hg); }
-.hfoot .spark { position: static; display: block; width: 100%; height: 28px; }
-.hgoal { margin-top: auto; padding-top: var(--hg); }
+/* today's heart line takes the room a taller neighbour leaves in the block (up to about three tile rows), so a short
+   block has its line and a stretched one has no empty space under the tiles */
+.hfoot { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; min-height: 28px; padding-top: var(--hg); }
+.hcap { margin-top: 4px; }
+/* Heart's four tiles hold the widest value on Home ("52-131 bpm"): in a half-width block they go two by two, as
+   This week's four do in a narrower one, so the range never runs past the block's edge (rows below 330px stay) */
+@container (min-width: 331px) and (max-width: 640px) {
+  .hrows.n4 { grid-auto-flow: row; grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: calc(1.5 * var(--cpy)); }
+  .hrows.n4 .ws:nth-child(odd) { border-inline-start: 0; padding-inline-start: 0; }
+  .hrows.n4 .wv { font-size: clamp(var(--fs-lg), calc((100cqi - 2 * var(--hg)) / 11.2), calc(var(--fs-lg) * 1.25)); }
+}
+/* as rows (phone), Heart's and Steps today's notes take the same column width, so the two blocks' numbers line up */
+@container (max-width: 330px) { .hrows:not(.plain) { grid-template-columns: minmax(0, 1fr) auto 6.5em; } }
+.hfoot .spark { position: static; display: block; width: 100%; flex: 1 1 0; height: auto; min-height: 28px; max-height: 96px; }
 
 /* Edit home: each tile names its block and says what it shows; switched-off ones fade back */
 .etile { display: flex; flex-direction: column; gap: 4px; min-height: 92px; border: 1px dashed var(--ol); }
