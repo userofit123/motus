@@ -13,11 +13,16 @@ const save = () => writeJson(KEY, accounts);
 export const current = () => accounts.list.find((a) => a.id === accounts.active) ?? null;
 
 let engine: any = null, localDb: any = null;
+/** Waits until the changes made so far are on disk. A failed save (storage full) doesn't undo a change that is already
+ *  in the database, so it isn't reported as failing: the database tries the save again shortly. */
+const saved = (db: { flush?(): Promise<void> }) => db.flush?.().catch(() => {});
 async function localTransport(acc: Account): Promise<Transport> {
   const [{ createEngine }, { pgliteDb }] = await Promise.all([import("@motus/engine"), import("@motus/engine/pglite")]);
   const db = localDb = await pgliteDb(`idb://motus-${acc.id}`);
   engine = await createEngine(db, { mode: "local" });
   const userId = await engine.ensureLocalUser(acc.name);
+  // nothing is saved on its own (pglite.ts): a new account's tables and user must be on disk before anything else
+  await saved(db);
   const { invalidate } = await import("../api/live");
   engine.onChange((_u: string, topics: string[]) => invalidate(topics));
   return {
@@ -34,7 +39,7 @@ async function localTransport(acc: Account): Promise<Transport> {
       const r = await engine.handle({ method, path: p, query: Object.fromEntries(new URLSearchParams(qs ?? "")), body, userId });
       if (r.status !== 200) throw new ApiError(r.status, r.body?.error ?? "Something went wrong");
       // this phone holds the only copy: a change counts as saved only once it is on disk (reads skip this)
-      if (method !== "GET") await db.flush?.();
+      if (method !== "GET") await saved(db);
       return r.body;
     },
   };

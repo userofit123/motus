@@ -56,6 +56,9 @@ export async function eraseCopiesOf(base: string) {
     for (const d of (await (indexedDB as any).databases?.()) ?? []) if (d.name?.startsWith(start)) { await dropDatabase(d.name); writeStr("motusUnsent:" + d.name.slice(8), "0"); }
   } catch { /* nothing kept */ }
 }
+/** Waits until the changes made so far are on disk. A failed save (storage full) doesn't undo a change that is already
+ *  in the database, so it isn't reported as failing: the database tries the save again shortly. */
+const saved = (): Promise<void> => db?.flush?.().catch(() => {}) ?? Promise.resolve();
 const http = <T = any>(method: string, path: string, body?: unknown) => httpTransport.request(method, path, body) as Promise<T>;
 
 const transport: Transport = {
@@ -65,6 +68,7 @@ const transport: Transport = {
     if (method === "PUT" && path === "/me") {
       const r = await httpTransport.request(method, path, body);
       await eng.handle({ method, path, body, userId }).catch(() => {});
+      await saved();
       return r;
     }
     const [p, qs] = path.split("?");
@@ -72,7 +76,7 @@ const transport: Transport = {
     if (r.status === 404 && r.body?.error === "Not found") return httpTransport.request(method, path, body); // not one of the engine's
     if (r.status !== 200) throw new ApiError(r.status, r.body?.error ?? "Something went wrong");
     // a change counts as saved only once it is on disk: until sent it exists nowhere else (reads skip this)
-    if (method !== "GET") await db.flush?.();
+    if (method !== "GET") await saved();
     return r.body;
   },
 };
@@ -101,6 +105,8 @@ export async function startReplica(user: { id: string }): Promise<boolean> {
       // ordinary request is given
       await R.loadSnapshot(db, await httpTransport.request("GET", "/sync/snapshot", undefined, { wait: 120_000 }));
     }
+    // nothing is saved on its own (pglite.ts): the tables and the first copy go to disk now, not with the first change
+    await saved();
   } catch {
     await db?.close().catch(() => {}); db = null; eng = null;
     releaseLock();
@@ -181,6 +187,8 @@ async function run() {
       sync.error = (e as Error).message;
     }
   } finally {
+    // what came in and what was marked sent (an unchanged database saves nothing, so this is cheap)
+    await saved();
     sync.waiting = await R.waitingCount(db).catch(() => sync.waiting);
     noteUnsent(sync.waiting);
     running = false; sync.syncing = false;

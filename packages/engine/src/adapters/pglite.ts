@@ -1,18 +1,33 @@
 // PGlite: Postgres compiled to WebAssembly, for local accounts on a device (desktop, Android) and for tests.
 // dataDir: "memory://" (tests), "idb://name" (browser / Android WebView), or a folder path (desktop).
-import { PGlite } from "@electric-sql/pglite";
+import { IdbFs, PGlite } from "@electric-sql/pglite";
 import { PARSERS, type Db, type Sql } from "../db";
 
 const ANALYZE_EVERY = 500;
+/** After a failed save (storage full, say), when to try again. */
+const RETRY_SAVE_MS = 5000;
+
+/** IndexedDB storage that writes back only when told to (save()), never on its own behind the queries. */
+class SaveOnFlush extends IdbFs {
+  // PGlite calls this after every query, with relaxed = true when relaxedDurability is on (and without waiting)
+  override syncToFs(relaxed?: boolean) { return relaxed ? Promise.resolve() : super.syncToFs(); }
+  save() { return super.syncToFs(); }
+}
 
 export async function pgliteDb(dataDir = "memory://"): Promise<Db> {
   // In a browser the files live in IndexedDB, and by default every query waits until PGlite has compared all its files
   // with IndexedDB and written back the changed ones: about 50 ms per read and 80 ms per write in Chromium (under 1 ms
-  // without it), so a page that asks for a few things took a second or more. Relaxed, a query answers at once and the
-  // write-back runs behind it. Reads stay that way; a change must not be lost once the app shows it saved (the
-  // replica's unsent changes and a local account's only copy live in this database), so the web transports call
-  // flush() after every change, which waits for the write-back.
-  const lite = await PGlite.create(dataDir, { parsers: PARSERS as any, relaxedDurability: dataDir.startsWith("idb://") });
+  // without it), so a page that asks for a few things took a second or more. So reads are relaxed and answer at once.
+  // PGlite's own relaxed write-back is switched off, not just left behind the queries: it would run while later queries
+  // change the files (saving a mix of before and after), and IndexedDB storage picks the files to save by their
+  // modified time in whole milliseconds, so one it saved in the same millisecond as the next commit looks unchanged to
+  // the next save, which then skips it and a change shown as saved is lost. Instead nothing is written back on its own:
+  // every path that writes (the web transports after each change, a sync, opening and first loading the copy) calls
+  // flush(), which saves inside the query queue, so no query touches the files while they are saved. A change must not
+  // be lost once the app shows it saved: the replica's unsent changes and a local account's only copy live here.
+  // Same IndexedDB database name as PGlite's own "idb://name", so data saved before this stays readable.
+  const fs = dataDir.startsWith("idb://") ? new SaveOnFlush(dataDir.slice("idb://".length)) : undefined;
+  const lite = await PGlite.create({ ...(fs ? { fs } : { dataDir }), parsers: PARSERS, relaxedDurability: !!fs });
   // PGlite runs one query at a time; queue transactions so they never interleave
   let chain: Promise<unknown> = Promise.resolve();
   const run = <T>(fn: () => Promise<T>): Promise<T> => {
@@ -27,16 +42,21 @@ export async function pgliteDb(dataDir = "memory://"): Promise<Db> {
   let txs = 0;
   const analyze = () => { void run(() => lite.exec("ANALYZE")).catch(() => {}); };
   analyze();
-  return {
+  let retry: ReturnType<typeof setTimeout> | undefined, closed = false;
+  const db: Db = {
     kind: "pglite",
     admin,
     tx: (fn) => {
       if (++txs % ANALYZE_EVERY === 0) analyze();
       return run(async () => (await lite.transaction((tx) => fn({ query: (t, p) => tx.query(t, p as any[]) as any, exec: async (t) => { await tx.exec(t); } })))!);
     },
-    // straight to the file system's save: lite.syncToFs() doesn't wait when relaxed. Queued so no query changes the
-    // files while they are saved.
-    flush: () => run(async () => { await lite.fs?.syncToFs(); }),
-    close: () => lite.close(),
+    // A failed save doesn't undo the commit: the caller still gets its answer (it is in the database), and the save is
+    // tried again shortly; any later flush saves it too.
+    flush: () => run(async () => { await fs?.save(); }).catch((e) => {
+      if (!retry && !closed) retry = setTimeout(() => { retry = undefined; void db.flush!().catch(() => {}); }, RETRY_SAVE_MS);
+      throw e;
+    }),
+    close: () => { closed = true; clearTimeout(retry); return lite.close(); },
   };
+  return db;
 }
