@@ -195,7 +195,9 @@ const achAmount = (unit: string, v: number) => unit === "kg" ? fmt.value.vol(v) 
 const hDay = useHealthDay(today);
 const day = computed(() => hDay.data.value ?? null);
 const ready = useReadiness();
-const rd = computed(() => (ready.data.value?.score != null ? ready.data.value : null));
+// shown with a score, and also while the usual is still being learnt (a new band's first week): then the big value is
+// the days the score still waits for, rather than the block being absent until a score comes
+const rd = computed(() => { const r = ready.data.value; return r && (r.score != null || r.parts.length + (r.building?.length ?? 0) > 0) ? r : null; });
 const yesterday = localYmd(new Date(Date.now() - 86400000));
 const nightsQ = useSleep({ from: yesterday, to: tomorrowYmd() });
 const night = computed(() => nightsQ.data.value?.nights?.[0] ?? null);
@@ -215,6 +217,28 @@ const readyParts = computed(() => (rd.value?.parts ?? []).filter((x) => x.value 
   return { key: x.key, icon: p.icon, t: p.t, s: x.baseline != null ? `${p.f(x.value!)} · usual ${p.f(x.baseline)}` : p.f(x.value!),
     r: x.effect === "flat" || x.baseline == null ? "As usual" : signedBy(x.value! - x.baseline, p.f), tone: x.effect === "up" ? "pos" : x.effect === "down" ? "neg" : undefined };
 }));
+// a part still learning its usual: today's value and when its usual comes, as a ready part's row has its usual, and on
+// the right a muted word where a result goes (the days themselves are the block's big value)
+const buildingParts = computed(() => (rd.value?.building ?? []).filter((x) => PART[x.key]).map((x) => {
+  const p = PART[x.key];
+  return { key: x.key, icon: p.icon, t: p.t, s: `${p.f(x.value)} · usual in ${rd.value!.need - x.days} ${rd.value!.need - x.days === 1 ? "day" : "days"}`, r: "Learning", tone: "muted" };
+}));
+// every part in one list, in the order of the score's parts (sleep, resting heart rate, HRV)
+const ORDER: ReadinessPart["key"][] = ["sleep", "restingHr", "hrv"];
+const allParts = computed(() => [...readyParts.value, ...buildingParts.value].sort((a, b) => ORDER.indexOf(a.key) - ORDER.indexOf(b.key)));
+// without a score: the score needs two parts with a usual, so it waits on the second most advanced part (a part with a
+// usual counts as all its days, one with no readings as none); the ring fills as its days come in
+const readyWait = computed(() => {
+  const r = rd.value;
+  if (!r || r.score != null) return null;
+  const days = ORDER.map((k) => (r.parts.some((x) => x.key === k) ? r.need : r.building.find((x) => x.key === k)?.days ?? 0)).sort((a, b) => b - a);
+  const missing = ORDER.filter((k) => !r.parts.some((x) => x.key === k) && !r.building.some((x) => x.key === k));
+  const left = r.need - days[1]!;
+  return { days: days[1]!, need: r.need,
+    text: r.parts.length + r.building.length < 2
+      ? `Your score also needs ${missing.map((k) => (k === "hrv" ? PART[k].t : PART[k].t.toLowerCase())).join(" or ")} from your band.`
+      : `Learning your usual. Your score shows in ${left} ${left === 1 ? "day" : "days"}.` };
+});
 // heart: the resting heart rate and HRV of today (else the latest readiness read), each against your usual, and the day's range
 const partOf = (k: ReadinessPart["key"]) => ready.data.value?.parts?.find((x) => x.key === k);
 const heartStats = computed<WStat[]>(() => {
@@ -567,13 +591,16 @@ await loaded(home, ach, avail, hDay, ready, nightsQ, dailyQ);
           <DailyLog />
         </div>
 
-        <!-- readiness: the score as a pinned goal's value and ring, what it means, then what made it as a report's highlights -->
+        <!-- readiness: the score as a pinned goal's value and ring, what it means, then what made it as a report's highlights;
+             while the usual is being learnt, the days the score waits for in their place, and each part's days so far -->
         <div v-else-if="id === 'readiness' && rd" class="card hb sz-m click" :data-solo="solo.has(id) || undefined" v-bind="link('/stats?tab=heart')">
           <div class="ch"><span class="bi"><Icon name="heartPulse" :size="15" /></span><span class="t grow">Readiness</span><span v-if="readyParts.length" class="tiny">Vs your usual</span></div>
-          <div class="row"><div class="big grow">{{ rd.score }}<small v-if="rd.label">{{ rd.label }}</small></div><Ring :pct="rd.score! / 100" :size="40" :color="rd.label === 'Take it easy' ? 'var(--warn)' : undefined" /></div>
-          <div v-if="rd.label" class="tiny">{{ READY_TEXT[rd.label] }}</div>
-          <div v-if="readyParts.length" class="list hhl">
-            <div v-for="x in readyParts" :key="x.key" class="li">
+          <div v-if="readyWait" class="row"><div class="big grow">{{ readyWait.days }}<small>of {{ readyWait.need }} days</small></div><Ring :pct="readyWait.days / readyWait.need" :size="40" /></div>
+          <div v-else class="row"><div class="big grow">{{ rd.score }}<small v-if="rd.label">{{ rd.label }}</small></div><Ring :pct="rd.score! / 100" :size="40" :color="rd.label === 'Take it easy' ? 'var(--warn)' : undefined" /></div>
+          <div v-if="readyWait" class="tiny">{{ readyWait.text }}</div>
+          <div v-else-if="rd.label" class="tiny">{{ READY_TEXT[rd.label] }}</div>
+          <div v-if="allParts.length" class="list hhl">
+            <div v-for="x in allParts" :key="x.key" class="li">
               <Icon :name="x.icon" :size="18" class="muted" />
               <div class="grow"><div class="t">{{ x.t }}</div><div class="s">{{ x.s }}</div></div>
               <b class="r rv" :class="x.tone">{{ x.r }}</b>
