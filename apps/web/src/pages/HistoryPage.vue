@@ -61,8 +61,8 @@ const byDay = computed(() => {
   // the engine leaves out plans already done (by their routine, activity type, or started from the plan)
   for (const p of c.planned) add(p.date, { kind: "planned", missed: p.date < today, ...p });
   // the engine sends workouts and activities as separate lists, so a day would show all its workouts before its activities;
-  // order each day like the List view (newest first), plans (no time of their own) after what was done
-  for (const xs of m.values()) xs.sort((a, b) => (a.kind === "planned" ? 1 : 0) - (b.kind === "planned" ? 1 : 0) || (a.startedAt && b.startedAt ? b.startedAt.localeCompare(a.startedAt) : 0));
+  // order each day like Home's list for a day (oldest first, in order of when they happened), plans (no time of their own) after what was done
+  for (const xs of m.values()) xs.sort((a, b) => (a.kind === "planned" ? 1 : 0) - (b.kind === "planned" ? 1 : 0) || (a.startedAt && b.startedAt ? a.startedAt.localeCompare(b.startedAt) : 0));
   return m;
 });
 const DOW = computed(() => weekdayOrder(first.value).map((i) => ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][i]));
@@ -160,8 +160,10 @@ await loaded(cal, listWorkouts, listActs);
           <b>{{ month.toLocaleDateString(undefined, { month: "long", year: "numeric" }) }}</b>
           <button class="ib sm plain" aria-label="Next month" @click="shift(1)"><Icon name="right" :size="18" /></button>
         </div>
-        <div class="calx"><button v-if="localYmd(month).slice(0, 7) !== today.slice(0, 7)" class="fchip acc" @click="month = new Date(new Date().getFullYear(), new Date().getMonth(), 1); sel = today">Today</button>
-        <button v-if="!isPhone && (!sel || sel < today)" class="qb acc" @click="planDay = today"><Icon name="plus" :size="16" />Plan a workout</button></div>
+        <div class="calx">
+          <button v-if="localYmd(month).slice(0, 7) !== today.slice(0, 7)" class="fchip acc" @click="month = new Date(new Date().getFullYear(), new Date().getMonth(), 1); sel = today">Today</button>
+          <button v-if="!isPhone && (!sel || sel < today)" class="qb acc" @click="planDay = today"><Icon name="plus" :size="16" />Plan a workout</button>
+        </div>
       </div>
       <Transition :name="calDir" mode="out-in">
       <div :key="month.getTime()" :ref="calRef" class="cal" @touchstart.passive="calStart" @touchend.passive="calEnd">
