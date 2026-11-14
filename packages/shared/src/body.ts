@@ -59,7 +59,8 @@ export const TAPE_MEASURES = BODY_MEASURES.filter((m) => m.id !== "weight" && !m
 export interface DailyKind { id: string; name: string; unit: string; step: number; feature: "steps" | "dailyLog"; icon: string }
 export const DAILY_KINDS: DailyKind[] = [
   { id: "steps", name: "Steps", unit: "", step: 500, feature: "steps", icon: "steps" },
-  { id: "sleep_h", name: "Sleep", unit: "h", step: 0.5, feature: "dailyLog", icon: "moon" },
+  // sleep is kept in hours, typed in two boxes (hours, minutes) and shown as "7h 48m"; mood says which end is good
+  { id: "sleep_h", name: "Sleep", unit: "hours and minutes", step: 0.5, feature: "dailyLog", icon: "moon" },
   { id: "water_ml", name: "Water", unit: "ml", step: 250, feature: "dailyLog", icon: "water" },
-  { id: "mood", name: "Mood", unit: "1-5", step: 1, feature: "dailyLog", icon: "smile" },
+  { id: "mood", name: "Mood", unit: "1 bad - 5 great", step: 1, feature: "dailyLog", icon: "smile" },
 ];

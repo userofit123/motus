@@ -1,5 +1,5 @@
 // Activities (walks, runs, rides…), body measurements and the daily log (steps, sleep, water, mood).
-import { routeStats, type ActivityType } from "@motus/shared";
+import { routeStats, DAILY_KINDS, type ActivityType } from "@motus/shared";
 import type { Router, Ctx } from "../router";
 import type { Sql } from "../db";
 import { camel, id, str, intOrNull, numOrNull, bool, isoTime, dateStr, startOfDay, tzOf } from "../util";
@@ -236,14 +236,31 @@ export function activityRoutes(r: Router) {
   r.get("/daily", async ({ q }, _p, _b, qs) => {
     const from = dateStr(qs.from) ?? "1970-01-01";
     const { rows } = await q.query<{ date: string | Date; kind: string; value: number | string; source: string | null }>(`SELECT date, kind, value, source FROM daily_logs WHERE date >= $1::date AND kind <> 'steps' ORDER BY date DESC`, [from]);
-    const all: { date: string | Date }[] = [...rows, ...(await stepsByDay(q, from, null, tzOf(qs)))];
-    return all.sort((a, b) => String(b.date).localeCompare(String(a.date)));
+    // band: Health Connect brought this day's value in (an import log entry not deleted), so a value typed over it can
+    // go back to the band's (PUT with band: true); the daily log marks it either way
+    const banded = new Set((await q.query<{ k: string }>(
+      `SELECT ${IMPORT_DAILY} || ':' || to_char(h.date, 'YYYY-MM-DD') AS k FROM health_imports h WHERE h.deleted_at IS NULL AND h.date >= $1::date`, [from])).rows.map((x) => x.k));
+    const all: { date: string | Date; kind: string; value: unknown; logged?: number | null }[] = [...rows, ...(await stepsByDay(q, from, null, tzOf(qs)))];
+    const out: Record<string, unknown>[] = all.map((x) => {
+      const k = `${x.kind}:${ymdOf(x.date)}`, band = banded.delete(k);
+      // waiting: gone back to the band's value (PUT band: true), which the band's next read of the day brings
+      return { ...x, band, waiting: band && (x.kind === "steps" ? x.logged == null : x.value == null) };
+    });
+    // a day with no value of its own left, only for what the daily log shows (other readers take every row as a number)
+    for (const k of banded) {
+      const i = k.lastIndexOf(":"), kind = k.slice(0, i);
+      if (DAILY_KINDS.some((x) => x.id === kind)) out.push({ date: k.slice(i + 1), kind, value: null, source: null, band: true, waiting: true });
+    }
+    return out.sort((a, b) => String(b.date).localeCompare(String(a.date)));
   });
   r.put("/daily", async (ctx, _p, b) => {
     const entries = Array.isArray(b.entries) ? b.entries : [b];
+    // only answered for values going back to the band's (a typed value restores nothing)
+    let restored: boolean | undefined;
     for (const e of entries.slice(0, 1000)) {
       const d = dateStr(e.date), k = str(e.kind, 20);
       if (!d || !k) continue;
+      if (e.band) { restored = (await toBand(ctx, d, k)) && restored !== false; continue; }
       if (e.value == null) await ctx.q.query("DELETE FROM daily_logs WHERE date = $1 AND kind = $2", [d, k]);
       else await ctx.q.query(
         `INSERT INTO daily_logs (user_id, date, kind, value, source) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (user_id, date, kind) DO UPDATE SET value = $4, source = $5`,
@@ -251,6 +268,33 @@ export function activityRoutes(r: Router) {
     }
     // the daily log is not a body measurement: it touches activity, stats, goals and home, not the body log
     ctx.changed("activity");
-    return { ok: true };
+    // restored: false when a value going back to the band's waits for the phone's next read of that day
+    return restored === undefined ? { ok: true } : { ok: true, restored };
   });
+}
+
+/** The daily log's kind for an import log entry's kind, in SQL (h: health_imports); as DAILY_KIND in health.ts. */
+const IMPORT_DAILY = "CASE h.kind WHEN 'sleep' THEN 'sleep_h' WHEN 'water' THEN 'water_ml' WHEN 'distance' THEN 'distance_m' ELSE h.kind END";
+const ymdOf = (d: string | Date) => (d instanceof Date ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}` : String(d).slice(0, 10));
+
+/**
+ * A value typed over the band's goes back to the band's. A typed value replaced the band's in daily_logs, so the band's
+ * number is only still known for sleep, as the night's time asleep (sleep_nights keeps the band's): that is written back
+ * at once, as an import would. Otherwise the typed value goes, and the band's comes back with its next read of that day:
+ * the import log entry stays, not marked deleted (clearing a typed number never marks it, 034), so that import writes the
+ * band's value again, and meanwhile GET /daily says the day is waiting for it. True when the band's value is back now,
+ * false when it waits for that import.
+ */
+async function toBand(ctx: Ctx, d: string, k: string): Promise<boolean> {
+  if (k === "sleep_h") {
+    const n = (await ctx.q.query<{ asleep_min: number }>("SELECT asleep_min FROM sleep_nights WHERE date = $1", [d])).rows[0];
+    if (n) {
+      await ctx.q.query(
+        `INSERT INTO daily_logs (user_id, date, kind, value, source) VALUES ($1,$2,'sleep_h',$3,'health_connect') ON CONFLICT (user_id, date, kind) DO UPDATE SET value = $3, source = 'health_connect'`,
+        [ctx.userId, d, Math.round(Number(n.asleep_min) / 6) / 10]);
+      return true;
+    }
+  }
+  await ctx.q.query("DELETE FROM daily_logs WHERE date = $1 AND kind = $2 AND source IS DISTINCT FROM 'health_connect'", [d, k]);
+  return false;
 }
