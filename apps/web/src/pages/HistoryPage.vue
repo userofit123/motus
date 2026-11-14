@@ -9,7 +9,10 @@ const kept: { v: { month: number; sel: string | null } | null } = { v: null };
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { daysIntoWeek, weekdayOrder } from "@motus/shared";
 import { useRoute, useRouter } from "vue-router";
+import { useQuery } from "@tanstack/vue-query";
+import { api } from "../api/client";
 import { useCalendar, useSettings, useWorkouts, useActivities, useHealthAvailable, useHealthDay, loaded } from "../api/queries";
+import { useStepGoal } from "../core/goals";
 import { asleepMin, mins } from "../core/sleep";
 import Menu from "../components/Menu.vue";
 import { unplanItems } from "../components/home/planActions";
@@ -129,6 +132,25 @@ const avail = useHealthAvailable();
 const banded = computed(() => !!avail.data.value && Object.values(avail.data.value).some(Boolean));
 const hDay = useHealthDay(computed(() => (sel.value && sel.value <= today ? sel.value : null)), banded);
 const nightOpen = ref<string | null>(null);
+// each day's steps as a thin bar along the bottom of its cell (M-200), so a day with only band data no longer looks empty:
+// filled to the steps goal (green once reached), or without one against the shown weeks' busiest day as Home's week bars.
+// Sleep gets no mark: a night spans two days, so it stays in the chosen day's tiles. Only with band data at all.
+// The daily log from the grid's first day on, under the key Home's daily log uses (useDaily), so live updates reload it
+const stepGoal = useStepGoal();
+const dailyQ = useQuery({ queryKey: computed(() => ["activities", "daily", range.value.from]), enabled: banded,
+  queryFn: () => api.get<{ date: string; kind: string; value: number | string }[]>("/daily", { from: range.value.from, tz: new Date().getTimezoneOffset() }) });
+const stepsOf = computed(() => {
+  const m = new Map<string, number>();
+  if (!banded.value) return m;
+  for (const r of dailyQ.data.value ?? []) { const d = String(r.date).slice(0, 10), n = Number(r.value); if (r.kind === "steps" && n > 0 && d >= range.value.from && d <= range.value.to && d <= today) m.set(d, n); }
+  return m;
+});
+const stepTop = computed(() => stepGoal.value?.target || Math.max(1, ...stepsOf.value.values()));
+const stepBars = computed(() => new Map([...stepsOf.value].map(([d, n]) => {
+  const g = stepGoal.value?.target, ok = !!g && n >= g;
+  return [d, { pct: Math.min(100, (n / stepTop.value) * 100), ok,
+    label: ok ? `${fmt.value.num(n, 0)} steps, goal reached` : g ? `${fmt.value.num(n, 0)} of ${fmt.value.num(g, 0)} steps` : `${fmt.value.num(n, 0)} steps` }];
+})));
 const dayTiles = computed(() => {
   const d = hDay.data.value;
   if (!d || d.date !== sel.value) return [];
@@ -190,7 +212,7 @@ await loaded(cal, listWorkouts, listActs);
         </div>
       </div>
       <Transition :name="calDir" mode="out-in">
-      <div :key="month.getTime()" :ref="calRef" class="cal" @touchstart.passive="calStart" @touchend.passive="calEnd">
+      <div :key="month.getTime()" :ref="calRef" class="cal" :class="{ stps: stepsOf.size }" @touchstart.passive="calStart" @touchend.passive="calEnd">
         <i class="calsel" aria-hidden="true" hidden />
         <div v-for="d in DOW" :key="d" class="dh">{{ isPhone ? d![0] : d }}</div>
         <div v-for="d in grid" :key="d.getTime()" class="d" :class="{ out: d.getMonth() !== month.getMonth(), today: localYmd(d) === today, sel: sel === localYmd(d) }" @click="sel = localYmd(d)">
@@ -202,6 +224,7 @@ await loaded(cal, listWorkouts, listActs);
             <div v-if="(byDay.get(localYmd(d)) ?? []).length > 3" class="tiny">+{{ (byDay.get(localYmd(d)) ?? []).length - 3 }} more</div>
           </template>
           <div v-else class="dots"><i v-for="x in (byDay.get(localYmd(d)) ?? []).slice(0, 4)" :key="x.id ?? x.scheduleId" :class="{ plan: x.kind === 'planned' }" :style="{ '--ec': x.color ?? (x.kind === 'activity' ? 'var(--c3)' : 'var(--acc)') }" /></div>
+          <template v-for="b in [stepBars.get(localYmd(d))]" :key="0"><i v-if="b" class="stp" :class="{ ok: b.ok }" role="img" :aria-label="b.label" :title="b.label"><b :style="{ width: b.pct + '%' }" /></i></template>
         </div>
       </div>
       </Transition>
@@ -262,4 +285,14 @@ await loaded(cal, listWorkouts, listActs);
 /* a workout's heart rate in its row's line: the small heart in the line's colour, beside its number */
 .hr { display: inline-flex; align-items: center; gap: 2px; white-space: nowrap; }
 .hr svg { flex: none; }
+/* a day's steps: a thin bar on the cell's bottom edge, out of the way of its entries and dots; the track (the cell's width
+   inside its padding) has no colour of its own, so a short bar reads as few steps and none as no steps */
+/* the month's cells keep room for it under their entries, all alike, so a full day's last entry never sits on it */
+.cal.stps .d { padding-bottom: 15px; }
+html.phone .cal.stps .d { padding-bottom: 8px; }
+.cal .stp { position: absolute; left: 6px; right: 6px; bottom: 6px; height: 3px; pointer-events: none; }
+.cal .stp b { display: block; height: 100%; min-width: 3px; border-radius: 2px; background: color-mix(in srgb, var(--acc) 50%, transparent); }
+.cal .stp.ok b { background: color-mix(in srgb, var(--pos) 50%, transparent); }
+/* on the phone the day's number and dots are centred, so the bar grows from the middle */
+html.phone .cal .stp { bottom: 3px; height: 2px; display: flex; justify-content: center; }
 </style>
