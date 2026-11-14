@@ -3,7 +3,7 @@
 // (PLAN.md §8.6). The rest timer is kept on the device so a reload does not lose it.
 import { reactive, ref } from "vue";
 import { readJson, writeJson } from "../core/prefs";
-import { withDefaults, cleanWorkoutSound, cleanCueVolume, type WorkoutSound } from "@motus/shared";
+import { withDefaults, cleanWorkoutSound, cleanTickSound, cleanCueVolume, type WorkoutSound, type TickSound } from "@motus/shared";
 import { api } from "../api/client";
 import { queryClient } from "../api/live";
 import { showRestCountdown, clearRestCountdown, scheduleRestAlarm, cancelRestAlarm, scheduleRestCues, cancelRestCues, notifyRestOverWeb, isNativeApp, backgroundTimers, nativeVibrate } from "./native";
@@ -26,7 +26,7 @@ const save = () => writeJson("motusRest", rest);
 
 /** The sounds the cues play (rest over, countdown), and how loud (10-100 %). `sound` false ("Workout sounds" off):
  *  none plays; a preview leaves it out. */
-export interface CueVoice { cueSound: WorkoutSound; tickSound: WorkoutSound; cueVolume: number; sound?: boolean }
+export interface CueVoice { cueSound: WorkoutSound; tickSound: TickSound; cueVolume: number; sound?: boolean }
 export interface Cues extends CueVoice { sound: boolean; vibrate: boolean; warn10: boolean; voice: boolean; countdown: boolean; next?: boolean }
 let cues: Cues = { sound: true, cueSound: "beep", tickSound: "beep", cueVolume: 100, vibrate: true, warn10: true, voice: false, countdown: true, next: true };
 // Whether `cues` holds a running workout's effective settings (account settings plus that workout's own overrides).
@@ -257,7 +257,7 @@ export const levelOf = (volume: number) => (cleanCueVolume(volume) / 100) ** 2;
  *  has died away before the next second's; they move with `freq` as the others do, so the 3-2-1's last note is an
  *  octave up in every sound. The Android app plays the same notes in the background (RestCues.java play()): a change
  *  here goes there too. */
-const TICK_NOTE: Record<WorkoutSound, (freq: number, delay: number, long: boolean, level: number) => void> = {
+const TICK_NOTE: Record<TickSound, (freq: number, delay: number, long: boolean, level: number) => void> = {
   beep: (f, delay, long, level) => tone(f, { delay, hold: long ? 0.2 : 0.14, dur: long ? 0.12 : 0.08, vol: 0.23, partials: CUE, level }),
   bell: (f, delay, long, level) => tone(f, { delay, dur: long ? 0.7 : 0.45, vol: 0.4, level }),
   soft: (f, delay, long, level) => tone(f, { delay, attack: 0.02, hold: long ? 0.16 : 0.1, dur: long ? 0.2 : 0.14, vol: 0.4, partials: SOFT, level }),
@@ -301,7 +301,27 @@ export const RINGS: Record<RingSound, (level: number) => void> = {
   bowl: (level) => tone(587, { dur: 5, vol: 0.4, partials: BOWL, attack: 0.04, level }),
   gong: (level) => tone(98, { dur: 5, vol: 0.42, partials: DEEP_GONG, attack: 0.06, level }),
 };
-const note = (v: CueVoice, f: number, delay: number, long: boolean) => TICK_NOTE[cleanWorkoutSound(v.tickSound)](f, delay, long, levelOf(v.cueVolume));
+// notes of a C major chord, so every tune (and any two in a row) sits in tune with the others
+export const C4 = 261.63, C5 = 523.25, E5 = 659.25, G5 = 783.99, C6 = 1046.5, E6 = 1318.5, G6 = 1567.98, C7 = 2093;
+// a small gong: a low note with off-key overtones that shimmer and die away slowly
+const GONG: Overtone[] = [[1, 1, 1], [1.5, 0.22, 0.8], [2, 0.3, 0.65], [2.76, 0.16, 0.45], [4.07, 0.05, 0.25]];
+export type TuneSound = "double" | "triple" | "high" | "rising" | "chime" | "pulse" | "softAlarm" | "wake" | "smallGong";
+/** The tunes, first made for the interval timer and also a rest over sound: each plays once, as it is already a whole
+ *  call. (Ids as the rest timer saves them; core/sounds.ts pairs them with the interval timer's.) */
+const TUNES: Record<TuneSound, (level: number) => void> = {
+  double: (level) => [C6, C6].forEach((f, i) => tone(f, { delay: i * 0.17, dur: i ? 0.7 : 0.35, level })),
+  triple: (level) => [C6, C6, C6].forEach((f, i) => tone(f, { delay: i * 0.17, dur: i === 2 ? 0.8 : 0.3, level })),
+  high: (level) => tone(G6, { dur: 0.8, vol: 0.24, level }),
+  rising: (level) => [C6, E6, G6, C7].forEach((f, i) => tone(f, { delay: i * 0.11, dur: i === 3 ? 1.1 : 0.45, vol: 0.24, level })),
+  // The soft alarms: meant to be noticed across the room, but rounded off (slower attacks, few bright overtones) so
+  // none of them is shrill.
+  softAlarm: (level) => [E5, C5, E5, C5].forEach((f, i) => tone(f, { delay: i * 0.3, dur: 0.38, vol: 0.3, partials: SOFT, attack: 0.03, level })), // two-tone, twice
+  chime: (level) => [E6, C6, G5].forEach((f, i) => tone(f, { delay: i * 0.22, dur: i === 2 ? 1.1 : 0.6, vol: 0.24, level })), // three bells, falling
+  pulse: (level) => [C5, E5, G5].forEach((f, i) => tone(f, { delay: i * 0.3, dur: 0.32, vol: 0.28 + i * 0.03, partials: SOFT, attack: 0.05, level })), // three soft swells, rising
+  wake: (level) => { tone(G5, { dur: 1.6, vol: 0.24, partials: SOFT, attack: 0.6, level }); tone(C6, { delay: 0.35, dur: 1.4, vol: 0.16, partials: SOFT, attack: 0.6, level }); }, // fades in, no edge
+  smallGong: (level) => tone(C4, { dur: 2.2, vol: 0.4, partials: GONG, attack: 0.02, level }), // long, so it sits under an interval's next part
+};
+const note = (v: CueVoice, f: number, delay: number, long: boolean) => TICK_NOTE[cleanTickSound(v.tickSound)](f, delay, long, levelOf(v.cueVolume));
 /** The countdown in the last seconds of a rest or an interval part: a short blip, the last one higher so you know
  *  "now". `v`: the sound and volume (the running workout's, unless given). */
 export function tick(last: boolean, v: CueVoice = cues) {
@@ -312,12 +332,14 @@ export function tick(last: boolean, v: CueVoice = cues) {
 export function beep(freq = 880, v: CueVoice = cues) {
   if (v.sound !== false) note(v, freq * 2, 0, true);
 }
-/** The end of a rest or a timed set, in the rest over sound: a short sound three times in a row, a ringing one once. */
+/** The end of a rest or a timed set, in the rest over sound: a short sound three times in a row, a ringing one or a
+ *  tune once. */
 export function restOver(v: CueVoice = cues) {
   if (v.sound === false) return;
   const id = cleanWorkoutSound(v.cueSound), level = levelOf(v.cueVolume);
   if (id in RINGS) { RINGS[id as RingSound](level); return; }
-  for (let i = 0; i < 3; i++) TICK_NOTE[id](1760, i * 0.25, false, level);
+  if (id in TUNES) { TUNES[id as TuneSound](level); return; }
+  for (let i = 0; i < 3; i++) TICK_NOTE[id as TickSound](1760, i * 0.25, false, level);
 }
 function speak(text: string) {
   try { const u = new SpeechSynthesisUtterance(text); u.rate = 1.05; speechSynthesis.cancel(); speechSynthesis.speak(u); } catch { /* no voice */ }

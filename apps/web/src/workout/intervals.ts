@@ -3,9 +3,9 @@
 // counter: where you are comes from how long it has run, so it stays right after the phone sleeps (PLAN.md §8.6).
 import { computed, reactive } from "vue";
 import { intervalPhases, intervalAt, intervalTotalS, cleanInterval, INTERVAL_DEFAULT, type IntervalConfig, type IntervalKind, type IntervalSound } from "@motus/shared";
-import { SOUND_BELL, SOUND_ROUND, SOUND_DIGITAL, SOUND_MARIMBA, SOUND_HAND_BELL, SOUND_SHIP_BELL, SOUND_TUBULAR, SOUND_TEMPLE, SOUND_BOWL, SOUND_DEEP_GONG } from "../core/soundNames";
+import { cueOfInterval } from "../core/sounds";
 import { readJson, writeJson } from "../core/prefs";
-import { now, tone as note, tick, levelOf, SOFT, PURE, WOOD, RINGS, savedCues, vibrate, type Overtone } from "./runtime";
+import { now, tone as note, tick, restOver, levelOf, SOFT, PURE, WOOD, C5, G5, C6, E6, savedCues, vibrate } from "./runtime";
 import { keepAwake, backgroundTimers, scheduleIntervalCues, cancelIntervalCues, showIntervalNotice, clearIntervalNotice, onNoticeAction, INTERVAL_CUE_MAX, type IntervalCue } from "./native";
 
 interface IntervalRun {
@@ -22,36 +22,16 @@ const save = () => { writeJson(KEY, iv); notice(); };
 
 export const PHASE_NAME: Record<IntervalKind, string> = { prep: "Get ready", work: "Work", rest: "Rest", setRest: "Rest between sets" };
 
-export const SOUND_NAME: Record<IntervalSound, string> = {
-  beep: SOUND_BELL, double: "Double bell", triple: "Three bells", high: "High", low: SOUND_ROUND, rising: "Rising",
-  softAlarm: "Soft alarm", chime: "Chime", marimba: SOUND_MARIMBA, pulse: "Pulse", gong: "Gong", digital: SOUND_DIGITAL, wake: "Wake",
-  handBell: SOUND_HAND_BELL, shipBell: SOUND_SHIP_BELL, tubular: SOUND_TUBULAR, temple: SOUND_TEMPLE, bowl: SOUND_BOWL, deepGong: SOUND_DEEP_GONG, none: "None",
-};
-// notes of a C major chord, so every sound (and any two in a row) sits in tune with the others
-const C4 = 261.63, C5 = 523.25, E5 = 659.25, G5 = 783.99, C6 = 1046.5, E6 = 1318.5, G6 = 1567.98, C7 = 2093;
-// a small gong: a low note with off-key overtones that shimmer and die away slowly
-const GONG: Overtone[] = [[1, 1, 1], [1.5, 0.22, 0.8], [2, 0.3, 0.65], [2.76, 0.16, 0.45], [4.07, 0.05, 0.25]];
-/** Plays one of the built-in sounds (also the preview when one is chosen). The ids stay as saved in presets. Every note
- *  is at the volume chosen in Settings → Workout defaults. */
+/** Plays one of the sounds (also the preview when one is chosen), at the volume chosen in Settings → Workout defaults.
+ *  The ids stay as saved in presets. Bell, Round, Digital and Marimba have their own form here, as a part's start; every
+ *  other sound plays as it does at a rest's end (workout/runtime.ts restOver), the same sound wherever it is picked. */
 export function playIntervalSound(sound: IntervalSound) {
-  const level = levelOf(savedCues().cueVolume), tone = (f: number, o: Parameters<typeof note>[1] = {}) => note(f, { ...o, level });
+  const c = savedCues(), level = levelOf(c.cueVolume), tone = (f: number, o: Parameters<typeof note>[1] = {}) => note(f, { ...o, level });
   if (sound === "beep") tone(G5, { dur: 0.9 }); // one bell
-  else if (sound === "double") [C6, C6].forEach((f, i) => tone(f, { delay: i * 0.17, dur: i ? 0.7 : 0.35 }));
-  else if (sound === "triple") [C6, C6, C6].forEach((f, i) => tone(f, { delay: i * 0.17, dur: i === 2 ? 0.8 : 0.3 }));
-  else if (sound === "high") tone(G6, { dur: 0.8, vol: 0.24 });
   else if (sound === "low") tone(C5, { dur: 1, vol: 0.34, partials: SOFT }); // round and gentle, no bright overtones
-  else if (sound === "rising") [C6, E6, G6, C7].forEach((f, i) => tone(f, { delay: i * 0.11, dur: i === 3 ? 1.1 : 0.45, vol: 0.24 })); // chime
-  // The soft alarms: meant to be noticed across the room, but rounded off (slower attacks, few bright overtones)
-  // so none of them is shrill.
-  else if (sound === "softAlarm") [E5, C5, E5, C5].forEach((f, i) => tone(f, { delay: i * 0.3, dur: 0.38, vol: 0.3, partials: SOFT, attack: 0.03 })); // two-tone, twice
-  else if (sound === "chime") [E6, C6, G5].forEach((f, i) => tone(f, { delay: i * 0.22, dur: i === 2 ? 1.1 : 0.6, vol: 0.24 })); // three bells, falling
   else if (sound === "marimba") [G5, C6, G5, C6].forEach((f, i) => tone(f, { delay: i * 0.14, dur: i === 3 ? 0.7 : 0.45, vol: 0.32, partials: WOOD }));
-  else if (sound === "pulse") [C5, E5, G5].forEach((f, i) => tone(f, { delay: i * 0.3, dur: 0.32, vol: 0.28 + i * 0.03, partials: SOFT, attack: 0.05 })); // three soft swells, rising
-  else if (sound === "gong") tone(C4, { dur: 2.2, vol: 0.4, partials: GONG, attack: 0.02 }); // long, so it sits under the next part's start
   else if (sound === "digital") [0, 0.1, 0.38, 0.48].forEach((d) => tone(E6, { delay: d, dur: 0.07, vol: 0.16, partials: PURE, attack: 0.004 })); // a watch's double chirp, quieter
-  else if (sound === "deepGong") RINGS.gong(level); // the rest timer's, the same sound wherever it is picked
-  else if (sound === "handBell" || sound === "shipBell" || sound === "tubular" || sound === "temple" || sound === "bowl") RINGS[sound](level);
-  else if (sound === "wake") { tone(G5, { dur: 1.6, vol: 0.24, partials: SOFT, attack: 0.6 }); tone(C6, { delay: 0.35, dur: 1.4, vol: 0.16, partials: SOFT, attack: 0.6 }); } // fades in, no edge
+  else { const cue = cueOfInterval(sound); if (cue) restOver({ ...c, cueSound: cue, sound: true }); }
 }
 
 export const ivPhases = computed(() => intervalPhases(iv.cfg));
@@ -103,8 +83,8 @@ export function skipInterval(dir: 1 | -1) {
 }
 
 // Cues at each change: the sound chosen for that part (by default two high beeps to work, one low beep to rest, three
-// when it's all done), and a short tick in the last three seconds of each phase. Whether sound and vibration play at
-// all follows Settings → Workout, read fresh each time.
+// when it's all done), and a short tick in the last three seconds of each phase. Whether sound, the 3-2-1 and vibration
+// play at all follows Settings → Workout, read fresh each time, as for a rest.
 // After the app was asleep nothing plays for a change that happened a while ago: on Android it already came as a
 // notification, and a late beep would only confuse.
 let lastIndex = ivNow.value.index, lastSecond = -1;
@@ -141,7 +121,7 @@ setInterval(() => {
     return;
   }
   const s = Math.ceil(leftMs / 1000);
-  if (index < ph.length && s <= 3 && s >= 1 && s !== lastSecond && ph[index]!.durS > 5) { lastSecond = s; const c = savedCues(); if (inAppCues() && c.sound) tick(s === 1, c); }
+  if (index < ph.length && s <= 3 && s >= 1 && s !== lastSecond && ph[index]!.durS > 5) { lastSecond = s; const c = savedCues(); if (inAppCues() && c.sound && c.countdown) tick(s === 1, c); }
 }, 200);
 
 // In the background the app's own beeps may stop (a locked phone), so the coming changes are scheduled to come as the

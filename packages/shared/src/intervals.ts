@@ -21,8 +21,8 @@ export interface IntervalPhase { kind: IntervalKind; durS: number; round: number
 
 /** The built-in sounds, all made from the app's own beep (no audio files to ship). New ids go before "none" so the
  *  ones saved in presets keep working; the later ones are soft alarms (gentle, but meant to be noticed), then the
- *  ringing bells, bowl and deep gong the rest timer also offers. */
-export const INTERVAL_SOUNDS = ["beep", "double", "triple", "high", "low", "rising", "softAlarm", "chime", "marimba", "pulse", "gong", "digital", "wake", "handBell", "shipBell", "tubular", "temple", "bowl", "deepGong", "none"] as const;
+ *  ringing bells, bowl and deep gong the rest timer also offers, then the rest timer's Bright and Click. */
+export const INTERVAL_SOUNDS = ["beep", "double", "triple", "high", "low", "rising", "softAlarm", "chime", "marimba", "pulse", "gong", "digital", "wake", "handBell", "shipBell", "tubular", "temple", "bowl", "deepGong", "bright", "click", "none"] as const;
 export type IntervalSound = (typeof INTERVAL_SOUNDS)[number];
 /** A sound for the start of each part, and "done" for the end of the whole run. */
 export type IntervalSounds = Record<IntervalKind | "done", IntervalSound>;

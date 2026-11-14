@@ -9,7 +9,8 @@ import { useMe, useSettings, saveSettings } from "../api/queries";
 import { goBack } from "../core/leave";
 import { prompt, confirm } from "../core/ask";
 import { askNotificationsOnce } from "../workout/native";
-import { iv, ivPhases, ivNow, ivRunning, ivDone, ivElapsedS, ivTotalS, PHASE_NAME, SOUND_NAME, playIntervalSound, setIntervalConfig, startIntervals, pauseIntervals, resumeIntervals, stopIntervals, skipInterval } from "../workout/intervals";
+import { iv, ivPhases, ivNow, ivRunning, ivDone, ivElapsedS, ivTotalS, PHASE_NAME, playIntervalSound, setIntervalConfig, startIntervals, pauseIntervals, resumeIntervals, stopIntervals, skipInterval } from "../workout/intervals";
+import { INTERVAL_SOUND_OPTIONS, intervalSoundName } from "../core/sounds";
 import AppSelect from "../components/AppSelect.vue";
 import Icon from "../components/Icon.vue";
 import Menu, { type MenuItem } from "../components/Menu.vue";
@@ -46,7 +47,6 @@ const pick = (p: IntervalPreset) => (current.value?.id === p.id ? setIntervalCon
 const plan = computed(() => intervalSummary(iv.cfg));
 
 // Timer settings: the sound at the start of each part (only the parts this setup has), kept with the preset
-const soundOpts = (Object.keys(SOUND_NAME) as IntervalSound[]).map((value) => ({ value, label: SOUND_NAME[value] }));
 // the play buttons (by each part, and by each sound in the list) only let you hear it; with sounds off they do nothing
 const canPlay = (v: IntervalSound) => s.value.workout.sound && v !== "none";
 const soundRows = computed(() => {
@@ -124,15 +124,15 @@ const menu = computed<MenuItem[]>(() => [
       <div class="card flush">
         <div v-for="[k, label] in soundRows" :key="k" class="li">
           <div class="grow"><div class="t">{{ label }}</div><div v-if="k === 'done'" class="s">When all rounds are done</div></div>
-          <AppSelect :model-value="iv.cfg.sounds[k]" :options="soundOpts" :title="`${label} sound`" @change="(v: IntervalSound) => setSound(k, v)">
+          <AppSelect :model-value="iv.cfg.sounds[k]" :options="INTERVAL_SOUND_OPTIONS" :title="`${label} sound`" @change="(v: IntervalSound) => setSound(k, v)">
             <template #end="{ option }">
               <button v-if="option.value !== 'none'" type="button" class="ib sm plain" :disabled="!canPlay(option.value)" :aria-label="`Play ${option.label}`" :title="`Play ${option.label}`" @click.stop="playIntervalSound(option.value)"><Icon name="play" /></button>
             </template>
           </AppSelect>
-          <button type="button" class="ib sm plain" :disabled="!canPlay(iv.cfg.sounds[k])" :aria-label="`Play ${SOUND_NAME[iv.cfg.sounds[k]]}`" :title="`Play ${SOUND_NAME[iv.cfg.sounds[k]]}`" @click="playIntervalSound(iv.cfg.sounds[k])"><Icon name="play" /></button>
+          <button type="button" class="ib sm plain" :disabled="!canPlay(iv.cfg.sounds[k])" :aria-label="`Play ${intervalSoundName(iv.cfg.sounds[k])}`" :title="`Play ${intervalSoundName(iv.cfg.sounds[k])}`" @click="playIntervalSound(iv.cfg.sounds[k])"><Icon name="play" /></button>
         </div>
       </div>
-      <p class="tiny plan spt">{{ s.workout.sound ? "Each sound plays when that part starts, at the sound level set in Settings → Workout defaults. With the app in the background, notifications use the phone's notification sound." : "Sounds are off in Settings → Workout defaults." }}</p>
+      <p class="tiny plan spt">{{ s.workout.sound ? "Each sound plays when that part starts. The sound level, the 3-2-1 countdown and its sound, and vibration follow Settings → Workout defaults. In the background, notifications use the phone's notification sound." : "Sounds are off in Settings → Workout defaults." }}</p>
     </template>
 
     <div v-else class="face" :class="phase?.kind ?? 'done'">
