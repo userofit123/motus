@@ -25,6 +25,7 @@ import { uuidv7, isUuid } from "../ids";
 import { bad, notFound } from "../errors";
 import { ensureTypes, saveActivity, stepsByDay } from "./activities";
 import { dayIn } from "./achievements";
+import { isNight } from "@motus/shared";
 
 export const HEALTH_SOURCE = "health_connect";
 type Daily = "steps" | "sleep" | "resting_hr" | "spo2" | "hrv" | "distance" | "active_kcal" | "water" | "vo2max";
@@ -560,8 +561,12 @@ export function healthRoutes(r: Router) {
       const mine = rows.filter((x: any) => x.kind === kind).map((x: any) => ({ date: x.date as string, value: Number(x.value) }));
       const now = mine.find((x) => x.date === today) ?? mine.find((x) => x.date === shift(today, -1));
       if (!now || !(now.value > 0)) return [];
+      // sleep: a nap or partial record (under MIN_NIGHT_H) is no night, neither today's value nor in the usual; a short
+      // one today leaves sleep out of the score rather than reading as a terrible night (or falling back to yesterday's)
+      const counts = (v: number) => v > 0 && (key !== "sleep" || isNight(v));
+      if (!counts(now.value)) return [];
       const from = shift(now.date, -BASELINE_DAYS);
-      return [{ key, value: now.value, history: mine.filter((x) => x.date >= from && x.date < now.date && x.value > 0).map((x) => x.value) }];
+      return [{ key, value: now.value, history: mine.filter((x) => x.date >= from && x.date < now.date && counts(x.value)).map((x) => x.value) }];
     });
     return { ...readiness(parts), date: today };
   });

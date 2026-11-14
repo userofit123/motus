@@ -11,7 +11,7 @@ import { invalidate, queryClient } from "../api/live";
 import { confirm } from "../core/ask";
 import { toast } from "../core/toast";
 import { onHome, streakOnHome, toggleHomeGoal, setHomeStreak, periodWord, goalSub } from "../core/goals";
-import { asleepMin, inBedMin, efficiency, hasStages, mins } from "../core/sleep";
+import { asleepMin, inBedMin, efficiency, hasStages, isFull, mins, SHORT_WHY } from "../core/sleep";
 import { useFmt, unitOf, ago, goalLabel, localYmd, tomorrowYmd } from "../core/format";
 import { reminderText } from "../core/reminderText";
 import { startPlan, unplanItems } from "../components/home/planActions";
@@ -205,6 +205,8 @@ const nightsQ = useSleep({ from: yesterday, to: tomorrowYmd() });
 const night = computed(() => nightsQ.data.value?.nights?.[0] ?? null);
 const nightName = computed(() => (night.value?.date === today ? "Last night" : night.value ? fmt.value.date(night.value.date, { weekday: "long" }) : ""));
 const nightOpen = ref<string | null>(null);
+// a short record (a nap, or a band that slipped off) isn't the night: the block says so plainly, and readiness leaves it out
+const nightShort = computed(() => !!night.value && !isFull(night.value));
 const READY_TEXT: Record<string, string> = { Ready: "Rested and recovered. A good day to train hard.", Normal: "About your usual. Train as planned.", "Take it easy": "Still recovering. Keep today light." };
 // each part as a report's highlight: what and its value against your usual, then how far off it is, in the tone of what
 // it does to the score (raises it: positive, lowers it: negative)
@@ -227,7 +229,10 @@ const buildingParts = computed(() => (rd.value?.building ?? []).filter((x) => PA
 }));
 // every part in one list, in the order of the score's parts (sleep, resting heart rate, HRV)
 const ORDER: ReadinessPart["key"][] = ["sleep", "restingHr", "hrv"];
-const allParts = computed(() => [...readyParts.value, ...buildingParts.value].sort((a, b) => ORDER.indexOf(a.key) - ORDER.indexOf(b.key)));
+// readiness leaves out a short record (under MIN_NIGHT_H) as no night; its row says why sleep isn't in the score
+const shortPart = computed(() => nightShort.value && !rd.value?.parts.some((x) => x.key === "sleep") && !rd.value?.building?.some((x) => x.key === "sleep")
+  ? [{ key: "sleep" as const, icon: PART.sleep.icon, t: PART.sleep.t, s: `${mins(asleepMin(night.value!))} · too short to count`, r: "Left out", tone: "muted" }] : []);
+const allParts = computed(() => [...readyParts.value, ...buildingParts.value, ...shortPart.value].sort((a, b) => ORDER.indexOf(a.key) - ORDER.indexOf(b.key)));
 // without a score: the score needs two parts with a usual, so it waits on the second most advanced part (a part with a
 // usual counts as all its days, one with no readings as none); the ring fills as its days come in
 const readyWait = computed(() => {
@@ -627,8 +632,9 @@ await loaded(home, ach, avail, hDay, ready, nightsQ, dailyQ);
         <!-- the newest night: time asleep with the share of the time in bed as its ring (as the night's sheet), then its stages -->
         <div v-else-if="id === 'sleep' && night" class="card hb sz-m click" :data-solo="solo.has(id) || undefined" v-bind="link(() => (nightOpen = night!.date))">
           <div class="ch"><span class="bi"><Icon name="moon" :size="15" /></span><span class="t grow">{{ nightName }}</span><span class="tiny">{{ fmt.time(night.startAt) }}-{{ fmt.time(night.endAt) }}</span></div>
-          <div class="row"><div class="big grow">{{ mins(asleepMin(night)) }}<small>asleep</small></div><Ring :pct="efficiency(night)" :size="40" /></div>
-          <div class="tiny">{{ mins(inBedMin(night)) }} in bed · {{ Math.round(efficiency(night) * 100) }}% of it asleep</div>
+          <div class="row"><div class="big grow">{{ mins(asleepMin(night)) }}<small>{{ nightShort ? "short record" : "asleep" }}</small></div><Ring :pct="efficiency(night)" :size="40" /></div>
+          <div v-if="nightShort" class="tiny">{{ SHORT_WHY }}</div>
+          <div v-else class="tiny">{{ mins(inBedMin(night)) }} in bed · {{ Math.round(efficiency(night) * 100) }}% of it asleep</div>
           <div v-if="hasStages(night) || night.awakeMin" class="hstages"><StageBar :night="night" /></div>
         </div>
 

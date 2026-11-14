@@ -17,3 +17,4 @@ export * from "./goals";
 export * from "./summary";
 export * from "./nextTime";
 export * from "./schedule";
+export * from "./sleep";

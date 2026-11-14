@@ -1,5 +1,5 @@
 // Nights of sleep from a band (Stats → Sleep and a night's sheet): the stages, their colours, and times of night.
-import { duration } from "@motus/shared";
+import { duration, isNightMin, MIN_NIGHT_H } from "@motus/shared";
 import type { SleepNight } from "../api/queries";
 
 // Deep in the accent, light a pale accent, REM the chart palette's teal (the second accent sits too close to the first
@@ -15,12 +15,19 @@ export const STAGES = [
  *  nights with stages draw the eye; never a grey that looks switched off. The legend draws its swatch the same way. */
 export const NO_STAGES_COLOR = "color-mix(in srgb, var(--acc) 70%, transparent)";
 export const NO_STAGES_SWATCH = `repeating-linear-gradient(-45deg, ${NO_STAGES_COLOR} 0 2px, color-mix(in srgb, var(--acc) 21%, transparent) 2px 4px)`;
+/** A nap or partial record (under the shared MIN_NIGHT_H) in the time-asleep chart: still a bar, in a muted grey apart
+ *  from the nights' colours, since it is set aside from every average; the legend names it. */
+export const SHORT_COLOR = "color-mix(in srgb, var(--tx2) 35%, transparent)";
+/** Why a short record is set aside, said the same on Stats → Sleep and Home */
+export const SHORT_WHY = `Under ${MIN_NIGHT_H} hours: a nap or part of a night, so it's left out of your sleep averages.`;
 export type StageKey = (typeof STAGES)[number]["key"];
 
 /** Whether the band told the stages apart, or only asleep from awake */
 export const hasStages = (n: SleepNight) => n.deepMin != null || n.lightMin != null || n.remMin != null;
 /** Minutes asleep: the day's own number when it was typed in (edited), else the band's */
 export const asleepMin = (n: SleepNight) => (n.edited && n.sleepH ? Math.round(n.sleepH * 60) : n.asleepMin);
+/** Whether a night's record counts as a night, or is a nap or partial record left out of averages and counts */
+export const isFull = (n: SleepNight) => isNightMin(asleepMin(n));
 /** Minutes from going to bed to getting up */
 export const inBedMin = (n: SleepNight) => Math.max(0, Math.round((Date.parse(n.endAt) - Date.parse(n.startAt)) / 60000));
 /** The share of the time in bed spent asleep, 0-1 */

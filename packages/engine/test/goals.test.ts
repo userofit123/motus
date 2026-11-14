@@ -330,4 +330,13 @@ describe("sleep goals", () => {
     const metrics = await call("GET", "/goal-metrics");
     expect(metrics.find((m: any) => m.metric === "sleep_h")).toMatchObject({ scope: "general", unit: "h", periodic: true });
   });
+
+  it("leaves naps and partial records out of the average", async () => {
+    const day = (n: number) => new Date(Date.now() - new Date().getTimezoneOffset() * 60000 - n * 86400000).toISOString().slice(0, 10);
+    const { id } = await call("POST", "/goals", { metric: "sleep_h", target: 7.5, period: "day" });
+    await call("PUT", "/daily", { entries: [{ date: day(0), kind: "sleep_h", value: 0.5 }] });
+    const g = await goal(id);
+    expect(g.progress).toMatchObject({ current: 0, done: false });
+    expect(g.progress.history.at(-1).value).toBe(0);
+  });
 });

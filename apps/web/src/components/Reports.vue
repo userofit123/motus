@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // Monthly report and year in review (optional feature): what each month and year added up to.
 import { computed, ref } from "vue";
-import { GROUPS, groupOf, percentChange, type HomeRecord } from "@motus/shared";
+import { GROUPS, groupOf, percentChange, isNight, type HomeRecord } from "@motus/shared";
 import { useStats } from "../api/queries";
 import { useFmt, unitOf } from "../core/format";
 import { mins } from "../core/sleep";
@@ -39,11 +39,12 @@ const by = (key: (d: Date) => string, dayKey: (d: string) => string) => computed
   }
   for (const a of d.activities) { const x = get(key(new Date(a.startedAt))); x.activities++; x.timeS += a.durationS; x.distM += Number(a.distanceM ?? 0); x.days.add(a.startedAt.slice(0, 10)); }
   for (const r of d.records ?? []) m.get(key(new Date(r.at)))?.records.push(r);
-  // a day's numbers count in the month (or year) it is a day of, in one that has a report (a workout or an activity)
+  // a day's numbers count in the month (or year) it is a day of, in one that has a report (a workout or an activity);
+  // sleep only as a night, not a nap or partial record (as Stats → Sleep averages it)
   const DAILY: Record<string, "sleep" | "rhr" | "hrv"> = { sleep_h: "sleep", resting_hr: "rhr", hrv: "hrv" };
   for (const x of d.daily ?? []) {
     const f = DAILY[x.kind], v = Number(x.value);
-    if (f && v > 0) m.get(dayKey(String(x.date).slice(0, 10)))?.[f].push(f === "sleep" ? v * 60 : v);
+    if (f && v > 0 && (f !== "sleep" || isNight(v))) m.get(dayKey(String(x.date).slice(0, 10)))?.[f].push(f === "sleep" ? v * 60 : v);
   }
   const top = (mp: Map<string, number>) => [...mp].sort((a, b) => b[1] - a[1])[0];
   return [...m.values()].sort((a, b) => b.k.localeCompare(a.k)).map((x) => {

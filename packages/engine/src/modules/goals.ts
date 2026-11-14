@@ -2,7 +2,7 @@
 // Progress is worked out from the data each time, so editing a past workout moves the goal too.
 // Weeks, months and days follow the app's calendar (tz = its getTimezoneOffset(), as for /home and /achievements), not
 // the process's: the server runs in UTC and the copy on a device in the person's zone, and both must agree.
-import { e1rm, GROUPS, LIFTED_SQL, bodyMeasure, bodyUnit, bodyGoalDirection, goalDaysOf, orderGoals, goalAutoTitle, GOAL_METRICS, type Goal, type GoalProgress, type Settings } from "@motus/shared";
+import { e1rm, GROUPS, LIFTED_SQL, bodyMeasure, bodyUnit, bodyGoalDirection, goalDaysOf, orderGoals, goalAutoTitle, GOAL_METRICS, MIN_NIGHT_H, type Goal, type GoalProgress, type Settings } from "@motus/shared";
 import type { Router, Ctx } from "../router";
 import type { Sql } from "../db";
 import { camel, id, str, numOrNull, oneOf, dateStr, startOfDay, tzOf, visible } from "../util";
@@ -92,8 +92,9 @@ async function valueFor(q: Sql, g: Goal, w: Window, s: Settings, now: Date, tzMi
     case "activity_minutes": return (await one(`SELECT coalesce(sum(duration_s),0) v FROM activities WHERE started_at >= $1 AND started_at < $2 AND ($3::text IS NULL OR type = $3)`, [...P, g.scopeId])) / 60;
     // steps are kept by calendar day, so they take the window's days rather than its instants; days with none don't count
     case "steps_avg": { const days = await stepsByDay(q, w.fromDay, w.toDay, tzMin); return days.length ? days.reduce((t, d) => t + d.value, 0) / days.length : 0; }
-    // sleep is filed under the day woken up on; days without it don't count, as for steps
-    case "sleep_h": return one(`SELECT coalesce(avg(value), 0) v FROM daily_logs WHERE kind = 'sleep_h' AND value > 0 AND date >= $1::date AND date < $2::date`, [w.fromDay, w.toDay]);
+    // sleep is filed under the day woken up on; days without it don't count, as for steps, nor do naps and partial
+    // records (under MIN_NIGHT_H), as everywhere sleep is averaged
+    case "sleep_h": return one(`SELECT coalesce(avg(value), 0) v FROM daily_logs WHERE kind = 'sleep_h' AND value >= $3 AND date >= $1::date AND date < $2::date`, [w.fromDay, w.toDay, MIN_NIGHT_H]);
     case "body_weight": return one(`SELECT value v FROM body_metrics WHERE kind='weight' ORDER BY measured_at DESC LIMIT 1`, []);
     case "body_metric": return one(`SELECT value v FROM body_metrics WHERE kind=$1 ORDER BY measured_at DESC LIMIT 1`, [g.scopeId]);
   }
@@ -138,8 +139,10 @@ async function progressOf(q: Sql, g: Goal, s: Settings, now: Date, tzMin = 0): P
   if (g.period !== "once" && !done && !lower) {
     const left = Math.ceil(g.target - current);
     const today = dayIn(now, tzMin), w = windowOf(g, now, s, tzMin);
+    // what is left, with its unit unless the unit is converted for display (kg, km): "30 min more today"
+    const mu = METRICS.find((m) => m.metric === g.metric)?.unit ?? "", amount = g.scope === "body" || mu === "kg" || mu === "km" ? `${left}` : `${left} ${mu}`.trim();
     // a daily goal on a day it doesn't count on: the last of its days is shown, and nothing more is due today
-    pace = g.period !== "day" ? `${left} more ${g.period === "week" ? "this week" : "this month"}` : w.fromDay === today ? `${left} more today` : "Not one of its days";
+    pace = g.period !== "day" ? `${amount} more ${g.period === "week" ? "this week" : "this month"}` : w.fromDay === today ? `${amount} more today` : "Not one of its days";
   } else if (g.deadline && !done) {
     // calendar days left, today included (due today: 1 day left), on the app's calendar
     const days = Math.round((new Date(g.deadline + "T00:00:00Z").getTime() - new Date(dayIn(now, tzMin) + "T00:00:00Z").getTime()) / DAY) + 1;
@@ -202,8 +205,8 @@ async function goalLog(q: Sql, g: Goal, w: Window, tzMin: number): Promise<{ kin
         kind: "workout", id: x.workoutId, name: x.workoutName, at: x.startedAt,
         value: g.metric === "e1rm" ? x.e1rm : g.metric === "max_weight" ? x.maxWeightKg : g.metric === "max_duration" ? x.durationS : g.metric === "max_reps" ? Math.max(0, ...x.sets.map((y: any) => y.reps ?? 0)) : null }));
     case "steps_avg": return (await stepsByDay(q, w.fromDay, w.toDay, tzMin)).map((r) => ({ kind: "day", name: "Steps", at: r.date, value: r.value }));
-    case "sleep_h": return (await q.query(`SELECT to_char(date, 'YYYY-MM-DD') AS date, value FROM daily_logs WHERE kind = 'sleep_h' AND value > 0 AND date >= $1::date AND date < $2::date ORDER BY date DESC`,
-      [w.fromDay, w.toDay])).rows.map((r: any) => ({ kind: "day", name: "Sleep", at: r.date, value: Number(r.value) }));
+    case "sleep_h": return (await q.query(`SELECT to_char(date, 'YYYY-MM-DD') AS date, value FROM daily_logs WHERE kind = 'sleep_h' AND value >= $3 AND date >= $1::date AND date < $2::date ORDER BY date DESC`,
+      [w.fromDay, w.toDay, MIN_NIGHT_H])).rows.map((r: any) => ({ kind: "day", name: "Sleep", at: r.date, value: Number(r.value) }));
     case "body_weight": case "body_metric": return (await q.query("SELECT id, measured_at, value FROM body_metrics WHERE kind = $1 ORDER BY measured_at DESC LIMIT 30", [bodyKind(g)]))
       .rows.map((r: any) => ({ kind: "body", id: r.id, name: "", at: r.measured_at, value: Number(r.value) }));
   }

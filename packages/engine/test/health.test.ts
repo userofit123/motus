@@ -705,6 +705,8 @@ describe("heart rate in training: per exercise, per routine, in an exercise's hi
     await call("PUT", "/daily", { entries: [
       { date: "2027-01-05", kind: "sleep_h", value: 7 }, { date: "2027-01-06", kind: "sleep_h", value: 8 },
       { date: "2027-01-05", kind: "resting_hr", value: 54 }, { date: "2027-01-06", kind: "hrv", value: 41 },
+      // a nap or partial record is no night: neither in the average nor in the count
+      { date: "2027-01-07", kind: "sleep_h", value: 0.5 },
     ] });
     const s = await call("GET", "/stats", undefined, { from: "2027-01-01T00:00:00Z", to: "2027-02-01T00:00:00Z", tz: "0" });
     const w = await call("GET", `/workouts/${wid}`);
@@ -795,4 +797,28 @@ describe("an import log entry is deleted only when the person deleted something"
     expect(res.rejected).toMatchObject([{ tbl: "daily_logs", op: "delete", row: null }]);
     expect(await dayRow("2027-02-05")).toBeUndefined();
   });
+});
+
+describe("readiness from the daily log", () => {
+  it("leaves naps and partial records out of last night and the usual", async () => {
+    const e = await createEngine(await pgliteDb("memory://"), { mode: "server", now: () => new Date("2026-12-20T09:00:00Z") });
+    const u = uuidv7();
+    await e.db.admin.query("INSERT INTO users (id, username) VALUES ($1, 'r')", [u]);
+    const go = async (method: string, path: string, body?: unknown, query?: Record<string, string>) => (await e.handle({ method, path, body, query, userId: u })).body as any;
+    const day = (n: number) => new Date(Date.parse("2026-12-20T12:00:00Z") - n * 86400000).toISOString().slice(0, 10);
+    // 10 usual nights of 7 h, 4 short records of 0.5 h among them, steady resting heart rate
+    const entries = [];
+    for (let i = 1; i <= 14; i++) {
+      entries.push({ date: day(i), kind: "sleep_h", value: i % 3 === 0 ? 0.5 : 7 }, { date: day(i), kind: "resting_hr", value: 55 });
+    }
+    await go("PUT", "/daily", { entries: [...entries, { date: day(0), kind: "sleep_h", value: 8 }, { date: day(0), kind: "resting_hr", value: 55 }] });
+    const r = await go("GET", "/health/readiness", undefined, { tz: "0" });
+    // the usual is 7 h (the short records would have pulled the median down), so 8 h is an hour more
+    expect(r.parts.find((p: any) => p.key === "sleep")).toMatchObject({ value: 8, baseline: 7, change: 60 });
+    // a short record today is no night: sleep drops out of the score rather than reading as a terrible one
+    await go("PUT", "/daily", { date: day(0), kind: "sleep_h", value: 1.5 });
+    const short = await go("GET", "/health/readiness", undefined, { tz: "0" });
+    expect(short.parts.map((p: any) => p.key)).toEqual(["restingHr"]);
+    expect(short.building).toEqual([]);
+  }, 120000);
 });
