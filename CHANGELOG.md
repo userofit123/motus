@@ -2,6 +2,15 @@
 
 The top entry's version is the one the release workflow publishes. Add a new `## [x.y.z]` section to release.
 
+## [0.1.24] - 2026-11-14
+
+- Walks and other activities you record in Motus take your band's step count for exactly that time, when the band's data covers the whole activity (Health Connect). If the band was off or its count doesn't fit the phone's, the phone's count stays. A count you type yourself always stays.
+- Heart rate from your band shows on activities and workouts: a graph over the session with the average and highest. Resting heart rate, blood oxygen and HRV come in too, with charts in Stats → Body. Each appears only when there's data for it.
+- Import past data with "Everything" works: it no longer asks Health Connect for years with no data, which made the whole read fail.
+- On phones the update notice sits at the bottom above the running-workout bar and the tabs, instead of as a tall column on the left.
+- Integrations is under Your data in Settings.
+- Updating adds a small database change on first start.
+
 ## [0.1.23] - 2026-11-14
 
 - Health Connect: Settings → Integrations → Imported data lists everything Motus brought in from Health Connect, day by day: steps, sleep, weight and activities. Tap an entry to correct it, or delete it from its ⋮ menu. A corrected or deleted entry stays that way on later syncs, and so does one you deleted anywhere else in the app.
