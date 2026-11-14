@@ -221,7 +221,7 @@ const readyParts = computed(() => (rd.value?.parts ?? []).filter((x) => x.value 
 // the right a muted word where a result goes (the days themselves are the block's big value)
 const buildingParts = computed(() => (rd.value?.building ?? []).filter((x) => PART[x.key]).map((x) => {
   const p = PART[x.key];
-  return { key: x.key, icon: p.icon, t: p.t, s: `${p.f(x.value)} · usual in ${rd.value!.need - x.days} ${rd.value!.need - x.days === 1 ? "day" : "days"}`, r: "Learning", tone: "muted" };
+  return { key: x.key, icon: p.icon, t: p.t, s: `${p.f(x.value)} · usual in ${(rd.value!.need ?? 7) - x.days} ${(rd.value!.need ?? 7) - x.days === 1 ? "day" : "days"}`, r: "Learning", tone: "muted" };
 }));
 // every part in one list, in the order of the score's parts (sleep, resting heart rate, HRV)
 const ORDER: ReadinessPart["key"][] = ["sleep", "restingHr", "hrv"];
@@ -231,11 +231,13 @@ const allParts = computed(() => [...readyParts.value, ...buildingParts.value].so
 const readyWait = computed(() => {
   const r = rd.value;
   if (!r || r.score != null) return null;
-  const days = ORDER.map((k) => (r.parts.some((x) => x.key === k) ? r.need : r.building.find((x) => x.key === k)?.days ?? 0)).sort((a, b) => b - a);
-  const missing = ORDER.filter((k) => !r.parts.some((x) => x.key === k) && !r.building.some((x) => x.key === k));
-  const left = r.need - days[1]!;
-  return { days: days[1]!, need: r.need,
-    text: r.parts.length + r.building.length < 2
+  // an older server sends no building or need: guard them so Home still draws
+  const building = r.building ?? [], need = r.need ?? 7;
+  const days = ORDER.map((k) => (r.parts.some((x) => x.key === k) ? need : building.find((x) => x.key === k)?.days ?? 0)).sort((a, b) => b - a);
+  const missing = ORDER.filter((k) => !r.parts.some((x) => x.key === k) && !building.some((x) => x.key === k));
+  const left = need - days[1]!;
+  return { days: days[1]!, need,
+    text: r.parts.length + building.length < 2
       ? `Your score also needs ${missing.map((k) => (k === "hrv" ? PART[k].t : PART[k].t.toLowerCase())).join(" or ")} from your band.`
       : `Learning your usual. Your score shows in ${left} ${left === 1 ? "day" : "days"}.` };
 });
