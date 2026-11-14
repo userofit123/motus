@@ -85,6 +85,15 @@ export async function syncHealth(o: { from?: Date } = {}): Promise<HealthResult 
   while (running) await running.catch(() => null);
   return running = read(o.from);
 }
+/** The oldest day of the last 60 waiting for the band's value (GET /daily marks it), or null; a failure reads as none. */
+async function oldestWaiting(): Promise<Date | null> {
+  try {
+    const from = new Date(Date.now() - 60 * DAY_MS).toISOString().slice(0, 10);
+    const days = (await api.get<{ date: string; waiting?: boolean }[]>("/daily", { from, tz: new Date().getTimezoneOffset() }))
+      .filter((x) => x.waiting).map((x) => String(x.date).slice(0, 10)).sort();
+    return days.length ? new Date(days[0] + "T00:00") : null;
+  } catch { return null; }
+}
 async function read(past?: Date): Promise<HealthResult | null> {
   syncing.value = true;
   try {
@@ -98,7 +107,11 @@ async function read(past?: Date): Promise<HealthResult | null> {
     // otherwise leave the days between them unread
     const usual = lastSync.value ? new Date(Date.parse(lastSync.value) - OVERLAP_MS) : null;
     const since = !usual ? back : fresh && back < usual ? back : usual;
-    const from = past && past < since ? past : since;
+    // a day whose typed value went back to the band's ("Use band value", maybe on another device) waits for a read of
+    // that day, which the usual overlap may no longer reach
+    const wait = await oldestWaiting();
+    const start = wait && wait < since ? wait : since;
+    const from = past && past < start ? past : start;
     const data: HealthData = await plugin().read({ from: from.toISOString() });
     const r = await api.post<HealthResult>("/health/import", data);
     // a read of the past also reads up to now, so the next one may start here; never earlier than a read already done
