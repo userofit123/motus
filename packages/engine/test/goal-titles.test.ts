@@ -48,7 +48,7 @@ describe("goal titles", () => {
   it("names a goal in the activity log by its title", async () => {
     const g = await call("POST", "/goals", { metric: "sleep_h", target: 7, period: "week" });
     const log = await call("GET", "/activity-log");
-    expect(log.entries.find((e: any) => e.open?.id === g.id || e.name === "Average 7 h of sleep a night")?.name).toBe("Average 7 h of sleep a night");
+    expect(log.entries.find((e: any) => e.open?.id === g.id || e.name === "Average 7h of sleep a night")?.name).toBe("Average 7h of sleep a night");
   });
 
   it("clears the automatic titles the app used to store, keeping names the person typed (migration 033)", async () => {

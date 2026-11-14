@@ -60,7 +60,7 @@ async function save() {
       <div class="fld"><label>Equipment</label><AppSelect v-model="f.equipment" :options="[{ value: '', label: 'None' }, ...EQUIPMENT.map((q) => ({ value: q, label: cap(q) }))]" title="Equipment" /></div>
     </div>
     <div class="fld"><label>Main muscles</label><ChoiceTiles :model-value="f.primaryMuscles" :options="MUSCLE_OPTS" multiple compact label="Main muscles" @update:model-value="(v) => setMuscles('primaryMuscles', v)" /></div>
-    <div class="fld"><label>Also works</label><ChoiceTiles :model-value="f.secondaryMuscles" :options="MUSCLE_OPTS" multiple compact label="Also works" @update:model-value="(v) => setMuscles('secondaryMuscles', v)" /></div>
+    <div class="fld"><label>Helpers</label><ChoiceTiles :model-value="f.secondaryMuscles" :options="MUSCLE_OPTS" multiple compact label="Helpers" @update:model-value="(v) => setMuscles('secondaryMuscles', v)" /></div>
     <div class="fld"><label>How to do it (one step per line)</label><textarea v-model="f.instructions" rows="4" /></div>
     <div class="fld"><label>Photos</label>
       <div class="row wrap">

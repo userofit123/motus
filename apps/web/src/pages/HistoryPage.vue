@@ -11,7 +11,7 @@ import { daysIntoWeek, weekdayOrder } from "@motus/shared";
 import { useRoute, useRouter } from "vue-router";
 import { useQuery } from "@tanstack/vue-query";
 import { api } from "../api/client";
-import { useCalendar, useSettings, useWorkouts, useActivities, useHealthAvailable, useHealthDay, loaded } from "../api/queries";
+import { useCalendar, useSettings, useWorkouts, useActivities, useHealthAvailable, useHealthDay, useTypeName, loaded } from "../api/queries";
 import { useStepGoal } from "../core/goals";
 import { asleepMin, mins } from "../core/sleep";
 import Menu from "../components/Menu.vue";
@@ -117,7 +117,9 @@ const calStart = (e: TouchEvent) => { sx = e.touches[0]!.clientX; sy = e.touches
 const calEnd = (e: TouchEvent) => { const dx = e.changedTouches[0]!.clientX - sx, dy = e.changedTouches[0]!.clientY - sy; if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.3) shift(dx < 0 ? 1 : -1); };
 function open(x: any) { if (x.kind === "workout") router.push(x.status === "in_progress" ? "/workout" : `/workouts/${x.id}`); else if (x.kind === "activity") router.push(`/activities/${x.id}`); else if (x.routineId) router.push(`/routines/${x.routineId}/start?schedule=${x.scheduleId}&date=${x.date}`); else activitySheet.value = { type: x.activityType }; }
 const icon = (x: any) => (x.kind === "activity" ? activityIcon(x.type) : x.kind === "planned" ? "calendar" : "dumbbell");
-const label = (x: any) => x.name || (x.type ? x.type[0].toUpperCase() + x.type.slice(1) : "Workout");
+// an unnamed activity by its type's own name ("Walk"), as every list names it
+const typeName = useTypeName();
+const label = (x: any) => x.name || (x.type ? typeName(x.type) : "Workout");
 const monthStats = computed(() => {
   const inMonth = [...byDay.value.entries()].filter(([d]) => d.slice(0, 7) === localYmd(month.value).slice(0, 7));
   const all = inMonth.flatMap(([, v]) => v);
@@ -177,7 +179,7 @@ const monthTiles = computed(() => {
     { key: "days", icon: "calendar", label: "Active days", value: String(m.days) },
   ];
 });
-const monthTitle = computed(() => (localYmd(month.value).slice(0, 7) === today.slice(0, 7) ? "This month" : month.value.toLocaleDateString(undefined, { month: "long", year: "numeric" })));
+const monthTitle = computed(() => (localYmd(month.value).slice(0, 7) === today.slice(0, 7) ? "This month" : fmt.value.date(month.value, { month: "long", year: "numeric" })));
 // list view
 const listWorkouts = useWorkouts(computed(() => ({ limit: 300 })));
 const listActs = useActivities(computed(() => ({ limit: 300 })));
@@ -203,7 +205,7 @@ await loaded(cal, listWorkouts, listActs);
       <div class="calnav">
         <div class="calm">
           <button class="ib sm plain" aria-label="Previous month" @click="shift(-1)"><Icon name="left" :size="18" /></button>
-          <b>{{ month.toLocaleDateString(undefined, { month: "long", year: "numeric" }) }}</b>
+          <b>{{ fmt.date(month, { month: "long", year: "numeric" }) }}</b>
           <button class="ib sm plain" aria-label="Next month" @click="shift(1)"><Icon name="right" :size="18" /></button>
         </div>
         <div class="calx">

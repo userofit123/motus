@@ -2,7 +2,7 @@
 // Progress is worked out from the data each time, so editing a past workout moves the goal too.
 // Weeks, months and days follow the app's calendar (tz = its getTimezoneOffset(), as for /home and /achievements), not
 // the process's: the server runs in UTC and the copy on a device in the person's zone, and both must agree.
-import { e1rm, GROUPS, LIFTED_SQL, bodyMeasure, bodyUnit, bodyGoalDirection, goalDaysOf, orderGoals, goalAutoTitle, GOAL_METRICS, MIN_NIGHT_H, type Goal, type GoalProgress, type Settings } from "@motus/shared";
+import { e1rm, GROUPS, LIFTED_SQL, bodyMeasure, bodyUnit, bodyGoalDirection, goalDaysOf, orderGoals, goalAutoTitle, GOAL_METRICS, MIN_NIGHT_H, duration, type Goal, type GoalProgress, type Settings } from "@motus/shared";
 import type { Router, Ctx } from "../router";
 import type { Sql } from "../db";
 import { camel, id, str, numOrNull, oneOf, dateStr, startOfDay, tzOf, visible } from "../util";
@@ -140,7 +140,9 @@ async function progressOf(q: Sql, g: Goal, s: Settings, now: Date, tzMin = 0): P
     const left = Math.ceil(g.target - current);
     const today = dayIn(now, tzMin), w = windowOf(g, now, s, tzMin);
     // what is left, with its unit unless the unit is converted for display (kg, km): "30 min more today"
-    const mu = METRICS.find((m) => m.metric === g.metric)?.unit ?? "", amount = g.scope === "body" || mu === "kg" || mu === "km" ? `${left}` : `${left} ${mu}`.trim();
+    // sleep in hours and minutes, as everywhere it is shown ("1h 30m more this week")
+    const mu = METRICS.find((m) => m.metric === g.metric)?.unit ?? "", amount = mu === "h" ? duration(Math.round((g.target - current) * 60) * 60, true)
+      : g.scope === "body" || mu === "kg" || mu === "km" ? `${left}` : `${left} ${mu}`.trim();
     // a daily goal on a day it doesn't count on: the last of its days is shown, and nothing more is due today
     pace = g.period !== "day" ? `${amount} more ${g.period === "week" ? "this week" : "this month"}` : w.fromDay === today ? `${amount} more today` : "Not one of its days";
   } else if (g.deadline && !done) {
@@ -187,7 +189,7 @@ async function goalLog(q: Sql, g: Goal, w: Window, tzMin: number): Promise<{ kin
     .rows.map((r: any) => ({ kind: "workout", id: r.id, name: r.name, at: r.started_at, durationS: r.dur == null ? null : Math.round(Number(r.dur)) }));
   const acts = async (type: string | null) => (await q.query(
     `SELECT id, type, name, started_at, duration_s, distance_m FROM activities WHERE started_at >= $1 AND started_at < $2 AND ($3::text IS NULL OR type = $3) ORDER BY started_at DESC LIMIT 60`, [...P, type]))
-    .rows.map((r: any) => ({ kind: "activity", id: r.id, name: r.name || r.type, type: r.type, at: r.started_at, durationS: r.duration_s, distanceM: r.distance_m == null ? null : Number(r.distance_m) }));
+    .rows.map((r: any) => ({ kind: "activity", id: r.id, name: r.name ?? "", type: r.type, at: r.started_at, durationS: r.duration_s, distanceM: r.distance_m == null ? null : Number(r.distance_m) }));
   const both = (a: any[], b: any[]) => [...a, ...b].sort((x, y) => String(y.at).localeCompare(String(x.at))).slice(0, 60);
   switch (g.metric) {
     case "workouts": case "volume": return wk();

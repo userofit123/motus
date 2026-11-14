@@ -88,7 +88,7 @@ await loaded(pv);
   <div v-if="p" class="page">
     <button class="back" @click="goBack(router, '/routines')"><Icon name="left" :size="16" /><span>Back</span></button>
     <div class="ph">
-      <div><h1>{{ p.routine.name }}</h1><div class="sub">{{ p.lastDoneAt ? `Last done ${ago(p.lastDoneAt)} · ${p.timesDone}×` : "First time" }}</div></div>
+      <div><h1>{{ p.routine.name }}</h1><div class="sub">{{ p.lastDoneAt ? `Last done ${ago(p.lastDoneAt)} · done ${p.timesDone}×` : "First time" }}</div></div>
       <div class="acts"><button class="btn lg keep" :disabled="busy || !active.length" @click="start()"><Icon name="play" :size="18" />Start</button></div>
     </div>
 

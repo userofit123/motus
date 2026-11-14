@@ -6,7 +6,7 @@
 import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
 import { ymd } from "@motus/shared";
-import { useWorkouts, useActivities, useActivityTypes } from "../../api/queries";
+import { useWorkouts, useActivities, useTypeName } from "../../api/queries";
 import { useFmt, activityIcon } from "../../core/format";
 import Icon from "../Icon.vue";
 import LineChart from "../LineChart.vue";
@@ -15,7 +15,7 @@ import Sparkline from "../Sparkline.vue";
 const props = defineProps<{ from: Date | null; to: Date | null; daily: { date: string; kind: string; value: number | string }[] }>();
 const router = useRouter();
 const fmt = useFmt();
-const types = useActivityTypes();
+const typeName = useTypeName();
 const range = computed(() => ({ ...(props.from ? { from: props.from.toISOString() } : {}), ...(props.to ? { to: props.to.toISOString() } : {}), limit: 1000 }));
 const ws = useWorkouts(range);
 const as = useActivities(range);
@@ -43,7 +43,6 @@ const vitals = computed(() => {
 // workouts and activities with a heart rate, oldest first. A session only has one when a band was worn while it was
 // recorded and has synced since (or Health Connect handed it over), so often few of the period's sessions do: the
 // section says how many, and shows the chart only from three on (one or two points draw no trend)
-const typeName = (slug: string) => (types.data.value ?? []).find((t: any) => t.slug === slug)?.name ?? slug[0]!.toUpperCase() + slug.slice(1);
 const sessions = computed(() => [
   ...((ws.data.value ?? []) as any[]).filter((w) => w.avgHr).map((w) => ({ key: `w${w.id}`, path: `/workouts/${w.id}`, icon: "dumbbell", name: w.name || "Workout", at: w.startedAt as string, durationS: Number(w.durationS), avg: Number(w.avgHr), max: w.maxHr ? Number(w.maxHr) : null })),
   ...((as.data.value ?? []) as any[]).filter((a) => a.avgHr).map((a) => ({ key: `a${a.id}`, path: `/activities/${a.id}`, icon: activityIcon(a.type), name: a.name || typeName(a.type), at: a.startedAt as string, durationS: Number(a.durationS), avg: Number(a.avgHr), max: a.maxHr ? Number(a.maxHr) : null })),
@@ -94,7 +93,7 @@ const tiles = computed(() => vitals.value.length + (sessions.value.length ? 1 : 
       </div></div>
       <div v-if="sessions.length > 10 && !showAll" class="center spt"><button class="qb" @click="showAll = true">Show all {{ sessions.length }} sessions</button></div>
     </template>
-    <div v-else-if="total" class="card empty"><Icon name="heart" :size="34" /><b>No workout heart rate yet</b>Workouts and activities you record while wearing your band show their heart rate here once it has synced.</div>
+    <div v-else-if="total" class="card empty"><Icon name="heart" :size="34" /><b>No heart rate in workouts yet</b>Workouts and activities you record while wearing your band show their heart rate here once it has synced.</div>
     <div v-else class="card empty"><Icon name="heart" :size="34" /><b>No workouts in this period</b>Pick a longer period, or record one while wearing your band.</div>
   </template>
 </template>

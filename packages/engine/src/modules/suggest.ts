@@ -7,10 +7,11 @@
 // - a muscle that gets far fewer sets than the others lately, or hasn't been worked for a long while (or ever)
 // - otherwise, the routine you haven't done for the longest
 // At most two of a kind and five in all, so one long list of "not done for N days" can't crowd out the rest.
-import { GROUPS, muscleName } from "@motus/shared";
+import { GROUPS, muscleName, agoDays } from "@motus/shared";
 import type { Sql } from "../db";
 import type { RoutineSummary, HomeSuggestion } from "@motus/shared";
 import { programState } from "./programs";
+import { dayIn } from "./achievements";
 
 export type Suggestion = HomeSuggestion;
 
@@ -22,15 +23,10 @@ const DAY = 86400000;
 const MAX = 5, PER_KIND = 2;
 // gaps of both sorts count as one kind: two of them at most, so the workouts that are due still find room
 const family = (k: Suggestion["kind"]) => (k === "target" ? "gap" : k);
-// "a back exercise", "an arm exercise": a group or muscle as the word before "exercise"
-const AS_ADJ: Record<string, string> = {
-  chest: "a chest", back: "a back", shoulders: "a shoulder", arms: "an arm", core: "a core", legs: "a leg",
-  lats: "a lat", "middle back": "a middle back", biceps: "a biceps", triceps: "a triceps", abdominals: "an ab", quadriceps: "a quad",
-  hamstrings: "a hamstring", glutes: "a glute", calves: "a calf", forearms: "a forearm",
-};
 
-/** hidden: suggestions you dismissed (key → when); each stays hidden until your next workout */
-export async function suggestions(q: Sql, routines: RoutineSummary[], now: Date, hidden: Record<string, string> = {}): Promise<Suggestion[]> {
+/** hidden: suggestions you dismissed (key → when); each stays hidden until your next workout. tzMin: the app's offset,
+ *  so days are counted by its calendar, as the Routines page counts "last done". */
+export async function suggestions(q: Sql, routines: RoutineSummary[], now: Date, hidden: Record<string, string> = {}, tzMin = 0): Promise<Suggestion[]> {
   const usable = routines.filter((r) => !r.archived && r.exerciseCount > 0);
   const byId = new Map(usable.map((r) => [r.id, r]));
   const out: Suggestion[] = [];
@@ -76,7 +72,10 @@ export async function suggestions(q: Sql, routines: RoutineSummary[], now: Date,
     `SELECT unnest(e.primary_muscles) AS m, count(s.id) AS n FROM workout_exercises we JOIN workouts w ON w.id = we.workout_id JOIN exercises e ON e.id = we.exercise_id
      JOIN workout_sets s ON s.workout_exercise_id = we.id AND s.done AND s.kind <> 'warmup'
      WHERE w.status = 'completed' AND w.started_at >= $1 GROUP BY 1`, [new Date(now.getTime() - 28 * DAY).toISOString()])).rows.map((x) => [x.m, Number(x.n)]));
-  const days = (m: string) => lastAt.has(m) ? Math.floor((now.getTime() - lastAt.get(m)!) / DAY) : null;
+  // whole calendar days since, on the app's calendar: yesterday evening is 1 day ago at any hour today
+  const today = Date.parse(dayIn(now, tzMin));
+  const calDays = (at: string | number | Date) => Math.round((today - Date.parse(dayIn(new Date(at), tzMin))) / DAY);
+  const days = (m: string) => lastAt.has(m) ? calDays(lastAt.get(m)!) : null;
   const known = MAIN.filter((m) => lastAt.has(m)); // only muscles you have trained before
   const last7 = known.filter((m) => days(m)! < 7);
   const hits = (await q.query<{ routine_id: string; m: string; n: string; main: boolean }>(
@@ -95,10 +94,10 @@ export async function suggestions(q: Sql, routines: RoutineSummary[], now: Date,
   // the gap tips, worked out here so a muscle's own tip can step aside for one that will be shown: like every muscle tip the
   // title says what to do and the reason why; it opens the exercises for it, or its + makes a routine. Only a helper
   // somewhere is said so, since the routine's figure shows it worked.
-  const why = (name: string, help: boolean, adj: string) => `${help ? `Your routines only work your ${name} as a helper` : `No routine works your ${name}`} · add ${adj} exercise`;
+  const why = (name: string, help: boolean) => help ? `Your routines only train your ${name} as a helper` : `None of your routines train your ${name}`;
   const gapTips: Omit<Suggestion, "key">[] = [
-    ...gaps.map((g) => { const name = g.name.toLowerCase(); return { kind: "gap" as const, title: `Work your ${name}`, reason: why(name, g.muscles.some(helped), AS_ADJ[g.id] ?? `a ${name}`), routineId: null, color: null, muscle: g.id, muscles: g.muscles.filter((m) => WATCH.includes(m)) }; }),
-    ...targets.map((m) => ({ kind: "target" as const, title: `Work your ${lower(m)}`, reason: why(lower(m), helped(m), AS_ADJ[m] ?? `a ${lower(m)}`), routineId: null, color: null, muscle: m, muscles: [m] })),
+    ...gaps.map((g) => { const name = g.name.toLowerCase(); return { kind: "gap" as const, title: `Work your ${name}`, reason: why(name, g.muscles.some(helped)), routineId: null, color: null, muscle: g.id, muscles: g.muscles.filter((m) => WATCH.includes(m)) }; }),
+    ...targets.map((m) => ({ kind: "target" as const, title: `Work your ${lower(m)}`, reason: why(lower(m), helped(m)), routineId: null, color: null, muscle: m, muscles: [m] })),
   ];
   // only the gaps that make the cut (two at most, not dismissed): a muscle whose gap tip was cut keeps its own tip
   const shownGaps = gapTips.filter((x) => !isHidden(`${x.kind}:${x.muscle}`)).slice(0, PER_KIND);
@@ -134,8 +133,8 @@ export async function suggestions(q: Sql, routines: RoutineSummary[], now: Date,
   if (workouts >= 5) for (const m of MAIN.filter((x) => !lastAt.has(x) && routineFor(x))) muscleTip(m, "rested", `${muscleName(m)}: not worked yet`);
 
   // 6. and the routines done longest ago
-  const ago = (at: string | null) => (at ? Math.floor((now.getTime() - new Date(at).getTime()) / DAY) : null);
+  const ago = (at: string | null) => (at ? calDays(at) : null);
   for (const r of [...usable].filter((x) => (ago(x.lastDoneAt) ?? 99) >= 3).sort((a, b) => (a.lastDoneAt ?? "").localeCompare(b.lastDoneAt ?? "")))
-    add({ kind: "oldest", title: r.name, reason: r.lastDoneAt ? `Not done for ${ago(r.lastDoneAt)} days` : "You haven't done this one yet", routineId: r.id, color: r.color ?? null });
+    add({ kind: "oldest", title: r.name, reason: r.lastDoneAt ? `Last done ${agoDays(ago(r.lastDoneAt)!)}` : "You haven't done this one yet", routineId: r.id, color: r.color ?? null });
   return out;
 }

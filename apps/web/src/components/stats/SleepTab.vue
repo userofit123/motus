@@ -160,8 +160,8 @@ const insights = computed(() => {
   const week = rf.filter((n) => n.date > ymd(new Date(Date.now() - 7 * 86400000)));
   if (week.length >= 4) {
     const bs = week.map((n) => nightMin(n.startAt)), spread = Math.max(...bs) - Math.min(...bs);
-    out.push(spread <= 30 ? { icon: "clock", t: "Bedtime steady this week", s: "earliest to latest", rv: mins(Math.max(1, spread)), tone: "pos" }
-      : { icon: "clock", t: "Bedtime varied this week", s: "earliest to latest", rv: mins(spread), tone: spread >= 90 ? "neg" : undefined });
+    out.push(spread <= 30 ? { icon: "clock", t: "Bedtime steady", s: "earliest to latest, last 7 days", rv: mins(Math.max(1, spread)), tone: "pos" }
+      : { icon: "clock", t: "Bedtime varied", s: "earliest to latest, last 7 days", rv: mins(spread), tone: spread >= 90 ? "neg" : undefined });
   }
   // over the period: nights under 7 hours, and weekend nights (going to bed on a Friday or Saturday) against the rest
   const nd = nightDays.value;

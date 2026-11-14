@@ -55,15 +55,15 @@ describe("suggestions", () => {
     expect(gaps.map((x) => x.muscle)).toEqual(["back", "shoulders"]);
     expect(gaps[0].routineId).toBeNull();
     expect(gaps[0].title).toBe("Work your back");
-    expect(gaps[0].reason).toBe("No routine works your back · add a back exercise");
+    expect(gaps[0].reason).toBe("None of your routines train your back");
     expect(gaps[0].muscles).toContain("lats");
   }, 60000);
 
-  it("says a group is only worked as a helper, with the right word for its exercise", async () => {
+  it("says a group is only worked as a helper", async () => {
     await personWith(["chest", "lats", "shoulders"], { chest: ["triceps"] });
     const arms = (await suggest()).find((x) => x.muscle === "arms");
     expect(arms?.title).toBe("Work your arms");
-    expect(arms?.reason).toBe("Your routines only work your arms as a helper · add an arm exercise");
+    expect(arms?.reason).toBe("Your routines only train your arms as a helper");
   }, 60000);
 
   it("leaves out a gap you trained outside your routines lately", async () => {
@@ -84,7 +84,7 @@ describe("suggestions", () => {
     const fa = sug.find((x) => x.kind === "target");
     expect(fa?.muscle).toBe("forearms");
     expect(fa?.title).toBe("Work your forearms");
-    expect(fa?.reason).toBe("Your routines only work your forearms as a helper · add a forearm exercise");
+    expect(fa?.reason).toBe("Your routines only train your forearms as a helper");
   }, 60000);
 
   // a workout of a routine that is then archived, moved back by `daysAgo`: trained outside the routines you keep

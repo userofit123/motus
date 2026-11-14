@@ -3,6 +3,7 @@
 import { computed, ref } from "vue";
 import { useWidth } from "./useWidth";
 import { useTip } from "./useTip";
+import { useFmt } from "../core/format";
 
 const props = defineProps<{ points: { x: number; y: number; label?: string; id?: string }[]; height?: number; fmt?: (v: number) => string; xfmt?: (t: number) => string; color?: string; zero?: boolean }>();
 const emit = defineEmits<{ pick: [id: string] }>();
@@ -54,7 +55,9 @@ function move(e: MouseEvent) {
   hover.value = best;
 }
 const f = (v: number) => (props.fmt ? props.fmt(v) : String(Math.round(v * 10) / 10));
-const xf = (t: number) => (props.xfmt ? props.xfmt(t) : new Date(t).toLocaleDateString(undefined, { day: "numeric", month: "short" }));
+// dates as the lists write them (your date format: "13 Nov")
+const df = useFmt();
+const xf = (t: number) => (props.xfmt ? props.xfmt(t) : df.value.date(t));
 </script>
 
 <template>

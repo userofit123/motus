@@ -52,3 +52,16 @@ export function duration(totalS: number, short = false): string {
   if (m) return short || !r ? `${m}m` : `${m}m ${r}s`;
   return short && !r ? "0m" : `${r}s`;
 }
+
+/** How long ago, from whole calendar days: "today", "yesterday", "3 days ago", "1 week ago", "2 months ago". Whole weeks,
+ *  months and years passed (rounded down), so 13 days reads "1 week ago", never "2 weeks ago" or "last week". One wording
+ *  for the app and the engine (Home's suggestions), so a routine's last day reads the same everywhere. */
+export function agoDays(days: number): string {
+  if (days <= 0) return "today";
+  if (days === 1) return "yesterday";
+  if (days < 7) return `${days} days ago`;
+  if (days < 14) return "1 week ago";
+  if (days < 60) return `${Math.floor(days / 7)} weeks ago`;
+  if (days < 730) return `${Math.floor(days / 30)} months ago`;
+  return `${Math.floor(days / 365)} years ago`;
+}

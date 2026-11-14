@@ -31,9 +31,9 @@ export const LESSONS = {
       ] },
       { heading: "How Motus counts", rows: [
         { icon: "target", t: "Main muscle", s: "The muscle the exercise is for", r: "1 set" },
-        { icon: "layers", t: "Helping muscle", s: "A muscle that also works in it", r: "0.5 set" },
+        { icon: "layers", t: "Helper", s: "A muscle that also works in it", r: "0.5 set" },
         { icon: "flame", t: "Warm-up sets", r: "Not counted" },
-        { icon: "calendar", t: "This week", s: "Starts on your first day of the week" },
+        { icon: "calendar", t: "Last 7 days", s: "Today and the 6 days before it" },
         { icon: "stats", t: "Average per training week", s: "Weeks without a workout are left out" },
       ] },
     ],

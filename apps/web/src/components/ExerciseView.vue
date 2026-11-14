@@ -15,6 +15,7 @@ import { sidesItem, SIDES_HINT } from "../core/sides";
 import { trackItem } from "../core/track";
 import { toast, savedToast } from "../core/toast";
 import Icon from "./Icon.vue";
+import DotLine from "./DotLine.vue";
 import BodyMap from "./BodyMap.vue";
 import LineChart from "./LineChart.vue";
 import Menu, { type MenuItem } from "./Menu.vue";
@@ -160,10 +161,12 @@ const menu = computed<MenuItem[]>(() => [
       <div v-if="sessions.length" class="card list">
         <div v-for="s in sessions" :key="s.workoutId" class="li click" @click="openWorkout(s.workoutId)">
           <div class="grow">
-            <div class="t">{{ fmt.date(s.startedAt, { weekday: "short", day: "numeric", month: "short", year: "numeric" }) }} <span class="tiny">· {{ s.workoutName }} · #{{ s.position }} of {{ s.ofN }}</span></div>
-            <div class="s">{{ s.sets.map(setText).join(" · ") || (s.status === "skipped" ? "Skipped" : "") }}</div>
+            <!-- the day, then where it was and its estimated 1RM, then the sets: each line wraps between whole parts (DotLine) -->
+            <div class="t">{{ fmt.date(s.startedAt, { weekday: "short", day: "numeric", month: "short", year: "numeric" }) }}</div>
+            <DotLine class="s" :parts="[s.workoutName, `#${s.position} of ${s.ofN}`, s.e1rm ? `estimated 1RM ${fmt.wu_(s.e1rm)}` : ''].filter(Boolean)" />
+            <DotLine v-if="s.sets.length" class="s" :parts="s.sets.map(setText)" /><div v-else-if="s.status === 'skipped'" class="s">Skipped</div>
           </div>
-          <div class="r tiny"><div v-if="s.e1rm">1RM {{ fmt.wu_(s.e1rm) }}</div><div v-if="s.volumeKg">{{ fmt.vol(s.volumeKg) }}</div><div v-if="s.avgHr">{{ Math.round(s.avgHr) }} bpm</div></div>
+          <div class="r tiny"><div v-if="s.volumeKg">{{ fmt.vol(s.volumeKg) }}</div><div v-if="s.avgHr">{{ Math.round(s.avgHr) }} bpm</div></div>
         </div>
       </div>
     </div>
@@ -186,7 +189,7 @@ const menu = computed<MenuItem[]>(() => [
       <div v-if="standard" class="card spt">
         <div class="lbl">Strength standard</div>
         <div style="font-weight:600;font-size:20px;margin-top:4px">{{ standard.level }}</div>
-        <div class="tiny">1RM {{ fmt.num(standard.ratio, 2) }}× body weight{{ standard.next ? ` · ${standard.next.level} at ${fmt.wu_(standard.next.kg)}` : "" }}</div>
+        <div class="tiny">Estimated 1RM {{ fmt.num(standard.ratio, 2) }}× body weight{{ standard.next ? ` · ${standard.next.level} at ${fmt.wu_(standard.next.kg)}` : "" }}</div>
         <div class="row" style="gap:4px;margin-top:10px"><div v-for="(t, i) in standard.thresholds" :key="i" class="grow" style="text-align:center"><div class="pbar" style="height:6px"><i :style="{ width: best1rm! >= t ? '100%' : '0%' }" /></div><div class="tiny" style="margin-top:3px">{{ LEVELS[i] }}</div></div></div>
         <p class="tiny" style="margin-top:8px">A rough guide from common gym rules of thumb, using your latest body weight. <template v-if="!settings.profile.sex"><button class="lnk inl" @click="router.push('/body?tab=details')">Set your sex</button> for a closer match.</template></p>
       </div>

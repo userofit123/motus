@@ -37,7 +37,7 @@ const plural = (n: number, one: string, many = one + "s") => `${n} ${n === 1 ? o
 // what a Motus file holds (or what an import added), from its row counts per table
 const COUNTED: [string, string, string?][] = [
   ["routines", "routine"], ["programs", "program"], ["exercises", "custom exercise"], ["workouts", "workout"], ["notes", "note"], ["reminders", "reminder"], ["goals", "goal"],
-  ["activities", "activity", "activities"], ["body_metrics", "body measurement"], ["daily_logs", "day log"],
+  ["activities", "activity", "activities"], ["body_metrics", "body measurement"], ["daily_logs", "daily log entry", "daily log entries"],
 ];
 const summary = (c: Record<string, number>) => COUNTED.filter(([k]) => c[k]).map(([k, one, many]) => plural(c[k]!, one, many)).join(", ");
 // a file with only settings or exercise preferences in it still has something to add

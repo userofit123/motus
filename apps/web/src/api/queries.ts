@@ -45,6 +45,11 @@ export const useReminders = (params: MaybeRef<Record<string, unknown>> = {}) => 
 export const useActivities = (params: MaybeRef<Record<string, unknown>> = {}) => useQuery({ queryKey: computed(() => ["activities", unref(params)]), queryFn: () => api.get("/activities", unref(params)) });
 export const useActivity = (id: MaybeRef<string>) => useQuery({ queryKey: computed(() => ["activities", "one", unref(id)]), queryFn: () => api.get(`/activities/${unref(id)}`), enabled: computed(() => !!unref(id)) });
 export const useActivityTypes = () => useQuery({ queryKey: ["activities", "types"], queryFn: () => api.get("/activity-types"), staleTime: 5 * 60_000 });
+/** An activity type's own name ("Walk") from its id, for an activity without a name of its own, so every list says it alike. */
+export function useTypeName() {
+  const types = useActivityTypes();
+  return (slug: string | null | undefined) => { const s = slug || "activity"; return (types.data.value as { slug: string; name: string }[] | undefined)?.find((t) => t.slug === s)?.name ?? s.charAt(0).toUpperCase() + s.slice(1); };
+}
 export const useBody = (kind?: string) => useQuery({ queryKey: ["body", kind ?? "all"], queryFn: () => api.get("/body", { kind }) });
 export const useSchedules = () => useQuery({ queryKey: ["schedules"], queryFn: () => api.get("/schedules") });
 export const useTemplates = () => useQuery({ queryKey: ["static", "templates"], queryFn: () => api.get("/templates"), staleTime: Infinity });

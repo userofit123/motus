@@ -11,7 +11,7 @@
 import { computed, ref } from "vue";
 import { daysIntoWeek, type HomePlan, type HomeToday } from "@motus/shared";
 import { useRouter } from "vue-router";
-import { useCalendar, useSettings } from "../../api/queries";
+import { useCalendar, useSettings, useTypeName } from "../../api/queries";
 import { useFmt, ago, localYmd, tomorrowYmd, activityIcon } from "../../core/format";
 import { startOpen } from "../../core/ui";
 import Icon from "../Icon.vue";
@@ -92,6 +92,7 @@ const cal = useCalendar(weekRange, wantCal);
 interface DayRow { key: string; kind: "workout" | "activity" | "planned"; icon: string; name: string; sub: string; x: any }
 // today or a past day: what you did, then (a past day only) the plans you missed. Today leaves out a workout in progress
 // (the title is Resume) and its open plans (they're the title or the plan list above)
+const typeName = useTypeName();
 const dayRows = computed<DayRow[]>(() => {
   const c = cal.data.value as any, d = sel.value;
   if (!c || d > today) return [];
@@ -99,7 +100,7 @@ const dayRows = computed<DayRow[]>(() => {
   const done: DayRow[] = [
     ...c.workouts.filter((w: any) => on(w.startedAt) && (d < today || w.status !== "in_progress")).map((w: any) => ({ key: w.id, kind: "workout" as const, icon: "dumbbell", name: w.name || "Workout", sub: `${fmt.value.time(w.startedAt)} · Workout`, x: { kind: "workout", ...w } })),
     ...c.activities.filter((a: any) => on(a.startedAt)).map((a: any) => {
-      const t = a.type ? a.type[0].toUpperCase() + a.type.slice(1) : "Activity";
+      const t = typeName(a.type);
       return { key: a.id, kind: "activity" as const, icon: activityIcon(a.type), name: a.name || t, sub: `${fmt.value.time(a.startedAt)} · ${t}`, x: { kind: "activity", ...a } };
     }),
   ].sort((a, b) => a.x.startedAt.localeCompare(b.x.startedAt));

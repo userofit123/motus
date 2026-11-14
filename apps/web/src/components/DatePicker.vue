@@ -34,7 +34,7 @@ const grid = computed(() => {
   const cells = Math.ceil((lead + new Date(m.getFullYear(), m.getMonth() + 1, 0).getDate()) / 7) * 7;
   return Array.from({ length: cells }, (_, i) => { const d = new Date(start); d.setDate(start.getDate() + i); return { ymd: localYmd(d), n: d.getDate(), out: d.getMonth() !== m.getMonth() }; });
 });
-const title = computed(() => month.value.toLocaleDateString(undefined, { month: "long", year: "numeric" }));
+const title = computed(() => fmt.value.date(month.value, { month: "long", year: "numeric" }));
 const pop = ref<InstanceType<typeof PickerPop> | null>(null);
 function goTo(s: string) {
   hi.value = s;

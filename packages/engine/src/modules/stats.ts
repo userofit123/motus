@@ -190,7 +190,7 @@ export function statsRoutes(r: Router) {
       programs.push({ id: p.id, name: p.name, weeks: (p.weeks ?? []).length, deloadPct: p.deload_pct, startDate: start, calendarWeek, ...st });
     }
     const routines = await routineSummaries(ctx.q, ctx.userId);
-    const suggest = (await suggestions(ctx.q, routines, now, s.home.hidden)).filter((x) => x.kind !== "program" || (programsOn && !programs.length));
+    const suggest = (await suggestions(ctx.q, routines, now, s.home.hidden, tzMin)).filter((x) => x.kind !== "program" || (programsOn && !programs.length));
     const allGoals = await goalsWithProgress(ctx, tzMin);
     const goals = allGoals.filter((g) => g.status === "active").slice(0, 3);
     // the goals picked for the top of Home, in the order picked, each saying whether its streak shows beside it

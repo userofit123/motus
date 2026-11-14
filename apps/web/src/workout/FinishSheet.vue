@@ -229,7 +229,7 @@ async function finish() {
 <template>
   <Sheet title="Finish workout" @close="emit('close')">
     <div class="card spb fin-hero">
-      <div class="lbl">Workout time</div>
+      <div class="lbl">Duration</div>
       <div class="fin-time">{{ fmt.dur(secs) }}</div>
       <div class="list">
         <div v-if="vsPlan" class="li"><Icon name="target" :size="18" class="fin-i" /><div class="grow"><div class="t">{{ vsPlan.t }}</div><div v-if="vsPlan.s" class="s">{{ vsPlan.s }}</div></div></div>

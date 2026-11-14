@@ -31,6 +31,7 @@ import NumStep from "../components/NumStep.vue";
 import AppSelect from "../components/AppSelect.vue";
 import BodyMap from "../components/BodyMap.vue";
 import MuscleFig from "../components/MuscleFig.vue";
+import DotLine from "../components/DotLine.vue";
 import TemplateList from "../components/TemplateList.vue";
 import RadioList from "../components/RadioList.vue";
 import Sheet from "../components/Sheet.vue";
@@ -509,7 +510,7 @@ await loaded(src, all, folders, routines, templates);
             </div>
 
             <details class="fold sect prog">
-              <summary class="sect-h"><span class="si"><Icon name="timer" :size="16" /></span><span class="grow"><b>Rest after each set</b><span class="tiny pgl"><template v-for="(x, k) in restLine(e)" :key="k"><span v-if="k" class="sep">&nbsp;· </span><span>{{ x }}</span></template></span></span></summary>
+              <summary class="sect-h"><span class="si"><Icon name="timer" :size="16" /></span><span class="grow"><b>Rest after each set</b><DotLine class="tiny pgl" :parts="restLine(e)" /></span></summary>
               <div class="tiny" style="margin:-2px 0 8px">Faded times are your defaults from Settings.</div>
               <div class="rgrid">
                 <button class="rtile" @click="restFor = { ex: i, kind: 'between' }"><span>Normal sets</span><b :class="{ dim: e.restS == null }">{{ fmt.clock(workRest(e)) }}</b></button>
@@ -530,7 +531,7 @@ await loaded(src, all, folders, routines, templates);
 
             <!-- Progression: the header opens the sheet like the Rest header, its line says what applies, faded where it is your default -->
             <div v-if="progUsable(e) && !e.fixed" class="sect">
-              <button class="sect-h go" :aria-label="'Progression: ' + progLine(e).map((x: any) => x.text).join(', ')" @click="progFor = e"><span class="si"><Icon name="arrowUp" :size="16" /></span><span class="grow"><b>Progression</b><span class="tiny pgl"><template v-for="(x, k) in progLine(e)" :key="k"><span v-if="k" class="sep">&nbsp;· </span><span :class="{ dim: x.dim }">{{ x.text }}</span></template></span></span></button>
+              <button class="sect-h go" :aria-label="'Progression: ' + progLine(e).map((x: any) => x.text).join(', ')" @click="progFor = e"><span class="si"><Icon name="arrowUp" :size="16" /></span><span class="grow"><b>Progression</b><DotLine class="tiny pgl" :parts="progLine(e).map((x: any) => ({ text: x.text, cls: x.dim ? 'dim' : undefined }))" /></span></button>
             </div>
 
             <!-- part of the routine like its sets and rests: the page's Save keeps it, and leaving unsaved asks first -->

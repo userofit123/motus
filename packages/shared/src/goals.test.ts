@@ -56,7 +56,7 @@ describe("goalAutoTitle", () => {
       activity_count: "Run 3 times a week",
       activity_minutes: "Walk 30 min a day",
       steps_avg: "10,000 steps a day",
-      sleep_h: "Average 7 h of sleep a night",
+      sleep_h: "Average 7h of sleep a night",
       body_weight: "Body weight down to 75 kg",
       body_metric: "Upper arm (left) up to 38 cm",
     });
@@ -70,8 +70,8 @@ describe("goalAutoTitle", () => {
     expect(walk({ period: "week" })).toBe("Walk 30 min a week");
     expect(walk({ period: "month" })).toBe("Walk 30 min a month");
     expect(walk({ period: "once" })).toBe("Walk 30 min in total");
-    expect(goalAutoTitle(goal("sleep_h", { target: 8, period: "day" }))).toBe("Sleep 8 h a night");
-    expect(goalAutoTitle(goal("sleep_h", { target: 7.5, period: "month" }))).toBe("Average 7.5 h of sleep a night");
+    expect(goalAutoTitle(goal("sleep_h", { target: 8, period: "day" }))).toBe("Sleep 8h a night");
+    expect(goalAutoTitle(goal("sleep_h", { target: 7.5, period: "month" }))).toBe("Average 7h 30m of sleep a night");
     expect(goalAutoTitle(goal("steps_avg", { target: 8000, period: "week" }))).toBe("Average 8,000 steps a day");
   });
   it("names everything, gym workouts and any activity plainly", () => {

@@ -3,8 +3,8 @@
 // the best one, the last twelve of them, what went into this one, and whether it shows on Home.
 import { computed } from "vue";
 import { useRouter } from "vue-router";
-import { fromM, type Goal } from "@motus/shared";
-import { useGoalDetail, useSettings, useActivityTypes } from "../api/queries";
+import { fromM, bodyName, type Goal } from "@motus/shared";
+import { useGoalDetail, useSettings, useActivityTypes, useTypeName } from "../api/queries";
 import { useFmt, goalLabel } from "../core/format";
 import { onHome, streakOnHome, toggleHomeGoal, setHomeStreak, periodWord, periodNow, goalSub } from "../core/goals";
 import Sheet from "./Sheet.vue";
@@ -20,6 +20,9 @@ const router = useRouter();
 const fmt = useFmt();
 const s = useSettings();
 const types = useActivityTypes();
+const typeName = useTypeName();
+// an entry's name: an unnamed activity by its type ("Walk"), as in History
+const title = (x: any) => x.name || (x.kind === "activity" ? typeName(x.type) : x.kind === "body" ? (g.value?.metric === "body_weight" ? "Body weight" : bodyName(g.value?.scopeId ?? "")) : "Workout");
 const q = useGoalDetail(computed(() => props.id));
 const d = computed(() => q.data.value);
 const g = computed<Goal | undefined>(() => d.value?.goal);
@@ -30,9 +33,11 @@ const periodic = computed(() => !!g.value && g.value.period !== "once");
 const show = (v: number) => { const u = g.value?.progress?.unit; return u === "kg" ? fmt.value.w(v) : u === "km" ? fmt.value.num(fromM(v * 1000, fmt.value.du), 1) : u === "cm" ? fmt.value.len(v) : fmt.value.num(v, 1); };
 const wlabel = (day: string) => fmt.value.date(day, g.value?.period === "month" ? { month: "short" } : { day: "numeric", month: "short" });
 const icon = (x: any) => (x.kind === "workout" ? "dumbbell" : x.kind === "body" ? "scale" : x.kind === "day" ? "steps" : (types.data.value ?? []).find((t: any) => t.slug === x.type)?.icon ?? "activity");
+// a value in the goal's unit as the list and bars show it: sleep in hours and minutes ("7h 30m"), as everywhere
+const showU = (v: number) => (g.value?.progress?.unit === "h" ? fmt.value.dur(Math.round(v * 60) * 60, true) : show(v));
 const right = (x: any) => {
   if (x.kind === "body") return show(x.value) + " " + (g.value?.progress?.unit === "kg" ? fmt.value.wu : g.value?.progress?.unit === "cm" ? fmt.value.lu : "%");
-  if (x.kind === "day") return fmt.value.num(x.value, 0);
+  if (x.kind === "day") return g.value?.progress?.unit === "h" ? showU(x.value) : fmt.value.num(x.value, 0);
   if (x.value != null) return show(x.value) + (g.value?.progress?.unit === "kg" ? ` ${fmt.value.wu}` : "");
   return [x.durationS ? fmt.value.dur(x.durationS, true) : "", x.distanceM ? `${fmt.value.num(fmt.value.distNum(x.distanceM), 1)} ${fmt.value.du}` : ""].filter(Boolean).join(" · ");
 };
@@ -62,12 +67,12 @@ const menu = computed(() => !g.value ? [] : [
         <div class="card stat"><div class="lbl"><span class="bi"><Icon name="trophy" :size="15" /></span>Best</div><div class="val">{{ d.best }}<small>{{ periodWord(g, d.best) }}</small></div><div class="sub">longest run</div></div>
       </div>
       <div v-if="periodic && d.periods.length" class="card"><div class="lbl hgap">Last {{ d.periods.length }} {{ periodWord(g, 2) }}</div>
-        <BarChart :bars="d.periods.map((p: any) => ({ label: wlabel(p.from), value: p.value, dim: !p.met }))" :goal="g.target" :fmt="show" :height="150" /></div>
+        <BarChart :bars="d.periods.map((p: any) => ({ label: wlabel(p.from), value: p.value, dim: !p.met }))" :goal="g.target" :fmt="showU" :height="150" /></div>
       <div v-else-if="(g.progress?.history.length ?? 0) > 1" class="card"><LineChart :points="g.progress!.history.map((h) => ({ x: new Date(h.date).getTime(), y: Number(show(h.value).replace(/,/g, '')) || h.value }))" :height="160" /></div>
 
       <div class="sh"><h2>{{ g.scope === "body" ? "Entries" : periodNow(g) }}</h2><span v-if="d.log.length" class="tiny">{{ d.log.length }}</span></div>
       <div v-if="d.log.length" class="card flush"><div v-for="(x, i) in d.log" :key="x.id ?? i" class="li" :class="{ click: x.kind !== 'day' }" @click="open(x)">
-        <Icon :name="icon(x)" :size="18" class="muted" /><div class="grow"><div class="t">{{ x.name || "Workout" }}</div><div class="s">{{ fmt.date(x.at, { weekday: "short", day: "numeric", month: "short" }) }}</div></div><span class="tiny">{{ right(x) }}</span></div></div>
+        <Icon :name="icon(x)" :size="18" class="muted" /><div class="grow"><div class="t">{{ title(x) }}</div><div class="s">{{ fmt.date(x.at, { weekday: "short", day: "numeric", month: "short" }) }}</div></div><span class="tiny">{{ right(x) }}</span></div></div>
       <div v-else class="card empty">Nothing yet {{ periodNow(g).toLowerCase() }}.</div>
       <p v-if="g.notes" class="tiny spt">{{ g.notes }}</p>
 

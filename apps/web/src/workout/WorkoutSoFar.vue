@@ -79,7 +79,7 @@ const rows = computed(() => r.value.perExercise.map((p, i) => {
     </div>
 
     <div class="wsf-tiles" :class="{ two: tileCount !== 3 }">
-      <div v-if="!final" class="card stat wsf-tile"><div class="lbl"><span class="bi"><Icon name="clock" :size="15" /></span>Time</div>
+      <div v-if="!final" class="card stat wsf-tile"><div class="lbl"><span class="bi"><Icon name="clock" :size="15" /></span>Duration</div>
         <div class="val">{{ fmt.clock(secs) }}</div><div class="sub">Since {{ fmt.time(w.startedAt) }}</div></div>
       <div class="card stat wsf-tile"><div class="lbl"><span class="bi"><Icon name="layers" :size="15" /></span>Volume</div>
         <div class="val">{{ fmt.vol(r.volumeKg) }}</div><div class="sub">{{ plural(r.reps, "rep") }}</div></div>

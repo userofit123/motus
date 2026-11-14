@@ -23,7 +23,7 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   { id: "streak", title: "Weekly target", desc: "Your longest run of weeks in a row that met your weekly workout goal", unit: "weeks", steps: [4, 8, 12, 26, 52] },
   { id: "records", title: "Personal records", desc: "Times you beat your best on an exercise (weight, estimated 1RM, reps, time or distance)", unit: "count", steps: [1, 10, 25, 50, 100, 250] },
   { id: "lifted", title: "Weight lifted", desc: "Weight × reps over every working set", unit: "kg", steps: (u) => (u.weight === "lb" ? [2, 20, 100, 200, 1000, 2000] : [1, 10, 50, 100, 500, 1000]) },
-  { id: "hours", title: "Time training", desc: "Time in finished workouts, pauses left out", unit: "s", steps: [10, 25, 50, 100, 250, 500] },
+  { id: "hours", title: "Training time", desc: "Time in finished workouts, pauses left out", unit: "s", steps: [10, 25, 50, 100, 250, 500] },
   { id: "walk", title: "Walking", desc: "Distance of walks and hikes", unit: "m", steps: [10, 50, 100, 250, 500, 1000] },
   { id: "run", title: "Running", desc: "Distance of runs", unit: "m", steps: [10, 50, 100, 250, 500, 1000], untilStarted: true },
   { id: "cycle", title: "Cycling", desc: "Distance of rides", unit: "m", steps: [100, 250, 500, 1000, 2500, 5000], untilStarted: true },

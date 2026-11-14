@@ -195,7 +195,7 @@ const nowId = computed(() => (W.state.active === props.index ? nextSet(visibleSe
     </div>
 
     <table class="sets" :class="{ v3: three }">
-      <thead><tr><th>Set</th><th v-if="prefs.showPrevious" class="prevh">Previous</th><th v-if="showW">{{ fmt.wu }}<span v-if="perSide" class="thside"> / side</span></th><th v-if="showW && showR" class="sx" /><th v-if="showR">Reps</th><th v-if="showD">Time</th><th v-if="showDist">{{ fmt.du }}</th><th v-if="feat.rpe">RPE</th><th style="width:44px" /></tr></thead>
+      <thead><tr><th>Set</th><th v-if="prefs.showPrevious" class="prevh">Last time</th><th v-if="showW">{{ fmt.wu }}<span v-if="perSide" class="thside"> / side</span></th><th v-if="showW && showR" class="sx" /><th v-if="showR">Reps</th><th v-if="showD">Time</th><th v-if="showDist">{{ fmt.du }}</th><th v-if="feat.rpe">RPE</th><th style="width:44px" /></tr></thead>
       <tbody>
         <tr v-for="s in visibleSets" :key="s.id" :class="{ done: s.done, drop: s.kind === 'drop', now: s.id === nowId && e.status !== 'skipped' }" :aria-current="s.id === nowId ? 'step' : undefined">
           <td :class="joinCls(s)"><button class="sk" :class="{ w: s.kind === 'warmup', d: s.kind === 'drop', f: s.kind === 'failure' }" @click.stop>{{ kindShort(s) }}</button></td>

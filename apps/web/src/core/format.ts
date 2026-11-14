@@ -1,6 +1,6 @@
 // Numbers, units and dates as the person likes them (Settings → Units & formats).
 import { computed } from "vue";
-import { fromKg, toKg, fromM, fromCm, toCm, num, clock, duration as dur, ymd, usesWeight, usesReps, usesDuration, sideRounds, type Settings, type Tracking } from "@motus/shared";
+import { fromKg, toKg, fromM, fromCm, toCm, num, clock, duration as dur, agoDays, ymd, usesWeight, usesReps, usesDuration, sideRounds, type Settings, type Tracking } from "@motus/shared";
 import { useSettings } from "../api/queries";
 
 export function useFmt() {
@@ -13,7 +13,16 @@ export function makeFmt(s: Settings) {
   const hour12 = s.clock === "12";
   const w = (kg: number | null | undefined, dp = 1) => (kg == null ? "" : num(fromKg(kg, wu), dp));
   const wu_ = (kg: number | null | undefined, dp = 1) => (kg == null ? "" : `${w(kg, dp)} ${wu}`);
+  // one short month everywhere: en-GB writes September "Sept", every other month (and en-US) three letters. Year-month-day
+  // is about the order of numbers: month and day names stay English (sv-SE would write "nov." and "tis")
+  const loc = (d: Date, o: Intl.DateTimeFormatOptions) => {
+    const words = !!o.weekday || (!!o.month && o.month !== "numeric" && o.month !== "2-digit");
+    // and no comma after a leading weekday ("Fri 13 Nov 2026" as "Fri 13 Nov"): with a year added en-GB puts one in
+    return d.toLocaleDateString(locale === "sv-SE" && words ? "en-GB" : locale, o).replace(/\bSept\b/, "Sep").replace(/^([A-Za-z]+), /, "$1 ");
+  };
+  const toDate = (d: string | number | Date) => (d instanceof Date ? d : typeof d === "number" ? new Date(d) : new Date(d.length === 10 ? d + "T12:00:00" : d));
   const dist = (m: number | null | undefined, dp = 2) => (m == null ? "" : `${num(fromM(m, du), dp)} ${du}`);
+  const vol = (kg: number) => { const v = fromKg(kg, wu); return v >= 10000 ? `${num(v / 1000, 1)}k ${wu}` : `${num(v, 0)} ${wu}`; };
   return {
     s,
     wu, du, lu,
@@ -25,7 +34,7 @@ export function makeFmt(s: Settings) {
     wu_,
     toKg: (v: number) => toKg(v, wu),
     fromKg: (kg: number) => fromKg(kg, wu),
-    vol: (kg: number) => { const v = fromKg(kg, wu); return v >= 10000 ? `${num(v / 1000, 1)}k ${wu}` : `${num(v, 0)} ${wu}`; },
+    vol,
     dist,
     distNum: (m: number) => fromM(m, du),
     pace: (s: number, m: number) => { if (!m || !s) return ""; const per = s / fromM(m, du); return `${clock(per)} /${du}`; },
@@ -42,12 +51,15 @@ export function makeFmt(s: Settings) {
       const rest = [r, d, time].filter(Boolean).join(" ");
       return kg && rest ? (r ? `${kg} ${rest}` : `${kg} · ${rest}`) : kg || rest;
     },
-    date: (iso: string | null | undefined, o: Intl.DateTimeFormatOptions = { day: "numeric", month: "short" }) => (iso ? new Date(iso.length === 10 ? iso + "T12:00:00" : iso).toLocaleDateString(locale, o) : ""),
+    /** a date (ISO string, YYYY-MM-DD, time in ms or Date) in your date format: "13 Nov" by default */
+    date: (d: string | number | Date | null | undefined, o: Intl.DateTimeFormatOptions = { day: "numeric", month: "short" }) => (d == null || d === "" ? "" : loc(toDate(d), o)),
     /** a planned day in words: "today", "tomorrow", else "Tue 10 Nov" (with the year when it isn't this year) */
-    day: (d: string) => { const t = new Date(); if (d === ymd(t)) return "today"; t.setDate(t.getDate() + 1); if (d === ymd(t)) return "tomorrow"; const x = new Date(d + "T12:00:00"); return x.toLocaleDateString(locale, { weekday: "short", day: "numeric", month: "short", ...(x.getFullYear() !== new Date().getFullYear() ? { year: "numeric" } : {}) }); },
-    dateLong: (iso: string | null | undefined) => (iso ? new Date(iso.length === 10 ? iso + "T12:00:00" : iso).toLocaleDateString(locale, { weekday: "long", day: "numeric", month: "long", year: "numeric" }) : ""),
+    day: (d: string) => { const t = new Date(); if (d === ymd(t)) return "today"; t.setDate(t.getDate() + 1); if (d === ymd(t)) return "tomorrow"; const x = new Date(d + "T12:00:00"); return loc(x, { weekday: "short", day: "numeric", month: "short", ...(x.getFullYear() !== new Date().getFullYear() ? { year: "numeric" } : {}) }); },
+    dateLong: (iso: string | null | undefined) => (iso ? loc(toDate(iso), { weekday: "long", day: "numeric", month: "long", year: "numeric" }) : ""),
     time: (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleTimeString(locale, { hour: "numeric", minute: "2-digit", hour12 }) : ""),
     ago: (iso: string | null | undefined) => ago(iso),
+    /** an achievement's amount in its unit, the same on Home and in Stats: "12.3k kg", "48.5 km", "3h 28m", "4 weeks" */
+    ach: (unit: string, v: number) => unit === "kg" ? vol(v) : unit === "m" ? dist(v, v < 10000 ? 1 : 0) : unit === "s" ? dur(v, true) : unit === "weeks" ? `${num(v, 0)} ${v === 1 ? "week" : "weeks"}` : num(v, 0),
     num,
   };
 }
@@ -58,15 +70,8 @@ export interface SetFigures { weightKg: number | null; reps: number | null; dura
 export function ago(iso: string | null | undefined): string {
   if (!iso) return "never";
   const d = new Date(iso), now = new Date();
-  const days = Math.floor((new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime() - new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()) / 86400000);
-  if (days <= 0) return "today";
-  if (days === 1) return "yesterday";
-  if (days < 7) return `${days} days ago`;
-  // whole weeks, months and years passed (rounded down), so 13 days reads "1 week ago", never "2 weeks ago" or "last week"
-  if (days < 14) return "1 week ago";
-  if (days < 60) return `${Math.floor(days / 7)} weeks ago`;
-  if (days < 730) return `${Math.floor(days / 30)} months ago`;
-  return `${Math.floor(days / 365)} years ago`;
+  // rounded: a day across a clock change is 23 or 25 hours long
+  return agoDays(Math.round((new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime() - new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()) / 86400000));
 }
 /** "12.3k kg" -> its number and its unit, so a tile can set the unit small beside the number */
 export const unitOf = (s: string) => { const i = s.lastIndexOf(" "); return i < 0 ? { value: s, unit: "" } : { value: s.slice(0, i), unit: s.slice(i + 1) }; };
@@ -91,6 +96,8 @@ export function goalLabel(g: { target: number; scope?: string; progress?: { curr
   }
   if (p.unit === "kg") return `${f.w(p.current)} / ${f.w(g.target)} ${f.wu}`;
   if (p.unit === "cm") return `${f.len(p.current)} / ${f.len(g.target)} ${f.lu}`;
+  // sleep in hours and minutes, as everywhere sleep is shown: "7h 12m / 8h"
+  if (p.unit === "h") return `${dur(Math.round(p.current * 60) * 60, true)} / ${dur(Math.round(g.target * 60) * 60, true)}`;
   if (p.unit === "km") return `${num(f.distNum(p.current * 1000), 1)} / ${num(f.distNum(g.target * 1000), 1)} ${f.du}`;
   // counts (steps, times, min, reps...) are whole numbers: the engine's label has no thousands separators
   return `${num(p.current, 0)} / ${num(g.target, 0)} ${p.unit ?? ""}`.trim();

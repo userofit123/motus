@@ -4,8 +4,8 @@
 // (no reminder waiting, no goal due soon, no program running) stays away until it has; feature blocks need their feature.
 import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
-import { muscleName, num, fromM, percentChange, orderGoals, HOME_BLOCKS, type Goal, type HomePlan, type HomeRecord, type HomeGroup, type HomeSuggestion, type HomeWeek } from "@motus/shared";
-import { useHome, useSettings, saveSettings, useAchievements, useGoals, useHealthAvailable, useHealthDay, useReadiness, useSleep, useDaily, useActivityTypes, useRoutines, loaded, type HealthAvailable, type ReadinessPart } from "../api/queries";
+import { muscleName, num, fromM, percentChange, orderGoals, HOME_BLOCKS, type Goal, type HomePlan, type HomeRecord, type HomeGroup, type HomeWeek } from "@motus/shared";
+import { useHome, useSettings, saveSettings, useAchievements, useGoals, useHealthAvailable, useHealthDay, useReadiness, useSleep, useDaily, useTypeName, loaded, type HealthAvailable, type ReadinessPart } from "../api/queries";
 import { api } from "../api/client";
 import { invalidate, queryClient } from "../api/live";
 import { confirm } from "../core/ask";
@@ -95,7 +95,7 @@ const weekStats = computed<WStat[]>(() => {
   };
   const out = [
     row("workouts", "dumbbell", "Workouts", tw.value.workouts, lw.value.workouts, (n) => String(n)),
-    row("time", "clock", "Time", tw.value.timeS, lw.value.timeS, (n) => fmt.value.dur(n, true)),
+    row("time", "clock", "Training time", tw.value.timeS, lw.value.timeS, (n) => fmt.value.dur(n, true)),
     row("volume", "layers", "Volume", tw.value.volumeKg, lw.value.volumeKg, (n) => fmt.value.vol(n), true),
   ];
   if (walked.value) out.push({ ...row("walk", "walk", "Distance", tw.value.walkM, lw.value.walkM, (n) => fmt.value.dist(n, 1), true), note: "Walks and hikes" });
@@ -127,8 +127,9 @@ const listSub = (g: Goal) => (g.period !== "once" || (g.name && g.summary) ? goa
 const reached = (g: Goal) => g.status === "achieved" || !!g.progress?.done;
 // the unit after a goal's number, as the stat tiles write it ("142.5 kg", "12,500 steps", "1 session")
 const COUNT_UNITS: Record<string, [string, string]> = { sessions: ["session", "sessions"], times: ["time", "times"], workouts: ["workout", "workouts"], weeks: ["week", "weeks"], reps: ["rep", "reps"], sets: ["set", "sets"], steps: ["step", "steps"] };
-const goalVal = (g: Goal, v: number) => { const u = g.progress?.unit; return u === "kg" ? fmt.value.w(v) : u === "km" ? fmt.value.num(fromM(v * 1000, fmt.value.du), 1) : u === "cm" ? fmt.value.len(v) : fmt.value.num(v, u === "min" || !!COUNT_UNITS[u ?? ""] ? 0 : 1); };
-const goalUnit = (g: Goal, v: number) => { const u = g.progress?.unit ?? ""; const c = COUNT_UNITS[u]; return c ? c[v === 1 ? 0 : 1] : u === "kg" ? fmt.value.wu : u === "km" ? fmt.value.du : u === "cm" ? fmt.value.lu : u; };
+// sleep in hours and minutes as everywhere ("7h 30m"), its unit in the number
+const goalVal = (g: Goal, v: number) => { const u = g.progress?.unit; return u === "h" ? fmt.value.dur(Math.round(v * 60) * 60, true) : u === "kg" ? fmt.value.w(v) : u === "km" ? fmt.value.num(fromM(v * 1000, fmt.value.du), 1) : u === "cm" ? fmt.value.len(v) : fmt.value.num(v, u === "min" || !!COUNT_UNITS[u ?? ""] ? 0 : 1); };
+const goalUnit = (g: Goal, v: number) => { const u = g.progress?.unit ?? ""; const c = COUNT_UNITS[u]; return c ? c[v === 1 ? 0 : 1] : u === "kg" ? fmt.value.wu : u === "km" ? fmt.value.du : u === "cm" ? fmt.value.lu : u === "h" ? "" : u; };
 // the tile's tiny line names the target the same way for every goal: "of 150 kg" for goals that count up to it,
 // "Target 80 kg" for body goals (which can head up or down) and goals that must stay under it
 const goalTarget = (g: Goal) => `${g.scope === "body" || g.comparator === "<=" ? "Target" : "of"} ${goalVal(g, g.target)} ${goalUnit(g, g.target)}`.trim();
@@ -185,16 +186,7 @@ const dayName = (d: string) => { const tm = tomorrowYmd(); return d === today ? 
 const planOpen = ref<any>(null);
 
 // an activity type's own name ("Walk"), not its id
-const types = useActivityTypes();
-const typeName = (slug: string) => (types.data.value as { slug: string; name: string }[] | undefined)?.find((t) => t.slug === slug)?.name ?? slug.charAt(0).toUpperCase() + slug.slice(1);
-// suggestions: a routine's last day by the calendar as Routines counts it; a gap says which routines leave it out
-const routinesQ = useRoutines();
-const reasonOf = (x: HomeSuggestion) => {
-  if (x.kind === "oldest") { const at = routinesQ.data.value?.find((r) => r.id === x.routineId)?.lastDoneAt; return at ? `Last done ${ago(at)}` : x.reason; }
-  if (x.kind === "gap" || x.kind === "target") { const m = x.title.replace(/^Work your /, ""); return x.reason.startsWith("Your routines only") ? `Your routines only train your ${m} as a helper` : `None of your routines train your ${m}`; }
-  return x.reason;
-};
-
+const typeName = useTypeName();
 // records
 const KIND: Record<string, string> = { weight: "Heaviest", e1rm: "Best estimated 1RM", volume: "Most volume", reps: "Most reps", duration: "Longest", distance: "Farthest" };
 const recordText = (r: HomeRecord) => r.distanceM ? fmt.value.dist(r.distanceM, 1) : r.durationS && !r.reps ? fmt.value.dur(r.durationS, true)
@@ -206,7 +198,7 @@ const achSteps = computed(() => (ach.data.value ?? []).flatMap((a: any) => a.ste
 const achRecent = computed(() => achSteps.value.filter((x) => x.reachedAt).sort((a, b) => b.reachedAt.localeCompare(a.reachedAt)).slice(0, 3));
 const achNext = computed(() => (ach.data.value ?? []).map((a: any) => a.steps.find((x: any) => !x.reachedAt) && { ...a.steps.find((x: any) => !x.reachedAt), unit: a.unit, value: a.value })
   .filter(Boolean).sort((a: any, b: any) => b.value / b.target - a.value / a.target)[0]);
-const achAmount = (unit: string, v: number) => unit === "kg" ? fmt.value.vol(v) : unit === "m" ? fmt.value.dist(v, v < 10000 ? 1 : 0) : unit === "s" ? `${num(v / 3600, 0)}h` : unit === "weeks" ? `${num(v, 0)} wk` : num(v, 0);
+const achAmount = (unit: string, v: number) => fmt.value.ach(unit, v);
 
 // ---- the band's blocks: today's numbers (/health/day), readiness, and the newest night of the last two days (the band
 // often hands over last night only when it next connects, so before then yesterday's night is the newest)
@@ -594,7 +586,7 @@ await loaded(home, ach, avail, hDay, ready, nightsQ, dailyQ);
             <div v-for="x in h.suggest" :key="x.kind + (x.routineId ?? x.muscle)" class="li click">
               <button class="cover" :aria-label="x.routineId ? `Open ${x.title}` : `Exercises for ${muscleName(x.muscle ?? '').toLowerCase()}`" @click="go(x.routineId ? `/routines/${x.routineId}` : `/exercises?muscle=${encodeURIComponent(x.muscle ?? '')}`)" />
               <MuscleFig sm :routine="x.routineId ?? undefined" :muscles="x.routineId ? undefined : x.muscles ?? (x.muscle ? [x.muscle] : undefined)" />
-              <div class="grow"><div class="t">{{ x.title }}</div><div class="s">{{ reasonOf(x) }}</div></div>
+              <div class="grow"><div class="t">{{ x.title }}</div><div class="s">{{ x.reason }}</div></div>
               <button v-if="x.routineId" class="ib sm over" aria-label="Plan" title="Plan" @click="planOpen = { rule: 'once', routineId: x.routineId }"><Icon name="calendar" :size="18" /></button>
               <button v-else-if="x.muscle" class="ib sm over" aria-label="New routine" title="New routine" @click="go('/routines/new/edit')"><Icon name="plus" :size="18" /></button>
               <button class="ib sm plain over" aria-label="Not now" title="Not now: hide until your next workout" @click="hideSuggestion(x.key)"><Icon name="close" :size="16" /></button>

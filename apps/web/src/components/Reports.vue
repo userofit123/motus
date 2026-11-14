@@ -55,7 +55,7 @@ const by = (key: (d: Date) => string, dayKey: (d: string) => string) => computed
 const months = by(monthKey, (d) => d.slice(0, 7));
 const years = by((d) => String(d.getFullYear()), (d) => d.slice(0, 4));
 const monthOf = (k: string) => new Date(Number(k.slice(0, 4)), Number(k.slice(5)) - 1, 15);
-const label = (k: string) => (k.length === 4 ? k : monthOf(k).toLocaleDateString(undefined, { month: "long", year: "numeric" }));
+const label = (k: string) => (k.length === 4 ? k : fmt.value.date(monthOf(k), { month: "long", year: "numeric" }));
 const prevKey = (k: string) => { const d = monthOf(k); d.setMonth(d.getMonth() - 1); return monthKey(d); };
 
 // Workouts per month: every month in a row up to this one (the empty ones too, so the gaps show), at most the last 12
@@ -69,7 +69,7 @@ const chart = computed(() => {
   for (let i = 11; i >= 0; i--) {
     const d = new Date(now.getFullYear(), now.getMonth() - i, 15), k = monthKey(d);
     if (k < first && i >= 6) continue;
-    out.push({ label: d.toLocaleDateString(undefined, { month: "short" }), short: d.toLocaleDateString(undefined, { month: "narrow" }), group: String(d.getFullYear()), value: byK.get(k)?.workouts ?? 0, tip: label(k) });
+    out.push({ label: fmt.value.date(d, { month: "short" }), short: fmt.value.date(d, { month: "narrow" }), group: String(d.getFullYear()), value: byK.get(k)?.workouts ?? 0, tip: label(k) });
   }
   return out.some((b) => b.value) ? out : [];
 });
@@ -85,7 +85,7 @@ const span = (k: string) => {
   if (k.length !== 4) return k === monthKey(new Date()) ? "This month so far" : "";
   if (k !== String(new Date().getFullYear())) return "";
   const ks = months.value.map((x) => x.k).filter((x) => x.startsWith(k)).sort();
-  const mn = (x: string) => monthOf(x).toLocaleDateString(undefined, { month: "short" });
+  const mn = (x: string) => fmt.value.date(monthOf(x), { month: "short" });
   return ks.length < 2 ? k : `${mn(ks[0]!)}-${mn(ks.at(-1)!)} ${k}`;
 };
 const build = (m: Period, p: Period | undefined, prev: string) => {
@@ -95,15 +95,15 @@ const build = (m: Period, p: Period | undefined, prev: string) => {
   };
   const tiles = [
     tile("workouts", "dumbbell", "Workouts", (x) => x.workouts, (n) => String(n)),
-    tile("time", "clock", "Time", (x) => x.timeS, (n) => fmt.value.dur(n, true)),
+    tile("time", "clock", "Training time", (x) => x.timeS, (n) => fmt.value.dur(n, true)),
     tile("volume", "layers", "Volume", (x) => x.volumeKg, (n) => fmt.value.vol(n), true),
     tile("days", "calendar", "Active days", (x) => x.days, (n) => String(n)),
   ];
   const names = [...new Set(m.records.map((r) => r.name))];
   const highlights: Highlight[] = [
     ...(m.records.length ? [{ key: "rec", icon: "trophy", t: "New records", s: names.length > 2 ? `${names.slice(0, 2).join(", ")} and ${names.length - 2} more` : names.join(", "), r: String(m.records.length), pr: true }] : []),
-    ...(m.top ? [{ key: "routine", icon: "routines", t: "Most done routine", s: m.top[0], r: m.top[1] === 1 ? "once" : `${m.top[1]} times` }] : []),
-    ...(m.group ? [{ key: "group", icon: "activity", t: "Most trained muscle group", s: m.group.name, r: `${m.group.sets} sets` }] : []),
+    ...(m.top ? [{ key: "routine", icon: "routines", t: "Most done routine", s: m.top[0], r: `${m.top[1]}×` }] : []),
+    ...(m.group ? [{ key: "group", icon: "activity", t: "Top muscle group", s: `${m.group.name} · most sets`, r: `${m.group.sets} sets` }] : []),
     // the count on the right as Records has it; the distance under the name only when there is one
     ...(m.activities ? [{ key: "act", icon: "walk", t: "Activities", s: m.distM > 0 ? `${fmt.value.dist(m.distM, 1)} in total` : "", r: String(m.activities) }] : []),
     // then what a band handed over, each only when there: sleep a night, resting heart rate (with HRV under it), and the
@@ -117,7 +117,7 @@ const build = (m: Period, p: Period | undefined, prev: string) => {
 };
 const report = computed(() => {
   const byK = new Map(months.value.map((m) => [m.k, m]));
-  return months.value.map((m) => build(m, byK.get(prevKey(m.k)), monthOf(prevKey(m.k)).toLocaleDateString(undefined, { month: "long" })));
+  return months.value.map((m) => build(m, byK.get(prevKey(m.k)), fmt.value.date(monthOf(prevKey(m.k)), { month: "long" })));
 });
 // a year card (against the year before it) when this year has two months with data; early in the year, last year's instead
 // (if it has two), never an older one. One month alone would only repeat that month's own report.

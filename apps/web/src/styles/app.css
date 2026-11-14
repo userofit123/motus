@@ -474,6 +474,7 @@ html.phone .sets .rcell .vin { max-width: 44px; }
 .sets .tbtn { min-width: 76px; }
 html.phone .sets.v3 .tbtn { min-width: 0; padding-inline: 6px; gap: 4px; }
 html.phone .sets.v3 :is(.prev, .prevh) { display: none; }
+.sets .prevh { white-space: nowrap; }
 /* its PR badge moves under the reps (or distance) box instead, like Previous's */
 .sets .v3pr { display: none; }
 html.phone .sets.v3 .v3pr { display: block; }
@@ -747,7 +748,12 @@ html.phone .calnav b { min-width: 124px; }
 .pvx.off { opacity: .45; }
 .pvx .thumb { align-self: flex-start; margin-top: 2px; }
 .exspark { width: 120px; height: 34px; position: relative; flex: none; }
-html.phone .exspark { width: 64px; }
+.exchg { width: 56px; flex: none; }
+/* Stats → Exercises on a phone: the sparkline and change column give the name and its line the room for two lines,
+   with a tighter gap; "+12%" still fits */
+html.phone .exspark { width: 44px; }
+html.phone .exchg { width: 36px; }
+html.phone .li:has(> .exspark) { gap: 8px; }
 /* big numbers in two-across stat cards shrink a little on narrow phones instead of wrapping */
 html.phone .grid.g4 .stat .val { font-size: clamp(24px, 7.4vw, var(--fs-val)); white-space: nowrap; }
 /* in a row of tiles a sub line can run under where the sparkline sits ("average of 46 nights"), so there the sparkline
@@ -764,6 +770,10 @@ html:not(.phone) .chips.hscroll { margin-inline: 0; padding-inline: 0; flex-wrap
 .frow > * { flex: 1 1 140px; }
 /* a setting row with a control: the label keeps at least ~half the row, the control gives way */
 .li > .grow { min-width: 42%; }
+/* beside a session's stats (SessionStats) a short title ("Walk") holds only its own width, so the stats keep one line;
+   the stats stop at 58% so a long title still keeps its 42% */
+.li:has(> .sstats) > .grow { min-width: min-content; }
+.li > .sstats.r { max-width: 58%; }
 .li > select, .li > .fpick, .li > input:not([type=checkbox]) { flex: 0 1 auto; min-width: 0; max-width: 56%; }
 /* a number typed into a list row (the daily log, body measurements): one size everywhere, so the boxes line up */
 .li input.num-in { flex: none; width: 76px; text-align: end; }
@@ -879,6 +889,13 @@ html.phone .scr.leaving .sht { animation: up .22s ease-in reverse forwards; }
 /* a dot between items (name · count): its own element with the same space on both sides. In a flex row the row's gap
    does it (no margin here, so it isn't doubled); in running text write " · " with one space each side instead */
 .sep { color: var(--tx2); flex: none; }
+/* DotLine: parts joined by dots that wrap between whole parts, the dot at a line's start (or end, right-aligned) clipped */
+/* a space's width each side of the dot's own width, so it spaces like " · " in text beside it */
+.dotl { display: block; overflow: hidden; --dg: .25em; --dw: .3em; }
+.dotl-in { display: flex; flex-wrap: wrap; column-gap: var(--dg); margin-left: calc(-1 * (var(--dw) + var(--dg))); }
+.dotl.end .dotl-in { justify-content: flex-end; margin-left: 0; margin-right: calc(-1 * (var(--dw) + var(--dg))); }
+.dotl-p { display: inline-flex; gap: var(--dg); min-width: 0; }
+.dotl .sep { width: var(--dw); text-align: center; }
 
 /* the Appearance sheet's grab handle, as on the other sheets */
 html.phone #pop .aph { position: relative; padding-top: 22px; }

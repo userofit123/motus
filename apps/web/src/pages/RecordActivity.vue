@@ -76,7 +76,7 @@ await loaded(types, active);
     <p v-if="!rec && active.data.value" class="tiny hgap">Your workout keeps going while you record. Each has its own bar at the bottom of the screen.</p>
     <RouteMap v-if="gps" :route="rec?.route ?? noRoute" :here="here" follow />
     <div class="grid rs spt">
-      <div class="card stat hero"><div class="lbl">Time</div><div class="val">{{ clock(recElapsedS) }}</div></div>
+      <div class="card stat hero"><div class="lbl">Duration</div><div class="val">{{ clock(recElapsedS) }}</div></div>
       <div v-if="gps" class="card stat"><div class="lbl">Distance</div><div class="val">{{ fmt.num(fmt.distNum(recDistM), 2) }}<small>{{ fmt.du }}</small></div></div>
       <div v-if="gps" class="card stat"><div class="lbl">{{ ride ? "Speed" : "Pace" }}</div><div class="val">{{ pace ?? "-" }}<small v-if="pace">{{ ride ? `${fmt.du}/h` : `/${fmt.du}` }}</small></div></div>
       <div v-if="onFoot" class="card stat"><div class="lbl">Steps</div><div class="val">{{ stepsCounting ? fmt.num(rec!.steps, 0) : "-" }}</div><div v-if="stepsNote" class="sub">{{ stepsNote }}</div></div>

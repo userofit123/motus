@@ -1,6 +1,6 @@
 import type { Goal, GoalDays, GoalScope } from "./types";
 import type { Settings } from "./settings";
-import { num, fromKg, fromM, fromCm } from "./units";
+import { num, fromKg, fromM, fromCm, duration } from "./units";
 import { bodyMeasure, bodyName } from "./body";
 import { daysIntoWeek } from "./training";
 
@@ -28,7 +28,7 @@ export const GOAL_METRICS: GoalMetric[] = [
   { scope: "activity", metric: "sessions", name: "Sessions", unit: "sessions", periodic: true },
   { scope: "activity", metric: "activity_distance", name: "Distance", unit: "km", periodic: true },
   { scope: "activity", metric: "activity_count", name: "Number of sessions", unit: "times", periodic: true, hidden: true },
-  { scope: "activity", metric: "activity_minutes", name: "Time", unit: "min", periodic: true },
+  { scope: "activity", metric: "activity_minutes", name: "Training time", unit: "min", periodic: true },
   { scope: "activity", metric: "steps_avg", name: "Average daily steps", unit: "steps", periodic: true },
   // the daily log's sleep (typed, or from a band): an average over the nights that have one, as steps_avg over days
   { scope: "general", metric: "sleep_h", name: "Average sleep", unit: "h", periodic: true, comparator: ">=" },
@@ -93,7 +93,8 @@ export function goalAutoTitle(g: TitleGoal, o: GoalTitleOpts = {}): string {
     case "activity_minutes": return n && g.scopeId ? lead(`${num(t, 0)} min${per}`) : `${num(t, 0)} min of activity${per}`;
     // an average per day (steps) or night (sleep) over the period: a daily goal is just that day's
     case "steps_avg": return g.period === "day" ? `${num(t, 0)} steps${per}` : `Average ${num(t, 0)} steps a day`;
-    case "sleep_h": return g.period === "day" ? `Sleep ${num(t, 1)} h${perPeriod(g, fd).replace(" a day", " a night")}` : `Average ${num(t, 1)} h of sleep a night`;
+    // sleep in hours and minutes, as everywhere: "Sleep 8h a night", "Average 7h 30m of sleep a night"
+    case "sleep_h": { const h = duration(Math.round(t * 60) * 60, true); return g.period === "day" ? `Sleep ${h}${perPeriod(g, fd).replace(" a day", " a night")}` : `Average ${h} of sleep a night`; }
     case "body_weight": case "body_metric": {
       const kind = g.metric === "body_weight" ? "weight" : g.scopeId ?? "";
       const m = bodyMeasure(kind), u = m?.unit ?? "cm";

@@ -14,6 +14,7 @@ import { useFmt, ago, setSummary, localYmd } from "../core/format";
 import { noteSheet, reminderSheet, exerciseSheet, scheduleSheet } from "../core/ui";
 import Icon from "../components/Icon.vue";
 import MuscleFig from "../components/MuscleFig.vue";
+import DotLine from "../components/DotLine.vue";
 import Menu from "../components/Menu.vue";
 import NoteItem from "../components/NoteItem.vue";
 import ReminderItem from "../components/ReminderItem.vue";
@@ -93,7 +94,7 @@ await loaded(r, summaries, notes, rems, schedules, history);
   <div v-if="routine" class="page">
     <button class="back" @click="goBack(router, '/routines')"><Icon name="left" :size="16" /><span>Routines</span></button>
     <div class="ph">
-      <div><h1>{{ routine.name }}</h1><div class="sub">{{ routine.exercises.length }} exercises · {{ routineTime(sum?.estimateS ?? 0, sum?.usual) }} · {{ sum?.lastDoneAt ? `last done ${ago(sum.lastDoneAt)}` : "not done yet" }}</div></div>
+      <div><h1>{{ routine.name }}</h1><DotLine class="sub" :parts="[`${routine.exercises.length} ${routine.exercises.length === 1 ? 'exercise' : 'exercises'}`, routineTime(sum?.estimateS ?? 0, sum?.usual), sum?.lastDoneAt ? `last done ${ago(sum.lastDoneAt)}` : 'not done yet']" /></div>
       <div class="acts"><Menu :items="menu" /><button class="btn keep" @click="router.push(`/routines/${id}/start`)"><Icon name="play" :size="16" />Start</button></div>
     </div>
     <p v-if="routine.description" class="muted desc">{{ routine.description }}</p>
@@ -119,7 +120,7 @@ await loaded(r, summaries, notes, rems, schedules, history);
             <div class="li click pexh" @click="exerciseSheet = e.exerciseId">
               <div class="thumb sm"><img v-if="e.exercise?.images?.[0]" :src="mediaUrl(e.exercise.images[0])" alt="" loading="lazy" /><Icon v-else name="dumbbell" :size="18" /></div>
               <div class="grow" style="min-width:0"><div class="t">{{ e.exercise?.name }}</div>
-                <div class="tiny row pexs"><template v-for="(x, i) in subLine(e)" :key="i"><span v-if="i" class="sep">·</span><span>{{ x }}</span></template></div>
+                <DotLine class="tiny" :parts="subLine(e)" />
                 <span v-if="e.fixed" class="exchips"><span class="mchip">Fixed numbers</span></span></div>
               <span @click.stop><Menu :items="exItems(e)" label="Exercise options" /></span>
             </div>
@@ -127,13 +128,13 @@ await loaded(r, summaries, notes, rems, schedules, history);
             <!-- the editor's sections in its order (rests, timer between reps, progression, note), read-only: the same headers,
                  the values as plain tiles that open nothing -->
             <div v-if="restOn(e)" class="sect">
-              <div class="sect-h"><span class="si"><Icon name="timer" :size="16" /></span><span class="grow"><b>Rest after each set</b><span class="tiny pgl"><template v-for="(x, k) in restSummary(e, fmt.clock, st?.workout, hasSideRounds(e))" :key="k"><span v-if="k" class="sep">&nbsp;· </span><span>{{ x }}</span></template></span></span></div>
+              <div class="sect-h"><span class="si"><Icon name="timer" :size="16" /></span><span class="grow"><b>Rest after each set</b><DotLine class="tiny pgl" :parts="restSummary(e, fmt.clock, st?.workout, hasSideRounds(e))" /></span></div>
             </div>
             <div v-if="e.repRestS" class="sect">
               <div class="sect-h"><span class="si"><Icon name="clock" :size="16" /></span><span class="grow"><b>Timer between reps</b><span class="tiny">Every {{ e.repRestS }}s</span></span></div>
             </div>
             <div v-if="progMode(e) !== 'off'" class="sect">
-              <div class="sect-h"><span class="si"><Icon name="arrowUp" :size="16" /></span><span class="grow"><b>Progression</b><span class="tiny pgl"><template v-for="(x, k) in progLine(e)" :key="k"><span v-if="k" class="sep">&nbsp;· </span><span :class="{ dim: x.dim }">{{ x.text }}</span></template></span></span></div>
+              <div class="sect-h"><span class="si"><Icon name="arrowUp" :size="16" /></span><span class="grow"><b>Progression</b><DotLine class="tiny pgl" :parts="(progLine(e) ?? []).map((x) => ({ text: x.text, cls: x.dim ? 'dim' : undefined }))" /></span></div>
             </div>
             <!-- its note and the notes that show every time; no menu here: notes are edited on the Notes tab -->
             <div v-if="e.note || shown('routine_exercise', e.id).length" class="sect">
@@ -192,7 +193,6 @@ await loaded(r, summaries, notes, rems, schedules, history);
 /* a small inset so the tap tint is the same rounded patch on desktop and phone */
 .pexh { border-bottom: 0; padding: var(--tdy); margin: calc(-1 * var(--tdy)); min-height: 0; border-radius: var(--r-sm); }
 .pexh .t { font-weight: 600; }
-.pexs { gap: 6px; flex-wrap: wrap; }
 /* the column's gap already sits above a section's line, so its margin is the editor's less that gap: --cpy-1 on both sides of the line at every density */
 .pexb > .sect { margin-top: calc(var(--cpy) - 1px - var(--lpy)); }
 .ntx { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; }

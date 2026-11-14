@@ -3,7 +3,7 @@
 import { goBack } from "../core/leave";
 import { computed } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { useActivity, loaded } from "../api/queries";
+import { useActivity, useTypeName, loaded } from "../api/queries";
 import { api } from "../api/client";
 import { invalidate } from "../api/live";
 import { useFmt } from "../core/format";
@@ -14,6 +14,7 @@ import { saveFile } from "../core/saveFile";
 import Icon from "../components/Icon.vue";
 import Menu from "../components/Menu.vue";
 import RouteMap from "../components/RouteMap.vue";
+import DotLine from "../components/DotLine.vue";
 import BarChart from "../components/BarChart.vue";
 import HeartRate from "../components/HeartRate.vue";
 import { routeSplits, M_PER_MI } from "@motus/shared";
@@ -23,6 +24,7 @@ const id = computed(() => String(route.params.id));
 const q = useActivity(id);
 const fmt = useFmt();
 const a = computed<any>(() => q.data.value);
+const typeName = useTypeName();
 // Where it came from, after the time like the workout page's "felt good": recorded live with the phone's GPS, or a
 // GPX/TCX file; one logged by hand needs no note.
 const source = computed(() => (a.value?.source === "gps" ? "recorded with GPS" : a.value?.source === "import" ? "imported from a file" : ""));
@@ -46,7 +48,7 @@ await loaded(q);
 <template>
   <div v-if="a" class="page">
     <button class="back" @click="goBack(router, '/history')"><Icon name="left" :size="16" /><span>Back</span></button>
-    <div class="ph"><div><h1 style="text-transform:capitalize">{{ a.name || a.type }}</h1><div class="sub">{{ fmt.dateLong(a.startedAt) }} · {{ fmt.time(a.startedAt) }}-{{ fmt.time(a.endedAt) }}{{ source ? ` · ${source}` : "" }}</div></div>
+    <div class="ph"><div><h1>{{ a.name || typeName(a.type) }}</h1><DotLine class="sub" :parts="[fmt.dateLong(a.startedAt), `${fmt.time(a.startedAt)}-${fmt.time(a.endedAt)}`, source].filter(Boolean)" /></div>
       <div class="acts"><Menu :items="[{ label: 'Rename', icon: 'edit', run: () => edit('name') }, { label: 'Notes', icon: 'note', run: () => edit('notes') }, { label: 'Export GPX', icon: 'download', sep: true, run: gpx, hidden: !a.route?.length }, { label: 'Delete', icon: 'trash', danger: true, sep: true, run: del }]" /></div></div>
     <RouteMap v-if="a.route?.length" :route="a.route" />
     <div class="grid g4 spt">
