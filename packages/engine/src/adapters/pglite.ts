@@ -56,7 +56,8 @@ export async function pgliteDb(dataDir = "memory://"): Promise<Db> {
       if (!retry && !closed) retry = setTimeout(() => { retry = undefined; void db.flush!().catch(() => {}); }, RETRY_SAVE_MS);
       throw e;
     }),
-    close: () => { closed = true; clearTimeout(retry); return lite.close(); },
+    // queued, so a save already waiting runs before the close and none can run after it (it would reopen the storage)
+    close: () => { closed = true; clearTimeout(retry); return run(() => lite.close()); },
   };
   return db;
 }

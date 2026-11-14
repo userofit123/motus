@@ -154,12 +154,15 @@ async function run() {
   let tried = Date.now();
   const call = <T = any>(method: string, path: string, body?: unknown) => { tried = Date.now(); return http<T>(method, path, body); };
   let changed = false, failed = 0;
+  // set before each local write (so a write that fails midway counts too): a run that wrote nothing needs no save
+  let wrote = false, ok = false;
   try {
     const meta = await R.replicaMeta(db);
     for (;;) {
       const out = await R.localChanges(db);
       if (!out.changes.length) break;
       const res = await call("POST", "/sync/push", { device: meta.device, changes: out.changes });
+      wrote = true;
       await R.markSent(db, out.upTo);
       if (res.rejected.length) { await R.applyRemote(db, userId, res.rejected); changed = true; }
       // the server couldn't take some (they no longer fit its data): say so rather than lose them without a word
@@ -169,14 +172,16 @@ async function run() {
     for (;;) {
       const m = await R.replicaMeta(db);
       const p = await call("GET", `/sync/pull?since=${m.cursor}&device=${encodeURIComponent(m.device)}`);
-      if (p.catalog !== m.catalog) { const cat = await call("GET", "/sync/catalog"); await R.loadCatalog(db, cat.stamp, cat.rows); changed = true; }
+      if (p.catalog !== m.catalog) { const cat = await call("GET", "/sync/catalog"); wrote = true; await R.loadCatalog(db, cat.stamp, cat.rows); changed = true; }
+      // an empty page only moves the cursor, which is no reason to save
+      if (p.changes.length) { wrote = true; changed = true; }
       const r = await R.applyRemote(db, userId, p.changes, p.cursor);
-      if (p.changes.length) changed = true;
       retry.push(...r.failed.map((f: any) => f.change));
       if (!p.more) break;
     }
     // a row that arrived before the row it belongs to (they came in different pages)
-    if (retry.length) await R.applyRemote(db, userId, retry);
+    if (retry.length) { wrote = true; await R.applyRemote(db, userId, retry); }
+    ok = true;
     failingSince = 0;
     Object.assign(sync, { online: true, error: failed ? `${failed} change${failed === 1 ? "" : "s"} from this device didn't fit the server's data` : "", lastAt: Date.now() });
   } catch (e) {
@@ -187,8 +192,9 @@ async function run() {
       sync.error = (e as Error).message;
     }
   } finally {
-    // what came in and what was marked sent (an unchanged database saves nothing, so this is cheap)
-    await saved();
+    // a save lists every file and reads every IndexedDB key, and page reads queue behind it: only when this run wrote
+    // locally (what came in, what was marked sent), or failed partway, when it may have
+    if (wrote || !ok) await saved();
     sync.waiting = await R.waitingCount(db).catch(() => sync.waiting);
     noteUnsent(sync.waiting);
     running = false; sync.syncing = false;
