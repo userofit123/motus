@@ -238,7 +238,7 @@ describe("goals on the app's calendar", () => {
     const every = await call("POST", "/goals", { metric: "steps_avg", target: 8000, period: "day" }, { tz: "0" });
     const e = (await call("GET", `/goals/${every.id}`, undefined, { tz: "0" })).progress;
     expect(e.current).toBe(3000); // today
-    expect(e.pace).toBe("5000 more today");
+    expect(e.pace).toBe("5000 steps more today");
     expect(e.streak).toBe(2); // Monday and Tuesday; Sunday the 4th has nothing
     const work = await call("POST", "/goals", { metric: "steps_avg", target: 8000, period: "day", days: "workdays" }, { tz: "0" });
     expect((await call("GET", `/goals/${work.id}`, undefined, { tz: "0" })).progress.history.slice(-3).map((h: any) => h.date)).toEqual(["2026-10-05", "2026-10-06", "2026-10-07"]);
