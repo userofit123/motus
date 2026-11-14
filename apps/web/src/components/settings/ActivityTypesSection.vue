@@ -1,6 +1,7 @@
 <script setup lang="ts">
-// Settings → Activities: the activity types you record, log and set goals for, one list used everywhere. Add your own,
+// Settings → Activity types: the activity types you record, log and set goals for, one list used everywhere. Add your own,
 // rename one, change what it tracks, or remove it (activities already logged as it keep their name).
+import type { ActivityType } from "@motus/shared";
 import { useActivityTypes } from "../../api/queries";
 import { api } from "../../api/client";
 import { invalidate } from "../../api/live";
@@ -14,14 +15,14 @@ const types = useActivityTypes();
 async function put(slug: string, b: Record<string, unknown>, msg?: string) {
   try { await api.put(`/activity-types/${slug}`, b); invalidate(["activities"]); if (msg) toast(msg); } catch (e) { toastError(e); }
 }
-async function rename(t: any) { const n = (await prompt("Rename", { value: t.name }))?.trim(); if (n && n !== t.name) put(t.slug, { name: n }, "Renamed"); }
-async function remove(t: any) {
+async function rename(t: ActivityType) { const n = (await prompt("Rename", { value: t.name }))?.trim(); if (n && n !== t.name) put(t.slug, { name: n }, "Renamed"); }
+async function remove(t: ActivityType) {
   if (!(await confirm(`Remove ${t.name}?`, { text: "Activities you logged as it stay, under the same name.", ok: "Remove", danger: true }))) return;
   try { await api.del(`/activity-types/${t.slug}`); invalidate(["activities"]); toast(`${t.name} removed`); } catch (e) { toastError(e); }
 }
-const hintOf = (t: any) => TRACKS.find((x) => x.value === tracksOf(t))!.hint;
+const hintOf = (t: ActivityType) => TRACKS.find((x) => x.value === tracksOf(t))!.hint;
 // asked like a new type's second question; a drop-down in the row left no room for its text at phone width
-async function setTracks(t: any) {
+async function setTracks(t: ActivityType) {
   const v = await choose(`What does ${t.name} track?`, TRACKS.map(({ value, label }) => ({ value, label })), `Now: ${hintOf(t)}`);
   if (!v || v === tracksOf(t)) return;
   const x = TRACKS.find((y) => y.value === v)!;
@@ -37,7 +38,6 @@ async function setTracks(t: any) {
       <Icon :name="t.icon" :size="18" class="muted" /><div class="grow"><div class="t">{{ t.name }}</div><div class="s">{{ hintOf(t) }}</div></div>
       <Menu :label="`${t.name} options`" :items="[{ label: 'Rename', icon: 'edit', run: () => rename(t) }, { label: 'Change what it tracks', icon: 'activity', run: () => setTracks(t) }, { label: 'Remove', icon: 'trash', danger: true, sep: true, run: () => remove(t) }]" />
     </div>
-    <div v-if="!types.data.value.length" class="li"><span class="grow tiny">No activity types. Add your own.</span></div>
   </div>
   <button class="btn" @click="newActivityType"><Icon name="plus" :size="16" />New activity type</button>
 </template>

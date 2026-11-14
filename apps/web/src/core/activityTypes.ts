@@ -1,5 +1,5 @@
 // Adding an activity type (climbing, padel, a spin class…) from wherever you pick one: the record page, logging one,
-// a goal, or Settings → Activities. Two plain questions: its name, and what it tracks.
+// a goal, or Settings → Activity types. Two plain questions: its name, and what it tracks.
 import { api } from "../api/client";
 import { invalidate } from "../api/live";
 import { prompt, choose } from "./ask";
