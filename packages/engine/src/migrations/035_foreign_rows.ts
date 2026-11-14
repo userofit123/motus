@@ -9,7 +9,7 @@
 const TARGETS = ["folders", "programs", "routines", "routine_exercises", "schedules", "workouts", "workout_exercises", "activities"];
 
 export default /* sql */ `
-CREATE FUNCTION motus_foreign_row(t text, i uuid) RETURNS boolean LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public AS $$
+CREATE FUNCTION motus_foreign_row(t text, i uuid) RETURNS boolean LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public, pg_temp AS $$
 DECLARE me uuid := NULLIF(current_setting('app.user_id', true), '')::uuid; r boolean;
 BEGIN
   -- the shared catalog has no owner and is everyone's

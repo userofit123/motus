@@ -18,6 +18,7 @@ import { confirm } from "../core/ask";
 import { invalidate } from "../api/live";
 import { useFmt, ago } from "../core/format";
 import { bodySheet } from "../core/ui";
+import { weightTrend, changeOver, signed } from "../core/body";
 import { toast } from "../core/toast";
 import { BODY_MEASURES, bodyName, bodyUnit, fromCm } from "@motus/shared";
 import Icon from "../components/Icon.vue";
@@ -43,13 +44,14 @@ const all = computed(() => (body.data.value ?? []).filter((b: any) => b.kind !==
 const disp = (k: string, v: number) => { const u = bodyUnit(k); return u === "kg" ? fmt.value.fromKg(v) : u === "%" ? v : fromCm(v, fmt.value.lu); };
 const unit = (k: string) => { const u = bodyUnit(k); return u === "kg" ? fmt.value.wu : u === "%" ? "%" : fmt.value.lu; };
 const val = (b: any) => `${fmt.value.num(disp(b.kind, Number(b.value)), 1)} ${unit(b.kind)}`;
-const signed = (d: number, k: string) => `${d > 0 ? "+" : d < 0 ? "−" : "±"}${fmt.value.num(Math.abs(d), 1)} ${unit(k)}`;
+const signedIn = (d: number, k: string) => signed(d, unit(k));
 
 // weight
 const weights = computed(() => all.value.filter((b) => b.kind === "weight"));
-const trend = computed(() => { let e: number | null = null; return weights.value.slice().reverse().map((b) => { const y = fmt.value.fromKg(Number(b.value)); e = e == null ? y : e + 0.15 * (y - e); return { x: new Date(b.measuredAt).getTime(), y: Math.round(e! * 10) / 10 }; }); });
-// how far the trend moved over the last 30 days (from the last point at least 30 days old, or the first one)
-const month = computed(() => { const t = trend.value; if (t.length < 2) return null; const cut = Date.now() - 30 * 86400000; const from = [...t].reverse().find((p) => p.x <= cut) ?? t[0]!; return t.at(-1)!.y - from.y; });
+// smoothed and measured exactly as Stats → Body does (core/body.ts), so the two Trend tiles agree
+const trend = computed(() => weightTrend(weights.value.slice().reverse().map((b) => ({ x: new Date(b.measuredAt).getTime(), y: fmt.value.fromKg(Number(b.value)) }))));
+// how far the trend moved over the last 30 days
+const month = computed(() => changeOver(trend.value, Date.now() - 30 * 86400000));
 const more = ref(false);
 
 // measurements: newest first per kind, in the shared list's order
@@ -77,7 +79,7 @@ await loaded(body);
     <template v-if="cur === 'weight'">
       <div class="grid g4 n2">
         <div class="card stat"><div class="lbl"><span class="bi"><Icon name="scale" :size="15" /></span>Latest</div><div class="val">{{ weights.length ? fmt.w(weights[0].value) : "-" }}<small>{{ fmt.wu }}</small></div><div class="sub">{{ weights.length ? ago(weights[0].measuredAt) : "Not logged yet" }}</div></div>
-        <div class="card stat"><div class="lbl"><span class="bi"><Icon name="stats" :size="15" /></span>Trend</div><div class="val">{{ trend.length ? fmt.num(trend.at(-1)!.y, 1) : "-" }}<small>{{ fmt.wu }}</small></div><div class="sub">{{ month != null ? `${signed(month, "weight")} over 30 days` : "Smoothed, so one day's water weight doesn't swing it" }}</div><Sparkline :values="trend.slice(-30).map((p) => p.y)" /></div>
+        <div class="card stat"><div class="lbl"><span class="bi"><Icon name="stats" :size="15" /></span>Trend</div><div class="val">{{ trend.length ? fmt.num(trend.at(-1)!.y, 1) : "-" }}<small>{{ fmt.wu }}</small></div><div class="sub">{{ month != null ? `${signedIn(month, "weight")} over 30 days` : "Smoothed, so one day's water weight doesn't swing it" }}</div><Sparkline :values="trend.slice(-30).map((p) => p.y)" /></div>
       </div>
     </template>
 
@@ -85,8 +87,8 @@ await loaded(body);
       <div v-if="!latest.length" class="card empty"><Icon name="scale" :size="34" /><b>No measurements yet</b>Neck, chest, waist, arms, thighs and more, plus body fat. Log them all at once with a tape measure.<br /><button class="btn tonal" @click="bodySheet = 'tape'">Log measurements</button></div>
       <div v-else class="card flush"><div class="list">
         <div v-for="x in latest" :key="x.k" class="li click" :class="{ 'bp-on': picked === x.k }" @click="kind = picked === x.k ? '' : x.k">
-          <div class="grow"><div class="t">{{ bodyName(x.k) }}</div><div class="s">{{ ago(x.b.measuredAt) }} · {{ x.n }} entr{{ x.n === 1 ? "y" : "ies" }}</div></div>
-          <div class="exspark"><Sparkline :values="spark(x.k)" style="width:100%;height:100%" /></div><span v-if="x.d != null" class="tiny num">{{ signed(x.d, x.k) }}</span><b class="num">{{ val(x.b) }}</b><Icon :name="picked === x.k ? 'down' : 'right'" :size="16" class="muted" />
+          <div class="grow bp-l"><div class="t">{{ bodyName(x.k) }}</div><div class="s"><span class="bp-nw">{{ ago(x.b.measuredAt) }}</span> · <span class="bp-nw">{{ x.n }} entr{{ x.n === 1 ? "y" : "ies" }}</span></div></div>
+          <div class="exspark"><Sparkline :values="spark(x.k)" style="width:100%;height:100%" /></div><div class="bp-v"><b class="num bp-nw">{{ val(x.b) }}</b><div v-if="x.d != null" class="tiny num bp-nw">{{ signedIn(x.d, x.k) }}</div></div><Icon :name="picked === x.k ? 'down' : 'right'" :size="16" class="muted" />
         </div></div></div>
       <p v-if="!picked && latest.length" class="tiny spt">Tap a measurement to see its entries.</p>
     </template>
@@ -106,4 +108,11 @@ await loaded(body);
 
 <style scoped>
 .bp-on { background: color-mix(in srgb, var(--acc) 8%, transparent); }
+/* on a phone a number never splits from its unit, and the subtitle wraps only between its parts */
+.bp-nw { white-space: nowrap; }
+/* the value with its change under it, right-aligned in one column, so the row fits a phone and the sparklines line up */
+.bp-v { text-align: right; min-width: 5.5em; flex: none; }
+/* the label side gives way first, so a row is never wider than its card */
+.bp-l { min-width: 0; }
+.bp-l .s { overflow: hidden; }
 </style>

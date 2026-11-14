@@ -43,7 +43,7 @@ const goals = useGoals();
 const wkGoal = computed(() => { const gs = (goals.data.value ?? []).filter((g) => g.status === "active" && g.period === "week" && (g.metric === "workouts" || (g.metric === "sessions" && g.scopeId === "workout")));
   const ids = s.value.home.goals.map((x) => x.id); return (gs.find((g) => ids.includes(g.id)) ?? gs[0])?.target ?? null; });
 const ach = useAchievements(computed(() => !!s.value.features.achievements));
-const achAmount = (unit: string, v: number) => unit === "kg" ? fmt.value.vol(v) : unit === "m" ? fmt.value.dist(v, v < 10000 ? 1 : 0) : unit === "s" ? `${num(v / 3600, 0)}h` : unit === "weeks" ? `${num(v, 0)} wk` : num(v, 0);
+const achAmount = (unit: string, v: number) => unit === "kg" ? fmt.value.vol(v) : unit === "m" ? fmt.value.dist(v, v < 10000 ? 1 : 0) : unit === "s" ? `${num(v / 3600, 0)}h` : unit === "weeks" ? `${num(v, 0)} ${v === 1 ? "week" : "weeks"}` : num(v, 0);
 const d = computed<any>(() => st.data.value);
 const p = computed<any>(() => prev.data.value);
 // Sleep and Heart only once a band (or a script) has handed over that kind of data: never an empty tab for something
