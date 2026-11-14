@@ -26,7 +26,7 @@ export async function loadSession() {
   // dev server restarting behind its proxy, which answers 500) is no answer at all: open on the saved session as offline.
   catch (e) {
     // a 401 is the server (or a proxy in front of it) saying nobody is signed in: an answer, so signed out, not offline
-    if (e instanceof ApiError && e.status === 401) s = null;
+    if (e instanceof ApiError && e.status === 401) { s = null; writeJson(KEY(), null); }
     else { s = saved; offline = true; if (navigator.onLine) unreachable(); else sync.online = false; }
   }
   if (s) Object.assign(session, { setupNeeded: s.setupNeeded, user: s.user, registration: s.registration, version: s.version, apiLevel: s.apiLevel });

@@ -45,11 +45,11 @@ export async function latestRelease(): Promise<Release> {
   return fromGitHub();
 }
 
-// the update checks (the apps' automatic check, the pull to refresh, App & Versions) ask for the same query, so an answer
-// up to 5 minutes old is reused: a pull doesn't ask GitHub again (60 requests an hour without a token)
+// the update checks (the apps' automatic check, the pull to refresh, App & Versions, the changelog) share this query, so an
+// answer up to 5 minutes old is reused: a pull doesn't ask GitHub again (60 requests an hour without a token)
 export const releaseQuery = { queryKey: ["static", "release"], queryFn: latestRelease, staleTime: 5 * 60_000 };
 
-export type Platform ={ key: "android" | "windows" | "linux" | "mac" | "ios" | "other"; name: string; app: boolean };
+export type Platform = { key: "android" | "windows" | "linux" | "mac" | "ios" | "other"; name: string; app: boolean };
 /** What this is running on: the Android or desktop app, or a browser on some system (from the user agent). */
 export function detectPlatform(): Platform {
   const ua = navigator.userAgent;

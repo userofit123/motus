@@ -8,12 +8,12 @@ import { useSettings, saveSettings } from "../../api/queries";
 import { session, isLocalAccount } from "../../core/session";
 import { updater } from "../../core/updater";
 import { useFmt } from "../../core/format";
-import { latestRelease, detectPlatform, downloads, newer, REPO, REPO_URL } from "../../core/releases";
+import { releaseQuery, detectPlatform, downloads, newer, REPO, REPO_URL } from "../../core/releases";
 
 const s = useSettings();
 const router = useRouter();
 const qc = useQueryClient();
-const rel = useQuery({ queryKey: ["static", "release"], queryFn: latestRelease, staleTime: 3600_000, refetchOnWindowFocus: false, retry: false });
+const rel = useQuery({ ...releaseQuery, refetchOnWindowFocus: false, retry: false });
 const checkNow = () => { void rel.refetch(); void qc.invalidateQueries({ queryKey: ["static", "update"] }); };
 const f = useFmt();
 const set = (patch: Record<string, unknown>) => saveSettings({ updates: patch });

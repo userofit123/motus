@@ -80,8 +80,9 @@ interface Highlight { key: string; icon: string; t: string; s: string; r: string
 const mean = (xs: number[]) => xs.reduce((t, x) => t + x, 0) / xs.length;
 // what a report covers, under its title: a year the months that have data in it, a month whether it is still going
 const span = (k: string) => {
-  // only the month still going has something to say; a past month's title is enough
+  // only the month still going and the year still going have something to say; a past month's or year's title is enough
   if (k.length !== 4) return k === monthKey(new Date()) ? "This month so far" : "";
+  if (k !== String(new Date().getFullYear())) return "";
   const ks = months.value.map((x) => x.k).filter((x) => x.startsWith(k)).sort();
   const mn = (x: string) => monthOf(x).toLocaleDateString(undefined, { month: "short" });
   return ks.length < 2 ? k : `${mn(ks[0]!)}-${mn(ks.at(-1)!)} ${k}`;
@@ -117,10 +118,12 @@ const report = computed(() => {
   const byK = new Map(months.value.map((m) => [m.k, m]));
   return months.value.map((m) => build(m, byK.get(prevKey(m.k)), monthOf(prevKey(m.k)).toLocaleDateString(undefined, { month: "long" })));
 });
-// the newest year against the one before it; left out when only one month has data (the month's own report is then the same
-// numbers), and then the year before takes its place if it has two, so January and February still show a year card
+// a year card (against the year before it) when this year has two months with data; early in the year, last year's instead
+// (if it has two), never an older one. One month alone would only repeat that month's own report.
 const year = computed(() => {
-  const y = years.value.slice(0, 2).find((x) => months.value.filter((m) => m.k.startsWith(x.k)).length >= 2);
+  const now = new Date().getFullYear();
+  const y = [now, now - 1].map(String).map((k) => years.value.find((x) => x.k === k))
+    .find((x) => x && months.value.filter((m) => m.k.startsWith(x.k)).length >= 2);
   if (!y) return null;
   const before = String(Number(y.k) - 1);
   return build(y, years.value.find((x) => x.k === before), before);
@@ -139,7 +142,7 @@ const year = computed(() => {
       </div>
       <template v-for="r in [...(year ? [year] : []), ...report]" :key="r.k">
         <div class="card wkc" :class="{ full: r === year || !year && report.length === 1 }">
-          <div class="ch"><span class="bi"><Icon :name="r === year ? 'star' : 'calendar'" :size="15" /></span><span class="grow"><span class="t">{{ r.title }}</span><span v-if="r.sub" class="s sub">{{ r.sub }}</span></span><span v-if="r.anyDelta" class="tiny">Vs {{ r.prev }}</span></div>
+          <div class="ch"><span class="bi"><Icon :name="r === year ? 'star' : 'calendar'" :size="15" /></span><span class="grow"><span class="t">{{ r.title }}</span><span v-if="r.sub || r.k.length === 7" class="s sub" :class="{ ghost: !r.sub }">{{ r.sub || "\u00a0" }}</span></span><span v-if="r.anyDelta" class="tiny">Vs {{ r.prev }}</span></div>
           <div class="wstats n4" :class="{ plain: !r.anyDelta }">
             <div v-for="x in r.tiles" :key="x.key" class="ws" role="group" :aria-label="`${[x.label, x.value, x.unit, x.delta].filter(Boolean).join(' ')}, ${r.prev} ${x.last}`" :title="`${r.prev} ${x.last}`">
               <div class="wlb"><Icon :name="x.icon" :size="14" />{{ x.label }}</div>
@@ -164,6 +167,8 @@ const year = computed(() => {
 <style scoped>
 /* the period under a title, as a list row's sub line (that one is scoped to list rows, so it is repeated here) */
 .sub { display: block; font-size: 12.5px; color: var(--tx2); margin-top: 1px; font-weight: 400; }
+/* a month card without a note keeps the line empty so two cards side by side have equal headers; a phone stacks them, so there it is dropped */
+html.phone .sub.ghost { display: none; }
 /* the year in review and the chart take the whole row, and so does a lone month; the months otherwise sit two across */
 .full { grid-column: 1 / -1; }
 

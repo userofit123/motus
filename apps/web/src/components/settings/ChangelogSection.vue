@@ -6,7 +6,7 @@ import { computed } from "vue";
 import { useQuery } from "@tanstack/vue-query";
 import { session } from "../../core/session";
 import { updater } from "../../core/updater";
-import { latestRelease, detectPlatform, newer } from "../../core/releases";
+import { releaseQuery, detectPlatform, newer } from "../../core/releases";
 import changelog from "../../../../../CHANGELOG.md?raw";
 
 type Line = { kind: "h" | "li" | "p"; text: string };
@@ -31,7 +31,7 @@ const bundled: Version[] = changelog.split(/^## /m).slice(1).flatMap((block) => 
   return m ? [{ version: m[1]!, date: m[2] ?? "", lines: lines(nl < 0 ? "" : block.slice(nl + 1)) }] : [];
 });
 
-const rel = useQuery({ queryKey: ["static", "release"], queryFn: latestRelease, staleTime: 3600_000, refetchOnWindowFocus: false, retry: false });
+const rel = useQuery({ ...releaseQuery, refetchOnWindowFocus: false, retry: false });
 const platform = detectPlatform();
 const installed = computed(() => (platform.app && updater.appVersion) || import.meta.env.VITE_VERSION || session.version || "");
 const versions = computed<Version[]>(() => {
