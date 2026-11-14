@@ -34,13 +34,37 @@ export async function shareWorkoutImage(w: any, fmt: Fmt) {
     g.fillText(`${sets.length} × ${best?.weightKg != null ? fmt.w(best.weightKg) + " " + fmt.wu + " × " : ""}${best?.reps ?? ""}`, W - 80, y);
     g.textAlign = "left"; y += 62;
   }
-  const grad = g.createLinearGradient(80, 0, 200, 0); grad.addColorStop(0, v("--acc")); grad.addColorStop(1, v("--acc2"));
-  g.fillStyle = grad; roundRect(g, 80, H - 140, 64, 64, 20); g.fill();
+  drawLogo(g, 80, H - 140, 64, v("--acc"));
   g.fillStyle = v("--tx"); g.font = font(40); g.fillText("Motus", 164, H - 94);
   const blob: Blob = await new Promise((r) => c.toBlob((b) => r(b!), "image/png"));
   const file = new File([blob], `${w.name}-${w.startedAt.slice(0, 10)}.png`, { type: "image/png" });
   if ((navigator as any).canShare?.({ files: [file] })) { await navigator.share({ files: [file], title: w.name }).catch(() => {}); return; }
   await saveFile(blob, file.name);
+}
+// The app mark as in shell/Logo.vue (layout.css .logo): accent tile with the dumbbell of public/icon.svg, drawn as shapes
+// rather than an <img>, so nothing has to load first and the canvas never gets tainted (toBlob keeps working in the WebView).
+function drawLogo(g: CanvasRenderingContext2D, x: number, y: number, size: number, acc: string) {
+  g.fillStyle = acc; const a = hexRgb(g.fillStyle as string);
+  const mix = (o: number[], p: number, al = 1) => `rgba(${a.map((c, i) => Math.round(c * p + o[i]! * (1 - p))).join(",")},${al})`;
+  const white = [255, 255, 255], black = [0, 0, 0];
+  g.save();
+  g.shadowColor = mix(black, .7, .5); g.shadowBlur = size * .3; g.shadowOffsetY = size * .1;
+  const tile = g.createLinearGradient(x, y, x + size, y + size); tile.addColorStop(0, mix(white, .38)); tile.addColorStop(1, acc);
+  g.fillStyle = tile; roundRect(g, x, y, size, size, size * 15 / 44); g.fill();
+  g.restore(); g.save();
+  const k = size / 512;
+  g.translate(x + 256 * k, y + 250 * k); g.rotate(-Math.PI / 4); g.scale(.98 * k, .98 * k);
+  g.shadowColor = mix(black, .25, .5); g.shadowBlur = 2 * size / 44; g.shadowOffsetY = 2 * size / 44;
+  g.fillStyle = mix(black, .16);
+  for (const [rx, ry, w, h, r] of <[number, number, number, number, number][]>[[-184, -19, 368, 38, 19], [-128, -108, 56, 216, 18], [72, -108, 56, 216, 18], [-170, -74, 50, 148, 16], [120, -74, 50, 148, 16]]) { roundRect(g, rx, ry, w, h, r); g.fill(); }
+  g.shadowColor = "transparent"; g.globalAlpha = .6; g.fillStyle = mix(white, .15);
+  for (const rx of [-116, 84]) { roundRect(g, rx, -88, 10, 72, 5); g.fill(); }
+  g.restore();
+}
+// The canvas normalises any opaque colour to #rrggbb (rgba(...) when translucent).
+function hexRgb(c: string) {
+  if (c.startsWith("#")) return [1, 3, 5].map((i) => parseInt(c.slice(i, i + 2), 16));
+  return (c.match(/[\d.]+/g) ?? ["0", "0", "0"]).slice(0, 3).map(Number);
 }
 function roundRect(g: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
   g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath();
