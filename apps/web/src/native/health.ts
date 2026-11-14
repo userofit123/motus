@@ -79,7 +79,10 @@ async function read(past?: Date): Promise<HealthResult | null> {
     const reads = readsOf(st.granted), before = readBefore();
     const fresh = reads.some((k) => !before.includes(k));
     const back = new Date(Date.now() - (fresh && st.history ? MORE_DAYS : FIRST_DAYS) * DAY_MS);
-    const since = lastSync.value && !fresh ? new Date(Date.parse(lastSync.value) - OVERLAP_MS) : back;
+    // a new kind goes back to `back`, but never starts later than the usual start: a last sync older than `back` would
+    // otherwise leave the days between them unread
+    const usual = lastSync.value ? new Date(Date.parse(lastSync.value) - OVERLAP_MS) : null;
+    const since = !usual ? back : fresh && back < usual ? back : usual;
     const from = past && past < since ? past : since;
     const data: HealthData = await plugin().read({ from: from.toISOString() });
     const r = await api.post<HealthResult>("/health/import", data);

@@ -239,7 +239,10 @@ export function readiness(parts: { key: ReadinessPart["key"]; value: number; his
   const out: ReadinessPart[] = [], building: ReadinessBuilding[] = [];
   let score = 70;
   for (const p of parts) {
-    const base = p.history.length >= MIN_BASELINE ? median(p.history)! : 0;
+    const enough = p.history.length >= MIN_BASELINE;
+    const base = enough ? median(p.history)! : 0;
+    // a full history with a zero usual is unusable, not still filling up: skip it rather than promise "usual in 1 day" forever
+    if (!base && enough) continue;
     if (!base) { building.push({ key: p.key, value: p.value, days: Math.min(p.history.length, MIN_BASELINE - 1) }); continue; }
     let change: number, pts: number, flat: boolean;
     if (p.key === "sleep") {

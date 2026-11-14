@@ -602,6 +602,12 @@ describe("readiness", () => {
     expect(readiness([P("sleep", 8, 7), P("hrv", 60, 50)]).building).toEqual([]);
   });
 
+  it("does not list a part with a full history but a zero usual as building", () => {
+    const r = readiness([P("sleep", 8, 7), P("hrv", 60, 50), P("restingHr", 55, 0, 28)]);
+    expect(r.building).toEqual([]);
+    expect(r.parts.map((p) => p.key)).toEqual(["sleep", "hrv"]);
+  });
+
   it("reads today's values, else yesterday's, against the 28 days before", async () => {
     const W = uuidv7();
     await eng.db.admin.query("INSERT INTO users (id, username) VALUES ($1, 'w')", [W]);
