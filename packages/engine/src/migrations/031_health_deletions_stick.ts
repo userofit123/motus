@@ -20,11 +20,16 @@ const DAILY = `CASE h.kind WHEN 'sleep' THEN 'sleep_h' WHEN 'distance' THEN 'dis
 const DAILY_KINDS = "('steps', 'sleep', 'resting_hr', 'spo2', 'hrv', 'distance', 'active_kcal', 'water', 'vo2max')";
 
 export default /* sql */ `
+-- the repair is not logged for sync (motus.sync_apply, 004): every copy runs this migration and repairs itself, and a
+-- logged delete travels keyed only by (person, day, kind), so it would also delete a value typed for that day on another
+-- copy meanwhile. Switched off again before the triggers exist, which log and travel as usual.
+SELECT set_config('motus.sync_apply', '1', true);
 DELETE FROM daily_logs d USING health_imports h
   WHERE h.deleted_at IS NOT NULL AND h.kind IN ${DAILY_KINDS}
     AND d.user_id = h.user_id AND d.date = h.date AND d.kind = ${DAILY} AND d.source = 'health_connect';
 DELETE FROM sleep_nights n USING health_imports h
   WHERE h.user_id = n.user_id AND h.kind = 'sleep' AND h.date = n.date AND h.deleted_at IS NOT NULL;
+SELECT set_config('motus.sync_apply', '', true);
 
 -- runs for every writer (also a sync applying rows), so it never looks at motus.sync_apply
 CREATE FUNCTION motus_health_deleted_skip() RETURNS trigger LANGUAGE plpgsql AS $$

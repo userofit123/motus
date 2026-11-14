@@ -15,9 +15,9 @@
 // - Activities recorded and workouts done in Motus while wearing a band get the band's side of them afterwards
 //   (/health/ranges): its step count for exactly that time, and heart rate.
 // Everything brought in is noted in health_imports (027), the import log the person can edit and delete from. A deletion
-// sticks: from the log, or of the data itself anywhere else in the app, the key is never imported again, and the
-// database never keeps a day's number from Health Connect or a night under a deleted key (031), also when a copy that
-// hadn't heard of the deletion syncs it back.
+// sticks: from the log, or of the data itself anywhere else in the app (marked at that moment, 034), the key is never
+// imported again, and the database never keeps a day's number from Health Connect or a night under a deleted key (031),
+// also when a copy that hadn't heard of the deletion syncs it back.
 import type { Router, Ctx } from "../router";
 import type { Sql } from "../db";
 import { dateStr, isoTime, numOrNull, intOrNull, str, tzOf } from "../util";
@@ -279,32 +279,26 @@ export function healthRoutes(r: Router) {
   r.post("/health/import", async (ctx, _p, b) => {
     const list = (v: unknown, max: number): any[] => (Array.isArray(v) ? v.slice(0, max) : []);
     const out = { steps: 0, sleep: 0, sleepNights: 0, restingHr: 0, spo2: 0, hrv: 0, distance: 0, activeKcal: 0, hydration: 0, vo2max: 0, weight: 0, bodyFat: 0, activities: 0, hrDays: 0 };
-    let touched = false; // the log changed (a row noted or marked deleted), even when no number did
+    let touched = false; // the log changed (a row noted), even when no number did
 
     const imps = new Map<string, Imp>((await ctx.q.query("SELECT key, kind, to_char(date, 'YYYY-MM-DD') AS date, ref, deleted_at IS NOT NULL AS deleted FROM health_imports")).rows
       .map((x: any) => [x.key, { kind: x.kind, date: x.date, ref: x.ref, deleted: x.deleted }]));
-    // what the log's rows became, as it is now (missing: the person deleted it elsewhere in the app)
+    // the day's numbers here and where each came from: one from the phone that the log doesn't have yet is noted below
     const daily = new Map<string, string>((await ctx.q.query(`SELECT kind || ':' || to_char(date, 'YYYY-MM-DD') AS k, source FROM daily_logs WHERE kind IN ${DAILY_SQL}`)).rows
       .map((x: any) => [x.k, x.source]));
-    const refs = [...imps.values()].filter((x) => !x.deleted && x.ref).map((x) => x.ref!);
-    const alive = new Set<string>((await ctx.q.query("SELECT id::text AS id FROM body_metrics WHERE id::text = ANY($1) UNION ALL SELECT id::text FROM activities WHERE id::text = ANY($1)", [refs])).rows.map((x: any) => x.id));
-    /** Whether to bring this key in: not when deleted from the log, nor when its data was deleted elsewhere (noted now). */
-    const open = async (key: string, there: boolean) => {
-      const h = imps.get(key);
-      if (!h) return true;
-      if (h.deleted) return false;
-      if (there) return true;
-      await forget(ctx, key);
-      h.deleted = touched = true;
-      return false;
-    };
+    /**
+     * Whether to bring this key in: not when deleted, from the log or by deleting its data elsewhere in the app (034
+     * marks it then). Data missing here is not taken as deleted: a copy may have the log entry before the day's number
+     * (sync sends rows a page at a time), and a number typed over the band's and then cleared was the person's own.
+     */
+    const open = (key: string) => !imps.get(key)?.deleted;
 
     // a typed value (source "manual", or null on rows from before sources) is never replaced
     const day = async (kind: Daily, date: unknown, value: number | null) => {
       const d = dateStr(date);
       if (!d || value == null) return false;
       const key = `${kind}:${d}`, dk = `${DAILY_KIND[kind]}:${d}`;
-      if (!(await open(key, daily.has(dk)))) return false;
+      if (!open(key)) return false;
       const { rows } = await ctx.q.query(
         `INSERT INTO daily_logs (user_id, date, kind, value, source) VALUES ($1,$2,$3,$4,$5)
          ON CONFLICT (user_id, date, kind) DO UPDATE SET value = $4, source = $5
@@ -356,7 +350,7 @@ export function healthRoutes(r: Router) {
       // an app without record ids keys a reading by its time; with ids, that older key still counts as the same reading
       const key = id ? `${kind}:${id}` : `${kind}:${at}`, legacy = imps.get(`${kind}:${at}`);
       const h = imps.get(key);
-      if (!(await open(key, !!h?.ref && alive.has(h.ref))) || h) return false;
+      if (!open(key) || h) return false;
       if (id && legacy?.deleted) return false;
       const same = (await ctx.q.query("SELECT id::text AS id FROM body_metrics WHERE kind = $2 AND measured_at BETWEEN $1::timestamptz - interval '1 minute' AND $1::timestamptz + interval '1 minute' LIMIT 1", [at, kind])).rows[0];
       let ref: string | null = same?.id ?? null, added = false;
@@ -370,7 +364,6 @@ export function healthRoutes(r: Router) {
       }
       await remember(ctx, key, kind, null, ref);
       imps.set(key, { kind, date: null, ref, deleted: false });
-      alive.add(ref);
       touched = true;
       return added;
     };
@@ -382,7 +375,7 @@ export function healthRoutes(r: Router) {
     for (const s of sessions) {
       const hcId = str(String(s.id), 70), key = `activity:${hcId}`, clientId = `hc:${hcId}`;
       const h = imps.get(key);
-      if (!(await open(key, !!h?.ref && alive.has(h.ref))) || h) continue;
+      if (!open(key) || h) continue;
       // brought in before the log existed: noted, not added again
       let ref: string | null = (await ctx.q.query("SELECT id::text AS id FROM activities WHERE client_id = $1", [clientId])).rows[0]?.id ?? null;
       if (!ref) {
@@ -476,7 +469,8 @@ export function healthRoutes(r: Router) {
   });
 
   // Nights of sleep, newest first. Shown only while the day's sleep is there: not when the day's sleep was cleared
-  // elsewhere (the next sync notes that as a deletion; a deleted import has no night, 031). edited/sleepH: the day's own number.
+  // elsewhere (the band's cleared marks its import deleted, 034, and a deleted import has no night, 031; a typed one
+  // cleared leaves the night for the next import). edited/sleepH: the day's own number.
   const nights = async (ctx: Ctx, where: string, args: unknown[], withHr: boolean) => (await ctx.q.query(
     `SELECT to_char(n.date, 'YYYY-MM-DD') AS date, n.start_at, n.end_at, n.asleep_min, n.awake_min, n.light_min, n.deep_min, n.rem_min,
        n.avg_hr, n.min_hr, n.avg_spo2, n.min_spo2, n.resp_rate, d.value AS sleep_h, d.source AS d_source ${withHr ? ", n.hr" : ""}

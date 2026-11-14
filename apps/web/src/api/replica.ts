@@ -100,14 +100,24 @@ export async function startReplica(user: { id: string }): Promise<boolean> {
     // a copy made by an older app may hold another account's rows (M-184): made again, unless it still has changes
     // to send (it then waits for a later start, after a sync has sent them)
     const meta = await R.replicaMeta(db);
-    if (R.outdated(meta) && !(await R.waitingCount(db))) await R.clearCopy(db);
-    if (!(await R.replicaMeta(db)).ready) {
-      // the first copy needs the server once
-      const cat = await http("GET", "/sync/catalog");
-      await R.loadCatalog(db, cat.stamp, cat.rows);
-      // everything you have in one answer: on a big history and a slow connection this takes far longer than an
-      // ordinary request is given
-      await R.loadSnapshot(db, await httpTransport.request("GET", `/sync/snapshot?user=${encodeURIComponent(userId)}`, undefined, { wait: 120_000 }));
+    const remake = R.outdated(meta) && !(await R.waitingCount(db));
+    if (remake || !meta.ready) {
+      // the first copy needs the server once. Both answers come before anything here is emptied: an update opened
+      // offline keeps working on the copy it has, and the copy is made again at a later start
+      let fresh: { cat: { stamp: string; rows: unknown[] }; snap: unknown } | null = null;
+      try {
+        const cat = await http<{ stamp: string; rows: unknown[] }>("GET", "/sync/catalog");
+        // everything you have in one answer: on a big history and a slow connection this takes far longer than an
+        // ordinary request is given
+        fresh = { cat, snap: await httpTransport.request("GET", `/sync/snapshot?user=${encodeURIComponent(userId)}`, undefined, { wait: 120_000 }) };
+      } catch (e) {
+        if (!meta.ready) throw e;
+      }
+      if (fresh) {
+        if (remake) await R.clearCopy(db);
+        await R.loadCatalog(db, fresh.cat.stamp, fresh.cat.rows);
+        await R.loadSnapshot(db, fresh.snap);
+      }
     }
     // nothing is saved on its own (pglite.ts): the tables and the first copy go to disk now, not with the first change
     await saved();

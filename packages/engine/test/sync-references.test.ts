@@ -71,6 +71,28 @@ describe("references in a device's changes", () => {
     expect(res.rejected[0].row.weeks).toEqual([{ days: [mine, mine], deload: false }]);
   });
 
+  it("takes references to the person's own rows sent later in the same push: a workout finished offline", async () => {
+    // rows go table by table, so the routine's new version comes before the workout it names
+    const w = { id: uuidv7(), user_id: A, name: "Push", routine_id: mine, status: "completed", started_at: at(), finished_at: at() };
+    const v = { id: uuidv7(), user_id: A, routine_id: mine, snapshot: {}, reason: "workout", workout_id: w.id };
+    const note = { id: uuidv7(), user_id: A, target_type: "workout", target_id: w.id, body: "Felt strong" };
+    const res = await ok(as(A)("POST", "/sync/push", { device: "d1", user: A, changes: [upsert("notes", note), upsert("routine_versions", v), upsert("workouts", w)] }));
+    expect(res).toMatchObject({ applied: 3, failed: [], rejected: [] });
+    expect((await server.db.admin.query("SELECT workout_id FROM routine_versions WHERE id = $1", [v.id])).rows[0].workout_id).toBe(w.id);
+    expect((await server.db.admin.query("SELECT target_id FROM notes WHERE id = $1", [note.id])).rows[0].target_id).toBe(w.id);
+  });
+
+  it("keeps a program's day naming a routine of the person's sent in the same push or a later one", async () => {
+    const r1 = { id: uuidv7(), user_id: A, name: "New" }, r2 = { id: uuidv7(), user_id: A, name: "Later" };
+    const p = { id: uuidv7(), user_id: A, name: "P2", weeks: [{ days: [r1.id, r2.id, theirs], deload: false }], deload_pct: 40, start_date: at().slice(0, 10), active: false };
+    const res = await ok(as(A)("POST", "/sync/push", { device: "d1", user: A, changes: [upsert("programs", p), upsert("routines", r1)] }));
+    expect(res.applied).toBe(2);
+    // only someone else's routine goes; the one not sent yet (the next page) stays
+    expect(res.rejected[0].row.weeks).toEqual([{ days: [r1.id, r2.id], deload: false }]);
+    await ok(as(A)("POST", "/sync/push", { device: "d1", user: A, changes: [upsert("routines", r2)] }));
+    expect((await server.db.admin.query("SELECT weeks FROM programs WHERE id = $1", [p.id])).rows[0].weeks).toEqual([{ days: [r1.id, r2.id], deload: false }]);
+  });
+
   it("refuses to sync a copy that isn't the signed-in person's", async () => {
     expect((await as(A)("GET", "/sync/pull", undefined, { since: "0", device: "d1", user: B })).status).toBe(409);
     expect((await as(A)("GET", "/sync/snapshot", undefined, { user: B })).status).toBe(409);
@@ -100,7 +122,7 @@ describe("a copy made before M-184", () => {
     expect(again.device).toBe(m.device);
     const names = (await dev.db.admin.query("SELECT name FROM routines")).rows.map((r: any) => r.name);
     expect(names).not.toContain("Foreign");
-    expect(names.length).toBe(1);
+    expect(names.length).toBe((await server.db.admin.query("SELECT 1 FROM routines WHERE user_id = $1", [A])).rows.length);
     await dev.db.close();
   }, 60000);
 });

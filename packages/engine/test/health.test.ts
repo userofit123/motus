@@ -472,16 +472,18 @@ describe("nights of sleep, daily distance and active calories from a band", () =
   });
 
   it("says which kinds of band data there are", async () => {
-    expect(await call("GET", "/health/available")).toEqual({ sleep: true, heart: true, distance: true, calories: false, ...NO_NEW });
+    expect(await call("GET", "/health/available")).toEqual({ sleep: true, heart: true, distance: true, calories: false, nights: true, restingHr: true, hrv: false, spo2: true, imports: true, ...NO_NEW });
     const V = uuidv7();
     await eng.db.admin.query("INSERT INTO users (id, username) VALUES ($1, 'v')", [V]);
     const as = async (method: string, path: string, body?: unknown) => (await eng.handle({ method, path, body, userId: V })).body as any;
-    expect(await as("GET", "/health/available")).toEqual({ sleep: false, heart: false, distance: false, calories: false, ...NO_NEW });
+    expect(await as("GET", "/health/available")).toEqual({ sleep: false, heart: false, distance: false, calories: false, nights: false, restingHr: false, hrv: false, spo2: false, imports: false, ...NO_NEW });
     // typed by hand, not from a band
     await as("PUT", "/daily", { date: "2026-11-20", kind: "sleep_h", value: 8 });
     expect((await as("GET", "/health/available")).sleep).toBe(false);
     await as("POST", "/health/import", { activeKcal: [{ date: "2026-11-20", value: 300 }], sleepNights: [n20] });
-    expect(await as("GET", "/health/available")).toEqual({ sleep: true, heart: false, distance: false, calories: true, ...NO_NEW });
+    expect(await as("GET", "/health/available")).toEqual({ sleep: true, heart: false, distance: false, calories: true, nights: true, restingHr: false, hrv: false, spo2: false, imports: true, ...NO_NEW });
+    await as("POST", "/health/import", { restingHr: [{ date: "2026-11-24", value: 58 }], spo2: [{ date: "2026-11-24", value: 96 }], hrv: [{ date: "2026-11-24", value: 42 }] });
+    expect(await as("GET", "/health/available")).toEqual({ sleep: true, heart: true, distance: false, calories: true, nights: true, restingHr: true, hrv: true, spo2: true, imports: true, ...NO_NEW });
     // the other person's nights are not this one's
     expect((await as("GET", "/health/sleep")).nights.map((n: any) => n.date)).toEqual(["2026-11-20"]);
   });
@@ -736,5 +738,61 @@ describe("031 on a daily log out of step with the import log", () => {
     const left = (await q("SELECT kind || ':' || to_char(date, 'YYYY-MM-DD') AS k, source FROM daily_logs ORDER BY 1")).rows;
     expect(left).toEqual([{ k: "sleep_h:2026-11-09", source: "manual" }, { k: "steps:2026-11-10", source: "health_connect" }]);
     expect((await q("SELECT count(*)::int AS n FROM sleep_nights")).rows[0].n).toBe(0);
+    // each copy repairs itself: the repair is not sent anywhere, where a delete keyed by day and kind could take a
+    // number typed on another copy with it
+    expect((await q("SELECT count(*)::int AS n FROM sync_log WHERE op = 'delete'")).rows[0].n).toBe(0);
+    // while what the triggers do afterwards is logged and travels as usual
+    await q("UPDATE health_imports SET deleted_at = now() WHERE user_id = $1 AND key = 'steps:2026-11-10'", [u]);
+    expect((await q("SELECT tbl, op FROM sync_log WHERE op = 'delete'")).rows).toEqual([{ tbl: "daily_logs", op: "delete" }]);
+    await db.close();
+  });
+});
+
+describe("an import log entry is deleted only when the person deleted something", () => {
+  const imp = async (key: string) => (await eng.db.admin.query("SELECT deleted_at FROM health_imports WHERE user_id = $1 AND key = $2", [U, key])).rows[0];
+  const dayRow = async (date: string, kind = "steps") => (await eng.db.admin.query("SELECT value, source FROM daily_logs WHERE user_id = $1 AND date = $2 AND kind = $3", [U, date, kind])).rows[0];
+
+  it("not on a copy that has the log entry but not yet the day's number", async () => {
+    await call("POST", "/health/import", { steps: [{ date: "2027-02-01", value: 7000 }] });
+    // what a copy looks like between two pages of a sync: the entry came, the day's number not yet
+    await eng.db.admin.query("SELECT set_config('motus.sync_apply', '1', false)");
+    await eng.db.admin.query("DELETE FROM daily_logs WHERE user_id = $1 AND date = '2027-02-01' AND kind = 'steps'", [U]);
+    await eng.db.admin.query("SELECT set_config('motus.sync_apply', '', false)");
+    expect((await call("POST", "/health/import", { steps: [{ date: "2027-02-01", value: 7000 }] })).steps).toBe(1);
+    expect((await imp("steps:2027-02-01")).deleted_at).toBeNull();
+    expect(await dayRow("2027-02-01")).toMatchObject({ value: 7000, source: "health_connect" });
+  });
+
+  it("not when a number typed over the band's is cleared: the band's comes back", async () => {
+    await call("POST", "/health/import", { steps: [{ date: "2027-02-02", value: 6000 }] });
+    await call("PUT", "/daily", { date: "2027-02-02", kind: "steps", value: 6500 });
+    await call("PUT", "/daily", { date: "2027-02-02", kind: "steps", value: null });
+    expect((await imp("steps:2027-02-02")).deleted_at).toBeNull();
+    expect((await call("POST", "/health/import", { steps: [{ date: "2027-02-02", value: 6000 }] })).steps).toBe(1);
+    expect(await dayRow("2027-02-02")).toMatchObject({ value: 6000, source: "health_connect" });
+  });
+
+  it("not for a deletion a sync brings, which carries its own mark if it was one", async () => {
+    await call("POST", "/health/import", { steps: [{ date: "2027-02-03", value: 5000 }] });
+    const del = { tbl: "daily_logs", pk: { user_id: U, date: "2027-02-03", kind: "steps" }, op: "delete" as const, at: new Date().toISOString() };
+    await withUser(eng.db, U, (q) => applyChanges(q, U, [del], { origin: "phone" }));
+    expect((await imp("steps:2027-02-03")).deleted_at).toBeNull();
+  });
+
+  it("when the band's number is cleared in the daily log, at that moment", async () => {
+    await call("POST", "/health/import", { steps: [{ date: "2027-02-04", value: 4000 }] });
+    await call("PUT", "/daily", { date: "2027-02-04", kind: "steps", value: null });
+    expect((await imp("steps:2027-02-04")).deleted_at).not.toBeNull();
+    expect((await call("POST", "/health/import", { steps: [{ date: "2027-02-04", value: 4000 }] })).steps).toBe(0);
+  });
+
+  it("tells a device whose pushed day's number was not written under a deleted import to drop it", async () => {
+    await call("POST", "/health/import", { steps: [{ date: "2027-02-05", value: 3000 }] });
+    await call("DELETE", "/health/imports/steps:2027-02-05");
+    const row = { user_id: U, date: "2027-02-05", kind: "steps", value: 3000, source: "health_connect" };
+    const res = await call("POST", "/sync/push", { device: "phone", changes: [{ tbl: "daily_logs", pk: { user_id: U, date: "2027-02-05", kind: "steps" }, op: "upsert", at: new Date().toISOString(), row }] });
+    expect(res.applied).toBe(0);
+    expect(res.rejected).toMatchObject([{ tbl: "daily_logs", op: "delete", row: null }]);
+    expect(await dayRow("2027-02-05")).toBeUndefined();
   });
 });

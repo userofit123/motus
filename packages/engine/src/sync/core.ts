@@ -107,20 +107,27 @@ export const REFS: Record<string, Ref[]> = {
   goals: [{ col: "scope_id", table: (r) => (r.scope === "routine" ? "routines" : r.scope === "exercise" ? "exercises" : null), required: true }],
 };
 
+/** A program's week as a device sends it (untrusted JSON): only its days are looked at, the rest is kept as sent. */
+type Week = Record<string, unknown> & { days: unknown[] };
+const isWeek = (w: unknown): w is Week => !!w && typeof w === "object" && Array.isArray((w as { days?: unknown }).days);
+
 /**
  * Makes a row from a device point only at rows its person can see (the same rule visible() applies to the app's own
  * requests): a reference that can't be cleared refuses the row; others are cleared, and a program's days leave out
  * routines that aren't the person's. Returns whether anything was cleared (the device then gets the row as written).
+ * Only a row that is someone else's counts against a reference (035). One that isn't here is kept: the person's own,
+ * sent in the same push after the row pointing at it (rows go table by table: a routine's version names the workout
+ * finished offline, a program the routine made for it) or in a later page of the push, or one already deleted (the
+ * app shows a reference it can't follow; a required one with a foreign key still fails on its own). foreign: what was
+ * found per row. The push's own rows need no list of their own: not here yet, they aren't someone else's either, and
+ * one with someone else's id is refused when written (row-level security), so nothing may count it as the person's.
  */
-async function ownRefs(q: Sql, tbl: string, row: Record<string, unknown>, seen: Set<string>) {
+async function ownRefs(q: Sql, tbl: string, row: Record<string, unknown>, foreign: Map<string, boolean>) {
   const canSee = async (table: string, v: unknown) => {
     if (!isUuid(v)) return false;
-    // only what was found is remembered: a row can point at one written later in the same batch (a routine based on another)
     const k = table + ":" + v;
-    if (seen.has(k)) return true;
-    const ok = (await q.query(`SELECT 1 FROM ${table} WHERE id = $1`, [v])).rows.length > 0;
-    if (ok) seen.add(k);
-    return ok;
+    if (!foreign.has(k)) foreign.set(k, !!(await q.query<{ f: boolean }>("SELECT motus_foreign_row($1, $2) AS f", [table, v])).rows[0]?.f);
+    return !foreign.get(k);
   };
   let cleared = false;
   for (const ref of REFS[tbl] ?? []) {
@@ -134,8 +141,8 @@ async function ownRefs(q: Sql, tbl: string, row: Record<string, unknown>, seen: 
   }
   if (tbl === "programs" && Array.isArray(row.weeks)) {
     const weeks: unknown[] = [];
-    for (const w of row.weeks as any[]) {
-      if (!w || typeof w !== "object" || !Array.isArray(w.days)) { weeks.push(w); continue; }
+    for (const w of row.weeks as unknown[]) {
+      if (!isWeek(w)) { weeks.push(w); continue; }
       const days: unknown[] = [];
       for (const d of w.days) if (await canSee("routines", d)) days.push(d); else cleared = true;
       weeks.push({ ...w, days });
@@ -167,9 +174,10 @@ export async function applyChanges(q: Sql, userId: string, changes: Change[], op
   ];
   if (opts.apply) await q.query("SELECT set_config('motus.sync_apply', '1', true)");
   const failed: { change: Change; error: string }[] = [];
-  // upserts that were not written because the row here is a finished workout and the change would reopen it
+  // upserts that were not written: the row here is a finished workout and the change would reopen it, or a trigger
+  // skipped it (the device then gets the row as it is here, or its deletion)
   const kept: Change[] = [], cleared: Change[] = [];
-  const seen = new Set<string>();
+  const foreign = new Map<string, boolean>();
   for (const c of list) {
     const def = SYNCED_BY_NAME.get(c.tbl)!;
     await q.query("SAVEPOINT motus_row");
@@ -190,17 +198,19 @@ export async function applyChanges(q: Sql, userId: string, changes: Change[], op
           }
           if ("prefill" in row && !("fixed" in row)) row.fixed = row.prefill === "target";
         }
-        const fixed = !opts.apply && (await ownRefs(q, c.tbl, row, seen));
+        const fixed = !opts.apply && (await ownRefs(q, c.tbl, row, foreign));
         // only the columns the JSON has: a device on an older app doesn't know newer columns, so a new row takes their
         // default and an existing row keeps its value, instead of both becoming NULL
         const has = all.filter((x) => x in row);
         const rest = has.filter((x) => !def.pk.includes(x));
         // the last guard against a finished workout going back to running, whatever got this far
-        const guard = c.tbl === "workouts" ? " WHERE NOT (workouts.status <> 'in_progress' AND EXCLUDED.status = 'in_progress') RETURNING 1 AS ok" : "";
+        const guard = c.tbl === "workouts" ? " WHERE NOT (workouts.status <> 'in_progress' AND EXCLUDED.status = 'in_progress')" : "";
+        // RETURNING tells a row not written: by that guard, or by a trigger that skips it (a day's number from Health
+        // Connect under a deleted import, 031). Not with DO NOTHING, where a row already here returns nothing either.
         const r = await q.query(
           `INSERT INTO ${c.tbl} (${has.join(", ")}) SELECT ${has.join(", ")} FROM jsonb_populate_record(NULL::${c.tbl}, $1::jsonb)
-           ON CONFLICT (${def.pk.join(", ")}) DO ${rest.length ? `UPDATE SET ${rest.map((x) => `${x} = EXCLUDED.${x}`).join(", ")}` : "NOTHING"}${guard}`, [JSON.stringify(row)]);
-        if (guard && !r.rows.length) kept.push(c);
+           ON CONFLICT (${def.pk.join(", ")}) DO ${rest.length ? `UPDATE SET ${rest.map((x) => `${x} = EXCLUDED.${x}`).join(", ")}${guard} RETURNING 1 AS ok` : "NOTHING"}`, [JSON.stringify(row)]);
+        if (rest.length && !r.rows.length) kept.push(c);
         else if (fixed) cleared.push(c);
       } else if (def.pk.length === 1 && def.pk[0] === "id") {
         await q.query(`DELETE FROM ${c.tbl} WHERE id = $1`, [c.pk.id]);
