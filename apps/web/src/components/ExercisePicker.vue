@@ -163,9 +163,12 @@ function te(e: TouchEvent) {
 
 
 <style scoped>
-/* the search stays on top while the filters and the list scroll under it (-4px cancels the sheet body's top padding),
-   on the sheet's own background */
-.pksearch { position: sticky; top: -4px; z-index: 1; background: var(--bg); padding-block: 4px; margin-bottom: var(--hg); }
+/* the search stays on top while the filters and the list scroll under it (-4px cancels the sheet body's top padding).
+   It runs the sheet's full width (negative margin = the body's side padding, put back as its own padding so the field
+   still lines up with the list) so rows never show at its sides. Its colour must be solid, so this one sheet drops the
+   frosted see-through colour of glass themes and shows the same solid --bg as the bar */
+.pksearch { position: sticky; top: -4px; z-index: 1; background: var(--bg); padding: 4px calc(var(--cpx) + 6px); margin: 0 calc(-1 * (var(--cpx) + 6px)) var(--hg); }
+:global(body.glass .sht:has(.pksearch)) { background: var(--bg); }
 /* a pick on the phone's big body scrolls the count line up so the filter card ends exactly under that search: the bar's
    measured height (its -4px and the body's 4px top padding cancel out) plus the 2px between the card and the count line
    (FilterPanel .ffoot) */
