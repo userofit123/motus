@@ -15,7 +15,9 @@
 // - Activities recorded and workouts done in Motus while wearing a band get the band's side of them afterwards
 //   (/health/ranges): its step count for exactly that time, and heart rate.
 // Everything brought in is noted in health_imports (027), the import log the person can edit and delete from. A deletion
-// sticks: from the log, or of the data itself anywhere else in the app, the key is never imported again.
+// sticks: from the log, or of the data itself anywhere else in the app, the key is never imported again, and the
+// database never keeps a day's number from Health Connect or a night under a deleted key (031), also when a copy that
+// hadn't heard of the deletion syncs it back.
 import type { Router, Ctx } from "../router";
 import type { Sql } from "../db";
 import { dateStr, isoTime, numOrNull, intOrNull, str, tzOf } from "../util";
@@ -302,11 +304,7 @@ export function healthRoutes(r: Router) {
       const d = dateStr(date);
       if (!d || value == null) return false;
       const key = `${kind}:${d}`, dk = `${DAILY_KIND[kind]}:${d}`;
-      if (!(await open(key, daily.has(dk)))) {
-        // deleted, yet the phone's number is back: a copy that hadn't heard of the deletion synced it again
-        if (imps.get(key)?.deleted && daily.get(dk) === HEALTH_SOURCE) await ctx.q.query("DELETE FROM daily_logs WHERE date = $1 AND kind = $2 AND source = $3", [d, DAILY_KIND[kind], HEALTH_SOURCE]);
-        return false;
-      }
+      if (!(await open(key, daily.has(dk)))) return false;
       const { rows } = await ctx.q.query(
         `INSERT INTO daily_logs (user_id, date, kind, value, source) VALUES ($1,$2,$3,$4,$5)
          ON CONFLICT (user_id, date, kind) DO UPDATE SET value = $4, source = $5
@@ -336,7 +334,7 @@ export function healthRoutes(r: Router) {
       const key = `sleep:${n.date}`;
       // a night without the day's hours alongside: its asleep time is the day's sleep (a typed day stays as it is)
       if (!sleepDays.has(n.date)) await day("sleep", n.date, Math.round(n.asleep / 6) / 10);
-      if (imps.get(key)?.deleted) continue; // its night is cleared below
+      if (imps.get(key)?.deleted) continue;
       if (!imps.has(key)) {
         // the day's sleep is typed, so day() noted nothing: the night still came in, and is noted so a deletion sticks
         const typed = (await ctx.q.query("SELECT 1 FROM daily_logs WHERE date = $1 AND kind = 'sleep_h'", [n.date])).rows.length > 0;
@@ -349,8 +347,6 @@ export function healthRoutes(r: Router) {
         n.avgHr, n.minHr, n.hr && JSON.stringify(n.hr), n.avgSpo2, n.minSpo2, n.respRate, HEALTH_SOURCE]);
       if (rows.length) out.sleepNights++;
     }
-    // a night whose day was deleted (here, or on a copy whose deletion synced in) goes too
-    if ((await ctx.q.query("DELETE FROM sleep_nights n USING health_imports h WHERE h.kind = 'sleep' AND h.deleted_at IS NOT NULL AND h.date = n.date RETURNING 1")).rows.length) touched = true;
 
     // weight and body fat readings, each into the body log once
     const reading = async (kind: Body, e: any, value: number | null) => {
@@ -479,13 +475,13 @@ export function healthRoutes(r: Router) {
     return out;
   });
 
-  // Nights of sleep, newest first. Shown only while the day's sleep is there: not once its import is deleted, nor when
-  // the day's sleep was cleared elsewhere (the next sync notes that as a deletion). edited/sleepH: the day's own number.
+  // Nights of sleep, newest first. Shown only while the day's sleep is there: not when the day's sleep was cleared
+  // elsewhere (the next sync notes that as a deletion; a deleted import has no night, 031). edited/sleepH: the day's own number.
   const nights = async (ctx: Ctx, where: string, args: unknown[], withHr: boolean) => (await ctx.q.query(
     `SELECT to_char(n.date, 'YYYY-MM-DD') AS date, n.start_at, n.end_at, n.asleep_min, n.awake_min, n.light_min, n.deep_min, n.rem_min,
        n.avg_hr, n.min_hr, n.avg_spo2, n.min_spo2, n.resp_rate, d.value AS sleep_h, d.source AS d_source ${withHr ? ", n.hr" : ""}
      FROM sleep_nights n JOIN daily_logs d ON d.user_id = n.user_id AND d.date = n.date AND d.kind = 'sleep_h'
-     WHERE ${where} AND NOT EXISTS (SELECT 1 FROM health_imports h WHERE h.key = 'sleep:' || to_char(n.date, 'YYYY-MM-DD') AND h.deleted_at IS NOT NULL)
+     WHERE ${where}
      ORDER BY n.date DESC LIMIT 400`, args)).rows.map((x: any) => {
     const num = (v: unknown) => (v == null ? null : Number(v));
     return {

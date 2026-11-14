@@ -30,6 +30,7 @@ import m027 from "./migrations/027_health_imports";
 import m028 from "./migrations/028_band_heart_rate";
 import m029 from "./migrations/029_sleep_nights";
 import m030 from "./migrations/030_hr_days";
+import m031 from "./migrations/031_health_deletions_stick";
 
 const MIGRATIONS: [string, string][] = [
   ["001_init", m001],
@@ -62,6 +63,7 @@ const MIGRATIONS: [string, string][] = [
   ["028_band_heart_rate", m028],
   ["029_sleep_nights", m029],
   ["030_hr_days", m030],
+  ["031_health_deletions_stick", m031],
 ];
 
 /** `until`: stop after that one (tests run a migration against rows written in the shape before it). */

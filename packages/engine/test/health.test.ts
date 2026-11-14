@@ -2,8 +2,10 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { createEngine, type Engine } from "../src/index";
 import { pgliteDb } from "../src/adapters/pglite";
+import { migrate } from "../src/migrate";
+import { withUser } from "../src/db";
 import { uuidv7 } from "../src/ids";
-import { overrule } from "../src/sync/core";
+import { overrule, applyChanges } from "../src/sync/core";
 import { heartRate, plausibleSteps, exerciseHr, readiness, readHrDay } from "../src/modules/health";
 
 let eng: Engine, U: string;
@@ -164,6 +166,28 @@ describe("health connect import", () => {
     expect(overrule(c(null), { row: row("2026-10-09T10:00:00Z") })).toBe(false);
     expect(overrule(c("2026-10-09T10:00:00Z"), { row: row(null) })).toBe(true);
     expect(overrule(c(null), { row: row(null) })).toBeNull();
+  });
+
+  it("keeps a deleted day's number from coming back through a sync, so the log and the daily log agree", async () => {
+    await call("POST", "/health/import", { steps: [{ date: "2026-10-10", value: 5000 }, { date: "2026-10-11", value: 5100 }] });
+    await call("DELETE", "/health/imports/steps:2026-10-10");
+    const at = new Date().toISOString();
+    const day = (date: string, value: number, source: string) =>
+      ({ tbl: "daily_logs", pk: { user_id: U, date, kind: "steps" }, op: "upsert" as const, at, row: { user_id: U, date, kind: "steps", value, source } });
+    // a phone that hadn't heard of the deletion pushes its copy of the day: not written
+    await withUser(eng.db, U, (q) => applyChanges(q, U, [day("2026-10-10", 5000, "health_connect")], { origin: "phone" }));
+    expect((await daily("steps")).some((x: any) => x.date === "2026-10-10")).toBe(false);
+    expect(await entry("steps:2026-10-10")).toBeUndefined();
+    // a number typed for that day is the person's own and is kept
+    await withUser(eng.db, U, (q) => applyChanges(q, U, [day("2026-10-10", 1234, "manual")], { origin: "phone" }));
+    expect((await daily("steps")).find((x: any) => x.date === "2026-10-10")).toMatchObject({ value: 1234, source: "manual" });
+    await call("PUT", "/daily", { date: "2026-10-10", kind: "steps", value: null });
+
+    // a deletion made on another copy arrives: the day's number from Health Connect goes with it
+    const imp = (await eng.db.admin.query("SELECT to_jsonb(h) AS r FROM health_imports h WHERE user_id = $1 AND key = 'steps:2026-10-11'", [U])).rows[0].r;
+    await withUser(eng.db, U, (q) => applyChanges(q, U, [{ tbl: "health_imports", pk: { user_id: U, key: imp.key }, op: "upsert", at, row: { ...imp, deleted_at: at } }], { apply: true }));
+    expect((await daily("steps")).some((x: any) => x.date === "2026-10-11")).toBe(false);
+    expect(await entry("steps:2026-10-11")).toBeUndefined();
   });
 });
 
@@ -397,9 +421,8 @@ describe("nights of sleep, daily distance and active calories from a band", () =
     await call("DELETE", "/health/imports/sleep:2026-11-20");
     await send(404, "GET", "/health/sleep/2026-11-20");
     expect(await call("POST", "/health/import", { sleep: [{ date: "2026-11-20", hours: 7.5 }], sleepNights: [n20] })).toMatchObject({ sleep: 0, sleepNights: 0 });
-    // a copy that hadn't heard of the deletion synced the night back: the next import clears it
+    // a copy that hadn't heard of the deletion syncs the night back: it is never written
     await eng.db.admin.query("INSERT INTO sleep_nights (user_id, date, start_at, end_at, asleep_min, awake_min) VALUES ($1, '2026-11-20', $2, $3, 450, 30)", [U, n20.start, n20.end]);
-    await call("POST", "/health/import", {});
     expect((await eng.db.admin.query("SELECT 1 FROM sleep_nights WHERE user_id = $1 AND date = '2026-11-20'", [U])).rows.length).toBe(0);
 
     // the day's sleep cleared in the daily log: the night is no longer shown, and the next sync notes the deletion
@@ -686,5 +709,32 @@ describe("heart rate in training: per exercise, per routine, in an exercise's hi
     expect(s.health).toEqual({ sleepAvgMin: 450, sleepNights: 2, restingHrAvg: 54, hrvAvg: 41, workoutAvgHr: w.avgHr });
     const none = await call("GET", "/stats", undefined, { from: "2027-03-01T00:00:00Z", to: "2027-04-01T00:00:00Z", tz: "0" });
     expect(none.health).toEqual({ sleepAvgMin: null, sleepNights: 0, restingHrAvg: null, hrvAvg: null, workoutAvgHr: null });
+  });
+});
+
+describe("031 on a daily log out of step with the import log", () => {
+  it("drops a day's number from Health Connect and a night that came back under a deleted key, and keeps typed ones", async () => {
+    const db = await pgliteDb("memory://");
+    await migrate(db, "030_hr_days");
+    const q = (sql: string, p: unknown[] = []) => db.admin.query<any>(sql, p);
+    const u = uuidv7();
+    await q("INSERT INTO users (id, username) VALUES ($1, 'r')", [u]);
+    const del = "2026-11-14T13:27:35Z";
+    await q(`INSERT INTO health_imports (user_id, key, kind, date, deleted_at) VALUES
+      ($1, 'steps:2026-11-09', 'steps', '2026-11-09', $2), ($1, 'resting_hr:2026-11-09', 'resting_hr', '2026-11-09', $2),
+      ($1, 'sleep:2026-11-09', 'sleep', '2026-11-09', $2), ($1, 'hrv:2026-11-09', 'hrv', '2026-11-09', $2),
+      ($1, 'sleep:2026-11-08', 'sleep', '2026-11-08', $2), ($1, 'steps:2026-11-10', 'steps', '2026-11-10', NULL)`, [u, del]);
+    await q(`INSERT INTO daily_logs (user_id, date, kind, value, source) VALUES
+      ($1, '2026-11-09', 'steps', 8000, 'health_connect'), ($1, '2026-11-09', 'resting_hr', 55, 'health_connect'),
+      ($1, '2026-11-09', 'sleep_h', 7, 'manual'), ($1, '2026-11-10', 'steps', 6000, 'health_connect')`, [u]);
+    await q(`INSERT INTO sleep_nights (user_id, date, start_at, end_at, asleep_min, awake_min) VALUES
+      ($1, '2026-11-09', '2026-11-08T23:00:00Z', '2026-11-09T07:00:00Z', 420, 20), ($1, '2026-11-08', '2026-11-07T23:00:00Z', '2026-11-08T07:00:00Z', 420, 20)`, [u]);
+    await migrate(db);
+
+    // the deletions stand; what a copy synced back under them goes, a typed sleep and a live import stay
+    expect((await q("SELECT count(*)::int AS n FROM health_imports WHERE deleted_at IS NOT NULL")).rows[0].n).toBe(5);
+    const left = (await q("SELECT kind || ':' || to_char(date, 'YYYY-MM-DD') AS k, source FROM daily_logs ORDER BY 1")).rows;
+    expect(left).toEqual([{ k: "sleep_h:2026-11-09", source: "manual" }, { k: "steps:2026-11-10", source: "health_connect" }]);
+    expect((await q("SELECT count(*)::int AS n FROM sleep_nights")).rows[0].n).toBe(0);
   });
 });
