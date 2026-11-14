@@ -342,12 +342,12 @@ class MotusHealthPlugin : Plugin() {
     // the first app has none, the next one's count is added in. A band app writes a record per minute with steps
     // (Gadgetbridge does) and the phone's own step counter writes longer ones, so every quiet minute between the band's
     // took a share of the phone's count and a day read 1,000+ steps more than the band. So on a day more than one app
-    // counted and one of them is worn (band, watch, ring), each hour is taken from the worn device when it counted
-    // anything in that hour (the largest, if two apps write for the same band), else Health Connect's own count for the
-    // hour: the hours the band was off (charging, not yet put on) keep the phone's count, as Health Connect's screen
-    // does. With no worn device among them, Health Connect's own daily total stands.
-    // A long range (years) is asked for 90 days at a time: one request for thousands of day buckets can fail; hours
-    // are asked a week at a time, and only for weeks with such days.
+    // counted and one of them is worn (band, watch, ring), each quarter hour is taken from the worn device when it
+    // counted anything then (the largest, if two apps write for the same band), else Health Connect's own count for it:
+    // the time the band was off (charging, not yet put on) keeps the phone's count, as Health Connect's screen does.
+    // With no worn device among them, or when Health Connect refuses the quarter hours, its own daily total stands.
+    // A long range (years) is asked for 90 days at a time: one request for thousands of day buckets can fail; quarter
+    // hours are asked a week at a time, and only for weeks with such days.
     private suspend fun <R : Record, T : Any> dailyTotal(c: HealthConnectClient, from: Instant, zone: ZoneId, type: KClass<R>, startOf: (R) -> Instant,
                                                        metric: AggregateMetric<T>, key: String = "value", num: ((T) -> Double)? = null, value: (T) -> Any): JSArray {
         // start at the oldest record Health Connect will give us, not at `from`: "everything" asks from 2000, and
@@ -372,11 +372,13 @@ class MotusHealthPlugin : Plugin() {
                     val wFrom = LocalDate.ofEpochDay(wk * 7).atStartOfDay(); val wTo = wFrom.plusDays(7)
                     val wr = TimeRangeFilter.between(wFrom, wTo)
                     val origins = mixed.filter { it.startTime.toLocalDate() in ds }.flatMap { it.result.dataOrigins }.filter { worn[it.packageName] == true }.toSet()
-                    val all = hourly(c, metric, wr, emptySet(), num)
-                    val band = mutableMapOf<LocalDateTime, Double>()
-                    for (o in origins) for ((h, v) in hourly(c, metric, wr, setOf(o), num)) band[h] = maxOf(band[h] ?: 0.0, v)
+                    val (all, band) = try {
+                        val band = mutableMapOf<Instant, Double>()
+                        for (o in origins) for ((h, v) in quarters(c, metric, wr, setOf(o), num)) band[h] = maxOf(band[h] ?: 0.0, v)
+                        quarters(c, metric, wr, emptySet(), num) to band
+                    } catch (e: Exception) { if (e is kotlinx.coroutines.CancellationException) throw e; continue }
                     for ((h, v) in all) {
-                        val d = h.toLocalDate()
+                        val d = LocalDate.ofInstant(h, zone)
                         if (d !in ds) continue
                         val b = band[h]
                         fixed[d] = (fixed[d] ?: 0.0) + (if (b != null && b > 0) b else v)
@@ -394,10 +396,11 @@ class MotusHealthPlugin : Plugin() {
         return arr
     }
 
-    // one count per hour (local time) over a week, from the given apps (empty: as Health Connect adds them up)
-    private suspend fun <T : Any> hourly(c: HealthConnectClient, metric: AggregateMetric<T>, range: TimeRangeFilter, origins: Set<DataOrigin>, num: (T) -> Double): Map<LocalDateTime, Double> =
-        c.aggregateGroupByDuration(AggregateGroupByDurationRequest(setOf(metric), range, Duration.ofHours(1), origins))
-            .mapNotNull { r -> r.result[metric]?.let { LocalDateTime.ofInstant(r.startTime, r.zoneOffset ?: ZoneId.systemDefault().rules.getOffset(r.startTime)) to num(it) } }.toMap()
+    // one count per quarter hour over a week, from the given apps (empty: as Health Connect adds them up), keyed by the
+    // moment it starts (local times repeat when the clocks go back)
+    private suspend fun <T : Any> quarters(c: HealthConnectClient, metric: AggregateMetric<T>, range: TimeRangeFilter, origins: Set<DataOrigin>, num: (T) -> Double): Map<Instant, Double> =
+        c.aggregateGroupByDuration(AggregateGroupByDurationRequest(setOf(metric), range, Duration.ofMinutes(15), origins))
+            .mapNotNull { r -> r.result[metric]?.let { r.startTime to num(it) } }.toMap()
 
     // whether an app's records come from something worn (band, watch, ring, chest strap), going by its first one in the range
     private val WORN = setOf(Device.TYPE_WATCH, Device.TYPE_FITNESS_BAND, Device.TYPE_RING, Device.TYPE_CHEST_STRAP)
