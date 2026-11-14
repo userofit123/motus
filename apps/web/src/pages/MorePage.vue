@@ -3,7 +3,7 @@
 // Settings. Settings itself holds every option; this page only links to the few you reach for often.
 import { computed } from "vue";
 import { useRouter } from "vue-router";
-import { bodySheet, dailySheet, activitySheet, appearanceOpen } from "../core/ui";
+import { logSheet, bodySheet, dailySheet, activitySheet, appearanceOpen } from "../core/ui";
 import { useSettings, useMe } from "../api/queries";
 import Icon from "../components/Icon.vue";
 const router = useRouter();
@@ -33,7 +33,7 @@ const PAGES: [to: string, label: string, icon: string, hint: string][] = [
     <!-- the same entries, names and order as the Log section of the + sheet (shell/StartSheet.vue) -->
     <div class="sh"><h2>Log</h2></div>
     <div class="card flush">
-      <div class="li click" @click="router.push('/log')"><span class="bi sg"><Icon name="history" :size="17" /></span><span class="grow t">Past workout</span><Icon name="plus" :size="16" class="muted" /></div>
+      <div class="li click" @click="logSheet = {}"><span class="bi sg"><Icon name="history" :size="17" /></span><span class="grow t">Past workout</span><Icon name="plus" :size="16" class="muted" /></div>
       <div class="li click" @click="activitySheet = { type: 'walk' }"><span class="bi sg"><Icon name="walk" :size="17" /></span><span class="grow t">Activity</span><Icon name="plus" :size="16" class="muted" /></div>
       <div class="li click" @click="bodySheet = true"><span class="bi sg"><Icon name="scale" :size="17" /></span><span class="grow t">Body weight</span><Icon name="plus" :size="16" class="muted" /></div>
       <div v-if="s.features.measurements" class="li click" @click="bodySheet = 'tape'"><span class="bi sg"><Icon name="target" :size="17" /></span><span class="grow t">Measurements</span><Icon name="plus" :size="16" class="muted" /></div>

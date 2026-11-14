@@ -12,6 +12,8 @@ export const noteSheet = ref<null | { targets: { type: string; id: string; label
 export const reminderSheet = ref<null | { targetType: "exercise" | "routine"; targetId: string; label: string; scopeRoutineId?: string | null; routineName?: string; workoutId?: string | null; preset?: { body?: string; weightKg?: number } }>(null);
 /** One reminder in full (tapped anywhere it shows), with Dismiss; gone() lets a workout drop it from its own copy */
 export const reminderView = ref<null | { r: Reminder; routineName?: string | null; gone?: () => void }>(null);
+/** Logging a past workout: on a day (a Calendar day), or from a routine (a planned workout's "Log it") */
+export const logSheet = ref<null | { date?: string; routineId?: string }>(null);
 export const activitySheet = ref<null | { id?: string; type?: string }>(null);
 /** The body sheet: true for weight, or a measure's id to open on the measurements with that one ready */
 export const bodySheet = ref<boolean | string>(false);

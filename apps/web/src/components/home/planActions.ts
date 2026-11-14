@@ -9,7 +9,7 @@ import { api } from "../../api/client";
 import { invalidate } from "../../api/live";
 import { confirm } from "../../core/ask";
 import { toast, toastError } from "../../core/toast";
-import { activitySheet } from "../../core/ui";
+import { logSheet, activitySheet } from "../../core/ui";
 import { recordPath } from "../../workout/recording";
 
 export const startPlan = (router: Router, p: HomePlan) =>
@@ -48,5 +48,5 @@ export const unplanItems = (p: Unplan, sep = false): MenuItem[] => p.repeats
 
 export const planMenu = (router: Router, p: HomePlan): MenuItem[] => [{
   label: "Log it", icon: "plus",
-  run: () => (p.routineId ? router.push(`/log?routine=${p.routineId}`) : (activitySheet.value = { type: p.activityType ?? undefined })),
+  run: () => (p.routineId ? (logSheet.value = { routineId: p.routineId }) : (activitySheet.value = { type: p.activityType ?? undefined })),
 }, ...unplanItems(p, true)];

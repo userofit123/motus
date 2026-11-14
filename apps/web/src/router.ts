@@ -23,7 +23,6 @@ export const router = createRouter({
     // "Empty workout": plan the exercises first, in the routine editor
     { path: "/workout/plan", name: "workout-plan", component: () => import("./pages/RoutineEditor.vue") },
     { path: "/workouts/:id", name: "workout-detail", component: () => import("./pages/WorkoutPage.vue") },
-    { path: "/log", name: "log", component: () => import("./pages/LogWorkoutPage.vue") },
     { path: "/exercises", name: "exercises", component: () => import("./pages/ExercisesPage.vue") },
     { path: "/exercises/:id", name: "exercise", component: () => import("./pages/ExercisePage.vue") },
     { path: "/goals", name: "goals", component: () => import("./pages/GoalsPage.vue") },

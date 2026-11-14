@@ -13,7 +13,7 @@ import { api } from "../api/client";
 import { invalidate } from "../api/live";
 import { toastError } from "../core/toast";
 import { confirm } from "../core/ask";
-import { activitySheet, bodySheet, dailySheet } from "../core/ui";
+import { logSheet, activitySheet, bodySheet, dailySheet } from "../core/ui";
 import { ago } from "../core/format";
 import { recording, recTypeName } from "../workout/recording";
 import { iv, ivRunning } from "../workout/intervals";
@@ -78,7 +78,7 @@ async function empty() {
 
     <h2 class="spt">Log</h2>
     <div class="opt-list">
-      <button class="optb" @click="go('/log')"><span class="oi"><Icon name="history" /></span><div class="grow"><div class="t">Past workout</div><div class="s">Something you did without the app</div></div></button>
+      <button class="optb" @click="emit('close'); logSheet = {}"><span class="oi"><Icon name="history" /></span><div class="grow"><div class="t">Past workout</div><div class="s">Something you did without the app</div></div></button>
       <button class="optb" @click="emit('close'); activitySheet = {}"><span class="oi"><Icon name="walk" /></span><div class="grow"><div class="t">Activity</div><div class="s">A walk, run, ride or class done earlier: type in the time</div></div></button>
       <button class="optb" @click="emit('close'); bodySheet = true"><span class="oi"><Icon name="scale" /></span><div class="grow"><div class="t">Body weight</div><div class="s">Kept on the Body page with its trend</div></div></button>
       <button v-if="s.features.measurements" class="optb" @click="emit('close'); bodySheet = 'tape'"><span class="oi"><Icon name="target" /></span><div class="grow"><div class="t">Measurements</div><div class="s">Waist, chest, arms… and body fat, all at once</div></div></button>

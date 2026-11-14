@@ -14,7 +14,7 @@ import Menu from "../components/Menu.vue";
 import { unplanItems } from "../components/home/planActions";
 import { useFmt, localYmd, activityIcon } from "../core/format";
 import { isPhone } from "../core/device";
-import { activitySheet } from "../core/ui";
+import { logSheet, activitySheet } from "../core/ui";
 import Icon from "../components/Icon.vue";
 import SearchField from "../components/SearchField.vue";
 import ScheduleEditor from "../components/ScheduleEditor.vue";
@@ -182,7 +182,7 @@ await loaded(cal, listWorkouts, listActs);
       </div>
       </Transition>
       <div v-if="sel" :key="sel" class="spt dayfade">
-        <div class="sh first"><h2>{{ fmt.date(sel, { weekday: "long", day: "numeric", month: "long" }) }}</h2><div class="grow" /><span v-if="sel <= today" @click.stop><Menu label="Log on this day" align="start" :items="[{ label: 'Log a workout', icon: 'dumbbell', run: () => router.push(`/log?date=${sel}`) }, { label: 'Log an activity', icon: 'activity', run: () => (activitySheet = {}) }]" /></span><button v-if="sel >= today" class="lnk" @click="planDay = sel"><Icon name="plus" :size="14" />Plan</button></div>
+        <div class="sh first"><h2>{{ fmt.date(sel, { weekday: "long", day: "numeric", month: "long" }) }}</h2><div class="grow" /><span v-if="sel <= today" @click.stop><Menu label="Log on this day" align="start" :items="[{ label: 'Log a workout', icon: 'dumbbell', run: () => (logSheet = { date: sel ?? undefined }) }, { label: 'Log an activity', icon: 'activity', run: () => (activitySheet = {}) }]" /></span><button v-if="sel >= today" class="lnk" @click="planDay = sel"><Icon name="plus" :size="14" />Plan</button></div>
         <div class="card">
           <div v-if="!(byDay.get(sel) ?? []).length" class="tiny">{{ sel >= today ? "Nothing planned. Use Plan to put a routine on this day." : "Nothing on this day." }}</div>
           <div class="list"><div v-for="x in byDay.get(sel) ?? []" :key="x.id ?? x.scheduleId" class="li click" @click="open(x)">

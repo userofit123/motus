@@ -1,6 +1,6 @@
 <script setup lang="ts">
-// Panels any screen can open: Start, an exercise, a note, a reminder (new, or one in full), an activity, body weight, Appearance, the schedule editor, a routine's History, a program's start date, what an exercise is tracked by.
-import { exerciseSheet, noteSheet, reminderSheet, reminderView, activitySheet, bodySheet, dailySheet, startOpen, scheduleSheet, historySheet, programStartSheet, trackSheet } from "../core/ui";
+// Panels any screen can open: Start, an exercise, a note, a reminder (new, or one in full), a past workout, an activity, body weight, Appearance, the schedule editor, a routine's History, a program's start date, what an exercise is tracked by.
+import { exerciseSheet, noteSheet, reminderSheet, reminderView, logSheet, activitySheet, bodySheet, dailySheet, startOpen, scheduleSheet, historySheet, programStartSheet, trackSheet } from "../core/ui";
 import ScheduleEditor from "../components/ScheduleEditor.vue";
 import RoutineHistory from "./RoutineHistory.vue";
 import ProgramStartSheet from "./ProgramStartSheet.vue";
@@ -11,6 +11,7 @@ import StartSheet from "./StartSheet.vue";
 import NoteSheet from "./NoteSheet.vue";
 import ReminderSheet from "./ReminderSheet.vue";
 import ReminderView from "./ReminderView.vue";
+import LogWorkoutSheet from "./LogWorkoutSheet.vue";
 import ActivitySheet from "./ActivitySheet.vue";
 import BodySheet from "./BodySheet.vue";
 import DailySheet from "./DailySheet.vue";
@@ -48,6 +49,7 @@ onBeforeUnmount(() => removeEventListener("keydown", key));
   <RoutineHistory v-if="historySheet" :id="historySheet" @close="historySheet = null" />
   <ProgramStartSheet v-if="programStartSheet" :o="programStartSheet" @close="programStartSheet = null" />
   <TrackSheet v-if="trackSheet" :o="trackSheet" @close="trackSheet = null" />
+  <LogWorkoutSheet v-if="logSheet" :o="logSheet" @close="logSheet = null" />
   <ActivitySheet v-if="activitySheet" :o="activitySheet" @close="activitySheet = null" />
   <BodySheet v-if="bodySheet" @close="bodySheet = false" />
   <DailySheet v-if="dailySheet" @close="dailySheet = false" />
