@@ -56,7 +56,14 @@ hr.sep { border: 0; border-top: 1px solid var(--ol); margin: 14px 0; }
 .ph.sub2 { flex-wrap: wrap; align-items: center; row-gap: 0; }
 /* the tabs' own margins (made for tabs above content) would centre their margin box, not the tabs, and push the summary down */
 .ph.sub2 .seg { margin: 0; }
-.ph.sub2 .sub { flex: 0 0 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* the tabs (40px) are taller than the title's line (34.5px), so they would set the row's height and push the title down
+   from where every other page has it; a zero-height tab box leaves the row to the title and still centres the tabs on it */
+.ph.sub2 .acts { height: 0; }
+/* ...so the summary keeps its usual 4px from the tabs' bottom, which hangs half the height difference below the title's line.
+   40px is the .seg's height (tabs.css: 34px buttons + 3px padding each side) and 26px the phone title (.pmain .ph h1);
+   change these if those change */
+.ph.sub2 .sub { flex: 0 0 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: calc(4px + (40px - 1.15 * var(--fs-h1)) / 2); }
+.pmain .ph.sub2 .sub { margin-top: calc(4px + (40px - 1.15 * 26px) / 2); }
 /* a page header's buttons and ⋮; a plan row's Start and ⋮ on Home (.pact) is the same pair */
 .ph .acts, .pact { display: flex; gap: 8px; align-items: center; flex: none; }
 /* a page's Back: a small pill, the chevron on its own tinted dot; same height as the old text link */
