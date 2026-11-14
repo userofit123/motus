@@ -30,7 +30,7 @@ const title = computed(() => fmt.value.date(props.date, { weekday: "long", day: 
           <div class="tiny">{{ fmt.time(n.startAt) }}-{{ fmt.time(n.endAt) }} · {{ mins(inBedMin(n)) }} in bed · {{ Math.round(efficiency(n) * 100) }}% of it asleep</div>
         </div>
       </div>
-      <div class="tiny ns-note">Time asleep leaves out the time awake in bed.</div>
+      <div v-if="n.awakeMin" class="tiny ns-note">Time asleep leaves out the time awake in bed.</div>
       <div v-if="n.edited" class="tiny ns-note">Time asleep as you set it for this day; the band measured {{ mins(n.asleepMin) }}.</div>
 
       <div v-if="n.avgHr != null || n.avgSpo2 != null || n.respRate != null" class="card wkc ns-gap"><NightStats :night="n" no-asleep /></div>

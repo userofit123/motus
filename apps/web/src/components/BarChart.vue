@@ -3,15 +3,17 @@
 // hover tip when its axis label alone ("3") wouldn't say what it is; its `full` name ("8 Nov") is the axis label when the
 // chart has only a few bars, its `short` one ("N") when a grouped chart is too narrow for the usual one. A bar's `group` ("2026") is a second axis line, shown
 // where it changes, so a run of months says which year each is in; `values` prints each bar's value above it. A bar's
-// `parts` stack inside it from the bottom (a night's sleep stages), each in its own colour; a bar with an `id` can be
+// `parts` stack inside it from the bottom (a night's sleep stages), each in its own colour (`hatch`: as thin stripes of it,
+// for a quieter part that still reads apart from the solid ones); a bar with an `id` can be
 // clicked (pick), as a LineChart's points.
 import { computed, ref, useId } from "vue";
 import { useWidth } from "./useWidth";
-const props = defineProps<{ bars: { label: string; value: number; dim?: boolean; color?: string; tip?: string; group?: string; short?: string; full?: string; parts?: { value: number; color: string }[]; id?: string }[]; height?: number; fmt?: (v: number) => string; band?: [number, number]; horizontal?: boolean; goal?: number; values?: boolean }>();
+import { useTip } from "./useTip";
+const props = defineProps<{ bars: { label: string; value: number; dim?: boolean; color?: string; tip?: string; group?: string; short?: string; full?: string; parts?: { value: number; color: string; hatch?: boolean }[]; id?: string }[]; height?: number; fmt?: (v: number) => string; band?: [number, number]; horizontal?: boolean; goal?: number; values?: boolean }>();
 const emit = defineEmits<{ pick: [id: string] }>();
 const uid = useId();
 // a stacked bar's parts, bottom up: where each starts and ends
-const stack = (parts: { value: number; color: string }[]) => { let at = 0; return parts.filter((p) => p.value > 0).map((p) => ({ color: p.color, lo: at, hi: (at += p.value) })); };
+const stack = (parts: { value: number; color: string; hatch?: boolean }[]) => { let at = 0; return parts.filter((p) => p.value > 0).map((p) => ({ color: p.color, hatch: p.hatch, lo: at, hi: (at += p.value) })); };
 const H = computed(() => props.height ?? 160);
 const max = computed(() => Math.max(1, ...props.bars.map((b) => b.value), props.band?.[1] ?? 0, props.goal ?? 0));
 const hover = ref<number | null>(null);
@@ -50,8 +52,8 @@ const starts = (i: number) => {
 // the group's name starts at its bar's left edge, or ends at its right edge when it would run past the chart's
 const GW = 30;
 const gx = (i: number) => (i * slot.value + (slot.value - bw.value) / 2 + GW > W.value ? { x: i * slot.value + (slot.value + bw.value) / 2, a: "end" } : { x: i * slot.value + (slot.value - bw.value) / 2, a: "start" });
-// a tip over a bar near either edge hangs inwards from it, so a long one ("7h 15m · Sat 14 Nov · 23:05-6:40") isn't cut off
-const tipShift = (at: number) => `translate(${at < 0.25 ? "-12px" : at > 0.75 ? "calc(-100% + 12px)" : "-50%"}, calc(-100% - 10px))`;
+// a tip over a bar near either edge slides inwards, so a long one isn't cut off
+const { el: tipEl, style: tipStyle } = useTip(W);
 const f = (v: number) => (props.fmt ? props.fmt(v) : String(Math.round(v * 10) / 10));
 </script>
 
@@ -75,7 +77,10 @@ const f = (v: number) => (props.fmt ? props.fmt(v) : String(Math.round(v * 10) /
         <rect :x="i * slot" :width="slot" y="0" :height="H" fill="transparent" />
         <template v-if="b.parts && b.value > 0">
           <clipPath :id="`${uid}-${i}`"><rect :x="i * slot + (slot - bw) / 2" :width="bw" :y="y(b.value)" :height="Math.max(2, H - bottom - y(b.value))" :rx="Math.min(5, bw / 3)" /></clipPath>
-          <g :clip-path="`url(#${uid}-${i})`"><rect v-for="(p, j) in stack(b.parts)" :key="j" :x="i * slot + (slot - bw) / 2" :width="bw" :y="y(p.hi)" :height="y(p.lo) - y(p.hi)" :style="{ fill: p.color }" /></g>
+          <g :clip-path="`url(#${uid}-${i})`"><template v-for="(p, j) in stack(b.parts)" :key="j">
+            <pattern v-if="p.hatch" :id="`${uid}-${i}-${j}`" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="4" height="4" :style="{ fill: p.color, opacity: 0.3 }" /><rect width="2" height="4" :style="{ fill: p.color }" /></pattern>
+            <rect :x="i * slot + (slot - bw) / 2" :width="bw" :y="y(p.hi)" :height="y(p.lo) - y(p.hi)" :style="{ fill: p.hatch ? `url(#${uid}-${i}-${j})` : p.color }" />
+          </template></g>
         </template>
         <rect v-else-if="b.value > 0" class="cbar" :data-dim="b.dim ? 1 : undefined" :x="i * slot + (slot - bw) / 2" :width="bw" :y="y(b.value)" :height="Math.max(2, H - bottom - y(b.value))" :rx="Math.min(5, bw / 3)" :style="b.color ? { fill: b.color } : undefined" />
         <text v-if="values && b.value > 0" class="ax bv" :x="i * slot + slot / 2" :y="y(b.value) - 5" text-anchor="middle">{{ f(b.value) }}</text>
@@ -83,7 +88,7 @@ const f = (v: number) => (props.fmt ? props.fmt(v) : String(Math.round(v * 10) /
         <text v-if="starts(i)" class="ax grp" :x="gx(i).x" :y="H - 4" :text-anchor="gx(i).a">{{ b.group }}</text>
       </g>
     </svg>
-    <div v-if="hover != null" class="ctip" :style="{ left: ((hover + 0.5) / bars.length) * 100 + '%', top: y(bars[hover]!.value) + 'px', transform: tipShift((hover + 0.5) / bars.length) }"><b>{{ f(bars[hover]!.value) }}</b> · {{ bars[hover]!.tip ?? bars[hover]!.full ?? bars[hover]!.label }}</div>
+    <div v-if="hover != null" class="ctip" ref="tipEl" :style="tipStyle((hover + 0.5) * slot, y(bars[hover]!.value) + 'px')"><b>{{ f(bars[hover]!.value) }}</b> · {{ bars[hover]!.tip ?? bars[hover]!.full ?? bars[hover]!.label }}</div>
   </div>
 </template>
 

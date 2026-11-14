@@ -8,7 +8,7 @@ import { computed, ref } from "vue";
 import { ymd, weekStartOf } from "@motus/shared";
 import { useSleep, useSettings, type SleepNight } from "../../api/queries";
 import { useFmt, localYmd } from "../../core/format";
-import { STAGES, NO_STAGES_COLOR, hasStages, asleepMin, inBedMin, efficiency, nightMin, nightIso, mins, typical } from "../../core/sleep";
+import { STAGES, NO_STAGES_COLOR, NO_STAGES_SWATCH, hasStages, asleepMin, inBedMin, efficiency, nightMin, nightIso, mins, typical } from "../../core/sleep";
 import Icon from "../Icon.vue";
 import BarChart from "../BarChart.vue";
 import LineChart from "../LineChart.vue";
@@ -65,13 +65,14 @@ const deepPct = computed(() => { const ns = nights.value.filter((n) => n.deepMin
 const avgBed = computed(() => avg(nights.value.map(inBedMin)));
 const avgEff = computed(() => avg(nights.value.map(efficiency)));
 const clock = (m: number) => fmt.value.time(nightIso(m));
-// where most nights' bedtimes (or wake times) fall: the middle half from 5 nights on, else the earliest to the latest;
-// one night says nothing about a habit, so it only says so
+// where bedtimes (or wake times) usually fall: the middle half from 5 nights on, else the earliest to the latest; one
+// night says nothing about a habit, so it only says so
 type Typical = NonNullable<ReturnType<typeof typical>>;
-const span = (t: Typical) => (t.lo === t.hi ? `at ${clock(t.lo)}` : clock(t.lo) + "-" + clock(t.hi));
-// a tile's line as its words and its times, the times kept whole so a narrow tile breaks before them, not inside them
-const spread = (t: Typical) => (t.n === 1 ? ["from 1 night", ""] : [t.n >= 5 ? "most nights" : `all ${t.n} nights`, span(t)]);
-const schedule = computed(() => bed.value && wake.value && bed.value.n > 1 ? `${bed.value.n >= 5 ? "Most nights (shaded) to bed" : "To bed"} ${span(bed.value)} · up ${span(wake.value)}` : "");
+const span = (t: Typical) => (t.lo === t.hi ? `at ${clock(t.at)}` : clock(t.lo) + "-" + clock(t.hi));
+// a tile's line as its words and its times, the times kept whole so a narrow tile breaks before them, not inside them;
+// with 2-4 nights only the earliest to the latest, since any word beside it no longer fits a phone's tile on one line
+const spread = (t: Typical) => (t.n === 1 ? ["from 1 night", ""] : [t.n >= 5 ? "usually" : "", span(t)]);
+const schedule = computed(() => bed.value && wake.value && bed.value.n > 1 ? `${bed.value.n >= 5 ? "Usual times shaded: to bed" : "To bed"} ${span(bed.value)} · up ${span(wake.value)}` : "");
 // the tiles there are data for: time asleep always, then bedtime, wake time, and deep sleep or else time in bed
 const tiles = computed(() => 1 + (bed.value ? 1 : 0) + (wake.value ? 1 : 0) + (deepPct.value != null || avgBed.value != null ? 1 : 0));
 
@@ -84,7 +85,7 @@ const mixed = computed(() => staged.value && days.value.some((x) => !x.night || 
 const bars = computed(() => {
   const part = (n: SleepNight | null, min: number) => {
     if (!staged.value) return undefined;
-    if (!n || !hasStages(n)) return [{ value: min / 60, color: NO_STAGES_COLOR }];
+    if (!n || !hasStages(n)) return [{ value: min / 60, color: NO_STAGES_COLOR, hatch: true }];
     // the stages scaled to the time asleep shown (the day's own number, when it was typed in)
     const sum = Math.max(1, (n.deepMin ?? 0) + (n.lightMin ?? 0) + (n.remMin ?? 0));
     return STAGES.filter((st) => st.key !== "awakeMin").map((st) => ({ value: ((n[st.key] ?? 0) / sum) * (min / 60), color: st.color }));
@@ -100,7 +101,7 @@ const bars = computed(() => {
   for (const x of days.value) { const k = weekStartOf(new Date(x.date + "T12:00"), s.value.firstDay); wk.set(k, [...(wk.get(k) ?? []), x.min]); }
   return [...wk].map(([k, ms]) => { const full = fmt.value.date(k, { day: "numeric", month: "short" }); return { label: full.split(" ")[0]!, full, group: month(k), tip: `week of ${full}`, value: avg(ms)! / 60 }; });
 });
-const legend = computed(() => [...STAGES.slice(0, 3).map((st) => ({ name: st.name, color: st.color as string })), ...(mixed.value ? [{ name: "No stages", color: NO_STAGES_COLOR }] : [])]);
+const legend = computed(() => [...STAGES.slice(0, 3).map((st) => ({ name: st.name, color: st.color as string })), ...(mixed.value ? [{ name: "No stages", color: NO_STAGES_SWATCH }] : [])]);
 const hours = (v: number) => mins(v * 60);
 
 // heart rate, blood oxygen and breathing while asleep, a night at a time, each only when the band read it
@@ -111,7 +112,8 @@ const TRENDS = [
 ] as const;
 const trends = computed(() => TRENDS.map((t) => {
   const ns = nights.value.filter((n) => t.v(n) != null);
-  const pts = ns.map((n) => ({ x: new Date(n.date + "T12:00").getTime(), y: Number(t.v(n)), id: n.date }));
+  // a point's tip names its night as the other charts' tips do ("Sat 7 Nov")
+  const pts = ns.map((n) => ({ x: new Date(n.date + "T12:00").getTime(), y: Number(t.v(n)), id: n.date, label: fmt.value.date(n.date, { weekday: "short", day: "numeric", month: "short" }) }));
   const u = (n: number) => t.unit === "%" ? pc(Math.round(n * 10) / 10) : t.unit === "/min" ? `${fmt.value.num(n, 0)}/min` : `${fmt.value.num(n, 0)} ${t.unit}`;
   const lows = ns.map((n) => t.lo(n)).filter((x): x is number => x != null);
   const mean = avg(pts.map((p) => p.y));
@@ -204,8 +206,8 @@ const open = ref<string | null>(null);
       <div class="card spt">
         <div class="lbl hgap">{{ perWeek ? "Average time asleep per night, by week" : "Time asleep per night" }} (h) · target {{ BAND[0] }}-{{ BAND[1] }}</div>
         <BarChart :bars="bars" :band="BAND" :height="170" :fmt="hours" @pick="(d) => (open = d)" />
-        <div class="tiny sl-line">Time asleep leaves out the time awake in bed.</div>
         <div v-if="staged && !perWeek" class="bmlegend sl-leg"><span v-for="k in legend" :key="k.name"><i :style="{ background: k.color }" />{{ k.name }}</span></div>
+        <div v-if="nights.length" class="tiny sl-line">Time asleep leaves out the time awake in bed.</div>
       </div>
 
       <div v-if="nights.length > 1" class="card spt">

@@ -2,6 +2,7 @@
 // A line chart over time with a soft area, gridlines and a tooltip; points can be clicked (e.g. to open that workout).
 import { computed, ref } from "vue";
 import { useWidth } from "./useWidth";
+import { useTip } from "./useTip";
 
 const props = defineProps<{ points: { x: number; y: number; label?: string; id?: string }[]; height?: number; fmt?: (v: number) => string; xfmt?: (t: number) => string; color?: string; zero?: boolean }>();
 const emit = defineEmits<{ pick: [id: string] }>();
@@ -43,6 +44,8 @@ const xticks = computed(() => {
   return out.sort((a, b) => a.x - b.x);
 });
 const hover = ref<number | null>(null);
+// near either edge the tip slides inwards, so it isn't cut off
+const { el: tipEl, style: tipStyle } = useTip(W);
 function move(e: MouseEvent) {
   const r = (e.currentTarget as SVGElement).getBoundingClientRect();
   const x = ((e.clientX - r.left) / r.width) * W.value;
@@ -66,7 +69,7 @@ const xf = (t: number) => (props.xfmt ? props.xfmt(t) : new Date(t).toLocaleDate
       <path class="ln" :d="path" :style="color ? { stroke: color } : undefined" />
       <circle v-for="(p, i) in sorted" :key="i" class="pt" :cx="sx(p.x)" :cy="sy(p.y)" :r="hover === i ? 5 : sorted.length > 40 ? 0 : 3" :style="color ? { stroke: color } : undefined" />
     </svg>
-    <div v-if="hover != null && sorted[hover]" class="ctip" :style="{ left: (sx(sorted[hover]!.x) / W) * 100 + '%', top: (sy(sorted[hover]!.y) / H) * 100 + '%' }">
+    <div v-if="hover != null && sorted[hover]" class="ctip" ref="tipEl" :style="tipStyle(sx(sorted[hover]!.x), (sy(sorted[hover]!.y) / H) * 100 + '%')">
       <b>{{ f(sorted[hover]!.y) }}</b> · {{ sorted[hover]!.label ?? xf(sorted[hover]!.x) }}
     </div>
   </div>
