@@ -10,6 +10,7 @@ export * from "./settings";
 export * from "./templates";
 export * from "./live";
 export * from "./intervals";
+export * from "./sounds";
 export * from "./version";
 export * from "./route";
 export * from "./goals";

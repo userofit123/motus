@@ -3,6 +3,7 @@
 // Where you are is worked out from how long the timer has run, never by counting ticks, so it stays right after the
 // phone sleeps or the tab is in the background.
 import { duration } from "./units";
+import { SOUND_IDS, soundOfInterval } from "./sounds";
 
 export interface IntervalConfig {
   prepS: number; // a lead-in before the first round, to get in place
@@ -19,15 +20,14 @@ export interface IntervalPreset extends IntervalConfig { id: string; name: strin
 export type IntervalKind = "prep" | "work" | "rest" | "setRest";
 export interface IntervalPhase { kind: IntervalKind; durS: number; round: number; set: number }
 
-/** The built-in sounds, all made from the app's own beep (no audio files to ship). New ids go before "none" so the
- *  ones saved in presets keep working; the later ones are soft alarms (gentle, but meant to be noticed), then the
- *  ringing bells, bowl and deep gong the rest timer also offers, then the rest timer's Bright and Click. */
-export const INTERVAL_SOUNDS = ["beep", "double", "triple", "high", "low", "rising", "softAlarm", "chime", "marimba", "pulse", "gong", "digital", "wake", "handBell", "shipBell", "tubular", "temple", "bowl", "deepGong", "bright", "click", "none"] as const;
+/** Each part's sound: one of the library's (sounds.ts, the same the rest timer offers), or "none" for a part that
+ *  starts in silence. */
+export const INTERVAL_SOUNDS = [...SOUND_IDS, "none"] as const;
 export type IntervalSound = (typeof INTERVAL_SOUNDS)[number];
 /** A sound for the start of each part, and "done" for the end of the whole run. */
 export type IntervalSounds = Record<IntervalKind | "done", IntervalSound>;
 /** Each part's sound for setups saved before sounds could be chosen, and new ones. */
-export const INTERVAL_SOUNDS_DEFAULT: IntervalSounds = { prep: "beep", work: "double", rest: "low", setRest: "low", done: "triple" };
+export const INTERVAL_SOUNDS_DEFAULT: IntervalSounds = { prep: "notification", work: "start", rest: "checkpoint", setRest: "checkpoint", done: "achievement" };
 
 export const INTERVAL_DEFAULT: IntervalConfig = { prepS: 10, workS: 40, restS: 20, rounds: 8, sets: 1, setRestS: 60 };
 /** Starting setups shown before any are saved. */
@@ -50,12 +50,13 @@ export function cleanInterval(c: Partial<IntervalConfig>): Required<IntervalConf
     sounds: cleanSounds(c.sounds),
   };
 }
-/** Each part's sound if it is one of ours, else the usual one for that part. */
+/** Each part's sound if it is one of ours ("none" included; an id from before the recorded sounds becomes the nearest
+ *  of them, sounds.ts), else the usual one for that part. */
 export function cleanSounds(v: unknown): IntervalSounds {
   const o = v && typeof v === "object" ? (v as Record<string, unknown>) : {}, out = { ...INTERVAL_SOUNDS_DEFAULT };
   for (const k of Object.keys(out) as (keyof IntervalSounds)[]) {
     const x = o[k];
-    if (typeof x === "string" && (INTERVAL_SOUNDS as readonly string[]).includes(x)) out[k] = x as IntervalSound;
+    out[k] = x === "none" ? "none" : soundOfInterval(x) ?? out[k];
   }
   return out;
 }

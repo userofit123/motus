@@ -3,9 +3,8 @@
 // counter: where you are comes from how long it has run, so it stays right after the phone sleeps (PLAN.md §8.6).
 import { computed, reactive } from "vue";
 import { intervalPhases, intervalAt, intervalTotalS, cleanInterval, INTERVAL_DEFAULT, type IntervalConfig, type IntervalKind, type IntervalSound } from "@motus/shared";
-import { cueOfInterval } from "../core/sounds";
 import { readJson, writeJson } from "../core/prefs";
-import { now, tick, restOver, savedCues, vibrate } from "./runtime";
+import { now, beep, restOver, savedCues, vibrate } from "./runtime";
 import { keepAwake, backgroundTimers, scheduleIntervalCues, cancelIntervalCues, showIntervalNotice, clearIntervalNotice, onNoticeAction, INTERVAL_CUE_MAX, type IntervalCue } from "./native";
 
 interface IntervalRun {
@@ -23,11 +22,9 @@ const save = () => { writeJson(KEY, iv); notice(); };
 export const PHASE_NAME: Record<IntervalKind, string> = { prep: "Get ready", work: "Work", rest: "Rest", setRest: "Rest between sets" };
 
 /** Plays one of the sounds (also the preview when one is chosen), at the volume chosen in Settings → Workout defaults:
- *  as it plays at a rest's end (workout/runtime.ts restOver), so each sound is the same wherever it is picked. The ids
- *  stay as saved in presets (core/sounds.ts pairs them with the rest timer's). */
+ *  as it plays at a rest's end (workout/runtime.ts restOver), so each sound is the same wherever it is picked. */
 export function playIntervalSound(sound: IntervalSound) {
-  const cue = cueOfInterval(sound);
-  if (cue) restOver({ ...savedCues(), cueSound: cue, sound: true });
+  if (sound !== "none") restOver({ ...savedCues(), cueSound: sound, sound: true });
 }
 
 export const ivPhases = computed(() => intervalPhases(iv.cfg));
@@ -78,8 +75,8 @@ export function skipInterval(dir: 1 | -1) {
   if (hidden()) planCues(); // from the lock screen: the changes scheduled before are now at the wrong times
 }
 
-// Cues at each change: the sound chosen for that part (by default Bell to get ready, Double bell to work, Round to
-// rest, Three bells when it's all done), and a short tick in the last three seconds of each phase. Whether sound and vibration
+// Cues at each change: the sound chosen for that part (by default Alert to get ready, Start to work, Checkpoint to
+// rest, Achievement when it's all done), and a short tick in the last three seconds of each phase. Whether sound and vibration
 // play at all follows Settings → Workout, read fresh each time, as for a rest.
 // After the app was asleep nothing plays for a change that happened a while ago: on Android it already came as a
 // notification, and a late beep would only confuse.
@@ -117,7 +114,7 @@ setInterval(() => {
     return;
   }
   const s = Math.ceil(leftMs / 1000);
-  if (index < ph.length && s <= 3 && s >= 1 && s !== lastSecond && ph[index]!.durS > 5) { lastSecond = s; const c = savedCues(); if (inAppCues() && c.sound) tick(s === 1, c); }
+  if (index < ph.length && s <= 3 && s >= 1 && s !== lastSecond && ph[index]!.durS > 5) { lastSecond = s; const c = savedCues(); if (inAppCues() && c.sound) beep(c); }
 }, 200);
 
 // In the background the app's own beeps may stop (a locked phone), so the coming changes are scheduled to come as the

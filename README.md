@@ -157,3 +157,4 @@ Motus is free to use, change and share for non-commercial purposes. Commercial u
 See [LICENSE](LICENSE) (PolyForm Noncommercial 1.0.0).
 
 The exercise library comes from [free-exercise-db](https://github.com/yuhonas/free-exercise-db) (public domain).
+The workout sounds come from the "Minimal" pack of [uisfx](https://github.com/romainsimon/uisfx) (CC0 1.0, public domain).

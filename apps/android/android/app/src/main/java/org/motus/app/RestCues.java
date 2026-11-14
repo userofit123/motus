@@ -6,32 +6,34 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.media.AudioAttributes;
-import android.media.AudioFormat;
-import android.media.AudioManager;
-import android.media.AudioTrack;
+import android.media.SoundPool;
 import android.os.Build;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.Looper;
 import android.os.PowerManager;
 import android.os.SystemClock;
+import java.util.HashMap;
+import java.util.HashSet;
 
 /**
  * The rest timer's 10 seconds warning and 3-2-1 while the app is in the background, where the WebView's own timers and
  * sound are stopped (workout/runtime.ts plays them on screen). Each is an exact alarm, so it comes with the screen off,
- * and the notes are made here the way the web app makes them (workout/runtime.ts TICK_NOTE): the same partials,
- * envelope, pitch and level for each countdown sound, so a cue sounds the same in the background as on screen. The rest's end
- * is the web app's "Rest over" alarm, not this. A note whose moment passed more than LATE_MS ago is dropped.
+ * and plays the chosen countdown sound from the same library as the web app (res/raw, the web app's src/sounds as
+ * .ogg), at the same level and cut off at the same length, so a cue sounds the same in the background as on screen.
+ * The rest's end is the web app's "Rest over" alarm, not this. A note whose moment passed more than LATE_MS ago is
+ * dropped.
  */
 public class RestCues extends BroadcastReceiver {
     private static final String ACTION = "org.motus.app.REST_CUE";
     private static final int WARN = 200, COUNT = 201; // the alarms' request codes
     private static final long LATE_MS = 1000;
-    private static final int RATE = 44100;
+    // a countdown note is cut off after this long, so it is over before the next second's (COUNT_MAX_S in runtime.ts)
+    private static final long CUT_MS = 800;
     // the notes waiting to play, so taking the cues off (the app came back) also stops a 3-2-1 already under way
     private static final Object NOTES = new Object();
     private static final Handler main = new Handler(Looper.getMainLooper());
-    // the notes are built (a few thousand samples each) and played on one background thread, not the main one
+    // the sounds are loaded and played on one background thread, not the main one
     private static final HandlerThread worker = new HandlerThread("motus-restcues");
     static { worker.start(); }
     private static final Handler audio = new Handler(worker.getLooper());
@@ -44,6 +46,8 @@ public class RestCues extends BroadcastReceiver {
      *  seconds still to come). */
     static void schedule(Context ctx, long endAt, boolean warn10, boolean countdown, String sound, int volume) {
         cancel(ctx);
+        // loaded now, so it is ready when the first cue comes
+        if (warn10 || countdown) { Context app = ctx.getApplicationContext(); audio.post(() -> load(app, sound)); }
         long now = System.currentTimeMillis();
         if (warn10 && endAt - 10_000 > now) set(ctx, WARN, endAt - 10_000, endAt, sound, volume);
         if (countdown && endAt - 1000 > now) set(ctx, COUNT, Math.max(endAt - 3000, now), endAt, sound, volume);
@@ -64,6 +68,7 @@ public class RestCues extends BroadcastReceiver {
 
     static void cancel(Context ctx) {
         audio.removeCallbacksAndMessages(NOTES);
+        audio.post(waiting::clear);
         AlarmManager am = (AlarmManager) ctx.getSystemService(Context.ALARM_SERVICE);
         for (int code : new int[] { WARN, COUNT }) {
             PendingIntent pi = PendingIntent.getBroadcast(ctx, code, intent(ctx), PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_NO_CREATE);
@@ -81,15 +86,15 @@ public class RestCues extends BroadcastReceiver {
         long endAt = intent.getLongExtra("endAt", 0), from = intent.getLongExtra("from", 0);
         String sound = intent.getStringExtra("sound");
         int volume = intent.getIntExtra("volume", 100);
-        // as on screen: the 10 seconds is one long note at 1320 Hz (beep(660)), the 3-2-1 short ones at 1318.5 Hz, all
-        // alike (tick(false)): the rest over sound is the "now", so the "1" gets no different note of its own
+        // as on screen: the 10 seconds and each of the 3-2-1 are one play of the countdown sound, all alike (beep()):
+        // the rest over sound is the "now", so the "1" gets no different note of its own
         long[] due = warn ? new long[] { endAt - 10_000 } : new long[] { endAt - 3000, endAt - 2000, endAt - 1000 };
         long now = System.currentTimeMillis(), last = now;
+        Context app = ctx.getApplicationContext();
         for (long d : due) {
             if (d < from - 50 || now - d > LATE_MS) continue; // played on screen before the app went away, or long gone
             long wait = Math.max(0, d - now);
-            double freq = warn ? 1320 : TICK_F;
-            audio.postAtTime(() -> play(sound, freq, warn, volume), NOTES, SystemClock.uptimeMillis() + wait);
+            audio.postAtTime(() -> play(app, sound, volume, d), NOTES, SystemClock.uptimeMillis() + wait);
             last = Math.max(last, now + wait);
         }
         // the 3-2-1 takes up to 3 seconds: kept awake (and the broadcast open) until its last note has played
@@ -100,128 +105,80 @@ public class RestCues extends BroadcastReceiver {
         main.postDelayed(() -> {
             if (wl != null && wl.isHeld()) wl.release();
             pending.finish();
-        }, last - now + 800);
+        }, last - now + CUT_MS + 400);
     }
 
-    // [frequency ratio, loudness, how long it rings as a share of the note], as in workout/runtime.ts
-    private static final double[][] CUE = { { 1, 1, 1 }, { 2, 0.5, 1 }, { 3, 0.3, 1 }, { 4, 0.15, 1 } };
-    private static final double[][] BELL = { { 1, 1, 1 }, { 2, 0.32, 0.6 }, { 2.76, 0.16, 0.4 }, { 5.4, 0.05, 0.2 } };
-    private static final double[][] SOFT = { { 1, 1, 1 }, { 2, 0.18, 0.5 } };
-    private static final double[][] PURE = { { 1, 1, 1 } };
-    private static final double[][] WOOD = { { 1, 1, 1 }, { 4, 0.22, 0.12 }, { 10, 0.04, 0.05 } };
-    private static final double[][] CLICK = { { 1, 1, 1 }, { 2.4, 0.45, 0.4 }, { 4.7, 0.2, 0.25 } };
-    // the ringing sounds' partials (BRONZE, TUBE, TEMPLE, BOWL, DEEP_GONG in workout/runtime.ts)
-    private static final double[][] BRONZE = { { 0.5, 0.3, 1.4 }, { 1, 1, 1 }, { 1.19, 0.45, 0.8 }, { 1.5, 0.25, 0.6 }, { 2, 0.4, 0.5 }, { 2.5, 0.12, 0.35 }, { 2.98, 0.1, 0.25 }, { 4.1, 0.05, 0.15 } };
-    private static final double[][] TUBE = { { 1, 1, 1 }, { 2.76, 0.45, 0.6 }, { 5.4, 0.25, 0.4 }, { 8.93, 0.12, 0.25 }, { 13.34, 0.05, 0.15 } };
-    private static final double[][] TEMPLE = { { 1, 1, 1 }, { 1.003, 0.5, 1 }, { 2.1, 0.55, 0.75 }, { 3.15, 0.4, 0.55 }, { 4.6, 0.28, 0.4 }, { 6.3, 0.16, 0.28 }, { 8.2, 0.08, 0.18 } };
-    private static final double[][] BOWL = { { 1, 1, 1 }, { 1.005, 0.7, 1 }, { 2.71, 0.5, 0.8 }, { 2.722, 0.35, 0.8 }, { 5.15, 0.2, 0.5 }, { 5.17, 0.12, 0.5 } };
-    private static final double[][] DEEP_GONG = { { 1, 0.7, 1 }, { 1.48, 0.5, 0.9 }, { 2.1, 0.6, 0.85 }, { 2.9, 0.55, 0.7 }, { 3.9, 0.45, 0.6 }, { 5.2, 0.35, 0.5 }, { 6.8, 0.25, 0.4 }, { 8.9, 0.18, 0.3 }, { 11.6, 0.12, 0.25 }, { 15.2, 0.08, 0.2 } };
-    private static final double[][] GONG = { { 1, 1, 1 }, { 1.5, 0.22, 0.8 }, { 2, 0.3, 0.65 }, { 2.76, 0.16, 0.45 }, { 4.07, 0.05, 0.25 } };
-    // the tunes' notes, a C major chord (C4 … C7 in workout/runtime.ts)
-    private static final double C4 = 261.63, C5 = 523.25, E5 = 659.25, G5 = 783.99, C6 = 1046.5, E6 = 1318.5, G6 = 1567.98, C7 = 2093;
-    private static final double LOUDER = 2.2;
-    private static final double TICK_F = 1318.5; // the countdown's pitch, E6 (TICK_F)
-    private static final double RING_TICK_S = 0.85; // a ringing sound's countdown note is gone by then (RING_TICK_S)
+    // The sounds, loaded once and kept: all of this is used only on the audio thread.
+    private static SoundPool pool;
+    private static final HashMap<Integer, Integer> loaded = new HashMap<>(); // raw resource -> the pool's sound id
+    private static final HashSet<Integer> ready = new HashSet<>(); // the pool's sound ids that have finished loading
+    // a note asked for while its sound was still loading, played once it has (if still on time)
+    private static final HashMap<Integer, Runnable> waiting = new HashMap<>();
 
-    /** One note of a cue in the chosen countdown sound (TICK_NOTE in workout/runtime.ts, which has one for every sound
-     *  the app offers); `lng`: a "now" note, held a little longer. */
-    private static void play(String sound, double f, boolean lng, int volume) {
-        double level = Math.pow(Math.max(10, Math.min(100, volume)) / 100.0, 2);
-        if (sound == null) sound = "beep";
+    /** The file of each sound in the library (SOUND_IDS in packages/shared sounds.ts, the files named in snake_case);
+     *  an id this version doesn't know plays the usual countdown sound (the web app cleans the choice before). */
+    private static int rawOf(String sound) {
+        if (sound == null) return R.raw.progress_step;
         switch (sound) {
-            case "bell": note(f, lng ? 0.7 : 0.45, 0.4, BELL, 0.005, 0, level); break;
-            case "soft": note(f, lng ? 0.2 : 0.14, 0.4, SOFT, 0.02, lng ? 0.16 : 0.1, level); break;
-            case "digital": note(f, 0.03, 0.45, PURE, 0.003, 0.05, level, 2, 0.1); break;
-            case "wood": note(f / 2, lng ? 0.35 : 0.22, 0.45, WOOD, 0.002, 0, level); break;
-            case "click": note(f / 1.5, lng ? 0.1 : 0.06, 0.5, CLICK, 0.001, 0, level); break;
-            case "handBell": note(2093 * f / TICK_F, 0.2, 0.3, BELL, 0.005, 0, level, 3, 0.07); break;
-            case "shipBell": ring(880, BRONZE, 0.36, 0.003, f, level); break;
-            case "tubular": ring(784, TUBE, 0.4, 0.003, f, level); break;
-            case "temple": ring(330, TEMPLE, 0.42, 0.004, f, level); break;
-            case "bowl": ring(587, BOWL, 0.4, 0.04, f, level); break;
-            case "gong": ring(98, DEEP_GONG, 0.42, 0.06, f, level); break;
-            // the tunes, their notes played quickly (tuneTick)
-            case "double": tune(f, new double[] { C6, C6 }, 0.1, 0.25, 0.3, BELL, 0.005, level); break;
-            case "triple": tune(f, new double[] { C6, C6, C6 }, 0.08, 0.2, 0.3, BELL, 0.005, level); break;
-            case "high": tune(f, new double[] { G6 }, 0, lng ? 0.5 : 0.35, 0.24, BELL, 0.005, level); break;
-            case "rising": tune(f, new double[] { C6, E6, G6, C7 }, 0.06, 0.2, 0.24, BELL, 0.005, level); break;
-            case "chime": tune(f, new double[] { E6, C6, G5 }, 0.08, 0.25, 0.24, BELL, 0.005, level); break;
-            case "pulse": tune(f, new double[] { C5, E5, G5 }, 0.08, 0.12, 0.3, SOFT, 0.02, level); break;
-            case "softAlarm": tune(f, new double[] { E5, C5 }, 0.12, 0.14, 0.3, SOFT, 0.02, level); break;
-            case "wake": notes(new double[][] { { G5 * f / TICK_F, 0, 0.24 }, { C6 * f / TICK_F, 0.06, 0.16 } }, 0.3, SOFT, 0.08, 0, level); break;
-            case "smallGong": ring(C4, GONG, 0.4, 0.02, f, level); break;
-            // "beep", and any id this version doesn't know (the web app cleans the choice to one it has, else "beep")
-            default: note(f, lng ? 0.12 : 0.08, 0.23, CUE, 0.005, lng ? 0.2 : 0.14, level);
+            case "press": return R.raw.press;
+            case "focus": return R.raw.focus;
+            case "select": return R.raw.select;
+            case "check": return R.raw.check;
+            case "toggleOn": return R.raw.toggle_on;
+            case "info": return R.raw.info;
+            case "start": return R.raw.start;
+            case "wake": return R.raw.wake;
+            case "checkpoint": return R.raw.checkpoint;
+            case "notification": return R.raw.notification;
+            case "reward": return R.raw.reward;
+            case "warning": return R.raw.warning;
+            case "success": return R.raw.success;
+            case "streak": return R.raw.streak;
+            case "complete": return R.raw.complete;
+            case "levelUp": return R.raw.level_up;
+            case "achievement": return R.raw.achievement;
+            default: return R.raw.progress_step; // "progressStep"
         }
     }
 
-    /** A tune's countdown note: its notes `gap` seconds apart, moved with `f` (tuneTick in workout/runtime.ts). */
-    private static void tune(double f, double[] tones, double gap, double dur, double vol, double[][] partials, double attack, double level) {
-        double[][] ns = new double[tones.length][];
-        for (int i = 0; i < tones.length; i++) ns[i] = new double[] { tones[i] * f / TICK_F, i * gap, vol };
-        notes(ns, dur, partials, attack, 0, level);
-    }
-
-    /** A ringing sound's single short strike at its own pitch, moved with `f` (ringTick in workout/runtime.ts). */
-    private static void ring(double base, double[][] partials, double vol, double attack, double f, double level) {
-        double longest = 0;
-        for (double[] p : partials) longest = Math.max(longest, p[2]);
-        note(base * f / TICK_F, RING_TICK_S / longest, vol, partials, attack, 0, level);
-    }
-
-    private static void note(double freq, double dur, double vol, double[][] partials, double attack, double hold, double level) {
-        note(freq, dur, vol, partials, attack, hold, level, 1, 0);
-    }
-
-    /** The web app's tone(), `strikes` times `gap` seconds apart (one buffer). */
-    private static void note(double freq, double dur, double vol, double[][] partials, double attack, double hold, double level, int strikes, double gap) {
-        double[][] ns = new double[strikes][];
-        for (int k = 0; k < strikes; k++) ns[k] = new double[] { freq, k * gap, vol };
-        notes(ns, dur, partials, attack, hold, level);
-    }
-
-    /** The web app's tone() for each of `ns` ({ frequency, delay in seconds, vol }), mixed into one buffer: each partial
-     *  rises exponentially to its peak in `attack`, stays there `hold`, then falls exponentially to near silence; peaks
-     *  above the web app's limiter are scaled down to it. */
-    private static void notes(double[][] ns, double dur, double[][] partials, double attack, double hold, double level) {
-        double one = 0, lastDelay = 0;
-        for (double[] p : partials) one = Math.max(one, hold + Math.max(attack + 0.05, dur * p[2]));
-        for (double[] nt : ns) lastDelay = Math.max(lastDelay, nt[1]);
-        double len = one + lastDelay;
-        int n = (int) ((len + 0.02) * RATE);
-        double[] sum = new double[n];
-        for (double[] nt : ns)
-        for (double[] p : partials) {
-            double f = nt[0] * p[0];
-            if (f > 16000) continue;
-            double peak = Math.max(0.0002, nt[2] * p[1] * LOUDER * level), fall = attack + hold, end = hold + Math.max(attack + 0.05, dur * p[2]);
-            int start = (int) Math.round(nt[1] * RATE);
-            for (int i = 0; start + i < n; i++) {
-                double t = (double) i / RATE, g;
-                if (t >= end) break;
-                if (t < attack) g = 0.0001 * Math.pow(peak / 0.0001, t / attack);
-                else if (t < fall) g = peak;
-                else g = peak * Math.pow(0.0001 / peak, (t - fall) / (end - fall));
-                sum[start + i] += g * Math.sin(2 * Math.PI * f * t);
-            }
-        }
-        double max = 0;
-        for (double v : sum) max = Math.max(max, Math.abs(v));
-        double scale = max > 0.89 ? 0.89 / max : 1; // the limiter's ceiling (-1 dB)
-        short[] pcm = new short[n];
-        for (int i = 0; i < n; i++) pcm[i] = (short) Math.round(sum[i] * scale * Short.MAX_VALUE);
-        AudioTrack track = null;
+    /** The pool's id of a sound, loading it the first time (0: it can't be played). */
+    private static int load(Context ctx, String sound) {
         try {
-            // the media stream and its volume, like the WebView's sound on screen
-            AudioAttributes attrs = new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build();
-            AudioFormat fmt = new AudioFormat.Builder().setSampleRate(RATE).setEncoding(AudioFormat.ENCODING_PCM_16BIT).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build();
-            track = new AudioTrack(attrs, fmt, n * 2, AudioTrack.MODE_STATIC, AudioManager.AUDIO_SESSION_ID_GENERATE);
-            track.write(pcm, 0, n);
-            track.play();
-            final AudioTrack t = track;
-            track = null; // released later, once it has rung out
-            main.postDelayed(t::release, (long) (len * 1000) + 300);
-        } catch (RuntimeException e) { /* no sound */ }
-        finally { if (track != null) track.release(); }
+            if (pool == null) {
+                // the media stream and its volume, like the WebView's sound on screen
+                AudioAttributes attrs = new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA).setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build();
+                pool = new SoundPool.Builder().setMaxStreams(2).setAudioAttributes(attrs).build();
+                // may be called on another thread: handed to the audio thread, which alone touches these
+                pool.setOnLoadCompleteListener((sp, sampleId, status) -> audio.post(() -> {
+                    if (status != 0) return;
+                    ready.add(sampleId);
+                    Runnable r = waiting.remove(sampleId);
+                    if (r != null) r.run();
+                }));
+            }
+            int res = rawOf(sound);
+            Integer id = loaded.get(res);
+            if (id == null) {
+                id = pool.load(ctx, res, 1);
+                if (id == 0) return 0;
+                loaded.put(res, id);
+            }
+            return id;
+        } catch (RuntimeException e) { return 0; } // no sound
+    }
+
+    /** One countdown note, due at `due` (ms): the sound at the chosen level (10-100 %, squared as levelOf in
+     *  workout/runtime.ts), cut off after CUT_MS. */
+    private static void play(Context ctx, String sound, int volume, long due) {
+        int id = load(ctx, sound);
+        if (id == 0) return;
+        float level = (float) Math.pow(Math.max(10, Math.min(100, volume)) / 100.0, 2);
+        if (ready.contains(id)) start(id, level);
+        else waiting.put(id, () -> { if (System.currentTimeMillis() - due <= LATE_MS) start(id, level); });
+    }
+
+    private static void start(int id, float level) {
+        int stream = pool.play(id, level, level, 1, 0, 1f);
+        if (stream != 0) audio.postDelayed(() -> pool.stop(stream), CUT_MS);
     }
 }

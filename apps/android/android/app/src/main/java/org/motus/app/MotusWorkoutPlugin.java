@@ -328,7 +328,7 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener2 {
     public void scheduleRestCues(PluginCall call) {
         Long endAt = call.getLong("endAt");
         if (endAt == null) { call.reject("endAt missing"); return; }
-        RestCues.schedule(getContext(), endAt, call.getBoolean("warn10", false), call.getBoolean("countdown", false), call.getString("tickSound", "beep"), call.getInt("cueVolume", 100));
+        RestCues.schedule(getContext(), endAt, call.getBoolean("warn10", false), call.getBoolean("countdown", false), call.getString("tickSound", "progressStep"), call.getInt("cueVolume", 100));
         call.resolve();
     }
 
