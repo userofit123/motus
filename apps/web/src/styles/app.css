@@ -126,7 +126,7 @@ hr.sep { border: 0; border-top: 1px solid var(--ol); margin: 14px 0; }
 /* a tile is (block - gaps and lines) / tiles; the value may take a tile / 5.6, room for about 5.6 characters' widths */
 .wstats .wv { font-size: clamp(var(--fs-lg), calc((100cqi - 4 * var(--hg)) / 16.8), calc(var(--fs-lg) * 1.25)); font-weight: 650; line-height: 1.2; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .wstats.n4 .wv { font-size: clamp(var(--fs-lg), calc((100cqi - 6 * var(--hg)) / 22.4), calc(var(--fs-lg) * 1.25)); }
-.wstats .wv small { font-size: var(--fs); font-weight: 500; margin-inline-start: 5px; color: var(--tx2); letter-spacing: 0; }
+.wstats .wv small { font-size: var(--fs); font-weight: 500; color: var(--tx2); letter-spacing: 0; }
 /* the line keeps its height when there is no change to show, so the tiles stay level */
 .wstats .wd { font-size: var(--fs-sm); line-height: 1.4; min-height: 1.4em; color: var(--tx2); font-variant-numeric: tabular-nums; white-space: nowrap; }
 @container (max-width: 460px) {
@@ -332,6 +332,9 @@ html.phone .tst { bottom: calc(var(--tabh) + 76px + var(--sb)); }
 nav .navb .acct { width: 40px; height: 40px; border-radius: 50%; background: var(--s2); display: grid; place-items: center; font-weight: 700; font-size: 14px; cursor: pointer; border: 0; color: var(--tx); }
 nav .navb .upd { color: var(--acc); }
 main { position: relative; }
+/* the floating + sits 22px from the edge and is 58px wide: keep that strip free so it never covers a card's right edge
+   (wider than 1480px the centred page leaves it room anyway) */
+@media (max-width: 1480px) { main { padding-right: calc(96px + var(--sr)); } }
 .fab.pos2 { bottom: 22px; }
 
 /* what's running (the workout, a recording), shown on every other page; one bar each, stacked */

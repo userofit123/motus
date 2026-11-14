@@ -11,11 +11,13 @@ const uid = Math.random().toString(36).slice(2);
 const sorted = computed(() => [...props.points].sort((a, b) => a.x - b.x));
 const dom = computed(() => {
   const ys = sorted.value.map((p) => p.y), xs = sorted.value.map((p) => p.x);
-  let lo = props.zero ? 0 : Math.min(...ys), hi = Math.max(...ys);
+  const min = Math.min(...ys);
+  let lo = props.zero ? 0 : min, hi = Math.max(...ys);
   const flat = lo === hi;
   if (flat) { const m = Math.abs(hi) * 0.1 || 1; lo -= m; hi += m; }
   const pad = (hi - lo) * 0.1;
-  return { x0: Math.min(...xs), x1: Math.max(...xs), y0: props.zero ? 0 : lo - pad, y1: hi + pad, flat };
+  return { x0: Math.min(...xs), x1: Math.max(...xs), y0: props.zero ? 0 : min >= 0 ? Math.max(0, lo - pad) : lo - pad, // values that can't be negative never get a negative axis
+    y1: hi + pad, flat };
 });
 const sx = (x: number) => { const d = dom.value; return P.l + (d.x1 === d.x0 ? 0.5 : (x - d.x0) / (d.x1 - d.x0)) * (W.value - P.l - P.r); };
 const sy = (y: number) => { const d = dom.value; return P.t + (1 - (y - d.y0) / (d.y1 - d.y0)) * (H.value - P.t - P.b); };

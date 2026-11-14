@@ -69,6 +69,8 @@ export function ago(iso: string | null | undefined): string {
   return `${Math.floor(days / 365)} years ago`;
 }
 /** A date as YYYY-MM-DD on this device's calendar (the shared ymd, under the name the screens use). */
+/** "12.3k kg" -> its number and its unit, so a tile can set the unit small beside the number */
+export const unitOf = (s: string) => { const i = s.lastIndexOf(" "); return i < 0 ? { value: s, unit: "" } : { value: s.slice(0, i), unit: s.slice(i + 1) }; };
 export const localYmd = ymd;
 // tomorrow by calendar (not now + 24h, which lands on the wrong day across a clock change)
 export const tomorrowYmd = () => { const n = new Date(); return ymd(new Date(n.getFullYear(), n.getMonth(), n.getDate() + 1)); };
