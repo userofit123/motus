@@ -237,14 +237,14 @@ await loaded(goals, metrics, routines, exercises, types, body);
       <div v-if="f.scope === 'body'" class="fld"><label>Direction</label><div class="seg block"><button v-for="d in GOAL_DIRECTIONS" :key="d.value" :class="{ on: dirShown === d.value }" @click="f.dir = d.value">{{ d.label }}</button></div></div>
       <div class="frow">
         <div class="fld"><label>Target ({{ f.scope === "body" ? bodyUnitShown : unit }})</label><input v-model.number="f.target" type="number" inputmode="decimal" step="any" />
-          <div v-if="f.scope === 'body'" class="tiny" style="margin-top:4px">{{ bodyNow ? `Now ${bodyNow}` : "Nothing logged yet" }}{{ bodyPassed ? " · already there" : "" }}</div></div>
+          <div v-if="f.scope === 'body'" class="tiny fhelp">{{ bodyNow ? `Now ${bodyNow}` : "Nothing logged yet" }}{{ bodyPassed ? " · already there" : "" }}</div></div>
         <div v-if="metric?.periodic && f.scope !== 'body'" class="fld"><label>How often</label><AppSelect v-model="f.when" :options="WHEN" title="How often" /></div>
       </div>
       <div v-if="f.when === 'days' && f.scope !== 'body'" class="fld"><label>On these days</label><ChoiceTiles v-model="f.days" :options="DAY_OPTS" multiple compact min="56px" label="On these days" /></div>
       <p v-else-if="f.when === 'workdays' && f.scope !== 'body'" class="tiny hgap">{{ daysShort(workdaysOf(settings), settings.firstDay) }}, your work week. <button class="lnk inl" @click="router.push('/settings/units')">Change it</button></p>
       <div class="frow"><div class="fld"><label>Deadline (optional)</label><DatePicker v-model="f.deadline" clearable placeholder="No deadline" title="Deadline" /></div></div>
       <div class="fld"><label>Name (optional)</label><input v-model="f.title" maxlength="120" :placeholder="autoTitle" />
-        <div v-if="f.title.trim() && autoTitle" class="tiny" style="margin-top:4px">Shown under the name: {{ autoTitle }}</div></div>
+        <div v-if="f.title.trim() && autoTitle" class="tiny fhelp">Shown under the name: {{ autoTitle }}</div></div>
       <template #foot><button class="btn o" @click="closeForm">Cancel</button><button class="btn" @click="save">Save goal</button></template>
     </Sheet>
     <ExercisePicker v-if="pickEx" title="Goal for which exercise?" @close="pickEx = false" @pick="(ids) => { f.scopeId = ids[0]; pickEx = false; }" />

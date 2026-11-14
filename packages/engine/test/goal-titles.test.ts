@@ -52,34 +52,57 @@ describe("goal titles", () => {
   });
 
   it("clears the automatic titles the app used to store, keeping names the person typed (migration 033)", async () => {
-    const put = async (title: string, metric: string, scope: string, scopeId: string | null, extra = "") => {
+    await call("GET", "/activity-types");
+    const r = await call("POST", "/routines", { name: "Leg day" });
+    const put = async (title: string, metric: string, scope: string, scopeId: string | null, period = "week", days: unknown = null) => {
       const gid = uuidv7();
-      await eng.db.admin.query(`INSERT INTO goals (id, user_id, title, scope, scope_id, metric, comparator, target, period) VALUES ($1, $2, $3, $4, $5, $6, '>=', 30, 'week')`, [gid, U, title, scope, scopeId, metric]);
-      return [gid, extra || title] as const;
+      await eng.db.admin.query(`INSERT INTO goals (id, user_id, title, scope, scope_id, metric, comparator, target, period, days) VALUES ($1, $2, $3, $4, $5, $6, '>=', 30, $7, $8::jsonb)`,
+        [gid, U, title, scope, scopeId, metric, period, days == null ? null : JSON.stringify(days)]);
+      return [gid, title] as const;
     };
     const seeded = (await eng.db.admin.query<{ w: string }>("SELECT md5($1::text || ':weekly-target')::uuid::text w", [U])).rows[0]!.w;
     await eng.db.admin.query(`INSERT INTO goals (id, user_id, title, scope, scope_id, metric, comparator, target, period) VALUES ($1, $2, 'Weekly target', 'activity', 'workout', 'sessions', '>=', 3, 'week')`, [seeded, U]);
     const cleared = [
-      await put("Walk: 30 min time a day", "activity_minutes", "activity", "walk"),
-      await put("Walk: 30 km distance on Mon, Wed", "activity_distance", "activity", "walk"),
-      await put("Gym workouts: 3 a week", "sessions", "activity", "workout"),
-      await put("Sessions: 4 in total", "sessions", "activity", null),
+      await put("Walk: 30 min time a week", "activity_minutes", "activity", "walk"),
+      await put("Walk: 30 min time a day", "activity_minutes", "activity", "walk", "day"),
+      await put("Walk: 2.5 mi distance on Mon, Wed", "activity_distance", "activity", "walk", "day", [3, 1]),
+      await put("Walk: 30 km distance on Sun, Sat", "activity_distance", "activity", "walk", "day", [6, 0]),
+      await put("Walk: 30 km distance on Sat, Sun", "activity_distance", "activity", "walk", "day", [6, 0]),
+      await put("Run: 3 a day", "sessions", "activity", "run", "day"),
+      await put("Gym workouts: 3 on workdays", "sessions", "activity", "workout", "day", "workdays"),
+      await put("Sessions: 4 in total", "sessions", "activity", null, "once"),
+      await put("Any activity: 20 min time a month", "activity_minutes", "activity", null, "month"),
       await put("150 min active minutes (workouts and activities) a week", "active_minutes", "general", null),
-      await put("Old name: under 45 min finish within", "routine_duration", "general", null),
-      await put("Body weight to 165.5 lb", "body_weight", "body", null),
-      await put("10,000 steps average daily steps a day", "steps_avg", "activity", null),
+      await put("Leg day: under 45 min finish within", "routine_duration", "routine", r.id, "once"),
+      await put("Legs: 12 sets working sets a week", "muscle_sets", "muscle", "legs"),
+      await put("Body weight to 165.5 lb", "body_weight", "body", null, "once"),
+      await put("Upper arm (left) to 38 cm", "body_metric", "body", "arm_l", "once"),
+      await put("Body fat % to 15 kg", "body_metric", "body", "body_fat", "once"),
+      await put("Any activity: 10000 steps average daily steps a day", "steps_avg", "activity", null, "day"),
     ];
     const kept = [
       await put("Walk the dog", "activity_minutes", "activity", "walk"),
       await put("Summer legs: 30 min", "activity_minutes", "activity", "walk"),
       await put("Run to 10 km", "activity_distance", "activity", "run"),
+      // typed names in the old titles' shapes, but not what the old form built for these goals
+      await put("Summer cut to 75 kg", "body_weight", "body", null, "once"),
+      await put("Gym: 3 a week", "sessions", "activity", "workout"),
+      await put("Waist to 80 cm", "body_metric", "body", "hips", "once"),
+      await put("Walk: 30 min time a week", "activity_minutes", "activity", "run"),
+      await put("Walk: 30 min time a day", "activity_minutes", "activity", "walk"),
+      await put("Run: 3 a week", "sessions", "activity", "run", "day", [1, 3]),
+      await put("Push day: 3 times times done a week", "routine_count", "routine", r.id),
+      await put("Legs: 12 sets working sets a week!", "muscle_sets", "muscle", "legs"),
     ];
     await eng.db.admin.query("DELETE FROM schema_migrations WHERE name = '033_goal_names_only'");
+    const logged = Number((await eng.db.admin.query<{ n: string }>("SELECT count(*) n FROM sync_log")).rows[0]!.n);
     await migrate(eng.db);
     const titles = new Map((await eng.db.admin.query<{ id: string; title: string }>("SELECT id::text, title FROM goals")).rows.map((r) => [r.id, r.title]));
-    for (const [gid] of cleared) expect(titles.get(gid)).toBe("");
+    for (const [gid, t] of cleared) expect([t, titles.get(gid)]).toEqual([t, ""]);
     for (const [gid, t] of kept) expect(titles.get(gid)).toBe(t);
     expect(titles.get(seeded)).toBe("");
     expect((await one(cleared[0]![0])).title).toBe("Walk 30 min a week");
-  });
+    // every copy clears its own titles, so nothing is sent on to the others
+    expect(Number((await eng.db.admin.query<{ n: string }>("SELECT count(*) n FROM sync_log")).rows[0]!.n)).toBe(logged);
+});
 });

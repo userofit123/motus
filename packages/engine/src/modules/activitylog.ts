@@ -2,6 +2,7 @@
 // (migration 004), which the database writes for every change to a person's rows, so nothing has to remember to log.
 // Row changes become plain entries ("Finished Push day", "Logged 18 sets in Push day"): rows belong to a thing
 // (a set to its workout, a routine's sets to the routine), and a burst of changes to one thing is one entry.
+import type { Goal } from "@motus/shared";
 import type { Router } from "../router";
 import { camel, intOrNull, str } from "../util";
 import { getSettings } from "./settings";
@@ -122,9 +123,9 @@ export function activityLogRoutes(r: Router) {
     for (const [k, sql] of Object.entries(NOW) as [LogKind, string][]) {
       const list = [...new Set(keep.filter((g) => g.kind === k && g.id).map((g) => g.id!))];
       if (!list.length) continue;
-      let rows = (await q.query(sql, [list])).rows;
-      if (k === "goal") rows = (await withTitles(q, await getSettings(q, userId), rows.map((x: any) => camel<any>(x))))
-        .map((g: any) => ({ id: g.id, name: g.title, status: g.status, achieved_at: g.achievedAt }));
+      let rows = (await q.query<{ id: string; [col: string]: unknown }>(sql, [list])).rows;
+      if (k === "goal") rows = (await withTitles(q, await getSettings(q, userId), rows.map((x) => camel<Goal>(x))))
+        .map((g) => ({ id: g.id, name: g.title, status: g.status, achieved_at: g.achievedAt }));
       for (const x of rows) cur.set(k + ":" + x.id, x);
       for (const x of (await q.query(`SELECT pk->>'id' AS id, min(seq) AS s FROM sync_log WHERE tbl = $1 AND pk = ANY($2::text[]::jsonb[]) GROUP BY 1`,
         [TABLE[k], list.map((id) => JSON.stringify({ id }))])).rows) firstSeq.set(k + ":" + x.id, Number(x.s));
