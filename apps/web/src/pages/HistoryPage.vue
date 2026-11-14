@@ -116,8 +116,9 @@ const label = (x: any) => x.name || (x.type ? x.type[0].toUpperCase() + x.type.s
 const monthStats = computed(() => {
   const inMonth = [...byDay.value.entries()].filter(([d]) => d.slice(0, 7) === localYmd(month.value).slice(0, 7));
   const all = inMonth.flatMap(([, v]) => v);
+  const done = (x: any) => (x.kind === "workout" && x.status === "completed") || x.kind === "activity";
   const w = all.filter((x) => x.kind === "workout" && x.status === "completed"), a = all.filter((x) => x.kind === "activity");
-  return { workouts: w.length, activities: a.length, timeS: [...w, ...a].reduce((t, x) => t + (x.durationS ?? 0), 0), days: inMonth.filter(([, v]) => v.some((x) => x.kind !== "planned")).length };
+  return { workouts: w.length, activities: a.length, timeS: [...w, ...a].reduce((t, x) => t + (x.durationS ?? 0), 0), days: inMonth.filter(([, v]) => v.some(done)).length };
 });
 const planDay = ref<string | null>(null);
 // the shown month's totals, as stat tiles at the end of the calendar (they follow the month you are looking at); the
