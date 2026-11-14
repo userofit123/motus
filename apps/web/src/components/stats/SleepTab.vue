@@ -8,7 +8,7 @@ import { computed, ref } from "vue";
 import { ymd, weekStartOf } from "@motus/shared";
 import { useSleep, useSettings, type SleepNight } from "../../api/queries";
 import { useFmt, localYmd } from "../../core/format";
-import { STAGES, ASLEEP_COLOR, hasStages, asleepMin, inBedMin, efficiency, nightMin, nightIso, mins, typical } from "../../core/sleep";
+import { STAGES, NO_STAGES_COLOR, hasStages, asleepMin, inBedMin, efficiency, nightMin, nightIso, mins, typical } from "../../core/sleep";
 import Icon from "../Icon.vue";
 import BarChart from "../BarChart.vue";
 import LineChart from "../LineChart.vue";
@@ -65,12 +65,18 @@ const deepPct = computed(() => { const ns = nights.value.filter((n) => n.deepMin
 const avgBed = computed(() => avg(nights.value.map(inBedMin)));
 const avgEff = computed(() => avg(nights.value.map(efficiency)));
 const clock = (m: number) => fmt.value.time(nightIso(m));
-const within = (m: number) => `usually within ${mins(Math.max(1, m))}`;
+// where most nights' bedtimes (or wake times) fall: the middle half from 5 nights on, else the earliest to the latest;
+// one night says nothing about a habit, so it only says so
+type Typical = NonNullable<ReturnType<typeof typical>>;
+const span = (t: Typical) => (t.lo === t.hi ? `at ${clock(t.lo)}` : clock(t.lo) + "-" + clock(t.hi));
+// a tile's line as its words and its times, the times kept whole so a narrow tile breaks before them, not inside them
+const spread = (t: Typical) => (t.n === 1 ? ["from 1 night", ""] : [t.n >= 5 ? "most nights" : `all ${t.n} nights`, span(t)]);
+const schedule = computed(() => bed.value && wake.value && bed.value.n > 1 ? `${bed.value.n >= 5 ? "Most nights (shaded) to bed" : "To bed"} ${span(bed.value)} · up ${span(wake.value)}` : "");
 // the tiles there are data for: time asleep always, then bedtime, wake time, and deep sleep or else time in bed
 const tiles = computed(() => 1 + (bed.value ? 1 : 0) + (wake.value ? 1 : 0) + (deepPct.value != null || avgBed.value != null ? 1 : 0));
 
 // nightly time asleep: a bar a night, stacked deep / light / REM when the band told them apart (a night it didn't, or a
-// day with only its hours, in a neutral grey beside them); over two months of nights the bars would be hairlines, so it
+// day with only its hours, in its own colour beside them, named in the legend); over two months of nights the bars would be hairlines, so it
 // becomes the average night of each week
 const BAND: [number, number] = [7, 9];
 const perWeek = computed(() => days.value.length > 62);
@@ -78,20 +84,23 @@ const mixed = computed(() => staged.value && days.value.some((x) => !x.night || 
 const bars = computed(() => {
   const part = (n: SleepNight | null, min: number) => {
     if (!staged.value) return undefined;
-    if (!n || !hasStages(n)) return [{ value: min / 60, color: ASLEEP_COLOR }];
+    if (!n || !hasStages(n)) return [{ value: min / 60, color: NO_STAGES_COLOR }];
     // the stages scaled to the time asleep shown (the day's own number, when it was typed in)
     const sum = Math.max(1, (n.deepMin ?? 0) + (n.lightMin ?? 0) + (n.remMin ?? 0));
     return STAGES.filter((st) => st.key !== "awakeMin").map((st) => ({ value: ((n[st.key] ?? 0) / sum) * (min / 60), color: st.color }));
   };
+  // the month under its first day, so "30 1 3" says where October ends; a night's tip gives its bedtime to getting up
+  const month = (d: string) => fmt.value.date(d, { month: "short" });
   if (!perWeek.value) return days.value.map((x) => {
-    const full = fmt.value.date(x.date, { day: "numeric", month: "short" });
-    return { label: full.split(" ")[0]!, full, tip: fmt.value.date(x.date, { weekday: "short", day: "numeric", month: "short" }), value: x.min / 60, parts: part(x.night, x.min), id: x.night ? x.date : undefined };
+    const full = fmt.value.date(x.date, { day: "numeric", month: "short" }), n = x.night;
+    const tip = fmt.value.date(x.date, { weekday: "short", day: "numeric", month: "short" }) + (n ? ` · ${fmt.value.time(n.startAt)}-${fmt.value.time(n.endAt)}` : "");
+    return { label: full.split(" ")[0]!, full, group: month(x.date), tip, value: x.min / 60, parts: part(n, x.min), id: n ? x.date : undefined };
   });
   const wk = new Map<string, number[]>();
   for (const x of days.value) { const k = weekStartOf(new Date(x.date + "T12:00"), s.value.firstDay); wk.set(k, [...(wk.get(k) ?? []), x.min]); }
-  return [...wk].map(([k, ms]) => { const full = fmt.value.date(k, { day: "numeric", month: "short" }); return { label: full.split(" ")[0]!, full, tip: `week of ${full}`, value: avg(ms)! / 60 }; });
+  return [...wk].map(([k, ms]) => { const full = fmt.value.date(k, { day: "numeric", month: "short" }); return { label: full.split(" ")[0]!, full, group: month(k), tip: `week of ${full}`, value: avg(ms)! / 60 }; });
 });
-const legend = computed(() => [...STAGES.slice(0, 3).map((st) => ({ name: st.name, color: st.color as string })), ...(mixed.value ? [{ name: "Asleep", color: ASLEEP_COLOR }] : [])]);
+const legend = computed(() => [...STAGES.slice(0, 3).map((st) => ({ name: st.name, color: st.color as string })), ...(mixed.value ? [{ name: "No stages", color: NO_STAGES_COLOR }] : [])]);
 const hours = (v: number) => mins(v * 60);
 
 // heart rate, blood oxygen and breathing while asleep, a night at a time, each only when the band read it
@@ -175,8 +184,8 @@ const open = ref<string | null>(null);
       <!-- the period's averages, as Overview's tiles -->
       <div class="grid g4" :class="tiles < 4 ? `n${tiles}` : ''">
         <div class="card hero stat"><div class="lbl"><span class="bi"><Icon name="moon" :size="15" /></span>Time asleep</div><div class="val">{{ mins(avgAsleep!) }}</div><div class="sub">average of {{ days.length }} {{ days.length === 1 ? "night" : "nights" }}</div><Sparkline v-if="days.length > 1" :values="days.map((x) => x.min)" color="var(--onc)" /></div>
-        <div v-if="bed" class="card stat"><div class="lbl"><span class="bi"><Icon name="clock" :size="15" /></span>Bedtime</div><div class="val">{{ clock(bed.at) }}</div><div class="sub">{{ within(bed.within) }}</div></div>
-        <div v-if="wake" class="card stat"><div class="lbl"><span class="bi"><Icon name="bell" :size="15" /></span>Wake time</div><div class="val">{{ clock(wake.at) }}</div><div class="sub">{{ within(wake.within) }}</div></div>
+        <div v-if="bed" class="card stat"><div class="lbl"><span class="bi"><Icon name="clock" :size="15" /></span>Bedtime</div><div class="val">{{ clock(bed.at) }}</div><div class="sub">{{ spread(bed)[0] }} <span class="nw">{{ spread(bed)[1] }}</span></div></div>
+        <div v-if="wake" class="card stat"><div class="lbl"><span class="bi"><Icon name="bell" :size="15" /></span>Wake time</div><div class="val">{{ clock(wake.at) }}</div><div class="sub">{{ spread(wake)[0] }} <span class="nw">{{ spread(wake)[1] }}</span></div></div>
         <div v-if="deepPct != null" class="card stat"><div class="lbl"><span class="bi"><Icon name="layers" :size="15" /></span>Deep sleep</div><div class="val">{{ deepPct }}<small>%</small></div><div class="sub">of time asleep</div></div>
         <div v-else-if="avgBed != null" class="card stat"><div class="lbl"><span class="bi"><Icon name="timer" :size="15" /></span>In bed</div><div class="val">{{ mins(avgBed) }}</div><div class="sub">{{ Math.round(avgEff! * 100) }}% of it asleep</div></div>
       </div>
@@ -195,13 +204,14 @@ const open = ref<string | null>(null);
       <div class="card spt">
         <div class="lbl hgap">{{ perWeek ? "Average time asleep per night, by week" : "Time asleep per night" }} (h) · target {{ BAND[0] }}-{{ BAND[1] }}</div>
         <BarChart :bars="bars" :band="BAND" :height="170" :fmt="hours" @pick="(d) => (open = d)" />
+        <div class="tiny sl-line">Time asleep leaves out the time awake in bed.</div>
         <div v-if="staged && !perWeek" class="bmlegend sl-leg"><span v-for="k in legend" :key="k.name"><i :style="{ background: k.color }" />{{ k.name }}</span></div>
       </div>
 
       <div v-if="nights.length > 1" class="card spt">
         <div class="lbl hgap">Bedtime and wake time</div>
-        <SleepSchedule :nights="nights" @pick="(d) => (open = d)" />
-        <div v-if="bed && wake" class="tiny sl-line">To bed around {{ clock(bed.at) }}, {{ within(bed.within) }} · up around {{ clock(wake.at) }}, {{ within(wake.within) }}</div>
+        <SleepSchedule :nights="nights" :bed="bed" :wake="wake" @pick="(d) => (open = d)" />
+        <div v-if="schedule" class="tiny sl-line">{{ schedule }}</div>
       </div>
 
       <div v-if="trends.length" class="grid g2 spt"><div v-for="t in trends" :key="t.id" class="card"><div class="lbl hgap">{{ t.name }} ({{ t.unit }})</div>
@@ -212,7 +222,7 @@ const open = ref<string | null>(null);
         <div class="card"><div class="list">
           <div v-for="n in list" :key="n.date" class="li click" role="button" tabindex="0" @click="open = n.date" @keydown.enter="open = n.date">
             <span class="bi sg"><Icon name="moon" :size="16" /></span>
-            <div class="grow"><div class="t">{{ fmt.date(n.date, { weekday: "short", day: "numeric", month: "short" }) }}</div><div class="s">{{ fmt.time(n.startAt) }}-{{ fmt.time(n.endAt) }} · {{ Math.round(efficiency(n) * 100) }}% asleep</div></div>
+            <div class="grow"><div class="t">{{ fmt.date(n.date, { weekday: "short", day: "numeric", month: "short" }) }}</div><div class="s">{{ fmt.time(n.startAt) }}-{{ fmt.time(n.endAt) }} · {{ mins(inBedMin(n)) }} in bed</div></div>
             <b class="num">{{ mins(asleepMin(n)) }}</b>
           </div>
         </div></div>
@@ -233,5 +243,6 @@ const open = ref<string | null>(null);
 .sl-ins .grow { min-width: 0; }
 .rv { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .sl-line { margin-top: 6px; }
+.nw { white-space: nowrap; }
 .sl-leg { margin-top: var(--hg); }
 </style>

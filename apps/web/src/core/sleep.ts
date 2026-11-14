@@ -10,8 +10,9 @@ export const STAGES = [
   { key: "remMin", name: "REM", color: "var(--c3)" },
   { key: "awakeMin", name: "Awake", color: "var(--warn)" },
 ] as const;
-/** A night the band didn't split into stages, beside ones it did: neutral, so it isn't read as one long deep sleep */
-export const ASLEEP_COLOR = "color-mix(in srgb, var(--tx2) 35%, var(--s2))";
+/** A night the band didn't split into stages, beside ones it did: its own chart colour, apart from the stages' (so it
+ *  isn't read as one long deep sleep) and never a grey that looks switched off */
+export const NO_STAGES_COLOR = "var(--c5)";
 export type StageKey = (typeof STAGES)[number]["key"];
 
 /** Whether the band told the stages apart, or only asleep from awake */
@@ -30,10 +31,12 @@ export const nightIso = (m: number) => { const d = new Date(2000, 0, 1, 12, 0); 
 /** "7h 12m" */
 export const mins = (m: number) => duration(Math.round(m) * 60, true);
 
-const mean = (xs: number[]) => xs.reduce((t, x) => t + x, 0) / xs.length;
-/** The average of some times of night, and how far a typical one lies from it (mean distance, in minutes) */
-export function typical(ms: number[]): { at: number; within: number } | null {
+/** Some times of night: the middle one, and the range most of them fall in, rounded to 5 minutes. From 5 nights on, the
+ *  middle half (so one late night doesn't stretch it); with fewer, the earliest to the latest. */
+export function typical(ms: number[]): { at: number; lo: number; hi: number; n: number } | null {
   if (!ms.length) return null;
-  const at = mean(ms);
-  return { at, within: mean(ms.map((m) => Math.abs(m - at))) };
+  const xs = [...ms].sort((a, b) => a - b), n = xs.length;
+  const at = (p: number) => { const i = (n - 1) * p, f = Math.floor(i); return xs[f]! + (xs[Math.min(n - 1, f + 1)]! - xs[f]!) * (i - f); };
+  const r5 = (m: number) => Math.round(m / 5) * 5;
+  return n >= 5 ? { at: at(0.5), lo: r5(at(0.25)), hi: r5(at(0.75)), n } : { at: at(0.5), lo: r5(xs[0]!), hi: r5(xs[n - 1]!), n };
 }

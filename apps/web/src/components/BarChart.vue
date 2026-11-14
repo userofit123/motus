@@ -50,6 +50,8 @@ const starts = (i: number) => {
 // the group's name starts at its bar's left edge, or ends at its right edge when it would run past the chart's
 const GW = 30;
 const gx = (i: number) => (i * slot.value + (slot.value - bw.value) / 2 + GW > W.value ? { x: i * slot.value + (slot.value + bw.value) / 2, a: "end" } : { x: i * slot.value + (slot.value - bw.value) / 2, a: "start" });
+// a tip over a bar near either edge hangs inwards from it, so a long one ("7h 15m · Sat 14 Nov · 23:05-6:40") isn't cut off
+const tipShift = (at: number) => `translate(${at < 0.25 ? "-12px" : at > 0.75 ? "calc(-100% + 12px)" : "-50%"}, calc(-100% - 10px))`;
 const f = (v: number) => (props.fmt ? props.fmt(v) : String(Math.round(v * 10) / 10));
 </script>
 
@@ -81,7 +83,7 @@ const f = (v: number) => (props.fmt ? props.fmt(v) : String(Math.round(v * 10) /
         <text v-if="starts(i)" class="ax grp" :x="gx(i).x" :y="H - 4" :text-anchor="gx(i).a">{{ b.group }}</text>
       </g>
     </svg>
-    <div v-if="hover != null" class="ctip" :style="{ left: ((hover + 0.5) / bars.length) * 100 + '%', top: y(bars[hover]!.value) + 'px' }"><b>{{ f(bars[hover]!.value) }}</b> · {{ bars[hover]!.tip ?? bars[hover]!.full ?? bars[hover]!.label }}</div>
+    <div v-if="hover != null" class="ctip" :style="{ left: ((hover + 0.5) / bars.length) * 100 + '%', top: y(bars[hover]!.value) + 'px', transform: tipShift((hover + 0.5) / bars.length) }"><b>{{ f(bars[hover]!.value) }}</b> · {{ bars[hover]!.tip ?? bars[hover]!.full ?? bars[hover]!.label }}</div>
   </div>
 </template>
 
