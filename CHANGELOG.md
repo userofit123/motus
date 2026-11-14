@@ -2,6 +2,17 @@
 
 The top entry's version is the one the release workflow publishes. Add a new `## [x.y.z]` section to release.
 
+## [0.1.21] - 2026-11-14
+
+- Workout sounds come from one library of 12 short sounds, the same list everywhere: the Rest over sound, the Countdown sound and every part of the interval timer. Eight are clean recorded sounds (Hover, Step, Check, Ping, Checkpoint, Alert, Success, Level up) and four are the old single notes remade to match them (Round, Marimba, Bell, High). Each sound plays once, sounds the same wherever you pick it, and works as a countdown beep in the app and on Android in the background. Sounds you picked before switch to the closest new one. The rest over sound is now Success by default, and the interval timer starts work with Ping and ends with Level up.
+- The 3-2-1 before a rest ends is three equal beeps in the app and on Android in the background, the interval timer's last-second ticks play whenever sounds are on, and the sound settings say when each sound plays.
+- Pages open much faster the first time and earlier days on Home load at once: the copy of your data on the device no longer waits for the browser's storage after every read. A change counts as saved only once it is stored on the device, so closing the app right after saving loses nothing.
+- Calendar: each day lists its workouts and activities in the order they happened, the header is just the title and the Calendar/List tabs at the same height as other pages, the month and its arrows sit in the middle, and the month's workouts, time, activities and active days are tiles at the bottom.
+- Logging a past workout opens a popup like the other Log items, from Settings, the + button, a day in the calendar or "Log it" on a planned workout. Closing it with changes asks first. Pulling any popup down and then keeping it slides it back smoothly.
+- Home no longer has the body weight block, and a half-width block left alone in its row fills the row.
+- Settings → Activity types shows each type with its icon and what it tracks, edits it from the ⋮ menu, and adds types with a New activity type button.
+- The Add exercise search bar has the popup's colour and covers its full width while the list scrolls.
+
 ## [0.1.20] - 2026-11-13
 
 - Home shows only goals you created and pinned. The app no longer makes or pins goals by itself; the "Weekly target" and "Daily steps" goals it made before come off Home but stay in Goals. Every pinned goal is one wide block: the current value with the target under it on the left, its streak, days left or done date on the right, and its history as dots or a trend line. A device still on an older version can pin those goals back through sync until it updates.
