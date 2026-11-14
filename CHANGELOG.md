@@ -2,6 +2,12 @@
 
 The top entry's version is the one the release workflow publishes. Add a new `## [x.y.z]` section to release.
 
+## [0.1.23] - 2026-11-14
+
+- Health Connect: Settings → Integrations → Imported data lists everything Motus brought in from Health Connect, day by day: steps, sleep, weight and activities. Tap an entry to correct it, or delete it from its ⋮ menu. A corrected or deleted entry stays that way on later syncs, and so does one you deleted anywhere else in the app.
+- Import past data reads further back than the first 30 days: the last 90 days, the last year or everything, on phones whose Health Connect allows reading older data (Motus asks for that permission when you choose it).
+- Updating adds a small database change on first start.
+
 ## [0.1.22] - 2026-11-14
 
 - Health Connect (Android app): switch it on in Settings → Features, then allow it in Settings → Integrations. Motus then reads daily steps, sleep, weight and workouts that other apps wrote to Health Connect, such as a band connected through Gadgetbridge (its Settings → External integrations → Health Connect). It reads when you open the app, at most every 15 minutes, or when you tap Sync now. Steps and sleep you typed in yourself stay as they are, each weight reading is added once, and each workout becomes an activity once, with its heart rate, distance, steps and calories. Gym sessions are left out, since those are logged in Motus.
