@@ -255,7 +255,7 @@ watch(() => avail.data.value, () => { if (!TABS.value.some(([k]) => k === tab.va
       <template v-else>
         <div v-if="bw.length" class="grid g4 n3">
           <div class="card hero stat"><div class="lbl"><span class="bi"><Icon name="stats" :size="15" /></span>Trend</div><div class="val">{{ fmt.num(bwTrend.at(-1)!.y, 1) }}<small>{{ fmt.wu }}</small></div><div class="sub">Latest {{ fmt.num(bw.at(-1)!.y, 1) }} {{ fmt.wu }}</div><Sparkline :values="bwTrend.map((t) => t.y)" color="var(--onc)" /></div>
-          <div class="card stat"><div class="lbl"><span class="bi"><Icon name="arrowUp" :size="15" /></span>Change</div><div class="val">{{ bwMoved != null ? signed(bwMoved) : "-" }}<small>{{ bwMoved != null ? fmt.wu : "" }}</small></div><div class="sub">{{ pMoved != null ? `${signed(pMoved, fmt.wu)} vs previous` : "Nothing to compare with" }}</div></div>
+          <div class="card stat"><div class="lbl"><span class="bi"><Icon :name="bwMoved == null || bwMoved === 0 ? 'swap' : bwMoved > 0 ? 'arrowUp' : 'arrowDown'" :size="15" /></span>Change</div><div class="val">{{ bwMoved != null ? signed(bwMoved) : "-" }}<small>{{ bwMoved != null ? fmt.wu : "" }}</small></div><div class="sub">{{ pMoved != null ? `${signed(pMoved, fmt.wu)} vs previous` : "Nothing to compare with" }}</div></div>
           <div class="card stat"><div class="lbl"><span class="bi"><Icon name="calendar" :size="15" /></span>Weigh-ins</div><div class="val">{{ bw.length }}</div><div class="sub">{{ percentChange(bw.length, pbw.length) ? `${percentChange(bw.length, pbw.length)} vs previous` : "in this period" }}</div></div>
         </div>
         <div class="card" :class="{ spt: bw.length }"><div class="lbl hgap">Body weight ({{ fmt.wu }}) · smoothed trend</div>
