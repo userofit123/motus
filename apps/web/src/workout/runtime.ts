@@ -229,7 +229,7 @@ function playSound(id: SoundId, o: { level: number; delay?: number; maxS?: numbe
         src.stop(t + o.maxS + 0.01);
       }
       src.connect(g).connect(ac.destination); src.start(t);
-    });
+    }).catch(() => { /* a sound is optional: an error here must not become an unhandled rejection */ });
   } catch { /* no sound */ }
 }
 /** The volume setting (10-100 %) as a gain. Squared, because the ear hears loudness roughly by the square: 50 % is

@@ -30,6 +30,7 @@ public class RestCues extends BroadcastReceiver {
     private static final long LATE_MS = 1000;
     // a countdown note is cut off after this long, so it is over before the next second's (COUNT_MAX_S in runtime.ts)
     private static final long CUT_MS = 800;
+    private static final int FADE_MS = 80, FADE_STEPS = 4;
     // the notes waiting to play, so taking the cues off (the app came back) also stops a 3-2-1 already under way
     private static final Object NOTES = new Object();
     private static final Handler main = new Handler(Looper.getMainLooper());
@@ -150,7 +151,12 @@ public class RestCues extends BroadcastReceiver {
                 pool = new SoundPool.Builder().setMaxStreams(2).setAudioAttributes(attrs).build();
                 // may be called on another thread: handed to the audio thread, which alone touches these
                 pool.setOnLoadCompleteListener((sp, sampleId, status) -> audio.post(() -> {
-                    if (status != 0) return;
+                    if (status != 0) {
+                        // a failed load must not stay "loaded": a later schedule retries it, and a note waiting for it is dropped
+                        loaded.values().remove(sampleId);
+                        waiting.remove(sampleId);
+                        return;
+                    }
                     ready.add(sampleId);
                     Runnable r = waiting.remove(sampleId);
                     if (r != null) r.run();
@@ -179,6 +185,12 @@ public class RestCues extends BroadcastReceiver {
 
     private static void start(int id, float level) {
         int stream = pool.play(id, level, level, 1, 0, 1f);
-        if (stream != 0) audio.postDelayed(() -> pool.stop(stream), CUT_MS);
+        if (stream == 0) return;
+        // fades out over the last FADE_MS in FADE_STEPS steps (like the web's 80 ms ramp), then stops; all on the audio thread
+        for (int i = 1; i <= FADE_STEPS; i++) {
+            final float v = level * (1f - (float) i / FADE_STEPS);
+            audio.postDelayed(() -> pool.setVolume(stream, v, v), CUT_MS - FADE_MS + (long) FADE_MS * i / FADE_STEPS);
+        }
+        audio.postDelayed(() -> pool.stop(stream), CUT_MS + 10);
     }
 }
