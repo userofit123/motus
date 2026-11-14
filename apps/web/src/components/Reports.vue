@@ -3,7 +3,7 @@
 import { computed, ref } from "vue";
 import { GROUPS, groupOf, percentChange, type HomeRecord } from "@motus/shared";
 import { useStats } from "../api/queries";
-import { useFmt } from "../core/format";
+import { useFmt, unitOf } from "../core/format";
 import { mins } from "../core/sleep";
 import BarChart from "./BarChart.vue";
 import Icon from "./Icon.vue";
@@ -78,7 +78,13 @@ const chart = computed(() => {
 interface Tile { key: string; icon: string; label: string; value: string; unit: string; delta: string; last: string }
 interface Highlight { key: string; icon: string; t: string; s: string; r: string; pr?: boolean }
 const mean = (xs: number[]) => xs.reduce((t, x) => t + x, 0) / xs.length;
-const unitOf = (s: string) => { const i = s.lastIndexOf(" "); return i < 0 ? { value: s, unit: "" } : { value: s.slice(0, i), unit: s.slice(i + 1) }; };
+// what a report covers, under its title: a year the months that have data in it, a month whether it is still going
+const span = (k: string) => {
+  if (k.length !== 4) return k === monthKey(new Date()) ? "This month so far" : "Whole month";
+  const ks = months.value.map((x) => x.k).filter((x) => x.startsWith(k)).sort();
+  const mn = (x: string) => monthOf(x).toLocaleDateString(undefined, { month: "short" });
+  return ks.length < 2 ? k : `${mn(ks[0]!)}-${mn(ks.at(-1)!)} ${k}`;
+};
 const build = (m: Period, p: Period | undefined, prev: string) => {
   const tile = (key: string, icon: string, lbl: string, get: (x: Period) => number, show: (n: number) => string, split = false): Tile => {
     const v = show(get(m));
@@ -104,7 +110,7 @@ const build = (m: Period, p: Period | undefined, prev: string) => {
       : m.hrv.length ? [{ key: "hrv", icon: "heartPulse", t: "HRV", s: "", r: `${Math.round(mean(m.hrv))} ms` }] : []),
     ...(m.whr.length ? [{ key: "whr", icon: "heartPulse", t: "Workout heart rate", s: `Average of ${m.whr.length} ${m.whr.length === 1 ? "workout" : "workouts"}`, r: `${Math.round(mean(m.whr))} bpm` }] : []),
   ];
-  return { k: m.k, title: m.k.length === 4 ? `${m.k} in review` : label(m.k), prev, tiles, anyDelta: tiles.some((x) => x.delta), highlights };
+  return { k: m.k, title: m.k.length === 4 ? (m.k === String(new Date().getFullYear()) ? "This year so far" : `${m.k} in review`) : label(m.k), sub: span(m.k), prev, tiles, anyDelta: tiles.some((x) => x.delta), highlights };
 };
 const report = computed(() => {
   const byK = new Map(months.value.map((m) => [m.k, m]));
@@ -113,7 +119,8 @@ const report = computed(() => {
 // the newest year against the one before it
 const year = computed(() => {
   const y = years.value[0];
-  if (!y) return null;
+  // left out when only one month has data: the month's own report is then the same numbers
+  if (!y || months.value.filter((x) => x.k.startsWith(y.k)).length < 2) return null;
   const before = String(Number(y.k) - 1);
   return build(y, years.value.find((x) => x.k === before), before);
 });
@@ -122,16 +129,20 @@ const year = computed(() => {
 <template>
   <!-- nothing until the history is read, so the empty state doesn't flash up while it loads -->
   <div v-if="all.data.value">
-    <!-- the year in review across the top, then workouts per month, then a card per month; one header and set of tiles
+    <!-- workouts per month across the top, then the year so far (once two months have data), then a card per month; one header and set of tiles
          for all of them -->
-    <div v-if="year" class="grid g2">
-      <template v-for="r in [year, ...report]" :key="r.k">
+    <div v-if="report.length" class="grid g2">
+      <div v-if="chart.length" class="card full">
+        <div class="ch"><span class="bi"><Icon name="stats" :size="15" /></span><span class="t grow">Workouts per month</span><span class="tiny">{{ chart.length === 12 ? "Last 12 months" : `Last ${chart.length} months` }}</span></div>
+        <BarChart :bars="chart" values :height="170" />
+      </div>
+      <template v-for="r in [...(year ? [year] : []), ...report]" :key="r.k">
         <div class="card wkc" :class="{ full: r === year }">
-          <div class="ch"><span class="bi"><Icon :name="r === year ? 'star' : 'calendar'" :size="15" /></span><span class="t grow">{{ r.title }}</span><span v-if="r.anyDelta" class="tiny">Vs {{ r.prev }}</span></div>
+          <div class="ch"><span class="bi"><Icon :name="r === year ? 'star' : 'calendar'" :size="15" /></span><span class="grow"><span class="t">{{ r.title }}</span><span class="s sub">{{ r.sub }}</span></span><span v-if="r.anyDelta" class="tiny">Vs {{ r.prev }}</span></div>
           <div class="wstats n4" :class="{ plain: !r.anyDelta }">
             <div v-for="x in r.tiles" :key="x.key" class="ws" role="group" :aria-label="`${[x.label, x.value, x.unit, x.delta].filter(Boolean).join(' ')}, ${r.prev} ${x.last}`" :title="`${r.prev} ${x.last}`">
               <div class="wlb"><Icon :name="x.icon" :size="14" />{{ x.label }}</div>
-              <div class="wv">{{ x.value }}<small v-if="x.unit">{{ x.unit }}</small></div>
+              <div class="wv">{{ x.value }} <small v-if="x.unit">{{ x.unit }}</small></div>
               <div v-if="r.anyDelta" class="wd">{{ x.delta }}</div>
             </div>
           </div>
@@ -143,10 +154,6 @@ const year = computed(() => {
             </div>
           </div>
         </div>
-        <div v-if="r === year && chart.length" class="card full">
-          <div class="ch"><span class="bi"><Icon name="stats" :size="15" /></span><span class="t grow">Workouts per month</span><span class="tiny">{{ chart.length === 12 ? "Last 12 months" : `Last ${chart.length} months` }}</span></div>
-          <BarChart :bars="chart" values :height="170" />
-        </div>
       </template>
     </div>
     <div v-else class="card empty"><Icon name="stats" :size="34" /><b>Nothing to report yet</b>Each month's report shows here once you finish a workout or log an activity.</div>
@@ -155,6 +162,8 @@ const year = computed(() => {
 
 <style scoped>
 /* the year in review and the chart take the whole row; the months sit two across */
+/* the period under a title, as a list row's sub line */
+.sub { display: block; font-size: 12.5px; color: var(--tx2); margin-top: 1px; font-weight: 400; }
 .full { grid-column: 1 / -1; }
 
 /* the highlights under the tiles, as list rows: what on the left, its number on the right; a record in the
