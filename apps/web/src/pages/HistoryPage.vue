@@ -212,7 +212,7 @@ await loaded(cal, listWorkouts, listActs);
           <div v-if="dayTiles.length" class="wstats dtiles">
             <div v-for="x in dayTiles" :key="x.key" class="ws" :class="{ click: x.open }" :role="x.open ? 'button' : 'group'" :tabindex="x.open ? 0 : undefined" :aria-label="[x.label, x.value, x.unit, x.sub].filter(Boolean).join(' ')" @click="x.open?.()" @keydown.enter="x.open?.()">
               <div class="wlb"><Icon :name="x.icon" :size="14" />{{ x.label }}</div>
-              <div class="wv">{{ x.value }}<small v-if="x.unit">{{ x.unit }}</small></div>
+              <div class="wv">{{ x.value }} <small v-if="x.unit">{{ x.unit }}</small></div>
               <div class="wd">{{ x.sub }}</div>
             </div>
           </div>
