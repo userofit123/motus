@@ -27,7 +27,7 @@ export function num(v: number | null | undefined, dp = 1): string {
 export function percentChange(now: number | null | undefined, before: number | null | undefined): string {
   if (!before || now == null) return "";
   const pc = Math.round(((now - before) / before) * 100);
-  return `${pc >= 0 ? "+" : ""}${pc}%`;
+  return pc === 0 ? "±0%" : `${pc > 0 ? "+" : ""}${pc}%`;
 }
 
 /** Rounds a weight in the person's unit to the nearest step (2.5 kg / 5 lb plates by default), so 80 kg shown in lb is 176.4 not 176.369... */

@@ -79,7 +79,7 @@ await loaded(body);
     <template v-if="cur === 'weight'">
       <div class="grid g4 n2">
         <div class="card stat"><div class="lbl"><span class="bi"><Icon name="scale" :size="15" /></span>Latest</div><div class="val">{{ weights.length ? fmt.w(weights[0].value) : "-" }}<small>{{ fmt.wu }}</small></div><div class="sub">{{ weights.length ? ago(weights[0].measuredAt) : "Not logged yet" }}</div></div>
-        <div class="card stat"><div class="lbl"><span class="bi"><Icon name="stats" :size="15" /></span>Trend</div><div class="val">{{ trend.length ? fmt.num(trend.at(-1)!.y, 1) : "-" }}<small>{{ fmt.wu }}</small></div><div class="sub">{{ month != null ? `${signedIn(month, "weight")} over 30 days` : "Smoothed, so one day's water weight doesn't swing it" }}</div><Sparkline :values="trend.slice(-30).map((p) => p.y)" /></div>
+        <div class="card stat"><div class="lbl"><span class="bi"><Icon name="stats" :size="15" /></span>Trend</div><div class="val">{{ trend.length ? fmt.num(trend.at(-1)!.y, 1) : "-" }}<small>{{ fmt.wu }}</small></div><div class="sub">{{ month != null ? `${signedIn(month, "weight")} over the last 30 days` : "Smoothed, so one day's water weight doesn't swing it" }}</div><Sparkline :values="trend.slice(-30).map((p) => p.y)" /></div>
       </div>
     </template>
 

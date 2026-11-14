@@ -25,7 +25,7 @@ function tier(m: string): 0 | 1 | 2 | 3 {
   const share = v / top.value;
   return share >= 0.6 ? 1 : share >= 0.25 ? 2 : 3;
 }
-const TIER_NAME = ["", "Main", "Helped", "A little"];
+const TIER_NAME = ["", "Main muscle", "Helper", "Small part"];
 const label = (m: string) => {
   // as a filter the name is all it needs; "Main" would only echo whether it is picked
   if (props.pickable) return muscleName(m);
