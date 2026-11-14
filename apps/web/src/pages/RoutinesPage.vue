@@ -148,13 +148,13 @@ await loaded(routines, folders, ...(settings.value.features.programs ? [programs
           <MuscleFig :muscles="r.muscles" :helpers="r.helpers" />
           <div class="rmain">
             <div class="row" style="align-items:flex-start">
-              <div class="grow" style="min-width:0"><div class="row" style="gap:8px"><span class="dot" :style="{ background: r.color ?? undefined }" /><span class="ellipsis" style="font-weight:600;font-size:15.5px">{{ r.name }}</span></div><div class="tiny" style="margin-top:2px">{{ exercises(r.exerciseCount) }} · {{ routineTime(r.estimateS, r.usual) }}</div></div>
+              <div class="grow" style="min-width:0"><div class="row" style="gap:8px"><span class="dot" :style="{ background: r.color ?? undefined }" /><span class="ellipsis" style="font-weight:600;font-size:15.5px">{{ r.name }}</span></div><div class="tiny" style="margin-top:2px">{{ r.exerciseCount ? `${exercises(r.exerciseCount)} · ${routineTime(r.estimateS, r.usual)}` : "No exercises yet" }}</div></div>
               <span @click.stop><Menu :items="items(r)" /></span>
             </div>
-            <div class="tiny ellipsis" style="margin:10px 0 0">{{ r.exerciseNames.join(" · ") || "No exercises yet" }}</div>
+            <div v-if="r.exerciseNames.length" class="tiny ellipsis" style="margin:10px 0 0">{{ r.exerciseNames.join(" · ") }}</div>
             <div class="chips" style="margin-top:8px"><span v-for="m in r.muscles.slice(0, 4)" :key="m" class="mchip">{{ muscleName(m) }}</span></div>
             <div class="row" style="margin-top:auto;padding-top:12px">
-              <span class="tiny grow">{{ r.lastDoneAt ? `Last done ${ago(r.lastDoneAt)} · ${r.timesDone}×` : "Not done yet" }}<template v-if="r.pendingReminders"> · <Icon name="bell" :size="12" style="display:inline;vertical-align:-1px" /> {{ r.pendingReminders }}</template></span>
+              <span class="tiny grow">{{ r.lastDoneAt ? `Last done ${ago(r.lastDoneAt)} · done ${r.timesDone}× in all` : "Not done yet" }}<template v-if="r.pendingReminders"> · <Icon name="bell" :size="12" style="display:inline;vertical-align:-1px" /> {{ r.pendingReminders }}</template></span>
               <button class="btn o s" @click.stop="router.push(`/routines/${r.id}/start`)"><Icon name="play" :size="14" />Start</button>
             </div>
           </div>

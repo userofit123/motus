@@ -80,7 +80,7 @@ await loaded(all);
         <div class="grow">
           <div style="font-weight:600;line-height:1.3">{{ e.name }} <Icon v-if="e.favourite" name="star" :size="13" style="display:inline;color:var(--acc);vertical-align:-1px" /></div>
           <div class="tiny" style="margin-top:3px">{{ e.primaryMuscles.map(muscleName).join(", ") }}{{ e.equipment ? " · " + e.equipment : "" }}</div>
-          <div class="tiny">{{ e.timesDone ? `${e.timesDone}× · ${ago(e.lastDoneAt)}` : e.ownerId ? "Yours" : "" }}</div>
+          <div class="tiny">{{ e.timesDone ? `Done ${e.timesDone}× · ${ago(e.lastDoneAt) === "today" ? "last today" : `last ${ago(e.lastDoneAt)}`}` : e.ownerId ? "Yours" : "" }}</div>
         </div>
       </div>
     </div>

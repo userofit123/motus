@@ -102,9 +102,9 @@ const lastText = computed(() => lastSync.value ? `${fmt.value.date(lastSync.valu
         <div v-if="s.features.healthConnect" class="li"><div class="grow"><div class="t">Health Connect on this device</div><div class="s">{{ hcText }}</div></div>
           <button v-if="hc?.available === 'yes' && !connected" class="btn s" @click="connect">Allow</button>
           <button v-else-if="connected" class="btn o s" @click="changeAccess">Change</button></div>
-        <div v-if="s.features.healthConnect && missing.length" class="li"><div class="grow"><div class="t">More to read</div><div class="s">{{ missingText }}</div></div>
+        <div v-if="s.features.healthConnect && missing.length" class="li"><div class="grow"><div class="t">Not allowed yet</div><div class="s">{{ missingText }}</div></div>
           <button class="btn s" @click="connect">Allow</button></div>
-        <div v-if="s.features.healthConnect && connected" class="li"><div class="grow"><div class="t">Last sync</div><div class="s">{{ lastText }}</div></div></div>
+        <div v-if="s.features.healthConnect && connected" class="li"><div class="grow"><div class="t">Last read</div><div class="s">{{ lastText }}</div></div></div>
         <div v-if="s.features.healthConnect && connected" class="li"><div class="grow"><div class="t">Import past data</div><div class="s">{{ pastText }}</div></div>
           <button class="btn o s" :disabled="syncing" @click="importPast">Import</button></div>
         <div class="li click" role="button" tabindex="0" @click="router.push('/settings/health')" @keydown.enter="router.push('/settings/health')"><div class="grow"><div class="t">Imported data</div><div class="s">Everything that came in, to correct or delete</div></div><Icon name="right" :size="16" class="muted" /></div>
@@ -124,6 +124,6 @@ const lastText = computed(() => lastSync.value ? `${fmt.value.date(lastSync.valu
         <p class="tiny" style="margin-top:6px">with the header <code>Authorization: Bearer &lt;token&gt;</code> and the file as the body.</p></div>
     </template>
     <div v-if="s.features.mcp" class="card"><div class="t" style="font-weight:600">Ask Claude</div><p class="tiny" style="margin-top:4px">A finished workout's ⋮ menu has "Copy for an AI assistant": paste it into Claude or any assistant to talk it through. With an API token, an MCP server or script can read your history from the API.</p></div>
-    <p v-if="!s.features.apiTokens && !s.features.mcp && !s.features.healthConnect && !importsOnly" class="muted">Switch on Health Connect, Personal API or Ask Claude in Settings → Features.</p>
+    <p v-if="!s.features.apiTokens && !s.features.mcp && !s.features.healthConnect && !importsOnly" class="muted">Switch on Health Connect, API tokens or Ask Claude in Settings → Features.</p>
   </div>
 </template>

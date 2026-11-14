@@ -10,7 +10,7 @@ import { api, mediaUrl } from "../api/client";
 import { progParts as progPartsOf } from "../core/progression";
 import { restSummary } from "../core/plannedRest";
 import { isPhone } from "../core/device";
-import { useFmt, ago, setSummary } from "../core/format";
+import { useFmt, ago, setSummary, localYmd } from "../core/format";
 import { noteSheet, reminderSheet, exerciseSheet, scheduleSheet } from "../core/ui";
 import Icon from "../components/Icon.vue";
 import MuscleFig from "../components/MuscleFig.vue";
@@ -39,10 +39,11 @@ const history = useQuery({ queryKey: computed(() => ["workouts", "routine", id.v
 const tab = ref("plan");
 const routine = computed<any>(() => r.data.value);
 const myRems = computed(() => (rems.data.value ?? []).filter((m: any) => (m.targetType === "routine" && m.targetId === id.value) || (m.targetType === "exercise" && routine.value?.exercises.some((e: any) => e.exerciseId === m.targetId) && (!m.scopeRoutineId || m.scopeRoutineId === id.value))));
-const mySchedules = computed(() => (schedules.data.value ?? []).filter((s: any) => s.routineId === id.value));
+// only what is still planned: a one-off day that has passed (or a plan that ended) is just the last time it was done
+const mySchedules = computed(() => { const today = localYmd(new Date()); return (schedules.data.value ?? []).filter((s: any) => s.routineId === id.value && (s.rule === "once" ? s.startDate.slice(0, 10) >= today : !s.endDate || s.endDate.slice(0, 10) >= today)); });
 const muscles = computed(() => muscleSets((routine.value?.exercises ?? []).map((e: any) => ({ primary: e.exercise?.primaryMuscles ?? [], secondary: e.exercise?.secondaryMuscles ?? [], sets: e.sets.length }))));
 const worked = computed(() => musclesWorked((routine.value?.exercises ?? []).map((e: any) => ({ primary: e.exercise?.primaryMuscles ?? [], secondary: e.exercise?.secondaryMuscles ?? [] }))));
-// under each exercise's name: the editor's header line (superset, then setSummary: "3 × 8-12 · 60 kg"), its parts as
+// under each exercise's name: the editor's header line (superset, then setSummary: "3 sets of 8 · 60 kg"), its parts as
 // separate items so the row's gap spaces the dots
 const subLine = (e: any) => [e.superset ? `Superset ${e.superset}` : "",
   ...setSummary(e.sets, e.exercise?.tracking ?? "weight_reps", fmt.value, !!st.value.features.unilateral).split(" · ")].filter(Boolean);
@@ -145,8 +146,8 @@ await loaded(r, summaries, notes, rems, schedules, history);
       <div class="stack">
         <div class="card"><BodyMap :values="muscles" :highlight="worked.primary" :secondary="worked.secondary" :height="190" legend /><div class="chips" style="margin-top:8px;justify-content:center"><span v-for="m in [...worked.primary, ...worked.secondary]" :key="m" class="mchip">{{ muscleName(m) }}</span></div></div>
         <div class="card">
-          <div class="row hgap"><b class="grow">Schedule</b><button class="qb acc" style="padding:4px 6px" @click="scheduleSheet = { routineId: id }"><Icon name="plus" :size="16" /></button></div>
-          <div v-if="!mySchedules.length" class="tiny">Not scheduled. Add days to see it in Up next and the calendar, with a reminder.</div>
+          <div class="row hgap"><b class="grow">Planned</b><button class="qb acc" style="padding:4px 6px" @click="scheduleSheet = { routineId: id }"><Icon name="plus" :size="16" /></button></div>
+          <div v-if="!mySchedules.length" class="tiny">Nothing planned. Add days to see it in Up next and the calendar, with a reminder.</div>
           <div v-for="s in mySchedules" :key="s.id" class="li" style="min-height:0;padding:calc(var(--lpy) - 2px) 0"><Icon name="calendar" :size="16" class="muted" /><span class="grow">{{ schedLine(s) }}</span>
             <Menu :items="[{ label: 'Edit', icon: 'edit', run: () => (scheduleSheet = s) }, schedRemove(s)]" /></div>
         </div>

@@ -124,9 +124,9 @@ export function setRounds(sets: SetLike[], sides: boolean): { n: number; sides: 
     n++;
     if (sides && x.side) sided++;
   });
-  return { n, sides: !sided ? "" : sided === n ? "left and right" : `${sided} left and right` };
+  return { n, sides: !sided ? "" : sided === n ? "left and right" : `${sided} on each side` };
 }
-/** "3 × 8-12 · 60 kg": an exercise's working sets in one line, counted by rounds (setRounds); the routine editor's
+/** "3 sets of 8 · 60 kg": an exercise's working sets in one line, counted by rounds (setRounds); the routine editor's
  *  folded cards and overview and the routine page's exercise cards, so both say the same */
 export function setSummary(sets: any[], t: Tracking, f: { clock: (s: number) => string; w: (kg: number) => string; wu: string }, sides: boolean) {
   const work = sets.filter((x: any) => x.kind !== "warmup" && x.kind !== "drop"), warm = sets.filter((x: any) => x.kind === "warmup").length;
@@ -141,13 +141,15 @@ export function setSummary(sets: any[], t: Tracking, f: { clock: (s: number) => 
     if (second[i - 1]) rounds[rounds.length - 1]!.push(x); else rounds.push([x]);
   });
   const r = setRounds(sets, sides), n = `${r.n} set${r.n === 1 ? "" : "s"}`;
+  // "5 sets of 8 per side": every set that counts is for one side; in a mix the part "2 left and right" says it
+  const per = r.sides === "left and right" ? " per side" : "";
   let what = "";
-  if (usesReps(t)) what = same("reps") ? `${r.n} × ${reps(work[0])}` : rounds.map((g: any[]) => [...new Set(g.map(reps))].join("/")).join(", ");
-  else if (usesDuration(t)) what = same("durationS") && work[0]?.durationS ? `${r.n} × ${f.clock(work[0].durationS)}` : n;
+  if (usesReps(t)) what = same("reps") && work[0]?.reps != null ? `${n} of ${reps(work[0])}` : rounds.map((g: any[]) => [...new Set(g.map(reps))].join("/")).join(", ");
+  else if (usesDuration(t)) what = same("durationS") && work[0]?.durationS ? `${n} of ${f.clock(work[0].durationS)}` : n;
   else what = n;
   const w = usesWeight(t) && same("weightKg") && work[0]?.weightKg != null ? ` · ${f.w(work[0].weightKg)} ${f.wu}` : "";
-  const sd = r.sides ? ` · ${r.sides}` : "";
-  return `${what}${w}${sd}${warm ? ` · ${warm} warm-up` : ""}${drops ? ` · ${drops} drop${drops === 1 ? "" : "s"}` : ""}`;
+  const sd = r.sides && !per ? ` · ${r.sides}` : "";
+  return `${what}${per}${w}${sd}${warm ? ` · ${warm} warm-up set${warm === 1 ? "" : "s"}` : ""}${drops ? ` · ${drops} drop${drops === 1 ? "" : "s"}` : ""}`;
 }
 /** The bar joining a left and right round's badges (sideJoins), as classes on set j's badge cell: `sj-a` on the first side
  * (bar down from its badge), `sj-b` on the second (bar up to its badge), `sj-m` for a row between them (an own-rest row);

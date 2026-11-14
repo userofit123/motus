@@ -26,6 +26,12 @@ const sides = computed(() => !!s.value.features.unilateral);
 // "/ side" only when every set that counts is for one side; in a mix the L and R badges say it
 const perSide = computed(() => { const w = props.ex.sets.filter((x) => x.kind !== "warmup" && x.kind !== "drop"); return sides.value && w.length > 0 && w.every((x) => x.side); });
 // a left and right round with no rest planned between its sides: a bar joins the two badges, as in the workout
+// the letters in the set column, explained once under the table; only the ones this exercise uses
+const key = computed(() => [
+  props.ex.sets.some((x) => x.kind === "warmup") ? "W warm-up" : "",
+  props.ex.sets.some((x) => x.kind === "failure") ? "F to failure" : "",
+  sides.value && props.ex.sets.some((x) => x.side) ? "L/R left/right" : "",
+].filter(Boolean));
 const joins = computed(() => { const d = restDefaultsOf(s.value.workout); return sides.value ? sideJoins(props.ex.sets, (j) => plannedRest(props.ex, props.ex.sets[j]!, j, d)) : []; });
 </script>
 
@@ -50,6 +56,7 @@ const joins = computed(() => { const d = restDefaultsOf(s.value.workout); return
         </div>
       </div>
     </div>
+    <div v-if="key.length" class="tiny row skey"><template v-for="(k, i) in key" :key="k"><span v-if="i" class="sep">·</span><span>{{ k }}</span></template></div>
   </div>
 </template>
 
@@ -60,5 +67,6 @@ const joins = computed(() => { const d = restDefaultsOf(s.value.workout); return
 /* an empty value keeps its box, so the columns read as one grid; only the "-" is muted */
 .pv.none { color: var(--tx2); font-weight: 500; }
 .pv small { font-size: 11px; font-weight: 500; color: var(--tx2); }
+.skey { gap: 6px; flex-wrap: wrap; margin-top: var(--lpy); }
 .sk.r { background: var(--accc); color: var(--onc); }
 </style>

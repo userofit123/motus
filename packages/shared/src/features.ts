@@ -17,14 +17,14 @@ export const FEATURES: FeatureDef[] = [
   { id: "notifLogging", group: "Logging", name: "Log from the notification", desc: "Tick the next set from the lock-screen timer (Android).", on: true },
   // Training
   { id: "programs", group: "Training", name: "Programs", desc: "Multi-week plans made of routines, with deload weeks.", on: true },
-  { id: "gyms", group: "Training", name: "Gym profiles", desc: "Equipment per gym.", on: false },
+  { id: "gyms", group: "Training", name: "Gym profiles", desc: "The equipment each gym has, so exercises match where you train.", on: false },
   { id: "intervalTimer", group: "Training", name: "Interval timer", desc: "Work and rest in rounds for HIIT, Tabata or circuits, with a beep at each change. Started from the + menu.", on: false },
   { id: "sharing", group: "Training", name: "Share routines", desc: "Send a copy of a routine to another person on your server.", on: false },
   // Body & activity
   { id: "measurements", group: "Body & activity", name: "Body measurements", desc: "Waist, chest, arms and more, plus body fat.", on: true },
   { id: "photos", group: "Body & activity", name: "Progress photos", desc: "Private photos, compared side by side.", on: false },
   { id: "steps", group: "Body & activity", name: "Steps", desc: "Daily steps and a step goal.", on: true },
-  { id: "dailyLog", group: "Body & activity", name: "Sleep, water and mood", desc: "A quick daily log.", on: true },
+  { id: "dailyLog", group: "Body & activity", name: "Daily log", desc: "Steps, sleep, water and mood you type in.", on: true },
   // Insights
   { id: "achievements", group: "Insights", name: "Achievements", desc: "Milestones like 100 workouts or 100 km walked.", on: true },
   { id: "reports", group: "Insights", name: "Monthly report and year in review", desc: "A summary page for each month and year.", on: true },
@@ -33,7 +33,7 @@ export const FEATURES: FeatureDef[] = [
   // Integrations
   { id: "healthConnect", group: "Integrations", name: "Health Connect", desc: "Steps, sleep, weight and workouts from a band, scale or watch, such as one connected through Gadgetbridge. Android app only.", on: false },
   { id: "strava", group: "Integrations", name: "Strava", desc: "Import walks and runs.", on: false, ready: false },
-  { id: "apiTokens", group: "Integrations", name: "Personal API", desc: "Tokens for scripts and dashboards, and a file-upload address for GPX/FIT.", on: false },
+  { id: "apiTokens", group: "Integrations", name: "API tokens", desc: "Tokens for scripts and dashboards, and a file-upload address for GPX/FIT.", on: false },
   { id: "mcp", group: "Integrations", name: "Ask Claude", desc: "Copy a workout as text for an AI assistant, or connect one over MCP.", on: false },
   { id: "wear", group: "Integrations", name: "Wear OS", desc: "The watch app.", on: false, ready: false },
   { id: "liveBundle", group: "Integrations", name: "Instant app updates", desc: "Small fixes arrive without installing a new app version.", on: false, ready: false },

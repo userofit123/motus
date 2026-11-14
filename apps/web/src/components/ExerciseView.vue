@@ -3,7 +3,7 @@
 // that workout, and the band's average heart rate during it when known), charts, records, notes and reminders, and which routines use it. Shown as a page and as a sheet.
 import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
-import { strengthLevel, LEVELS, e1rm, weightForReps, usesWeight, usesReps, usesDuration, usesDistance, trackingLabel, muscleName, categoryName, type Tracking } from "@motus/shared";
+import { strengthLevel, LEVELS, e1rm, liftedKg, weightForReps, usesWeight, usesReps, usesDuration, usesDistance, trackingLabel, muscleName, categoryName, type Tracking } from "@motus/shared";
 import { invalidate } from "../api/live";
 import { useExercise, useExerciseHistory, useNotes, useReminders, useChange, useSettings, useBody } from "../api/queries";
 import { api, mediaUrl } from "../api/client";
@@ -40,7 +40,7 @@ const pending = computed(() => (rems.data.value ?? []).filter((r: any) => r.stat
 const TABS = computed<[string, string][]>(() => [["about", "About"], ["history", `History${sessions.value.length ? " · " + sessions.value.length : ""}`], ["charts", "Charts"], ["records", "Records"],
   ["notes", `Notes${(notes.data.value?.length ?? 0) + pending.value.length ? " · " + ((notes.data.value?.length ?? 0) + pending.value.length) : ""}`]]);
 const CHARTS = computed<[string, string][]>(() => [
-  ...(usesWeight(tracking.value) && usesReps(tracking.value) ? [["e1rm", "Est. 1RM"], ["max", "Heaviest"], ["volume", "Volume"]] as [string, string][] : []),
+  ...(usesWeight(tracking.value) && usesReps(tracking.value) ? [["e1rm", "Estimated 1RM"], ["max", "Heaviest"], ["volume", "Volume"]] as [string, string][] : []),
   ...(usesReps(tracking.value) ? [["reps", "Reps"]] as [string, string][] : []),
   ...(usesDuration(tracking.value) ? [["duration", "Time"]] as [string, string][] : []),
   ...(usesDistance(tracking.value) ? [["distance", "Distance"]] as [string, string][] : []),
@@ -58,8 +58,10 @@ const usualHour = computed(() => {
 });
 const best1rm = computed(() => hist.data.value?.records?.e1rm?.value ?? null);
 const setText = (s: SetFigures) => fmt.value.set(s, tracking.value);
-const REC: Record<string, string> = { maxWeight: "Heaviest weight", e1rm: "Best estimated 1RM", maxReps: "Most reps in a set", setVolume: "Best set (weight × reps)", sessionVolume: "Most volume in a session", maxDuration: "Longest", maxDistance: "Farthest" };
-const recVal = (k: string, v: number) => (["maxWeight", "e1rm", "setVolume", "sessionVolume"].includes(k) ? fmt.value.wu_(v) : k === "maxDuration" ? fmt.value.clock(v) : k === "maxDistance" ? fmt.value.dist(v) : String(v));
+const REC: Record<string, string> = { maxWeight: "Heaviest weight", e1rm: "Best estimated 1RM", maxReps: "Most reps in a set", setVolume: "Best set", sessionVolume: "Most volume in a session", maxDuration: "Longest", maxDistance: "Farthest" };
+// the best set is shown as the set itself ("32 kg × 8"), found in its workout by the volume it lifted
+const bestSet = (r: any) => (sessions.value.find((x) => x.workoutId === r.workoutId)?.sets ?? []).find((x: any) => x.kind !== "warmup" && x.weightKg && x.reps && liftedKg(x.weightKg, x.reps, tracking.value) === r.value);
+const recVal = (k: string, v: number, r?: any) => (k === "setVolume" && bestSet(r) ? `${fmt.value.wu_(bestSet(r).weightKg)} × ${bestSet(r).reps}` : ["maxWeight", "e1rm", "setVolume", "sessionVolume"].includes(k) ? fmt.value.wu_(v) : k === "maxDuration" ? fmt.value.clock(v) : k === "maxDistance" ? fmt.value.dist(v) : String(v));
 const fav = useChange(async (v: boolean) => { await api.put(`/exercises/${props.id}/prefs`, { ...(e.value?.prefs ?? {}), favourite: v }); savedToast(v ? "Added to favourites" : "Removed from favourites"); }, ["exercises"]);
 const noteMenu = useNoteMenu();
 const own = computed(() => !!e.value?.ownerId);
@@ -177,7 +179,7 @@ const menu = computed<MenuItem[]>(() => [
       <div class="grid g2">
         <div v-for="(r, k) in hist.data.value?.records ?? {}" :key="k" class="card tight click" @click="openWorkout(r.workoutId)">
           <div class="lbl">{{ REC[k] ?? k }}</div>
-          <div class="val" style="font-size:24px">{{ recVal(String(k), r.value) }}</div>
+          <div class="val" style="font-size:24px">{{ recVal(String(k), r.value, r) }}</div>
           <div class="tiny">{{ r.detail ? r.detail + " · " : "" }}{{ fmt.date(r.at, { day: "numeric", month: "short", year: "numeric" }) }}</div>
         </div>
       </div>

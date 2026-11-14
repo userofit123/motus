@@ -37,7 +37,7 @@ const NOW: Partial<Record<LogKind, string>> = {
   body: "SELECT id, kind FROM body_metrics WHERE id = ANY($1::uuid[])",
   note: "SELECT id, body AS name, target_type, target_id, workout_id FROM notes WHERE id = ANY($1::uuid[])",
   reminder: "SELECT id, body AS name, status, done_at, target_type, target_id FROM reminders WHERE id = ANY($1::uuid[])",
-  schedule: "SELECT s.id, coalesce(r.name, s.activity_type) AS name FROM schedules s LEFT JOIN routines r ON r.id = s.routine_id WHERE s.id = ANY($1::uuid[])",
+  schedule: "SELECT s.id, coalesce(r.name, s.activity_type) AS name, s.routine_id IS NULL AS act FROM schedules s LEFT JOIN routines r ON r.id = s.routine_id WHERE s.id = ANY($1::uuid[])",
   folder: "SELECT id, name FROM folders WHERE id = ANY($1::uuid[])",
   program: "SELECT id, name FROM programs WHERE id = ANY($1::uuid[])",
   activity: "SELECT a.id, coalesce(nullif(a.name, ''), t.name, a.type) AS name, a.type FROM activities a LEFT JOIN activity_types t ON t.slug = a.type WHERE a.id = ANY($1::uuid[])",
@@ -46,7 +46,7 @@ const NOW: Partial<Record<LogKind, string>> = {
 // [noun, said when added, said when deleted]
 const WORDS: Record<LogKind, [string, string, string]> = {
   workout: ["workout", "Started", "Deleted a workout"], routine: ["routine", "Created routine", "Deleted a routine"], exercise: ["exercise", "Added exercise", "Deleted an exercise"],
-  goal: ["goal", "Set a goal:", "Deleted a goal"], body: ["body entry", "Logged", "Deleted a body entry"], note: ["note", "Added a note", "Deleted a note"],
+  goal: ["goal", "Set the goal", "Deleted a goal"], body: ["body entry", "Logged", "Deleted a body entry"], note: ["note", "Added a note", "Deleted a note"],
   reminder: ["reminder", "Added a reminder", "Deleted a reminder"], schedule: ["plan", "Planned", "Removed a plan"], folder: ["folder", "Created folder", "Deleted a folder"],
   program: ["program", "Created program", "Deleted a program"], activity: ["activity", "Logged", "Deleted an activity"], activity_type: ["activity type", "Added activity type", "Removed an activity type"],
   settings: ["settings", "Changed settings", "Changed settings"], daily: ["daily log", "Logged", "Removed"],
@@ -130,12 +130,20 @@ export function activityLogRoutes(r: Router) {
       for (const x of (await q.query(`SELECT pk->>'id' AS id, min(seq) AS s FROM sync_log WHERE tbl = $1 AND pk = ANY($2::text[]::jsonb[]) GROUP BY 1`,
         [TABLE[k], list.map((id) => JSON.stringify({ id }))])).rows) firstSeq.set(k + ":" + x.id, Number(x.s));
     }
-    const entries = keep.map((g) => describe(g, g.id ? cur.get(g.kind + ":" + g.id) : null, g.id ? firstSeq.get(g.kind + ":" + g.id) : undefined, doneSets));
+    // a daily value that Health Connect brought in is said so; one typed in is just logged
+    const imported = new Set<Group>();
+    const dailyRows = keep.filter((g) => g.kind === "daily").flatMap((g) => g.rows.filter((x) => x.op === "upsert" && x.pk.date).map((x) => ({ g, kind: String(x.pk.kind), date: String(x.pk.date).slice(0, 10) })));
+    if (dailyRows.length) {
+      const src = new Map((await q.query("SELECT kind, to_char(date, 'YYYY-MM-DD') AS d, source FROM daily_logs WHERE kind = ANY($1::text[]) AND date = ANY($2::date[])",
+        [[...new Set(dailyRows.map((x) => x.kind))], [...new Set(dailyRows.map((x) => x.date))]])).rows.map((x: any) => [`${x.kind}|${x.d}`, x.source as string]));
+      for (const g of new Set(dailyRows.map((x) => x.g))) if (dailyRows.filter((x) => x.g === g).every((x) => src.get(`${x.kind}|${x.date}`) === "health_connect")) imported.add(g);
+    }
+    const entries = keep.map((g) => describe(g, g.id ? cur.get(g.kind + ":" + g.id) : null, g.id ? firstSeq.get(g.kind + ":" + g.id) : undefined, doneSets, imported.has(g)));
     return { entries, cursor };
   });
 }
 
-function describe(g: Group, now: any, firstSeq: number | undefined, doneSets: Set<string>): LogEntry {
+function describe(g: Group, now: any, firstSeq: number | undefined, doneSets: Set<string>, fromHealth = false): LogEntry {
   const main = g.rows.filter((x) => x.tbl === TABLE[g.kind]);
   const created = main.some((x) => x.op === "upsert" && x.seq === firstSeq);
   const deleted = !!NOW[g.kind] && main.some((x) => x.op === "delete") && !now;
@@ -161,12 +169,17 @@ function describe(g: Group, now: any, firstSeq: number | undefined, doneSets: Se
   else if (g.kind === "body") {
     const count = new Set(g.rows.map((x) => x.pk.id)).size;
     say(created ? "logged" : "changed", count > 1 ? `${created ? "Logged" : "Changed"} ${count} body entries` : `${created ? "Logged" : "Changed"} ${label(String(now?.kind ?? "body entry"))}`);
-  } else if (g.kind === "daily") say(main.some((x) => x.op === "delete") ? "deleted" : "logged", `${main.every((x) => x.op === "delete") ? gone : added} ${n}`);
+  } else if (g.kind === "daily") {
+    const removed = main.every((x) => x.op === "delete");
+    say(main.some((x) => x.op === "delete") ? "deleted" : "logged", removed ? `${gone} ${n} data` : fromHealth ? `Imported ${n} from Health Connect` : `${added} ${n}`);
+  }
   else if (g.kind === "settings") say("changed", "Changed settings");
   else if (g.kind === "exercise" && !main.length) say("changed", `Changed settings for ${n}`);
   else if (g.kind === "note" || g.kind === "reminder") say(created ? "created" : "changed", created ? added : `Changed a ${noun}`, name ?? "");
-  else if (g.kind === "schedule") say(created ? "created" : "changed", created ? `${added} ${n}` : `Changed the plan for ${n}`);
+  else if (g.kind === "schedule") say(created ? "created" : "changed", !name ? (created ? "Planned a workout" : "Changed a plan (deleted since)") : created ? (now?.act ? `Planned a ${name.toLowerCase()} session` : `${added} ${name}`) : `Changed the plan for ${name}`);
   else if (g.kind === "goal") say(created ? "created" : "changed", created ? (name ? `${added} ${name}` : "Set a goal") : `Changed goal: ${n}`);
+  // a thing with no name left was deleted since: "a routine" would read as "Changed routine a routine"
+  else if (!name) say(created ? (g.kind === "activity" ? "logged" : "created") : "changed", `${created ? (g.kind === "activity" ? "Logged" : g.kind === "exercise" || g.kind === "activity_type" ? "Added" : "Created") : "Changed"} ${/^[aeiou]/.test(noun) ? "an" : "a"} ${noun} (deleted since)`);
   else say(created ? (g.kind === "activity" ? "logged" : "created") : "changed", created ? `${added} ${n}` : `Changed ${g.kind === "activity" ? n : `${noun} ${n}`}`);
 
   // where it can be opened

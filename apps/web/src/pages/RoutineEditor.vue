@@ -225,7 +225,7 @@ const joins = (e: any) => (sidesOn.value ? sideJoins(e.sets, (j) => plannedRest(
 const exName = (e: any) => exOf(e)?.name ?? "";
 const exImg = (e: any) => exOf(e)?.images?.[0];
 
-// "3 × 8-12 · 60 kg", shared with the routine page so both say the same (setSummary in core/format)
+// "3 sets of 8 · 60 kg", shared with the routine page so both say the same (setSummary in core/format)
 const setSummary = (e: any) => setSummaryOf(e.sets, tr(e), fmt.value, sidesOn.value);
 
 // rest after each kind of set; normal sets use the exercise's own rest, the others the person's default for the kind as

@@ -54,14 +54,14 @@ const GROUPS = computed<[string, Section[]][]>(() => [
   ["Your data", [["backup", "Backup & restore", "download", "A copy of everything"], ["data", "Export & import", "upload", "Motus files, CSV, other apps"], ["log", "Activity log", "history", "Everything you changed"],
     // what comes in from outside (Health Connect) or goes out (API tokens, Ask Claude) is your data too
     ...(s.value.features.apiTokens || s.value.features.mcp || s.value.features.healthConnect || avail.data.value?.imports ? [["integrations", "Integrations", "link", integrationsHint.value] as Section] : [])]],
-  ["About", [["versions", "App & Versions", "refresh", "Installed version, downloads"], ["changelog", "What's new", "sparkle", "Release notes"],
+  ["About", [["versions", "App & versions", "refresh", "Installed version, downloads"], ["changelog", "What's new", "sparkle", "Release notes"],
     ...(session.user?.role === "admin" ? [["admin", "Server admin", "server", "People, invites, sign-ups"] as Section] : []), ["about", "About Motus", "info", "Version, credits"]]],
 ]);
 const SECTIONS = computed(() => GROUPS.value.flatMap(([, xs]) => xs));
 // screens inside a section, reached from a row there: [the section they belong to, their name]
 const SUBS: Record<string, [parent: string, name: string]> = { health: ["integrations", "Imported data"] };
 const sub = computed(() => SUBS[sec.value]);
-const title = computed(() => sub.value?.[1] ?? SECTIONS.value.find((x) => x[0] === sec.value)?.[1]);
+const title = computed(() => sub.value?.[1] ?? SECTIONS.value.find((x) => x[0] === sec.value)?.[1] ?? (sec.value === "integrations" ? "Integrations" : undefined));
 const parentName = computed(() => (sub.value ? SECTIONS.value.find((x) => x[0] === sub.value![0])?.[1] ?? "Settings" : "Settings"));
 const go = (k: string) => router.push(`/settings/${k}`);
 const DAY_OPTS = computed(() => weekdayOrder(s.value.firstDay).map((d) => ({ value: d, label: WEEKDAYS[d]!.slice(0, 3) })));

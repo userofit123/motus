@@ -33,7 +33,10 @@ const dayName = (d: string) => d === ymd(new Date().toISOString()) ? "Today" : d
 const when = (iso: string) => { const m = Math.round((Date.now() - Date.parse(iso)) / 60000); return m < 1 ? "Just now" : m < 60 ? `${m} min ago` : m < 360 ? `${Math.round(m / 60)} h ago` : fmt.value.time(iso); };
 // which device made a change is only worth saying when more than one did
 const devices = computed(() => new Set(entries.value.map((e) => e.origin)).size > 1);
-const sub = (e: any) => [e.detail, when(e.at), devices.value ? (e.origin ? `device ${e.origin.slice(-4)}` : "server") : ""].filter(Boolean).join(" · ");
+// "" is the copy this screen reads: the server in a browser, this device's own copy in the apps; any other origin is a device's
+// offline copy, which has no name of its own to show
+const where = (origin: string) => origin ? "on another device" : sync.on ? "on this device" : "on the server";
+const sub = (e: any) => [e.detail, when(e.at), devices.value ? where(e.origin) : ""].filter(Boolean).join(" · ");
 
 // changes kept on this device until the server can be reached
 const WHAT: [RegExp, string][] = [[/^\/(workouts|workout-)/, "Workout"], [/^\/routines|^\/folders/, "Routine"], [/^\/(activities|body|daily)/, "Activity or body entry"], [/^\/goals/, "Goal"], [/^\/(notes|reminders)/, "Note or reminder"], [/^\/settings/, "Settings"]];

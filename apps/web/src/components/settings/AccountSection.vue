@@ -37,6 +37,8 @@ const sessions = useQuery({ queryKey: ["settings", "sessions"], queryFn: () => a
 type Session = { id: string; deviceName?: string; platform?: string; current?: boolean; lastSeenAt?: string; createdAt?: string };
 const devices = computed(() => ((sessions.data.value ?? []) as Session[]).filter((x) => x.platform !== "api").sort((a, b) => Number(b.current) - Number(a.current)));
 const others = computed(() => devices.value.filter((x) => !x.current).length);
+// older sign-ins were saved under the generic names: "Browser" and a command-line tool's own "curl/8.18.0"
+const deviceName = (x: Session) => { const n = (x.deviceName ?? "").trim(); const tool = /^(curl|wget|httpie)\b/i.exec(n); return tool ? `Script (${tool[1]!.toLowerCase()})` : !n || n.toLowerCase() === "browser" ? (x.platform === "api" ? "API token" : "Unknown browser") : n; };
 const icon = (x: Session) => (x.platform === "android" || /Android|iPhone/.test(x.deviceName ?? "") ? "device" : "server");
 async function endSession(id: string) { try { await api.del(`/auth/sessions/${id}`); sessions.refetch(); toast("Signed out that device"); } catch (e) { toastError(e); } }
 async function endOthers() { try { await api.post("/auth/logout-others"); sessions.refetch(); toast("Signed out everywhere else"); } catch (e) { toastError(e); } }
@@ -84,7 +86,7 @@ async function deleteAccount() {
     <p class="tiny hgap">{{ !sessions.data.value ? "" : others ? `This account is also signed in on ${others} other device${others === 1 ? "" : "s"}. Sign out any you don't know.` : "This account isn't signed in anywhere else." }}</p>
     <div class="card flush">
       <div v-for="x in devices" :key="x.id" class="li"><Icon :name="icon(x)" :size="18" class="muted" />
-        <div class="grow"><div class="t">{{ x.deviceName || x.platform }}</div>
+        <div class="grow"><div class="t">{{ deviceName(x) }}</div>
           <div class="s">{{ x.current ? "This device · active now" : `Last active ${ago(x.lastSeenAt)} · signed in ${fmt.date(x.createdAt, { day: "numeric", month: "short", year: "numeric" })}` }}</div></div>
         <button v-if="!x.current" class="qb" @click="endSession(x.id)">Sign out</button></div>
     </div>

@@ -113,7 +113,7 @@ const menu = computed<MenuItem[]>(() => [
         <div class="li"><div class="grow"><div class="t">Work</div><div class="s">Each round</div></div><NumStep :value="iv.cfg.workS" :step="5" :min="5" :max="3600" unit="s" label="work seconds" @set="(v) => set('workS', v)" /></div>
         <div class="li"><div class="grow"><div class="t">Rest</div><div class="s">Between rounds</div></div><NumStep :value="iv.cfg.restS" :step="5" :max="3600" unit="s" label="rest seconds" @set="(v) => set('restS', v)" /></div>
         <div class="li"><div class="grow"><div class="t">Rounds</div><div class="s">Work and rest, repeated</div></div><NumStep :value="iv.cfg.rounds" :min="1" :max="99" label="rounds" @set="(v) => set('rounds', v)" /></div>
-        <div class="li"><div class="grow"><div class="t">Sets</div><div class="s">All the rounds repeated</div></div><NumStep :value="iv.cfg.sets" :min="1" :max="20" label="sets" @set="(v) => set('sets', v)" /></div>
+        <div class="li"><div class="grow"><div class="t">Sets</div><div class="s">How many times all the rounds repeat</div></div><NumStep :value="iv.cfg.sets" :min="1" :max="20" label="sets" @set="(v) => set('sets', v)" /></div>
         <div v-if="iv.cfg.sets > 1" class="li"><div class="grow"><div class="t">Rest between sets</div><div class="s">In place of the last round's rest</div></div><NumStep :value="iv.cfg.setRestS" :step="15" :max="3600" unit="s" label="seconds between sets" @set="(v) => set('setRestS', v)" /></div>
       </div>
       <div class="row spt go">

@@ -37,13 +37,17 @@ export async function createSession(db: Db, userId: string, device: string, plat
 // The name a signed-in device gets in Account → Signed-in devices, so you can tell your places apart:
 // "Firefox on Linux", "Motus app on Android". A name the app chose itself (anything but the generic ones) is kept.
 const GENERIC = new Set(["", "browser", "android browser", "android app"]);
+// a script or command-line tool signing in (curl, wget, a library): its own name tells nothing to a person
+const SCRIPT = /^(curl|wget|httpie|python-requests|python-urllib|go-http-client|node-fetch|axios|okhttp)\b/i;
 export function deviceLabel(given: unknown, ua: string | undefined): string {
   const g = (typeof given === "string" ? given : "").trim();
-  if (!GENERIC.has(g.toLowerCase()) || !ua) return g || "Browser";
+  const tool = SCRIPT.exec(g) ?? (GENERIC.has(g.toLowerCase()) && ua ? SCRIPT.exec(ua) : null);
+  if (tool) return `Script (${tool[1]!.toLowerCase()})`;
+  if (!GENERIC.has(g.toLowerCase()) || !ua) return g || "Unknown browser";
   const os = /Android/.test(ua) ? "Android" : /iPhone|iPad|iPod/.test(ua) ? "iPhone or iPad" : /Windows/.test(ua) ? "Windows" : /CrOS/.test(ua) ? "ChromeOS"
     : /Mac OS X|Macintosh/.test(ua) ? "Mac" : /Linux/.test(ua) ? "Linux" : "";
   const app = g.toLowerCase() === "android app" || /Electron\//.test(ua) ? "Motus app" : /Edg\//.test(ua) ? "Edge" : /OPR\//.test(ua) ? "Opera"
-    : /Firefox\//.test(ua) ? "Firefox" : /Chrome\//.test(ua) ? "Chrome" : /Safari\//.test(ua) ? "Safari" : g || "Browser";
+    : /Firefox\//.test(ua) ? "Firefox" : /Chrome\//.test(ua) ? "Chrome" : /Safari\//.test(ua) ? "Safari" : g && g.toLowerCase() !== "browser" ? g : "Unknown browser";
   return os ? `${app} on ${os}` : app;
 }
 

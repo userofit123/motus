@@ -61,7 +61,7 @@ describe("activity log", () => {
     await call(A, "PUT", "/settings", { weeklyGoal: 4 });
     const { entries } = await log();
     const by = (k: string) => entries.find((e: any) => e.kind === k);
-    expect(by("goal")).toMatchObject({ action: "created", text: "Set a goal: Three a week" });
+    expect(by("goal")).toMatchObject({ action: "created", text: "Set the goal Three a week" });
     expect(by("body")).toMatchObject({ action: "logged", text: "Logged body weight" });
     expect(by("note")).toMatchObject({ text: "Added a note", detail: "Keep the elbows in", open: { kind: "exercise", id: ex.id } });
     expect(by("settings")).toMatchObject({ text: "Changed settings" });

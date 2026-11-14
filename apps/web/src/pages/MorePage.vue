@@ -46,7 +46,7 @@ const PAGES = computed<[to: string, label: string, icon: string, hint: string][]
       <div class="li click" @click="activitySheet = { type: 'walk' }"><span class="bi sg"><Icon name="walk" :size="17" /></span><span class="grow t">Activity</span><Icon name="plus" :size="16" class="muted" /></div>
       <div class="li click" @click="bodySheet = true"><span class="bi sg"><Icon name="scale" :size="17" /></span><span class="grow t">Body weight</span><Icon name="plus" :size="16" class="muted" /></div>
       <div v-if="s.features.measurements" class="li click" @click="bodySheet = 'tape'"><span class="bi sg"><Icon name="target" :size="17" /></span><span class="grow t">Measurements</span><Icon name="plus" :size="16" class="muted" /></div>
-      <div v-if="s.features.steps || s.features.dailyLog" class="li click" @click="dailySheet = true"><span class="bi sg"><Icon :name="s.features.steps ? 'steps' : 'moon'" :size="17" /></span><span class="grow t">{{ s.features.dailyLog ? (s.features.steps ? "Steps, sleep, water, mood" : "Sleep, water, mood") : "Steps" }}</span><Icon name="plus" :size="16" class="muted" /></div>
+      <div v-if="s.features.steps || s.features.dailyLog" class="li click" @click="dailySheet = true"><span class="bi sg"><Icon :name="s.features.steps ? 'steps' : 'moon'" :size="17" /></span><span class="grow t">{{ s.features.dailyLog ? "Daily log" : "Steps" }}</span><Icon name="plus" :size="16" class="muted" /></div>
     </div>
 
     <div class="sh"><h2>App</h2></div>

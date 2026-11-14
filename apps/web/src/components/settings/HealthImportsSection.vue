@@ -8,10 +8,11 @@ import { useInfiniteQuery } from "@tanstack/vue-query";
 import { TOPICS, toM } from "@motus/shared";
 import { api } from "../../api/client";
 import { invalidate } from "../../api/live";
-import { useActivityTypes } from "../../api/queries";
+import { useActivityTypes, useSleep } from "../../api/queries";
 import { isPhone } from "../../core/device";
 import { goBack } from "../../core/leave";
 import { useFmt, localYmd, activityIcon } from "../../core/format";
+import { mins } from "../../core/sleep";
 import { confirm, prompt } from "../../core/ask";
 import { toast, toastError } from "../../core/toast";
 import Icon from "../Icon.vue";
@@ -54,12 +55,19 @@ const vitalNum = (k: Vital, v: number) => fmt.value.num(v, (k === "spo2" || k ==
 const typeName = (slug: string) => (types.data.value ?? []).find((t: any) => t.slug === slug)?.name ?? slug[0]!.toUpperCase() + slug.slice(1);
 const icon = (x: Item) => (x.kind === "activity" ? activityIcon(x.activity?.type) : ICON[x.kind]);
 const title = (x: Item) => (x.kind === "activity" ? x.activity?.name || typeName(x.activity?.type ?? "activity") : NAME[x.kind]);
-// the value in the person's units: "8,432", "7.5 h", "72.4 kg", "58 bpm", "97%", "6.42 km", "412 kcal"
-const value = (x: Item) => x.value == null ? "-" : x.kind === "distance" ? fmt.value.dist(x.value) : x.kind === "active_kcal" ? `${fmt.value.num(x.value, 0)} kcal` : x.kind === "water" ? `${fmt.value.num(x.value, 0)} ml` : x.kind === "body_fat" ? `${fmt.value.num(x.value, 1)}%` : isVital(x.kind) ? `${vitalNum(x.kind, x.value)}${x.kind === "spo2" ? "" : " "}${UNIT[x.kind]}` : x.kind === "steps" ? fmt.value.num(x.value, 0) : x.kind === "sleep" ? `${fmt.value.num(x.value, 1)} h` : `${fmt.value.w(x.value)} ${fmt.value.wu}`;
-// when it was: an activity's start (and its type, when it has a name of its own), a weighing's time, a night's end;
-// a day's steps and heart values are the whole day
-const sub = (x: Item) => x.kind === "activity" && x.activity ? [fmt.value.time(x.activity.startedAt), x.activity.name ? typeName(x.activity.type) : ""].filter(Boolean).join(" · ")
-  : x.kind === "steps" || x.kind === "distance" || x.kind === "active_kcal" || x.kind === "water" || isVital(x.kind) ? "Whole day" : x.at ? fmt.value.time(x.at) : x.kind === "sleep" ? "Night" : "-";
+// the value in the person's units: "8,432", "7h 30m", "72.4 kg", "58 bpm", "97%", "6.42 km", "412 kcal"
+const value = (x: Item) => x.value == null ? "-" : x.kind === "distance" ? fmt.value.dist(x.value) : x.kind === "active_kcal" ? `${fmt.value.num(x.value, 0)} kcal` : x.kind === "water" ? `${fmt.value.num(x.value, 0)} ml` : x.kind === "body_fat" ? `${fmt.value.num(x.value, 1)}%` : isVital(x.kind) ? `${vitalNum(x.kind, x.value)}${x.kind === "spo2" ? "" : " "}${UNIT[x.kind]}` : x.kind === "steps" ? fmt.value.num(x.value, 0) : x.kind === "sleep" ? mins(x.value * 60) : `${fmt.value.w(x.value)} ${fmt.value.wu}`;
+// the nights shown here, for their times in bed: the list's own days, oldest to newest (steps, heart values and the like
+// are a whole day, which says nothing a row's title doesn't, so they have no second line)
+const sleepDays = computed(() => items.value.filter((x) => x.kind === "sleep").map((x) => x.date.slice(0, 10)).sort());
+const nights = useSleep(computed(() => ({ from: sleepDays.value[0], to: sleepDays.value.at(-1) })), computed(() => sleepDays.value.length > 0));
+const nightOf = (x: Item) => (nights.data.value?.nights ?? []).find((n) => n.date.slice(0, 10) === x.date.slice(0, 10));
+// when it was: an activity's start (and its type, when it has a name of its own), a weighing's time, a night's times in bed
+const sub = (x: Item) => {
+  if (x.kind === "activity" && x.activity) return [fmt.value.time(x.activity.startedAt), x.activity.name ? typeName(x.activity.type) : ""].filter(Boolean).join(" · ");
+  if (x.kind === "sleep") { const n = nightOf(x); return n ? `${fmt.value.time(n.startAt)}-${fmt.value.time(n.endAt)}` : ""; }
+  return x.kind === "weight" || x.kind === "body_fat" ? (x.at ? fmt.value.time(x.at) : "") : "";
+};
 
 const path = (x: Item) => `/health/imports/${encodeURIComponent(x.key)}`;
 const changed = () => invalidate([...TOPICS.health]);
@@ -101,7 +109,7 @@ const menu = (x: Item): MenuItem[] => [
     <div class="card"><div class="list">
       <div v-for="x in d.items" :key="x.key" class="li click" role="button" tabindex="0" @click="edit(x)" @keydown.enter.self="edit(x)">
         <span class="bi sg"><Icon :name="icon(x)" :size="16" /></span>
-        <div class="grow"><div class="t">{{ title(x) }}<span v-if="x.edited" class="mchip hi-chip">Edited</span></div><div class="s">{{ sub(x) }}</div></div>
+        <div class="grow"><div class="t">{{ title(x) }}<span v-if="x.edited" class="mchip hi-chip">Edited</span></div><div v-if="sub(x)" class="s">{{ sub(x) }}</div></div>
         <SessionStats v-if="x.kind === 'activity' && x.activity" :x="{ kind: 'activity', durationS: x.activity.durationS, distanceM: x.activity.distanceM, steps: x.activity.steps }" />
         <b v-else class="num">{{ value(x) }}</b>
         <span @click.stop><Menu :items="menu(x)" :label="`Options for ${title(x)}`" /></span>

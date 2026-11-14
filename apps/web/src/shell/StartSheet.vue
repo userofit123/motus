@@ -82,7 +82,7 @@ async function empty() {
       <button class="optb" @click="emit('close'); activitySheet = {}"><span class="oi"><Icon name="walk" /></span><div class="grow"><div class="t">Activity</div><div class="s">A walk, run, ride or class done earlier: type in the time</div></div></button>
       <button class="optb" @click="emit('close'); bodySheet = true"><span class="oi"><Icon name="scale" /></span><div class="grow"><div class="t">Body weight</div><div class="s">Kept on the Body page with its trend</div></div></button>
       <button v-if="s.features.measurements" class="optb" @click="emit('close'); bodySheet = 'tape'"><span class="oi"><Icon name="target" /></span><div class="grow"><div class="t">Measurements</div><div class="s">Waist, chest, arms… and body fat, all at once</div></div></button>
-      <button v-if="s.features.steps || s.features.dailyLog" class="optb" @click="emit('close'); dailySheet = true"><span class="oi"><Icon :name="s.features.steps ? 'steps' : 'moon'" /></span><div class="grow"><div class="t">{{ s.features.dailyLog ? (s.features.steps ? "Steps, sleep, water, mood" : "Sleep, water, mood") : "Steps" }}</div><div class="s">Today's daily log</div></div></button>
+      <button v-if="s.features.steps || s.features.dailyLog" class="optb" @click="emit('close'); dailySheet = true"><span class="oi"><Icon :name="s.features.steps ? 'steps' : 'moon'" /></span><div class="grow"><div class="t">{{ s.features.dailyLog ? "Daily log" : "Steps" }}</div><div class="s">{{ s.features.dailyLog ? (s.features.steps ? "Steps, sleep, water, mood" : "Sleep, water, mood") : "Today's steps" }}</div></div></button>
     </div>
 
     <h2 class="spt">Create</h2>
