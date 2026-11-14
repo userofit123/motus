@@ -34,6 +34,24 @@ export interface WorkoutSoFar {
 
 const working = (s: WorkoutSet) => s.done && s.kind !== "warmup";
 
+/** The sets that decide whether an exercise is done: its working sets, so warm-ups left unticked never hold it back
+ * (the same sets the "sets" counts use). Only an exercise of warm-ups alone needs those. The server's rule (the set
+ * update in workouts.ts) is the same. */
+function deciding<S extends Pick<WorkoutSet, "kind">>(sets: S[]): S[] {
+  const work = sets.filter((s) => s.kind !== "warmup");
+  return work.length ? work : sets;
+}
+export function exerciseComplete(sets: Pick<WorkoutSet, "kind" | "done">[]): boolean {
+  const need = deciding(sets);
+  return need.length > 0 && need.every((s) => s.done);
+}
+/** The set to do next: the first one not done, passing over warm-ups once a working set is ticked (they no longer
+ * come first, and a done exercise has no set left to do). */
+export function nextSet<S extends Pick<WorkoutSet, "kind" | "done">>(sets: S[]): S | undefined {
+  const begun = sets.some((s) => s.done && s.kind !== "warmup");
+  return sets.find((s) => !s.done && !(begun && s.kind === "warmup"));
+}
+
 /** How one set ranks against the others of the same exercise: estimated 1RM (or weight × reps, or weight) for weights,
  * then reps, time, distance. Assisted exercises log the help taken off, so less is better there. */
 function score(s: WorkoutSet, t: Tracking): number {

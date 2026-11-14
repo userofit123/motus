@@ -2,7 +2,7 @@
 // One exercise in the running workout: its reminders and pinned notes when it comes up (and the notes written in it), and the sets table
 // (Previous · kg · Reps · ✓). The routine's numbers are already filled in (last time's in an empty workout); tap Previous to copy it, tick to log the set.
 import { computed, ref, watch, nextTick, onBeforeUnmount } from "vue";
-import { usesWeight, usesReps, usesDuration, usesDistance, toM, fromM, parseQuick, warmups, muscleName, sideJoins, restDefaultsOf, refitSet, keepsWeight, type Tracking, type WorkoutExercise, type WorkoutSet } from "@motus/shared";
+import { exerciseComplete, nextSet, usesWeight, usesReps, usesDuration, usesDistance, toM, fromM, parseQuick, warmups, muscleName, sideJoins, restDefaultsOf, refitSet, keepsWeight, type Tracking, type WorkoutExercise, type WorkoutSet } from "@motus/shared";
 import { joinRest } from "../core/plannedRest";
 import { SET_KINDS, setNo as setNoOf, sideJoinCls } from "../core/format";
 import { useWorkout } from "./useWorkout";
@@ -131,7 +131,7 @@ const menu = computed(() => [
   { label: "About this exercise", icon: "info", run: () => (exerciseSheet.value = props.e.exerciseId) },
   { label: "Remind me next time", icon: "bell", run: () => (reminderSheet.value = { targetType: "exercise", targetId: props.e.exerciseId, label: props.e.exercise.name, scopeRoutineId: props.e.routineExerciseId && !props.e.swapped ? W.state.w?.routineId : null, routineName: W.state.w?.name, workoutId: W.state.w?.id }) },
   { label: "Skip", sep: true, icon: "skip", run: skip, hidden: props.e.status === "skipped" },
-  { label: "Bring it back", icon: "refresh", run: () => W.setStatus(props.e, props.e.sets.every((s) => s.done) && props.e.sets.length ? "done" : "pending"), hidden: props.e.status !== "skipped" },
+  { label: "Bring it back", icon: "refresh", run: () => W.setStatus(props.e, exerciseComplete(props.e.sets) ? "done" : "pending"), hidden: props.e.status !== "skipped" },
   { label: "Swap for another exercise", icon: "swap", run: openReplace },
   // what it is counted by: the exercise's own way, chosen for every workout from now on (and its sets in every routine)
   { ...trackItem(props.e.exerciseId, tr.value, !!feat.value.timedSets, retrack), sep: true },
@@ -175,7 +175,7 @@ watch(() => shownNotes.value.map((n) => n.id), async (ids) => {
 // the set to do now, marked in the table (the same one the action bar shows)
 // sets are logged only in the exercise being done: in one you're just looking at, the ticks are locked against stray taps
 const isActive = computed(() => W.state.active === props.index);
-const nowId = computed(() => (W.state.active === props.index ? visibleSets.value.find((s) => !s.done)?.id ?? null : null));
+const nowId = computed(() => (W.state.active === props.index ? nextSet(visibleSets.value)?.id ?? null : null));
 </script>
 
 <template>

@@ -1,7 +1,7 @@
 // The running workout, as one shared object: a local copy that every change updates at once (so typing and ticking never
 // wait for the network), with each change sent to the server (or kept for later when offline).
 import { computed, effectScope, nextTick, reactive, ref, watch } from "vue";
-import { planSetRest, restDefaultsOf, dropWeightKg, toKg, type Workout, type WorkoutExercise, type WorkoutSet, type WorkoutPrefs } from "@motus/shared";
+import { planSetRest, restDefaultsOf, exerciseComplete, nextSet, dropWeightKg, toKg, type Workout, type WorkoutExercise, type WorkoutSet, type WorkoutPrefs } from "@motus/shared";
 import { useActive, useSettings } from "../api/queries";
 import { send, endedHere, markEnded, waiting } from "../api/outbox";
 import { api } from "../api/client";
@@ -10,7 +10,7 @@ import { toastError } from "../core/toast";
 import { readJson, writeJson } from "../core/prefs";
 import { startRest, finishRest, rest, setCues, restActive, adjustRest, setRest, pauseRest, resumeRest } from "./runtime";
 import { haptic, enableNotificationActions, showSession, clearSession, isNativeApp, onNoticeAction, type NoticeButton } from "./native";
-import { makeFmt } from "../core/format";
+import { makeFmt, setNo } from "../core/format";
 import { choose } from "../core/ask";
 
 // cur: the exercise on screen (look around freely); active: the one being done now, which the action bar works on
@@ -87,8 +87,8 @@ export function useWorkout() {
       const w = state.w;
       if (!w || w.status !== "in_progress" || !appPrefs.value.sessionNotice) return null;
       if (restActive() && rest.pausedLeftS == null && isNativeApp()) return "rest";
-      const e = w.exercises[state.active], sets = w.exercises.filter((x) => x.status !== "skipped").flatMap((x) => x.sets);
-      const work = e?.sets.filter((x) => x.kind !== "warmup") ?? [], cur = e?.sets.find((x) => !x.done);
+      const e = w.exercises[state.active], sets = w.exercises.filter((x) => x.status !== "skipped").flatMap((x) => x.sets).filter((x) => x.kind !== "warmup");
+      const work = e?.sets.filter((x) => x.kind !== "warmup") ?? [], cur = e && nextSet(e.sets);
       const setTxt = !e ? "" : !cur ? "all sets done" : cur.kind === "warmup" ? "warm-up set" : `set ${work.indexOf(cur) + 1} of ${work.length}`;
       return {
         title: w.pauseStartedAt ? `${w.name} (paused)` : `${w.name}: workout in progress`,
@@ -115,7 +115,7 @@ export function useWorkout() {
   const fmt = computed(() => makeFmt(settings.value));
   // the weight step in your units (5 lb or 2.5 kg), kept in kg
   const incKg = computed(() => settings.value.units.weight === "lb" ? toKg(settings.value.increments.lb, "lb") : settings.value.increments.kg);
-  const tickNext = () => { const e = state.w?.exercises.find((x) => x.status === "pending" && x.sets.some((y) => !y.done)); if (e) tick(e, e.sets.findIndex((y) => !y.done)); };
+  const tickNext = () => { const e = state.w?.exercises.find((x) => x.status === "pending" && nextSet(x.sets)); if (e) tick(e, e.sets.indexOf(nextSet(e.sets)!)); };
   const restLonger = () => startRest(30, { setId: null, label: "Rest", next: "", workoutId: state.w?.id ?? "" });
   watch(() => settings.value.features.notifLogging, (on) => enableNotificationActions(!!on), { immediate: true });
   // the buttons on the workout's and the rest's notifications (native.ts), registered once; a rest that is over (still
@@ -165,12 +165,16 @@ export function useWorkout() {
   function describeNext(after: WorkoutExercise, si: number): string {
     const w = state.w!;
     const i = w.exercises.indexOf(after);
-    const nextSet = after.sets.slice(si + 1).find((x) => !x.done);
+    const following = after.sets.slice(si + 1).find((x) => !x.done);
     const f = fmt.value;
     const txt = (e: WorkoutExercise, s: WorkoutSet) => [e.exercise.name, f.set(s, e.exercise.tracking)].filter(Boolean).join(" · ");
-    if (nextSet) return `Set ${after.sets.indexOf(nextSet) + 1} · ${txt(after, nextSet)}`;
+    // named as the table's badge and the bar name it: warm-ups and drops have no number of their own, sides share one
+    if (following) {
+      const k = after.sets.indexOf(following);
+      return `${following.kind === "warmup" ? "Warm-up set" : `Set ${setNo(after.sets, k, !!settings.value.features.unilateral)}`} · ${txt(after, following)}`;
+    }
     const ne = w.exercises.slice(i + 1).find((e) => e.status === "pending") ?? w.exercises.find((e) => e.status === "pending" && e !== after);
-    const ns = ne?.sets.find((x) => !x.done);
+    const ns = ne && nextSet(ne.sets);
     return ne && ns ? `Next: ${txt(ne, ns)}` : "Last set done";
   }
 
@@ -188,7 +192,8 @@ export function useWorkout() {
     haptic(done ? "medium" : "light");
     // the rest that was running ends now: it belonged to the set before this one
     if (done && rest.endAt) finishRest(true);
-    const allDone = e.sets.every((x) => x.done);
+    // warm-ups don't hold an exercise back: done once its working sets are (the server's rule too)
+    const allDone = exerciseComplete(e.sets);
     e.status = e.status === "skipped" ? "skipped" : allDone ? "done" : "pending";
     // saved behind the scenes: the rest and the next exercise follow the copy here at once. Waiting for the save left
     // the screen stuck for seconds while the device's copy (PGlite) was still reloading the workout after the weight

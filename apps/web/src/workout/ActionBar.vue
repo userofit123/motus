@@ -5,7 +5,7 @@
 // with -15 and +15 either side. When an exercise is finished: on to the next, or Finish. The workout's Pause is always
 // the first button of the bottom row.
 import { computed, ref, watch, onBeforeUnmount } from "vue";
-import { clock, usesWeight, usesReps, usesDuration, type WorkoutSet, type SetKind } from "@motus/shared";
+import { clock, nextSet, usesWeight, usesReps, usesDuration, type WorkoutSet, type SetKind } from "@motus/shared";
 import { useWorkout } from "./useWorkout";
 import { setNo } from "../core/format";
 import { KIND_LABEL, REST_LABEL } from "../core/plannedRest";
@@ -42,8 +42,8 @@ const w = computed(() => W.state.w);
 const e = computed(() => w.value?.exercises[W.state.active] ?? null);
 const tr = computed(() => e.value?.exercise?.tracking ?? "weight_reps");
 const shown = computed(() => e.value?.sets.filter((x) => W.prefs.value.showWarmups || x.kind !== "warmup") ?? []);
-/** the set to do now: the first one not done */
-const s = computed<WorkoutSet | null>(() => (e.value?.status === "skipped" ? null : shown.value.find((x) => !x.done) ?? null));
+/** the set to do now: the first one not done, past warm-ups left behind (nextSet) */
+const s = computed<WorkoutSet | null>(() => (e.value?.status === "skipped" ? null : nextSet(shown.value) ?? null));
 const si = computed(() => (s.value ? e.value!.sets.indexOf(s.value) : -1));
 // the sets that count: a drop belongs to the set before it
 const work = computed(() => e.value?.sets.filter((x) => x.kind !== "warmup" && x.kind !== "drop") ?? []);

@@ -763,13 +763,17 @@ export function workoutRoutes(r: Router) {
       await replanRests(ctx, weId, (s, i, all) => all[i + 1]?.id === sid && (!s.done || !all[i + 1]!.done),
         (now, all) => ({ ...now, kinds: all.map((s) => (s.id === sid ? was : s.kind)) }));
     }
-    // the exercise is done when every set is done; it gets its start time from the first set
+    // the exercise is done when its working sets are (warm-ups left unticked never hold it back; only an exercise of
+    // warm-ups alone needs those): the app's rule, exerciseComplete in shared/summary.ts. Its start time is the first set's
     if ("done" in b) {
-      const st = (await ctx.q.query("SELECT count(*) FILTER (WHERE done) AS d, count(*) AS n, min(done_at) AS first FROM workout_sets WHERE workout_exercise_id = $1", [weId])).rows[0];
+      const st = (await ctx.q.query(
+        `SELECT count(*) FILTER (WHERE done) AS d, count(*) AS n, count(*) FILTER (WHERE done AND kind <> 'warmup') AS wd,
+           count(*) FILTER (WHERE kind <> 'warmup') AS wn, min(done_at) AS first FROM workout_sets WHERE workout_exercise_id = $1`, [weId])).rows[0];
+      const [d, n] = Number(st.wn) > 0 ? [Number(st.wd), Number(st.wn)] : [Number(st.d), Number(st.n)];
       await ctx.q.query(
         `UPDATE workout_exercises SET status = CASE WHEN status = 'skipped' THEN 'skipped' WHEN $2::int > 0 AND $2::int = $3::int THEN 'done' ELSE 'pending' END,
            started_at = coalesce(started_at, $4), ended_at = CASE WHEN $2::int = $3::int THEN now() ELSE NULL END WHERE id = $1`,
-        [weId, Number(st.d), Number(st.n), st.first]);
+        [weId, d, n, st.first]);
     }
     await touch(ctx, workoutId);
     ctx.changed("workout");

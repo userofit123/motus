@@ -4,7 +4,7 @@
 // and the action bar (rest included) in the middle, what comes next and the totals on the right.
 import { computed, nextTick, onMounted, onBeforeUnmount, ref, watch } from "vue";
 import { useRouter } from "vue-router";
-import { clock, muscleName, workoutSoFar, restAfterSet, restDefaultsOf, isStretch, type Reminder } from "@motus/shared";
+import { clock, nextSet, muscleName, workoutSoFar, restAfterSet, restDefaultsOf, isStretch, type Reminder } from "@motus/shared";
 import { useWorkout, endWorkout } from "./useWorkout";
 import { elapsed, finishRest } from "./runtime";
 import { keepAwake } from "./native";
@@ -45,7 +45,7 @@ const overrides = computed({ get: () => (w.value?.settings ?? {}) as Record<stri
 function key(ev: KeyboardEvent) {
   if ((ev.target as HTMLElement).closest("input,textarea,select") || document.querySelector(".scr")) return;
   const e = w.value?.exercises[W.state.active];
-  if (ev.key === " " && e) { const i = e.sets.findIndex((x) => !x.done); if (i >= 0) { ev.preventDefault(); W.tick(e, i); } }
+  if (ev.key === " " && e) { const n = nextSet(e.sets), i = n ? e.sets.indexOf(n) : -1; if (i >= 0) { ev.preventDefault(); W.tick(e, i); } }
   if (ev.key === "ArrowRight") go(W.state.cur + 1);
   if (ev.key === "ArrowLeft") go(W.state.cur - 1);
 }
@@ -159,8 +159,8 @@ const menu = computed(() => [
     <div class="aw-top">
       <button class="ib sm plain" aria-label="Minimise" @click="router.push('/')"><Icon name="down" /></button>
       <div class="grow" style="min-width:0;cursor:pointer" role="button" tabindex="0" @click="go(w.exercises.length)" @keydown.enter="go(w.exercises.length)">
-        <div class="aw-name ellipsis">{{ w.name }}</div>
-        <div class="aw-clock"><b>{{ clock(elapsed(w)) }}</b><span v-if="paused" class="aw-paused">Paused</span><span>{{ done }} of {{ total }} sets</span><span v-if="hrLatest">{{ hrLatest.bpm }} bpm</span><span v-if="waiting.length">{{ waiting.length }} waiting to sync</span></div>
+        <div class="aw-name"><span class="aw-sets">{{ done }} of {{ total }} sets</span><span class="sep">·</span><span class="ellipsis">{{ w.name }}</span></div>
+        <div class="aw-clock"><b :class="{ paused }">{{ clock(elapsed(w)) }}</b><span v-if="paused" class="aw-paused">Paused</span><span v-if="hrLatest">{{ hrLatest.bpm }} bpm</span><span v-if="waiting.length">{{ waiting.length }} waiting to sync</span></div>
       </div>
       <Menu :items="menu" align="start" />
       <button class="btn" :class="{ o: done === 0 }" @click="finishing = true">Finish</button>
@@ -253,10 +253,23 @@ const menu = computed(() => [
 <style scoped>
 /* room under the page for the action bar, however tall it is right now (it grows and shrinks with what it shows) */
 .aw.phone { padding-bottom: calc(var(--dockh, 330px) + var(--spg)); }
-.aw-name { font-size: 13px; font-weight: 600; color: var(--tx2); cursor: pointer; }
-.aw-clock { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; font-size: 12.5px; color: var(--tx2); }
+/* the sets count sits by the name, not the clock, so the header is one row at any width, count and length of workout:
+   the name shortens with "…", the count never does. The name comes last: a shortened text keeps a sliver of space
+   after its "…", which before the dot would space it unevenly */
+.aw-name { display: flex; align-items: baseline; gap: 6px; min-width: 0; font-size: 13px; font-weight: 600; color: var(--tx2); cursor: pointer; }
+.aw-name .ellipsis { min-width: 0; }
+.aw-name .sep, .aw-sets { flex: none; font-weight: 400; }
+/* one line: the clock comes first and always shows; what follows ("Paused", heart rate, waiting to sync) shows whole or
+   not at all: an item with no room wraps to a second line that the line's height hides, never a cut word. Paused
+   shows on the clock itself too (its colour), so a long paused workout on a phone still says so */
+.aw-clock { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 10px; height: calc(26px * 1.1); overflow: hidden; white-space: nowrap; font-size: 12.5px; color: var(--tx2); }
+.aw-clock > * { flex: none; }
+/* Finish is outlined until the first set and filled after: the filled one keeps the outline's 1px edge (unseen), so
+   the button never changes width and the header around it stays put */
+.aw-top > .btn:not(.o) { border: 1px solid transparent; }
 .aw-clock b { font-size: 26px; font-weight: 600; letter-spacing: -.8px; color: var(--tx); font-variant-numeric: tabular-nums; line-height: 1.1; }
-.aw-paused { color: var(--acc); font-weight: 600; }
+.aw-paused, .aw-clock b.paused { color: var(--acc); }
+.aw-paused { font-weight: 600; }
 /* -4px pulls the bar up under the header's --hg gap (optical); the gap below is a block gap */
 .aw-prog { display: flex; gap: 3px; margin: -4px 0 var(--spg); }
 .aw-prog span { flex-basis: 0; height: 5px; border-radius: 5px; background: var(--s2); overflow: hidden; }
