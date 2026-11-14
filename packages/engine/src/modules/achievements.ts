@@ -2,8 +2,9 @@
 // when it was reached. Worked out on request from the logged data, never stored: deleting a workout moves them too.
 // Weeks follow the app's calendar (tz = its getTimezoneOffset()), not the server's, so the server and the copy on a
 // device agree.
-import { ACHIEVEMENTS, achievementName, achievementTarget, daysIntoWeek, e1rm, LIFTED_SQL, TRACKING_SQL, type Settings } from "@motus/shared";
+import { ACHIEVEMENTS, achievementName, achievementTarget, daysIntoWeek, LIFTED_SQL, type Settings } from "@motus/shared";
 import type { Sql } from "../db";
+import { findRecords } from "./workouts";
 
 const DAY = 86400000;
 /** The calendar day an instant falls on, for an app whose clock is tzMin minutes behind UTC. */
@@ -57,37 +58,10 @@ type Series = [at: string, total: number][];
 /** Running totals from events in time order. */
 const running = (ev: { at: string; v: number }[]): Series => { let t = 0; return ev.filter((e) => e.v > 0).map((e) => [e.at, (t += e.v)]); };
 
-/** Exercise sessions that beat every earlier session of that exercise; the first time doing one is not a record. */
+/** Records as the workout lists, the workout page and Home count them (findRecords): one per exercise of a workout that
+ * beat its earlier sessions; the first time doing one is not a record. The whole history, not only recent sessions. */
 async function recordSeries(q: Sql): Promise<Series> {
-  const { rows } = await q.query(
-    `SELECT we.exercise_id, ${TRACKING_SQL} AS tracking, w.id AS workout_id, w.started_at, s.weight_kg, s.reps, s.duration_s, s.distance_m
-     FROM workout_sets s JOIN workout_exercises we ON we.id = s.workout_exercise_id JOIN workouts w ON w.id = we.workout_id JOIN exercises e ON e.id = we.exercise_id LEFT JOIN exercise_prefs p ON p.exercise_id = e.id
-     WHERE w.status = 'completed' AND s.done AND s.kind <> 'warmup' ORDER BY we.exercise_id, w.started_at, w.id, s.position`);
-  const events: { at: string; v: number }[] = [];
-  let i = 0;
-  while (i < rows.length) {
-    const ex = rows[i].exercise_id, tracking = rows[i].tracking;
-    // assisted exercises log the help as weight: less is better, so only more reps at the same or less help counts
-    const assisted = tracking === "assisted";
-    const prev: any[] = [];
-    let first = true;
-    while (i < rows.length && rows[i].exercise_id === ex) {
-      const wid = rows[i].workout_id, at = rows[i].started_at, sets: any[] = [];
-      while (i < rows.length && rows[i].exercise_id === ex && rows[i].workout_id === wid) sets.push(rows[i++]);
-      if (!first) {
-        const w = (s: any) => Number(s.weight_kg) || 0;
-        const maxW = Math.max(0, ...prev.map(w)), maxE = Math.max(0, ...prev.map((s) => e1rm(w(s), s.reps) ?? 0));
-        const maxD = Math.max(0, ...prev.map((s) => s.duration_s ?? 0)), maxM = Math.max(0, ...prev.map((s) => Number(s.distance_m) || 0));
-        const repsAt = (s: any) => Math.max(0, ...prev.filter((p) => (assisted ? w(p) <= w(s) : w(p) >= w(s))).map((p) => p.reps ?? 0));
-        const beat = sets.some((s) => (!assisted && w(s) > maxW) || (!assisted && (e1rm(w(s), s.reps) ?? 0) > maxE + 0.01)
-          || (s.reps > 0 && s.reps > repsAt(s)) || (s.duration_s ?? 0) > maxD || (Number(s.distance_m) || 0) > maxM);
-        if (beat) events.push({ at, v: 1 });
-      }
-      first = false;
-      prev.push(...sets);
-    }
-  }
-  return running(events.sort((a, b) => a.at.localeCompare(b.at)));
+  return running((await findRecords(q, new Date(0).toISOString(), Infinity)).map((r) => ({ at: r.at, v: 1 })));
 }
 
 /** Best run of weeks in a row reaching the weekly target, as it grew. */

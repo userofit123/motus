@@ -12,6 +12,7 @@ export interface ExerciseSoFar {
   volumeKg: number;
   /** the best working set done, by what the exercise tracks (null: none done yet) */
   best: WorkoutSet | null;
+  /** 1 when one of its sets broke a record, else 0 */
   records: number;
   /** done working sets that had a rep target, and how many of them reached it */
   targets: number;
@@ -58,10 +59,12 @@ export function exerciseSoFar(e: WorkoutExercise): ExerciseSoFar {
   const work = e.sets.filter(working), aimed = work.filter((s) => s.targetReps != null);
   return {
     id: e.id, name: e.exercise?.name ?? "", status: e.status,
-    setsDone: e.sets.filter((s) => s.done).length, setsPlanned: e.sets.length,
+    // sets mean working sets everywhere (lists, the workout page, Stats): warm-ups are neither planned nor done sets
+    setsDone: work.length, setsPlanned: e.sets.filter((s) => s.kind !== "warmup").length,
     volumeKg: e.sets.reduce((a, s) => a + setVolume(s, t), 0),
     best: bestSet(e.sets, t),
-    records: e.sets.filter((s) => s.done && s.pr?.length).length,
+    // a record is one per exercise that beat its bests (as lists, Home and the workout page count), not one per set
+    records: work.some((s) => s.pr?.length) ? 1 : 0,
     targets: aimed.length, targetsHit: aimed.filter((s) => (s.reps ?? 0) >= s.targetReps!).length,
   };
 }

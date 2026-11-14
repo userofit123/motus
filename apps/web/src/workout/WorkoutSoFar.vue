@@ -34,7 +34,7 @@ const muscleLine = computed(() => {
   return m.length > 3 ? `${m.slice(0, 3).join(" · ")} · ${m.length - 3} more` : m.join(" · ");
 });
 const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
-// Records = sets that beat a personal best; Rep targets = sets that reached the reps the routine asked for. Two tiles, so
+// Records = exercises that beat a personal best; Rep targets = sets that reached the reps the routine asked for. Two tiles, so
 // each label says what its number counts
 const recordsSub = computed(() => r.value.records ? "New personal bests" : props.final ? "No new records" : "None yet");
 const tileCount = computed(() => (props.final ? 2 : 3) + (r.value.targets ? 1 : 0));
@@ -50,7 +50,8 @@ const rows = computed(() => r.value.perExercise.map((p, i) => {
   const e = props.w.exercises[i]!;
   const done = p.status === "done" || p.status === "partial", skipped = p.status === "skipped";
   return {
-    p, done, skipped, started: !done && !skipped && p.setsDone > 0,
+    // warm-ups aren't counted sets, but ticking one has started the exercise
+    p, done, skipped, started: !done && !skipped && e.sets.some((s) => s.done),
     bestLbl: e.exercise?.tracking === "assisted" ? "Least help" : "Best",
     best: p.best ? fmt.value.set(p.best, e.exercise?.tracking) : "",
     reason: e.skipReason ?? "",
@@ -103,7 +104,7 @@ const rows = computed(() => r.value.perExercise.map((p, i) => {
         <div v-for="(x, i) in rows" :key="x.p.id" class="li click" :class="{ skip: x.skipped }" @click="emit('open', i)">
           <span class="stt" :class="{ done: x.done, part: x.started }"><Icon v-if="x.done" name="check" :size="13" /><Icon v-else-if="x.skipped" name="skip" :size="11" /></span>
           <div class="grow wsf-main">
-            <div class="wsf-name"><span class="t ellipsis">{{ x.p.name }}</span><span v-if="x.p.records" class="pr">{{ x.p.records > 1 ? `${x.p.records} PRs` : "PR" }}</span></div>
+            <div class="wsf-name"><span class="t ellipsis">{{ x.p.name }}</span><span v-if="x.p.records" class="pr">PR</span></div>
             <div class="s wsf-sub">
               <template v-if="x.skipped"><span>Skipped</span><template v-if="x.reason"><span class="sep">·</span><span>{{ x.reason }}</span></template></template>
               <template v-else>

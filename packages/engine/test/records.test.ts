@@ -346,3 +346,38 @@ describe("records follow what the exercise tracks", () => {
     expect(timed.get("b")).toEqual(["reps"]);
   });
 });
+
+describe("one meaning of sets and records on every screen", () => {
+  it("lists, the calendar, Home, the workout page and Achievements count working sets done and one record per exercise", async () => {
+    const { call, log, exercise } = await user();
+    const bench = await exercise("Test same-count bench", "weight_reps"), row = await exercise("Test same-count row", "weight_reps");
+    await log("2026-09-10T08:00:00Z", [{ exerciseId: bench, sets: [{ weightKg: 60, reps: 8 }] }, { exerciseId: row, sets: [{ weightKg: 50, reps: 8 }] }]);
+    // bench: two warm-ups, then two sets that each beat the one before (two flagged sets, one record);
+    // row: a heavier set and a lighter one with more reps (two flagged sets, one record)
+    const w = await log("2026-09-12T08:00:00Z", [
+      { exerciseId: bench, sets: [{ kind: "warmup", weightKg: 40, reps: 10 }, { kind: "warmup", weightKg: 50, reps: 5 }, { weightKg: 65, reps: 8 }, { weightKg: 70, reps: 8 }] },
+      { exerciseId: row, sets: [{ weightKg: 55, reps: 8 }, { kind: "failure", weightKg: 45, reps: 12 }] },
+    ]);
+    const page = await call("GET", `/workouts/${w.id}`);
+    expect(prsOf(page).filter((p: string[]) => p.length).length).toBe(4); // flagged sets: 2 on bench, 2 on row (most reps at 45 kg)
+    expect([page.report.totals.workingSets, page.report.totals.records]).toEqual([4, 2]);
+    const listed = (await call("GET", "/workouts")).find((x: any) => x.id === w.id);
+    expect([listed.setCount, listed.prCount]).toEqual([4, 2]);
+    const cal = (await call("GET", "/calendar", undefined, { from: "2026-09-12", to: "2026-09-12" })).workouts.find((x: any) => x.id === w.id);
+    expect(cal.sets).toBe(4);
+    NOW = new Date("2026-09-20T10:00:00Z");
+    const blocks = (await call("GET", "/me")).settings.home.blocks.map((b: any) => (b.id === "records" ? { ...b, on: true } : b));
+    await call("PUT", "/settings", { home: { blocks } });
+    const home = await call("GET", "/home", undefined, { tz: "0" });
+    expect(home.records.filter((r: any) => r.workoutId === w.id).length).toBe(2);
+    expect([home.last.id, home.last.setCount, home.last.prCount]).toEqual([w.id, 4, 2]);
+    const fed = home.feed.find((x: any) => x.id === w.id);
+    expect([fed.setCount, fed.prCount]).toEqual([4, 2]);
+    const stats = await call("GET", "/stats", undefined, { from: "2026-09-12", to: "2026-09-13", records: "1", tz: "0" });
+    expect(stats.workouts.find((x: any) => x.id === w.id).sets).toBe(4);
+    expect(stats.records.filter((r: any) => r.workoutId === w.id).length).toBe(2);
+    const ach = (await call("GET", "/achievements", undefined, { tz: "0" })).find((a: any) => a.id === "records");
+    expect(ach.value).toBe(2);
+    NOW = new Date("2026-10-05T10:00:00Z");
+  });
+});

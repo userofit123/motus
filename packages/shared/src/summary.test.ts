@@ -12,8 +12,8 @@ describe("workoutSoFar", () => {
     ex("weight_reps", "skipped", [set({ weightKg: 50, reps: 10 })]),
   ] };
   const r = workoutSoFar(w);
-  it("counts done against planned, leaving skipped exercises out", () => {
-    expect([r.exercisesDone, r.exercisesTotal, r.setsDone, r.setsPlanned]).toEqual([1, 2, 4, 5]);
+  it("counts working sets done against planned, leaving warm-ups and skipped exercises out", () => {
+    expect([r.exercisesDone, r.exercisesTotal, r.setsDone, r.setsPlanned]).toEqual([1, 2, 3, 4]);
   });
   it("never counts more sets done than planned when a skipped exercise had sets done", () => {
     const s = workoutSoFar({ exercises: [ex("weight_reps", "pending", [set({ weightKg: 60, reps: 5, done: true }), set({ weightKg: 60, reps: 5 })]), ex("weight_reps", "skipped", [set({ weightKg: 50, reps: 10, done: true })])] });
@@ -24,6 +24,10 @@ describe("workoutSoFar", () => {
   });
   it("counts records and rep targets", () => {
     expect([r.records, r.targets, r.targetsHit]).toEqual([1, 2, 1]);
+  });
+  it("counts a record once per exercise, however many of its sets broke one", () => {
+    const s = workoutSoFar({ exercises: [ex("weight_reps", "done", [set({ weightKg: 80, reps: 8, done: true, pr: ["weight"] }), set({ weightKg: 85, reps: 8, done: true, pr: ["weight"] })])] });
+    expect(s.records).toBe(1);
   });
   it("picks the best set by estimated 1RM, and the least help when assisted", () => {
     expect(r.perExercise[0]!.best?.weightKg).toBe(85);

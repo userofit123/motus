@@ -160,7 +160,9 @@ export function statsRoutes(r: Router) {
       const at = lastByGroup.filter((x: any) => g.muscles.includes(x.m)).map((x: any) => x.at).sort().at(-1) ?? null;
       return { id: g.id, name: g.name, lastAt: at };
     });
-    const last = (await workoutSummaries(ctx.q, "w.status = 'completed'", [], 1))[0] ?? null;
+    // the feed's workouts, newest first: the last one is the first of them (one summary read, records included)
+    const done = await workoutSummaries(ctx.q, "w.status = 'completed'", [], 8);
+    const last = done[0] ?? null;
     const active = (await ctx.q.query("SELECT id, name, started_at FROM workouts WHERE status = 'in_progress' ORDER BY started_at DESC LIMIT 1")).rows[0] ?? null;
     const end = dayIn(new Date(now.getTime() + 7 * 86400000), tzMin);
     // the same rule as the calendar: a plan done (by its routine, its activity type, or started from it) drops out.
@@ -190,7 +192,7 @@ export function statsRoutes(r: Router) {
       `SELECT m.*, coalesce(e.name, r.name) AS target_name FROM reminders m LEFT JOIN exercises e ON m.target_type='exercise' AND e.id = m.target_id
        LEFT JOIN routines r ON m.target_type='routine' AND r.id = m.target_id WHERE m.status = 'pending' ORDER BY m.created_at DESC LIMIT 5`)).rows.map((x: any) => camel(x));
     const feed = [
-      ...(await workoutSummaries(ctx.q, "w.status = 'completed'", [], 8)).map((w) => ({ kind: "workout", ...w })),
+      ...done.map((w) => ({ kind: "workout", ...w })),
       ...(await ctx.q.query("SELECT id, type, name, started_at, duration_s, distance_m, steps FROM activities ORDER BY started_at DESC LIMIT 8")).rows.map((x: any) => ({ kind: "activity", ...camel<any>(x) })),
     ].sort((a: any, b: any) => b.startedAt.localeCompare(a.startedAt)).slice(0, 8);
     // the days (in the app's calendar) with a finished workout or an activity: the week strip
