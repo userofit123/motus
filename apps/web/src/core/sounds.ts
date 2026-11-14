@@ -1,9 +1,9 @@
-// The sounds both timers offer, in one list with one order and one name each: the rest timer's choices (Settings →
-// Workout defaults → Workout sounds) and each part of the interval timer. The ids saved differ between the two (rest
-// timer: WORKOUT_SOUNDS, interval timer: INTERVAL_SOUNDS in @motus/shared) and stay as they are; `cue` and `iv` are the
-// same sound's id in each. The countdown sound offers only the ones with a single note (TICK_SOUNDS): a tune can't be
-// a 3-2-1.
-import { TICK_SOUNDS, type IntervalSound, type TickSound, type WorkoutSound } from "@motus/shared";
+// The sound library: every sound choice offers these, in this order with these names - the rest over and countdown
+// sounds (Settings → Workout defaults → Workout sounds) and each part of the interval timer. Each name sounds the same
+// wherever it is picked (workout/runtime.ts restOver; the countdown plays its short form, TICK_NOTE). The ids saved
+// differ between the two timers (rest timer: WORKOUT_SOUNDS, interval timer: INTERVAL_SOUNDS in @motus/shared) and stay
+// as they are; `cue` and `iv` are the same sound's id in each.
+import type { IntervalSound, WorkoutSound } from "@motus/shared";
 
 interface Sound { name: string; cue: WorkoutSound; iv: Exclude<IntervalSound, "none"> }
 // short ones first, then the tunes, the soft alarms, and the ones that ring out
@@ -30,12 +30,10 @@ export const SOUNDS: Sound[] = [
   { name: "Singing bowl", cue: "bowl", iv: "bowl" },
   { name: "Deep gong", cue: "gong", iv: "deepGong" },
 ];
-const isTick = (id: string): id is TickSound => (TICK_SOUNDS as readonly string[]).includes(id);
-/** The rest over sound's choices */
+/** The rest over and countdown sounds' choices */
 export const CUE_SOUND_OPTIONS = SOUNDS.map((s) => ({ value: s.cue as string, label: s.name }));
-/** The countdown sound's choices: the same list without the tunes */
-export const TICK_SOUND_OPTIONS = CUE_SOUND_OPTIONS.filter((o) => isTick(o.value));
-/** An interval part's choices: the same list, and None for a part that starts in silence */
+/** An interval part's choices: the same list, and None for a part that starts in silence (the rest timer's sounds
+ *  have switches for that: Play sounds, the 10 seconds warning, the 3-2-1) */
 export const INTERVAL_SOUND_OPTIONS: { value: IntervalSound; label: string }[] = [...SOUNDS.map((s) => ({ value: s.iv, label: s.name })), { value: "none", label: "None" }];
 export const intervalSoundName = (id: IntervalSound) => INTERVAL_SOUND_OPTIONS.find((o) => o.value === id)?.label ?? "";
 /** The rest timer's id of an interval sound (none for "none") */

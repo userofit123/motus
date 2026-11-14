@@ -5,7 +5,7 @@ import { computed, reactive } from "vue";
 import { intervalPhases, intervalAt, intervalTotalS, cleanInterval, INTERVAL_DEFAULT, type IntervalConfig, type IntervalKind, type IntervalSound } from "@motus/shared";
 import { cueOfInterval } from "../core/sounds";
 import { readJson, writeJson } from "../core/prefs";
-import { now, tone as note, tick, restOver, levelOf, SOFT, PURE, WOOD, C5, G5, C6, E6, savedCues, vibrate } from "./runtime";
+import { now, tick, restOver, savedCues, vibrate } from "./runtime";
 import { keepAwake, backgroundTimers, scheduleIntervalCues, cancelIntervalCues, showIntervalNotice, clearIntervalNotice, onNoticeAction, INTERVAL_CUE_MAX, type IntervalCue } from "./native";
 
 interface IntervalRun {
@@ -22,16 +22,12 @@ const save = () => { writeJson(KEY, iv); notice(); };
 
 export const PHASE_NAME: Record<IntervalKind, string> = { prep: "Get ready", work: "Work", rest: "Rest", setRest: "Rest between sets" };
 
-/** Plays one of the sounds (also the preview when one is chosen), at the volume chosen in Settings → Workout defaults.
- *  The ids stay as saved in presets. Bell, Round, Digital and Marimba have their own form here, as a part's start; every
- *  other sound plays as it does at a rest's end (workout/runtime.ts restOver), the same sound wherever it is picked. */
+/** Plays one of the sounds (also the preview when one is chosen), at the volume chosen in Settings → Workout defaults:
+ *  as it plays at a rest's end (workout/runtime.ts restOver), so each sound is the same wherever it is picked. The ids
+ *  stay as saved in presets (core/sounds.ts pairs them with the rest timer's). */
 export function playIntervalSound(sound: IntervalSound) {
-  const c = savedCues(), level = levelOf(c.cueVolume), tone = (f: number, o: Parameters<typeof note>[1] = {}) => note(f, { ...o, level });
-  if (sound === "beep") tone(G5, { dur: 0.9 }); // one bell
-  else if (sound === "low") tone(C5, { dur: 1, vol: 0.34, partials: SOFT }); // round and gentle, no bright overtones
-  else if (sound === "marimba") [G5, C6, G5, C6].forEach((f, i) => tone(f, { delay: i * 0.14, dur: i === 3 ? 0.7 : 0.45, vol: 0.32, partials: WOOD }));
-  else if (sound === "digital") [0, 0.1, 0.38, 0.48].forEach((d) => tone(E6, { delay: d, dur: 0.07, vol: 0.16, partials: PURE, attack: 0.004 })); // a watch's double chirp, quieter
-  else { const cue = cueOfInterval(sound); if (cue) restOver({ ...c, cueSound: cue, sound: true }); }
+  const cue = cueOfInterval(sound);
+  if (cue) restOver({ ...savedCues(), cueSound: cue, sound: true });
 }
 
 export const ivPhases = computed(() => intervalPhases(iv.cfg));
@@ -82,8 +78,8 @@ export function skipInterval(dir: 1 | -1) {
   if (hidden()) planCues(); // from the lock screen: the changes scheduled before are now at the wrong times
 }
 
-// Cues at each change: the sound chosen for that part (by default two high beeps to work, one low beep to rest, three
-// when it's all done), and a short tick in the last three seconds of each phase. Whether sound and vibration
+// Cues at each change: the sound chosen for that part (by default Bell to get ready, Double bell to work, Round to
+// rest, Three bells when it's all done), and a short tick in the last three seconds of each phase. Whether sound and vibration
 // play at all follows Settings → Workout, read fresh each time, as for a rest.
 // After the app was asleep nothing plays for a change that happened a while ago: on Android it already came as a
 // notification, and a late beep would only confuse.

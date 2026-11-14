@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cleanHomeBlocks, cleanGoalsOrder, orderGoals, withDefaults, HOME_BLOCKS, WORKOUT_SOUNDS, TICK_SOUNDS } from "./settings";
+import { cleanHomeBlocks, cleanGoalsOrder, orderGoals, withDefaults, HOME_BLOCKS, WORKOUT_SOUNDS } from "./settings";
 
 const ids = (x: { id: string }[]) => x.map((s) => s.id);
 
@@ -75,10 +75,8 @@ describe("Workout cue sound and volume", () => {
     expect(withDefaults({ workout: { cueSound: "wood", tickSound: "click" } }).workout.tickSound).toBe("click");
     expect(withDefaults({ workout: { tickSound: "nope" } }).workout.tickSound).toBe("beep");
   });
-  it("offers every sound for the rest over, and every one with a single note for the countdown", () => {
-    for (const id of TICK_SOUNDS) expect(withDefaults({ workout: { cueSound: id, tickSound: id } }).workout).toMatchObject({ cueSound: id, tickSound: id });
-    // the interval timer's tunes are rest over sounds only: they have no single note for the countdown
-    for (const id of WORKOUT_SOUNDS) expect(withDefaults({ workout: { cueSound: id } }).workout.cueSound).toBe(id);
-    expect(withDefaults({ workout: { tickSound: "double" } }).workout.tickSound).toBe("beep");
+  it("offers every sound for both the rest over and the countdown", () => {
+    for (const id of WORKOUT_SOUNDS) expect(withDefaults({ workout: { cueSound: id, tickSound: id } }).workout).toMatchObject({ cueSound: id, tickSound: id });
+    expect(withDefaults({ workout: { tickSound: "double" } }).workout.tickSound).toBe("double");
   });
 });

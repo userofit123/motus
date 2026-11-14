@@ -3,7 +3,7 @@
 // (PLAN.md §8.6). The rest timer is kept on the device so a reload does not lose it.
 import { reactive, ref } from "vue";
 import { readJson, writeJson } from "../core/prefs";
-import { withDefaults, cleanWorkoutSound, cleanTickSound, cleanCueVolume, type WorkoutSound, type TickSound } from "@motus/shared";
+import { withDefaults, cleanWorkoutSound, cleanCueVolume, type WorkoutSound } from "@motus/shared";
 import { api } from "../api/client";
 import { queryClient } from "../api/live";
 import { showRestCountdown, clearRestCountdown, scheduleRestAlarm, cancelRestAlarm, scheduleRestCues, cancelRestCues, notifyRestOverWeb, isNativeApp, backgroundTimers, nativeVibrate } from "./native";
@@ -26,7 +26,7 @@ const save = () => writeJson("motusRest", rest);
 
 /** The sounds the cues play (rest over, countdown), and how loud (10-100 %). `sound` false ("Workout sounds" off):
  *  none plays; a preview leaves it out. */
-export interface CueVoice { cueSound: WorkoutSound; tickSound: TickSound; cueVolume: number; sound?: boolean }
+export interface CueVoice { cueSound: WorkoutSound; tickSound: WorkoutSound; cueVolume: number; sound?: boolean }
 export interface Cues extends CueVoice { sound: boolean; vibrate: boolean; warn10: boolean; voice: boolean; countdown: boolean; next?: boolean }
 let cues: Cues = { sound: true, cueSound: "beep", tickSound: "beep", cueVolume: 100, vibrate: true, warn10: true, voice: false, countdown: true, next: true };
 // Whether `cues` holds a running workout's effective settings (account settings plus that workout's own overrides).
@@ -251,13 +251,14 @@ function play(freq: number, { delay = 0, dur = 0.5, vol = 0.3, partials = BELL, 
  *  then about half as loud (-12 dB) rather than barely quieter (-6 dB). */
 export const levelOf = (volume: number) => (cleanCueVolume(volume) / 100) ** 2;
 /** How each sound plays one countdown note; `long` is a "now" note (the last of 3-2-1, a single beep), held a little
- *  longer. The short ones keep the bright CUE notes' 1-3 kHz pitches, where a phone speaker is loud; the softer ones (a
- *  bell fades fast, a wooden knock is short) are a choice for those who find the beep harsh. The ringing ones play as a
- *  single short strike at their own pitch (the hand bell a quick shake), cut to fade out within RING_TICK_S so a note
- *  has died away before the next second's; they move with `freq` as the others do, so the 3-2-1's last note is an
- *  octave up in every sound. The Android app plays the same notes in the background (RestCues.java play()): a change
- *  here goes there too. */
-const TICK_NOTE: Record<TickSound, (freq: number, delay: number, long: boolean, level: number) => void> = {
+ *  longer. Every sound in the library has one, so any can be the countdown sound. The short ones keep the bright CUE
+ *  notes' 1-3 kHz pitches, where a phone speaker is loud; the softer ones (a bell fades fast, a wooden knock is short)
+ *  are a choice for those who find the beep harsh. The ringing ones play as a single short strike at their own pitch
+ *  (the hand bell a quick shake), cut to fade out within RING_TICK_S; a tune plays its own notes quickly, all over
+ *  within half a second, so a note has died away before the next second's. All move with `freq` as the others do, so
+ *  the interval timer's last 3-2-1 note is an octave up in every sound. The Android app plays the same notes in the
+ *  background (RestCues.java play()): a change here goes there too. */
+const TICK_NOTE: Record<WorkoutSound, (freq: number, delay: number, long: boolean, level: number) => void> = {
   beep: (f, delay, long, level) => tone(f, { delay, hold: long ? 0.2 : 0.14, dur: long ? 0.12 : 0.08, vol: 0.23, partials: CUE, level }),
   bell: (f, delay, long, level) => tone(f, { delay, dur: long ? 0.7 : 0.45, vol: 0.4, level }),
   soft: (f, delay, long, level) => tone(f, { delay, attack: 0.02, hold: long ? 0.16 : 0.1, dur: long ? 0.2 : 0.14, vol: 0.4, partials: SOFT, level }),
@@ -271,7 +272,20 @@ const TICK_NOTE: Record<TickSound, (freq: number, delay: number, long: boolean, 
   temple: (f, delay, _l, level) => ringTick(330, TEMPLE, 0.42, 0.004, f, delay, level),
   bowl: (f, delay, _l, level) => ringTick(587, BOWL, 0.4, 0.04, f, delay, level),
   gong: (f, delay, _l, level) => ringTick(98, DEEP_GONG, 0.42, 0.06, f, delay, level),
+  double: (f, delay, _l, level) => tuneTick([C6, C6], 0.1, f, delay, { dur: 0.25, level }),
+  triple: (f, delay, _l, level) => tuneTick([C6, C6, C6], 0.08, f, delay, { dur: 0.2, level }),
+  high: (f, delay, long, level) => tuneTick([G6], 0, f, delay, { dur: long ? 0.5 : 0.35, vol: 0.24, level }),
+  rising: (f, delay, _l, level) => tuneTick([C6, E6, G6, C7], 0.06, f, delay, { dur: 0.2, vol: 0.24, level }),
+  chime: (f, delay, _l, level) => tuneTick([E6, C6, G5], 0.08, f, delay, { dur: 0.25, vol: 0.24, level }),
+  pulse: (f, delay, _l, level) => tuneTick([C5, E5, G5], 0.08, f, delay, { dur: 0.12, vol: 0.3, partials: SOFT, attack: 0.02, level }),
+  softAlarm: (f, delay, _l, level) => tuneTick([E5, C5], 0.12, f, delay, { dur: 0.14, vol: 0.3, partials: SOFT, attack: 0.02, level }),
+  wake: (f, delay, _l, level) => { tuneTick([G5], 0, f, delay, { dur: 0.3, vol: 0.24, partials: SOFT, attack: 0.08, level }); tuneTick([C6], 0, f, delay + 0.06, { dur: 0.3, vol: 0.16, partials: SOFT, attack: 0.08, level }); },
+  smallGong: (f, delay, _l, level) => ringTick(C4, GONG, 0.4, 0.02, f, delay, level),
 };
+/** A tune's countdown note: its notes `gap` seconds apart, moved with `f` as every countdown note is. */
+function tuneTick(notes: readonly number[], gap: number, f: number, delay: number, o: ToneOptions) {
+  notes.forEach((n, i) => tone(n * (f / TICK_F), { ...o, delay: delay + i * gap }));
+}
 /** The countdown's own pitch (E6): a ringing sound's note at this pitch is its usual one. */
 const TICK_F = 1318.5;
 /** How long a ringing sound's countdown note lasts at most, its longest overtone included: gone before the next one. */
@@ -321,7 +335,7 @@ const TUNES: Record<TuneSound, (level: number) => void> = {
   wake: (level) => { tone(G5, { dur: 1.6, vol: 0.24, partials: SOFT, attack: 0.6, level }); tone(C6, { delay: 0.35, dur: 1.4, vol: 0.16, partials: SOFT, attack: 0.6, level }); }, // fades in, no edge
   smallGong: (level) => tone(C4, { dur: 2.2, vol: 0.4, partials: GONG, attack: 0.02, level }), // long, so it sits under an interval's next part
 };
-const note = (v: CueVoice, f: number, delay: number, long: boolean) => TICK_NOTE[cleanTickSound(v.tickSound)](f, delay, long, levelOf(v.cueVolume));
+const note = (v: CueVoice, f: number, delay: number, long: boolean) => TICK_NOTE[cleanWorkoutSound(v.tickSound)](f, delay, long, levelOf(v.cueVolume));
 /** A countdown note in the last seconds of a rest or an interval part. A rest's 3-2-1 is three identical short notes
  *  (the same as the Android app plays in the background); only the interval timer passes `last` for a higher, longer
  *  final note that marks the change to the next part. `v`: the sound and volume (the running workout's, unless given). */
@@ -340,7 +354,7 @@ export function restOver(v: CueVoice = cues) {
   const id = cleanWorkoutSound(v.cueSound), level = levelOf(v.cueVolume);
   if (id in RINGS) { RINGS[id as RingSound](level); return; }
   if (id in TUNES) { TUNES[id as TuneSound](level); return; }
-  for (let i = 0; i < 3; i++) TICK_NOTE[id as TickSound](1760, i * 0.25, false, level);
+  for (let i = 0; i < 3; i++) TICK_NOTE[id](1760, i * 0.25, false, level);
 }
 function speak(text: string) {
   try { const u = new SpeechSynthesisUtterance(text); u.rate = 1.05; speechSynthesis.cancel(); speechSynthesis.speak(u); } catch { /* no voice */ }

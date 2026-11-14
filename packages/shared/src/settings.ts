@@ -11,21 +11,18 @@ export interface ProgressionDefaults extends ProgressionSettings { stepKg: numbe
 import type { RestDefaults } from "./training";
 import { cleanIntervalPresets, type IntervalPreset } from "./intervals";
 
-/** The workout's sounds (Settings → Workout defaults → Workout sounds). The rest over sound (`cueSound`) plays when a
- *  rest or a timed set ends: the short ones three times, the ones that ring out (bells, gongs, the bowl) and the tunes
- *  once. The countdown sound (`tickSound`) is the note of the 10 seconds warning, the 3-2-1 and a timed set's start: one
- *  of TICK_SOUNDS, the ones with a single-note form (a ringing one plays there as a single short strike that has faded
- *  before the next second); the Android app plays these too (RestCues.java). The tunes are the interval timer's, so
- *  both timers offer the same sounds (apps/web core/sounds.ts). Ids stay as saved. */
-export const TICK_SOUNDS = ["beep", "bell", "soft", "digital", "wood", "click", "handBell", "shipBell", "tubular", "temple", "bowl", "gong"] as const;
-export type TickSound = (typeof TICK_SOUNDS)[number];
-export const WORKOUT_SOUNDS = [...TICK_SOUNDS, "double", "triple", "high", "rising", "chime", "pulse", "softAlarm", "wake", "smallGong"] as const;
+/** The workout's sounds (Settings → Workout defaults → Workout sounds), one library for every sound choice: the rest
+ *  over sound (`cueSound`), the countdown sound (`tickSound`) and each part of the interval timer offer them all (apps/web
+ *  core/sounds.ts). The rest over sound plays when a rest or a timed set ends: the short ones three times, the ones
+ *  that ring out and the tunes once. The countdown sound is the note of the 10 seconds warning, the 3-2-1 and a timed
+ *  set's start: each sound has a short form for it, gone before the next second (a ringing one a single strike, a tune
+ *  its notes played quickly); the Android app plays the same notes in the background (RestCues.java). Ids stay as saved. */
+export const WORKOUT_SOUNDS = ["beep", "bell", "soft", "digital", "wood", "click", "handBell", "shipBell", "tubular", "temple", "bowl", "gong", "double", "triple", "high", "rising", "chime", "pulse", "softAlarm", "wake", "smallGong"] as const;
 export type WorkoutSound = (typeof WORKOUT_SOUNDS)[number];
 /** The sounds there were while one choice played both the rest over and the countdown (see withDefaults). */
 const FIRST_SOUNDS: readonly unknown[] = ["beep", "bell", "soft", "digital", "wood"];
 /** A cue sound and volume as saved anywhere (also a workout's own override), made safe. */
 export const cleanWorkoutSound = (v: unknown): WorkoutSound => ((WORKOUT_SOUNDS as readonly unknown[]).includes(v) ? (v as WorkoutSound) : "beep");
-export const cleanTickSound = (v: unknown): TickSound => ((TICK_SOUNDS as readonly unknown[]).includes(v) ? (v as TickSound) : "beep");
 export const cleanCueVolume = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) ? Math.min(100, Math.max(10, Math.round(v))) : 100);
 
 export interface WorkoutPrefs {
@@ -40,7 +37,7 @@ export interface WorkoutPrefs {
   countdown: boolean;
   sound: boolean; // every workout sound (rest over, 10 seconds, 3-2-1, timed sets, rep timer); off: none of them
   cueSound: WorkoutSound; // the rest over sound (also a timed set's end)
-  tickSound: TickSound; // the countdown sound: 10 seconds, 3-2-1, a timed set's start, the rep timer
+  tickSound: WorkoutSound; // the countdown sound: 10 seconds, 3-2-1, a timed set's start, the rep timer
   cueVolume: number; // 10-100, % of full level, for every sound the app plays itself
   vibrate: boolean;
   warn10: boolean;
@@ -197,7 +194,7 @@ export function withDefaults(saved: unknown): Settings {
   // (only one of the sounds of that time; a ringing rest over sound chosen since never became the countdown by itself)
   const savedTick = (saved as { workout?: { tickSound?: unknown } } | null)?.workout?.tickSound;
   const oldTick = FIRST_SOUNDS.includes(workout.cueSound) ? workout.cueSound : "beep";
-  out.workout = { ...workout, cueSound: cleanWorkoutSound(workout.cueSound), tickSound: cleanTickSound(savedTick ?? oldTick), cueVolume: cleanCueVolume(workout.cueVolume) };
+  out.workout = { ...workout, cueSound: cleanWorkoutSound(workout.cueSound), tickSound: cleanWorkoutSound(savedTick ?? oldTick), cueVolume: cleanCueVolume(workout.cueVolume) };
   // a top-level "sound" from the first version was never used (the cues' sound is workout.cueSound): dropped
   delete (out as Settings & { sound?: unknown }).sound;
   // the old fixed weekly and daily step targets, and the marks that the app had made its own starting goals from them:

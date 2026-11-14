@@ -116,25 +116,50 @@ public class RestCues extends BroadcastReceiver {
     private static final double[][] TEMPLE = { { 1, 1, 1 }, { 1.003, 0.5, 1 }, { 2.1, 0.55, 0.75 }, { 3.15, 0.4, 0.55 }, { 4.6, 0.28, 0.4 }, { 6.3, 0.16, 0.28 }, { 8.2, 0.08, 0.18 } };
     private static final double[][] BOWL = { { 1, 1, 1 }, { 1.005, 0.7, 1 }, { 2.71, 0.5, 0.8 }, { 2.722, 0.35, 0.8 }, { 5.15, 0.2, 0.5 }, { 5.17, 0.12, 0.5 } };
     private static final double[][] DEEP_GONG = { { 1, 0.7, 1 }, { 1.48, 0.5, 0.9 }, { 2.1, 0.6, 0.85 }, { 2.9, 0.55, 0.7 }, { 3.9, 0.45, 0.6 }, { 5.2, 0.35, 0.5 }, { 6.8, 0.25, 0.4 }, { 8.9, 0.18, 0.3 }, { 11.6, 0.12, 0.25 }, { 15.2, 0.08, 0.2 } };
+    private static final double[][] GONG = { { 1, 1, 1 }, { 1.5, 0.22, 0.8 }, { 2, 0.3, 0.65 }, { 2.76, 0.16, 0.45 }, { 4.07, 0.05, 0.25 } };
+    // the tunes' notes, a C major chord (C4 … C7 in workout/runtime.ts)
+    private static final double C4 = 261.63, C5 = 523.25, E5 = 659.25, G5 = 783.99, C6 = 1046.5, E6 = 1318.5, G6 = 1567.98, C7 = 2093;
     private static final double LOUDER = 2.2;
     private static final double TICK_F = 1318.5; // the countdown's pitch, E6 (TICK_F)
     private static final double RING_TICK_S = 0.85; // a ringing sound's countdown note is gone by then (RING_TICK_S)
 
-    /** One note of a cue in the chosen countdown sound (TICK_NOTE in workout/runtime.ts); `lng`: a "now" note, held a little longer. */
+    /** One note of a cue in the chosen countdown sound (TICK_NOTE in workout/runtime.ts, which has one for every sound
+     *  the app offers); `lng`: a "now" note, held a little longer. */
     private static void play(String sound, double f, boolean lng, int volume) {
         double level = Math.pow(Math.max(10, Math.min(100, volume)) / 100.0, 2);
-        if ("bell".equals(sound)) note(f, lng ? 0.7 : 0.45, 0.4, BELL, 0.005, 0, level);
-        else if ("soft".equals(sound)) note(f, lng ? 0.2 : 0.14, 0.4, SOFT, 0.02, lng ? 0.16 : 0.1, level);
-        else if ("digital".equals(sound)) note(f, 0.03, 0.45, PURE, 0.003, 0.05, level, 2, 0.1);
-        else if ("wood".equals(sound)) note(f / 2, lng ? 0.35 : 0.22, 0.45, WOOD, 0.002, 0, level);
-        else if ("click".equals(sound)) note(f / 1.5, lng ? 0.1 : 0.06, 0.5, CLICK, 0.001, 0, level);
-        else if ("handBell".equals(sound)) note(2093 * f / TICK_F, 0.2, 0.3, BELL, 0.005, 0, level, 3, 0.07);
-        else if ("shipBell".equals(sound)) ring(880, BRONZE, 0.36, 0.003, f, level);
-        else if ("tubular".equals(sound)) ring(784, TUBE, 0.4, 0.003, f, level);
-        else if ("temple".equals(sound)) ring(330, TEMPLE, 0.42, 0.004, f, level);
-        else if ("bowl".equals(sound)) ring(587, BOWL, 0.4, 0.04, f, level);
-        else if ("gong".equals(sound)) ring(98, DEEP_GONG, 0.42, 0.06, f, level);
-        else note(f, lng ? 0.12 : 0.08, 0.23, CUE, 0.005, lng ? 0.2 : 0.14, level);
+        if (sound == null) sound = "beep";
+        switch (sound) {
+            case "bell": note(f, lng ? 0.7 : 0.45, 0.4, BELL, 0.005, 0, level); break;
+            case "soft": note(f, lng ? 0.2 : 0.14, 0.4, SOFT, 0.02, lng ? 0.16 : 0.1, level); break;
+            case "digital": note(f, 0.03, 0.45, PURE, 0.003, 0.05, level, 2, 0.1); break;
+            case "wood": note(f / 2, lng ? 0.35 : 0.22, 0.45, WOOD, 0.002, 0, level); break;
+            case "click": note(f / 1.5, lng ? 0.1 : 0.06, 0.5, CLICK, 0.001, 0, level); break;
+            case "handBell": note(2093 * f / TICK_F, 0.2, 0.3, BELL, 0.005, 0, level, 3, 0.07); break;
+            case "shipBell": ring(880, BRONZE, 0.36, 0.003, f, level); break;
+            case "tubular": ring(784, TUBE, 0.4, 0.003, f, level); break;
+            case "temple": ring(330, TEMPLE, 0.42, 0.004, f, level); break;
+            case "bowl": ring(587, BOWL, 0.4, 0.04, f, level); break;
+            case "gong": ring(98, DEEP_GONG, 0.42, 0.06, f, level); break;
+            // the tunes, their notes played quickly (tuneTick)
+            case "double": tune(f, new double[] { C6, C6 }, 0.1, 0.25, 0.3, BELL, 0.005, level); break;
+            case "triple": tune(f, new double[] { C6, C6, C6 }, 0.08, 0.2, 0.3, BELL, 0.005, level); break;
+            case "high": tune(f, new double[] { G6 }, 0, lng ? 0.5 : 0.35, 0.24, BELL, 0.005, level); break;
+            case "rising": tune(f, new double[] { C6, E6, G6, C7 }, 0.06, 0.2, 0.24, BELL, 0.005, level); break;
+            case "chime": tune(f, new double[] { E6, C6, G5 }, 0.08, 0.25, 0.24, BELL, 0.005, level); break;
+            case "pulse": tune(f, new double[] { C5, E5, G5 }, 0.08, 0.12, 0.3, SOFT, 0.02, level); break;
+            case "softAlarm": tune(f, new double[] { E5, C5 }, 0.12, 0.14, 0.3, SOFT, 0.02, level); break;
+            case "wake": notes(new double[][] { { G5 * f / TICK_F, 0, 0.24 }, { C6 * f / TICK_F, 0.06, 0.16 } }, 0.3, SOFT, 0.08, 0, level); break;
+            case "smallGong": ring(C4, GONG, 0.4, 0.02, f, level); break;
+            // "beep", and any id this version doesn't know (the web app cleans the choice to one it has, else "beep")
+            default: note(f, lng ? 0.12 : 0.08, 0.23, CUE, 0.005, lng ? 0.2 : 0.14, level);
+        }
+    }
+
+    /** A tune's countdown note: its notes `gap` seconds apart, moved with `f` (tuneTick in workout/runtime.ts). */
+    private static void tune(double f, double[] tones, double gap, double dur, double vol, double[][] partials, double attack, double level) {
+        double[][] ns = new double[tones.length][];
+        for (int i = 0; i < tones.length; i++) ns[i] = new double[] { tones[i] * f / TICK_F, i * gap, vol };
+        notes(ns, dur, partials, attack, 0, level);
     }
 
     /** A ringing sound's single short strike at its own pitch, moved with `f` (ringTick in workout/runtime.ts). */
@@ -148,20 +173,29 @@ public class RestCues extends BroadcastReceiver {
         note(freq, dur, vol, partials, attack, hold, level, 1, 0);
     }
 
-    /** The web app's tone(), `strikes` times `gap` seconds apart (one buffer): each partial rises exponentially to its peak in `attack`, stays there `hold`, then falls
-     *  exponentially to near silence; peaks above the web app's limiter are scaled down to it. */
+    /** The web app's tone(), `strikes` times `gap` seconds apart (one buffer). */
     private static void note(double freq, double dur, double vol, double[][] partials, double attack, double hold, double level, int strikes, double gap) {
-        double one = 0;
+        double[][] ns = new double[strikes][];
+        for (int k = 0; k < strikes; k++) ns[k] = new double[] { freq, k * gap, vol };
+        notes(ns, dur, partials, attack, hold, level);
+    }
+
+    /** The web app's tone() for each of `ns` ({ frequency, delay in seconds, vol }), mixed into one buffer: each partial
+     *  rises exponentially to its peak in `attack`, stays there `hold`, then falls exponentially to near silence; peaks
+     *  above the web app's limiter are scaled down to it. */
+    private static void notes(double[][] ns, double dur, double[][] partials, double attack, double hold, double level) {
+        double one = 0, lastDelay = 0;
         for (double[] p : partials) one = Math.max(one, hold + Math.max(attack + 0.05, dur * p[2]));
-        double len = one + (strikes - 1) * gap;
+        for (double[] nt : ns) lastDelay = Math.max(lastDelay, nt[1]);
+        double len = one + lastDelay;
         int n = (int) ((len + 0.02) * RATE);
         double[] sum = new double[n];
-        for (int k = 0; k < strikes; k++)
+        for (double[] nt : ns)
         for (double[] p : partials) {
-            double f = freq * p[0];
+            double f = nt[0] * p[0];
             if (f > 16000) continue;
-            double peak = Math.max(0.0002, vol * p[1] * LOUDER * level), fall = attack + hold, end = hold + Math.max(attack + 0.05, dur * p[2]);
-            int start = (int) Math.round(k * gap * RATE);
+            double peak = Math.max(0.0002, nt[2] * p[1] * LOUDER * level), fall = attack + hold, end = hold + Math.max(attack + 0.05, dur * p[2]);
+            int start = (int) Math.round(nt[1] * RATE);
             for (int i = 0; start + i < n; i++) {
                 double t = (double) i / RATE, g;
                 if (t >= end) break;

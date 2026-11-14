@@ -26,7 +26,7 @@ export const INTERVAL_SOUNDS = ["beep", "double", "triple", "high", "low", "risi
 export type IntervalSound = (typeof INTERVAL_SOUNDS)[number];
 /** A sound for the start of each part, and "done" for the end of the whole run. */
 export type IntervalSounds = Record<IntervalKind | "done", IntervalSound>;
-/** The cues the timer has always played, so setups saved before sounds could be chosen sound the same. */
+/** Each part's sound for setups saved before sounds could be chosen, and new ones. */
 export const INTERVAL_SOUNDS_DEFAULT: IntervalSounds = { prep: "beep", work: "double", rest: "low", setRest: "low", done: "triple" };
 
 export const INTERVAL_DEFAULT: IntervalConfig = { prepS: 10, workS: 40, restS: 20, rounds: 8, sets: 1, setRestS: 60 };
