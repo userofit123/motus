@@ -2,6 +2,15 @@
 
 The top entry's version is the one the release workflow publishes. Add a new `## [x.y.z]` section to release.
 
+## [0.1.25] - 2026-11-14
+
+- Stats has a Sleep tab when your band sends sleep: last night with its stages (deep, light, REM, awake), heart rate, blood oxygen and breathing, averages for bedtime, wake time and time asleep, how regular your sleep is, short insights, and every night with its own detail.
+- Stats has a Heart tab when there's heart data: resting heart rate, blood oxygen, HRV and the heart rate of your workouts and activities. These charts moved there from Body.
+- Daily distance and active calories from your band show in Stats → Activities and in Imported data.
+- On phones, pull down at the top of a page to sync: it reads Health Connect, syncs with your server and reloads the page.
+- Health Connect: if Motus can read more than you allowed at first, Settings → Integrations shows "More to read" with an Allow button, and then reads the last 30 days. Change opens Health Connect's data and access screen; it did nothing before.
+- Updating adds a small database change on first start.
+
 ## [0.1.24] - 2026-11-14
 
 - Walks and other activities you record in Motus take your band's step count for exactly that time, when the band's data covers the whole activity (Health Connect). If the band was off or its count doesn't fit the phone's, the phone's count stays. A count you type yourself always stays.
