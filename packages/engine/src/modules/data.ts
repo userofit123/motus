@@ -12,6 +12,7 @@ const EXPORT_FORMAT = 1;
 const TABLES = [
   "exercises", "exercise_prefs", "folders", "routines", "routine_exercises", "routine_sets", "routine_versions", "programs", "schedules", "schedule_exceptions",
   "workouts", "workout_exercises", "workout_sets", "activity_types", "activities", "notes", "reminders", "goals", "body_metrics", "daily_logs",
+  "health_imports", // after what it points at (ref: a body entry or an activity), so a merge swaps those ids in it too
 ] as const;
 type Table = (typeof TABLES)[number];
 // A Motus file holds all of these or some of them, e.g. only routines to copy into another account.

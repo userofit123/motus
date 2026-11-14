@@ -3,7 +3,7 @@
 // how much of its own log has been sent, this device's name for itself, and which catalog it has.
 import type { Db, Sql } from "../db";
 import { SYNCED } from "./tables";
-import { readRows, applyChanges, latestPerRow, keyOf, overrule, DELETES_WIN, type Change } from "./core";
+import { readRows, applyChanges, latestPerRow, keyOf, overrule, RULED, type Change } from "./core";
 import { uuidv7 } from "../ids";
 
 export interface ReplicaMeta { cursor: number; pushed: number; device: string; catalog: string; ready: boolean }
@@ -85,7 +85,7 @@ export async function applyRemote(db: Db, userId: string, changes: Change[], cur
     const mine = new Map<string, { at: number; op: string }>();
     for (const e of (await q.query("SELECT DISTINCT ON (tbl, pk) tbl, pk, op, at FROM sync_log WHERE seq > $1 ORDER BY tbl, pk, seq DESC", [m.pushed])).rows)
       mine.set(keyOf(e.tbl, e.pk), { at: new Date(e.at).getTime(), op: e.op });
-    const here = await readRows(q, changes.filter((c) => DELETES_WIN.has(c.tbl)));
+    const here = await readRows(q, changes.filter((c) => RULED.has(c.tbl)));
     const keep: Change[] = [];
     const take = changes.filter((c) => {
       const k = keyOf(c.tbl, c.pk), t = mine.get(k);

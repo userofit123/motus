@@ -32,6 +32,7 @@ import ChangelogSection from "../components/settings/ChangelogSection.vue";
 import AccountsSection from "../components/settings/AccountsSection.vue";
 import IntegrationsSection from "../components/settings/IntegrationsSection.vue";
 import ActivityLogSection from "../components/settings/ActivityLogSection.vue";
+import HealthImportsSection from "../components/settings/HealthImportsSection.vue";
 import { native } from "../core/device";
 
 const route = useRoute(), router = useRouter();
@@ -53,6 +54,11 @@ const GROUPS = computed<[string, Section[]][]>(() => [
     ...(session.user?.role === "admin" ? [["admin", "Server admin", "server", "People, invites, sign-ups"] as Section] : []), ["about", "About Motus", "info", "Version, credits"]]],
 ]);
 const SECTIONS = computed(() => GROUPS.value.flatMap(([, xs]) => xs));
+// screens inside a section, reached from a row there: [the section they belong to, their name]
+const SUBS: Record<string, [parent: string, name: string]> = { health: ["integrations", "Imported data"] };
+const sub = computed(() => SUBS[sec.value]);
+const title = computed(() => sub.value?.[1] ?? SECTIONS.value.find((x) => x[0] === sec.value)?.[1]);
+const parentName = computed(() => (sub.value ? SECTIONS.value.find((x) => x[0] === sub.value![0])?.[1] ?? "Settings" : "Settings"));
 const go = (k: string) => router.push(`/settings/${k}`);
 const DAY_OPTS = computed(() => weekdayOrder(s.value.firstDay).map((d) => ({ value: d, label: WEEKDAYS[d]!.slice(0, 3) })));
 const set = (patch: Record<string, unknown>) => saveSettings(patch);
@@ -126,7 +132,7 @@ await loaded(me);
 
 <template>
   <div class="page">
-    <div class="ph"><div><button v-if="isPhone && sec" class="back" @click="goBack(router, '/settings')"><Icon name="left" :size="16" /><span>Settings</span></button><h1>{{ isPhone && sec ? SECTIONS.find((x) => x[0] === sec)?.[1] : "Settings" }}</h1></div></div>
+    <div class="ph"><div><button v-if="isPhone && sec" class="back" @click="goBack(router, sub ? `/settings/${sub[0]}` : '/settings')"><Icon name="left" :size="16" /><span>{{ parentName }}</span></button><h1>{{ isPhone && sec ? title : "Settings" }}</h1></div></div>
     <div :class="isPhone ? '' : 'grid'" :style="isPhone ? undefined : { gridTemplateColumns: '220px minmax(0,1fr)', alignItems: 'start' }">
       <!-- phone: the groups as short lists, each row saying what's inside -->
       <div v-if="isPhone && !sec">
@@ -143,7 +149,7 @@ await loaded(me);
       <div v-else-if="!isPhone" class="card snav" role="navigation" aria-label="Settings sections">
         <template v-for="[g, xs] in GROUPS" :key="g">
           <div class="sng">{{ g }}</div>
-          <button v-for="[k, l, ic] in xs" :key="k" type="button" class="sni" :class="{ on: sec === k }" :aria-current="sec === k ? 'page' : undefined" @click="go(k)"><Icon :name="ic" :size="17" /><span>{{ l }}</span></button>
+          <button v-for="[k, l, ic] in xs" :key="k" type="button" class="sni" :class="{ on: sec === k || sub?.[0] === k }" :aria-current="sec === k ? 'page' : undefined" @click="go(k)"><Icon :name="ic" :size="17" /><span>{{ l }}</span></button>
         </template>
       </div>
 
@@ -264,6 +270,7 @@ await loaded(me);
         <ChangelogSection v-else-if="sec === 'changelog'" />
         <AccountsSection v-else-if="sec === 'accounts'" />
         <IntegrationsSection v-else-if="sec === 'integrations'" />
+        <HealthImportsSection v-else-if="sec === 'health'" />
         <AdminSection v-else-if="sec === 'admin'" />
 
         <template v-else-if="sec === 'about'">

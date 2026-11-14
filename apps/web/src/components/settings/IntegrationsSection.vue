@@ -5,13 +5,16 @@
 import { useFmt } from "../../core/format";
 import { useQuery } from "@tanstack/vue-query";
 import { api } from "../../api/client";
-import { prompt, confirm } from "../../core/ask";
+import { prompt, confirm, choose } from "../../core/ask";
+import { useRouter } from "vue-router";
+import Icon from "../Icon.vue";
 import { toast } from "../../core/toast";
 import { useSettings } from "../../api/queries";
 import { computed, onMounted, onBeforeUnmount, ref } from "vue";
-import { healthSupported, healthStatus, connectHealth, openHealthSettings, syncHealth, lastSync, syncing, type HealthStatus } from "../../native/health";
+import { healthSupported, healthStatus, connectHealth, openHealthSettings, syncHealth, lastSync, syncing, type HealthStatus, type HealthResult } from "../../native/health";
 
 const s = useSettings();
+const router = useRouter();
 const sessions = useQuery({ queryKey: ["settings", "sessions"], queryFn: () => api.get("/auth/sessions") });
 async function create() {
   const name = await prompt("Name the token", { placeholder: "e.g. Home Assistant" }); if (!name) return;
@@ -45,13 +48,32 @@ const connected = computed(() => !!hc.value?.granted.length);
 async function connect() {
   try { hc.value = await connectHealth(); if (hc.value.granted.length) await sync(); } catch (e) { toast((e as Error).message); }
 }
+// what a read added, as a toast
+function report(r: HealthResult | null) {
+  if (!r) return;
+  const n = r.steps + r.sleep + r.weight + r.activities;
+  toast(n ? [r.steps && `${r.steps} ${r.steps === 1 ? "day" : "days"} of steps`, r.sleep && `${r.sleep} ${r.sleep === 1 ? "night" : "nights"} of sleep`,
+    r.weight && `${r.weight} weight ${r.weight === 1 ? "entry" : "entries"}`, r.activities && `${r.activities} ${r.activities === 1 ? "activity" : "activities"}`].filter(Boolean).join(", ") + " added" : "Up to date");
+}
 async function sync() {
+  try { report(await syncHealth()); } catch (e) { toast((e as Error).message || "Health Connect could not be read"); }
+}
+// Import past data: Health Connect lets a new app see 30 days; further back needs its "past data" access, which some
+// phones don't offer at all
+const pastText = computed(() => hc.value?.history ? "Steps, sleep, weight and workouts from before"
+  : hc.value?.historyAvailable ? "The last 30 days; further back asks Health Connect first" : "The last 30 days, as far as Health Connect goes on this phone");
+const PAST = [{ value: "30", label: "Last 30 days" }, { value: "90", label: "Last 90 days" }, { value: "365", label: "Last year" }, { value: "all", label: "Everything" }];
+async function importPast() {
+  const more = hc.value?.history || hc.value?.historyAvailable;
+  const pick = more ? await choose("Import from how far back?", PAST, hc.value?.history ? undefined : "Going back further than 30 days asks Health Connect to allow past data.") : "30";
+  if (!pick) return;
   try {
-    const r = await syncHealth();
-    if (!r) return;
-    const n = r.steps + r.sleep + r.weight + r.activities;
-    toast(n ? [r.steps && `${r.steps} ${r.steps === 1 ? "day" : "days"} of steps`, r.sleep && `${r.sleep} ${r.sleep === 1 ? "night" : "nights"} of sleep`,
-      r.weight && `${r.weight} weight ${r.weight === 1 ? "entry" : "entries"}`, r.activities && `${r.activities} ${r.activities === 1 ? "activity" : "activities"}`].filter(Boolean).join(", ") + " added" : "Up to date");
+    if (pick !== "30" && !hc.value?.history) {
+      hc.value = await connectHealth();
+      if (!hc.value.history) return toast("Past data wasn't allowed, so Motus can read the last 30 days only");
+    }
+    const from = pick === "all" ? new Date("2000-01-01T00:00:00") : new Date(Date.now() - Number(pick) * 86_400_000);
+    report(await syncHealth({ from }));
   } catch (e) { toast((e as Error).message || "Health Connect could not be read"); }
 }
 const lastText = computed(() => lastSync.value ? `${fmt.value.date(lastSync.value)} ${fmt.value.time(lastSync.value)}` : "Not yet");
@@ -66,6 +88,9 @@ const lastText = computed(() => lastSync.value ? `${fmt.value.date(lastSync.valu
           <button v-if="hc?.available === 'yes' && !connected" class="btn s" @click="connect">Allow</button>
           <button v-else-if="connected" class="btn o s" @click="openHealthSettings">Change</button></div>
         <div v-if="connected" class="li"><div class="grow"><div class="t">Last sync</div><div class="s">{{ lastText }}</div></div></div>
+        <div v-if="connected" class="li"><div class="grow"><div class="t">Import past data</div><div class="s">{{ pastText }}</div></div>
+          <button class="btn o s" :disabled="syncing" @click="importPast">Import</button></div>
+        <div class="li click" role="button" tabindex="0" @click="router.push('/settings/health')" @keydown.enter="router.push('/settings/health')"><div class="grow"><div class="t">Imported data</div><div class="s">Everything that came in, to correct or delete</div></div><Icon name="right" :size="16" class="muted" /></div>
       </div>
       <p class="tiny">Motus reads what other apps wrote to Health Connect, such as a band connected through Gadgetbridge (its Settings → External integrations → Health Connect). It reads when you open the app; steps and sleep you type in yourself stay as they are.</p>
     </template>

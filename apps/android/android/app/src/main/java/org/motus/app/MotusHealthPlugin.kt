@@ -4,6 +4,7 @@ import android.content.Intent
 import android.os.Build
 import androidx.activity.result.ActivityResult
 import androidx.health.connect.client.HealthConnectClient
+import androidx.health.connect.client.HealthConnectFeatures
 import androidx.health.connect.client.PermissionController
 import androidx.health.connect.client.aggregate.AggregateMetric
 import androidx.health.connect.client.permission.HealthPermission
@@ -54,9 +55,20 @@ class MotusHealthPlugin : Plugin() {
 
     private fun client() = HealthConnectClient.getOrCreate(context)
 
+    // Without this permission Health Connect hands out only the 30 days before the first grant; it exists only on
+    // newer Health Connect versions, so it is asked for (and reported) only where the phone offers it
+    private val HISTORY = HealthPermission.PERMISSION_READ_HEALTH_DATA_HISTORY
+    private fun historyAvailable(c: HealthConnectClient): Boolean = try {
+        c.features.getFeatureStatus(HealthConnectFeatures.FEATURE_READ_HEALTH_DATA_HISTORY) == HealthConnectFeatures.FEATURE_STATUS_AVAILABLE
+    } catch (e: Exception) { false }
+
     override fun handleOnDestroy() { scope.cancel() }
 
-    /** { available: "yes" | "update" | "no", granted: string[] } ("update": the Health Connect app needs installing or updating) */
+    /**
+     * { available: "yes" | "update" | "no", granted: string[], history: boolean, historyAvailable: boolean }
+     * ("update": the Health Connect app needs installing or updating; history: data older than 30 days before the
+     * first grant may be read; historyAvailable: this phone's Health Connect can grant that at all)
+     */
     @PluginMethod
     fun status(call: PluginCall) {
         val s = sdk()
@@ -66,10 +78,16 @@ class MotusHealthPlugin : Plugin() {
             HealthConnectClient.SDK_UNAVAILABLE_PROVIDER_UPDATE_REQUIRED -> "update"
             else -> "no"
         })
-        if (s != HealthConnectClient.SDK_AVAILABLE) { out.put("granted", JSArray()); call.resolve(out); return }
+        if (s != HealthConnectClient.SDK_AVAILABLE) {
+            out.put("granted", JSArray()).put("history", false).put("historyAvailable", false); call.resolve(out); return
+        }
         scope.launch {
             try {
-                out.put("granted", JSArray(names(client().permissionController.getGrantedPermissions())))
+                val c = client()
+                val granted = c.permissionController.getGrantedPermissions()
+                out.put("granted", JSArray(names(granted)))
+                out.put("history", HISTORY in granted)
+                out.put("historyAvailable", historyAvailable(c))
                 call.resolve(out)
             } catch (e: Exception) { call.reject(e.message ?: "Health Connect could not be reached") }
         }
@@ -79,7 +97,8 @@ class MotusHealthPlugin : Plugin() {
     @PluginMethod
     fun connect(call: PluginCall) {
         if (sdk() != HealthConnectClient.SDK_AVAILABLE) { call.reject("Health Connect is not available"); return }
-        val intent = PermissionController.createRequestPermissionResultContract().createIntent(context, PERMS)
+        val perms = if (historyAvailable(client())) PERMS + HISTORY else PERMS
+        val intent = PermissionController.createRequestPermissionResultContract().createIntent(context, perms)
         startActivityForResult(call, intent, "permissionsDone")
     }
 
@@ -102,8 +121,9 @@ class MotusHealthPlugin : Plugin() {
     }
 
     /**
-     * Everything since `from` (an ISO time). Days are the phone's calendar days.
-     * { steps: [{date, value}], sleep: [{date, hours}], weight: [{at, kg}], sessions: [{id, type, title, start, end, avgHr?, distanceM?, steps?, calories?}] }
+     * Everything since `from` (an ISO time; years back are fine, Health Connect then needs the history permission
+     * for anything older than 30 days before the first grant). Days are the phone's calendar days.
+     * { steps: [{date, value}], sleep: [{date, hours}], weight: [{id, at, kg}], sessions: [{id, type, title, start, end, avgHr?, distanceM?, steps?, calories?}] }
      */
     @PluginMethod
     fun read(call: PluginCall) {
@@ -133,15 +153,21 @@ class MotusHealthPlugin : Plugin() {
         if (perm(HeartRateRecord::class) in granted) add("heartRate")
     }
 
-    // Health Connect adds up each day itself and leaves out steps two apps both wrote (a band and the phone)
+    // Health Connect adds up each day itself and leaves out steps two apps both wrote (a band and the phone).
+    // A long range (years) is asked for 90 days at a time: one request for thousands of day buckets can fail.
     private suspend fun steps(c: HealthConnectClient, from: Instant, zone: ZoneId): JSArray {
-        val start = LocalDate.ofInstant(from, zone).atStartOfDay()
-        val end = LocalDate.now(zone).plusDays(1).atStartOfDay()
-        val res = c.aggregateGroupByPeriod(AggregateGroupByPeriodRequest(setOf(StepsRecord.COUNT_TOTAL), TimeRangeFilter.between(start, end), Period.ofDays(1)))
+        var day = LocalDate.ofInstant(from, zone)
+        val end = LocalDate.now(zone).plusDays(1)
         val arr = JSArray()
-        for (r in res) {
-            val n = r.result[StepsRecord.COUNT_TOTAL] ?: continue
-            arr.put(JSObject().put("date", r.startTime.toLocalDate().toString()).put("value", n))
+        while (day.isBefore(end)) {
+            val next = minOf(day.plusDays(90), end)
+            val res = c.aggregateGroupByPeriod(AggregateGroupByPeriodRequest(setOf(StepsRecord.COUNT_TOTAL),
+                TimeRangeFilter.between(day.atStartOfDay(), next.atStartOfDay()), Period.ofDays(1)))
+            for (r in res) {
+                val n = r.result[StepsRecord.COUNT_TOTAL] ?: continue
+                arr.put(JSObject().put("date", r.startTime.toLocalDate().toString()).put("value", n))
+            }
+            day = next
         }
         return arr
     }
@@ -182,7 +208,7 @@ class MotusHealthPlugin : Plugin() {
 
     private suspend fun weight(c: HealthConnectClient, from: Instant): JSArray {
         val arr = JSArray()
-        for (w in readAll(c, WeightRecord::class, from)) arr.put(JSObject().put("at", w.time.toString()).put("kg", w.weight.inKilograms))
+        for (w in readAll(c, WeightRecord::class, from)) arr.put(JSObject().put("id", w.metadata.id).put("at", w.time.toString()).put("kg", w.weight.inKilograms))
         return arr
     }
 
@@ -214,13 +240,15 @@ class MotusHealthPlugin : Plugin() {
             val type = typeOf(s.exerciseType) ?: continue
             val o = JSObject().put("id", s.metadata.id).put("type", type).put("title", s.title ?: "")
                 .put("start", s.startTime.toString()).put("end", s.endTime.toString())
-            if (metrics.isNotEmpty()) {
+            // one aggregate per session: over years of sessions Health Connect may refuse some (its rate limit), and
+            // those sessions still come back, only without heart rate, distance, steps and calories
+            if (metrics.isNotEmpty()) try {
                 val a = c.aggregate(AggregateRequest(metrics, TimeRangeFilter.between(s.startTime, s.endTime)))
                 a[HeartRateRecord.BPM_AVG]?.let { o.put("avgHr", it) }
                 a[DistanceRecord.DISTANCE_TOTAL]?.let { o.put("distanceM", it.inMeters) }
                 a[StepsRecord.COUNT_TOTAL]?.let { o.put("steps", it) }
                 a[ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL]?.let { o.put("calories", it.inKilocalories.toInt()) }
-            }
+            } catch (e: Exception) { if (e is kotlinx.coroutines.CancellationException) throw e }
             arr.put(o)
         }
         return arr

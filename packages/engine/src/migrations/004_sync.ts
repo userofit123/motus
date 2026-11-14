@@ -38,5 +38,5 @@ BEGIN
   RETURN NULL;
 END $$;
 
-${SYNCED.map((t) => `CREATE TRIGGER sync_log AFTER INSERT OR UPDATE OR DELETE ON ${t.name} FOR EACH ROW EXECUTE FUNCTION motus_log_change(${t.pk.map((c) => `'${c}'`).join(", ")});`).join("\n")}
+${SYNCED.filter((t) => !t.since).map((t) => `CREATE TRIGGER sync_log AFTER INSERT OR UPDATE OR DELETE ON ${t.name} FOR EACH ROW EXECUTE FUNCTION motus_log_change(${t.pk.map((c) => `'${c}'`).join(", ")});`).join("\n")}
 `;

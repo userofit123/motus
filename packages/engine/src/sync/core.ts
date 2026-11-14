@@ -51,6 +51,8 @@ export async function allRows(q: Sql): Promise<Record<string, Record<string, unk
  */
 export const DELETES_WIN = new Set(["workouts", "workout_exercises", "workout_sets"]);
 const finished = (status: unknown) => status != null && status !== "in_progress";
+/** The tables overrule() looks at the row here for. */
+export const RULED = new Set([...DELETES_WIN, "health_imports"]);
 
 /**
  * Rules that decide before "the newest change wins" (whose clocks can disagree between a phone and a server):
@@ -62,6 +64,12 @@ export function overrule(c: Change, here: { row: Record<string, unknown> | null;
   if (DELETES_WIN.has(c.tbl)) {
     if (c.op === "delete") return true;
     if (!here.row && here.lastOp === "delete") return false;
+  }
+  // a Health Connect import deleted anywhere stays deleted: a phone that hadn't heard yet and synced the same day again
+  // (a newer imported_at) must not bring it back
+  if (c.tbl === "health_imports" && c.op === "upsert" && c.row && here.row) {
+    if (c.row.deleted_at != null) return true;
+    if (here.row.deleted_at != null) return false;
   }
   if (c.tbl === "workouts" && c.op === "upsert" && c.row && here.row) {
     const a = finished(c.row.status), b = finished(here.row.status);

@@ -1,6 +1,7 @@
 // The tables that are a person's data and travel between devices, parents before children (the order rows are written in).
 // Not synced: sign-in tables, the shared catalog (fetched whole), uploaded files (fetched on demand), the events feed.
-export const SYNCED: { name: string; pk: string[] }[] = [
+// since: the migration that made the table (it makes its own sync trigger; 004_sync only does the tables there were then)
+export const SYNCED: { name: string; pk: string[]; since?: string }[] = [
   { name: "user_settings", pk: ["user_id"] },
   { name: "exercises", pk: ["id"] }, // only people's own; the catalog has no owner
   { name: "exercise_prefs", pk: ["user_id", "exercise_id"] },
@@ -22,5 +23,6 @@ export const SYNCED: { name: string; pk: string[] }[] = [
   { name: "activities", pk: ["id"] },
   { name: "body_metrics", pk: ["id"] },
   { name: "daily_logs", pk: ["user_id", "date", "kind"] },
+  { name: "health_imports", pk: ["user_id", "key"], since: "027_health_imports" },
 ];
 export const SYNCED_BY_NAME = new Map(SYNCED.map((t, i) => [t.name, { ...t, order: i }]));

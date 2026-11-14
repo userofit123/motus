@@ -5,7 +5,7 @@ import type { Sql } from "../db";
 import { bad } from "../errors";
 import { str } from "../util";
 import { SYNCED_BY_NAME } from "../sync/tables";
-import { readRows, allRows, applyChanges, latestPerRow, keyOf, overrule, DELETES_WIN, type Change } from "../sync/core";
+import { readRows, allRows, applyChanges, latestPerRow, keyOf, overrule, RULED, type Change } from "../sync/core";
 
 const PAGE = 5000;
 
@@ -49,7 +49,7 @@ export function syncRoutes(r: Router) {
     // last change wins: a newer change from somewhere else beats this one, and the device gets that one instead.
     // Except where overrule() decides first: a cancelled workout stays cancelled, a finished one stays finished.
     const accepted: Change[] = [], rejected: Change[] = [];
-    const here = await readRows(ctx.q, list.filter((c) => DELETES_WIN.has(c.tbl))); // the only rows the rules look at
+    const here = await readRows(ctx.q, list.filter((c) => RULED.has(c.tbl))); // the only rows the rules look at
     for (const c of list) {
       const last = (await ctx.q.query("SELECT at, origin, op FROM sync_log WHERE tbl = $1 AND pk = $2::jsonb ORDER BY seq DESC LIMIT 1", [c.tbl, JSON.stringify(c.pk)])).rows[0];
       const o = overrule(c, { row: here.get(keyOf(c.tbl, c.pk)) ?? null, lastOp: last?.op });

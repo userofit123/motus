@@ -54,7 +54,9 @@ dependencies {
     implementation "androidx.core:core-splashscreen:$coreSplashScreenVersion"
     implementation project(':capacitor-android')
     // reading steps, sleep, weight and exercise sessions other apps wrote (MotusHealthPlugin)
-    implementation "androidx.health.connect:connect-client:1.1.0-alpha07"
+    // alpha12: the newest that builds with Android Gradle plugin 8.2 (beta01 needs 8.6, beta02 and later 8.9 and compileSdk 36);
+    // alpha10+ is needed for reading data older than 30 days (HealthConnectFeatures)
+    implementation "androidx.health.connect:connect-client:1.1.0-alpha12"
     implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3"
     testImplementation "junit:junit:$junitVersion"
     androidTestImplementation "androidx.test.ext:junit:$androidxJunitVersion"
