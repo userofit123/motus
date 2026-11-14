@@ -3,7 +3,7 @@
 import { reactive, computed, watch, onBeforeUnmount } from "vue";
 import { useQueryClient } from "@tanstack/vue-query";
 import { useMe, useSettings } from "../api/queries";
-import { latestRelease, detectPlatform, newer } from "./releases";
+import { releaseQuery, detectPlatform, newer } from "./releases";
 
 const nat = () => (globalThis as any).motusNative?.update;
 export const updater = reactive({
@@ -109,7 +109,7 @@ export function useAutoUpdate() {
       if (Date.now() - lastCheck >= every && Date.now() - lastFail >= RETRY_GAP) {
         // the same answer App & Versions shows (its "Checked at" follows); a check that failed (offline) is tried
         // again after RETRY_GAP, not 6 hours later
-        const r = await qc.fetchQuery({ queryKey: ["static", "release"], queryFn: latestRelease, staleTime: 0 }).catch(() => null);
+        const r = await qc.fetchQuery(releaseQuery).catch(() => null);
         const v = r?.latest ?? "";
         if (!v) { lastFail = Date.now(); return; }
         lastCheck = Date.now(); lastFail = 0;

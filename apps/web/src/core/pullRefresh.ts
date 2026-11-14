@@ -9,7 +9,7 @@ import { sync, schedule } from "../api/replica";
 import { invalidate, queryClient, reloadQueued } from "../api/live";
 import { healthSupported, syncHealth, healthAdded } from "../native/health";
 import { updater, updateAvailable } from "./updater";
-import { latestRelease, detectPlatform } from "./releases";
+import { releaseQuery, detectPlatform } from "./releases";
 import { toast } from "./toast";
 
 /** How far (after resistance) the spinner must come down for a release to refresh */
@@ -53,7 +53,7 @@ async function readHealth(on: boolean): Promise<string> {
  *  the update notice, as an automatic check would. In a browser there is nothing to install: "". */
 async function checkUpdate(): Promise<string> {
   if (!detectPlatform().app) return "";
-  const r = await queryClient.fetchQuery({ queryKey: ["static", "release"], queryFn: latestRelease, staleTime: 0 }).catch(() => null);
+  const r = await queryClient.fetchQuery(releaseQuery).catch(() => null);
   if (!r?.latest) return "Couldn't check for updates";
   updater.latest = r.latest;
   if (!updater.appVersion) return "";

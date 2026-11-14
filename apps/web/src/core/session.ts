@@ -24,7 +24,11 @@ export async function loadSession() {
   try { s = await (saved ? Promise.race([answer, slow()]) : answer); writeJson(KEY(), s.user ? s : null); }
   // Only the server's answer "nobody" (user: null) signs out. A failed check (no connection, or a server error such as a
   // dev server restarting behind its proxy, which answers 500) is no answer at all: open on the saved session as offline.
-  catch { s = saved; offline = true; if (navigator.onLine) unreachable(); else sync.online = false; }
+  catch (e) {
+    // a 401 is the server (or a proxy in front of it) saying nobody is signed in: an answer, so signed out, not offline
+    if (e instanceof ApiError && e.status === 401) s = null;
+    else { s = saved; offline = true; if (navigator.onLine) unreachable(); else sync.online = false; }
+  }
   if (s) Object.assign(session, { setupNeeded: s.setupNeeded, user: s.user, registration: s.registration, version: s.version, apiLevel: s.apiLevel });
   else session.user = null;
   // a server account works on a copy on this device (offline use); local accounts already are one
