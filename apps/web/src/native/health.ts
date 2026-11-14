@@ -106,20 +106,41 @@ async function read(past?: Date): Promise<HealthResult | null> {
     rememberRead(reads);
     // then what the band saw during activities and workouts recorded in Motus over the same days: its steps (a phone in
     // a pocket counts fewer) and heart rate. A failure here keeps the import above; the next sync asks again.
-    try { r.ranges = await readRanges(from); } catch (e) { console.warn("Health Connect ranges", e); }
+    try { r.ranges = await readRanges(from < rangesFrom() ? from : rangesFrom()); } catch (e) { console.warn("Health Connect ranges", e); }
     if (r.steps || r.sleep || r.activities || r.weight || r.restingHr || r.spo2 || r.hrv || r.sleepNights || r.distance || r.activeKcal || r.bodyFat || r.hydration || r.vo2max || r.hrDays) invalidate([...TOPICS.health]);
     if (r.ranges?.steps || r.ranges?.hr) invalidate([...TOPICS.health, "workouts"]);
     return r;
   } finally { syncing.value = false; running = null; }
 }
 
+// Sessions are asked about over a fixed look-back, not since the last sync: a band hands its heart rate over when it next
+// connects, which can be days after the session, so a window that follows the sync would never ask again. The engine
+// leaves out sessions that already have what they need, so this stays cheap.
+const RANGES_DAYS = 30, SETTLE_MS = 3 * DAY_MS, CHECKED_KEY = "motusHealthChecked", CHECKED_MAX = 400;
+const rangesFrom = () => new Date(Date.now() - RANGES_DAYS * DAY_MS);
+// Sessions the band had nothing for, once they ended more than 3 days ago (it has synced by then, or never will), so a
+// session without band data isn't read from Health Connect on every sync. Kept per account on this phone.
+const checkedIds = () => new Set(readJson<Record<string, string[]>>(CHECKED_KEY, {})[key()] ?? []);
+const rememberChecked = (ids: string[]) => {
+  if (!ids.length) return;
+  const all = readJson<Record<string, string[]>>(CHECKED_KEY, {});
+  all[key()] = [...new Set([...(all[key()] ?? []), ...ids])].slice(-CHECKED_MAX);
+  writeJson(CHECKED_KEY, all);
+};
+
 async function readRanges(from: Date): Promise<{ steps: number; hr: number } | undefined> {
   if (typeof plugin()?.readRanges !== "function") return undefined; // an app build from before
-  const { ranges } = await api.get<{ ranges: Range[] }>("/health/ranges", { from: from.toISOString() });
-  if (!ranges?.length) return undefined;
+  const got = await api.get<{ ranges: Range[] }>("/health/ranges", { from: from.toISOString() });
+  const checked = checkedIds();
+  const ranges = (got.ranges ?? []).filter((x) => !checked.has(x.id));
+  if (!ranges.length) return undefined;
   const { results } = await plugin().readRanges({ ranges }) as { results: RangeResult[] };
   if (!results?.length) return undefined;
-  return api.post<{ steps: number; hr: number }>("/health/ranges", { results });
+  const settled = new Set(ranges.filter((x) => Date.now() - Date.parse(x.end) > SETTLE_MS).map((x) => x.id));
+  const out = await api.post<{ steps: number; hr: number }>("/health/ranges", { results });
+  // marked only after the server took the results, and only for a session the band had neither heart rate nor steps for
+  rememberChecked(results.filter((x) => settled.has(x.id) && !x.hr?.length && !(x.covered && x.steps)).map((x) => x.id));
+  return out;
 }
 
 const EVERY_MS = 15 * 60_000;
