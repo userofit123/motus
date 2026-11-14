@@ -60,6 +60,9 @@ const byDay = computed(() => {
   for (const a of c.activities) add(localYmd(new Date(a.startedAt)), { kind: "activity", ...a });
   // the engine leaves out plans already done (by their routine, activity type, or started from the plan)
   for (const p of c.planned) add(p.date, { kind: "planned", missed: p.date < today, ...p });
+  // the engine sends workouts and activities as separate lists, so a day would show all its workouts before its activities;
+  // order each day like the List view (newest first), plans (no time of their own) after what was done
+  for (const xs of m.values()) xs.sort((a, b) => (a.kind === "planned" ? 1 : 0) - (b.kind === "planned" ? 1 : 0) || (a.startedAt && b.startedAt ? b.startedAt.localeCompare(a.startedAt) : 0));
   return m;
 });
 const DOW = computed(() => weekdayOrder(first.value).map((i) => ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][i]));
@@ -122,9 +125,11 @@ const n = (k: number, one: string, many = one + "s") => `${k} ${k === 1 ? one : 
 // so it names that month (a bare "6 workouts · 7h 2m" under the title read as a riddle)
 const summary = computed(() => {
   const m = monthStats.value, mk = localYmd(month.value).slice(0, 7);
-  const name = mk === today.slice(0, 7) ? "This month" : month.value.toLocaleDateString(undefined, mk.slice(0, 4) === today.slice(0, 4) ? { month: "long" } : { month: "long", year: "numeric" });
+  // the month alone: the month bar right below shows the year, and the year would push the line past a phone's width
+  const name = mk === today.slice(0, 7) ? "This month" : month.value.toLocaleDateString(undefined, { month: "long" });
   if (!m.workouts && !m.activities) return { head: `${name}:`, parts: [mk >= today.slice(0, 7) ? "nothing yet" : "nothing logged"] };
-  return { head: `${name}:`, parts: [m.workouts ? n(m.workouts, "workout") : "", m.activities ? n(m.activities, "activity", "activities") : "", m.timeS ? `${fmt.value.dur(m.timeS, true)} in total` : ""].filter(Boolean) };
+  // one line under the title even on a phone, so the time stands bare: after the counts it reads as their total
+  return { head: `${name}:`, parts: [m.workouts ? n(m.workouts, "workout") : "", m.activities ? n(m.activities, "activity", "activities") : "", m.timeS ? fmt.value.dur(m.timeS, true) : ""].filter(Boolean) };
 });
 // list view
 const listWorkouts = useWorkouts(computed(() => ({ limit: 300 })));
@@ -139,22 +144,24 @@ await loaded(cal, listWorkouts, listActs);
 
 <template>
   <div class="page">
-    <div class="ph">
-      <div><h1>Calendar</h1><div class="sub"><template v-if="view === 'calendar'">{{ summary.head }} <template v-for="(p, i) in summary.parts" :key="p"><template v-if="i"> · </template><span class="nw">{{ p }}</span></template></template><template v-else>{{ n(list.length, "session") }}</template></div></div>
+    <div class="ph sub2">
+      <h1>Calendar</h1>
       <div class="acts">
         <div class="seg"><button :class="{ on: view === 'calendar' }" @click="view = 'calendar'">Calendar</button><button :class="{ on: view === 'list' }" @click="view = 'list'">List</button></div>
       </div>
+      <div class="sub"><template v-if="view === 'calendar'">{{ summary.head }} {{ summary.parts.join(" · ") }}</template><template v-else>{{ n(list.length, "session") }}</template></div>
     </div>
 
     <Transition name="sw" mode="out-in">
     <div v-if="view === 'calendar'" key="cal">
       <div class="calnav">
-        <button class="ib sm plain" aria-label="Previous month" @click="shift(-1)"><Icon name="left" :size="18" /></button>
-        <b>{{ month.toLocaleDateString(undefined, { month: "long", year: "numeric" }) }}</b>
-        <button class="ib sm plain" aria-label="Next month" @click="shift(1)"><Icon name="right" :size="18" /></button>
-        <div class="grow" />
-        <button v-if="localYmd(month).slice(0, 7) !== today.slice(0, 7)" class="fchip acc" @click="month = new Date(new Date().getFullYear(), new Date().getMonth(), 1); sel = today">Today</button>
-        <button v-if="!isPhone && (!sel || sel < today)" class="qb acc" @click="planDay = today"><Icon name="plus" :size="16" />Plan a workout</button>
+        <div class="calm">
+          <button class="ib sm plain" aria-label="Previous month" @click="shift(-1)"><Icon name="left" :size="18" /></button>
+          <b>{{ month.toLocaleDateString(undefined, { month: "long", year: "numeric" }) }}</b>
+          <button class="ib sm plain" aria-label="Next month" @click="shift(1)"><Icon name="right" :size="18" /></button>
+        </div>
+        <div class="calx"><button v-if="localYmd(month).slice(0, 7) !== today.slice(0, 7)" class="fchip acc" @click="month = new Date(new Date().getFullYear(), new Date().getMonth(), 1); sel = today">Today</button>
+        <button v-if="!isPhone && (!sel || sel < today)" class="qb acc" @click="planDay = today"><Icon name="plus" :size="16" />Plan a workout</button></div>
       </div>
       <Transition :name="calDir" mode="out-in">
       <div :key="month.getTime()" :ref="calRef" class="cal" @touchstart.passive="calStart" @touchend.passive="calEnd">
