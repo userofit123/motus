@@ -3,7 +3,9 @@
 // and a ring for sets done of planned, stat tiles (time, volume, records, rep targets), then a row per exercise with its done state,
 // best set (the least help, for assisted ones), PR badge and a small bar for its sets. The last tab of the running
 // workout; the numbers come from workoutSoFar (shared), so the Finish screen shows the same. There (`final`) the time
-// leaves the tiles (Finish shows it larger) and each row says how the exercise compares with last time.
+// leaves the tiles (Finish shows it larger) and each row says how the exercise compares with last time. Under the tiles,
+// the band's heart rate so far (Android app, Health Connect on), when it handed any over: live while running, the
+// finished workout's card on Finish.
 import { computed } from "vue";
 import { musclesWorked, muscleName, workoutSoFar, type Trend, type Workout } from "@motus/shared";
 import { useFmt } from "../core/format";
@@ -11,6 +13,10 @@ import { elapsed } from "./runtime";
 import Icon from "../components/Icon.vue";
 import Ring from "../components/Ring.vue";
 import BodyMap from "../components/BodyMap.vue";
+import LineChart from "../components/LineChart.vue";
+import HeartRate from "../components/HeartRate.vue";
+import { useSettings } from "../api/queries";
+import { useLiveHr, hrPoints } from "../native/health";
 
 const props = defineProps<{ w: Workout; final?: boolean; vsLast?: Record<string, Trend> }>();
 const emit = defineEmits<{ open: [index: number] }>();
@@ -32,6 +38,13 @@ const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
 // each label says what its number counts
 const recordsSub = computed(() => r.value.records ? "New personal bests" : props.final ? "No new records" : "None yet");
 const tileCount = computed(() => (props.final ? 2 : 3) + (r.value.targets ? 1 : 0));
+
+const settings = useSettings();
+const hr = useLiveHr(() => props.w.startedAt, () => !!settings.value.features.healthConnect);
+const hrLatest = hr.latest, hrSamples = hr.samples;
+const hrPts = computed(() => hrPoints(hrSamples.value, (x) => fmt.value.time(new Date(x).toISOString())));
+// fresh: the newest reading big and how old it is; past 10 minutes the average so far takes its place
+const hrSub = computed(() => hrLatest.value ? `${hrLatest.value.ago} · average ${hr.avg.value} · up to ${hr.max.value}` : `average so far · up to ${hr.max.value}`);
 
 const rows = computed(() => r.value.perExercise.map((p, i) => {
   const e = props.w.exercises[i]!;
@@ -75,6 +88,13 @@ const rows = computed(() => r.value.perExercise.map((p, i) => {
         <div class="val">{{ r.targetsHit }}<small>/{{ r.targets }}</small></div>
         <div class="sub">Sets on target</div>
         <div class="sub">Sets that reached their reps</div></div>
+    </div>
+
+    <HeartRate v-if="final && hrSamples.length" :hr="hrSamples" />
+    <div v-else-if="hrSamples.length" class="card stat wsf-hr">
+      <div class="lbl"><span class="bi"><Icon name="heart" :size="15" /></span>Heart rate</div>
+      <div class="val">{{ hrLatest ? hrLatest.bpm : hr.avg.value }}<small>bpm</small></div><div class="sub">{{ hrSub }}</div>
+      <LineChart v-if="hrPts.length > 1" class="wsf-hrc" :points="hrPts" :height="120" :fmt="(v) => fmt.num(v, 0)" :xfmt="(t) => fmt.time(new Date(t).toISOString())" />
     </div>
 
     <div>
@@ -128,6 +148,13 @@ const rows = computed(() => r.value.perExercise.map((p, i) => {
 .wsf-tile.hit .val { color: var(--pos); }
 .wsf-tile.hit .bi { background: var(--pos); color: var(--on); }
 .wsf-tile.rec .bi { background: var(--acc); color: var(--on); }
+
+/* heart rate: a stat tile as wide as the row of tiles, its line under the numbers */
+.wsf-hr { min-height: 0; container-type: inline-size; }
+.wsf-hr .lbl { font-size: var(--fs-sm); gap: 6px; }
+/* the tiles' value size (5.2% of the row, which is as wide as this card) */
+.wsf-hr .val { font-size: clamp(var(--fs-lg), 5.2cqi, var(--fs-val)); margin-top: var(--tdy); }
+.wsf-hrc { margin-top: var(--tdy); }
 
 /* exercise rows: done state on the left, best set in full colour, sets as a small bar on the right */
 .wsf-main { min-width: 0; }

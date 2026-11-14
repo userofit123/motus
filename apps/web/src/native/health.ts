@@ -2,7 +2,7 @@
 // there (a band through Gadgetbridge, a scale, a watch) and hands it to the engine (POST /health/import), which keeps
 // typed values and never adds the same thing twice. Read when the app opens or comes back to the screen, at most every
 // 15 minutes, and from Settings → Integrations by hand.
-import { ref } from "vue";
+import { computed, onScopeDispose, ref, shallowRef, watch, type Ref } from "vue";
 import { TOPICS } from "@motus/shared";
 import { api } from "../api/client";
 import { invalidate } from "../api/live";
@@ -10,7 +10,7 @@ import { readJson, writeJson } from "../core/prefs";
 import { accounts } from "./accounts";
 
 /** Everything the plugin asks Health Connect for: someone who allowed an earlier version lacks the kinds added since */
-export const HEALTH_KINDS = ["steps", "sleep", "weight", "sessions", "heartRate", "restingHr", "spo2", "hrv", "respiratoryRate", "distance", "activeKcal"] as const;
+export const HEALTH_KINDS = ["steps", "sleep", "weight", "sessions", "heartRate", "restingHr", "spo2", "hrv", "respiratoryRate", "distance", "activeKcal", "bodyFat", "hydration", "vo2max"] as const;
 type Kind = (typeof HEALTH_KINDS)[number];
 // history: Motus may read further back than 30 days; historyAvailable: this phone's Health Connect can allow that at all
 // (someone who allowed Motus before past data could be asked for has historyAvailable but not history until connect() again)
@@ -24,10 +24,12 @@ export interface HealthData {
   // each night in full (its stages, and the heart rate, blood oxygen and breathing read meanwhile), a day's distance
   // (metres) and active calories, the band's whole-day totals; passed on as they come, absent from an older app build
   sleepNights?: unknown[]; distance?: { date: string; value: number }[]; activeKcal?: { date: string; value: number }[];
+  // body fat, water drunk, VO2 max and each day's heart rate: passed on as they come, absent from an older app build
+  bodyFat?: unknown[]; hydration?: unknown[]; vo2max?: unknown[]; hrDays?: unknown[];
 }
 /** What POST /health/import added, and ranges: what POST /health/ranges filled in on activities and workouts recorded in
  *  Motus (the band's steps, its heart rate) */
-export interface HealthResult { steps: number; sleep: number; weight: number; activities: number; restingHr?: number; spo2?: number; hrv?: number; sleepNights?: number; distance?: number; activeKcal?: number; ranges?: { steps: number; hr: number } }
+export interface HealthResult { steps: number; sleep: number; weight: number; activities: number; restingHr?: number; spo2?: number; hrv?: number; sleepNights?: number; distance?: number; activeKcal?: number; bodyFat?: number; hydration?: number; vo2max?: number; hrDays?: number; ranges?: { steps: number; hr: number } }
 type Range = { kind: "activity" | "workout"; id: string; start: string; end: string };
 type RangeResult = { kind: "activity" | "workout"; id: string; steps?: number; covered: boolean; hr?: [number, number][] };
 
@@ -71,7 +73,7 @@ async function read(past?: Date): Promise<HealthResult | null> {
     // then what the band saw during activities and workouts recorded in Motus over the same days: its steps (a phone in
     // a pocket counts fewer) and heart rate. A failure here keeps the import above; the next sync asks again.
     try { r.ranges = await readRanges(from); } catch (e) { console.warn("Health Connect ranges", e); }
-    if (r.steps || r.sleep || r.activities || r.weight || r.restingHr || r.spo2 || r.hrv || r.sleepNights || r.distance || r.activeKcal) invalidate([...TOPICS.health]);
+    if (r.steps || r.sleep || r.activities || r.weight || r.restingHr || r.spo2 || r.hrv || r.sleepNights || r.distance || r.activeKcal || r.bodyFat || r.hydration || r.vo2max || r.hrDays) invalidate([...TOPICS.health]);
     if (r.ranges?.steps || r.ranges?.hr) invalidate([...TOPICS.health, "workouts"]);
     return r;
   } finally { syncing.value = false; running = null; }
@@ -99,4 +101,86 @@ export function watchHealth(on: () => boolean) {
   };
   document.addEventListener("visibilitychange", maybe);
   setTimeout(maybe, 3000);
+}
+
+// Live heart rate while a workout or a recording runs: the band's readings since the session started, read straight from
+// Health Connect every minute while the app is on screen (and at once when it comes back). The band hands them over only
+// when Gadgetbridge syncs with it, so the newest is often a few minutes old: shown with its age, and not at all past 10
+// minutes. One reader per session, shared by every screen that shows it (the page and the bar at the bottom).
+export type HrSample = [number, number]; // [unix seconds, bpm]
+const LIVE_EVERY_MS = 60_000, LIVE_FRESH_S = 10 * 60, LIVE_OVERLAP_S = 10 * 60;
+interface LiveReader { since: string; samples: Ref<HrSample[]>; users: number; timer: ReturnType<typeof setInterval> | null; busy: boolean; polled: number }
+const readers = new Map<string, LiveReader>();
+// what "2 min ago" says moves on its own, a little faster than the readings come in
+const liveNow = ref(Date.now());
+let nowTimer: ReturnType<typeof setInterval> | null = null;
+const canLive = () => healthSupported() && typeof plugin()?.latestHr === "function"; // an app build from before has none
+
+async function pollLive(r: LiveReader, force = false) {
+  // moving between pages hands the reader on (page to bar and back): no second read within a few seconds of the last
+  if (r.busy || document.visibilityState !== "visible" || (!force && Date.now() - r.polled < 20_000)) return;
+  r.busy = true; r.polled = Date.now();
+  try {
+    // from a little before the newest reading held (a later sync can hand over a few minutes it missed), merged by time
+    const last = r.samples.value.at(-1)?.[0];
+    const from = last ? new Date(Math.max(Date.parse(r.since), (last - LIVE_OVERLAP_S) * 1000)).toISOString() : r.since;
+    const { samples } = (await plugin().latestHr({ since: from })) as { samples?: HrSample[] };
+    if (!samples?.length) return;
+    const all = new Map(r.samples.value.map((p) => [p[0], p[1]] as const));
+    for (const [t, bpm] of samples) if (bpm > 0) all.set(t, bpm);
+    if (all.size !== r.samples.value.length || samples.some(([t, b]) => all.get(t) !== b)) r.samples.value = [...all].sort((a, b) => a[0] - b[0]);
+  } catch { /* no permission or Health Connect busy: try again next minute */ }
+  finally { r.busy = false; }
+}
+const onVisible = () => { if (document.visibilityState === "visible") { liveNow.value = Date.now(); for (const r of readers.values()) if (r.users) void pollLive(r, true); } };
+
+function attach(since: string): LiveReader {
+  let r = readers.get(since);
+  if (!r) { r = { since, samples: ref<HrSample[]>([]), users: 0, timer: null, busy: false, polled: 0 }; readers.set(since, r); }
+  if (r.users++ === 0) { void pollLive(r); r.timer = setInterval(() => void pollLive(r!, true), LIVE_EVERY_MS); }
+  if (readers.size && !nowTimer) { nowTimer = setInterval(() => (liveNow.value = Date.now()), 15_000); document.addEventListener("visibilitychange", onVisible); }
+  return r;
+}
+function detach(r: LiveReader) {
+  if (--r.users > 0) return;
+  if (r.timer) clearInterval(r.timer); r.timer = null;
+  // kept while nobody shows it (the page hands it to the bar and back, a workout and a recording may both run), so its
+  // readings stay; only the oldest idle ones go once there are more than a few
+  for (const [k, x] of readers) if (readers.size > 3 && !x.users) readers.delete(k);
+  if (![...readers.values()].some((x) => x.users) && nowTimer) { clearInterval(nowTimer); nowTimer = null; document.removeEventListener("visibilitychange", onVisible); }
+}
+
+/** The band's heart rate since `start` (ISO) while `on` is true (the session runs, the Health Connect feature is on).
+ *  samples: every reading so far; latest: the newest when at most 10 minutes old, with how old it is ("2 min ago").
+ *  Empty and null outside the Android app, without permission, or before the first reading arrives. */
+export function useLiveHr(start: () => string | null | undefined, on: () => boolean) {
+  const empty = ref<HrSample[]>([]);
+  const cur = shallowRef<LiveReader | null>(null);
+  watch(() => (on() && canLive() ? start() ?? null : null), (since) => {
+    if (cur.value?.since === since) return;
+    if (cur.value) detach(cur.value);
+    cur.value = since ? attach(since) : null;
+  }, { immediate: true });
+  onScopeDispose(() => { if (cur.value) detach(cur.value); cur.value = null; });
+  const samples = computed(() => (cur.value ?? { samples: empty }).samples.value);
+  const latest = computed(() => {
+    const p = samples.value.at(-1); if (!p) return null;
+    const ageS = Math.max(0, liveNow.value / 1000 - p[0]);
+    return ageS > LIVE_FRESH_S ? null : { bpm: p[1], at: p[0], ago: ageS < 60 ? "just now" : `${Math.floor(ageS / 60)} min ago` };
+  });
+  const avg = computed(() => (samples.value.length ? Math.round(samples.value.reduce((t, p) => t + p[1], 0) / samples.value.length) : null));
+  const max = computed(() => (samples.value.length ? samples.value.reduce((m, p) => Math.max(m, p[1]), 0) : null));
+  return { samples, latest, avg, max };
+}
+
+/** Heart-rate readings as chart points: a band reads every few seconds, so an hour is over a thousand points; they're
+ *  averaged down to at most `most` (the line looks the same and the tooltip stays quick). */
+export function hrPoints(hr: readonly HrSample[] | null | undefined, label: (ms: number) => string, most = 240) {
+  const all = hr ?? [], step = Math.max(1, Math.ceil(all.length / most));
+  const out: { x: number; y: number; label: string }[] = [];
+  for (let i = 0; i < all.length; i += step) {
+    const part = all.slice(i, i + step), x = part[0]![0] * 1000;
+    out.push({ x, y: Math.round(part.reduce((t, p) => t + p[1], 0) / part.length), label: label(x) });
+  }
+  return out;
 }

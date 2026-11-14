@@ -11,8 +11,9 @@ export const TOPICS = {
   // "health": the Health Connect import log lists steps, sleep, weight and activities, so their changes refresh it
   activity: ["activities", "stats", "goals", "home", "calendar", "health"],
   body: ["body", "stats", "goals", "home", "health"],
-  // workouts: a band's heart rate is added to workouts afterwards (/health/ranges)
-  health: ["health", "activities", "workouts", "body", "stats", "goals", "home", "calendar"],
+  // workouts: a band's heart rate is added to workouts afterwards (/health/ranges); routines and exercises show it per
+  // routine and per exercise session; goals: sleep hours
+  health: ["health", "activities", "workouts", "routines", "exercises", "body", "stats", "goals", "home", "calendar"],
   schedule: ["schedules", "calendar", "home"],
   settings: ["settings", "home", "stats", "goals"],
   everything: ["*"],

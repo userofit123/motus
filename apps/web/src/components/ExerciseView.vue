@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // Everything about one exercise (PLAN.md §8.16): what it is and how to do it, every time you did it (with its place in
-// that workout), charts, records, notes and reminders, and which routines use it. Shown as a page and as a sheet.
+// that workout, and the band's average heart rate during it when known), charts, records, notes and reminders, and which routines use it. Shown as a page and as a sheet.
 import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
 import { strengthLevel, LEVELS, e1rm, weightForReps, usesWeight, usesReps, usesDuration, usesDistance, trackingLabel, muscleName, categoryName, type Tracking } from "@motus/shared";
@@ -161,7 +161,7 @@ const menu = computed<MenuItem[]>(() => [
             <div class="t">{{ fmt.date(s.startedAt, { weekday: "short", day: "numeric", month: "short", year: "numeric" }) }} <span class="tiny">· {{ s.workoutName }} · #{{ s.position }} of {{ s.ofN }}</span></div>
             <div class="s">{{ s.sets.map(setText).join(" · ") || (s.status === "skipped" ? "Skipped" : "") }}</div>
           </div>
-          <div class="r tiny"><div v-if="s.e1rm">1RM {{ fmt.wu_(s.e1rm) }}</div><div v-if="s.volumeKg">{{ fmt.vol(s.volumeKg) }}</div></div>
+          <div class="r tiny"><div v-if="s.e1rm">1RM {{ fmt.wu_(s.e1rm) }}</div><div v-if="s.volumeKg">{{ fmt.vol(s.volumeKg) }}</div><div v-if="s.avgHr">{{ Math.round(s.avgHr) }} bpm</div></div>
         </div>
       </div>
     </div>

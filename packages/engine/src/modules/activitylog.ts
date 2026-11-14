@@ -55,7 +55,7 @@ const snip = (s: string | null | undefined) => { const t = String(s ?? "").repla
 // a daily log kind's plain name (its id carries the unit: sleep_h, distance_m)
 const NAMES: Record<string, string> = {
   weight: "body weight", sleep_h: "sleep", water_ml: "water", distance_m: "distance", active_kcal: "active calories",
-  resting_hr: "resting heart rate", spo2: "blood oxygen", hrv: "HRV",
+  resting_hr: "resting heart rate", spo2: "blood oxygen", hrv: "HRV", vo2max: "VO2 max", body_fat: "body fat",
 };
 const label = (k: string) => NAMES[k] ?? k.replace(/_/g, " ");
 

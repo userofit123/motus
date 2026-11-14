@@ -32,7 +32,7 @@ const hc = ref<HealthStatus | null>(null);
 const readHc = async () => { if (healthSupported() && s.value.features.healthConnect) hc.value = await healthStatus().catch(() => null); };
 onMounted(() => { void readHc(); document.addEventListener("visibilitychange", readHc); });
 onBeforeUnmount(() => document.removeEventListener("visibilitychange", readHc));
-const KIND_NAMES: Record<string, string> = { steps: "steps", sleep: "sleep", weight: "weight", sessions: "workouts", heartRate: "heart rate", restingHr: "resting heart rate", spo2: "blood oxygen", hrv: "HRV", respiratoryRate: "breathing rate", distance: "distance", activeKcal: "active calories" };
+const KIND_NAMES: Record<string, string> = { steps: "steps", sleep: "sleep", weight: "weight", sessions: "workouts", heartRate: "heart rate", restingHr: "resting heart rate", spo2: "blood oxygen", hrv: "HRV", respiratoryRate: "breathing rate", distance: "distance", activeKcal: "active calories", bodyFat: "body fat", hydration: "water", vo2max: "VO2 max" };
 const allowed = computed(() => {
   const names = (hc.value?.granted ?? []).map((k) => KIND_NAMES[k]).filter(Boolean) as string[];
   return names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names.at(-1)}` : names[0] ?? "";
@@ -69,6 +69,8 @@ function report(r: HealthResult | null) {
     r.restingHr && `${many(r.restingHr, "day", "days")} of resting heart rate`, r.spo2 && `${many(r.spo2, "day", "days")} of blood oxygen`,
     r.hrv && `${many(r.hrv, "day", "days")} of HRV`,
     r.distance && `${many(r.distance, "day", "days")} of distance`, r.activeKcal && `${many(r.activeKcal, "day", "days")} of active calories`,
+    r.bodyFat && `${r.bodyFat} body fat ${r.bodyFat === 1 ? "entry" : "entries"}`, r.hydration && `${many(r.hydration, "day", "days")} of water`,
+    r.vo2max && `${many(r.vo2max, "day", "days")} of VO2 max`,
     r.ranges?.steps && `steps from your band for ${many(r.ranges.steps, "activity", "activities")}`,
     r.ranges?.hr && `heart rate for ${many(r.ranges.hr, "session", "sessions")}`].filter(Boolean);
   toast(parts.length ? `${parts.join(", ")} added` : "Up to date");

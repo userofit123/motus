@@ -92,6 +92,8 @@ async function valueFor(q: Sql, g: Goal, w: Window, s: Settings, now: Date, tzMi
     case "activity_minutes": return (await one(`SELECT coalesce(sum(duration_s),0) v FROM activities WHERE started_at >= $1 AND started_at < $2 AND ($3::text IS NULL OR type = $3)`, [...P, g.scopeId])) / 60;
     // steps are kept by calendar day, so they take the window's days rather than its instants; days with none don't count
     case "steps_avg": { const days = await stepsByDay(q, w.fromDay, w.toDay, tzMin); return days.length ? days.reduce((t, d) => t + d.value, 0) / days.length : 0; }
+    // sleep is filed under the day woken up on; days without it don't count, as for steps
+    case "sleep_h": return one(`SELECT coalesce(avg(value), 0) v FROM daily_logs WHERE kind = 'sleep_h' AND value > 0 AND date >= $1::date AND date < $2::date`, [w.fromDay, w.toDay]);
     case "body_weight": return one(`SELECT value v FROM body_metrics WHERE kind='weight' ORDER BY measured_at DESC LIMIT 1`, []);
     case "body_metric": return one(`SELECT value v FROM body_metrics WHERE kind=$1 ORDER BY measured_at DESC LIMIT 1`, [g.scopeId]);
   }
@@ -200,6 +202,8 @@ async function goalLog(q: Sql, g: Goal, w: Window, tzMin: number): Promise<{ kin
         kind: "workout", id: x.workoutId, name: x.workoutName, at: x.startedAt,
         value: g.metric === "e1rm" ? x.e1rm : g.metric === "max_weight" ? x.maxWeightKg : g.metric === "max_duration" ? x.durationS : g.metric === "max_reps" ? Math.max(0, ...x.sets.map((y: any) => y.reps ?? 0)) : null }));
     case "steps_avg": return (await stepsByDay(q, w.fromDay, w.toDay, tzMin)).map((r) => ({ kind: "day", name: "Steps", at: r.date, value: r.value }));
+    case "sleep_h": return (await q.query(`SELECT to_char(date, 'YYYY-MM-DD') AS date, value FROM daily_logs WHERE kind = 'sleep_h' AND value > 0 AND date >= $1::date AND date < $2::date ORDER BY date DESC`,
+      [w.fromDay, w.toDay])).rows.map((r: any) => ({ kind: "day", name: "Sleep", at: r.date, value: Number(r.value) }));
     case "body_weight": case "body_metric": return (await q.query("SELECT id, measured_at, value FROM body_metrics WHERE kind = $1 ORDER BY measured_at DESC LIMIT 30", [bodyKind(g)]))
       .rows.map((r: any) => ({ kind: "body", id: r.id, name: "", at: r.measured_at, value: Number(r.value) }));
   }
@@ -211,12 +215,12 @@ async function goalLog(q: Sql, g: Goal, w: Window, tzMin: number): Promise<{ kin
  * it is now. Most one-off measures already cover everything since the goal started (the heaviest set, the most reps, the
  * quickest run of a routine, sessions in total), so not met now means the data that reached it was changed or deleted.
  * A body measure goes back and forth: any entry since the goal was set (from the one it started at) still reaching the
- * target keeps it. A streak or an average of steps can slip with time and nothing tells a slip from a typo, so they keep it.
+ * target keeps it. A streak or an average of steps or sleep can slip with time and nothing tells a slip from a typo, so they keep it.
  * A routine or exercise that is gone for good (its workouts lose the link) took the data with it, which is no correction
  * of it, so the goal keeps what it reached. Values are rounded as progress rounds them, so both agree on an entry.
  */
 async function stillReached(q: Sql, g: Goal): Promise<boolean> {
-  if (g.metric === "streak_weeks" || g.metric === "steps_avg") return true;
+  if (g.metric === "streak_weeks" || g.metric === "steps_avg" || g.metric === "sleep_h") return true;
   if (g.scope === "routine" || g.scope === "exercise")
     return !(await q.query(`SELECT 1 FROM ${g.scope === "routine" ? "routines" : "exercises"} WHERE id::text = $1`, [g.scopeId])).rows.length;
   if (g.scope !== "body") return false;
@@ -263,7 +267,7 @@ async function goalFields(ctx: Ctx, b: Record<string, unknown>, prev?: Goal) {
   const target = has("target") ? numOrNull(b.target, 0, 1e9) : Number(prev!.target);
   if (target == null || target <= 0) throw bad("Set a target");
   const raw = has("scopeId") ? b.scopeId : prev!.scopeId;
-  // general goals and daily steps point at nothing: a reference left from the kind it was before is dropped, not kept hidden
+  // general goals (sleep among them) and daily steps point at nothing: a reference left from the kind it was before is dropped, not kept hidden
   const scopeId = raw && m.metric !== "body_weight" && m.scope !== "general" && m.metric !== "steps_avg" ? str(raw, 80) : null;
   if (["routine", "exercise", "muscle"].includes(m.scope) && !scopeId) throw bad(`Pick the ${m.scope === "muscle" ? "muscle group" : m.scope}`);
   if (m.metric === "body_metric" && (!bodyMeasure(scopeId ?? "") || scopeId === "weight")) throw bad("Pick what to measure");

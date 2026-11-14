@@ -98,6 +98,9 @@
     <uses-permission android:name="android.permission.health.READ_OXYGEN_SATURATION" />
     <uses-permission android:name="android.permission.health.READ_HEART_RATE_VARIABILITY" />
     <uses-permission android:name="android.permission.health.READ_RESPIRATORY_RATE" />
+    <uses-permission android:name="android.permission.health.READ_BODY_FAT" />
+    <uses-permission android:name="android.permission.health.READ_HYDRATION" />
+    <uses-permission android:name="android.permission.health.READ_VO2_MAX" />
     <!-- data older than 30 days before the first grant (Health Connect versions that offer it; asked for only there) -->
     <uses-permission android:name="android.permission.health.READ_HEALTH_DATA_HISTORY" />
     <queries><package android:name="com.google.android.apps.healthdata" /></queries>

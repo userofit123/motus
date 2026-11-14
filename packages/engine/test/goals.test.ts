@@ -316,3 +316,18 @@ describe("editing a goal", () => {
     expect(await goal(id)).toMatchObject({ status: "active", achievedAt: null });
   });
 });
+
+describe("sleep goals", () => {
+  it("averages the daily log's sleep over the goal's days, at least N hours", async () => {
+    const day = (n: number) => new Date(Date.now() - new Date().getTimezoneOffset() * 60000 - n * 86400000).toISOString().slice(0, 10);
+    const { id } = await call("POST", "/goals", { metric: "sleep_h", target: 7.5, period: "day", scopeId: "stray" });
+    expect(await goal(id)).toMatchObject({ scope: "general", comparator: ">=", scopeId: null, period: "day" });
+    expect((await goal(id)).progress).toMatchObject({ current: 0, done: false, unit: "h" });
+    await call("PUT", "/daily", { entries: [{ date: day(0), kind: "sleep_h", value: 8 }, { date: day(1), kind: "sleep_h", value: 6 }] });
+    const g = await goal(id);
+    expect(g.progress).toMatchObject({ current: 8, done: true, label: "8 / 7.5 h" });
+    expect(g.progress.history.slice(-2).map((x: any) => x.value)).toEqual([6, 8]);
+    const metrics = await call("GET", "/goal-metrics");
+    expect(metrics.find((m: any) => m.metric === "sleep_h")).toMatchObject({ scope: "general", unit: "h", periodic: true });
+  });
+});

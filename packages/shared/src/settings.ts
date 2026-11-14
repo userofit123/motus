@@ -97,11 +97,13 @@ export interface HomeBlock { id: string; on: boolean }
 /** Every Home block, in the default order; `on` is whether a new account sees it. Blocks tied to a feature, or that only
  *  have something to say now and then (a workout in progress is part of Today; reminders, goals due soon, a program), stay
  *  in this list and simply don't draw while there's nothing to show. Ids added later are appended to a saved order. */
+// readiness, sleep, heart and activityToday read what a band handed over (Health Connect): on, yet absent from Home and
+// Edit home until that kind of data is there. A saved layout gets them at its end.
 export const HOME_BLOCKS: HomeBlock[] = [
-  { id: "today", on: true }, { id: "week", on: true },
+  { id: "today", on: true }, { id: "readiness", on: true }, { id: "sleep", on: true }, { id: "week", on: true }, { id: "heart", on: true },
   { id: "pinned", on: true }, { id: "dueSoon", on: true }, { id: "program", on: true },
   { id: "muscles", on: true }, { id: "upnext", on: true }, { id: "previous", on: true }, { id: "goals", on: true },
-  { id: "suggest", on: true }, { id: "reminders", on: true },
+  { id: "suggest", on: true }, { id: "reminders", on: true }, { id: "activityToday", on: true },
   { id: "records", on: false }, { id: "feed", on: false }, { id: "daily", on: false }, { id: "achievements", on: false },
 ];
 /** Home's blocks made safe (they sync from any device): unknown ids and repeats dropped, missing ones appended with their default. */

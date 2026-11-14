@@ -6,6 +6,7 @@ import type { Sql } from "../db";
 import { camel, id, str, numOrNull, intOrNull, bool, oneOf } from "../util";
 import { uuidv7 } from "../ids";
 import { notFound, bad } from "../errors";
+import { exerciseHrOf } from "./health";
 
 // one side at a time and what it is tracked by: the person's own choice for this exercise (exercise_prefs) wins over the exercise's
 // default, so every query here joins the prefs as p
@@ -53,7 +54,7 @@ export async function exerciseSessions(q: Sql, exerciseId: string, limit = 200, 
     const work = sets.filter((s) => s.kind !== "warmup");
     const best = work.reduce<any>((b, s) => ((e1rm(s.weightKg, s.reps) ?? 0) > (e1rm(b?.weightKg, b?.reps) ?? -1) ? s : b), null);
     return {
-      workoutId: r.workout_id, workoutName: r.workout_name, routineId: r.routine_id, tracking: r.tracking as Tracking, startedAt: r.started_at, position: r.position + 1, ofN: Number(r.of_n), status: r.status,
+      workoutId: r.workout_id, workoutExerciseId: r.we_id as string, workoutName: r.workout_name, routineId: r.routine_id, tracking: r.tracking as Tracking, startedAt: r.started_at, position: r.position + 1, ofN: Number(r.of_n), status: r.status,
       sets, bestSet: best, volumeKg: work.reduce((a, s) => a + liftedKg(s.weightKg, s.reps, r.tracking), 0),
       maxWeightKg: work.reduce((a, s) => Math.max(a, s.weightKg ?? 0), 0) || null,
       e1rm: work.reduce((a, s) => Math.max(a, e1rm(s.weightKg, s.reps) ?? 0), 0) || null,
@@ -108,7 +109,10 @@ export function libraryRoutes(r: Router) {
   });
 
   r.get("/exercises/:id/history", async ({ q }, p, _b, qs) => {
-    const sessions = await exerciseSessions(q, id(p.id), Math.min(500, Number(qs.limit) || 200), null, true);
+    const list = await exerciseSessions(q, id(p.id), Math.min(500, Number(qs.limit) || 200), null, true);
+    // the band's heart rate during this exercise, for the sessions whose workout has a series (only those are read)
+    const hr = await exerciseHrOf(q, list.map((s) => s.workoutId));
+    const sessions = list.map((s) => ({ ...s, avgHr: hr.get(s.workoutExerciseId)?.avgHr ?? null, maxHr: hr.get(s.workoutExerciseId)?.maxHr ?? null }));
     const { best, repMax } = recordsOf(sessions);
     // the list keeps skipped sessions, but the summary only counts sessions where it was done
     const done = sessions.filter((s) => s.sets.length);

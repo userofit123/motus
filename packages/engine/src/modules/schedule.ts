@@ -137,7 +137,7 @@ export function scheduleRoutes(r: Router) {
     if (!from || !to) throw bad("from and to are required");
     const lo = addDays(from, -1), hi = addDays(to, 2);
     const workouts = (await q.query(
-      `SELECT w.id, w.name, w.routine_id, w.started_at, w.status, r.color,
+      `SELECT w.id, w.name, w.routine_id, w.started_at, w.status, w.avg_hr, w.max_hr, r.color,
          greatest(0, extract(epoch FROM coalesce(w.ended_at, now()) - w.started_at)::int - w.paused_s) AS duration_s,
          (SELECT count(*) FROM workout_sets s JOIN workout_exercises we ON we.id = s.workout_exercise_id WHERE we.workout_id = w.id AND s.done) AS sets,
          ${VOLUME_SQL} AS volume_kg

@@ -16,7 +16,7 @@ import { programState } from "./programs";
 /** Every completed workout in a range, with its totals and sets per muscle. */
 async function workoutRows(q: Sql, from: string, to: string) {
   const { rows } = await q.query(
-    `SELECT w.id, w.name, w.routine_id, w.started_at, r.color, greatest(0, extract(epoch FROM w.ended_at - w.started_at)::int - w.paused_s) AS duration_s,
+    `SELECT w.id, w.name, w.routine_id, w.started_at, w.avg_hr, w.max_hr, r.color, greatest(0, extract(epoch FROM w.ended_at - w.started_at)::int - w.paused_s) AS duration_s,
        coalesce(sum(${LIFTED_SQL}) FILTER (WHERE s.kind <> 'warmup'), 0) AS volume_kg,
        count(s.id) FILTER (WHERE s.kind <> 'warmup') AS sets, coalesce(sum(s.reps) FILTER (WHERE s.kind <> 'warmup'), 0) AS reps,
        count(DISTINCT we.id) FILTER (WHERE we.status = 'skipped') AS skipped, count(DISTINCT we.id) AS exercises
@@ -77,6 +77,18 @@ async function exerciseStats(q: Sql, from: string, to: string) {
   return [...by.values()];
 }
 
+/** A range's sleep, resting heart rate, HRV and workout heart rate, for Reports: averages over the days (or workouts)
+ *  that have them, null when none do. Days run from fromDay up to toDay (not included) on the app's calendar. */
+async function healthIn(q: Sql, from: string, to: string, fromDay: string, toDay: string) {
+  const r = (await q.query(
+    `SELECT avg(value) FILTER (WHERE kind = 'sleep_h') * 60 AS sleep_min, count(*) FILTER (WHERE kind = 'sleep_h') AS nights,
+       avg(value) FILTER (WHERE kind = 'resting_hr') AS rhr, avg(value) FILTER (WHERE kind = 'hrv') AS hrv,
+       (SELECT avg(avg_hr) FROM workouts WHERE status = 'completed' AND avg_hr IS NOT NULL AND started_at >= $3 AND started_at < $4) AS whr
+     FROM daily_logs WHERE kind IN ('sleep_h', 'resting_hr', 'hrv') AND value > 0 AND date >= $1::date AND date < $2::date`, [fromDay, toDay, from, to])).rows[0] as any;
+  const n = (v: unknown) => (v == null ? null : Math.round(Number(v)));
+  return { sleepAvgMin: n(r.sleep_min), sleepNights: Number(r.nights), restingHrAvg: n(r.rhr), hrvAvg: n(r.hrv), workoutAvgHr: n(r.whr) };
+}
+
 export function statsRoutes(r: Router) {
   r.get("/stats", async (ctx, _p, _b, qs) => {
     const to = qs.to || new Date(ctx.now().getTime() + 86400000).toISOString();
@@ -105,7 +117,8 @@ export function statsRoutes(r: Router) {
       ...(await stepsByDay(ctx.q, fromDay, null, tzOf(qs)))].sort((a, b) => String(a.date).localeCompare(String(b.date)));
     // every record set in the range, only when asked (Reports counts them per month; Stats doesn't need them)
     const records = qs.records ? await recentRecords(ctx.q, from, Infinity) : [];
-    return { from, to, workouts, activities, exercises, routines: routineList, muscles, groups: GROUPS, weeklyRange: WEEKLY_SET_RANGE, body, daily, records };
+    return { from, to, workouts, activities, exercises, routines: routineList, muscles, groups: GROUPS, weeklyRange: WEEKLY_SET_RANGE, body, daily, records,
+      health: await healthIn(ctx.q, from, to, fromDay, dayIn(to, tzOf(qs))) };
   });
 
   r.get("/home", async (ctx, _p, _b, qs) => {

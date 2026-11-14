@@ -24,6 +24,15 @@ describe("Home blocks", () => {
     expect(ids(out).slice(0, 3)).toEqual(["today", "muscles", "week"]);
     expect(out.some((s) => s.id === "bodyweight")).toBe(false);
   });
+  it("appends the band's blocks, switched on, to a layout saved before they were there", () => {
+    const saved = [{ id: "today", on: true }, { id: "achievements", on: true }, { id: "week", on: false }];
+    const out = cleanHomeBlocks(saved);
+    expect(ids(out).slice(0, 3)).toEqual(["today", "achievements", "week"]);
+    for (const id of ["readiness", "sleep", "heart", "activityToday"]) expect(out.find((s) => s.id === id)?.on).toBe(true);
+    // in their default order among the other missing ones, after the saved ones
+    expect(ids(out).indexOf("readiness")).toBeGreaterThan(2);
+    expect(ids(out).indexOf("readiness")).toBeLessThan(ids(out).indexOf("sleep"));
+  });
   it("keeps the default on/off when a saved one isn't a boolean", () => {
     expect(cleanHomeBlocks([{ id: "feed", on: "yes" }])[0]).toEqual({ id: "feed", on: false });
     // Today can't be switched off, even from a saved order that says so

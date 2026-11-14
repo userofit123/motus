@@ -4,15 +4,19 @@
 import { computed } from "vue";
 import { useRouter } from "vue-router";
 import { logSheet, bodySheet, dailySheet, activitySheet, appearanceOpen } from "../core/ui";
-import { useSettings, useMe } from "../api/queries";
+import { useSettings, useMe, useHealthAvailable } from "../api/queries";
 import Icon from "../components/Icon.vue";
 const router = useRouter();
 const s = useSettings();
 const me = useMe();
 const user = computed(() => me.data.value?.user);
 const initials = computed(() => (user.value?.displayName || user.value?.username || "?").split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]!.toUpperCase()).join(""));
-const PAGES: [to: string, label: string, icon: string, hint: string][] = [
-  ["/exercises", "Exercises", "dumbbell", "The library, and your own"], ["/body", "Body", "scale", "Weight, measurements, photos, about you"]];
+// Sleep and Heart are Stats' tabs, listed here (the one tap to them on the phone) only once a band has handed that over
+const avail = useHealthAvailable();
+const PAGES = computed<[to: string, label: string, icon: string, hint: string][]>(() => [
+  ["/exercises", "Exercises", "dumbbell", "The library, and your own"], ["/body", "Body", "scale", "Weight, measurements, photos, about you"],
+  ...(avail.data.value?.sleep ? [["/stats?tab=sleep", "Sleep", "moon", "Nights, stages and bedtimes"] as [string, string, string, string]] : []),
+  ...(avail.data.value?.heart ? [["/stats?tab=heart", "Heart", "heart", "Resting heart rate, HRV and blood oxygen"] as [string, string, string, string]] : [])]);
 </script>
 
 <template>

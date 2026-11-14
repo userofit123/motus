@@ -9,7 +9,8 @@ const kept: { v: { month: number; sel: string | null } | null } = { v: null };
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { daysIntoWeek, weekdayOrder } from "@motus/shared";
 import { useRoute, useRouter } from "vue-router";
-import { useCalendar, useSettings, useWorkouts, useActivities, loaded } from "../api/queries";
+import { useCalendar, useSettings, useWorkouts, useActivities, useHealthAvailable, useHealthDay, loaded } from "../api/queries";
+import { asleepMin, mins } from "../core/sleep";
 import Menu from "../components/Menu.vue";
 import { unplanItems } from "../components/home/planActions";
 import { useFmt, localYmd, activityIcon } from "../core/format";
@@ -19,6 +20,7 @@ import Icon from "../components/Icon.vue";
 import SearchField from "../components/SearchField.vue";
 import ScheduleEditor from "../components/ScheduleEditor.vue";
 import SessionStats from "../components/SessionStats.vue";
+import NightSheet from "../components/stats/NightSheet.vue";
 
 const route = useRoute(), router = useRouter();
 const s = useSettings();
@@ -121,6 +123,25 @@ const monthStats = computed(() => {
   return { workouts: w.length, activities: a.length, timeS: [...w, ...a].reduce((t, x) => t + (x.durationS ?? 0), 0), days: inMonth.filter(([, v]) => v.some(done)).length };
 });
 const planDay = ref<string | null>(null);
+// what a band handed over for the chosen day (its night, resting heart rate, steps and distance), as tiles at the top of
+// the day's card; asked only for a day up to today, once a band has handed something over at all
+const avail = useHealthAvailable();
+const banded = computed(() => !!avail.data.value && Object.values(avail.data.value).some(Boolean));
+const hDay = useHealthDay(computed(() => (sel.value && sel.value <= today ? sel.value : null)), banded);
+const nightOpen = ref<string | null>(null);
+const dayTiles = computed(() => {
+  const d = hDay.data.value;
+  if (!d || d.date !== sel.value) return [];
+  const out: { key: string; icon: string; label: string; value: string; unit: string; sub: string; open?: () => void }[] = [];
+  if (d.sleep) { const n = d.sleep; out.push({ key: "sleep", icon: "moon", label: "Sleep", value: mins(asleepMin(n)), unit: "", sub: `${fmt.value.time(n.startAt)}-${fmt.value.time(n.endAt)}`, open: () => (nightOpen.value = n.date) }); }
+  if (d.restingHr != null) out.push({ key: "rhr", icon: "heart", label: "Resting", value: String(Math.round(d.restingHr)), unit: "bpm", sub: d.hrv != null ? `HRV ${Math.round(d.hrv)} ms` : "" });
+  const dist = d.distanceM ? fmt.value.dist(d.distanceM, 1) : "";
+  if (d.steps) out.push({ key: "steps", icon: "steps", label: "Steps", value: fmt.value.num(d.steps, 0), unit: "", sub: dist });
+  else if (dist) { const i = dist.lastIndexOf(" "); out.push({ key: "dist", icon: "walk", label: "Distance", value: dist.slice(0, i), unit: dist.slice(i + 1), sub: "" }); }
+  return out;
+});
+// a workout's average heart rate from a band, after its time in the row's line
+const hrOf = (x: any) => (x.kind !== "planned" && x.avgHr ? Math.round(Number(x.avgHr)) : null);
 // the shown month's totals, as stat tiles at the end of the calendar (they follow the month you are looking at); the
 // tiles of Home's This week and Stats' month reports, in their order (Activities in Volume's place), without a change column: the calendar loads only this month
 const monthTiles = computed(() => {
@@ -184,10 +205,20 @@ await loaded(cal, listWorkouts, listActs);
       </Transition>
       <div v-if="sel" :key="sel" class="spt dayfade">
         <div class="sh first"><h2>{{ fmt.date(sel, { weekday: "long", day: "numeric", month: "long" }) }}</h2><div class="grow" /><span v-if="sel <= today" @click.stop><Menu label="Log on this day" align="start" :items="[{ label: 'Log a workout', icon: 'dumbbell', run: () => (logSheet = { date: sel ?? undefined }) }, { label: 'Log an activity', icon: 'activity', run: () => (activitySheet = {}) }]" /></span><button v-if="sel >= today" class="lnk" @click="planDay = sel"><Icon name="plus" :size="14" />Plan</button></div>
-        <div class="card">
+        <!-- the band's numbers for the day as a report's tiles, then the day's sessions under a faint line -->
+        <div class="card" :class="{ wkc: dayTiles.length }">
+          <div v-if="dayTiles.length" class="wstats dtiles">
+            <div v-for="x in dayTiles" :key="x.key" class="ws" :class="{ click: x.open }" :role="x.open ? 'button' : 'group'" :tabindex="x.open ? 0 : undefined" :aria-label="[x.label, x.value, x.unit, x.sub].filter(Boolean).join(' ')" @click="x.open?.()" @keydown.enter="x.open?.()">
+              <div class="wlb"><Icon :name="x.icon" :size="14" />{{ x.label }}</div>
+              <div class="wv">{{ x.value }}<small v-if="x.unit">{{ x.unit }}</small></div>
+              <div class="wd">{{ x.sub }}</div>
+            </div>
+          </div>
+          <div :class="{ dsess: dayTiles.length }">
           <div v-if="!(byDay.get(sel) ?? []).length" class="tiny">{{ sel >= today ? "Nothing planned. Use Plan to put a routine on this day." : "Nothing on this day." }}</div>
           <div class="list"><div v-for="x in byDay.get(sel) ?? []" :key="x.id ?? x.scheduleId" class="li click" @click="open(x)">
-            <Icon :name="icon(x)" :size="18" :style="{ color: x.color ?? 'var(--acc)' }" /><div class="grow"><div class="t" :style="x.missed ? { opacity: .5 } : undefined">{{ label(x) }}</div><div class="s">{{ x.kind === "planned" ? (x.missed ? "Missed" : "Planned") : fmt.time(x.startedAt) }}</div></div><SessionStats v-if="x.kind !== 'planned'" :x="x" /><span v-if="x.kind === 'planned'" @click.stop><Menu :items="unplanItems(x)" :label="`Options for ${x.name}`" /></span><Icon v-else name="right" class="muted" /></div></div>
+            <Icon :name="icon(x)" :size="18" :style="{ color: x.color ?? 'var(--acc)' }" /><div class="grow"><div class="t" :style="x.missed ? { opacity: .5 } : undefined">{{ label(x) }}</div><div class="s">{{ x.kind === "planned" ? (x.missed ? "Missed" : "Planned") : fmt.time(x.startedAt) }}<template v-if="hrOf(x)"> · <span class="hr"><Icon name="heart" :size="12" />{{ hrOf(x) }} bpm</span></template></div></div><SessionStats v-if="x.kind !== 'planned'" :x="x" /><span v-if="x.kind === 'planned'" @click.stop><Menu :items="unplanItems(x)" :label="`Options for ${x.name}`" /></span><Icon v-else name="right" class="muted" /></div></div>
+          </div>
         </div>
       </div>
       <!-- the month's totals, after everything else; List needs none, each of its months has its count beside its name -->
@@ -208,13 +239,25 @@ await loaded(cal, listWorkouts, listActs);
       <section v-for="[m, xs] in listGroups" :key="m"><div class="sh"><h2>{{ m }}</h2><span class="tiny">{{ xs.length }}</span></div>
         <div class="card"><div class="list"><div v-for="x in xs" :key="x.id" class="li click" @click="open(x)">
           <Icon :name="icon(x)" :size="18" :style="{ color: x.color ?? 'var(--acc)' }" />
-          <div class="grow"><div class="t">{{ label(x) }}</div><div class="s">{{ fmt.date(x.startedAt, { weekday: "short", day: "numeric", month: "short" }) }} · {{ fmt.time(x.startedAt) }}</div></div>
+          <div class="grow"><div class="t">{{ label(x) }}</div><div class="s">{{ fmt.date(x.startedAt, { weekday: "short", day: "numeric", month: "short" }) }} · {{ fmt.time(x.startedAt) }}<template v-if="hrOf(x)"> · <span class="hr"><Icon name="heart" :size="12" />{{ hrOf(x) }} bpm</span></template></div></div>
           <SessionStats :x="x" />
         </div></div></div>
       </section>
     </div>
     </Transition>
 
+    <NightSheet v-if="nightOpen" :date="nightOpen" @close="nightOpen = null" />
     <ScheduleEditor v-if="planDay" :schedule="{ rule: 'once', startDate: planDay }" @close="planDay = null" />
   </div>
 </template>
+
+<style scoped>
+/* the day's sessions a block-padding below the band's tiles, under a faint line, as a report's highlights */
+.dsess { margin-top: var(--cpy); border-top: 1px solid var(--ol); }
+.dsess .li:last-child { border-bottom: 0; padding-bottom: 0; }
+.dsess > .tiny { padding-top: var(--cpy); }
+.dtiles .ws.click { border-radius: var(--r-sm); cursor: pointer; }
+/* a workout's heart rate in its row's line: the small heart in the line's colour, beside its number */
+.hr { display: inline-flex; align-items: center; gap: 2px; white-space: nowrap; }
+.hr svg { flex: none; }
+</style>

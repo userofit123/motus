@@ -4,9 +4,12 @@ import { createEngine, type Engine } from "../src/index";
 import { pgliteDb } from "../src/adapters/pglite";
 import { uuidv7 } from "../src/ids";
 import { overrule } from "../src/sync/core";
-import { heartRate, plausibleSteps } from "../src/modules/health";
+import { heartRate, plausibleSteps, exerciseHr, readiness, readHrDay } from "../src/modules/health";
 
 let eng: Engine, U: string;
+/** An import that changed nothing. */
+const NONE = { steps: 0, sleep: 0, sleepNights: 0, restingHr: 0, spo2: 0, hrv: 0, distance: 0, activeKcal: 0, hydration: 0, vo2max: 0, weight: 0, bodyFat: 0, activities: 0, hrDays: 0 };
+const NO_NEW = { vo2max: false, hrDay: false, bodyFat: false, hydration: false };
 const call = async (method: string, path: string, body?: unknown, query?: Record<string, string>) => {
   const r = await eng.handle({ method, path, body, query, userId: U });
   if (r.status !== 200) throw new Error(`${method} ${path} → ${r.status} ${JSON.stringify(r.body)}`);
@@ -129,7 +132,7 @@ describe("health connect import", () => {
       steps: [{ date: "2026-10-07", value: 4500 }], sleep: [{ date: "2026-10-07", hours: 6.5 }],
       weight: [{ id: "w1", at: "2026-10-06T07:00:00Z", kg: 81 }], sessions: [{ id: "s7", type: "walk", start: "2026-10-07T06:00:00Z", end: "2026-10-07T06:20:00Z" }],
     });
-    expect(again).toEqual({ steps: 0, sleep: 0, sleepNights: 0, restingHr: 0, spo2: 0, hrv: 0, distance: 0, activeKcal: 0, weight: 0, activities: 0 });
+    expect(again).toEqual(NONE);
     for (const k of keys) expect(await entry(k)).toBeUndefined();
     expect((await daily("steps")).some((x: any) => x.date === "2026-10-07")).toBe(false);
     expect((await daily("sleep_h")).some((x: any) => x.date === "2026-10-07")).toBe(false);
@@ -147,7 +150,7 @@ describe("health connect import", () => {
     await call("DELETE", `/activities/${(await entry("activity:s8")).ref}`);
     for (const k of ["steps:2026-10-08", "weight:w8", "activity:s8"]) expect(await entry(k)).toBeUndefined();
 
-    expect(await call("POST", "/health/import", batch)).toEqual({ steps: 0, sleep: 0, sleepNights: 0, restingHr: 0, spo2: 0, hrv: 0, distance: 0, activeKcal: 0, weight: 0, activities: 0 });
+    expect(await call("POST", "/health/import", batch)).toEqual(NONE);
     expect((await daily("steps")).some((x: any) => x.date === "2026-10-08")).toBe(false);
     expect((await call("GET", "/body", undefined, { kind: "weight" })).some((x: any) => x.measuredAt.startsWith("2026-10-08"))).toBe(false);
     expect((await call("GET", "/activities", undefined, { from: "2026-10-08" })).some((a: any) => a.startedAt.startsWith("2026-10-08"))).toBe(false);
@@ -425,17 +428,223 @@ describe("nights of sleep, daily distance and active calories from a band", () =
   });
 
   it("says which kinds of band data there are", async () => {
-    expect(await call("GET", "/health/available")).toEqual({ sleep: true, heart: true, distance: true, calories: false });
+    expect(await call("GET", "/health/available")).toEqual({ sleep: true, heart: true, distance: true, calories: false, ...NO_NEW });
     const V = uuidv7();
     await eng.db.admin.query("INSERT INTO users (id, username) VALUES ($1, 'v')", [V]);
     const as = async (method: string, path: string, body?: unknown) => (await eng.handle({ method, path, body, userId: V })).body as any;
-    expect(await as("GET", "/health/available")).toEqual({ sleep: false, heart: false, distance: false, calories: false });
+    expect(await as("GET", "/health/available")).toEqual({ sleep: false, heart: false, distance: false, calories: false, ...NO_NEW });
     // typed by hand, not from a band
     await as("PUT", "/daily", { date: "2026-11-20", kind: "sleep_h", value: 8 });
     expect((await as("GET", "/health/available")).sleep).toBe(false);
     await as("POST", "/health/import", { activeKcal: [{ date: "2026-11-20", value: 300 }], sleepNights: [n20] });
-    expect(await as("GET", "/health/available")).toEqual({ sleep: true, heart: false, distance: false, calories: true });
+    expect(await as("GET", "/health/available")).toEqual({ sleep: true, heart: false, distance: false, calories: true, ...NO_NEW });
     // the other person's nights are not this one's
     expect((await as("GET", "/health/sleep")).nights.map((n: any) => n.date)).toEqual(["2026-11-20"]);
+  });
+});
+
+describe("body fat, water, VO2 max and a day's heart rate from Health Connect", () => {
+  const body = async (kind: string) => (await call("GET", "/body", undefined, { kind })) as any[];
+  const dayOf = (v: unknown) => (v instanceof Date ? v.toISOString() : String(v)).slice(0, 10);
+  const dailyAt = async (kind: string, date: string) => (await call("GET", "/daily", undefined, { from: "2026-12-01", tz: "0" })).find((x: any) => x.kind === kind && dayOf(x.date) === date);
+
+  it("adds a body fat reading once, links one typed at that minute, edits and deletes it for good", async () => {
+    const batch = { bodyFat: [{ id: "bf1", at: "2026-12-01T07:00:00Z", pct: 18.46 }, { id: "bf2", at: "2026-12-02T07:00:00Z", pct: 90 }] };
+    expect(await call("POST", "/health/import", batch)).toMatchObject({ bodyFat: 1 });
+    expect(await call("POST", "/health/import", batch)).toEqual(NONE);
+    expect((await body("body_fat")).map((x) => Number(x.value))).toEqual([18.5]);
+    expect(await entry("body_fat:bf1")).toMatchObject({ kind: "body_fat", date: "2026-12-01", at: "2026-12-01T07:00:00.000Z", value: 18.5, edited: false });
+    // typed at the same minute as a reading sent without an id: one reading, now in the log
+    await call("POST", "/body", { kind: "body_fat", value: 19, measuredAt: "2026-12-03T07:00:00Z" });
+    expect((await call("POST", "/health/import", { bodyFat: [{ at: "2026-12-03T07:00:20Z", pct: 19.2 }] })).bodyFat).toBe(0);
+    expect(await entry("body_fat:2026-12-03T07:00:20.000Z")).toMatchObject({ value: 19 });
+    expect((await body("body_fat")).length).toBe(2);
+    // a weight at the same minute is another kind of reading
+    expect((await call("POST", "/health/import", { weight: [{ id: "w-dec", at: "2026-12-01T07:00:00Z", kg: 80 }] })).weight).toBe(1);
+
+    await call("PUT", "/health/imports/body_fat:bf1", { value: 17.04 });
+    expect((await entry("body_fat:bf1")).value).toBe(17);
+    await send(400, "PUT", "/health/imports/body_fat:bf1", { value: 80 });
+    await call("DELETE", "/health/imports/body_fat:bf1");
+    expect(await call("POST", "/health/import", batch)).toEqual(NONE);
+    expect(await entry("body_fat:bf1")).toBeUndefined();
+    expect((await body("body_fat")).map((x) => Number(x.value))).toEqual([19]);
+  });
+
+  it("imports water and VO2 max like steps: typed days stay, edits and deletions stick", async () => {
+    await call("PUT", "/daily", { date: "2026-12-02", kind: "water_ml", value: 500 }); // typed by hand
+    const batch = {
+      hydration: [{ date: "2026-12-01", ml: 1500.4 }, { date: "2026-12-02", ml: 2000 }, { date: "2026-12-03", ml: 30000 }],
+      vo2max: [{ date: "2026-12-01", value: 45.26 }, { date: "2026-12-02", value: 5 }],
+    };
+    expect(await call("POST", "/health/import", batch)).toMatchObject({ hydration: 1, vo2max: 1 });
+    expect(await call("POST", "/health/import", batch)).toEqual(NONE);
+    expect(await dailyAt("water_ml", "2026-12-01")).toMatchObject({ source: "health_connect" });
+    expect(Number((await dailyAt("water_ml", "2026-12-01")).value)).toBe(1500);
+    expect(Number((await dailyAt("water_ml", "2026-12-02")).value)).toBe(500);
+    expect(await dailyAt("water_ml", "2026-12-03")).toBeUndefined();
+    expect(Number((await dailyAt("vo2max", "2026-12-01")).value)).toBe(45.3);
+    expect(await entry("water:2026-12-01")).toMatchObject({ kind: "water", value: 1500, edited: false });
+    expect(await entry("vo2max:2026-12-01")).toMatchObject({ kind: "vo2max", value: 45.3 });
+    expect(await entry("water:2026-12-02")).toBeUndefined();
+
+    await call("PUT", "/health/imports/vo2max:2026-12-01", { value: 46 });
+    expect(await entry("vo2max:2026-12-01")).toMatchObject({ value: 46, edited: true });
+    expect((await call("POST", "/health/import", { vo2max: [{ date: "2026-12-01", value: 47 }] })).vo2max).toBe(0);
+    await call("DELETE", "/health/imports/water:2026-12-01");
+    expect((await call("POST", "/health/import", { hydration: [{ date: "2026-12-01", ml: 1800 }] })).hydration).toBe(0);
+    expect(await dailyAt("water_ml", "2026-12-01")).toBeUndefined();
+  });
+
+  it("keeps a day's heart rate, written again when it changed, outside the import log", async () => {
+    const t = Date.parse("2026-12-01T00:00:00Z") / 1000;
+    const hr = Array.from({ length: 1440 }, (_, i) => [t + i * 60, 60 + (i % 40)]);
+    expect(readHrDay({ date: "2026-12-01" })).toBeNull();
+    expect(readHrDay({ date: "nope", min: 50 })).toBeNull();
+    expect(readHrDay({ date: "2026-12-01", hr })).toMatchObject({ min: 60, max: 99, avg: 80 });
+    const r = await call("POST", "/health/import", { hrDays: [{ date: "2026-12-01", min: 48, max: 162, avg: 71.4, hr }, { date: "2026-12-02" }] });
+    expect(r).toMatchObject({ hrDays: 1 });
+    expect((await call("POST", "/health/import", { hrDays: [{ date: "2026-12-01", min: 48, max: 162, avg: 71.4, hr }] })).hrDays).toBe(0);
+    expect((await call("POST", "/health/import", { hrDays: [{ date: "2026-12-01", min: 47, max: 162, avg: 71, hr }] })).hrDays).toBe(1);
+    expect((await log({ limit: "200" })).items.some((x: any) => x.key.includes("2026-12-01") && x.kind === "hr")).toBe(false);
+    const row = (await eng.db.admin.query("SELECT min_hr, max_hr, avg_hr, hr FROM hr_days WHERE user_id = $1", [U])).rows[0];
+    expect(row).toMatchObject({ min_hr: 47, max_hr: 162, avg_hr: 71 });
+    expect(row.hr.length).toBe(288);
+    const x = await call("GET", "/export");
+    expect(x.tables.hr_days.length).toBe(1);
+    expect(x.tables.hr_days[0].user_id).toBeUndefined();
+  });
+
+  it("gives everything for one day, nulls where there is nothing", async () => {
+    await call("POST", "/health/import", {
+      steps: [{ date: "2026-12-01", value: 9000 }], restingHr: [{ date: "2026-12-01", value: 55 }], hrv: [{ date: "2026-12-01", value: 48 }],
+      spo2: [{ date: "2026-12-01", value: 97 }], distance: [{ date: "2026-12-01", value: 6500 }], activeKcal: [{ date: "2026-12-01", value: 420 }],
+      sleepNights: [{ date: "2026-12-01", start: "2026-11-30T23:00:00Z", end: "2026-12-01T06:30:00Z", asleepMin: 420, awakeMin: 30, deepMin: 80 }],
+    });
+    const d = await call("GET", "/health/day/2026-12-01", undefined, { tz: "0" });
+    expect(d).toMatchObject({
+      date: "2026-12-01", restingHr: 55, hrv: 48, spo2: 97, vo2max: 46, steps: 9000, distanceM: 6500, activeKcal: 420, waterMl: null,
+      sleep: { date: "2026-12-01", asleepMin: 420, deepMin: 80, sleepH: 7 }, hr: { min: 47, max: 162, avg: 71 },
+    });
+    expect(d.hr.series.length).toBe(288);
+    expect(d.sleep.hr).toBeUndefined();
+    expect(await call("GET", "/health/day/2026-12-09", undefined, { tz: "0" })).toEqual({
+      date: "2026-12-09", sleep: null, hr: null, restingHr: null, hrv: null, spo2: null, vo2max: null, steps: null, distanceM: null, activeKcal: null, waterMl: null,
+    });
+    await send(400, "GET", "/health/day/nope");
+  });
+
+  it("says which of these there are", async () => {
+    expect(await call("GET", "/health/available")).toMatchObject({ vo2max: true, hrDay: true, bodyFat: true, hydration: false });
+    // water typed by hand is not from Health Connect; the import's water was deleted above
+    await call("POST", "/health/import", { hydration: [{ date: "2026-12-04", ml: 1200 }] });
+    expect((await call("GET", "/health/available")).hydration).toBe(true);
+  });
+});
+
+describe("readiness", () => {
+  const P = (key: "sleep" | "restingHr" | "hrv", value: number, base: number, n = 10) => ({ key, value, history: Array.from({ length: n }, () => base) });
+
+  it("starts at 70 and moves with sleep, resting heart rate and HRV against the person's usual", () => {
+    expect(readiness([P("sleep", 7, 7), P("restingHr", 55, 55), P("hrv", 50, 50)])).toMatchObject({ score: 70, label: "Normal" });
+    // an hour more sleep, a lower resting rate, a higher HRV: each at its most
+    const good = readiness([P("sleep", 8, 7), P("restingHr", 50, 55), P("hrv", 60, 50)]);
+    expect(good).toMatchObject({ score: 100, label: "Ready" });
+    expect(good.parts).toEqual([
+      { key: "sleep", value: 8, baseline: 7, change: 60, effect: "up" },
+      { key: "restingHr", value: 50, baseline: 55, change: -9.1, effect: "up" },
+      { key: "hrv", value: 60, baseline: 50, change: 20, effect: "up" },
+    ]);
+    // two hours short and a resting rate 10 % up
+    const bad = readiness([P("sleep", 5, 7), P("restingHr", 60.5, 55), P("hrv", 50, 50)]);
+    expect(bad).toMatchObject({ score: 30, label: "Take it easy" });
+    expect(bad.parts.map((p) => p.effect)).toEqual(["down", "down", "flat"]);
+    // the median, so one odd night doesn't move the usual
+    expect(readiness([{ key: "sleep", value: 7, history: [7, 7, 7, 7, 7, 7, 2] }, P("hrv", 50, 50)]).parts[0]!.baseline).toBe(7);
+  });
+
+  it("needs a week of history per part and two parts for a score", () => {
+    expect(readiness([P("sleep", 8, 7, 6), P("hrv", 60, 50)])).toMatchObject({ score: null, label: null });
+    expect(readiness([P("sleep", 8, 7, 6), P("hrv", 60, 50)]).parts.map((p) => p.key)).toEqual(["hrv"]);
+  });
+
+  it("reads today's values, else yesterday's, against the 28 days before", async () => {
+    const W = uuidv7();
+    await eng.db.admin.query("INSERT INTO users (id, username) VALUES ($1, 'w')", [W]);
+    const as = async (method: string, path: string, body?: unknown, query?: Record<string, string>) => (await eng.handle({ method, path, body, query, userId: W })).body as any;
+    const day = (n: number) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
+    expect(await as("GET", "/health/readiness", undefined, { tz: "0" })).toEqual({ score: null, label: null, parts: [], date: day(0) });
+    const entries = [];
+    for (let i = 1; i <= 20; i++) entries.push({ date: day(i), kind: "sleep_h", value: 7 }, { date: day(i + 1), kind: "resting_hr", value: 55 });
+    // long before: not part of the usual
+    entries.push({ date: day(40), kind: "sleep_h", value: 3 });
+    entries.push({ date: day(0), kind: "sleep_h", value: 8 }, { date: day(1), kind: "resting_hr", value: 55 });
+    await as("PUT", "/daily", { entries });
+    const r = await as("GET", "/health/readiness", undefined, { tz: "0" });
+    expect(r).toMatchObject({ score: 80, label: "Ready", date: day(0) });
+    expect(r.parts).toEqual([
+      { key: "sleep", value: 8, baseline: 7, change: 60, effect: "up" },
+      { key: "restingHr", value: 55, baseline: 55, change: 0, effect: "flat" },
+    ]);
+  });
+});
+
+describe("heart rate in training: per exercise, per routine, in an exercise's history and in reports", () => {
+  let wid: string, bench: string, row: string, routineId: string, benchWe: string, rowWe: string;
+  const T0 = Date.parse("2027-01-10T17:00:00Z") / 1000;
+  const iso = (s: number) => new Date(s * 1000).toISOString();
+
+  it("splits a workout's heart rate by exercise from when each set was ticked", () => {
+    // a reading every 10 s: 100 bpm during the first exercise's sets, 140 during the second's
+    const hr = Array.from({ length: 180 }, (_, i) => [T0 + i * 10, i * 10 <= 600 ? 100 + (i % 5) : 140]);
+    const sets = [{ weId: "a", doneS: T0 + 300 }, { weId: "a", doneS: T0 + 600 }, { weId: "b", doneS: T0 + 900 }, { weId: "b", doneS: T0 + 1200 }];
+    expect(exerciseHr(hr, T0, sets)).toEqual([{ workoutExerciseId: "a", avgHr: 102, maxHr: 104 }, { workoutExerciseId: "b", avgHr: 140, maxHr: 140 }]);
+    // every set ticked at once (typed in afterwards): nothing per exercise, unless the exercise has its own times
+    expect(exerciseHr(hr, T0, sets.map((s) => ({ ...s, doneS: T0 + 1200 })))).toEqual([]);
+    expect(exerciseHr(hr, T0, [{ weId: "a", doneS: T0 + 1200 }, { weId: "b", doneS: T0 + 1200 }], new Map([["b", [T0 + 700, T0 + 1000]]]))).toEqual([{ workoutExerciseId: "b", avgHr: 140, maxHr: 140 }]);
+    // a long break before a set: only the last 10 minutes count
+    expect(exerciseHr([[T0 + 10, 180], [T0 + 3000, 120]], T0, [{ weId: "a", doneS: T0 + 3000 }])).toEqual([{ workoutExerciseId: "a", avgHr: 120, maxHr: 120 }]);
+    expect(exerciseHr(null, T0, sets)).toEqual([]);
+  });
+
+  it("adds it to the workout's detail, the routine and the exercise's history", async () => {
+    bench = (await call("POST", "/exercises", { name: "HR bench" })).id;
+    row = (await call("POST", "/exercises", { name: "HR row" })).id;
+    routineId = (await call("POST", "/routines", { name: "HR day", exercises: [{ exerciseId: bench, sets: [{ reps: 5 }] }] })).id;
+    wid = (await call("POST", "/workouts/log", {
+      routineId, startedAt: iso(T0), endedAt: iso(T0 + 1800),
+      exercises: [{ exerciseId: bench, sets: [{ reps: 5, weightKg: 60 }, { reps: 5, weightKg: 60 }] }, { exerciseId: row, sets: [{ reps: 8, weightKg: 50 }] }],
+    })).id;
+    const w0 = await call("GET", `/workouts/${wid}`);
+    expect(w0.exerciseHr).toEqual([]);
+    [benchWe, rowWe] = w0.exercises.map((e: any) => e.id);
+    // as if ticked during the workout
+    const sets = w0.exercises.flatMap((e: any) => e.sets.map((s: any) => s.id));
+    for (const [i, sid] of sets.entries()) await eng.db.admin.query("UPDATE workout_sets SET done_at = $2 WHERE id = $1", [sid, iso(T0 + 300 * (i + 1))]);
+    const hr = Array.from({ length: 180 }, (_, i) => [T0 + i * 10, i * 10 <= 600 ? 110 : 150]);
+    await call("POST", "/health/ranges", { results: [{ kind: "workout", id: wid, hr }] });
+
+    const w = await call("GET", `/workouts/${wid}`);
+    expect(w.exerciseHr).toEqual([{ workoutExerciseId: benchWe, avgHr: 110, maxHr: 110 }, { workoutExerciseId: rowWe, avgHr: 150, maxHr: 150 }]);
+
+    const h = (await call("GET", `/exercises/${row}/history`)).sessions;
+    expect(h[0]).toMatchObject({ workoutId: wid, workoutExerciseId: rowWe, avgHr: 150, maxHr: 150 });
+
+    const r = await call("GET", `/routines/${routineId}`);
+    expect(r.hr).toEqual({ avg: w.avgHr, max: 150, sessions: [{ workoutId: wid, date: iso(T0), avgHr: w.avgHr, maxHr: 150 }] });
+    const other = (await call("POST", "/routines", { name: "No band" })).id;
+    expect((await call("GET", `/routines/${other}`)).hr).toBeNull();
+  });
+
+  it("puts sleep, resting heart rate, HRV and workout heart rate in a month's report", async () => {
+    await call("PUT", "/daily", { entries: [
+      { date: "2027-01-05", kind: "sleep_h", value: 7 }, { date: "2027-01-06", kind: "sleep_h", value: 8 },
+      { date: "2027-01-05", kind: "resting_hr", value: 54 }, { date: "2027-01-06", kind: "hrv", value: 41 },
+    ] });
+    const s = await call("GET", "/stats", undefined, { from: "2027-01-01T00:00:00Z", to: "2027-02-01T00:00:00Z", tz: "0" });
+    const w = await call("GET", `/workouts/${wid}`);
+    expect(s.health).toEqual({ sleepAvgMin: 450, sleepNights: 2, restingHrAvg: 54, hrvAvg: 41, workoutAvgHr: w.avgHr });
+    const none = await call("GET", "/stats", undefined, { from: "2027-03-01T00:00:00Z", to: "2027-04-01T00:00:00Z", tz: "0" });
+    expect(none.health).toEqual({ sleepAvgMin: null, sleepNights: 0, restingHrAvg: null, hrvAvg: null, workoutAvgHr: null });
   });
 });

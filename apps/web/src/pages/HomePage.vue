@@ -5,12 +5,13 @@
 import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
 import { muscleName, num, fromM, percentChange, orderGoals, HOME_BLOCKS, type Goal, type HomePlan, type HomeRecord, type HomeGroup, type HomeWeek } from "@motus/shared";
-import { useHome, useSettings, saveSettings, useAchievements, useGoals, loaded } from "../api/queries";
+import { useHome, useSettings, saveSettings, useAchievements, useGoals, useHealthAvailable, useHealthDay, useReadiness, useSleep, useDaily, loaded, type HealthAvailable, type ReadinessPart } from "../api/queries";
 import { api } from "../api/client";
 import { invalidate, queryClient } from "../api/live";
 import { confirm } from "../core/ask";
 import { toast } from "../core/toast";
-import { onHome, streakOnHome, toggleHomeGoal, setHomeStreak, periodWord, periodLabel } from "../core/goals";
+import { onHome, streakOnHome, toggleHomeGoal, setHomeStreak, periodWord, periodLabel, useStepGoal } from "../core/goals";
+import { asleepMin, inBedMin, efficiency, hasStages, mins } from "../core/sleep";
 import { useFmt, ago, goalLabel, localYmd, tomorrowYmd } from "../core/format";
 import { reminderText } from "../core/reminderText";
 import { startPlan, unplanItems } from "../components/home/planActions";
@@ -28,6 +29,8 @@ import ScheduleEditor from "../components/ScheduleEditor.vue";
 import GoalSheet from "../components/GoalSheet.vue";
 import SessionStats from "../components/SessionStats.vue";
 import TodayHero from "../components/home/TodayHero.vue";
+import StageBar from "../components/stats/StageBar.vue";
+import NightSheet from "../components/stats/NightSheet.vue";
 
 const router = useRouter();
 const home = useHome();
@@ -55,12 +58,20 @@ const META: Record<string, { name: string; desc: string; icon: string; size: Siz
   reminders: { name: "Reminders", desc: "Shows when a reminder is waiting", icon: "bell", size: "m" },
   records: { name: "Records", desc: "Personal records from the last 30 days", icon: "trophy", size: "m" },
   feed: { name: "Recent activity", desc: "Your latest workouts and activities", icon: "history", size: "m" },
-  daily: { name: "Today's log", desc: "Sleep, water and mood for today", icon: "moon", size: "m" },
+  daily: { name: "Today's log", desc: "Sleep, water and mood for today", icon: "note", size: "m" },
   achievements: { name: "Achievements", desc: "The latest reached and the next one", icon: "star", size: "m" },
+  readiness: { name: "Readiness", desc: "How ready you are to train, from last night's sleep and your heart", icon: "heartPulse", size: "m" },
+  sleep: { name: "Last night", desc: "Time asleep and its stages, from your band", icon: "moon", size: "m" },
+  heart: { name: "Heart", desc: "Resting heart rate, HRV and today's range, from your band", icon: "heart", size: "m" },
+  activityToday: { name: "Steps today", desc: "Steps, distance and active calories today, and your last 7 days, from your band", icon: "steps", size: "m" },
 };
 // a block whose feature is off is absent everywhere, Edit home included
 const FEATURE: Record<string, string> = { program: "programs", daily: "dailyLog", achievements: "achievements" };
-const available = (id: string) => !!META[id] && (!FEATURE[id] || !!s.value.features[FEATURE[id]!]);
+// the band's blocks are absent everywhere, Edit home included, until that kind of data has come in (as Stats' Sleep and
+// Heart tabs): the Health Connect switch is the Android app's, while the data can reach any device through the server
+const HEALTH: Record<string, (a: HealthAvailable) => boolean> = { readiness: (a) => a.sleep || a.heart, sleep: (a) => a.sleep, heart: (a) => a.heart, activityToday: (a) => a.distance || a.calories };
+const avail = useHealthAvailable();
+const available = (id: string) => !!META[id] && (!FEATURE[id] || !!s.value.features[FEATURE[id]!]) && (!HEALTH[id] || (!!avail.data.value && HEALTH[id]!(avail.data.value)));
 const listed = computed(() => s.value.home.blocks.filter((x) => available(x.id)));
 const isOn = (id: string) => listed.value.some((x) => x.id === id && x.on);
 // Today is always shown, so Edit home gives it no switch
@@ -76,7 +87,7 @@ const walked = computed(() => weeks.value.some((w) => w.walkM > 0));
 // a stat tile in This week and Previous: label, value with its unit set small, and for This week the change from last week
 // as a percent, the same way Stats shows it (nothing when last week had none to compare with)
 // ("12.3k kg" splits at its space so the number carries the weight and the unit is set small beside it)
-interface WStat { key: string; icon: string; label: string; value: string; unit: string; delta?: string; last?: string }
+interface WStat { key: string; icon: string; label: string; value: string; unit: string; delta?: string; last?: string; tone?: string }
 const unitOf = (s: string) => { const i = s.lastIndexOf(" "); return i < 0 ? { value: s, unit: "" } : { value: s.slice(0, i), unit: s.slice(i + 1) }; };
 const weekStats = computed<WStat[]>(() => {
   const row = (key: string, icon: string, label: string, now: number, last: number, show: (n: number) => string, split = false): WStat => {
@@ -179,6 +190,79 @@ const achNext = computed(() => (ach.data.value ?? []).map((a: any) => a.steps.fi
   .filter(Boolean).sort((a: any, b: any) => b.value / b.target - a.value / a.target)[0]);
 const achAmount = (unit: string, v: number) => unit === "kg" ? fmt.value.vol(v) : unit === "m" ? fmt.value.dist(v, v < 10000 ? 1 : 0) : unit === "s" ? `${num(v / 3600, 0)}h` : unit === "weeks" ? `${num(v, 0)} wk` : num(v, 0);
 
+// ---- the band's blocks: today's numbers (/health/day), readiness, and the newest night of the last two days (the band
+// often hands over last night only when it next connects, so before then yesterday's night is the newest)
+const hDay = useHealthDay(today);
+const day = computed(() => hDay.data.value ?? null);
+const ready = useReadiness();
+const rd = computed(() => (ready.data.value?.score != null ? ready.data.value : null));
+const yesterday = localYmd(new Date(Date.now() - 86400000));
+const nightsQ = useSleep({ from: yesterday, to: tomorrowYmd() });
+const night = computed(() => nightsQ.data.value?.nights?.[0] ?? null);
+const nightName = computed(() => (night.value?.date === today ? "Last night" : night.value ? fmt.value.date(night.value.date, { weekday: "long" }) : ""));
+const nightOpen = ref<string | null>(null);
+const READY_TEXT: Record<string, string> = { Ready: "Rested and recovered. A good day to train hard.", Normal: "About your usual. Train as planned.", "Take it easy": "Still recovering. Keep today light." };
+// each part as a report's highlight: what and its value against your usual, then how far off it is, in the tone of what
+// it does to the score (raises it: positive, lowers it: negative)
+const bpm = (v: number) => `${Math.round(v)} bpm`, ms = (v: number) => `${Math.round(v)} ms`;
+const PART: Record<ReadinessPart["key"], { icon: string; t: string; f: (v: number) => string }> = {
+  // sleep comes in hours, as the day's log keeps it
+  sleep: { icon: "moon", t: "Sleep", f: (h) => mins(h * 60) }, restingHr: { icon: "heart", t: "Resting heart rate", f: bpm }, hrv: { icon: "heartPulse", t: "HRV", f: ms },
+};
+const signedBy = (d: number, f: (v: number) => string) => `${Math.round(d) < 0 ? "-" : "+"}${f(Math.abs(d))}`;
+const readyParts = computed(() => (rd.value?.parts ?? []).filter((x) => x.value != null && PART[x.key]).map((x) => {
+  const p = PART[x.key];
+  return { key: x.key, icon: p.icon, t: p.t, s: x.baseline != null ? `${p.f(x.value!)} · usual ${p.f(x.baseline)}` : p.f(x.value!),
+    r: x.effect === "flat" || x.baseline == null ? "As usual" : signedBy(x.value! - x.baseline, p.f), tone: x.effect === "up" ? "pos" : x.effect === "down" ? "neg" : undefined };
+}));
+// heart: the resting heart rate and HRV of today (else the latest readiness read), each against your usual, and the day's range
+const partOf = (k: ReadinessPart["key"]) => ready.data.value?.parts?.find((x) => x.key === k);
+const heartStats = computed<WStat[]>(() => {
+  const out: WStat[] = [];
+  const vital = (key: "restingHr" | "hrv", icon: string, label: string, unit: string) => {
+    const p = partOf(key), v = day.value?.[key] ?? p?.value ?? null;
+    if (v == null) return;
+    const d = p?.baseline != null ? Math.round(v - p.baseline) : null;
+    // in the tone readiness gives it, so the same change reads the same in both blocks
+    out.push({ key, icon, label, value: String(Math.round(v)), unit, delta: d == null ? "" : `${d < 0 ? "-" : "+"}${Math.abs(d)} ${unit}`,
+      tone: p?.effect === "up" ? "pos" : p?.effect === "down" ? "neg" : undefined });
+  };
+  vital("restingHr", "heart", "Resting", "bpm");
+  vital("hrv", "heartPulse", "HRV", "ms");
+  const hr = day.value?.hr;
+  if (hr) out.push({ key: "today", icon: "activity", label: "Today", value: `${Math.round(hr.min)}-${Math.round(hr.max)}`, unit: "bpm", delta: "" });
+  return out;
+});
+const heartDelta = computed(() => heartStats.value.some((x) => x.key !== "today" && x.delta));
+// a band reads every few seconds: the day's line is averaged down to at most 96 points, enough for a block's width
+const hrLine = computed(() => {
+  const xs = day.value?.hr?.series ?? [];
+  const step = Math.max(1, Math.ceil(xs.length / 96)), out: number[] = [];
+  for (let i = 0; i < xs.length; i += step) { const part = xs.slice(i, i + step); out.push(part.reduce((t, p) => t + p[1], 0) / part.length); }
+  return out;
+});
+// today's steps, distance and active calories as the band counted them, each only when there; the steps against a daily
+// steps goal when there is one
+const stepGoal = useStepGoal();
+const actStats = computed<WStat[]>(() => {
+  const d = day.value, out: WStat[] = [];
+  if (!d) return out;
+  if (d.steps != null) out.push({ key: "steps", icon: "steps", label: "Steps", value: fmt.value.num(d.steps, 0), unit: "" });
+  if (d.distanceM) out.push({ key: "dist", icon: "walk", label: "Distance", ...unitOf(fmt.value.dist(d.distanceM, 1)) });
+  if (d.activeKcal) out.push({ key: "kcal", icon: "flame", label: "Active", value: fmt.value.num(d.activeKcal, 0), unit: "kcal" });
+  return out;
+});
+// without a goal, the last 7 days' steps as This week's bars, today in full colour
+const weekAgo = localYmd(new Date(Date.now() - 6 * 86400000));
+const dailyQ = useDaily(weekAgo);
+const stepDays = computed(() => Array.from({ length: 7 }, (_, i) => {
+  const d = localYmd(new Date(Date.now() - (6 - i) * 86400000));
+  const x = (dailyQ.data.value ?? []).find((r) => r.kind === "steps" && String(r.date).slice(0, 10) === d);
+  return { d, n: d === today && day.value?.steps != null ? day.value.steps : Number(x?.value ?? 0) };
+}));
+const stepMax = computed(() => Math.max(1, ...stepDays.value.map((x) => x.n)));
+const stepPct = computed(() => (stepGoal.value && day.value?.steps != null ? Math.min(100, (day.value.steps / stepGoal.value.target) * 100) : null));
+
 // a dismissed suggestion stays away until your next workout; the list redraws without waiting for the server
 const hideSuggestion = (key: string) => {
   queryClient.setQueriesData({ queryKey: ["home"] }, (d: any) => d && { ...d, suggest: d.suggest.filter((x: any) => x.key !== key) });
@@ -198,6 +282,10 @@ const shows = (id: string): boolean => {
     case "reminders": return !!x.reminders?.length;
     case "records": return !!x.records?.length;
     case "feed": return !!x.feed?.length;
+    case "readiness": return !!rd.value;
+    case "sleep": return !!night.value;
+    case "heart": return heartStats.value.length > 0;
+    case "activityToday": return actStats.value.length > 0;
     default: return true;
   }
 };
@@ -260,7 +348,7 @@ function movePin(id: string, dir: -1 | 1) {
 
 const greeting = computed(() => { const hr = new Date().getHours(); return hr < 5 ? "Good night" : hr < 12 ? "Good morning" : hr < 18 ? "Good afternoon" : "Good evening"; });
 // show the page once its data is in, all at once
-await loaded(home, ach);
+await loaded(home, ach, avail, hDay, ready, nightsQ, dailyQ);
 </script>
 
 <template>
@@ -475,8 +563,58 @@ await loaded(home, ach);
         </div>
 
         <div v-else-if="id === 'daily'" class="card hb sz-m" :data-solo="solo.has(id) || undefined">
-          <div class="ch"><span class="bi"><Icon name="moon" :size="15" /></span><span class="t grow">Today's log</span><button class="lnk" @click="dailySheet = true">Other days</button></div>
+          <div class="ch"><span class="bi"><Icon name="note" :size="15" /></span><span class="t grow">Today's log</span><button class="lnk" @click="dailySheet = true">Other days</button></div>
           <DailyLog />
+        </div>
+
+        <!-- readiness: the score as a pinned goal's value and ring, what it means, then what made it as a report's highlights -->
+        <div v-else-if="id === 'readiness' && rd" class="card hb sz-m click" :data-solo="solo.has(id) || undefined" v-bind="link('/stats?tab=heart')">
+          <div class="ch"><span class="bi"><Icon name="heartPulse" :size="15" /></span><span class="t grow">Readiness</span><span v-if="readyParts.length" class="tiny">Vs your usual</span></div>
+          <div class="row"><div class="big grow">{{ rd.score }}<small v-if="rd.label">{{ rd.label }}</small></div><Ring :pct="rd.score! / 100" :size="40" :color="rd.label === 'Take it easy' ? 'var(--warn)' : undefined" /></div>
+          <div v-if="rd.label" class="tiny">{{ READY_TEXT[rd.label] }}</div>
+          <div v-if="readyParts.length" class="list hhl">
+            <div v-for="x in readyParts" :key="x.key" class="li">
+              <Icon :name="x.icon" :size="18" class="muted" />
+              <div class="grow"><div class="t">{{ x.t }}</div><div class="s">{{ x.s }}</div></div>
+              <b class="r rv" :class="x.tone">{{ x.r }}</b>
+            </div>
+          </div>
+        </div>
+
+        <!-- the newest night: time asleep with the share of the time in bed as its ring (as the night's sheet), then its stages -->
+        <div v-else-if="id === 'sleep' && night" class="card hb sz-m click" :data-solo="solo.has(id) || undefined" v-bind="link(() => (nightOpen = night!.date))">
+          <div class="ch"><span class="bi"><Icon name="moon" :size="15" /></span><span class="t grow">{{ nightName }}</span><span class="tiny">{{ fmt.time(night.startAt) }}-{{ fmt.time(night.endAt) }}</span></div>
+          <div class="row"><div class="big grow">{{ mins(asleepMin(night)) }}<small>asleep</small></div><Ring :pct="efficiency(night)" :size="40" /></div>
+          <div class="tiny">{{ mins(inBedMin(night)) }} in bed · {{ Math.round(efficiency(night) * 100) }}% of it asleep</div>
+          <div v-if="hasStages(night) || night.awakeMin" class="hstages"><StageBar :night="night" /></div>
+        </div>
+
+        <!-- heart: resting heart rate and HRV against your usual and today's range as This week's tiles, then today's line -->
+        <div v-else-if="id === 'heart'" class="card hb wkc sz-m click" :data-solo="solo.has(id) || undefined" v-bind="link('/stats?tab=heart')">
+          <div class="ch"><span class="bi"><Icon name="heart" :size="15" /></span><span class="t grow">Heart</span><span v-if="heartDelta" class="tiny">Vs your usual</span></div>
+          <div class="wstats">
+            <div v-for="x in heartStats" :key="x.key" class="ws" role="group" :aria-label="[x.label, x.value, x.unit, x.delta].filter(Boolean).join(' ')">
+              <div class="wlb"><Icon :name="x.icon" :size="14" />{{ x.label }}</div>
+              <div class="wv">{{ x.value }}<small v-if="x.unit">{{ x.unit }}</small></div>
+              <div class="wd" :class="x.tone">{{ x.delta }}</div>
+            </div>
+          </div>
+          <div v-if="hrLine.length > 1" class="hfoot" aria-hidden="true"><Sparkline :values="hrLine" /></div>
+        </div>
+
+        <!-- what the band counted today; the steps against a daily steps goal as a bar when there is one -->
+        <div v-else-if="id === 'activityToday'" class="card hb wkc sz-m click" :data-solo="solo.has(id) || undefined" v-bind="link('/stats?tab=activities')">
+          <div class="ch"><span class="bi"><Icon name="steps" :size="15" /></span><span class="t grow">Steps today</span><span v-if="stepPct != null" class="tiny">Goal {{ fmt.num(stepGoal!.target, 0) }}</span></div>
+          <div class="wstats plain">
+            <div v-for="x in actStats" :key="x.key" class="ws" role="group" :aria-label="[x.label, x.value, x.unit].filter(Boolean).join(' ')">
+              <div class="wlb"><Icon :name="x.icon" :size="14" />{{ x.label }}</div>
+              <div class="wv">{{ x.value }}<small v-if="x.unit">{{ x.unit }}</small></div>
+            </div>
+          </div>
+          <div v-if="stepPct != null" class="hgoal"><div class="pbar" :class="{ ok: stepPct >= 100 }"><i :style="{ width: stepPct + '%' }" /></div></div>
+          <div v-else-if="stepDays.some((x) => x.n)" class="wbars" role="img" :aria-label="`Steps per day, last 7 days: ${stepDays.map((x) => x.n).join(', ')}`">
+            <i v-for="x in stepDays" :key="x.d" :class="{ cur: x.d === today }" :style="{ height: Math.max(4, (x.n / stepMax) * 100) + '%' }" />
+          </div>
         </div>
 
         <div v-else-if="id === 'achievements'" class="card hb sz-m click" :data-solo="solo.has(id) || undefined" v-bind="link('/stats?tab=achievements')">
@@ -492,6 +630,7 @@ await loaded(home, ach);
     <div v-else class="card empty"><Icon name="info" :size="34" /><b>Couldn't load Home</b>{{ (home.error.value as Error | null)?.message }}<br /><button class="btn tonal" @click="home.refetch()">Try again</button></div>
 
     <ScheduleEditor v-if="planOpen" :schedule="planOpen" @close="planOpen = null" />
+    <NightSheet v-if="nightOpen" :date="nightOpen" @close="nightOpen = null" />
     <GoalSheet v-if="goalOpen" :id="goalOpen" @close="goalOpen = null" @edit="(g) => router.push(`/goals?edit=${g.id}`)" @status="goalStatus" @delete="goalDelete" />
     <Sheet v-if="pinOpen" title="Pinned goals" @close="pinOpen = false">
       <p class="tiny hgap">Each pinned goal gets its own block on Home, in this order. Weekly and monthly goals can bring their streak along.</p>
@@ -612,6 +751,19 @@ html.phone .gtile { grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); }
 .ach-nm { color: var(--tx); font-weight: 600; }
 .ach-next { margin-top: var(--hg); display: flex; flex-direction: column; gap: 6px; }
 .today-ph { opacity: .4; min-height: 118px; }
+
+/* readiness's parts as a report's highlights (Reports .hl): a block-padding below the value under a faint line, the
+   last row without its line, the number in the row's tone */
+.hhl { margin-top: var(--cpy); border-top: 1px solid var(--ol); }
+.hhl .li:last-child { border-bottom: 0; padding-bottom: 0; }
+.hhl .grow { min-width: 0; }
+.hhl .s { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* last night's stages under a faint line, as on Stats → Sleep's last-night card */
+.hstages { margin-top: var(--cpy); padding-top: var(--cpy); border-top: 1px solid var(--ol); }
+/* heart's line and the steps goal's bar sit at the foot of the block, as This week's bars */
+.hfoot { margin-top: auto; padding-top: var(--hg); }
+.hfoot .spark { position: static; display: block; width: 100%; height: 28px; }
+.hgoal { margin-top: auto; padding-top: var(--hg); }
 
 /* Edit home: each tile names its block and says what it shows; switched-off ones fade back */
 .etile { display: flex; flex-direction: column; gap: 4px; min-height: 92px; border: 1px dashed var(--ol); }

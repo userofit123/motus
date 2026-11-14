@@ -4,6 +4,7 @@ import { computed, ref } from "vue";
 import { GROUPS, groupOf, percentChange, type HomeRecord } from "@motus/shared";
 import { useStats } from "../api/queries";
 import { useFmt } from "../core/format";
+import { mins } from "../core/sleep";
 import BarChart from "./BarChart.vue";
 import Icon from "./Icon.vue";
 
@@ -13,17 +14,20 @@ const all = useStats(ref({ records: 1 as const }));
 const monthKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 
 // what one month (or year) added up to while the history is read, then its counts once it is done
-interface Acc { k: string; workouts: number; timeS: number; volumeKg: number; sets: number; activities: number; distM: number; days: Set<string>; routines: Map<string, number>; groups: Map<string, number>; records: HomeRecord[] }
+interface Acc { k: string; workouts: number; timeS: number; volumeKg: number; sets: number; activities: number; distM: number; days: Set<string>; routines: Map<string, number>; groups: Map<string, number>; records: HomeRecord[];
+  // what a band handed over: minutes asleep a night, resting heart rate and HRV a day, a workout's average heart rate
+  sleep: number[]; rhr: number[]; hrv: number[]; whr: number[] }
 type Period = Omit<Acc, "days"> & { days: number; top?: [string, number]; group?: { name: string; sets: number } };
-interface StatsWorkout { startedAt: string; durationS: number; volumeKg: number; sets: number; name: string; muscles: Record<string, number> }
+interface StatsWorkout { startedAt: string; durationS: number; volumeKg: number; sets: number; name: string; muscles: Record<string, number>; avgHr?: number | string | null }
+interface StatsDaily { date: string | Date; kind: string; value: number | string }
 interface StatsActivity { startedAt: string; durationS: number; distanceM: number | string | null }
-const by = (key: (d: Date) => string) => computed<Period[]>(() => {
+const by = (key: (d: Date) => string, dayKey: (d: string) => string) => computed<Period[]>(() => {
   const m = new Map<string, Acc>();
-  const d = all.data.value as { workouts: StatsWorkout[]; activities: StatsActivity[]; records?: HomeRecord[] } | undefined;
+  const d = all.data.value as { workouts: StatsWorkout[]; activities: StatsActivity[]; records?: HomeRecord[]; daily?: StatsDaily[] } | undefined;
   if (!d) return [];
   const get = (k: string): Acc => {
     let x = m.get(k);
-    if (!x) m.set(k, (x = { k, workouts: 0, timeS: 0, volumeKg: 0, sets: 0, activities: 0, distM: 0, days: new Set(), routines: new Map(), groups: new Map(), records: [] }));
+    if (!x) m.set(k, (x = { k, workouts: 0, timeS: 0, volumeKg: 0, sets: 0, activities: 0, distM: 0, days: new Set(), routines: new Map(), groups: new Map(), records: [], sleep: [], rhr: [], hrv: [], whr: [] }));
     return x;
   };
   for (const w of d.workouts) {
@@ -31,17 +35,24 @@ const by = (key: (d: Date) => string) => computed<Period[]>(() => {
     x.workouts++; x.timeS += w.durationS; x.volumeKg += w.volumeKg; x.sets += w.sets; x.days.add(w.startedAt.slice(0, 10)); x.routines.set(w.name, (x.routines.get(w.name) ?? 0) + 1);
     // sets per muscle group, counted as Stats counts muscles (a helper muscle's sets at half)
     for (const [mu, n] of Object.entries(w.muscles)) { const g = groupOf(mu); if (g !== "other") x.groups.set(g, (x.groups.get(g) ?? 0) + n); }
+    if (Number(w.avgHr) > 0) x.whr.push(Number(w.avgHr));
   }
   for (const a of d.activities) { const x = get(key(new Date(a.startedAt))); x.activities++; x.timeS += a.durationS; x.distM += Number(a.distanceM ?? 0); x.days.add(a.startedAt.slice(0, 10)); }
   for (const r of d.records ?? []) m.get(key(new Date(r.at)))?.records.push(r);
+  // a day's numbers count in the month (or year) it is a day of, in one that has a report (a workout or an activity)
+  const DAILY: Record<string, "sleep" | "rhr" | "hrv"> = { sleep_h: "sleep", resting_hr: "rhr", hrv: "hrv" };
+  for (const x of d.daily ?? []) {
+    const f = DAILY[x.kind], v = Number(x.value);
+    if (f && v > 0) m.get(dayKey(String(x.date).slice(0, 10)))?.[f].push(f === "sleep" ? v * 60 : v);
+  }
   const top = (mp: Map<string, number>) => [...mp].sort((a, b) => b[1] - a[1])[0];
   return [...m.values()].sort((a, b) => b.k.localeCompare(a.k)).map((x) => {
     const g = top(x.groups);
     return { ...x, days: x.days.size, top: top(x.routines), group: g && { name: GROUPS.find((y) => y.id === g[0])?.name ?? g[0], sets: Math.round(g[1]) } };
   });
 });
-const months = by(monthKey);
-const years = by((d) => String(d.getFullYear()));
+const months = by(monthKey, (d) => d.slice(0, 7));
+const years = by((d) => String(d.getFullYear()), (d) => d.slice(0, 4));
 const monthOf = (k: string) => new Date(Number(k.slice(0, 4)), Number(k.slice(5)) - 1, 15);
 const label = (k: string) => (k.length === 4 ? k : monthOf(k).toLocaleDateString(undefined, { month: "long", year: "numeric" }));
 const prevKey = (k: string) => { const d = monthOf(k); d.setMonth(d.getMonth() - 1); return monthKey(d); };
@@ -66,6 +77,7 @@ const chart = computed(() => {
 // highlights as list rows
 interface Tile { key: string; icon: string; label: string; value: string; unit: string; delta: string; last: string }
 interface Highlight { key: string; icon: string; t: string; s: string; r: string; pr?: boolean }
+const mean = (xs: number[]) => xs.reduce((t, x) => t + x, 0) / xs.length;
 const unitOf = (s: string) => { const i = s.lastIndexOf(" "); return i < 0 ? { value: s, unit: "" } : { value: s.slice(0, i), unit: s.slice(i + 1) }; };
 const build = (m: Period, p: Period | undefined, prev: string) => {
   const tile = (key: string, icon: string, lbl: string, get: (x: Period) => number, show: (n: number) => string, split = false): Tile => {
@@ -85,6 +97,12 @@ const build = (m: Period, p: Period | undefined, prev: string) => {
     ...(m.group ? [{ key: "group", icon: "activity", t: "Most trained", s: m.group.name, r: `${m.group.sets} sets` }] : []),
     // the count on the right as Records has it; the distance under the name only when there is one
     ...(m.activities ? [{ key: "act", icon: "walk", t: "Activities", s: m.distM > 0 ? fmt.value.dist(m.distM, 1) : "", r: String(m.activities) }] : []),
+    // then what a band handed over, each only when there: sleep a night, resting heart rate (with HRV under it), and the
+    // workouts' heart rate, the average on the right as the counts above
+    ...(m.sleep.length ? [{ key: "sleep", icon: "moon", t: "Sleep", s: `Average of ${m.sleep.length} ${m.sleep.length === 1 ? "night" : "nights"}`, r: mins(mean(m.sleep)) }] : []),
+    ...(m.rhr.length ? [{ key: "rhr", icon: "heart", t: "Resting heart rate", s: m.hrv.length ? `HRV ${Math.round(mean(m.hrv))} ms` : "", r: `${Math.round(mean(m.rhr))} bpm` }]
+      : m.hrv.length ? [{ key: "hrv", icon: "heartPulse", t: "HRV", s: "", r: `${Math.round(mean(m.hrv))} ms` }] : []),
+    ...(m.whr.length ? [{ key: "whr", icon: "heartPulse", t: "Workout heart rate", s: `Average of ${m.whr.length} ${m.whr.length === 1 ? "workout" : "workouts"}`, r: `${Math.round(mean(m.whr))} bpm` }] : []),
   ];
   return { k: m.k, title: m.k.length === 4 ? `${m.k} in review` : label(m.k), prev, tiles, anyDelta: tiles.some((x) => x.delta), highlights };
 };

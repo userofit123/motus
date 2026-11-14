@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // One finished workout (requirement 2): when, how long (active and resting), what was done set by set, records,
-// how it compares with last time, muscles worked, heart rate (from a band), notes and reminders. Everything can be edited, duplicated,
+// how it compares with last time, muscles worked, heart rate (from a band; per exercise too), notes and reminders. Everything can be edited, duplicated,
 // turned into a routine, repeated, exported or deleted (requirement 6).
 import { startWorkout } from "../workout/start";
 import { goBack } from "../core/leave";
@@ -48,6 +48,14 @@ const verdict = (weId: string) => rep.value?.perExercise.find((p: any) => p.work
 // two badges, as in the workout
 const joins = computed(() => { const d = restDefaultsOf({ ...s.value.workout, ...(w.value?.settings ?? {}) }), on = !!s.value.features.unilateral;
   return new Map<string, boolean[]>((w.value?.exercises ?? []).map((e: any) => [e.id, on ? sideJoins(e.sets, (j) => joinRest(e, j, d)) : []])); });
+// the band's heart rate during each exercise (from its first set to its last), after its verdict as Stats → Heart words a
+// session: "128 bpm · up to 141 bpm"
+const exHr = (weId: string) => { const h = (w.value?.exerciseHr ?? []).find((x: any) => x.workoutExerciseId === weId);
+  return h?.avgHr ? ` · ${Math.round(h.avgHr)} bpm${h.maxHr ? ` · up to ${Math.round(h.maxHr)} bpm` : ""}` : ""; };
+// a set's records: one kind keeps its own word; two or more become one "3 PRs" badge, as the workout's exercise list
+// counts them, so the set's value never gets squeezed onto several lines on a phone (the kinds stay in the tooltip)
+const prName = (p: string, tracking?: string) => p === "e1rm" ? "1RM PR" : p === "weight" ? (tracking === "assisted" ? "Least help" : "Heaviest") : p === "reps" ? "Rep PR" : p === "volume" ? "Volume PR" : "PR";
+const prNames = (ps: string[], tracking?: string) => ps.map((p) => prName(p, tracking)).join(", ");
 const delta = (a: number | null | undefined, b: number | null | undefined) => (a == null || b == null || !b ? null : a - b);
 
 async function save(path: string, body: unknown, method: "put" | "del" | "post" = "put") {
@@ -170,7 +178,7 @@ await loaded(q);
           <div class="row hgap">
             <div class="thumb sm click" @click="exerciseSheet = e.exerciseId"><img v-if="e.exercise?.images?.[0]" :src="mediaUrl(e.exercise.images[0])" alt="" /><Icon v-else name="dumbbell" :size="16" /></div>
             <div class="grow click" @click="exerciseSheet = e.exerciseId"><div style="font-weight:600" :style="e.status === 'skipped' ? { textDecoration: 'line-through', opacity: .6 } : undefined">{{ e.exercise?.name }}</div>
-              <div class="tiny">{{ e.status === "skipped" ? `Skipped${e.skipReason ? " · " + e.skipReason : ""}` : verdict(e.id)?.verdict === "better" ? "Better than last time" : verdict(e.id)?.verdict === "worse" ? "Below last time" : verdict(e.id)?.verdict === "first" ? "First time" : "Same as last time" }}</div></div>
+              <div class="tiny">{{ e.status === "skipped" ? `Skipped${e.skipReason ? " · " + e.skipReason : ""}` : verdict(e.id)?.verdict === "better" ? "Better than last time" : verdict(e.id)?.verdict === "worse" ? "Below last time" : verdict(e.id)?.verdict === "first" ? "First time" : "Same as last time" }}{{ e.status === "skipped" ? "" : exHr(e.id) }}</div></div>
             <span v-if="verdict(e.id)?.verdict === 'better'" class="pos"><Icon name="arrowUp" :size="18" /></span>
             <span v-else-if="verdict(e.id)?.verdict === 'worse'" class="neg"><Icon name="arrowDown" :size="18" /></span>
             <Menu v-if="editing" :items="[{ label: 'Add a set', icon: 'plus', run: () => save(`/workout-exercises/${e.id}/sets`, { kind: 'normal', done: true }, 'post').then((ok) => ok && savedToast('Set added')) }, { label: e.status === 'skipped' ? 'Mark as done' : 'Mark as skipped', icon: 'skip', run: () => { const st = e.status === 'skipped' ? 'done' : 'skipped'; save(`/workout-exercises/${e.id}`, { status: st }).then((ok) => ok && savedToast(st === 'done' ? 'Marked as done' : 'Marked as skipped')); } }, { label: 'Remove from workout', icon: 'trash', danger: true, sep: true, run: () => save(`/workout-exercises/${e.id}`, undefined, 'del').then((ok) => ok && savedToast('Exercise removed')) }]" />
@@ -180,9 +188,9 @@ await loaded(q);
               <tr v-for="(x, j) in e.sets" :key="x.id">
                 <td :class="sideJoinCls(e.sets, joins.get(e.id) ?? [], j)"><span class="sk" :class="{ w: x.kind === 'warmup', d: x.kind === 'drop', f: x.kind === 'failure' }">{{ setLabel(e.sets, j, !!s.features.unilateral) }}</span></td>
                 <template v-if="!editing">
-                  <td style="text-align:start;font-weight:500">{{ fmt.set(x, e.exercise?.tracking) }}<span v-if="x.rpe" class="tiny"> @ {{ x.rpe }}</span></td>
+                  <td style="text-align:start;font-weight:500;white-space:nowrap">{{ fmt.set(x, e.exercise?.tracking) }}<span v-if="x.rpe" class="tiny"> @ {{ x.rpe }}</span></td>
                   <td class="tiny" style="text-align:end;white-space:nowrap" :title="x.restPlannedS != null ? `Planned rest ${fmt.clock(x.restPlannedS)}` : undefined">{{ x.restActualS != null ? `Rest ${fmt.clock(x.restActualS)}` : "" }}</td>
-                  <td style="text-align:end"><span v-for="p in x.pr" :key="p" class="pr" style="margin-inline-start:4px">{{ p === "e1rm" ? "1RM PR" : p === "weight" ? (e.exercise?.tracking === "assisted" ? "Least help" : "Heaviest") : p === "reps" ? "Rep PR" : p === "volume" ? "Volume PR" : "PR" }}</span></td>
+                  <td style="text-align:end"><span v-if="x.pr?.length" class="pr" :role="x.pr.length > 1 ? 'img' : undefined" :title="x.pr.length > 1 ? prNames(x.pr, e.exercise?.tracking) : undefined" :aria-label="x.pr.length > 1 ? prNames(x.pr, e.exercise?.tracking) : undefined">{{ x.pr.length > 1 ? `${x.pr.length} PRs` : prName(x.pr[0], e.exercise?.tracking) }}</span></td>
                 </template>
                 <template v-else>
                   <td v-if="usesWeight(e.exercise.tracking)"><input class="vin" inputmode="decimal" :value="x.weightKg != null ? Math.round(fmt.fromKg(x.weightKg) * 100) / 100 : ''" :placeholder="fmt.wu" @change="save(`/workout-sets/${x.id}`, { weightKg: num(($event.target as HTMLInputElement).value) == null ? null : fmt.toKg(num(($event.target as HTMLInputElement).value)!) }).then((ok) => ok && savedToast())" /></td>
@@ -227,6 +235,8 @@ await loaded(q);
 
 <style scoped>
 .lastt { margin-top: var(--tdy); }
+/* the pill sits on the middle of the row with the value and the rest, not on its smaller text's baseline */
+.sets .pr { vertical-align: middle; }
 .done-hi { display: flex; align-items: center; gap: var(--cpx); }
 .done-hi .t { font-weight: 600; font-size: 17px; }
 .done-hi .bi { background: color-mix(in srgb, var(--pos) 16%, transparent); color: var(--pos); }

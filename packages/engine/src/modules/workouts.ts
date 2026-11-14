@@ -9,6 +9,7 @@ import { notFound, bad, HttpError } from "../errors";
 import { getSettings, saveSettings } from "./settings";
 import { buildPlan, loadRoutine, pendingReminders, withWorkoutOverrides } from "./plan";
 import { getExercises, exerciseSessions, savePrefs } from "./library";
+import { exerciseHrOf } from "./health";
 
 const KINDS = ["warmup", "normal", "drop", "failure"] as const;
 const EX_STATUS = ["pending", "done", "skipped", "partial"] as const;
@@ -434,7 +435,10 @@ export function workoutRoutes(r: Router) {
     const reminders = (await ctx.q.query(
       `SELECT m.*, e.name AS target_name FROM reminders m LEFT JOIN exercises e ON m.target_type = 'exercise' AND e.id = m.target_id
         WHERE m.created_workout_id = $1 ORDER BY m.created_at`, [w.id])).rows.map((x: any) => camel(x));
-    return { ...w, report, prevId: nav.prev_id, nextId: nav.next_id, createdReminders: reminders };
+    // the band's heart rate per exercise, when the workout has a series ([] without one)
+    const hr = (w as any).hr ? await exerciseHrOf(ctx.q, [w.id]) : new Map<string, { avgHr: number; maxHr: number }>();
+    const exerciseHr = [...hr].map(([workoutExerciseId, x]) => ({ workoutExerciseId, ...x }));
+    return { ...w, report, prevId: nav.prev_id, nextId: nav.next_id, createdReminders: reminders, exerciseHr };
   });
 
   r.post("/workouts/start", async (ctx, _p, b) => {

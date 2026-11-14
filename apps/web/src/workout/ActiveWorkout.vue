@@ -28,6 +28,9 @@ import FinishSheet from "./FinishSheet.vue";
 import WorkoutSoFar from "./WorkoutSoFar.vue";
 import ExercisePicker from "../components/ExercisePicker.vue";
 import WorkoutSettings from "../components/WorkoutSettings.vue";
+import Sparkline from "../components/Sparkline.vue";
+import { useSettings } from "../api/queries";
+import { useLiveHr } from "../native/health";
 
 const router = useRouter();
 const W = useWorkout();
@@ -131,6 +134,11 @@ async function rename() { const n = await prompt("Workout name", { value: w.valu
 const moveTo = (from: number, to: number) => { const ids = w.value!.exercises.map((e) => e.id); if (to < 0 || to >= ids.length || from === to) return; ids.splice(to, 0, ids.splice(from, 1)[0]!); W.reorder(ids); };
 const move = (i: number, d: number) => { const ids = w.value!.exercises.map((e) => e.id); const j = i + d; if (j < 0 || j >= ids.length) return; [ids[i], ids[j]] = [ids[j]!, ids[i]!]; W.reorder(ids); };
 const togglePause = () => W.togglePause();
+// the band's heart rate so far (Android app, Health Connect on): the newest reading in the header while fresh, and on a
+// computer a card in the side column with the line so far (not beside the Summary, which shows it)
+const settings = useSettings();
+const hr = useLiveHr(() => w.value?.startedAt, () => !!w.value && !!settings.value.features.healthConnect);
+const hrLatest = hr.latest;
 // in groups: its exercises, notes and reminders, its settings, then Cancel on its own
 const menu = computed(() => [
   { label: "Add exercise", icon: "plus", run: () => (adding.value = true) },
@@ -149,7 +157,7 @@ const menu = computed(() => [
       <button class="ib sm plain" aria-label="Minimise" @click="router.push('/')"><Icon name="down" /></button>
       <div class="grow" style="min-width:0;cursor:pointer" role="button" tabindex="0" @click="go(w.exercises.length)" @keydown.enter="go(w.exercises.length)">
         <div class="aw-name ellipsis">{{ w.name }}</div>
-        <div class="aw-clock"><b>{{ clock(elapsed(w)) }}</b><span v-if="paused" class="aw-paused">Paused</span><span>{{ done }} of {{ total }} sets</span><span v-if="waiting.length">{{ waiting.length }} waiting to sync</span></div>
+        <div class="aw-clock"><b>{{ clock(elapsed(w)) }}</b><span v-if="paused" class="aw-paused">Paused</span><span>{{ done }} of {{ total }} sets</span><span v-if="hrLatest">{{ hrLatest.bpm }} bpm</span><span v-if="waiting.length">{{ waiting.length }} waiting to sync</span></div>
       </div>
       <Menu :items="menu" align="start" />
       <button class="btn" :class="{ o: done === 0 }" @click="finishing = true">Finish</button>
@@ -213,6 +221,12 @@ const menu = computed(() => [
           <div style="font-weight:600;margin-top:4px">{{ w.exercises.find((e, i) => i > W.state.active && e.status === "pending")?.exercise.name ?? "Last exercise" }}</div>
           <div class="tiny" style="margin-top:6px">Rest between sets {{ fmt.clock(upRest.between) }}, after the exercise {{ fmt.clock(upRest.after) }}</div>
         </div>
+        <div v-if="hr.samples.value.length && !onSummary" class="card aw-hr">
+          <div class="lbl">Heart rate</div>
+          <div class="aw-hrv">{{ hrLatest ? hrLatest.bpm : hr.avg.value }} bpm</div>
+          <div class="tiny aw-hrs">{{ hrLatest ? `${hrLatest.ago} · average ${hr.avg.value} · up to ${hr.max.value}` : `average so far · up to ${hr.max.value}` }}</div>
+          <Sparkline v-if="hr.samples.value.length > 1" :values="hr.samples.value.map((p) => p[1])" />
+        </div>
         <div class="card">
           <div class="grid g2" style="gap:10px">
             <div><div class="lbl">Volume</div><div style="font-weight:600;font-size:18px">{{ fmt.vol(soFar.volumeKg) }}</div></div>
@@ -262,6 +276,11 @@ const menu = computed(() => [
 /* the exercise being done: a dot after its name, wherever you're looking */
 .aw-tabs button.act::after, .aw-list .li.act .t::after { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--pos); flex: none; display: inline-block; margin-inline-start: 6px; vertical-align: middle; }
 /* phone: the controls are a sheet fixed to the bottom edge, its own shadow lifting it off the page */
+/* the side card: on the Summary tab its numbers are in the middle column already */
+.aw-hrv { font-weight: 600; font-size: 18px; margin-top: var(--tdy); }
+.aw-hrs { margin-top: var(--tdy); }
+/* the side card's line runs the card's width under its numbers, not in a stat tile's corner */
+.aw-hr .spark { position: static; display: block; width: 100%; height: 46px; margin-top: var(--tdy); }
 .aw-dock { position: fixed; z-index: 50; left: 0; right: 0; bottom: 0; padding-inline: var(--sl) var(--sr); }
 .aw-dock :deep(.abar) { border-radius: var(--r-sheet) var(--r-sheet) 0 0; border-bottom: 0; padding-bottom: calc(14px + var(--sb, 0px)); box-shadow: 0 -10px 30px -18px rgb(0 0 0 / .45); }
 </style>

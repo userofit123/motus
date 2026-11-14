@@ -266,7 +266,13 @@ export function routineRoutes(r: Router) {
   r.get("/routines/:id", async ({ q }, p) => {
     const routine = await loadRoutine(q, id(p.id));
     if (!routine) throw notFound("Routine not found");
-    return routine;
+    // the band's heart rate over its finished workouts that have one, newest first (date: when it started)
+    const { rows } = await q.query(
+      `SELECT id, started_at, avg_hr, max_hr FROM workouts WHERE routine_id = $1 AND status = 'completed' AND avg_hr IS NOT NULL ORDER BY started_at DESC LIMIT 20`, [routine.id]);
+    const sessions = rows.map((x: any) => ({ workoutId: x.id as string, date: new Date(x.started_at).toISOString(), avgHr: x.avg_hr as number, maxHr: (x.max_hr ?? null) as number | null }));
+    const maxes = sessions.map((x) => x.maxHr).filter((x): x is number => x != null);
+    const hr = sessions.length ? { avg: Math.round(sessions.reduce((t, x) => t + x.avgHr, 0) / sessions.length), max: maxes.length ? Math.max(...maxes) : null, sessions } : null;
+    return { ...routine, hr };
   });
 
   // `settings`: the start screen's Workout settings for this workout only (JSON), as the start will apply them

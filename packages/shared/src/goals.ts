@@ -26,6 +26,8 @@ export const GOAL_METRICS: GoalMetric[] = [
   { scope: "activity", metric: "activity_count", name: "Number of sessions", unit: "times", periodic: true, hidden: true },
   { scope: "activity", metric: "activity_minutes", name: "Time", unit: "min", periodic: true },
   { scope: "activity", metric: "steps_avg", name: "Average daily steps", unit: "steps", periodic: true },
+  // the daily log's sleep (typed, or from a band): an average over the nights that have one, as steps_avg over days
+  { scope: "general", metric: "sleep_h", name: "Average sleep", unit: "h", periodic: true, comparator: ">=" },
   // which way a body goal heads is chosen per goal (suggested by bodyGoalDirection), so neither sets a comparator
   { scope: "body", metric: "body_weight", name: "Body weight", unit: "kg", periodic: false },
   { scope: "body", metric: "body_metric", name: "Measurement", unit: "cm", periodic: false },
