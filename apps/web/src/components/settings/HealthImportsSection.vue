@@ -19,7 +19,7 @@ import Menu, { type MenuItem } from "../Menu.vue";
 import SessionStats from "../SessionStats.vue";
 
 interface Item {
-  key: string; kind: "steps" | "sleep" | "weight" | "activity"; date: string; at: string | null; value: number | null;
+  key: string; kind: "steps" | "sleep" | "weight" | "resting_hr" | "spo2" | "hrv" | "activity"; date: string; at: string | null; value: number | null;
   activity: { id: string; type: string; name: string | null; startedAt: string; durationS: number; distanceM: number | null; steps: number | null; avgHr: number | null } | null;
   ref: string | null; edited: boolean; importedAt: string;
 }
@@ -44,25 +44,30 @@ const days = computed(() => {
 });
 const dayName = (d: string) => d === localYmd(new Date()) ? "Today" : d === localYmd(new Date(Date.now() - 86400000)) ? "Yesterday" : fmt.value.date(d, { weekday: "long", day: "numeric", month: "long", ...(d.slice(0, 4) !== String(new Date().getFullYear()) ? { year: "numeric" } : {}) });
 
-const ICON = { steps: "steps", sleep: "moon", weight: "scale" } as const;
-const NAME = { steps: "Steps", sleep: "Sleep", weight: "Body weight" } as const;
+const ICON = { steps: "steps", sleep: "moon", weight: "scale", resting_hr: "heart", spo2: "water", hrv: "heartPulse" } as const;
+const NAME = { steps: "Steps", sleep: "Sleep", weight: "Body weight", resting_hr: "Resting heart rate", spo2: "Blood oxygen", hrv: "HRV" } as const;
+// a day's heart values: whole beats and milliseconds, blood oxygen to a tenth when the band gave one
+const UNIT = { resting_hr: "bpm", spo2: "%", hrv: "ms" } as const;
+type Vital = keyof typeof UNIT;
+const isVital = (k: Item["kind"]): k is Vital => k in UNIT;
+const vitalNum = (k: Vital, v: number) => fmt.value.num(v, k === "spo2" && !Number.isInteger(v) ? 1 : 0);
 const typeName = (slug: string) => (types.data.value ?? []).find((t: any) => t.slug === slug)?.name ?? slug[0]!.toUpperCase() + slug.slice(1);
 const icon = (x: Item) => (x.kind === "activity" ? activityIcon(x.activity?.type) : ICON[x.kind]);
 const title = (x: Item) => (x.kind === "activity" ? x.activity?.name || typeName(x.activity?.type ?? "activity") : NAME[x.kind]);
-// the value in the person's units: "8,432", "7.5 h", "72.4 kg"
-const value = (x: Item) => x.value == null ? "-" : x.kind === "steps" ? fmt.value.num(x.value, 0) : x.kind === "sleep" ? `${fmt.value.num(x.value, 1)} h` : `${fmt.value.w(x.value)} ${fmt.value.wu}`;
+// the value in the person's units: "8,432", "7.5 h", "72.4 kg", "58 bpm", "97%"
+const value = (x: Item) => x.value == null ? "-" : isVital(x.kind) ? `${vitalNum(x.kind, x.value)}${x.kind === "spo2" ? "" : " "}${UNIT[x.kind]}` : x.kind === "steps" ? fmt.value.num(x.value, 0) : x.kind === "sleep" ? `${fmt.value.num(x.value, 1)} h` : `${fmt.value.w(x.value)} ${fmt.value.wu}`;
 // when it was: an activity's start (and its type, when it has a name of its own), a weighing's time, a night's end;
-// a day's steps are the whole day
+// a day's steps and heart values are the whole day
 const sub = (x: Item) => x.kind === "activity" && x.activity ? [fmt.value.time(x.activity.startedAt), x.activity.name ? typeName(x.activity.type) : ""].filter(Boolean).join(" · ")
-  : x.kind === "steps" ? "Whole day" : x.at ? fmt.value.time(x.at) : x.kind === "sleep" ? "Night" : "-";
+  : x.kind === "steps" || isVital(x.kind) ? "Whole day" : x.at ? fmt.value.time(x.at) : x.kind === "sleep" ? "Night" : "-";
 
 const path = (x: Item) => `/health/imports/${encodeURIComponent(x.key)}`;
 const changed = () => invalidate([...TOPICS.health]);
-// typed in the person's units and kept in kg, whole steps, hours of sleep
+// typed in the person's units and kept in kg, whole steps, hours of sleep, bpm, % and ms
 async function edit(x: Item) {
   if (x.kind === "activity") { if (x.activity) router.push(`/activities/${x.activity.id}`); return; }
   const shown = x.value == null ? "" : x.kind === "weight" ? fmt.value.w(x.value) : String(x.kind === "steps" ? Math.round(x.value) : Math.round(x.value * 10) / 10);
-  const v = await prompt(x.kind === "weight" ? `Body weight (${fmt.value.wu})` : x.kind === "sleep" ? "Sleep (h)" : "Steps", { value: shown.replace(/,/g, "") });
+  const v = await prompt(x.kind === "weight" ? `Body weight (${fmt.value.wu})` : isVital(x.kind) ? `${NAME[x.kind]} (${UNIT[x.kind]})` : x.kind === "sleep" ? "Sleep (h)" : "Steps", { value: shown.replace(/,/g, "") });
   if (v == null || v.trim() === "") return;
   const n = Number(v.trim().replace(",", "."));
   if (!Number.isFinite(n) || n < 0) return toast("Type a number", { kind: "err" });
@@ -88,7 +93,7 @@ const menu = (x: Item): MenuItem[] => [
   <p class="muted" style="margin:0">What Motus read from Health Connect. Tap a value to correct it or an activity to open it. Anything you delete isn't imported again.</p>
   <div v-if="q.isLoading.value" class="card" style="opacity:.4;min-height:120px" />
   <div v-else-if="q.isError.value" class="card empty sm"><b>Couldn't load the imported data</b>{{ (q.error.value as Error)?.message }}<br /><button class="btn tonal" @click="q.refetch()">Try again</button></div>
-  <div v-else-if="!items.length" class="card empty sm"><b>Nothing imported yet</b>Steps, sleep, weight and workouts from Health Connect will be listed here after the first sync.</div>
+  <div v-else-if="!items.length" class="card empty sm"><b>Nothing imported yet</b>Steps, sleep, weight, heart data and workouts from Health Connect will be listed here after the first sync.</div>
   <template v-for="d in days" :key="d.day">
     <div class="sh"><h2>{{ dayName(d.day) }}</h2></div>
     <div class="card"><div class="list">

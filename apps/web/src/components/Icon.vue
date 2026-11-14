@@ -77,6 +77,8 @@ const ICONS: Record<string, string> = {
   steps: "M8 15c-1.5 0-3-1-3-4s1-6 3-6 2.5 3 2.5 5-1 5-2.5 5zM8 15v3a2 2 0 0 0 4 0v-1M16 11c1.5 0 3-1 3-4s-1-5-3-5-2.5 3-2.5 4 1 5 2.5 5zM16 11v3a2 2 0 0 1-4 0",
   moon: "M21 13A9 9 0 1 1 11 3a7 7 0 0 0 10 10z",
   heart: "M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1.1L12 21l7.8-7.5 1-1.1a5.5 5.5 0 0 0 0-7.8z",
+  // heart with a beat through it: heart rate variability, apart from "activity" (an imported workout of an unknown type)
+  heartPulse: "M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1.1L12 21l7.8-7.5 1-1.1a5.5 5.5 0 0 0 0-7.8zM3.2 12h6.3l.5-1 2 4.5 2-7 1.5 3.5h5.3",
   water: "M12 2.7S6 9.5 6 14a6 6 0 0 0 12 0c0-4.5-6-11.3-6-11.3z",
   smile: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01",
   camera: "M4 8a2 2 0 0 1 2-2h2l2-2h4l2 2h2a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM12 17a4 4 0 1 0 0-8 4 4 0 0 0 0 8z",

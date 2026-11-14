@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// One activity: the map, time, distance, pace, climb, pace per km/mile, notes; edit or delete.
+// One activity: the map, time, distance, pace, climb, pace per km/mile, heart rate (from a band), notes; edit or delete.
 import { goBack } from "../core/leave";
 import { computed } from "vue";
 import { useRoute, useRouter } from "vue-router";
@@ -15,6 +15,7 @@ import Icon from "../components/Icon.vue";
 import Menu from "../components/Menu.vue";
 import RouteMap from "../components/RouteMap.vue";
 import BarChart from "../components/BarChart.vue";
+import HeartRate from "../components/HeartRate.vue";
 import { routeSplits, M_PER_MI } from "@motus/shared";
 
 const route = useRoute(), router = useRouter();
@@ -28,6 +29,9 @@ const source = computed(() => (a.value?.source === "gps" ? "recorded with GPS" :
 // How long each km (or mile) took, moving; only worth a chart with two or more to compare. The fastest full one is marked.
 const splits = computed(() => (a.value?.route?.length ? routeSplits(a.value.route, fmt.value.du === "mi" ? M_PER_MI : 1000) : []));
 const fastest = computed(() => splits.value.filter((t) => !t.partial).reduce<(typeof splits.value)[number] | null>((b, t) => (!b || t.s < b.s ? t : b), null));
+// steps the band counted replace the phone's (a phone in a pocket or bag misses many): said under the number, with the
+// phone's own count beside it when there was one
+const stepsSub = computed(() => a.value?.stepsSource !== "band" ? "" : a.value.stepsApp ? `From your band · phone ${fmt.value.num(a.value.stepsApp, 0)}` : "From your band");
 async function del() { if (await confirm("Delete this activity?", { ok: "Delete", danger: true })) { await api.del(`/activities/${id.value}`); invalidate(["*"]); toast("Activity deleted"); router.replace("/history"); } }
 async function edit(field: "name" | "notes") { const v = await prompt(field === "name" ? "Name" : "Notes", { value: a.value[field] }); if (v != null) { await api.put(`/activities/${id.value}`, { ...a.value, [field]: v, route: null }); invalidate(["activities"]); toast(field === "name" ? "Activity renamed" : "Notes saved"); } }
 function gpx() {
@@ -49,12 +53,13 @@ await loaded(q);
       <div class="card stat hero"><div class="lbl">Time</div><div class="val">{{ fmt.clock(a.durationS) }}</div><div class="sub">{{ a.movingS ? `${fmt.clock(a.movingS)} moving` : "" }}</div></div>
       <div class="card stat"><div class="lbl">Distance</div><div class="val">{{ a.distanceM ? fmt.num(fmt.distNum(a.distanceM), 2) : "-" }}<small>{{ fmt.du }}</small></div></div>
       <div class="card stat"><div class="lbl">Pace</div><div class="val" style="font-size:26px">{{ a.distanceM ? fmt.pace(a.movingS || a.durationS, a.distanceM) : "-" }}</div></div>
-      <div class="card stat"><div class="lbl">{{ a.steps ? "Steps" : "Climb" }}</div><div class="val">{{ a.steps ? fmt.num(a.steps, 0) : a.elevationM != null ? Math.round(a.elevationM) : "-" }}<small v-if="!a.steps && a.elevationM != null">m</small></div></div>
+      <div class="card stat"><div class="lbl">{{ a.steps ? "Steps" : "Climb" }}</div><div class="val">{{ a.steps ? fmt.num(a.steps, 0) : a.elevationM != null ? Math.round(a.elevationM) : "-" }}<small v-if="!a.steps && a.elevationM != null">m</small></div><div v-if="a.steps && stepsSub" class="sub">{{ stepsSub }}</div></div>
     </div>
     <div v-if="splits.length > 1" class="card spt">
       <div class="lbl hgap">Pace per {{ fmt.du }}{{ fastest ? ` · fastest ${fmt.clock(fastest.s)} in ${fmt.du} ${fastest.n}` : "" }}</div>
       <BarChart :bars="splits.map((t) => ({ label: String(t.n), value: t.s, color: t === fastest ? 'var(--pos)' : undefined, tip: t.partial ? `last ${fmt.num(t.fraction ?? 0, 2)} ${fmt.du}` : `${fmt.du} ${t.n}` }))" :fmt="(v) => `${fmt.clock(v)} /${fmt.du}`" :height="140" />
     </div>
+    <HeartRate v-if="a.hr?.length || a.avgHr" class="spt" :avg="a.avgHr" :max="a.maxHr" :hr="a.hr" />
     <div v-if="a.notes" class="banner note spt"><Icon name="note" :size="18" class="note-ic" />{{ a.notes }}</div>
   </div>
   <div v-else class="page"><div class="empty">Loading…</div></div>

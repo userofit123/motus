@@ -37,8 +37,8 @@ watch(() => route.query.start, (v) => { if (v) { startOpen.value = true; router.
   <div v-else-if="!session.ready" id="splash"><Logo /></div>
   <AuthScreen v-else-if="!session.user" />
   <template v-else>
-    <!-- before the shell: on a phone it sits in the page's flow above it (on the desktop it floats) -->
-    <UpdateNotice />
+    <!-- the desktop's floats at the bottom; a phone's sits in the bottom dock with the running-workout bar (PhoneShell) -->
+    <UpdateNotice v-if="!isPhone" />
     <PhoneShell v-if="isPhone" />
     <DesktopShell v-else />
     <Overlays />

@@ -49,8 +49,10 @@ const GROUPS = computed<[string, Section[]][]>(() => [
     (globalThis as any).motusNative?.accounts ? ["accounts", "Servers & accounts", "server", "Switch, add or remove a server"] : ["accounts", "Server", "server", location.host]]],
   ["Training", [["workout", "Workout defaults", "dumbbell", "Rest times, sets, timer, sounds, progression"], ["activities", "Activity types", "walk", "Walk, run, ride and your own"], ["features", "Features", "sparkle", "Switch extras on or off"]]],
   ["App", [["units", "Units & formats", "scale", "kg or lb, dates, work week"], ["appearance", "Appearance", "palette", "Colours, style, layout"], ["notifications", "Notifications", "bell", "Planned workouts"]]],
-  ["Your data", [["backup", "Backup & restore", "download", "A copy of everything"], ["data", "Export & import", "upload", "Motus files, CSV, other apps"], ["log", "Activity log", "history", "Everything you changed"]]],
-  ["About", [["versions", "App & Versions", "refresh", "Installed version, downloads"], ["changelog", "What's new", "sparkle", "Release notes"], ...(s.value.features.apiTokens || s.value.features.mcp || s.value.features.healthConnect ? [["integrations", "Integrations", "link", integrationsHint.value] as Section] : []),
+  ["Your data", [["backup", "Backup & restore", "download", "A copy of everything"], ["data", "Export & import", "upload", "Motus files, CSV, other apps"], ["log", "Activity log", "history", "Everything you changed"],
+    // what comes in from outside (Health Connect) or goes out (API tokens, Ask Claude) is your data too
+    ...(s.value.features.apiTokens || s.value.features.mcp || s.value.features.healthConnect ? [["integrations", "Integrations", "link", integrationsHint.value] as Section] : [])]],
+  ["About", [["versions", "App & Versions", "refresh", "Installed version, downloads"], ["changelog", "What's new", "sparkle", "Release notes"],
     ...(session.user?.role === "admin" ? [["admin", "Server admin", "server", "People, invites, sign-ups"] as Section] : []), ["about", "About Motus", "info", "Version, credits"]]],
 ]);
 const SECTIONS = computed(() => GROUPS.value.flatMap(([, xs]) => xs));

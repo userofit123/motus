@@ -4,6 +4,7 @@ import { createEngine, type Engine } from "../src/index";
 import { pgliteDb } from "../src/adapters/pglite";
 import { uuidv7 } from "../src/ids";
 import { overrule } from "../src/sync/core";
+import { heartRate, plausibleSteps } from "../src/modules/health";
 
 let eng: Engine, U: string;
 const call = async (method: string, path: string, body?: unknown, query?: Record<string, string>) => {
@@ -128,7 +129,7 @@ describe("health connect import", () => {
       steps: [{ date: "2026-10-07", value: 4500 }], sleep: [{ date: "2026-10-07", hours: 6.5 }],
       weight: [{ id: "w1", at: "2026-10-06T07:00:00Z", kg: 81 }], sessions: [{ id: "s7", type: "walk", start: "2026-10-07T06:00:00Z", end: "2026-10-07T06:20:00Z" }],
     });
-    expect(again).toEqual({ steps: 0, sleep: 0, weight: 0, activities: 0 });
+    expect(again).toEqual({ steps: 0, sleep: 0, restingHr: 0, spo2: 0, hrv: 0, weight: 0, activities: 0 });
     for (const k of keys) expect(await entry(k)).toBeUndefined();
     expect((await daily("steps")).some((x: any) => x.date === "2026-10-07")).toBe(false);
     expect((await daily("sleep_h")).some((x: any) => x.date === "2026-10-07")).toBe(false);
@@ -146,7 +147,7 @@ describe("health connect import", () => {
     await call("DELETE", `/activities/${(await entry("activity:s8")).ref}`);
     for (const k of ["steps:2026-10-08", "weight:w8", "activity:s8"]) expect(await entry(k)).toBeUndefined();
 
-    expect(await call("POST", "/health/import", batch)).toEqual({ steps: 0, sleep: 0, weight: 0, activities: 0 });
+    expect(await call("POST", "/health/import", batch)).toEqual({ steps: 0, sleep: 0, restingHr: 0, spo2: 0, hrv: 0, weight: 0, activities: 0 });
     expect((await daily("steps")).some((x: any) => x.date === "2026-10-08")).toBe(false);
     expect((await call("GET", "/body", undefined, { kind: "weight" })).some((x: any) => x.measuredAt.startsWith("2026-10-08"))).toBe(false);
     expect((await call("GET", "/activities", undefined, { from: "2026-10-08" })).some((a: any) => a.startedAt.startsWith("2026-10-08"))).toBe(false);
@@ -160,5 +161,161 @@ describe("health connect import", () => {
     expect(overrule(c(null), { row: row("2026-10-09T10:00:00Z") })).toBe(false);
     expect(overrule(c("2026-10-09T10:00:00Z"), { row: row(null) })).toBe(true);
     expect(overrule(c(null), { row: row(null) })).toBeNull();
+  });
+});
+
+describe("a band's side of what was recorded in Motus", () => {
+  const FROM = "2026-11-01T00:00:00Z";
+  const T0 = Date.parse("2026-11-02T08:00:00Z") / 1000;
+  /** one reading a second for n seconds from the start, 100-159 bpm */
+  const series = (start: number, n: number) => Array.from({ length: n }, (_, i) => [start + i, 100 + (i % 60)]);
+  const ranges = async () => (await call("GET", "/health/ranges", undefined, { from: FROM })).ranges as any[];
+  const walk = async (startedAt: string, minutes: number, extra: Record<string, unknown> = {}) => (await call("POST", "/activities", {
+    type: "walk", startedAt, endedAt: new Date(Date.parse(startedAt) + minutes * 60000).toISOString(), source: "gps", ...extra,
+  })).id as string;
+  const act = (id: string) => call("GET", `/activities/${id}`);
+  let gps: string, typed: string, cycle: string, wid: string;
+
+  it("lists the activities and workouts the band may have more for, newest first", async () => {
+    gps = await walk("2026-11-02T08:00:00Z", 30, { steps: 3000 });
+    typed = await walk("2026-11-03T08:00:00Z", 30, { steps: 2500, source: "manual" }); // logged by hand with a count
+    cycle = (await call("POST", "/activities", { type: "cycle", startedAt: "2026-11-04T08:00:00Z", endedAt: "2026-11-04T09:00:00Z", source: "gps" })).id;
+    wid = (await call("POST", "/workouts/log", { name: "Legs", startedAt: "2026-11-05T17:00:00Z", endedAt: "2026-11-05T18:00:00Z" })).id;
+    await call("POST", "/health/import", { sessions: [{ id: "hc-nov", type: "walk", start: "2026-11-06T08:00:00Z", end: "2026-11-06T08:30:00Z" }] });
+    await call("POST", "/activities", { type: "walk", startedAt: "2026-10-20T08:00:00Z", durationS: 600, source: "gps" }); // before from
+    const r = await ranges();
+    expect(r.map((x) => [x.kind, x.id])).toEqual([["workout", wid], ["activity", cycle], ["activity", typed], ["activity", gps]]);
+    expect(r[0]).toMatchObject({ start: "2026-11-05T17:00:00.000Z", end: "2026-11-05T18:00:00.000Z" });
+  });
+
+  it("takes the band's steps only when its data covers the whole activity", async () => {
+    expect(await call("POST", "/health/ranges", { results: [{ kind: "activity", id: gps, steps: 3400, covered: false }] })).toEqual({ steps: 0, hr: 0 });
+    expect(await act(gps)).toMatchObject({ steps: 3000, stepsSource: null, stepsApp: null });
+    expect(await call("POST", "/health/ranges", { results: [{ kind: "activity", id: gps, steps: 3400, covered: true }] })).toEqual({ steps: 1, hr: 0 });
+    expect(await act(gps)).toMatchObject({ steps: 3400, stepsSource: "band", stepsApp: 3000 });
+    // the band's count again, now a little higher: the app's own stays kept aside
+    expect((await call("POST", "/health/ranges", { results: [{ kind: "activity", id: gps, steps: 3400, covered: true }] })).steps).toBe(0);
+    expect((await call("POST", "/health/ranges", { results: [{ kind: "activity", id: gps, steps: 3450, covered: true }] })).steps).toBe(1);
+    expect(await act(gps)).toMatchObject({ steps: 3450, stepsSource: "band", stepsApp: 3000 });
+    const listed = (await call("GET", "/activities", undefined, { from: FROM })).find((a: any) => a.id === gps);
+    expect(listed).toMatchObject({ stepsSource: "band" });
+    expect(listed.hr).toBeUndefined();
+  });
+
+  it("never replaces a count typed in, and not a type that doesn't count steps", async () => {
+    expect((await call("POST", "/health/ranges", { results: [{ kind: "activity", id: typed, steps: 4000, covered: true }] })).steps).toBe(0);
+    expect(await act(typed)).toMatchObject({ steps: 2500, stepsSource: null });
+    expect((await call("POST", "/health/ranges", { results: [{ kind: "activity", id: cycle, steps: 900, covered: true }] })).steps).toBe(0);
+
+    // changed by hand after the band's: the person's from then on
+    const a = await act(gps);
+    await call("PUT", `/activities/${gps}`, { ...a, steps: 3300 });
+    expect(await act(gps)).toMatchObject({ steps: 3300, stepsSource: "manual", stepsApp: 3000 });
+    expect((await call("POST", "/health/ranges", { results: [{ kind: "activity", id: gps, steps: 3500, covered: true }] })).steps).toBe(0);
+    expect((await act(gps)).steps).toBe(3300);
+    // saved again with the count untouched: stays as it was
+    const other = await walk("2026-11-07T08:00:00Z", 20, { steps: 2000 });
+    await call("POST", "/health/ranges", { results: [{ kind: "activity", id: other, steps: 2100, covered: true }] });
+    await call("PUT", `/activities/${other}`, { ...(await act(other)), name: "Errands" });
+    expect(await act(other)).toMatchObject({ steps: 2100, stepsSource: "band", name: "Errands" });
+  });
+
+  it("keeps the app's count when the band's is far from it (a band clock that is off)", async () => {
+    expect(plausibleSteps(1000, null)).toBe(true);
+    expect(plausibleSteps(5000, 150)).toBe(true);
+    expect(plausibleSteps(800, 2000)).toBe(true);
+    expect(plausibleSteps(700, 2000)).toBe(false);
+    expect(plausibleSteps(5100, 2000)).toBe(false);
+    const w = await walk("2026-11-08T08:00:00Z", 30, { steps: 3000 });
+    expect((await call("POST", "/health/ranges", { results: [{ kind: "activity", id: w, steps: 400, covered: true }] })).steps).toBe(0);
+    expect((await call("POST", "/health/ranges", { results: [{ kind: "activity", id: w, steps: 9000, covered: true }] })).steps).toBe(0);
+    expect(await act(w)).toMatchObject({ steps: 3000, stepsSource: null });
+    // no count of the app's own: the band's is taken as it is
+    const none = await walk("2026-11-08T10:00:00Z", 30);
+    expect((await call("POST", "/health/ranges", { results: [{ kind: "activity", id: none, steps: 400, covered: true }] })).steps).toBe(1);
+    expect(await act(none)).toMatchObject({ steps: 400, stepsSource: "band", stepsApp: null });
+  });
+
+  it("adds heart rate to an activity, thinned to 600 points, without replacing a typed average", async () => {
+    const h = heartRate(series(T0, 1800), T0, T0 + 1800)!;
+    expect(h.hr.length).toBe(600);
+    expect(h.max).toBe(159);
+    expect(h.avg).toBe(130);
+    expect(heartRate([[T0, 20], [T0 + 1, 300], [T0 + 2, 90]], T0, T0 + 10)).toBeNull(); // glitches out, one reading left
+    expect(heartRate(series(T0 - 4000, 10), T0, T0 + 1800)).toBeNull(); // another time
+
+    const r = await call("POST", "/health/ranges", { results: [{ kind: "activity", id: gps, hr: series(T0, 1800) }] });
+    expect(r).toEqual({ steps: 0, hr: 1 });
+    const a = await act(gps);
+    expect(a).toMatchObject({ avgHr: 130, maxHr: 159 });
+    expect(a.hr.length).toBe(600);
+    expect(a.hr[0][0]).toBeGreaterThanOrEqual(T0);
+
+    const typedHr = await walk("2026-11-09T08:00:00Z", 10, { avgHr: 111 });
+    const t = Date.parse("2026-11-09T08:00:00Z") / 1000;
+    await call("POST", "/health/ranges", { results: [{ kind: "activity", id: typedHr, hr: [[t, 140], [t + 60, 150]] }] });
+    expect(await act(typedHr)).toMatchObject({ avgHr: 111, maxHr: 150, hr: [[t, 140], [t + 60, 150]] });
+    expect((await ranges()).some((x) => x.id === gps)).toBe(false); // band steps and heart rate in: nothing more to ask
+  });
+
+  it("adds heart rate to a workout", async () => {
+    const t = Date.parse("2026-11-05T17:00:00Z") / 1000;
+    expect(await call("POST", "/health/ranges", { results: [{ kind: "workout", id: wid, hr: [[t + 10, 90], [t + 600, 150], [t + 1200, 120]] }] })).toEqual({ steps: 0, hr: 1 });
+    const w = await call("GET", `/workouts/${wid}`);
+    expect(w).toMatchObject({ avgHr: 120, maxHr: 150, hr: [[t + 10, 90], [t + 600, 150], [t + 1200, 120]] });
+    const listed = (await call("GET", "/workouts", undefined, { from: FROM })).find((x: any) => x.id === wid);
+    expect(listed).toMatchObject({ avgHr: 120, maxHr: 150 });
+    expect(listed.hr).toBeUndefined();
+    expect((await ranges()).some((x) => x.id === wid)).toBe(false);
+    await send(400, "POST", "/health/ranges", { results: [{ kind: "workout", id: "nope" }] });
+    await send(400, "POST", "/health/ranges", { results: [{ kind: "set", id: wid }] });
+  });
+
+  it("keeps heart rate and the steps' source when a device on an older app syncs the row without them", async () => {
+    const { user_id: _u, steps_source: _s, steps_app: _a, max_hr: _m, hr: _h, ...old } = (await eng.db.admin.query("SELECT to_jsonb(a) AS r FROM activities a WHERE id = $1", [gps])).rows[0].r;
+    const r = await eng.handle({ method: "POST", path: "/sync/push", userId: U, body: {
+      device: "old-phone", changes: [{ tbl: "activities", pk: { id: gps }, op: "upsert", at: new Date(Date.now() + 60000).toISOString(), row: { ...old, name: "Renamed on the old phone" } }],
+    } });
+    expect(r.status).toBe(200);
+    expect((r.body as any).applied).toBe(1);
+    const a = await act(gps);
+    expect(a).toMatchObject({ name: "Renamed on the old phone", stepsSource: "manual", stepsApp: 3000, maxHr: 159 });
+    expect(a.hr.length).toBe(600);
+  });
+});
+
+describe("daily resting heart rate, SpO2 and HRV from a band", () => {
+  it("imports, lists, keeps typed values, edits and deletes for good", async () => {
+    await call("PUT", "/daily", { date: "2026-11-11", kind: "resting_hr", value: 50 }); // typed by hand
+    const batch = {
+      restingHr: [{ date: "2026-11-10", value: 58 }, { date: "2026-11-11", value: 61 }, { date: "2026-11-12", value: 300 }],
+      spo2: [{ date: "2026-11-10", value: 96.44 }], hrv: [{ date: "2026-11-10", value: 42.6 }],
+    };
+    expect(await call("POST", "/health/import", batch)).toMatchObject({ restingHr: 1, spo2: 1, hrv: 1 });
+    const d = await call("GET", "/daily", undefined, { from: "2026-11-01", tz: "0" });
+    // a day comes back as text or as a date, depending on the database
+    const day = (v: unknown) => (v instanceof Date ? v.toISOString() : String(v)).slice(0, 10);
+    const at = (kind: string, date: string) => d.find((x: any) => x.kind === kind && day(x.date) === date);
+    expect(Number(at("resting_hr", "2026-11-10").value)).toBe(58);
+    expect(Number(at("resting_hr", "2026-11-11").value)).toBe(50);
+    expect(Number(at("spo2", "2026-11-10").value)).toBe(96.4);
+    expect(Number(at("hrv", "2026-11-10").value)).toBe(43);
+    expect(await call("POST", "/health/import", batch)).toMatchObject({ restingHr: 0, spo2: 0, hrv: 0 });
+
+    expect(await entry("resting_hr:2026-11-10")).toMatchObject({ kind: "resting_hr", date: "2026-11-10", value: 58, edited: false });
+    expect(await entry("spo2:2026-11-10")).toMatchObject({ kind: "spo2", value: 96.4 });
+    expect(await entry("hrv:2026-11-10")).toMatchObject({ kind: "hrv", value: 43 });
+    expect(await entry("resting_hr:2026-11-11")).toBeUndefined();
+
+    await call("PUT", "/health/imports/resting_hr:2026-11-10", { value: 57 });
+    expect(await entry("resting_hr:2026-11-10")).toMatchObject({ value: 57, edited: true });
+    await send(400, "PUT", "/health/imports/spo2:2026-11-10", { value: 20 });
+    expect((await call("POST", "/health/import", { restingHr: [{ date: "2026-11-10", value: 59 }] })).restingHr).toBe(0);
+    expect((await entry("resting_hr:2026-11-10")).value).toBe(57);
+
+    await call("DELETE", "/health/imports/hrv:2026-11-10");
+    expect((await call("POST", "/health/import", { hrv: [{ date: "2026-11-10", value: 45 }] })).hrv).toBe(0);
+    expect(await entry("hrv:2026-11-10")).toBeUndefined();
+    expect((await call("GET", "/daily", undefined, { from: "2026-11-01", tz: "0" })).some((x: any) => x.kind === "hrv")).toBe(false);
   });
 });

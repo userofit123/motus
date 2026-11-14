@@ -19,7 +19,7 @@ export const DURATION_SQL = `greatest(0, extract(epoch FROM coalesce(w.ended_at,
 
 export async function workoutSummaries(q: Sql, where: string, params: unknown[], limit = 100): Promise<WorkoutSummary[]> {
   const { rows } = await q.query(
-    `SELECT w.id, w.routine_id, w.name, w.status, w.started_at, w.ended_at, ${DURATION_SQL} AS duration_s, r.color,
+    `SELECT w.id, w.routine_id, w.name, w.status, w.started_at, w.ended_at, ${DURATION_SQL} AS duration_s, r.color, w.avg_hr, w.max_hr,
        (SELECT count(*) FROM workout_exercises we WHERE we.workout_id = w.id AND we.status <> 'skipped') AS exercise_count,
        (SELECT count(*) FROM workout_sets s JOIN workout_exercises we ON we.id = s.workout_exercise_id WHERE we.workout_id = w.id AND s.done) AS set_count,
        ${VOLUME_SQL} AS volume_kg

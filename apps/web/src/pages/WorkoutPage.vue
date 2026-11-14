@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // One finished workout (requirement 2): when, how long (active and resting), what was done set by set, records,
-// how it compares with last time, muscles worked, notes and reminders. Everything can be edited, duplicated,
+// how it compares with last time, muscles worked, heart rate (from a band), notes and reminders. Everything can be edited, duplicated,
 // turned into a routine, repeated, exported or deleted (requirement 6).
 import { startWorkout } from "../workout/start";
 import { goBack } from "../core/leave";
@@ -23,6 +23,7 @@ import ReminderItem from "../components/ReminderItem.vue";
 import { useNoteMenu } from "../core/noteMenu";
 import Menu from "../components/Menu.vue";
 import BodyMap from "../components/BodyMap.vue";
+import HeartRate from "../components/HeartRate.vue";
 import ExercisePicker from "../components/ExercisePicker.vue";
 import Sheet from "../components/Sheet.vue";
 import RoutineChanges from "../workout/RoutineChanges.vue";
@@ -206,6 +207,8 @@ await loaded(q);
       <div class="stack">
         <div class="card"><div class="lbl hgap">Muscles worked</div><BodyMap :values="rep.muscles" :height="200" legend />
           <div class="col" style="gap:3px;margin-top:8px"><div v-for="[m, n] in Object.entries(rep.muscles).sort((a: any, b: any) => b[1] - a[1])" :key="m" class="row tiny"><span class="grow" style="color:var(--tx)">{{ muscleName(m) }}</span>{{ n }} sets</div></div></div>
+        <!-- from a band worn during it, through Health Connect -->
+        <HeartRate v-if="w.hr?.length || w.avgHr" :avg="w.avgHr" :max="w.maxHr" :hr="w.hr" />
         <div v-if="rep.previous" class="card click" @click="router.push(`/workouts/${rep.previous.id}`)"><div class="lbl">Last time ({{ fmt.date(rep.previous.startedAt) }})</div>
           <div class="tiny" style="margin-top:6px">{{ fmt.dur(rep.previous.durationS, true) }} · {{ fmt.vol(rep.previous.volumeKg) }}</div>
           <div class="tiny" :class="rep.totals.durationS <= rep.previous.durationS ? 'pos' : ''">{{ rep.totals.durationS <= rep.previous.durationS ? `${fmt.dur(rep.previous.durationS - rep.totals.durationS, true)} faster` : `${fmt.dur(rep.totals.durationS - rep.previous.durationS, true)} longer` }}</div></div>

@@ -6,6 +6,7 @@ import { section } from "./nav";
 import { startOpen } from "../core/ui";
 import Icon from "../components/Icon.vue";
 import MiniBar from "./MiniBar.vue";
+import UpdateNotice from "./UpdateNotice.vue";
 import SyncPill from "./SyncPill.vue";
 import { useActive } from "../api/queries";
 import { sheetIsOpen } from "../core/sheets";
@@ -79,6 +80,7 @@ function te(e: TouchEvent) {
     <MiniBar v-if="hideBar" strip />
     <div class="pmain"><router-view v-slot="{ Component, route: r }"><Suspense :key="pageKey(r)"><Transition :name="motion" appear @after-enter="arrived"><component :is="Component" /></Transition></Suspense></router-view></div>
     <div v-if="!hideBar" class="dock">
+      <UpdateNotice />
       <MiniBar />
       <div class="tabbar">
         <template v-for="t in TABS" :key="t.name">

@@ -7,7 +7,7 @@
   grid-template-columns: auto minmax(0, 1fr) auto auto;
   grid-template-areas: "ic txt acts x";
   align-items: center;
-  column-gap: var(--cpx);
+  column-gap: 12px; /* the MiniBar's gap, so the title starts where the bar's text under it does */
   row-gap: var(--lpy);
   padding: var(--lpy);
   border-radius: 18px; /* the MiniBar's corners (Appearance's corner styles change both, theme.css) */
@@ -28,16 +28,23 @@
 /* the always-there status line that screen readers announce when the notice shows; not seen */
 .upn-live { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
-/* phone: in the page's flow above everything, with the 16px edges of the page and of the MiniBar strip; the buttons go
-   on their own line under the text, so the title keeps the width */
+/* phone: in the bottom dock above the running-workout bars and the tabs, with the MiniBar's edges and flat look; the
+   buttons go on their own line under the text, so the title keeps the width. The page's end moves up by its height
+   (--upnh, measured) so nothing hides behind it. */
 html.phone .upn {
-  margin: calc(8px + var(--st)) calc(16px + var(--sr)) 0 calc(16px + var(--sl));
+  margin: 8px 10px 0;
   grid-template-columns: auto minmax(0, 1fr) auto;
   grid-template-areas: "ic txt x" ". acts acts";
 }
-/* the notice already keeps the status bar's room, so what follows it doesn't again (as under the strip) */
-html.phone .upn + .pshell .strip-host > .mb-strip:first-child { margin-top: 6px; }
-html.phone .upn + .pshell .pmain { padding-top: 10px; }
+html.phone .pshell:has(.dock .upn) { padding-bottom: calc(var(--tabh) + 24px + var(--sb) + var(--upnh, 0px)); }
+html.phone .pshell.withbar:has(.dock .upn) { padding-bottom: calc(var(--tabh) + 88px + var(--sb) + var(--upnh, 0px)); }
+html.phone .pshell.withbar2:has(.dock .upn) { padding-bottom: calc(var(--tabh) + 140px + var(--sb) + var(--upnh, 0px)); }
+/* the short messages and the sync pill keep above it too */
+html.phone:has(.dock .upn) .tst { bottom: calc(var(--tabh) + 84px + var(--sb) + var(--upnh, 0px)); }
+html.phone:has(.pshell.withbar2 .dock .upn) .tst { bottom: calc(var(--tabh) + 140px + var(--sb) + var(--upnh, 0px)); }
+html.phone .pshell:has(.dock .upn) .syncpill { bottom: calc(var(--tabh) + var(--sb) + 20px + var(--upnh, 0px)); }
+html.phone .pshell.withbar:has(.dock .upn) .syncpill { bottom: calc(var(--tabh) + var(--sb) + 88px + var(--upnh, 0px)); }
+html.phone .pshell.withbar2:has(.dock .upn) .syncpill { bottom: calc(var(--tabh) + var(--sb) + 140px + var(--upnh, 0px)); }
 
 /* desktop: floating at the bottom in the MiniBar's column (clear of the page header's buttons at the top), above the
    bars when they show; the short messages and the page's end move up by its height (--upnh, measured) */

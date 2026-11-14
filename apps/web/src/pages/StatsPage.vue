@@ -111,6 +111,20 @@ const bwTrend = computed(() => { let ema: number | null = null; return bw.value.
 // lengths are kept in cm: shown in the person's unit; body fat stays in %
 const mUnit = (k: string) => (bodyMeasure(k)?.unit ?? "cm") === "cm" ? fmt.value.lu : "%";
 const measures = computed(() => { const m = new Map<string, any[]>(); for (const b of d.value?.body ?? []) if (b.kind !== "weight" && b.kind !== "photo") m.set(b.kind, [...(m.get(b.kind) ?? []), { x: new Date(b.measuredAt).getTime(), y: mUnit(b.kind) === "%" ? Number(b.value) : Math.round(fromCm(Number(b.value), fmt.value.lu) * 10) / 10 }]); return [...m]; });
+// a day's resting heart rate, blood oxygen and HRV from a band through Health Connect, each only when it has data.
+// Each chart has the same line under it as body weight: the latest, the smoothed trend and how far the trend moved over
+// the last 7 entries.
+const VITALS = [{ id: "resting_hr", name: "Resting heart rate", unit: "bpm", dp: 0 }, { id: "spo2", name: "Blood oxygen", unit: "%", dp: 0 }, { id: "hrv", name: "HRV", unit: "ms", dp: 0 }] as const;
+const vitals = computed(() => VITALS.map((v) => {
+  const pts = (d.value?.daily ?? []).filter((x: any) => x.kind === v.id).map((x: any) => ({ x: new Date(String(x.date).slice(0, 10) + "T12:00").getTime(), y: Number(x.value) })).sort((a: any, b: any) => a.x - b.x) as { x: number; y: number }[];
+  let ema: number | null = null;
+  const trend = pts.map((p) => (ema = ema == null ? p.y : ema + 0.15 * (p.y - ema)));
+  // rounded before its sign is chosen, so a small move reads "+0", never "-0"; no unit, as the body weight line
+  const moved = trend.length > 7 ? Math.round(trend.at(-1)! - trend.at(-8)!) : null;
+  // whole numbers: "58 bpm", "97%" (a percent sits right after its number, as elsewhere in Stats), "45 ms"
+  const f = (n: number) => fmt.value.num(n, v.dp), u = (n: number) => `${f(n)}${v.unit === "%" ? "" : " "}${v.unit}`;
+  return { ...v, pts, f, line: pts.length ? `Latest ${u(pts.at(-1)!.y)} · trend ${u(trend.at(-1)!)}${moved != null ? ` · ${moved >= 0 ? "+" : "-"}${f(Math.abs(moved))} over the last 7 entries` : ""}` : "" };
+}).filter((v) => v.pts.length));
 // show the page once its data is in, all at once
 await loaded(st, prev, ach);
 </script>
@@ -206,6 +220,9 @@ await loaded(st, prev, ach);
         <LineChart v-else :points="bwTrend" :height="220" :fmt="(v) => fmt.num(v, 1)" />
         <div v-if="bw.length" class="tiny" style="margin-top:6px">Latest {{ bw.at(-1)!.y }} {{ fmt.wu }} · trend {{ bwTrend.at(-1)!.y }} {{ fmt.wu }}{{ bwTrend.length > 7 ? ` · ${bwTrend.at(-1)!.y - bwTrend.at(-8)!.y >= 0 ? "+" : ""}${fmt.num(bwTrend.at(-1)!.y - bwTrend.at(-8)!.y, 1)} over the last 7 entries` : "" }}</div></div>
       <div v-if="s.features.measurements" class="grid g2 spt"><div v-for="[k, pts] in measures" :key="k" class="card click" role="button" tabindex="0" @click="router.push(`/body?tab=measurements&kind=${k}`)" @keydown.enter="router.push(`/body?tab=measurements&kind=${k}`)"><div class="lbl hgap">{{ bodyName(k) }} ({{ mUnit(k) }})</div><LineChart :points="pts" :height="140" /></div></div>
+      <!-- a day's resting heart rate, blood oxygen and HRV from a band: the same cards as the measurements above -->
+      <div v-if="vitals.length" class="grid g2 spt"><div v-for="v in vitals" :key="v.id" class="card"><div class="lbl hgap">{{ v.name }} ({{ v.unit }})</div>
+        <LineChart :points="v.pts" :height="140" :fmt="v.f" /><div class="tiny" style="margin-top:6px">{{ v.line }}</div></div></div>
     </template>
 
     <Reports v-else-if="tab === 'reports'" />

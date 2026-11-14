@@ -254,6 +254,10 @@ export interface Workout {
   bodyweightKg: number | null;
   settings: Record<string, unknown>;
   source: string;
+  /** heart rate from a band (Health Connect): average and max bpm, and the series as [unix seconds, bpm] (at most 600) */
+  avgHr?: number | null;
+  maxHr?: number | null;
+  hr?: [number, number][] | null;
   exercises: WorkoutExercise[];
   reminders?: Reminder[];
   routineNotes?: Note[];
@@ -272,6 +276,8 @@ export interface WorkoutSummary {
   volumeKg: number;
   prCount: number;
   color: string | null;
+  avgHr?: number | null;
+  maxHr?: number | null;
 }
 
 export type NoteTarget = "exercise" | "routine" | "routine_exercise" | "workout" | "workout_exercise" | "activity";
@@ -364,6 +370,12 @@ export interface Activity {
   steps: number | null;
   elevationM: number | null;
   avgHr: number | null;
+  maxHr?: number | null;
+  /** heart rate from a band, [unix seconds, bpm] (at most 600); only on the single activity, not in lists */
+  hr?: [number, number][] | null;
+  /** null: as recorded, or typed when logged; "band": the band's count (stepsApp keeps the app's); "manual": changed by hand later */
+  stepsSource?: "band" | "manual" | null;
+  stepsApp?: number | null;
   calories: number | null;
   route: [number, number, number?, number?][] | null; // [lat, lon, unix seconds, altitude]
   notes: string;

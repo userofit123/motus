@@ -27,6 +27,7 @@ import m024 from "./migrations/024_exercise_tracking";
 import m025 from "./migrations/025_reminder_deferred";
 import m026 from "./migrations/026_unpin_seeded_goals";
 import m027 from "./migrations/027_health_imports";
+import m028 from "./migrations/028_band_heart_rate";
 
 const MIGRATIONS: [string, string][] = [
   ["001_init", m001],
@@ -56,6 +57,7 @@ const MIGRATIONS: [string, string][] = [
   ["025_reminder_deferred", m025],
   ["026_unpin_seeded_goals", m026],
   ["027_health_imports", m027],
+  ["028_band_heart_rate", m028],
 ];
 
 /** `until`: stop after that one (tests run a migration against rows written in the shape before it). */

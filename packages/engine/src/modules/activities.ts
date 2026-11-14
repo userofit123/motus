@@ -107,9 +107,12 @@ export async function saveActivity(ctx: Ctx, b: any, aid = uuidv7(), isNew = tru
     // sent twice (a double tap or a retry): it's already saved, so point at that one
     if (!rows.length && b.clientId) return (await ctx.q.query("SELECT id FROM activities WHERE client_id = $1", [str(b.clientId, 80)])).rows[0]?.id ?? aid;
   } else {
+    // a step count changed by hand is the person's from then on: a band's count never replaces it (/health/ranges).
+    // The same count sent back (the form saved with steps untouched) leaves where it came from as it was
     const { rows } = await ctx.q.query(
       `UPDATE activities SET type=$3, name=$4, started_at=$5, ended_at=$6, duration_s=$7, moving_s=$8, distance_m=$9, steps=$10, elevation_m=$11, avg_hr=$12, calories=$13,
-         route=coalesce($14, route), notes=$15 WHERE id=$1 AND user_id=$2 RETURNING id`, vals.slice(0, 15));
+         route=coalesce($14, route), notes=$15, steps_source = CASE WHEN steps IS DISTINCT FROM $10 THEN 'manual' ELSE steps_source END
+       WHERE id=$1 AND user_id=$2 RETURNING id`, vals.slice(0, 15));
     if (!rows.length) throw notFound("Activity not found");
   }
   return aid;
@@ -157,7 +160,7 @@ export function activityRoutes(r: Router) {
     if (qs.to) { params.push(qs.to); conds.push(`started_at < $${params.length}`); }
     if (qs.type) { params.push(qs.type); conds.push(`type = $${params.length}`); }
     const { rows } = await q.query(
-      `SELECT id, type, name, started_at, ended_at, duration_s, moving_s, distance_m, steps, elevation_m, avg_hr, calories, notes, source, route IS NOT NULL AS has_route
+      `SELECT id, type, name, started_at, ended_at, duration_s, moving_s, distance_m, steps, elevation_m, avg_hr, max_hr, steps_source, calories, notes, source, route IS NOT NULL AS has_route
        FROM activities ${conds.length ? "WHERE " + conds.join(" AND ") : ""} ORDER BY started_at DESC LIMIT ${Math.min(1000, Number(qs.limit) || 200)}`, params);
     return rows.map((x: any) => camel(x));
   });
@@ -166,7 +169,8 @@ export function activityRoutes(r: Router) {
     if (!a) throw notFound("Activity not found");
     const x = camel<any>(a);
     delete x.userId;
-    // the app works out the splits itself (routeSplits), in km or miles, from the route it gets here
+    // the app works out the splits itself (routeSplits), in km or miles, from the route it gets here.
+    // The whole row: the heart rate series (hr) too, which the list leaves out to stay light
     return x;
   });
   r.post("/activities", async (ctx, _p, b) => {
@@ -227,7 +231,7 @@ export function activityRoutes(r: Router) {
     return { ok: true };
   });
 
-  // daily log: steps, sleep (h), water (ml), mood (1-5)
+  // daily log: steps, sleep (h), water (ml), mood (1-5); from a band also resting_hr (bpm), spo2 (%) and hrv (ms)
   // steps: a typed count, else the day's recorded activities (stepsByDay); tz: the app's calendar, as for goals
   r.get("/daily", async ({ q }, _p, _b, qs) => {
     const from = dateStr(qs.from) ?? "1970-01-01";

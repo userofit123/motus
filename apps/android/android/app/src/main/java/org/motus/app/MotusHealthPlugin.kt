@@ -30,6 +30,7 @@ import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.Period
 import java.time.ZoneId
+import java.time.ZoneOffset
 import kotlin.reflect.KClass
 
 /**
@@ -46,6 +47,7 @@ class MotusHealthPlugin : Plugin() {
     private val PERMS = setOf(
         perm(StepsRecord::class), perm(SleepSessionRecord::class), perm(WeightRecord::class), perm(ExerciseSessionRecord::class),
         perm(HeartRateRecord::class), perm(DistanceRecord::class), perm(ActiveCaloriesBurnedRecord::class),
+        perm(RestingHeartRateRecord::class), perm(OxygenSaturationRecord::class), perm(HeartRateVariabilityRmssdRecord::class),
     )
 
     // Health Connect is part of Android 14+, an app from the Play Store on 9-13, and missing below 9
@@ -123,7 +125,8 @@ class MotusHealthPlugin : Plugin() {
     /**
      * Everything since `from` (an ISO time; years back are fine, Health Connect then needs the history permission
      * for anything older than 30 days before the first grant). Days are the phone's calendar days.
-     * { steps: [{date, value}], sleep: [{date, hours}], weight: [{id, at, kg}], sessions: [{id, type, title, start, end, avgHr?, distanceM?, steps?, calories?}] }
+     * { steps: [{date, value}], sleep: [{date, hours}], weight: [{id, at, kg}], sessions: [{id, type, title, start, end, avgHr?, distanceM?, steps?, calories?}],
+     *   restingHr: [{date, value}], spo2: [{date, value}], hrv: [{date, value}] } (the last three: daily averages in bpm, % and ms)
      */
     @PluginMethod
     fun read(call: PluginCall) {
@@ -140,9 +143,123 @@ class MotusHealthPlugin : Plugin() {
                 out.put("sleep", if (has(SleepSessionRecord::class)) sleep(c, from, zone) else JSArray())
                 out.put("weight", if (has(WeightRecord::class)) weight(c, from) else JSArray())
                 out.put("sessions", if (has(ExerciseSessionRecord::class)) sessions(c, from, has) else JSArray())
+                out.put("restingHr", if (has(RestingHeartRateRecord::class)) daily(readAll(c, RestingHeartRateRecord::class, from).map {
+                    Triple(it.time, it.zoneOffset, it.beatsPerMinute.toDouble()) }, zone, 0) else JSArray())
+                out.put("spo2", if (has(OxygenSaturationRecord::class)) daily(readAll(c, OxygenSaturationRecord::class, from).map {
+                    Triple(it.time, it.zoneOffset, it.percentage.value) }, zone, 1) else JSArray())
+                out.put("hrv", if (has(HeartRateVariabilityRmssdRecord::class)) daily(readAll(c, HeartRateVariabilityRmssdRecord::class, from).map {
+                    Triple(it.time, it.zoneOffset, it.heartRateVariabilityMillis) }, zone, 1) else JSArray())
                 call.resolve(out)
             } catch (e: Exception) { call.reject(e.message ?: "Health Connect could not be read") }
         }
+    }
+
+    /**
+     * Steps and heart rate inside given time spans (e.g. a workout, a day), each looked up on its own.
+     * { ranges: [{kind, id, start, end}] } (at most 200) →
+     * { results: [{kind, id, steps?: number, covered: boolean, hr?: [[unixSeconds, bpm], ...]}] }
+     * steps: from one app only (the one with the most steps in the span; Motus's own left out), since Health Connect
+     * may hold the same steps from a band and from the phone. covered: that app's records reach across the whole span
+     * with no hole over 10 minutes (false when the band was off or has not synced yet). hr: at most 600 points.
+     */
+    @PluginMethod
+    fun readRanges(call: PluginCall) {
+        if (sdk() != HealthConnectClient.SDK_AVAILABLE) { call.reject("Health Connect is not available"); return }
+        val list = call.getArray("ranges", JSArray()) ?: JSArray()
+        scope.launch {
+            try {
+                val c = client()
+                val granted = c.permissionController.getGrantedPermissions()
+                val hasSteps = perm(StepsRecord::class) in granted
+                val hasHr = perm(HeartRateRecord::class) in granted
+                val results = JSArray()
+                for (i in 0 until minOf(list.length(), 200)) {
+                    val r = list.optJSONObject(i) ?: continue
+                    val kind = r.optString("kind", ""); val id = r.opt("id")
+                    val o = JSObject().put("kind", kind).put("id", id)
+                    try {
+                        val start = Instant.parse(r.getString("start")); val end = Instant.parse(r.getString("end"))
+                        var covered = false
+                        if (hasSteps && end.isAfter(start)) {
+                            val (n, cov) = rangeSteps(c, start, end)
+                            if (n != null) o.put("steps", n)
+                            covered = cov
+                        }
+                        o.put("covered", covered)
+                        if (hasHr && end.isAfter(start)) rangeHr(c, start, end)?.let { o.put("hr", it) }
+                    } catch (e: Exception) {
+                        if (e is kotlinx.coroutines.CancellationException) throw e
+                        o.remove("steps"); o.remove("hr"); o.put("covered", false)
+                    }
+                    results.put(o)
+                }
+                call.resolve(JSObject().put("results", results))
+            } catch (e: Exception) { call.reject(e.message ?: "Health Connect could not be read") }
+        }
+    }
+
+    private suspend fun <T : Record> readBetween(c: HealthConnectClient, type: KClass<T>, start: Instant, end: Instant): List<T> {
+        val all = mutableListOf<T>()
+        var token: String? = null
+        do {
+            val res = c.readRecords(ReadRecordsRequest(type, TimeRangeFilter.between(start, end), pageSize = 1000, pageToken = token))
+            all += res.records
+            token = res.pageToken
+        } while (token != null && all.size < 50000)
+        return all
+    }
+
+    // Steps of the app with the most in the span (records crossing the edges count by their share of time inside),
+    // and whether that app's records cover the span without a hole over 10 minutes
+    private suspend fun rangeSteps(c: HealthConnectClient, start: Instant, end: Instant): Pair<Long?, Boolean> {
+        val recs = readBetween(c, StepsRecord::class, start, end).filter {
+            it.metadata.dataOrigin.packageName != context.packageName && it.endTime.isAfter(start) && it.startTime.isBefore(end)
+        }
+        if (recs.isEmpty()) return null to false
+        val byOrigin = recs.groupBy { it.metadata.dataOrigin.packageName }
+        fun inside(s: StepsRecord): Double {
+            val len = s.endTime.toEpochMilli() - s.startTime.toEpochMilli()
+            if (len <= 0) return s.count.toDouble()
+            val a = maxOf(s.startTime, start).toEpochMilli(); val b = minOf(s.endTime, end).toEpochMilli()
+            return s.count.toDouble() * (b - a).coerceAtLeast(0) / len
+        }
+        val best = byOrigin.values.maxBy { rs -> rs.sumOf { inside(it) } }
+        val total = Math.round(best.sumOf { inside(it) })
+        val slack = 10L * 60 * 1000
+        val spanMs = end.toEpochMilli() - start.toEpochMilli()
+        val covered = if (spanMs < slack) true else {
+            val sorted = best.sortedBy { it.startTime }
+            var ok = sorted.first().startTime.toEpochMilli() <= start.toEpochMilli() + slack
+            var reach = sorted.first().endTime.toEpochMilli()
+            for (s in sorted.drop(1)) {
+                if (s.startTime.toEpochMilli() - reach > slack) { ok = false; break }
+                reach = maxOf(reach, s.endTime.toEpochMilli())
+            }
+            ok && reach >= end.toEpochMilli() - slack
+        }
+        return total to covered
+    }
+
+    // Heart rate samples in the span as [unixSeconds, bpm], averaged into at most 600 time buckets
+    private suspend fun rangeHr(c: HealthConnectClient, start: Instant, end: Instant): JSArray? {
+        val samples = readBetween(c, HeartRateRecord::class, start, end).flatMap { it.samples }
+            .filter { !it.time.isBefore(start) && !it.time.isAfter(end) }
+            .sortedBy { it.time }
+        if (samples.size < 2) return null
+        val out = JSArray()
+        if (samples.size <= 600) {
+            for (s in samples) out.put(JSArray().put(s.time.epochSecond).put(s.beatsPerMinute))
+            return out
+        }
+        val t0 = start.toEpochMilli(); val span = (end.toEpochMilli() - t0).coerceAtLeast(1)
+        val sumT = DoubleArray(600); val sumB = DoubleArray(600); val n = IntArray(600)
+        for (s in samples) {
+            val ms = s.time.toEpochMilli()
+            val b = ((ms - t0) * 600 / span).toInt().coerceIn(0, 599)
+            sumT[b] += ms.toDouble(); sumB[b] += s.beatsPerMinute.toDouble(); n[b]++
+        }
+        for (b in 0 until 600) if (n[b] > 0) out.put(JSArray().put(Math.round(sumT[b] / n[b] / 1000)).put(Math.round(sumB[b] / n[b])))
+        return out
     }
 
     private fun names(granted: Set<String>): List<String> = buildList {
@@ -151,12 +268,19 @@ class MotusHealthPlugin : Plugin() {
         if (perm(WeightRecord::class) in granted) add("weight")
         if (perm(ExerciseSessionRecord::class) in granted) add("sessions")
         if (perm(HeartRateRecord::class) in granted) add("heartRate")
+        if (perm(RestingHeartRateRecord::class) in granted) add("restingHr")
+        if (perm(OxygenSaturationRecord::class) in granted) add("spo2")
+        if (perm(HeartRateVariabilityRmssdRecord::class) in granted) add("hrv")
     }
 
     // Health Connect adds up each day itself and leaves out steps two apps both wrote (a band and the phone).
     // A long range (years) is asked for 90 days at a time: one request for thousands of day buckets can fail.
     private suspend fun steps(c: HealthConnectClient, from: Instant, zone: ZoneId): JSArray {
-        var day = LocalDate.ofInstant(from, zone)
+        // start at the oldest step record Health Connect will give us, not at `from`: "everything" asks from 2000, and
+        // one aggregate call per 90 days since then would run into Health Connect's rate limit and fail the whole read
+        val first = c.readRecords(ReadRecordsRequest(StepsRecord::class, TimeRangeFilter.after(from), ascendingOrder = true, pageSize = 1)).records.firstOrNull()
+            ?: return JSArray()
+        var day = LocalDate.ofInstant(maxOf(from, first.startTime), zone)
         val end = LocalDate.now(zone).plusDays(1)
         val arr = JSArray()
         while (day.isBefore(end)) {
@@ -202,6 +326,20 @@ class MotusHealthPlugin : Plugin() {
             }
             if (curS != null) ms += curE!!.toEpochMilli() - curS.toEpochMilli()
             if (ms > 0) arr.put(JSObject().put("date", day.toString()).put("hours", ms / 3_600_000.0))
+        }
+        return arr
+    }
+
+    // Daily average of point readings (resting heart rate, SpO2, HRV), on the day the reading was taken where it was taken
+    private fun daily(points: List<Triple<Instant, ZoneOffset?, Double>>, zone: ZoneId, decimals: Int): JSArray {
+        val byDay = sortedMapOf<LocalDate, MutableList<Double>>()
+        for ((t, off, v) in points) byDay.getOrPut(LocalDateTime.ofInstant(t, off ?: zone.rules.getOffset(t)).toLocalDate()) { mutableListOf() }.add(v)
+        val arr = JSArray()
+        for ((day, vs) in byDay) {
+            val avg = vs.average()
+            val o = JSObject().put("date", day.toString())
+            if (decimals == 0) o.put("value", Math.round(avg)) else o.put("value", Math.round(avg * 10) / 10.0)
+            arr.put(o)
         }
         return arr
     }

@@ -32,7 +32,7 @@ const hc = ref<HealthStatus | null>(null);
 const readHc = async () => { if (healthSupported() && s.value.features.healthConnect) hc.value = await healthStatus().catch(() => null); };
 onMounted(() => { void readHc(); document.addEventListener("visibilitychange", readHc); });
 onBeforeUnmount(() => document.removeEventListener("visibilitychange", readHc));
-const KIND_NAMES: Record<string, string> = { steps: "steps", sleep: "sleep", weight: "weight", sessions: "workouts", heartRate: "heart rate" };
+const KIND_NAMES: Record<string, string> = { steps: "steps", sleep: "sleep", weight: "weight", sessions: "workouts", heartRate: "heart rate", restingHr: "resting heart rate", spo2: "blood oxygen", hrv: "HRV" };
 const allowed = computed(() => {
   const names = (hc.value?.granted ?? []).map((k) => KIND_NAMES[k]).filter(Boolean) as string[];
   return names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names.at(-1)}` : names[0] ?? "";
@@ -48,19 +48,24 @@ const connected = computed(() => !!hc.value?.granted.length);
 async function connect() {
   try { hc.value = await connectHealth(); if (hc.value.granted.length) await sync(); } catch (e) { toast((e as Error).message); }
 }
-// what a read added, as a toast
+// what a read added, as a toast: "3 days of steps, 2 nights of sleep, steps from your band for 2 activities, heart rate for 3 sessions added"
+const many = (n: number, one: string, more: string) => `${n} ${n === 1 ? one : more}`;
 function report(r: HealthResult | null) {
   if (!r) return;
-  const n = r.steps + r.sleep + r.weight + r.activities;
-  toast(n ? [r.steps && `${r.steps} ${r.steps === 1 ? "day" : "days"} of steps`, r.sleep && `${r.sleep} ${r.sleep === 1 ? "night" : "nights"} of sleep`,
-    r.weight && `${r.weight} weight ${r.weight === 1 ? "entry" : "entries"}`, r.activities && `${r.activities} ${r.activities === 1 ? "activity" : "activities"}`].filter(Boolean).join(", ") + " added" : "Up to date");
+  const parts = [r.steps && `${many(r.steps, "day", "days")} of steps`, r.sleep && `${many(r.sleep, "night", "nights")} of sleep`,
+    r.weight && `${r.weight} weight ${r.weight === 1 ? "entry" : "entries"}`, r.activities && many(r.activities, "activity", "activities"),
+    r.restingHr && `${many(r.restingHr, "day", "days")} of resting heart rate`, r.spo2 && `${many(r.spo2, "day", "days")} of blood oxygen`,
+    r.hrv && `${many(r.hrv, "day", "days")} of HRV`,
+    r.ranges?.steps && `steps from your band for ${many(r.ranges.steps, "activity", "activities")}`,
+    r.ranges?.hr && `heart rate for ${many(r.ranges.hr, "session", "sessions")}`].filter(Boolean);
+  toast(parts.length ? `${parts.join(", ")} added` : "Up to date");
 }
 async function sync() {
   try { report(await syncHealth()); } catch (e) { toast((e as Error).message || "Health Connect could not be read"); }
 }
 // Import past data: Health Connect lets a new app see 30 days; further back needs its "past data" access, which some
 // phones don't offer at all
-const pastText = computed(() => hc.value?.history ? "Steps, sleep, weight and workouts from before"
+const pastText = computed(() => hc.value?.history ? "Steps, sleep, weight, heart data and workouts from before"
   : hc.value?.historyAvailable ? "The last 30 days; further back asks Health Connect first" : "The last 30 days, as far as Health Connect goes on this phone");
 const PAST = [{ value: "30", label: "Last 30 days" }, { value: "90", label: "Last 90 days" }, { value: "365", label: "Last year" }, { value: "all", label: "Everything" }];
 async function importPast() {
