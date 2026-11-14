@@ -50,6 +50,13 @@ const points = computed(() => sessions.value.map((s) => {
   const y = chart.value === "e1rm" ? s.e1rm : chart.value === "max" ? s.maxWeightKg : chart.value === "volume" ? s.volumeKg : chart.value === "reps" ? s.reps : chart.value === "duration" ? s.durationS : s.distanceM;
   return { x: new Date(s.startedAt).getTime(), y: y == null ? null : ["e1rm", "max", "volume"].includes(chart.value) ? fmt.value.fromKg(y) : chart.value === "distance" ? fmt.value.distNum(y) : y, id: s.workoutId, label: s.workoutName };
 }).filter((p) => p.y != null) as any[]);
+// "Done first in 2 of 5 workouts": the stored share turned back into a count
+const doneFirstText = computed(() => {
+  const sm = hist.data.value?.summary;
+  const total = sm?.timesDone ?? 0;
+  const first = Math.round((sm?.firstPositionShare ?? 0) * total);
+  return `Done first in ${first} of ${total} ${total === 1 ? "workout" : "workouts"}`;
+});
 // the time of day you usually do it, in this device's time zone
 const usualHour = computed(() => {
   const c = new Map<number, number>();
@@ -154,7 +161,7 @@ const menu = computed<MenuItem[]>(() => [
     <div v-else-if="tab === 'history'">
       <div v-if="hist.data.value?.summary?.timesDone" class="grid g3 spb">
         <div class="card tight"><div class="lbl">Times done</div><div class="val" style="font-size:24px">{{ hist.data.value.summary.timesDone }}</div><div class="tiny">since {{ fmt.date(hist.data.value.summary.firstAt, { month: "short", year: "numeric" }) }}</div></div>
-        <div class="card tight"><div class="lbl">Usually</div><div class="val" style="font-size:24px">#{{ hist.data.value.summary.usualPosition }}</div><div class="tiny">in the workout · first {{ Math.round(hist.data.value.summary.firstPositionShare * 100) }}% of the time</div></div>
+        <div class="card tight"><div class="lbl">Usual place</div><div class="val" style="font-size:24px">#{{ hist.data.value.summary.usualPosition }}</div><div class="tiny">{{ doneFirstText }}</div></div>
         <div class="card tight"><div class="lbl">Last done</div><div class="val" style="font-size:24px">{{ ago(hist.data.value.summary.lastAt) }}</div><div class="tiny">usually around {{ usualHour }}</div></div>
       </div>
       <div v-if="!sessions.length" class="empty"><Icon name="history" :size="32" /><b>Not done yet</b>Its history will show here after your first workout with it.</div>
