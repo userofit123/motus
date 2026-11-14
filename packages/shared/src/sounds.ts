@@ -4,7 +4,7 @@
 // how each plays are in apps/web core/sounds.ts and workout/runtime.ts.
 
 /** Every sound's id as saved, short ones first. */
-export const SOUND_IDS = ["press", "focus", "progressStep", "select", "check", "toggleOn", "info", "start", "wake", "checkpoint", "notification", "reward", "warning", "success", "streak", "complete", "levelUp", "achievement"] as const;
+export const SOUND_IDS = ["hover", "press", "focus", "progressStep", "select", "check", "toggleOn", "info", "start", "wake", "checkpoint", "notification", "reward", "warning", "success", "streak", "complete", "levelUp", "achievement"] as const;
 export type SoundId = (typeof SOUND_IDS)[number];
 
 const isSound = (v: unknown): v is SoundId => (SOUND_IDS as readonly unknown[]).includes(v);

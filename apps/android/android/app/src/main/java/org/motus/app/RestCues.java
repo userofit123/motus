@@ -121,6 +121,7 @@ public class RestCues extends BroadcastReceiver {
     private static int rawOf(String sound) {
         if (sound == null) return R.raw.progress_step;
         switch (sound) {
+            case "hover": return R.raw.hover;
             case "press": return R.raw.press;
             case "focus": return R.raw.focus;
             case "select": return R.raw.select;

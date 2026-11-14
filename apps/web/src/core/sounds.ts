@@ -9,7 +9,7 @@
 import { SOUND_IDS, type IntervalSound, type SoundId } from "@motus/shared";
 
 const NAMES: Record<SoundId, string> = {
-  press: "Tap", focus: "Blip", progressStep: "Step", select: "Pip", check: "Check", toggleOn: "Switch", info: "Ping",
+  hover: "Hover", press: "Tap", focus: "Blip", progressStep: "Step", select: "Pip", check: "Check", toggleOn: "Switch", info: "Ping",
   start: "Start", wake: "Wake", checkpoint: "Checkpoint", notification: "Alert", reward: "Reward", warning: "Warning",
   success: "Success", streak: "Streak", complete: "Complete", levelUp: "Level up", achievement: "Achievement",
 };
