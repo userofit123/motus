@@ -498,9 +498,13 @@ export function healthRoutes(r: Router) {
 
   // Which kinds of band data this person has at all, so screens only offer what there is to show
   r.get("/health/available", async (ctx) => {
-    const { rows } = await ctx.q.query(`SELECT
-      EXISTS (SELECT 1 FROM sleep_nights) OR EXISTS (SELECT 1 FROM daily_logs WHERE kind = 'sleep_h' AND source = $1) AS sleep,
-      EXISTS (SELECT 1 FROM daily_logs WHERE kind IN ('resting_hr', 'spo2', 'hrv'))
+    // one pass over the three heart kinds and one check of sleep_nights, shared by the flags that need them
+    const { rows } = await ctx.q.query(`WITH hk AS (
+        SELECT COALESCE(array_agg(DISTINCT kind::text), '{}'::text[]) AS kinds FROM daily_logs WHERE kind IN ('resting_hr', 'spo2', 'hrv')
+      ), sn AS (SELECT EXISTS (SELECT 1 FROM sleep_nights) AS any)
+      SELECT
+      sn.any OR EXISTS (SELECT 1 FROM daily_logs WHERE kind = 'sleep_h' AND source = $1) AS sleep,
+      cardinality(hk.kinds) > 0
         OR EXISTS (SELECT 1 FROM activities WHERE hr IS NOT NULL OR (source = $1 AND avg_hr IS NOT NULL))
         OR EXISTS (SELECT 1 FROM workouts WHERE hr IS NOT NULL) OR EXISTS (SELECT 1 FROM hr_days) AS heart,
       EXISTS (SELECT 1 FROM daily_logs WHERE kind = 'distance_m') AS distance,
@@ -509,11 +513,12 @@ export function healthRoutes(r: Router) {
       EXISTS (SELECT 1 FROM hr_days) AS hr_day,
       EXISTS (SELECT 1 FROM health_imports h JOIN body_metrics b ON b.id::text = h.ref WHERE h.kind = 'body_fat' AND h.deleted_at IS NULL) AS body_fat,
       EXISTS (SELECT 1 FROM daily_logs WHERE kind = 'water_ml' AND source = $1) AS hydration,
-      EXISTS (SELECT 1 FROM sleep_nights) AS nights,
-      EXISTS (SELECT 1 FROM daily_logs WHERE kind = 'resting_hr') AS resting_hr,
-      EXISTS (SELECT 1 FROM daily_logs WHERE kind = 'hrv') AS hrv,
-      EXISTS (SELECT 1 FROM daily_logs WHERE kind = 'spo2') AS spo2,
-      EXISTS (SELECT 1 FROM health_imports WHERE deleted_at IS NULL) AS imports`, [HEALTH_SOURCE]);
+      sn.any AS nights,
+      'resting_hr' = ANY (hk.kinds) AS resting_hr,
+      'hrv' = ANY (hk.kinds) AS hrv,
+      'spo2' = ANY (hk.kinds) AS spo2,
+      EXISTS (SELECT 1 FROM health_imports WHERE deleted_at IS NULL) AS imports
+      FROM hk, sn`, [HEALTH_SOURCE]);
     const x = rows[0] as any;
     return {
       sleep: !!x.sleep, heart: !!x.heart, distance: !!x.distance, calories: !!x.calories,

@@ -19,7 +19,7 @@ export function onMonthlyDay(startDate: string, date: string): boolean {
 }
 
 const ordinal = (n: number) => n + (n % 100 >= 11 && n % 100 <= 13 ? "th" : ["th", "st", "nd", "rd"][n % 10] ?? "th");
-const andList = (xs: string[]) => (xs.length < 2 ? xs.join("") : xs.slice(0, -1).join(", ") + " and " + xs[xs.length - 1]);
+export const andList = (xs: string[]) => (xs.length < 2 ? xs.join("") : xs.slice(0, -1).join(", ") + " and " + xs[xs.length - 1]);
 
 type Rule = Pick<Schedule, "rule" | "days" | "intervalDays" | "startDate"> & { endDate?: string | null; timeOfDay?: string | null };
 

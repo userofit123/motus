@@ -2,6 +2,7 @@
 // Integrations: Health Connect on the Android app (a band through Gadgetbridge, a scale, a watch), personal API tokens
 // (scripts, dashboards, Home Assistant), the address for automatic GPX uploads (FitoTrack, OpenTracks), and copying
 // workouts for an AI assistant.
+import { andList } from "@motus/shared";
 import { useFmt } from "../../core/format";
 import { useQuery } from "@tanstack/vue-query";
 import { api } from "../../api/client";
@@ -38,7 +39,7 @@ onBeforeUnmount(() => document.removeEventListener("visibilitychange", readHc));
 const KIND_NAMES: Record<string, string> = { steps: "steps", sleep: "sleep", weight: "weight", sessions: "workouts", heartRate: "heart rate", restingHr: "resting heart rate", spo2: "blood oxygen", hrv: "HRV", respiratoryRate: "breathing rate", distance: "distance", activeKcal: "active calories", bodyFat: "body fat", hydration: "water", vo2max: "VO2 max" };
 const allowed = computed(() => {
   const names = (hc.value?.granted ?? []).map((k) => KIND_NAMES[k]).filter(Boolean) as string[];
-  return names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names.at(-1)}` : names[0] ?? "";
+  return andList(names);
 });
 const hcText = computed(() => {
   if (!healthSupported()) return "Only in the Motus app for Android";
@@ -51,7 +52,7 @@ const connected = computed(() => !!hc.value?.granted.length);
 // allowed before Motus read some kinds (heart data, distance, sleep details came later): Health Connect only asks again
 // when Motus does, so the row offers it
 const missing = computed(() => connected.value ? HEALTH_KINDS.filter((k) => !hc.value!.granted.includes(k)) : []);
-const missingText = computed(() => { const n = missing.value.map((k) => KIND_NAMES[k]!); const t = n.length > 1 ? `${n.slice(0, -1).join(", ")} and ${n.at(-1)}` : n[0] ?? ""; return t.charAt(0).toUpperCase() + t.slice(1); });
+const missingText = computed(() => { const n = missing.value.map((k) => KIND_NAMES[k]!); const t = andList(n); return t.charAt(0).toUpperCase() + t.slice(1); });
 async function connect() {
   try {
     hc.value = await connectHealth();

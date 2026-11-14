@@ -5,6 +5,7 @@ import { computed } from "vue";
 import { useRouter } from "vue-router";
 import { logSheet, bodySheet, dailySheet, activitySheet, appearanceOpen } from "../core/ui";
 import { useSettings, useMe, useHealthAvailable } from "../api/queries";
+import { andList } from "@motus/shared";
 import Icon from "../components/Icon.vue";
 const router = useRouter();
 const s = useSettings();
@@ -14,9 +15,9 @@ const initials = computed(() => (user.value?.displayName || user.value?.username
 // Sleep and Heart are Stats' tabs, listed here (the one tap to them on the phone) only once a band has handed that over
 const avail = useHealthAvailable();
 // the subtitles name only what is there: "Nights, stages and bedtimes" only with night details, and so on
-const list = (xs: string[]) => { const t = xs.length > 1 ? `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}` : xs[0] ?? ""; return t.charAt(0).toUpperCase() + t.slice(1); };
+const list = (xs: string[]) => { const t = andList(xs); return t.charAt(0).toUpperCase() + t.slice(1); };
 const sleepHint = computed(() => avail.data.value?.nights ? "Nights, stages and bedtimes" : "Hours slept each night");
-const heartHint = computed(() => { const a = avail.data.value; return list([a?.restingHr && "resting heart rate", a?.hrv && "HRV", a?.spo2 && "blood oxygen"].filter(Boolean) as string[]) || "Heart rate from workouts and activities"; });
+const heartHint = computed(() => { const a = avail.data.value; return list([a?.restingHr && "resting heart rate", a?.hrv && "HRV", a?.spo2 && "blood oxygen"].filter(Boolean) as string[]) || (a?.hrDay ? "Heart rate through the day" : "Heart rate from workouts and activities"); });
 const PAGES = computed<[to: string, label: string, icon: string, hint: string][]>(() => [
   ["/exercises", "Exercises", "dumbbell", "The library, and your own"], ["/body", "Body", "scale", "Weight, measurements, photos, about you"],
   ...(avail.data.value?.sleep ? [["/stats?tab=sleep", "Sleep", "moon", sleepHint.value] as [string, string, string, string]] : []),
