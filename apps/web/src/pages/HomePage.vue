@@ -4,8 +4,8 @@
 // (no reminder waiting, no goal due soon, no program running) stays away until it has; feature blocks need their feature.
 import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
-import { muscleName, num, fromM, percentChange, orderGoals, HOME_BLOCKS, type Goal, type HomePlan, type HomeRecord, type HomeGroup, type HomeWeek } from "@motus/shared";
-import { useHome, useSettings, saveSettings, useAchievements, useGoals, useHealthAvailable, useHealthDay, useReadiness, useSleep, useDaily, loaded, type HealthAvailable, type ReadinessPart } from "../api/queries";
+import { muscleName, num, fromM, percentChange, orderGoals, HOME_BLOCKS, type Goal, type HomePlan, type HomeRecord, type HomeGroup, type HomeSuggestion, type HomeWeek } from "@motus/shared";
+import { useHome, useSettings, saveSettings, useAchievements, useGoals, useHealthAvailable, useHealthDay, useReadiness, useSleep, useDaily, useActivityTypes, useRoutines, loaded, type HealthAvailable, type ReadinessPart } from "../api/queries";
 import { api } from "../api/client";
 import { invalidate, queryClient } from "../api/live";
 import { confirm } from "../core/ask";
@@ -50,7 +50,7 @@ const META: Record<string, { name: string; desc: string; icon: string; size: Siz
   pinned: { name: "Pinned goals", desc: "The goals you made and pinned, each as its own block", icon: "pin", size: "m" },
   dueSoon: { name: "Goals due soon", desc: "Shows when a goal ends within two weeks", icon: "target", size: "m" },
   program: { name: "Your program", desc: "Shows while you follow a program", icon: "routines", size: "m" },
-  muscles: { name: "Muscles this week", desc: "Sets per muscle in the last 7 days, and what's resting", icon: "activity", size: "m" },
+  muscles: { name: "Muscles, last 7 days", desc: "Sets per muscle in the last 7 days, and what's resting", icon: "activity", size: "m" },
   upnext: { name: "Up next", desc: "What's planned for the coming days", icon: "calendar", size: "m" },
   previous: { name: "Last workout", desc: "Your most recent workout", icon: "dumbbell", size: "m" },
   goals: { name: "Goals", desc: "Your first three active goals", icon: "goals", size: "m" },
@@ -58,12 +58,12 @@ const META: Record<string, { name: string; desc: string; icon: string; size: Siz
   reminders: { name: "Reminders", desc: "Shows when a reminder is waiting", icon: "bell", size: "m" },
   records: { name: "Records", desc: "Personal records from the last 30 days", icon: "trophy", size: "m" },
   feed: { name: "Recent activity", desc: "Your latest workouts and activities", icon: "history", size: "m" },
-  daily: { name: "Today's log", desc: "Sleep, water and mood for today", icon: "note", size: "m" },
+  daily: { name: "Daily log", desc: "Steps, sleep, water and mood you type in for today", icon: "note", size: "m" },
   achievements: { name: "Achievements", desc: "The latest reached and the next one", icon: "star", size: "m" },
   readiness: { name: "Readiness", desc: "How ready you are to train, from last night's sleep and your heart", icon: "heartPulse", size: "m" },
   sleep: { name: "Last night", desc: "Time asleep and its stages, from your band", icon: "moon", size: "m" },
   heart: { name: "Heart", desc: "Resting heart rate, HRV and today's range, from your band", icon: "heart", size: "m" },
-  activityToday: { name: "Steps today", desc: "Steps, distance and active calories today, and your last 7 days, from your band", icon: "steps", size: "m" },
+  activityToday: { name: "Today from your band", desc: "Steps, distance and active calories today, and your last 7 days, from your band", icon: "steps", size: "m" },
 };
 // a block whose feature is off is absent everywhere, Edit home included
 const FEATURE: Record<string, string> = { program: "programs", daily: "dailyLog", achievements: "achievements" };
@@ -87,7 +87,7 @@ const walked = computed(() => weeks.value.some((w) => w.walkM > 0));
 // a stat tile in This week and Previous: label, value with its unit set small, and for This week the change from last week
 // as a percent, the same way Stats shows it (nothing when last week had none to compare with)
 // ("12.3k kg" splits at its space so the number carries the weight and the unit is set small beside it)
-interface WStat { key: string; icon: string; label: string; value: string; unit: string; delta?: string; last?: string; tone?: string }
+interface WStat { note?: string; key: string; icon: string; label: string; value: string; unit: string; delta?: string; last?: string; tone?: string }
 const weekStats = computed<WStat[]>(() => {
   const row = (key: string, icon: string, label: string, now: number, last: number, show: (n: number) => string, split = false): WStat => {
     const v = show(now);
@@ -98,7 +98,7 @@ const weekStats = computed<WStat[]>(() => {
     row("time", "clock", "Time", tw.value.timeS, lw.value.timeS, (n) => fmt.value.dur(n, true)),
     row("volume", "layers", "Volume", tw.value.volumeKg, lw.value.volumeKg, (n) => fmt.value.vol(n), true),
   ];
-  if (walked.value) out.push(row("walk", "walk", "Walked", tw.value.walkM, lw.value.walkM, (n) => fmt.value.dist(n, 1), true));
+  if (walked.value) out.push({ ...row("walk", "walk", "Distance", tw.value.walkM, lw.value.walkM, (n) => fmt.value.dist(n, 1), true), note: "Walks and hikes" });
   return out;
 });
 // no stat has a change (first week): the header note and the change column are left out
@@ -132,6 +132,11 @@ const goalUnit = (g: Goal, v: number) => { const u = g.progress?.unit ?? ""; con
 // the tile's tiny line names the target the same way for every goal: "of 150 kg" for goals that count up to it,
 // "Target 80 kg" for body goals (which can head up or down) and goals that must stay under it
 const goalTarget = (g: Goal) => `${g.scope === "body" || g.comparator === "<=" ? "Target" : "of"} ${goalVal(g, g.target)} ${goalUnit(g, g.target)}`.trim();
+// "0 of 30 min today" for a daily goal (its own period says the rest); other periods keep their line after the progress
+const goalLine = (g: Goal) => {
+  const label = goalLabel(g, fmt.value).replace(" / ", " of ");
+  return g.period === "day" && g.scope !== "body" ? `${label} today` : [label, listSub(g)].filter(Boolean).join(" · ");
+};
 const goalIcon = (g: Goal) => ({ activity: g.scopeId === "workout" ? "dumbbell" : "walk", routine: "routines", exercise: "dumbbell", muscle: "activity", body: "scale" } as Record<string, string>)[g.scope] ?? "target";
 // progress.pct is a share (0 to 1); the rows show it as a percent and the bar is that wide
 const pct = (g: Goal) => Math.max(0, Math.min(100, (g.progress?.pct ?? 0) * 100));
@@ -179,8 +184,19 @@ const upNext = computed<HomePlan[]>(() => (h.value?.upNext ?? []).filter((p) => 
 const dayName = (d: string) => { const tm = tomorrowYmd(); return d === today ? "Today" : d === tm ? "Tomorrow" : fmt.value.date(d, { weekday: "long" }); };
 const planOpen = ref<any>(null);
 
+// an activity type's own name ("Walk"), not its id
+const types = useActivityTypes();
+const typeName = (slug: string) => (types.data.value as { slug: string; name: string }[] | undefined)?.find((t) => t.slug === slug)?.name ?? slug.charAt(0).toUpperCase() + slug.slice(1);
+// suggestions: a routine's last day by the calendar as Routines counts it; a gap says which routines leave it out
+const routinesQ = useRoutines();
+const reasonOf = (x: HomeSuggestion) => {
+  if (x.kind === "oldest") { const at = routinesQ.data.value?.find((r) => r.id === x.routineId)?.lastDoneAt; return at ? `Last done ${ago(at)}` : x.reason; }
+  if (x.kind === "gap" || x.kind === "target") { const m = x.title.replace(/^Work your /, ""); return x.reason.startsWith("Your routines only") ? `Your routines only train your ${m} as a helper` : `None of your routines train your ${m}`; }
+  return x.reason;
+};
+
 // records
-const KIND: Record<string, string> = { weight: "Heaviest", e1rm: "Best 1RM", volume: "Most volume", reps: "Most reps", duration: "Longest", distance: "Farthest" };
+const KIND: Record<string, string> = { weight: "Heaviest", e1rm: "Best estimated 1RM", volume: "Most volume", reps: "Most reps", duration: "Longest", distance: "Farthest" };
 const recordText = (r: HomeRecord) => r.distanceM ? fmt.value.dist(r.distanceM, 1) : r.durationS && !r.reps ? fmt.value.dur(r.durationS, true)
   : fmt.value.set(r, r.tracking ?? "weight_reps");
 
@@ -243,10 +259,11 @@ const readyWait = computed(() => {
   const days = ORDER.map((k) => (r.parts.some((x) => x.key === k) ? need : building.find((x) => x.key === k)?.days ?? 0)).sort((a, b) => b - a);
   const missing = ORDER.filter((k) => !r.parts.some((x) => x.key === k) && !building.some((x) => x.key === k));
   const left = need - days[1]!;
-  return { days: days[1]!, need,
+  const known = ORDER.filter((k) => !missing.includes(k));
+  return { days: days[1]!, need, left,
     text: r.parts.length + building.length < 2
       ? `Your score also needs ${missing.map((k) => (k === "hrv" ? PART[k].t : PART[k].t.toLowerCase())).join(" or ")} from your band.`
-      : `Learning your usual. Your score shows in ${left} ${left === 1 ? "day" : "days"}.` };
+      : `Learning your usual ${known.map((k) => PART[k].t.toLowerCase().replace("hrv", "HRV")).join(", ").replace(/, ([^,]*)$/, " and $1")}.` };
 });
 // heart: the resting heart rate and HRV of today (else the latest readiness read), each against your usual, and the day's range
 const partOf = (k: ReadinessPart["key"]) => ready.data.value?.parts?.find((x) => x.key === k);
@@ -260,12 +277,12 @@ const heartStats = computed<WStat[]>(() => {
     out.push({ key, icon, label, value: String(Math.round(v)), unit, delta: d == null ? "" : `${d < 0 ? "-" : "+"}${Math.abs(d)} ${unit}`,
       tone: p?.effect === "up" ? "pos" : p?.effect === "down" ? "neg" : undefined });
   };
-  vital("restingHr", "heart", "Resting", "bpm");
+  vital("restingHr", "heart", "Resting heart rate", "bpm");
   vital("hrv", "heartPulse", "HRV", "ms");
   // blood oxygen whole, its percent right after the number, as the Heart tab writes it; it has no usual to compare with
   if (day.value?.spo2 != null) out.push({ key: "spo2", icon: "water", label: "Blood oxygen", value: `${Math.round(day.value.spo2)}%`, unit: "", delta: "" });
   const hr = day.value?.hr;
-  if (hr) out.push({ key: "today", icon: "activity", label: "Today", value: `${Math.round(hr.min)}-${Math.round(hr.max)}`, unit: "bpm", delta: `${Math.round(hr.avg)} on average` });
+  if (hr) out.push({ key: "today", icon: "activity", label: "Range today", value: `${Math.round(hr.min)}-${Math.round(hr.max)}`, unit: "bpm", delta: `average ${Math.round(hr.avg)}` });
   return out;
 });
 const heartDelta = computed(() => heartStats.value.some((x) => (x.key === "restingHr" || x.key === "hrv") && !!x.delta));
@@ -289,7 +306,7 @@ const actStats = computed<WStat[]>(() => {
   if (d.steps != null) out.push({ key: "steps", icon: "steps", label: "Steps", value: fmt.value.num(d.steps, 0), unit: "",
     ...(g ? { delta: `of ${fmt.value.num(g.target, 0)}`, tone: d.steps >= g.target ? "pos" : undefined } : {}) });
   if (d.distanceM) out.push({ key: "dist", icon: "walk", label: "Distance", ...unitOf(fmt.value.dist(d.distanceM, 1)) });
-  if (d.activeKcal) out.push({ key: "kcal", icon: "flame", label: "Active", value: fmt.value.num(d.activeKcal, 0), unit: "kcal" });
+  if (d.activeKcal) out.push({ key: "kcal", icon: "flame", label: "Active calories", value: fmt.value.num(d.activeKcal, 0), unit: "kcal" });
   return out;
 });
 // the last 7 days' steps as This week's bars, each under its weekday's letter, today in full colour; with a goal its
@@ -439,7 +456,7 @@ await loaded(home, ach, avail, hDay, ready, nightsQ, dailyQ);
         <div v-else-if="id === 'week'" class="card hb wkc sz-m click" :data-solo="solo.has(id) || undefined" v-bind="link('/stats')">
           <div class="ch"><span class="bi"><Icon name="stats" :size="15" /></span><span class="t grow">This week</span><span v-if="anyDelta" class="tiny">Vs last week</span></div>
           <div class="wstats" :class="{ n4: weekStats.length === 4, plain: !anyDelta }">
-            <div v-for="x in weekStats" :key="x.key" class="ws" role="group" :aria-label="`${[x.label, x.value, x.unit, x.delta].filter(Boolean).join(' ')}, last week ${x.last}`" :title="`Last week ${x.last}`">
+            <div v-for="x in weekStats" :key="x.key" class="ws" role="group" :aria-label="`${[x.label, x.value, x.unit, x.delta].filter(Boolean).join(' ')}, last week ${x.last}`" :title="`${x.note ? x.note + ' · ' : ''}Last week ${x.last}`">
               <div class="wlb"><Icon :name="x.icon" :size="14" />{{ x.label }}</div>
               <div class="wv">{{ x.value }} <small v-if="x.unit">{{ x.unit }}</small></div>
               <div v-if="anyDelta" class="wd">{{ x.delta }}</div>
@@ -487,7 +504,7 @@ await loaded(home, ach, avail, hDay, ready, nightsQ, dailyQ);
             <div v-for="g in dueSoon" :key="g.id" class="grow-row click" v-bind="link(() => (goalOpen = g.id))">
               <div class="row"><b class="grow ellipsis">{{ g.title }}</b><span class="tiny due">{{ dueText(g) }}</span></div>
               <div class="pbar"><i :style="{ width: pct(g) + '%' }" /></div>
-              <div class="tiny ellipsis">{{ goalLabel(g, fmt) }}<template v-if="listSub(g)"> · {{ listSub(g) }}</template></div>
+              <div class="tiny ellipsis">{{ goalLine(g) }}</div>
             </div>
           </div>
         </div>
@@ -509,13 +526,13 @@ await loaded(home, ach, avail, hDay, ready, nightsQ, dailyQ);
         <!-- muscles: the header on top as on every block, then the figure on the left (as on every muscle card) and beside it
              how many groups were worked and every group with when it last was -->
         <div v-else-if="id === 'muscles'" class="card hb sz-m click" :data-solo="solo.has(id) || undefined" v-bind="link('/stats?tab=muscles')">
-          <div class="ch"><span class="bi"><Icon name="activity" :size="15" /></span><span class="t grow">Muscles this week</span></div>
+          <div class="ch"><span class="bi"><Icon name="activity" :size="15" /></span><span class="t grow">Muscles, last 7 days</span></div>
           <div class="mfig">
             <BodyMap class="rbody" :values="{}" :highlight="h.main7" :secondary="h.helpers7" />
             <div class="grow mside">
               <template v-if="worked">
-                <div class="big">{{ worked }}<small>of {{ groups.length }} groups</small></div>
-                <div class="tiny">worked in the last 7 days</div>
+                <div class="big">{{ worked }}<small>of {{ groups.length }} muscle groups</small></div>
+                <div class="tiny">trained in the last 7 days</div>
               </template>
               <div v-else class="tiny">No workouts in the last 7 days</div>
               <!-- every group, a dot filled when worked this week, and when it last was -->
@@ -563,7 +580,7 @@ await loaded(home, ach, avail, hDay, ready, nightsQ, dailyQ);
             <div v-for="g in h.goals" :key="g.id" class="grow-row click" v-bind="link(() => (goalOpen = g.id))">
               <div class="row"><b class="grow ellipsis">{{ g.title }}</b><span class="tiny" :class="{ pos: g.progress?.done }">{{ g.progress?.done ? "Reached" : `${Math.round(pct(g))}%` }}</span></div>
               <div class="pbar" :class="{ ok: g.progress?.done }"><i :style="{ width: pct(g) + '%' }" /></div>
-              <div class="tiny ellipsis">{{ goalLabel(g, fmt) }}<template v-if="listSub(g)"> · {{ listSub(g) }}</template></div>
+              <div class="tiny ellipsis">{{ goalLine(g) }}</div>
             </div>
           </div>
         </div>
@@ -577,7 +594,7 @@ await loaded(home, ach, avail, hDay, ready, nightsQ, dailyQ);
             <div v-for="x in h.suggest" :key="x.kind + (x.routineId ?? x.muscle)" class="li click">
               <button class="cover" :aria-label="x.routineId ? `Open ${x.title}` : `Exercises for ${muscleName(x.muscle ?? '').toLowerCase()}`" @click="go(x.routineId ? `/routines/${x.routineId}` : `/exercises?muscle=${encodeURIComponent(x.muscle ?? '')}`)" />
               <MuscleFig sm :routine="x.routineId ?? undefined" :muscles="x.routineId ? undefined : x.muscles ?? (x.muscle ? [x.muscle] : undefined)" />
-              <div class="grow"><div class="t">{{ x.title }}</div><div class="s">{{ x.reason }}</div></div>
+              <div class="grow"><div class="t">{{ x.title }}</div><div class="s">{{ reasonOf(x) }}</div></div>
               <button v-if="x.routineId" class="ib sm over" aria-label="Plan" title="Plan" @click="planOpen = { rule: 'once', routineId: x.routineId }"><Icon name="calendar" :size="18" /></button>
               <button v-else-if="x.muscle" class="ib sm over" aria-label="New routine" title="New routine" @click="go('/routines/new/edit')"><Icon name="plus" :size="18" /></button>
               <button class="ib sm plain over" aria-label="Not now" title="Not now: hide until your next workout" @click="hideSuggestion(x.key)"><Icon name="close" :size="16" /></button>
@@ -603,20 +620,20 @@ await loaded(home, ach, avail, hDay, ready, nightsQ, dailyQ);
         <div v-else-if="id === 'feed'" class="card hb sz-m" :data-solo="solo.has(id) || undefined">
           <div class="ch"><span class="bi"><Icon name="history" :size="15" /></span><span class="t grow">Recent activity</span><button class="lnk" @click="router.push('/history?view=list')">All</button></div>
           <div class="list"><div v-for="x in h.feed.slice(0, 5)" :key="x.id" class="li click" v-bind="link(x.kind === 'workout' ? `/workouts/${x.id}` : `/activities/${x.id}`)">
-            <Icon :name="x.kind === 'workout' ? 'dumbbell' : x.type === 'walk' ? 'walk' : 'activity'" :size="18" class="muted" /><div class="grow"><div class="t">{{ x.kind === "workout" ? x.name : x.name || x.type }}</div><div class="s">{{ fmt.date(x.startedAt, { weekday: "short", day: "numeric", month: "short" }) }}</div></div>
+            <Icon :name="x.kind === 'workout' ? 'dumbbell' : x.type === 'walk' ? 'walk' : 'activity'" :size="18" class="muted" /><div class="grow"><div class="t">{{ x.kind === "workout" ? x.name : x.name || typeName(x.type) }}</div><div class="s">{{ fmt.date(x.startedAt, { weekday: "short", day: "numeric", month: "short" }) }}</div></div>
             <SessionStats :x="x" /></div></div>
         </div>
 
         <div v-else-if="id === 'daily'" class="card hb sz-m" :data-solo="solo.has(id) || undefined">
-          <div class="ch"><span class="bi"><Icon name="note" :size="15" /></span><span class="t grow">Today's log</span><button class="lnk" @click="dailySheet = true">Other days</button></div>
+          <div class="ch"><span class="bi"><Icon name="note" :size="15" /></span><span class="t grow">Daily log</span><button class="lnk" @click="dailySheet = true">Other days</button></div>
           <DailyLog />
         </div>
 
         <!-- readiness: the score as a pinned goal's value and ring, what it means, then what made it as a report's highlights;
              while the usual is being learnt, the days the score waits for in their place, and each part's days so far -->
         <div v-else-if="id === 'readiness' && rd" class="card hb sz-m click" :data-solo="solo.has(id) || undefined" v-bind="link('/stats?tab=heart')">
-          <div class="ch"><span class="bi"><Icon name="heartPulse" :size="15" /></span><span class="t grow">Readiness</span><span v-if="readyParts.length" class="tiny">Vs your usual</span></div>
-          <div v-if="readyWait" class="row"><div class="big grow">{{ readyWait.days }}<small>of {{ readyWait.need }} days</small></div><Ring :pct="readyWait.days / readyWait.need" :size="40" /></div>
+          <div class="ch"><span class="bi"><Icon name="heartPulse" :size="15" /></span><span class="t grow">Readiness</span><span v-if="readyParts.length && !readyWait" class="tiny">Vs your usual</span></div>
+          <div v-if="readyWait" class="row"><div class="big grow">{{ readyWait.left }}<small>{{ readyWait.left === 1 ? "day" : "days" }} until your score</small></div><Ring :pct="readyWait.days / readyWait.need" :size="40" /></div>
           <div v-else class="row"><div class="big grow">{{ rd.score }}<small v-if="rd.label">{{ rd.label }}</small></div><Ring :pct="rd.score! / 100" :size="40" :color="rd.label === 'Take it easy' ? 'var(--warn)' : undefined" /></div>
           <div v-if="readyWait" class="tiny">{{ readyWait.text }}</div>
           <div v-else-if="rd.label" class="tiny">{{ READY_TEXT[rd.label] }}</div>
@@ -656,7 +673,7 @@ await loaded(home, ach, avail, hDay, ready, nightsQ, dailyQ);
         <!-- what the band counted today, the steps against the steps goal when there is one, then the last 7 days' bars
              with their weekday letters and the goal's line -->
         <div v-else-if="id === 'activityToday'" class="card hb wkc sz-m click" :data-solo="solo.has(id) || undefined" v-bind="link('/stats?tab=activities')">
-          <div class="ch"><span class="bi"><Icon name="steps" :size="15" /></span><span class="t grow">Steps today</span><span v-if="stepGoal" class="tiny">Goal {{ fmt.num(stepGoal.target, 0) }} a day</span></div>
+          <div class="ch"><span class="bi"><Icon name="steps" :size="15" /></span><span class="t grow">Today from your band</span><span v-if="stepGoal" class="tiny">Goal {{ fmt.num(stepGoal.target, 0) }} a day</span></div>
           <div class="wstats hrows" :class="{ plain: !stepGoal }">
             <div v-for="x in actStats" :key="x.key" class="ws" role="group" :aria-label="[x.label, x.value, x.unit, x.delta].filter(Boolean).join(' ')">
               <div class="wlb"><Icon :name="x.icon" :size="14" />{{ x.label }}</div>
@@ -670,6 +687,7 @@ await loaded(home, ach, avail, hDay, ready, nightsQ, dailyQ);
               <b v-if="stepGoal" class="tgt" :style="{ '--f': stepGoal.target / stepMax }" />
             </div>
             <div class="wdays" aria-hidden="true"><span v-for="x in stepDays" :key="x.d" :class="{ cur: x.d === today }">{{ x.letter }}</span></div>
+            <div class="tiny hcap">Steps, last 7 days</div>
           </template>
         </div>
 
@@ -838,7 +856,7 @@ html.phone .gtile { grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); }
   .hrows.n4 .wv { font-size: clamp(var(--fs-lg), calc((100cqi - 2 * var(--hg)) / 11.2), calc(var(--fs-lg) * 1.25)); }
 }
 /* as rows (phone), Heart's and Steps today's notes take the same column width, so the two blocks' numbers line up */
-@container (max-width: 330px) { .hrows:not(.plain) { grid-template-columns: minmax(0, 1fr) auto 6.5em; } }
+@container (max-width: 330px) { .hrows:not(.plain) { grid-template-columns: minmax(0, 1fr) auto 5em; } .hrows .wd { white-space: normal; } }
 .hfoot .spark { position: static; display: block; width: 100%; flex: 1 1 0; height: auto; min-height: 28px; max-height: 96px; }
 
 /* Edit home: each tile names its block and says what it shows; switched-off ones fade back */
