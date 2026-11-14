@@ -21,8 +21,8 @@ const ws = useWorkouts(range);
 const as = useActivities(range);
 
 // a day's resting heart rate, blood oxygen and HRV from a band, each only when it has data in the period. Each chart has
-// the same line under it as body weight: the latest, the smoothed trend and how far the trend moved over the last 7 entries.
-const VITALS = [{ id: "resting_hr", name: "Resting heart rate", short: "Resting", icon: "heart", unit: "bpm" }, { id: "spo2", name: "Blood oxygen", short: "Blood oxygen", icon: "water", unit: "%" }, { id: "hrv", name: "HRV", short: "HRV", icon: "heartPulse", unit: "ms" }] as const;
+// the same line under it as body weight: the latest, the smoothed trend and how far the trend moved over the last 7 days.
+const VITALS = [{ id: "resting_hr", name: "Resting heart rate", short: "Resting heart rate", icon: "heart", unit: "bpm" }, { id: "spo2", name: "Blood oxygen", short: "Blood oxygen", icon: "water", unit: "%" }, { id: "hrv", name: "HRV", short: "HRV", icon: "heartPulse", unit: "ms" }] as const;
 const vitals = computed(() => {
   const lo = props.from ? ymd(props.from) : "", hi = props.to ? ymd(props.to) : "9999";
   return VITALS.map((v) => {
@@ -33,10 +33,10 @@ const vitals = computed(() => {
     // rounded before its sign is chosen, so a small move reads "+0", never "-0"; no unit, as the body weight line
     const moved = trend.length > 7 ? Math.round(trend.at(-1)! - trend.at(-8)!) : null;
     // whole numbers: "58 bpm", "97%" (a percent sits right after its number, as elsewhere in Stats), "45 ms"
-    const f = (n: number) => fmt.value.num(n, 0), u = (n: number) => `${f(n)}${v.unit === "%" ? "" : " "}${v.unit}`;
+    const f = (n: number) => fmt.value.num(n, 0), u = (n: number) => `${f(n)}${v.unit === "%" ? "" : "\u00a0"}${v.unit}`;
     const mean = pts.length ? pts.reduce((t, p) => t + p.y, 0) / pts.length : 0;
     return { ...v, pts, f, latest: pts.at(-1)?.y ?? 0, avg: u(mean),
-      line: pts.length ? `Latest ${u(pts.at(-1)!.y)} · trend ${u(trend.at(-1)!)}${moved != null ? ` · ${moved >= 0 ? "+" : "-"}${f(Math.abs(moved))} over the last 7 entries` : ""}` : "" };
+      line: pts.length ? `Latest ${u(pts.at(-1)!.y)} · trend ${u(trend.at(-1)!)}${moved == null ? "" : moved === 0 ? " · no change over the last 7 days" : ` · ${moved > 0 ? "+" : "-"}${u(Math.abs(moved))} over the last 7 days`}` : "" };
   }).filter((v) => v.pts.length);
 });
 
@@ -68,8 +68,8 @@ const tiles = computed(() => vitals.value.length + (sessions.value.length ? 1 : 
   <template v-else>
     <div class="grid g4" :class="tiles < 4 ? `n${tiles}` : ''">
       <div v-for="(v, i) in vitals" :key="v.id" class="card stat" :class="{ hero: i === 0 }"><div class="lbl"><span class="bi"><Icon :name="v.icon" :size="15" /></span>{{ v.short }}</div>
-        <div class="val">{{ v.f(v.latest) }}<small>{{ v.unit }}</small></div><div class="sub">average {{ v.avg }}</div><Sparkline v-if="v.pts.length > 1" :values="v.pts.map((p) => p.y)" :color="i === 0 ? 'var(--onc)' : undefined" /></div>
-      <div v-if="sessions.length" class="card stat" :class="{ hero: !vitals.length }"><div class="lbl"><span class="bi"><Icon name="dumbbell" :size="15" /></span>Exercise</div>
+        <div class="val">{{ v.f(v.latest) }}<small>{{ v.unit }}</small></div><div class="sub">latest · average {{ v.avg }}</div><Sparkline v-if="v.pts.length > 1" :values="v.pts.map((p) => p.y)" :color="i === 0 ? 'var(--onc)' : undefined" /></div>
+      <div v-if="sessions.length" class="card stat" :class="{ hero: !vitals.length }"><div class="lbl"><span class="bi"><Icon name="dumbbell" :size="15" /></span>Heart rate in workouts</div>
         <div class="val">{{ sAvg }}<small>bpm</small></div><div class="sub">{{ sessions.length }} {{ sessions.length === 1 ? "session" : "sessions" }}</div><Sparkline v-if="sessions.length > 2" :values="sessions.map((x) => x.avg)" :color="!vitals.length ? 'var(--onc)' : undefined" /></div>
     </div>
 
@@ -78,7 +78,7 @@ const tiles = computed(() => vitals.value.length + (sessions.value.length ? 1 : 
       <LineChart :points="v.pts" :height="140" :fmt="v.f" /><div class="tiny ht-line">{{ v.line }}</div></div></div>
 
     <!-- how hard each workout and activity was, over the period: its average heart rate -->
-    <div class="sh"><h2>Heart rate during exercise</h2><span v-if="sessions.length" class="tiny">{{ sessions.length }}</span></div>
+    <div class="sh"><h2>Heart rate in workouts</h2><span v-if="sessions.length" class="tiny">{{ sessions.length }}</span></div>
     <template v-if="sessions.length">
       <p class="tiny">How hard each workout and activity was: its average and highest heart rate.{{ total > sessions.length ? ` ${total - sessions.length} more in this period have none: wear your band while you record to add it.` : "" }}</p>
       <div v-if="sessions.length > 2" class="card"><div class="lbl hgap">Average per session (bpm)</div>
@@ -89,12 +89,12 @@ const tiles = computed(() => vitals.value.length + (sessions.value.length ? 1 : 
           <span class="bi sg"><Icon :name="x.icon" :size="16" /></span>
           <div class="grow"><div class="t">{{ x.name }}</div><div class="s">{{ fmt.date(x.at, { weekday: "short", day: "numeric", month: "short" }) }} · {{ fmt.dur(x.durationS, true) }}</div></div>
           <!-- the average, and the highest under it: on the left with the date and time it wrapped on a phone -->
-          <div class="r"><b class="num">{{ x.avg }} bpm</b><div v-if="x.max" class="s">up to {{ x.max }}</div></div>
+          <div class="r"><b class="num">{{ x.avg }} bpm</b><div v-if="x.max" class="s">highest {{ x.max }} bpm</div></div>
         </div>
       </div></div>
       <div v-if="sessions.length > 10 && !showAll" class="center spt"><button class="qb" @click="showAll = true">Show all {{ sessions.length }} sessions</button></div>
     </template>
-    <div v-else-if="total" class="card empty"><Icon name="heart" :size="34" /><b>No exercise heart rate yet</b>Workouts and activities you record while wearing your band show their heart rate here once it has synced.</div>
+    <div v-else-if="total" class="card empty"><Icon name="heart" :size="34" /><b>No workout heart rate yet</b>Workouts and activities you record while wearing your band show their heart rate here once it has synced.</div>
     <div v-else class="card empty"><Icon name="heart" :size="34" /><b>No workouts in this period</b>Pick a longer period, or record one while wearing your band.</div>
   </template>
 </template>

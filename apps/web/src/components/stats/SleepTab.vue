@@ -118,13 +118,13 @@ const hours = (v: number) => mins(v * 60);
 const TRENDS = [
   { id: "hr", name: "Heart rate while asleep", unit: "bpm", v: (n: SleepNight) => n.avgHr, lo: (n: SleepNight) => n.minHr },
   { id: "spo2", name: "Blood oxygen while asleep", unit: "%", v: (n: SleepNight) => n.avgSpo2, lo: (n: SleepNight) => n.minSpo2 },
-  { id: "resp", name: "Breathing rate", unit: "/min", v: (n: SleepNight) => n.respRate, lo: () => null },
+  { id: "resp", name: "Breathing rate while asleep", unit: "breaths/min", v: (n: SleepNight) => n.respRate, lo: () => null },
 ] as const;
 const trends = computed(() => TRENDS.map((t) => {
   const ns = full.value.filter((n) => t.v(n) != null);
   // a point's tip names its night as the other charts' tips do ("Sat 7 Nov")
   const pts = ns.map((n) => ({ x: new Date(n.date + "T12:00").getTime(), y: Number(t.v(n)), id: n.date, label: fmt.value.date(n.date, { weekday: "short", day: "numeric", month: "short" }) }));
-  const u = (n: number) => t.unit === "%" ? pc(Math.round(n * 10) / 10) : t.unit === "/min" ? `${fmt.value.num(n, 0)}/min` : `${fmt.value.num(n, 0)} ${t.unit}`;
+  const u = (n: number) => t.unit === "%" ? pc(Math.round(n * 10) / 10) : `${fmt.value.num(n, 0)} ${t.unit}`;
   const lows = ns.map((n) => t.lo(n)).filter((x): x is number => x != null);
   const mean = avg(pts.map((p) => p.y));
   return { ...t, pts, f: (v: number) => fmt.value.num(v, 0), line: pts.length ? [`Latest ${u(pts.at(-1)!.y)}`, `average ${u(mean!)}`, lows.length ? `lowest ${u(Math.min(...lows))}` : ""].filter(Boolean).join(" · ") : "" };

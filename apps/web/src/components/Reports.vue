@@ -101,17 +101,17 @@ const build = (m: Period, p: Period | undefined, prev: string) => {
   ];
   const names = [...new Set(m.records.map((r) => r.name))];
   const highlights: Highlight[] = [
-    ...(m.records.length ? [{ key: "rec", icon: "trophy", t: "Records", s: names.length > 2 ? `${names.slice(0, 2).join(", ")} and ${names.length - 2} more` : names.join(", "), r: String(m.records.length), pr: true }] : []),
-    ...(m.top ? [{ key: "routine", icon: "routines", t: "Most done", s: m.top[0], r: m.top[1] === 1 ? "once" : `${m.top[1]} times` }] : []),
-    ...(m.group ? [{ key: "group", icon: "activity", t: "Most trained", s: m.group.name, r: `${m.group.sets} sets` }] : []),
+    ...(m.records.length ? [{ key: "rec", icon: "trophy", t: "New records", s: names.length > 2 ? `${names.slice(0, 2).join(", ")} and ${names.length - 2} more` : names.join(", "), r: String(m.records.length), pr: true }] : []),
+    ...(m.top ? [{ key: "routine", icon: "routines", t: "Most done routine", s: m.top[0], r: m.top[1] === 1 ? "once" : `${m.top[1]} times` }] : []),
+    ...(m.group ? [{ key: "group", icon: "activity", t: "Most trained muscle group", s: m.group.name, r: `${m.group.sets} sets` }] : []),
     // the count on the right as Records has it; the distance under the name only when there is one
-    ...(m.activities ? [{ key: "act", icon: "walk", t: "Activities", s: m.distM > 0 ? fmt.value.dist(m.distM, 1) : "", r: String(m.activities) }] : []),
+    ...(m.activities ? [{ key: "act", icon: "walk", t: "Activities", s: m.distM > 0 ? `${fmt.value.dist(m.distM, 1)} in total` : "", r: String(m.activities) }] : []),
     // then what a band handed over, each only when there: sleep a night, resting heart rate (with HRV under it), and the
     // workouts' heart rate, the average on the right as the counts above
     ...(m.sleep.length ? [{ key: "sleep", icon: "moon", t: "Sleep", s: `Average of ${m.sleep.length} ${m.sleep.length === 1 ? "night" : "nights"}`, r: mins(mean(m.sleep)) }] : []),
-    ...(m.rhr.length ? [{ key: "rhr", icon: "heart", t: "Resting heart rate", s: m.hrv.length ? `HRV ${Math.round(mean(m.hrv))} ms` : "", r: `${Math.round(mean(m.rhr))} bpm` }]
+    ...(m.rhr.length ? [{ key: "rhr", icon: "heart", t: "Resting heart rate", s: `Average of ${m.rhr.length} ${m.rhr.length === 1 ? "day" : "days"}`, r: `${Math.round(mean(m.rhr))} bpm` }]
       : m.hrv.length ? [{ key: "hrv", icon: "heartPulse", t: "HRV", s: "", r: `${Math.round(mean(m.hrv))} ms` }] : []),
-    ...(m.whr.length ? [{ key: "whr", icon: "heartPulse", t: "Workout heart rate", s: `Average of ${m.whr.length} ${m.whr.length === 1 ? "workout" : "workouts"}`, r: `${Math.round(mean(m.whr))} bpm` }] : []),
+    ...(m.whr.length ? [{ key: "whr", icon: "heartPulse", t: "Heart rate in workouts", s: `Average of ${m.whr.length} ${m.whr.length === 1 ? "workout" : "workouts"}`, r: `${Math.round(mean(m.whr))} bpm` }] : []),
   ];
   return { k: m.k, title: m.k.length === 4 ? (m.k === String(new Date().getFullYear()) ? "This year so far" : `${m.k} in review`) : label(m.k), sub: span(m.k), prev, tiles, anyDelta: tiles.some((x) => x.delta), highlights };
 };
@@ -143,7 +143,7 @@ const year = computed(() => {
       </div>
       <template v-for="r in [...(year ? [year] : []), ...report]" :key="r.k">
         <div class="card wkc" :class="{ full: r === year || !year && report.length === 1 }">
-          <div class="ch"><span class="bi"><Icon :name="r === year ? 'star' : 'calendar'" :size="15" /></span><span class="grow"><span class="t">{{ r.title }}</span><span v-if="r.sub || r.k.length === 7" class="s sub" :class="{ ghost: !r.sub }">{{ r.sub || "\u00a0" }}</span></span><span v-if="r.anyDelta" class="tiny">Vs {{ r.prev }}</span></div>
+          <div class="ch"><span class="bi"><Icon :name="r === year ? 'star' : 'calendar'" :size="15" /></span><span class="grow"><span class="t">{{ r.title }}</span><span v-if="r.sub || r.k.length === 7" class="s sub" :class="{ ghost: !r.sub }">{{ r.sub || "\u00a0" }}</span></span><span v-if="r.anyDelta" class="tiny">Compared with {{ r.prev }}</span></div>
           <div class="wstats n4" :class="{ plain: !r.anyDelta }">
             <div v-for="x in r.tiles" :key="x.key" class="ws" role="group" :aria-label="`${[x.label, x.value, x.unit, x.delta].filter(Boolean).join(' ')}, ${r.prev} ${x.last}`" :title="`${r.prev} ${x.last}`">
               <div class="wlb"><Icon :name="x.icon" :size="14" />{{ x.label }}</div>

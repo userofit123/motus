@@ -19,8 +19,19 @@ const count = computed(() => (props.noAsleep ? 0 : 1) + [n.value.avgHr, n.value.
 <template>
   <div v-if="count" class="wstats" :class="{ n4: count === 4 }">
     <div v-if="!noAsleep" class="ws"><div class="wlb"><Icon name="moon" :size="14" />Time asleep</div><div class="wv">{{ mins(asleepMin(n)) }}</div><div class="wd">of {{ mins(inBedMin(n)) }} in bed</div></div>
-    <div v-if="n.avgHr != null" class="ws"><div class="wlb"><Icon name="heart" :size="14" />Heart rate</div><div class="wv">{{ n.avgHr }} <small>bpm</small></div><div class="wd">{{ n.minHr != null ? `lowest ${n.minHr} bpm` : "average" }}</div></div>
+    <div v-if="n.avgHr != null" class="ws"><div class="wlb"><Icon name="heart" :size="14" />Heart rate while asleep</div><div class="wv">{{ n.avgHr }} <small>bpm</small></div><div class="wd">{{ n.minHr != null ? `average · lowest ${n.minHr}` : "average" }}</div></div>
     <div v-if="n.avgSpo2 != null" class="ws"><div class="wlb"><Icon name="water" :size="14" />Blood oxygen</div><div class="wv">{{ p(n.avgSpo2) }} <small>%</small></div><div class="wd">{{ n.minSpo2 != null ? `lowest ${p(n.minSpo2)}%` : "average" }}</div></div>
-    <div v-if="n.respRate != null" class="ws"><div class="wlb"><Icon name="activity" :size="14" />Breathing</div><div class="wv">{{ fmt.num(n.respRate, 0) }} <small>/min</small></div><div class="wd">average</div></div>
+    <div v-if="n.respRate != null" class="ws"><div class="wlb"><Icon name="activity" :size="14" />Breathing rate</div><div class="wv">{{ fmt.num(n.respRate, 0) }} <small>breaths/min</small></div><div class="wd">average</div></div>
   </div>
 </template>
+
+<style scoped>
+/* in the phone's rows a longer label ("Heart rate while asleep") and unit ("breaths/min") no longer fit beside a three-column row, so the line goes under the label and the value stands on the right, as a list row's subtitle and value */
+@container (max-width: 330px) {
+  .wstats, .wstats.n4 { grid-template-columns: minmax(0, 1fr) auto; }
+  .wstats .ws .wlb { grid-column: 1; }
+  .wstats .ws .wv { grid-column: 2; grid-row: span 2; align-self: center; }
+  .wstats .ws .wd { grid-column: 1; text-align: start; margin-bottom: var(--tdy); }
+  .wstats .ws:last-child .wd { margin-bottom: 0; }
+}
+</style>
