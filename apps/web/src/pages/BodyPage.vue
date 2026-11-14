@@ -6,7 +6,7 @@
 //  · Photos (Progress photos feature).
 //  · About you (always there, last): year of birth, sex and height, edited in place (components/BodyProfile.vue). Nothing to
 //    log there, so the Log button is hidden (one primary button per screen, and it would have no meaning).
-// Logging: the Log button here, + → Body weight / Measurements, or Home's Body weight card. Stats → Body charts the same numbers
+// Logging: the Log button here, or + → Body weight / Measurements. Stats → Body charts the same numbers
 // over a chosen period and links back here. Steps, sleep, water and mood are not body measurements: they are the daily log
 // (+ → Steps / Daily log, Home's Today card, Stats → Activities).
 import { computed, onMounted, ref, watch } from "vue";

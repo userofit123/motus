@@ -1,8 +1,8 @@
 <script setup lang="ts">
-// Home (requirement 9): one board of blocks in your order (Edit home, from the ⋮ menu). Today leads; small blocks pair up
-// in rows of four (two on the phone) and wider ones take half or the whole row. A block with nothing to say right now
+// Home (requirement 9): one board of blocks in your order (Edit home, from the ⋮ menu). Today leads; blocks are half a row on
+// a computer (a whole row on the phone) or the whole row; a half-size block left alone in its row takes the whole row. A block with nothing to say right now
 // (no reminder waiting, no goal due soon, no program running) stays away until it has; feature blocks need their feature.
-import { computed, ref } from "vue";
+import { computed, ref, onMounted, onUpdated } from "vue";
 import { useRouter } from "vue-router";
 import { muscleName, num, fromM, percentChange, orderGoals, HOME_BLOCKS, type Goal, type HomePlan, type HomeRecord, type HomeGroup, type HomeWeek } from "@motus/shared";
 import { useHome, useSettings, saveSettings, useAchievements, useGoals, loaded } from "../api/queries";
@@ -34,12 +34,28 @@ const home = useHome();
 const s = useSettings();
 const fmt = useFmt();
 const h = computed(() => home.data.value);
+
+// a half-size block that would be alone in its row (an odd run before a wide block or the end) is marked to take the whole
+// row. Counted on the rendered tiles, since Pinned goals and Your program draw several tiles for one block.
+const grid = ref<HTMLElement | { $el: HTMLElement } | null>(null);
+function markSolo() {
+  const el = grid.value instanceof HTMLElement ? grid.value : grid.value?.$el;
+  if (!el) return;
+  const tiles: HTMLElement[] = [];
+  for (const c of Array.from(el.children) as HTMLElement[]) tiles.push(...(c.classList.contains("pins") ? (Array.from(c.children) as HTMLElement[]) : [c]));
+  let run: HTMLElement[] = [];
+  const close = () => { run.forEach((t, i) => { if (i === run.length - 1 && i % 2 === 0) t.setAttribute("data-solo", ""); else t.removeAttribute("data-solo"); }); run = []; };
+  for (const t of tiles) { if (t.classList.contains("sz-m")) run.push(t); else { t.removeAttribute("data-solo"); close(); } }
+  close();
+}
+onMounted(markSolo);
+onUpdated(markSolo);
 const today = localYmd(new Date());
 // nothing made or done yet: Today says how to begin and the summing-up blocks wait
 const fresh = computed(() => !!h.value && !h.value.routineCount && !h.value.totalWorkouts && !h.value.activityCount && !(s.value.features.programs && h.value.programs?.length));
 
-// ---- the blocks: name and what it shows (Edit home), icon, and size: s a quarter of the row (half on the phone), m half (all of it on the phone), l the whole row
-type Size = "s" | "m" | "l";
+// ---- the blocks: name and what it shows (Edit home), icon, and size: m half the row (all of it on the phone), l the whole row
+type Size = "m" | "l";
 const META: Record<string, { name: string; desc: string; icon: string; size: Size }> = {
   today: { name: "Today", desc: "What to do today and this week's training days", icon: "play", size: "l" },
   week: { name: "This week", desc: "Workouts, time and volume against last week", icon: "stats", size: "m" },
@@ -260,8 +276,8 @@ await loaded(home, ach);
     </div>
 
     <!-- Edit home: every block there is, in order, at its own size so the layout reads as it will -->
-    <TransitionGroup v-if="editing" name="mv" tag="div" class="hgrid">
-      <div v-for="(x, i) in listed" :key="x.id" class="card etile" :class="[META[x.id]!.size === 's' ? 'sz-s' : META[x.id]!.size === 'l' ? 'sz-l' : 'sz-m', { off: !x.on && !FIXED.has(x.id) }]">
+    <TransitionGroup v-if="editing" ref="grid" name="mv" tag="div" class="hgrid">
+      <div v-for="(x, i) in listed" :key="x.id" class="card etile" :class="[META[x.id]!.size === 'l' ? 'sz-l' : 'sz-m', { off: !x.on && !FIXED.has(x.id) }]">
         <!-- the name and its switch on one row (label left, control right); the arrows have their own row at the foot, so a
              quarter-width tile has room for the switch on the phone and in a narrow window -->
         <div class="ch">
@@ -280,7 +296,7 @@ await loaded(home, ach);
       </div>
     </TransitionGroup>
 
-    <div v-else-if="h" class="hgrid">
+    <div v-else-if="h" ref="grid" class="hgrid">
       <template v-for="id in blocks" :key="id">
         <TodayHero v-if="id === 'today'" :h="h" :fresh="fresh" />
 
@@ -470,7 +486,7 @@ await loaded(home, ach);
         </div>
       </template>
     </div>
-    <div v-else-if="home.isLoading.value" class="hgrid"><div class="card today-ph sz-l" /><div v-for="i in 4" :key="i" class="card sz-s today-ph" /></div>
+    <div v-else-if="home.isLoading.value" class="hgrid"><div class="card today-ph sz-l" /><div v-for="i in 2" :key="i" class="card sz-m today-ph" /></div>
     <div v-else class="card empty"><Icon name="info" :size="34" /><b>Couldn't load Home</b>{{ (home.error.value as Error | null)?.message }}<br /><button class="btn tonal" @click="home.refetch()">Try again</button></div>
 
     <ScheduleEditor v-if="planOpen" :schedule="planOpen" @close="planOpen = null" />
@@ -501,12 +517,11 @@ await loaded(home, ach);
 /* an Up next row: the name gives way to Start and ⋮ (cut with an ellipsis, like the plan rows in Today) instead of
    keeping the setting rows' 42%, so the row fits at phone width */
 .uprow > .grow { min-width: 0; }
-/* the board: four columns on a computer, two on the phone. Small blocks fill gaps left by wide ones (dense), so any order
-   still lays out without holes */
+/* the board: four columns on a computer (blocks span two, wide ones all four), two on the phone. A half-size block left alone
+   in its row (marked data-solo by markSolo) takes the whole row, so any order lays out without holes */
 .hgrid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--spg); grid-auto-flow: row dense; align-items: stretch; }
-.sz-s { grid-column: span 1; }
 .sz-m { grid-column: span 2; }
-.sz-l { grid-column: 1 / -1; }
+.sz-l, .sz-m[data-solo] { grid-column: 1 / -1; }
 /* pinned goals are one block in the order but each goal is its own tile in the grid */
 .pins { display: contents; }
 @media (max-width: 760px) { .hgrid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .sz-m { grid-column: 1 / -1; } }
@@ -522,7 +537,6 @@ html.phone .hgrid .sz-m { grid-column: 1 / -1; }
 .big small { font-size: var(--fs); font-weight: 500; margin-inline-start: 5px; color: var(--tx2); letter-spacing: 0; }
 .hero .big small, .hero .tiny { color: color-mix(in srgb, var(--onc) 75%, transparent); }
 /* small blocks and the goal tiles' halves are narrow on the phone, so their values shrink with the screen */
-html.phone .sz-s .big { font-size: clamp(22px, 7vw, var(--fs-val)); }
 /* a goal's value carries its unit beside the ring ("12,500 steps"), so at 360px the goal half is a little wider and both
    halves' values a step smaller, the same in both halves so they still line up */
 html.phone .gtile .big { font-size: clamp(20px, 6vw, var(--fs-val)); }
