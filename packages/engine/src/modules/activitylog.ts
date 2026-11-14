@@ -3,7 +3,9 @@
 // Row changes become plain entries ("Finished Push day", "Logged 18 sets in Push day"): rows belong to a thing
 // (a set to its workout, a routine's sets to the routine), and a burst of changes to one thing is one entry.
 import type { Router } from "../router";
-import { intOrNull, str } from "../util";
+import { camel, intOrNull, str } from "../util";
+import { getSettings } from "./settings";
+import { withTitles } from "./goals";
 
 type LogKind = "workout" | "routine" | "exercise" | "goal" | "body" | "note" | "reminder" | "schedule" | "folder" | "program" | "activity" | "activity_type" | "settings" | "daily";
 interface LogEntry {
@@ -29,7 +31,8 @@ const NOW: Partial<Record<LogKind, string>> = {
   workout: "SELECT id, name, status, started_at, ended_at FROM workouts WHERE id = ANY($1::uuid[])",
   routine: "SELECT id, name, deleted_at FROM routines WHERE id = ANY($1::uuid[])",
   exercise: "SELECT id, name FROM exercises WHERE id = ANY($1::uuid[])",
-  goal: "SELECT id, title AS name, status, achieved_at FROM goals WHERE id = ANY($1::uuid[])",
+  // a goal's name is worked out below (withTitles): the stored title is only a name the person gave it
+  goal: "SELECT * FROM goals WHERE id = ANY($1::uuid[])",
   body: "SELECT id, kind FROM body_metrics WHERE id = ANY($1::uuid[])",
   note: "SELECT id, body AS name, target_type, target_id, workout_id FROM notes WHERE id = ANY($1::uuid[])",
   reminder: "SELECT id, body AS name, status, done_at, target_type, target_id FROM reminders WHERE id = ANY($1::uuid[])",
@@ -60,7 +63,7 @@ const NAMES: Record<string, string> = {
 const label = (k: string) => NAMES[k] ?? k.replace(/_/g, " ");
 
 export function activityLogRoutes(r: Router) {
-  r.get("/activity-log", async ({ q }, _p, _b, qs) => {
+  r.get("/activity-log", async ({ q, userId }, _p, _b, qs) => {
     const limit = intOrNull(qs.limit, 1, 100) ?? 40;
     // the cursor is the last row shown: its exact time (as the database wrote it) and its number
     const [cAt, cSeq] = str(qs.before, 80).split("|");
@@ -119,7 +122,10 @@ export function activityLogRoutes(r: Router) {
     for (const [k, sql] of Object.entries(NOW) as [LogKind, string][]) {
       const list = [...new Set(keep.filter((g) => g.kind === k && g.id).map((g) => g.id!))];
       if (!list.length) continue;
-      for (const x of (await q.query(sql, [list])).rows) cur.set(k + ":" + x.id, x);
+      let rows = (await q.query(sql, [list])).rows;
+      if (k === "goal") rows = (await withTitles(q, await getSettings(q, userId), rows.map((x: any) => camel<any>(x))))
+        .map((g: any) => ({ id: g.id, name: g.title, status: g.status, achieved_at: g.achievedAt }));
+      for (const x of rows) cur.set(k + ":" + x.id, x);
       for (const x of (await q.query(`SELECT pk->>'id' AS id, min(seq) AS s FROM sync_log WHERE tbl = $1 AND pk = ANY($2::text[]::jsonb[]) GROUP BY 1`,
         [TABLE[k], list.map((id) => JSON.stringify({ id }))])).rows) firstSeq.set(k + ":" + x.id, Number(x.s));
     }

@@ -36,6 +36,8 @@ export function periodLabel(g: Pick<Goal, "period" | "days">, s?: Pick<Settings,
   if (s && sameDays([...g.days].sort(), workdaysOf(s))) return "Workdays";
   return daysShort(g.days, s?.firstDay ?? 0);
 }
+/** the line under a goal's title: how often it counts, or for a goal you named, its automatic title ("Walk 30 min a day"), which says that too */
+export const goalSub = (g: Pick<Goal, "period" | "days" | "name" | "summary">, s?: Pick<Settings, "workdays" | "firstDay">) => (g.name && g.summary ? g.summary : periodLabel(g, s));
 /** "Mon, Wed, Fri", in the order of the week as it starts in Settings (with a Monday start Sunday comes last) */
 export const daysShort = (days: number[], firstDay: number) =>
   [...days].sort((a, b) => daysIntoWeek(a, firstDay) - daysIntoWeek(b, firstDay)).map((d) => WEEKDAYS[d]!.slice(0, 3)).join(", ");

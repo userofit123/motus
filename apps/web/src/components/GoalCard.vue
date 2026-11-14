@@ -6,7 +6,7 @@ import Sparkline from "./Sparkline.vue";
 import Ring from "./Ring.vue";
 import Icon from "./Icon.vue";
 import { useFmt, goalLabel } from "../core/format";
-import { periodWord, periodLabel } from "../core/goals";
+import { periodWord, goalSub } from "../core/goals";
 import { useSettings } from "../api/queries";
 
 const props = defineProps<{ goal: Goal }>();
@@ -14,6 +14,14 @@ const props = defineProps<{ goal: Goal }>();
 const reached = computed(() => props.goal.status === "achieved" || !!props.goal.progress?.done);
 const fmt = useFmt();
 const s = useSettings();
+// under the title: how often it counts (or what a named goal measures), and a one-off goal's deadline
+const by = (d: string) => `By ${fmt.value.date(d, { day: "numeric", month: "short", year: "numeric" })}`;
+const sub = computed(() => {
+  const g = props.goal;
+  if (g.period !== "once") return goalSub(g, s.value);
+  if (g.name && g.summary) return g.deadline ? `${g.summary} · ${by(g.deadline)}` : g.summary;
+  return g.deadline ? by(g.deadline) : "One-off";
+});
 </script>
 
 <template>
@@ -21,7 +29,7 @@ const s = useSettings();
     <div class="row" style="align-items:flex-start">
       <div class="grow">
         <div style="font-weight:600;line-height:1.3">{{ goal.title }}</div>
-        <div class="tiny" style="margin-top:2px">{{ goal.period !== "once" ? periodLabel(goal, s) : goal.deadline ? `By ${fmt.date(goal.deadline, { day: "numeric", month: "short", year: "numeric" })}` : "One-off" }}</div>
+        <div class="tiny" style="margin-top:2px">{{ sub }}</div>
       </div>
       <Ring :pct="goal.progress?.pct ?? 0" :size="46" :done="reached" />
     </div>

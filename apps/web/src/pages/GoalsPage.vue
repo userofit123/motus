@@ -3,7 +3,7 @@
 // Active, achieved and archived; each with its progress, pace and trend.
 import { computed, nextTick, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { GROUPS, muscleName, toKg, toM, fromM, BODY_MEASURES, GOAL_DIRECTIONS, bodyMeasure, bodyGoalDirection, orderGoals, GOAL_METRICS, type Goal, type GoalMetric, workdaysOf, weekdayOrder } from "@motus/shared";
+import { GROUPS, muscleName, toKg, toM, fromM, BODY_MEASURES, GOAL_DIRECTIONS, bodyMeasure, bodyGoalDirection, orderGoals, goalAutoTitle, GOAL_METRICS, type Goal, type GoalMetric, workdaysOf, weekdayOrder } from "@motus/shared";
 import { useGoals, useGoalMetrics, useRoutines, useExercises, useActivityTypes, useChange, useBody, useSettings, saveSettings, loaded } from "../api/queries";
 import { api } from "../api/client";
 import { invalidate } from "../api/live";
@@ -14,7 +14,7 @@ import Icon from "../components/Icon.vue";
 import Sheet from "../components/Sheet.vue";
 import ReorderSheet from "../components/ReorderSheet.vue";
 import AppSelect from "../components/AppSelect.vue";
-import { WEEKDAYS, daysShort, periodLabel } from "../core/goals";
+import { WEEKDAYS, daysShort, goalSub } from "../core/goals";
 import ChoiceTiles from "../components/ChoiceTiles.vue";
 import DatePicker from "../components/DatePicker.vue";
 import GoalCard from "../components/GoalCard.vue";
@@ -138,14 +138,16 @@ const scopeName = computed(() => {
   if (v.scope === "body") return bm.value.name;
   return "";
 });
+// the title the goal gets when it isn't given a name ("Walk 30 min a day"), built as the server builds it, from the target as it will be stored
 const autoTitle = computed(() => {
-  const m = metric.value; if (!m || f.value.target == null) return "";
-  const w = f.value.when;
-  const per = w === "week" ? " a week" : w === "month" ? " a month" : w === "day" ? " a day" : w === "workdays" ? " on workdays" : w === "days" && f.value.days.length ? ` on ${daysShort(f.value.days, settings.value.firstDay)}` : "";
-  if (f.value.scope === "body") return `${scopeName.value} to ${f.value.target} ${bodyUnitShown.value}`;
-  // "Gym workouts: 3 a week", "Walk: 2 a week", "Sessions: 4 a week"
-  if (m.metric === "sessions") return `${scopeName.value || "Sessions"}: ${f.value.target}${per || " in total"}`;
-  return `${scopeName.value ? scopeName.value + ": " : ""}${m.comparator === "<=" ? "under " : ""}${f.value.target} ${unit.value} ${m.name.toLowerCase()}${per}`.replace(/\s+/g, " ");
+  const v = f.value, m = metric.value, t = Number(v.target);
+  if (!m || v.target == null || v.target === "" || !(t > 0)) return "";
+  const isBody = v.scope === "body";
+  const target = isBody ? toBase(t) : m.unit === "kg" ? toKg(t, fmt.value.wu) : m.unit === "km" ? toM(t, fmt.value.du) / 1000 : t;
+  // "everything" and gym workouts have no name of their own; a body measure is named by its kind
+  const name = isBody || (v.scope === "activity" && (!v.scopeId || v.scopeId === "workout")) ? "" : scopeName.value;
+  return goalAutoTitle({ scope: v.scope, scopeId: isBody ? bodyKind.value : v.scopeId, metric: isBody ? (bodyKind.value === "weight" ? "body_weight" : "body_metric") : v.metric,
+    comparator: isBody ? dirShown.value : m.comparator ?? ">=", target, period: v.period, days: goalDays(v) }, { name, units: settings.value.units, firstDay: settings.value.firstDay });
 });
 async function save() {
   const v = f.value, m = metric.value;
@@ -158,7 +160,7 @@ async function save() {
   const isBody = v.scope === "body", weight = bodyKind.value === "weight";
   if (isBody) target = toBase(Number(v.target));
   const body: Record<string, unknown> = { metric: isBody ? (weight ? "body_weight" : "body_metric") : v.metric, scopeId: isBody ? (weight ? null : bodyKind.value) : v.scopeId,
-    comparator: isBody ? dirShown.value : undefined, target, period: v.period, days: goalDays(v), deadline: v.deadline || null, title: v.title.trim() || autoTitle.value };
+    comparator: isBody ? dirShown.value : undefined, target, period: v.period, days: goalDays(v), deadline: v.deadline || null, title: v.title.trim() };
   // an untouched target stays as stored: the shown one is rounded, and converting it back would move it (100 kg → 100.017)
   if (editId.value && prefill && String(v.target) === prefill.text && (isBody ? bm.value.unit : m.unit) === prefill.unit) delete body.target;
   try {
@@ -195,11 +197,9 @@ async function startEdit(g: Goal) {
   filling = true;
   editMetric.value = g.metric; editId.value = g.id;
   f.value = { scope: g.scope, metric: g.metric, scopeId: g.scope === "body" ? null : g.scopeId, target, period: g.period, when, days: Array.isArray(g.days) ? [...g.days] : [],
-    deadline: g.deadline ?? "", title: g.title, body: paired ? kind.slice(0, -2) : kind, side: paired ? kind.slice(-1) : "l", dir: g.scope === "body" ? g.comparator : null };
+    deadline: g.deadline ?? "", title: g.name ?? "", body: paired ? kind.slice(0, -2) : kind, side: paired ? kind.slice(-1) : "l", dir: g.scope === "body" ? g.comparator : null };
   await nextTick();
   filling = false;
-  // a name the app made follows the goal as it changes; one you typed stays
-  if (g.title === autoTitle.value) f.value.title = "";
 }
 const setStatus = useChange(async (id: string, status: string) => { await api.put(`/goals/${id}`, { status }); toast(status === "archived" ? "Goal archived" : "Goal made active"); }, ["goals", "home"]);
 async function del(g: Goal) { if (await confirm(`Delete "${g.title}"?`, { ok: "Delete", danger: true })) { await api.del(`/goals/${g.id}`); invalidate(["goals", "home"]); open.value = null; toast("Goal deleted"); } }
@@ -223,7 +223,7 @@ await loaded(goals, metrics, routines, exercises, types, body);
 
     <GoalSheet v-if="open" :id="open" @close="open = null" @edit="startEdit" @status="(g, st) => { setStatus.run(g.id, st); open = null; }" @delete="del" />
     <ReorderSheet v-if="reordering" title="Reorder goals" hint="Drag to reorder your active goals, here and in Home's Goals."
-      :items="activeGoals.map((g) => ({ id: g.id, title: g.title, sub: periodLabel(g, settings) }))" @move="moveGoal" @close="reordering = false" />
+      :items="activeGoals.map((g) => ({ id: g.id, title: g.title, sub: goalSub(g, settings) }))" @move="moveGoal" @close="reordering = false" />
     <Sheet v-if="creating || editId" :title="editId ? 'Edit goal' : 'New goal'" @close="closeForm">
       <div class="fld"><label>What is it about?</label><ChoiceTiles v-model="f.scope" :options="SCOPE_TILES" label="What is it about?" />
         <p v-if="SCOPE_HELP[f.scope]" class="tiny" style="margin-top:8px">{{ SCOPE_HELP[f.scope] }}</p></div>
@@ -243,7 +243,8 @@ await loaded(goals, metrics, routines, exercises, types, body);
       <div v-if="f.when === 'days' && f.scope !== 'body'" class="fld"><label>On these days</label><ChoiceTiles v-model="f.days" :options="DAY_OPTS" multiple compact min="56px" label="On these days" /></div>
       <p v-else-if="f.when === 'workdays' && f.scope !== 'body'" class="tiny hgap">{{ daysShort(workdaysOf(settings), settings.firstDay) }}, your work week. <button class="lnk inl" @click="router.push('/settings/units')">Change it</button></p>
       <div class="frow"><div class="fld"><label>Deadline (optional)</label><DatePicker v-model="f.deadline" clearable placeholder="No deadline" title="Deadline" /></div></div>
-      <div class="fld"><label>Name</label><input v-model="f.title" :placeholder="autoTitle || 'Name the goal'" /></div>
+      <div class="fld"><label>Name (optional)</label><input v-model="f.title" maxlength="120" :placeholder="autoTitle" />
+        <div v-if="f.title.trim() && autoTitle" class="tiny" style="margin-top:4px">Shown under the name: {{ autoTitle }}</div></div>
       <template #foot><button class="btn o" @click="closeForm">Cancel</button><button class="btn" @click="save">Save goal</button></template>
     </Sheet>
     <ExercisePicker v-if="pickEx" title="Goal for which exercise?" @close="pickEx = false" @pick="(ids) => { f.scopeId = ids[0]; pickEx = false; }" />

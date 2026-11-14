@@ -328,7 +328,12 @@ export interface Reminder {
 export type GoalScope = "general" | "routine" | "exercise" | "muscle" | "activity" | "body";
 export interface Goal {
   id: string;
+  /** what to show: the name you gave the goal, else its automatic title (summary) */
   title: string;
+  /** the name you gave it, "" for none (the only title stored) */
+  name?: string;
+  /** the automatic title, from what it measures: "Walk 30 min a day" */
+  summary?: string;
   scope: GoalScope;
   scopeId: string | null;
   metric: string;

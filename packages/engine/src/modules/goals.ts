@@ -2,7 +2,7 @@
 // Progress is worked out from the data each time, so editing a past workout moves the goal too.
 // Weeks, months and days follow the app's calendar (tz = its getTimezoneOffset(), as for /home and /achievements), not
 // the process's: the server runs in UTC and the copy on a device in the person's zone, and both must agree.
-import { e1rm, GROUPS, LIFTED_SQL, bodyMeasure, bodyUnit, bodyGoalDirection, goalDaysOf, orderGoals, GOAL_METRICS, type Goal, type GoalProgress, type Settings } from "@motus/shared";
+import { e1rm, GROUPS, LIFTED_SQL, bodyMeasure, bodyUnit, bodyGoalDirection, goalDaysOf, orderGoals, goalAutoTitle, GOAL_METRICS, type Goal, type GoalProgress, type Settings } from "@motus/shared";
 import type { Router, Ctx } from "../router";
 import type { Sql } from "../db";
 import { camel, id, str, numOrNull, oneOf, dateStr, startOfDay, tzOf, visible } from "../util";
@@ -231,9 +231,34 @@ async function stillReached(q: Sql, g: Goal): Promise<boolean> {
     [bodyKind(g), set, g.comparator, g.target])).rows.length > 0;
 }
 
+/**
+ * Each goal's title, worked out on every read: the stored title column holds only a name the person gave it (name), the
+ * automatic one (summary: "Walk 30 min a day") is built from what the goal measures, by the routine's, exercise's or
+ * activity's name as it is now and in your units. title is the one to show: the name, else the summary.
+ */
+export async function withTitles(q: Sql, s: Settings, rows: Goal[]): Promise<Goal[]> {
+  const ids = (scope: string) => [...new Set(rows.filter((g) => g.scope === scope && g.scopeId).map((g) => g.scopeId!))];
+  const names = new Map<string, string>();
+  const look = async (scope: string, sql: string) => {
+    const list = ids(scope);
+    if (list.length) for (const r of (await q.query(sql, [list])).rows) names.set(`${scope}:${r.id}`, r.name);
+  };
+  await look("routine", "SELECT id::text AS id, name FROM routines WHERE id::text = ANY($1::text[])");
+  await look("exercise", "SELECT id::text AS id, name FROM exercises WHERE id::text = ANY($1::text[])");
+  await look("activity", "SELECT slug AS id, name FROM activity_types WHERE slug = ANY($1::text[])");
+  for (const g of rows) {
+    const name = g.scope === "muscle" ? GROUPS.find((x) => x.id === g.scopeId)?.name : g.scope === "body" ? undefined
+      : names.get(`${g.scope}:${g.scopeId}`) ?? (g.scope === "activity" && g.scopeId !== "workout" ? g.scopeId : undefined);
+    g.name = (g.title ?? "").trim();
+    g.summary = goalAutoTitle({ ...g, target: Number(g.target) }, { name, units: s.units, firstDay: s.firstDay });
+    g.title = g.name || g.summary;
+  }
+  return rows;
+}
+
 export async function goalsWithProgress(ctx: Ctx, tzMin: number, where = "status <> 'archived'"): Promise<Goal[]> {
   const s = await getSettings(ctx.q, ctx.userId);
-  const rows = (await ctx.q.query(`SELECT * FROM goals WHERE ${where} ORDER BY status = 'achieved', created_at DESC`)).rows.map((x: any) => camel<Goal>(x));
+  const rows = await withTitles(ctx.q, s, (await ctx.q.query(`SELECT * FROM goals WHERE ${where} ORDER BY status = 'achieved', created_at DESC`)).rows.map((x: any) => camel<Goal>(x)));
   for (const g of rows) {
     g.target = Number(g.target);
     g.progress = await progressOf(ctx.q, g, s, ctx.now(), tzMin);
