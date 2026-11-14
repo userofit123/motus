@@ -1,12 +1,16 @@
 // Pull to refresh on phones (shell/PhoneShell.vue): pulling down at the very top of a page shows a small round spinner
-// that follows the finger with resistance; letting go past THRESHOLD reads Health Connect (when on), syncs the offline
-// copy with the server (when there is one) and reloads the screen. Listeners stay passive: at the top of the page the
+// that follows the finger with resistance; letting go past THRESHOLD updates everything at once: reads Health Connect
+// (when on), syncs the offline copy with the server (when there is one), checks for a new app version (in the apps),
+// reloads the screen, and then says in one toast what it did. Listeners stay passive: at the top of the page the
 // browser has nothing to scroll for a downward pull, so nothing needs preventing (the overscroll glow is switched off in
 // app.css instead).
 import { ref } from "vue";
 import { sync, schedule } from "../api/replica";
 import { invalidate, queryClient, reloadQueued } from "../api/live";
-import { healthSupported, syncHealth } from "../native/health";
+import { healthSupported, syncHealth, healthAdded } from "../native/health";
+import { updater, updateAvailable } from "./updater";
+import { latestRelease, detectPlatform } from "./releases";
+import { toast } from "./toast";
 
 /** How far (after resistance) the spinner must come down for a release to refresh */
 export const THRESHOLD = 70;
@@ -21,30 +25,55 @@ async function until(done: () => boolean, maxMs: number) {
   while (!done() && Date.now() < end) await wait(60);
 }
 
-/** Send and fetch the offline copy's changes now, and wait for that run to finish (at most 20 s). */
-async function syncCopy() {
-  if (!sync.on) return;
-  const was = sync.syncing;
+/** Send and fetch the offline copy's changes now, and wait for that run to finish (at most 20 s).
+ *  What happened, for the summary: "" without an offline copy. */
+async function syncCopy(): Promise<string> {
+  if (!sync.on) return "";
+  const was = sync.syncing, at = sync.lastAt;
   schedule(0);
   // a run already going is waited for as it is (it starts another one by itself if asked meanwhile)
   if (!was) await until(() => sync.syncing, 1500);
   await until(() => !sync.syncing, 20_000);
+  // only a run that got through moves lastAt (api/replica.ts); one the server answered with an error leaves its message
+  if (sync.lastAt > at) return "Synced with the server";
+  return sync.online && sync.error ? "Couldn't sync with the server" : "Couldn't reach the server";
 }
 
-/** What a pull does: Health Connect and the server first, then every screen on show reloads. */
+/** Health Connect, when on and allowed: what it added ("" when nothing new or nothing allowed). */
+async function readHealth(on: boolean): Promise<string> {
+  if (!on || !healthSupported()) return "";
+  try {
+    const r = await syncHealth();
+    const added = r ? healthAdded(r) : "";
+    return added ? `${added} added from Health Connect` : "";
+  } catch { return "Couldn't read Health Connect"; }
+}
+
+/** The apps look for a new version as Check now does (the same cached answer App & Versions shows); a newer one shows
+ *  the update notice, as an automatic check would. In a browser there is nothing to install: "". */
+async function checkUpdate(): Promise<string> {
+  if (!detectPlatform().app) return "";
+  const r = await queryClient.fetchQuery({ queryKey: ["static", "release"], queryFn: latestRelease, staleTime: 0 }).catch(() => null);
+  if (!r?.latest) return "Couldn't check for updates";
+  updater.latest = r.latest;
+  if (!updater.appVersion) return "";
+  return updateAvailable.value ? `Version ${updateAvailable.value} available` : "Motus is up to date";
+}
+
+/** What a pull does: Health Connect, the server and the update check side by side, then every screen on show reloads,
+ *  and one toast sums it up: "Synced with the server · 3 days of steps added from Health Connect · Motus is up to date". */
 export async function refreshAll(healthOn: boolean) {
   const t0 = Date.now();
-  await Promise.all([
-    // a failure here is shown in Settings → Integrations when read by hand; a pull just carries on
-    healthOn && healthSupported() ? syncHealth().catch(() => null) : null,
-    syncCopy(),
-  ]);
+  // the server first in the summary (it is what most pulls are for), the update last
+  const said = await Promise.all([syncCopy(), readHealth(healthOn), checkUpdate()]);
   invalidate(["*"]);
   await wait(40); // the gathered reload starts after 30 ms (api/live.ts)
   await until(() => !reloadQueued.value && !queryClient.isFetching(), 10_000);
   // a refresh that was over at once still shows the spinner for a moment, so the pull reads as done, not ignored
   const left = 600 - (Date.now() - t0);
   if (left > 0) await wait(left);
+  const parts = said.filter(Boolean);
+  toast(parts.length ? parts.join(" · ") : "Up to date", { kind: parts.some((p) => p.startsWith("Couldn't")) ? "err" : "ok", ms: 5000 });
 }
 
 /** The gesture. allowed(e): may a pull start from this touch (page, target, nothing open). */

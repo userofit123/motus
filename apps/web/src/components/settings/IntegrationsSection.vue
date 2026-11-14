@@ -11,7 +11,7 @@ import Icon from "../Icon.vue";
 import { toast } from "../../core/toast";
 import { useSettings } from "../../api/queries";
 import { computed, onMounted, onBeforeUnmount, ref } from "vue";
-import { HEALTH_KINDS, healthSupported, healthStatus, connectHealth, openHealthSettings, syncHealth, lastSync, syncing, type HealthStatus, type HealthResult } from "../../native/health";
+import { HEALTH_KINDS, healthSupported, healthStatus, connectHealth, openHealthSettings, syncHealth, healthAdded, lastSync, syncing, type HealthStatus, type HealthResult } from "../../native/health";
 
 const s = useSettings();
 const router = useRouter();
@@ -56,20 +56,11 @@ async function connect() {
     if (hc.value.granted.length) await sync();
   } catch (e) { toast((e as Error).message || "Health Connect could not be read"); }
 }
-// what a read added, as a toast: "3 days of steps, 2 nights of sleep, steps from your band for 2 activities, heart rate for 3 sessions added"
-const many = (n: number, one: string, more: string) => `${n} ${n === 1 ? one : more}`;
+// what a read added, as a toast: "3 days of steps, 2 nights of sleep added"
 function report(r: HealthResult | null) {
   if (!r) return;
-  const parts = [r.steps && `${many(r.steps, "day", "days")} of steps`, (r.sleep || r.sleepNights) && `${many(Math.max(r.sleep, r.sleepNights ?? 0), "night", "nights")} of sleep`,
-    r.weight && `${r.weight} weight ${r.weight === 1 ? "entry" : "entries"}`, r.activities && many(r.activities, "activity", "activities"),
-    r.restingHr && `${many(r.restingHr, "day", "days")} of resting heart rate`, r.spo2 && `${many(r.spo2, "day", "days")} of blood oxygen`,
-    r.hrv && `${many(r.hrv, "day", "days")} of HRV`,
-    r.distance && `${many(r.distance, "day", "days")} of distance`, r.activeKcal && `${many(r.activeKcal, "day", "days")} of active calories`,
-    r.bodyFat && `${r.bodyFat} body fat ${r.bodyFat === 1 ? "entry" : "entries"}`, r.hydration && `${many(r.hydration, "day", "days")} of water`,
-    r.vo2max && `${many(r.vo2max, "day", "days")} of VO2 max`,
-    r.ranges?.steps && `steps from your band for ${many(r.ranges.steps, "activity", "activities")}`,
-    r.ranges?.hr && `heart rate for ${many(r.ranges.hr, "session", "sessions")}`].filter(Boolean);
-  toast(parts.length ? `${parts.join(", ")} added` : "Up to date");
+  const added = healthAdded(r);
+  toast(added ? `${added} added` : "Up to date");
 }
 async function sync() {
   try { report(await syncHealth()); } catch (e) { toast((e as Error).message || "Health Connect could not be read"); }

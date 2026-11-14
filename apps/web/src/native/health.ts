@@ -30,6 +30,21 @@ export interface HealthData {
 /** What POST /health/import added, and ranges: what POST /health/ranges filled in on activities and workouts recorded in
  *  Motus (the band's steps, its heart rate) */
 export interface HealthResult { steps: number; sleep: number; weight: number; activities: number; restingHr?: number; spo2?: number; hrv?: number; sleepNights?: number; distance?: number; activeKcal?: number; bodyFat?: number; hydration?: number; vo2max?: number; hrDays?: number; ranges?: { steps: number; hr: number } }
+// what a read added, in words (Settings → Integrations and pull to refresh say it): "3 days of steps, 2 nights of sleep,
+// 2 activities with band steps, 3 sessions with heart rate"; "" when it added nothing (every part starts with its count,
+// so it reads right first in a list too)
+const many = (n: number, one: string, more: string) => `${n} ${n === 1 ? one : more}`;
+export function healthAdded(r: HealthResult): string {
+  return [r.steps && `${many(r.steps, "day", "days")} of steps`, (r.sleep || r.sleepNights) && `${many(Math.max(r.sleep, r.sleepNights ?? 0), "night", "nights")} of sleep`,
+    r.weight && `${r.weight} weight ${r.weight === 1 ? "entry" : "entries"}`, r.activities && many(r.activities, "activity", "activities"),
+    r.restingHr && `${many(r.restingHr, "day", "days")} of resting heart rate`, r.spo2 && `${many(r.spo2, "day", "days")} of blood oxygen`,
+    r.hrv && `${many(r.hrv, "day", "days")} of HRV`,
+    r.distance && `${many(r.distance, "day", "days")} of distance`, r.activeKcal && `${many(r.activeKcal, "day", "days")} of active calories`,
+    r.bodyFat && `${r.bodyFat} body fat ${r.bodyFat === 1 ? "entry" : "entries"}`, r.hydration && `${many(r.hydration, "day", "days")} of water`,
+    r.vo2max && `${many(r.vo2max, "day", "days")} of VO2 max`,
+    r.ranges?.steps && `${many(r.ranges.steps, "activity", "activities")} with band steps`,
+    r.ranges?.hr && `${many(r.ranges.hr, "session", "sessions")} with heart rate`].filter(Boolean).join(", ");
+}
 type Range = { kind: "activity" | "workout"; id: string; start: string; end: string };
 type RangeResult = { kind: "activity" | "workout"; id: string; steps?: number; covered: boolean; hr?: [number, number][] };
 
