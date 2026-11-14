@@ -2,6 +2,23 @@
 
 The top entry's version is the one the release workflow publishes. Add a new `## [x.y.z]` section to release.
 
+## [0.1.27] - 2026-11-14
+
+- Daily steps match your band and Health Connect: on days the phone also counted steps, Motus counted the phone's steps in the minutes between the band's and showed 1,000+ too many. It now takes the band's count wherever the band was on, and the phone's only while the band was off. After updating, the last 90 days are read again and corrected (a value you typed stays).
+- The daily log shows where each value came from: grey "From your band" values, and a value you typed over the band's says "Typed in · Use band value" to bring the band's back. Sleep is typed in hours and minutes, and mood says which end is good.
+- Band data on Android 9-13 phones imports again (the read failed there).
+- The Readiness block shows while it learns your usual values, with how many days until your score.
+- Home: Steps today shows progress toward your steps goal, and the Heart block shows resting heart rate, HRV, blood oxygen and today's range. The Calendar's month view has a steps bar under each day.
+- Every screen counts sets and records the same way: working sets without warm-ups, and one record per exercise. An exercise counts as done once its working sets are, whatever its warm-ups.
+- Sleep under 3 hours counts as a nap or partial record and is left out of sleep averages.
+- Body and Stats → Body show the same trend and change, and trends only show once there are at least 3 entries over a week.
+- Clearer wording everywhere: one name for the same thing on every screen (Resting heart rate, Estimated 1RM, Duration and Training time, Daily log, Heart rate in workouts...), sleep as "7h 48m", volume as "18k kg", and dot-separated lines that never start or end on a dot.
+- Goals keep the name you give them; the automatic title shows under it.
+- The Heart tab lists every workout with heart rate, and workouts from the last 30 days pick up band data that synced late.
+- Fixes: a routine that no longer exists shows "Routine not found" instead of a blank page; the + button no longer covers cards on desktop; charts of things that can't be negative start at 0; Calendar's List view no longer signs you out; Imported data can be reached from Settings on any device; Reports never show the same numbers twice.
+- Band data you delete stays deleted on every device, and an offline copy can no longer mix one account's routines into another.
+- Updating adds a small database change on first start.
+
 ## [0.1.26] - 2026-11-14
 
 - Home has four new blocks that appear once your band's data comes in: Readiness (a score from last night's sleep, resting heart rate and HRV against your usual), Last night (time asleep, bed and wake time, stages), Heart (resting heart rate, HRV and today's heart rate) and Steps today (steps, distance and active calories).
