@@ -14,7 +14,9 @@ describe("015 and 016 on old rows", () => {
     const [on, off, ex, ra, rb] = [uuidv7(), uuidv7(), uuidv7(), uuidv7(), uuidv7()];
     await q("INSERT INTO users (id, username, display_name) VALUES ($1,'on','On'), ($2,'off','Off')", [on, off]);
     await q(`INSERT INTO user_settings (user_id, data) VALUES ($1, '{"features":{"progression":false}}')`, [off]);
-    await q("INSERT INTO exercises (id, owner_id, name, primary_muscles, instructions) VALUES ($1,$2,'Press','{chest}','{\"long text\"}')", [ex, on]);
+    // from the shared catalog: both people's routines use it (one person's own exercise in another's routine is
+    // removed by 032_own_references)
+    await q("INSERT INTO exercises (id, owner_id, name, primary_muscles, instructions) VALUES ($1,NULL,'Press','{chest}','{\"long text\"}')", [ex]);
     await q("INSERT INTO routines (id, user_id, name) VALUES ($1,$2,'A'), ($3,$4,'B')", [ra, on, rb, off]);
     const re = [uuidv7(), uuidv7(), uuidv7(), uuidv7()];
     const rows: [string, string, string, string | null, unknown][] = [

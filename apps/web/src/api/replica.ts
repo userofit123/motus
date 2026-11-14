@@ -97,13 +97,17 @@ export async function startReplica(user: { id: string }): Promise<boolean> {
     db = await pgliteDb(`idb://${name}`);
     eng = await createEngine(db, { mode: "local", seed: false });
     userId = user.id;
+    // a copy made by an older app may hold another account's rows (M-184): made again, unless it still has changes
+    // to send (it then waits for a later start, after a sync has sent them)
+    const meta = await R.replicaMeta(db);
+    if (R.outdated(meta) && !(await R.waitingCount(db))) await R.clearCopy(db);
     if (!(await R.replicaMeta(db)).ready) {
       // the first copy needs the server once
       const cat = await http("GET", "/sync/catalog");
       await R.loadCatalog(db, cat.stamp, cat.rows);
       // everything you have in one answer: on a big history and a slow connection this takes far longer than an
       // ordinary request is given
-      await R.loadSnapshot(db, await httpTransport.request("GET", "/sync/snapshot", undefined, { wait: 120_000 }));
+      await R.loadSnapshot(db, await httpTransport.request("GET", `/sync/snapshot?user=${encodeURIComponent(userId)}`, undefined, { wait: 120_000 }));
     }
     // nothing is saved on its own (pglite.ts): the tables and the first copy go to disk now, not with the first change
     await saved();
@@ -161,7 +165,7 @@ async function run() {
     for (;;) {
       const out = await R.localChanges(db);
       if (!out.changes.length) break;
-      const res = await call("POST", "/sync/push", { device: meta.device, changes: out.changes });
+      const res = await call("POST", "/sync/push", { device: meta.device, user: userId, changes: out.changes });
       wrote = true;
       await R.markSent(db, out.upTo);
       if (res.rejected.length) { await R.applyRemote(db, userId, res.rejected); changed = true; }
@@ -171,7 +175,7 @@ async function run() {
     const retry: any[] = [];
     for (;;) {
       const m = await R.replicaMeta(db);
-      const p = await call("GET", `/sync/pull?since=${m.cursor}&device=${encodeURIComponent(m.device)}`);
+      const p = await call("GET", `/sync/pull?since=${m.cursor}&device=${encodeURIComponent(m.device)}&user=${encodeURIComponent(userId)}`);
       if (p.catalog !== m.catalog) { const cat = await call("GET", "/sync/catalog"); wrote = true; await R.loadCatalog(db, cat.stamp, cat.rows); changed = true; }
       // an empty page only moves the cursor, which is no reason to save
       if (p.changes.length) { wrote = true; changed = true; }
@@ -185,6 +189,9 @@ async function run() {
     failingSince = 0;
     Object.assign(sync, { online: true, error: failed ? `${failed} change${failed === 1 ? "" : "s"} from this device didn't fit the server's data` : "", lastAt: Date.now() });
   } catch (e) {
+    // someone else signed in (in another tab): this copy is not theirs, so it stops here and the app opens again as
+    // them. The copy stays, with anything not yet sent, for when its person signs in again.
+    if (e instanceof ApiError && e.status === 409) { sync.on = false; location.reload(); return; }
     if (e instanceof ApiError && e.status === 0) unreachable(tried);
     else {
       // the server answered (with an error), so it is reachable: a later network failure gets its own grace

@@ -6,12 +6,17 @@ import { SYNCED } from "./tables";
 import { readRows, applyChanges, latestPerRow, keyOf, overrule, RULED, type Change } from "./core";
 import { uuidv7 } from "../ids";
 
-export interface ReplicaMeta { cursor: number; pushed: number; device: string; catalog: string; ready: boolean }
+/**
+ * v: how the copy was made. Copies older than COPY_VERSION are made again from the server (once nothing here is
+ * waiting to be sent): one made before M-184 may hold rows another account's sign-in pulled into it.
+ */
+export interface ReplicaMeta { cursor: number; pushed: number; device: string; catalog: string; ready: boolean; v: number }
+export const COPY_VERSION = 1;
 
 export const replicaMeta = (db: Db) => metaOf(db.admin);
 async function metaOf(q: Sql): Promise<ReplicaMeta> {
   const r = (await q.query("SELECT value FROM app_meta WHERE key = 'replica'")).rows[0]?.value;
-  return { cursor: 0, pushed: 0, device: "", catalog: "", ready: false, ...(r ?? {}) };
+  return { cursor: 0, pushed: 0, device: "", catalog: "", ready: false, v: 0, ...(r ?? {}) };
 }
 async function saveMeta(db: Db, patch: Partial<ReplicaMeta>) {
   const next = { ...(await replicaMeta(db)), ...patch };
@@ -45,7 +50,23 @@ export async function loadSnapshot(db: Db, snap: { cursor: number; user: any; ta
     }
   });
   const pushed = Number((await db.admin.query("SELECT coalesce(max(seq), 0) AS s FROM sync_log")).rows[0].s);
-  return saveMeta(db, { cursor: snap.cursor, pushed, device: (await replicaMeta(db)).device || uuidv7(), ready: true });
+  return saveMeta(db, { cursor: snap.cursor, pushed, device: (await replicaMeta(db)).device || uuidv7(), ready: true, v: COPY_VERSION });
+}
+
+/** Whether the copy has to be made again from the server (see ReplicaMeta.v). */
+export const outdated = (m: ReplicaMeta) => m.ready && m.v < COPY_VERSION;
+
+/**
+ * Empties the copy of the person's rows, so loadSnapshot makes it again. Only with nothing waiting to be sent (it
+ * would be lost). The shared catalog stays; the device keeps its name.
+ */
+export async function clearCopy(db: Db) {
+  await db.tx(async (q) => {
+    await q.query("SELECT set_config('motus.sync_apply', '1', true)");
+    for (const t of [...SYNCED].reverse()) await q.query(`DELETE FROM ${t.name}${t.name === "exercises" ? " WHERE owner_id IS NOT NULL" : ""}`);
+    await q.query("DELETE FROM sync_log");
+  });
+  await saveMeta(db, { ready: false, cursor: 0 });
 }
 
 /** What changed here since the last send (the latest change per row), and up to where in the log that goes. */
