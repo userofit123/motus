@@ -9,6 +9,7 @@ import { bad } from "../errors";
 import { dateStr, tzOf } from "../util";
 import { RECORD_TYPES } from "../migrations/040_health_records";
 import { HEALTH_DELETED_MAX } from "@motus/shared";
+import { afterRecords } from "./health";
 
 export type RecordType = (typeof RECORD_TYPES)[number];
 const isType = (t: unknown): t is RecordType => typeof t === "string" && (RECORD_TYPES as readonly string[]).includes(t);
@@ -145,7 +146,7 @@ const writeBlock = (ctx: Ctx, type: RecordType, day: string, recs: Record<string
  * Runs under lockRecords.
  */
 export async function saveRecords(ctx: Ctx, type: RecordType, fromS: number, toS: number, sent: { id: string; rec: Rec }[], complete: boolean, deletedKeys: Set<string>, source?: string, sentIds?: Set<string>) {
-  const out = { saved: 0, removed: 0 };
+  const out = { saved: 0, removed: 0, days: new Set<string>() };
   if (source) for (const x of sent) x.rec.src = source;
   const keep = sent.filter((x) => { const k = logKey(type, x.id, recordDay(type, x.rec)); return !k || !deletedKeys.has(k); });
   const have = await blocks(ctx, type, fromS, toS, keep.map((x) => x.id));
@@ -167,6 +168,8 @@ export async function saveRecords(ctx: Ctx, type: RecordType, fromS: number, toS
     where.set(id, day); dirty.add(day); out.saved++;
   }
   for (const day of dirty) await writeBlock(ctx, type, day, have.get(day)!);
+  // the blocks whose records changed, for the numbers worked out from them (afterRecords)
+  if (out.saved || out.removed) for (const day of dirty) out.days.add(day);
   return out;
 }
 
@@ -319,6 +322,9 @@ export function healthRecordRoutes(r: Router) {
     // read under the lock: a key deleted meanwhile has taken its records (the trigger waits for the lock) and is seen here
     const deletedKeys = new Set((await ctx.q.query<{ key: string }>("SELECT key FROM health_imports WHERE deleted_at IS NOT NULL")).rows.map((x) => x.key));
     const out = { saved: 0, removed: 0 };
+    // per type, the days whose records changed: the numbers worked out from them follow (afterRecords)
+    const changed = new Map<string, Set<string>>();
+    const touch = (type: string, day: string) => (changed.get(type) ?? changed.set(type, new Set()).get(type)!).add(day);
     for (const [type, v] of Object.entries(isObj(b.types) ? (b.types as Record<string, Sent>) : {})) {
       if (!isType(type) || !isObj(v) || !Array.isArray(v.records)) continue;
       const list = v.records as unknown[], taken = list.slice(0, MAX_PER_TYPE);
@@ -327,12 +333,15 @@ export function healthRecordRoutes(r: Router) {
       // a list cut short (over the most per request) can't say what is missing
       const n = await saveRecords(ctx, type, fromS, toS, sent, v.complete === true && list.length <= MAX_PER_TYPE, deletedKeys, source, sentIds);
       out.saved += n.saved; out.removed += n.removed;
+      for (const d of n.days) touch(type, d);
     }
     const gone = (Array.isArray(b.deleted) ? (b.deleted as unknown[]) : []).filter((x): x is string => typeof x === "string" && !!x).slice(0, HEALTH_DELETED_MAX);
     if (gone.length) {
       const n = Number((await ctx.q.query<{ n: number }>(
         "SELECT count(*)::int AS n FROM health_records h, unnest(h.ids) i WHERE h.ids && $1::text[] AND i = ANY($1::text[])", [gone])).rows[0]!.n);
       if (n) {
+        for (const x of (await ctx.q.query<{ type: string; day: string }>(
+          "SELECT type, to_char(day, 'YYYY-MM-DD') AS day FROM health_records WHERE ids && $1::text[]", [gone])).rows) touch(x.type, x.day);
         // blocks left with nothing go; only those holding the ids are touched (the ids index)
         await ctx.q.query("DELETE FROM health_records WHERE ids && $1::text[] AND ids <@ $1::text[]", [gone]);
         await ctx.q.query(
@@ -342,6 +351,7 @@ export function healthRecordRoutes(r: Router) {
       }
     }
     if (out.saved || out.removed) ctx.changed("readings");
+    await afterRecords(ctx, changed);
     return out;
   });
 
