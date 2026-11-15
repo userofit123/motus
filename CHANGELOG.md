@@ -2,6 +2,19 @@
 
 The top entry's version is the one the release workflow publishes. Add a new `## [x.y.z]` section to release.
 
+## [0.1.28] - 2026-11-15
+
+- Steps match your watch or band: Motus no longer mixes in your phone's own step counting from Health Connect. On a day a watch, band or ring counted, the day is that device's total (the number Gadgetbridge and Health Connect show), and a walk only takes steps the device counted. Past days and the last 30 days of walks are read again and corrected; values you typed stay. Imported data → ⋮ on a steps day → Step sources shows where a day's steps came from.
+- Activities show only what their type tracks: a Time only activity shows its time, not distance, climb or pace, here and in lists, Stats and goals. What your watch or band measured during an activity (steps, distance, climb, floors, active calories, heart rate) shows on it, marked as from your device.
+- Screens say which device the data came from: your watch, ring or band, or "Health Connect" for data from a phone app. Works with any device that writes to Health Connect.
+- Settings → Integrations → Health Connect has "How often": read every minute, every 10 or 30 minutes, every hour, or only when you pull down to refresh, while Motus is open. Climb and floors can be allowed there too.
+- Body is one page: trend, change, weigh-ins and a chart for any measurement, with a period picker. The Body tab in Stats is gone.
+- A week, month or year still running is compared with the same stretch of the one before, so Home no longer says "-100%" on the first day of the week; Reports says which days it compares with.
+- Backups and exports include your photos, a server account's backup and restore go to the server, older backups are brought up to date, and a backup from a newer version is refused instead of losing data.
+- The shared workout image shows the real Motus icon.
+- Band data imports on Android 9-13 phones too.
+- Updating adds a small database change on first start.
+
 ## [0.1.27] - 2026-11-14
 
 - Daily steps match your band and Health Connect: on days the phone also counted steps, Motus counted the phone's steps in the minutes between the band's and showed 1,000+ too many. It now takes the band's count wherever the band was on, and the phone's only while the band was off. After updating, the last 90 days are read again and corrected (a value you typed stays).
