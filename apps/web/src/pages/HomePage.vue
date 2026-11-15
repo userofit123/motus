@@ -5,7 +5,7 @@
 import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
 import { muscleName, num, fromM, percentChange, orderGoals, HOME_BLOCKS, type Goal, type HomePlan, type HomeRecord, type HomeGroup, type HomeWeek } from "@motus/shared";
-import { useHome, useSettings, saveSettings, useAchievements, useGoals, useHealthAvailable, useHealthDay, useReadiness, useSleep, useDaily, useTypeName, loaded, type HealthAvailable, type ReadinessPart } from "../api/queries";
+import { useHome, useSettings, saveSettings, useAchievements, useGoals, useHealthAvailable, useHealthDay, useReadiness, useSleep, useDaily, useTypeName, loaded, type HealthAvailable, type ReadinessPart, type ReadinessBuilding } from "../api/queries";
 import { api } from "../api/client";
 import { invalidate, queryClient } from "../api/live";
 import { confirm } from "../core/ask";
@@ -227,12 +227,15 @@ const bpm = (v: number) => `${Math.round(v)} bpm`, ms = (v: number) => `${Math.r
 const PART: Record<ReadinessPart["key"], { icon: string; t: string; f: (v: number) => string }> = {
   // sleep comes in hours, as the day's log keeps it
   sleep: { icon: "moon", t: "Sleep", f: (h) => mins(h * 60) }, restingHr: { icon: "heartPulse", t: "Resting heart rate", f: bpm }, hrv: { icon: "wave", t: "HRV", f: ms },
+  // Training load (a feature): the last 7 days' load against the weekly average of 4 weeks, as Stats → Heart's card
+  load: { icon: "load", t: "Training load", f: (v) => `${fmt.value.num(v, 0)} in 7 days` },
 };
 const signedBy = (d: number, f: (v: number) => string) => `${Math.round(d) < 0 ? "-" : "+"}${f(Math.abs(d))}`;
 const readyParts = computed(() => (rd.value?.parts ?? []).filter((x) => x.value != null && PART[x.key]).map((x) => {
   const p = PART[x.key];
-  return { key: x.key, icon: p.icon, t: p.t, s: x.baseline != null ? `${p.f(x.value!)} · usual ${p.f(x.baseline)}` : p.f(x.value!),
-    r: x.effect === "flat" || x.baseline == null ? "As usual" : signedBy(x.value! - x.baseline, p.f), tone: x.effect === "up" ? "pos" : x.effect === "down" ? "neg" : undefined };
+  return { key: x.key, icon: p.icon, t: p.t, s: x.baseline != null ? `${p.f(x.value!)} · usual ${x.key === "load" ? fmt.value.num(x.baseline, 0) : p.f(x.baseline)}` : p.f(x.value!),
+    // the load's points mean nothing alone: how far off is a share of the usual, as Stats → Heart's card says it
+    r: x.effect === "flat" || x.baseline == null ? "As usual" : x.key === "load" ? `${x.change! < 0 ? "-" : "+"}${Math.abs(Math.round(x.change!))}%` : signedBy(x.value! - x.baseline, p.f), tone: x.effect === "up" ? "pos" : x.effect === "down" ? "neg" : undefined };
 }));
 // a part still learning its usual: today's value and when its usual comes, as a ready part's row has its usual, and on
 // the right a muted word where a result goes (the days themselves are the block's big value)
@@ -240,8 +243,10 @@ const buildingParts = computed(() => (rd.value?.building ?? []).filter((x) => PA
   const p = PART[x.key];
   return { key: x.key, icon: p.icon, t: p.t, s: `${p.f(x.value)} · usual in ${(rd.value!.need ?? 7) - x.days} ${(rd.value!.need ?? 7) - x.days === 1 ? "day" : "days"}`, r: "Learning", tone: "muted" };
 }));
-// every part in one list, in the order of the score's parts (sleep, resting heart rate, HRV)
-const ORDER: ReadinessPart["key"][] = ["sleep", "restingHr", "hrv"];
+// every part in one list, in the order of the score's parts (sleep, resting heart rate, HRV, then the training load);
+// the body's parts alone decide when a score comes (the load never waits on a usual of its own)
+const ORDER: ReadinessPart["key"][] = ["sleep", "restingHr", "hrv", "load"];
+const BODY: ReadinessBuilding["key"][] = ["sleep", "restingHr", "hrv"];
 // readiness leaves out a short record (under MIN_NIGHT_H) as no night; its row says why sleep isn't in the score
 const shortPart = computed(() => nightShort.value && !rd.value?.parts.some((x) => x.key === "sleep") && !rd.value?.building?.some((x) => x.key === "sleep")
   ? [{ key: "sleep" as const, icon: PART.sleep.icon, t: PART.sleep.t, s: `${mins(asleepMin(night.value!))} · too short to count`, r: "Left out", tone: "muted" }] : []);
@@ -253,12 +258,12 @@ const readyWait = computed(() => {
   if (!r || r.score != null) return null;
   // an older server sends no building or need: guard them so Home still draws
   const building = r.building ?? [], need = r.need ?? 7;
-  const days = ORDER.map((k) => (r.parts.some((x) => x.key === k) ? need : building.find((x) => x.key === k)?.days ?? 0)).sort((a, b) => b - a);
-  const missing = ORDER.filter((k) => !r.parts.some((x) => x.key === k) && !building.some((x) => x.key === k));
+  const days = BODY.map((k) => (r.parts.some((x) => x.key === k) ? need : building.find((x) => x.key === k)?.days ?? 0)).sort((a, b) => b - a);
+  const missing = BODY.filter((k) => !r.parts.some((x) => x.key === k) && !building.some((x) => x.key === k));
   const left = need - days[1]!;
-  const known = ORDER.filter((k) => !missing.includes(k));
+  const known = BODY.filter((k) => !missing.includes(k));
   return { days: days[1]!, need, left,
-    text: r.parts.length + building.length < 2
+    text: r.parts.filter((x) => x.key !== "load").length + building.length < 2
       ? `Your score also needs ${missing.map((k) => (k === "hrv" ? PART[k].t : PART[k].t.toLowerCase())).join(" or ")} from your ${adviceWord(dev.value)}.`
       : `Learning your usual ${known.map((k) => PART[k].t.toLowerCase().replace("hrv", "HRV")).join(", ").replace(/, ([^,]*)$/, " and $1")}.` };
 });
@@ -633,7 +638,7 @@ await loaded(home, ach, avail, hDay, ready, nightsQ, dailyQ);
           <div v-if="readyWait" class="row"><div class="big grow">{{ readyWait.left }}<small>{{ readyWait.left === 1 ? "day" : "days" }} until your score</small></div><Ring :pct="readyWait.days / readyWait.need" :size="40" /></div>
           <div v-else class="row"><div class="big grow">{{ rd.score }}<small v-if="rd.label">{{ rd.label }}</small></div><Ring :pct="rd.score! / 100" :size="40" :color="rd.label === 'Take it easy' ? 'var(--warn)' : undefined" /></div>
           <div v-if="readyWait" class="tiny">{{ readyWait.text }}</div>
-          <div v-else-if="rd.label" class="tiny">{{ READY_TEXT[rd.label] }}</div>
+          <div v-else-if="rd.label" class="tiny">{{ rd.why ?? READY_TEXT[rd.label] }}</div>
           <div v-if="allParts.length" class="list hhl">
             <div v-for="x in allParts" :key="x.key" class="li">
               <Icon :name="x.icon" :size="18" class="muted" />

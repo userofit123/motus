@@ -695,6 +695,41 @@ describe("readiness", () => {
     expect(readiness([P("sleep", 8, 7), P("hrv", 60, 50)]).building).toEqual([]);
   });
 
+  it("takes the training load as a part, and says in one line why", () => {
+    const trend = (week: number, usual: number) => ({ week, usual, ratio: Math.round((week / usual) * 100) / 100, state: null });
+    const tired = readiness([P("sleep", 5, 7), P("restingHr", 60.5, 55), P("hrv", 50, 50)]);
+    expect(tired.why).toBe("Short sleep and high resting heart rate: take it easier.");
+    expect(readiness([P("sleep", 7, 7), P("hrv", 50, 50)]).why).toBe("Everything as usual: train as planned.");
+    // a week within the steady range (0.8-1.3 times the usual) moves nothing
+    expect(readiness([P("sleep", 7, 7), P("hrv", 50, 50)], trend(720, 600))).toMatchObject({ score: 70 });
+    // a week half again as heavy as usual: 0.2 beyond 1.3, -10
+    const heavy = readiness([P("sleep", 7, 7), P("hrv", 50, 50)], trend(900, 600));
+    expect(heavy).toMatchObject({ score: 60, label: "Normal", why: "A heavy week of training: train as planned." });
+    expect(heavy.parts.at(-1)).toEqual({ key: "load", value: 900, baseline: 600, change: 50, effect: "down" });
+    // opposite directions read with "but"
+    expect(readiness([P("sleep", 8, 7), P("hrv", 50, 50)], trend(900, 600)).why).toBe("A long sleep but a heavy week of training: train as planned.");
+    // the load alone doesn't make a score
+    expect(readiness([P("sleep", 7, 7)], trend(900, 600))).toMatchObject({ score: null, why: null });
+  });
+
+  it("works out each session's load and the 7:28 comparison once the feature is on", async () => {
+    const L = uuidv7();
+    await eng.db.admin.query("INSERT INTO users (id, username) VALUES ($1, 'load')", [L]);
+    const as = async (method: string, path: string, body?: unknown, query?: Record<string, string>) => (await eng.handle({ method, path, body, query, userId: L })).body as any;
+    const day = (n: number) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
+    expect(await as("GET", "/health/load", undefined, { from: day(6), to: day(0), tz: "0" })).toEqual({ load: null });
+    await as("PUT", "/settings", { features: { trainingLoad: true } });
+    // a 30-minute walk every other day for four weeks (no heart rate: 2 a minute), then a heavy last week of an hour a day
+    for (let i = 0; i < 28; i++) if (i < 7 || i % 2 === 0)
+      await eng.db.admin.query("INSERT INTO activities (id, user_id, type, started_at, duration_s) VALUES ($1, $2, 'walk', $3, $4)",
+        [uuidv7(), L, day(i) + "T10:00:00Z", i < 7 ? 3600 : 1800]);
+    const r = (await as("GET", "/health/load", undefined, { from: day(6), to: day(0), tz: "0" })).load;
+    expect(r.sessions.filter((x: any) => x.date >= day(6)).map((x: any) => x.load)).toEqual([120, 120, 120, 120, 120, 120, 120]);
+    // the usual: (840 + 10 walks of 60) / 4 weeks
+    expect(r.trend).toMatchObject({ week: 840, usual: 360, ratio: 2.33 });
+    expect(r.trend.state).toBe("much higher");
+  });
+
   it("does not list a part with a full history but a zero usual as building", () => {
     const r = readiness([P("sleep", 8, 7), P("hrv", 60, 50), P("restingHr", 55, 0, 28)]);
     expect(r.building).toEqual([]);
@@ -706,7 +741,7 @@ describe("readiness", () => {
     await eng.db.admin.query("INSERT INTO users (id, username) VALUES ($1, 'w')", [W]);
     const as = async (method: string, path: string, body?: unknown, query?: Record<string, string>) => (await eng.handle({ method, path, body, query, userId: W })).body as any;
     const day = (n: number) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
-    expect(await as("GET", "/health/readiness", undefined, { tz: "0" })).toEqual({ score: null, label: null, parts: [], building: [], need: 7, date: day(0) });
+    expect(await as("GET", "/health/readiness", undefined, { tz: "0" })).toEqual({ score: null, label: null, why: null, parts: [], building: [], need: 7, date: day(0) });
     const entries = [];
     for (let i = 1; i <= 20; i++) entries.push({ date: day(i), kind: "sleep_h", value: 7 }, { date: day(i + 1), kind: "resting_hr", value: 55 });
     // long before: not part of the usual

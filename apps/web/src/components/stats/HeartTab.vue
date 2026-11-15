@@ -8,9 +8,9 @@
 import { computed, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { useQuery } from "@tanstack/vue-query";
-import { ymd, weekStartOf, zoneMinutes, highRestingDays } from "@motus/shared";
+import { ymd, weekStartOf, zoneMinutes, highRestingDays, LOAD_METHOD } from "@motus/shared";
 import { api } from "../../api/client";
-import { useWorkouts, useActivities, useTypeName, useSettings } from "../../api/queries";
+import { useWorkouts, useActivities, useTypeName, useSettings, useTrainingLoad } from "../../api/queries";
 import { mins } from "../../core/sleep";
 import { ZONES, useMaxHr, hrSamples } from "../../core/heart";
 import HeartDay from "./HeartDay.vue";
@@ -141,6 +141,40 @@ const openDay = (d: string) => { anchor.value = d; view.value = "day"; };
 const openZone = (k: string) => { anchor.value = k; view.value = zPerWeek.value ? "week" : "day"; };
 const zHard = computed(() => zDays.value.reduce((t, [, m]) => t + m[2]! + m[3]! + m[4]!, 0));
 
+// training load (the Training load feature, M-245): each day's load over the stretch (a week's over two months, as the
+// zones), and the last 7 days of the stretch (to today in the current one) against the weekly average of 4 weeks. The
+// same comparison is a part of Home's Readiness
+const loadOn = computed(() => !!settings.value.features.trainingLoad);
+const loadEnd = computed(() => { const last = ymd(new Date(to.value.getTime() - 86400000)); return last < today.value ? last : today.value; });
+const lq = useTrainingLoad(computed(() => ({ from: range.value.from, to: loadEnd.value })), computed(() => loadOn.value && !isDay.value));
+const loadPerWeek = computed(() => view.value === "year");
+const loadBars = computed(() => {
+  const l = lq.data.value;
+  if (!l) return [];
+  const rows = new Map<string, number>();
+  // every day (or week) of the stretch so far, so a day without training shows as one
+  for (let d = range.value.from; d <= loadEnd.value; d = ymd(new Date(new Date(d + "T12:00").getTime() + 86400000))) {
+    const k = loadPerWeek.value ? weekStartOf(new Date(d + "T12:00"), settings.value.firstDay) : d;
+    rows.set(k, rows.get(k) ?? 0);
+  }
+  for (const x of l.sessions) if (inRange(x.date)) { const k = loadPerWeek.value ? weekStartOf(new Date(x.date + "T12:00"), settings.value.firstDay) : x.date; if (rows.has(k)) rows.set(k, rows.get(k)! + x.load); }
+  return [...rows].map(([k, v]) => { const full = fmt.value.date(k, { day: "numeric", month: "short" });
+    return { id: k, label: full.split(" ")[0]!, full, group: fmt.value.date(k, { month: "short" }), tip: loadPerWeek.value ? `week of ${full}` : fmt.value.date(k, { weekday: "short", day: "numeric", month: "short" }), value: v }; });
+});
+const loadHas = computed(() => loadBars.value.some((b) => b.value > 0) || (lq.data.value?.trend.week ?? 0) > 0);
+// the same ranges as Readiness's load part: steady reads "As usual" there, lighter raises the score, higher lowers it
+const LOAD_STATE = { lighter: "Lighter than usual", steady: "About your usual", higher: "Higher than usual", "much higher": "Much higher than usual" } as const;
+const loadRow = computed(() => {
+  const t = lq.data.value?.trend;
+  if (!t) return null;
+  const pct = t.ratio == null ? null : Math.round((t.ratio - 1) * 100);
+  return { t: t.state ? LOAD_STATE[t.state] : "Learning your usual",
+    s: t.ratio == null ? `${fmt.value.num(t.week, 0)} in 7 days · usual after 3 weeks of training` : `${fmt.value.num(t.week, 0)} in 7 days · usual ${fmt.value.num(t.usual, 0)}`,
+    rv: pct == null ? "Learning" : t.state === "steady" ? "As usual" : `${pct < 0 ? "-" : "+"}${Math.abs(pct)}%`,
+    tone: pct == null ? "muted" : t.state === "lighter" ? "pos" : t.state === "steady" ? undefined : "neg" };
+});
+const openLoad = (k: string) => { anchor.value = k; view.value = loadPerWeek.value ? "week" : "day"; };
+
 // the stretch's numbers on top, as Steps' and Sleep's tiles, each only with data: the average resting heart rate (the
 // first, with its days' line), the average HRV, the moderate-or-harder minutes a week (a stretch shorter than a week
 // counts as one), and the days with any heart data of the stretch's days so far. The charts' captions below say other
@@ -204,9 +238,24 @@ const tiles = computed(() => {
         <div class="tiny ht-line">{{ zPerWeek ? "Tap a week to open it." : "Tap a day to open it." }}</div>
       </div>
 
+      <!-- training load: the comparison as What stands out's row, each day's load, then how it is worked out -->
+      <div v-if="loadOn && loadHas && loadRow" class="card wkc" :class="{ spt: tiles.length || insights.length || vitals.length || zBars.length }">
+        <div class="ch"><span class="bi"><Icon name="load" :size="15" /></span><span class="t grow">Training load</span><span class="tiny">Vs your usual</span></div>
+        <div class="list ht-ins">
+          <div class="li">
+            <Icon name="load" :size="18" class="muted" />
+            <div class="grow"><div class="t">{{ loadRow.t }}</div><div class="s">{{ loadRow.s }}</div></div>
+            <b class="r rv" :class="loadRow.tone">{{ loadRow.rv }}</b>
+          </div>
+        </div>
+        <div class="csec"><div class="lbl hgap">Load {{ loadPerWeek ? "by week" : "by day" }}</div>
+          <BarChart :bars="loadBars" :height="170" :fmt="(v) => fmt.num(v, 0)" @pick="openLoad" /></div>
+        <div class="tiny ht-line">{{ LOAD_METHOD }} {{ loadPerWeek ? "Tap a week to open it." : "Tap a day to open it." }}{{ lq.data.value && !lq.data.value.maxHr ? " Set your max heart rate or year of birth in Body for heart rate to count." : "" }}</div>
+      </div>
+
       <!-- how hard each workout and activity was, over the stretch: its average and highest heart rate, as Stats → Sleep's
            "Sleep after workouts"; nothing at all when the stretch has no workouts -->
-      <div v-if="total" class="card wkc" :class="{ spt: tiles.length || insights.length || vitals.length || zBars.length }">
+      <div v-if="total" class="card wkc" :class="{ spt: tiles.length || insights.length || vitals.length || zBars.length || (loadOn && loadHas && loadRow) }">
         <div class="ch"><span class="bi"><Icon name="dumbbell" :size="15" /></span><span class="t grow">Heart rate in workouts</span><span v-if="sessions.length" class="tiny">{{ sessions.length }}</span></div>
         <template v-if="sessions.length">
           <template v-if="sessions.length > 2"><div class="lbl hgap">Average per session (bpm)</div>

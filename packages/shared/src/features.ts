@@ -28,6 +28,7 @@ export const FEATURES: FeatureDef[] = [
   // Insights
   { id: "achievements", group: "Insights", name: "Achievements", desc: "Milestones like 100 workouts or 100 km walked.", on: true },
   { id: "reports", group: "Insights", name: "Monthly report and year in review", desc: "A summary page for each month and year.", on: true },
+  { id: "trainingLoad", group: "Insights", name: "Training load", desc: "How hard your workouts were, from heart rate zones and sets, the last 7 days against your usual. Counts toward Readiness.", on: false },
   { id: "standards", group: "Insights", name: "Strength standards", desc: "How your lifts compare, relative to body weight.", on: true },
   { id: "shareImage", group: "Insights", name: "Share image", desc: "Make an image of a finished workout.", on: false },
   // Integrations

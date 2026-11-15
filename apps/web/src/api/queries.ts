@@ -98,12 +98,21 @@ export interface HealthDay {
 }
 export const useHealthDay = (date: MaybeRef<string | null>, enabled: MaybeRef<boolean> = true, opts?: QueryOpts) => useQuery({ queryKey: computed(() => ["health", "day", unref(date)]),
   queryFn: () => api.get<HealthDay>(`/health/day/${unref(date)}`), enabled: computed(() => !!unref(date) && unref(enabled)), ...keepOpt(opts) });
-/** How ready for training today, from last night's sleep, resting heart rate and HRV against your usual (baseline) */
-export interface ReadinessPart { key: "sleep" | "restingHr" | "hrv"; value: number | null; baseline: number | null; change: number | null; effect: "up" | "down" | "flat" }
-// building: parts with today's value but fewer than `need` days for a usual yet
-export interface ReadinessBuilding { key: ReadinessPart["key"]; value: number; days: number }
-export interface Readiness { score: number | null; label: "Ready" | "Normal" | "Take it easy" | null; parts: ReadinessPart[]; building: ReadinessBuilding[]; need: number; date: string }
-export const useReadiness = (enabled: MaybeRef<boolean> = true) => useQuery({ queryKey: ["health", "readiness"], queryFn: () => api.get<Readiness>("/health/readiness", { tz: new Date().getTimezoneOffset() }), enabled });
+/** How ready for training today, from last night's sleep, resting heart rate and HRV against your usual (baseline), and
+ * with Training load on the last 7 days' load against the 4-week average (load: value and baseline are weeks' loads) */
+export interface ReadinessPart { key: "sleep" | "restingHr" | "hrv" | "load"; value: number | null; baseline: number | null; change: number | null; effect: "up" | "down" | "flat" }
+// building: parts with today's value but fewer than `need` days for a usual yet (never the load, whose 4 weeks fill on their own)
+export interface ReadinessBuilding { key: Exclude<ReadinessPart["key"], "load">; value: number; days: number }
+// why: one line from the parts that moved the score most and what the label advises (an older server sends none)
+export interface Readiness { score: number | null; label: "Ready" | "Normal" | "Take it easy" | null; why?: string | null; parts: ReadinessPart[]; building: ReadinessBuilding[]; need: number; date: string }
+// under "stats": a workout, activity, band sync or settings change (the Training load feature, the max heart rate) all touch stats
+export const useReadiness = (enabled: MaybeRef<boolean> = true) => useQuery({ queryKey: ["stats", "readiness"], queryFn: () => api.get<Readiness>("/health/readiness", { tz: new Date().getTimezoneOffset() }), enabled });
+/** Training load (Stats → Heart): each session's load over [from, to] and the 28 days before, and the 7:28 comparison as of `to`; load null while the feature is off */
+export interface LoadSession { kind: "workout" | "activity"; id: string; name: string | null; type: string | null; date: string; load: number; hr: boolean }
+export interface TrainingLoad { sessions: LoadSession[]; trend: { week: number; usual: number; ratio: number | null; state: "lighter" | "steady" | "higher" | "much higher" | null }; maxHr: boolean }
+export const useTrainingLoad = (range: MaybeRef<{ from: string; to: string }>, enabled: MaybeRef<boolean> = true) => useQuery({
+  queryKey: computed(() => ["stats", "load", unref(range).from, unref(range).to]), enabled,
+  queryFn: () => api.get<{ load: TrainingLoad | null }>("/health/load", { ...unref(range), tz: new Date().getTimezoneOffset() }).then((r) => r.load) });
 /** The daily log from a day on (newest first), steps with the recorded activities counted in; the key Home's Today's log uses */
 export const useDaily = (from: string) => useQuery({ queryKey: ["activities", "daily", from], queryFn: () => api.get<{ date: string; kind: string; value: number | string }[]>("/daily", { from, tz: new Date().getTimezoneOffset() }) });
 export const useAchievements = (enabled: MaybeRef<boolean> = true) => useQuery({ queryKey: ["stats", "achievements"], queryFn: () => api.get<any[]>("/achievements", { tz: new Date().getTimezoneOffset() }), enabled });

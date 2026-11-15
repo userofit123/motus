@@ -29,6 +29,8 @@ import { dayIn } from "./achievements";
 import { isSum, DERIVED_DAYS, shift, lockRecords, loadReads, loadBlocks, appKinds, dayBlocks, derivedDays, sleepBlocks, sleepFrom, spanBlocks, spanFrom,
   type DerivedType, type SpanBand, type SumType } from "./healthDerive";
 import { isNight, cleanWornDevice, plausibleSteps, stepsTyped, appSteps, bandStepsVerdict, daySteps, type WornDevice } from "@motus/shared";
+import { maxHeartRate, sessionLoad, loadTrend, CHRONIC_DAYS, exercisePeaks, type LoadTrend, type HrTick } from "@motus/shared";
+import { getSettings } from "./settings";
 
 export const HEALTH_SOURCE = "health_connect";
 // a band's number for an activity's time: a measure that can't be (below 0, absurdly large, not a number) is left out
@@ -176,36 +178,12 @@ export function readHrDay(e: any): { date: string; min: number | null; max: numb
 }
 
 /** A set as the heart rate per exercise reads it: its exercise in the workout and when it was ticked (unix seconds). */
-export interface HrSet { weId: string; doneS: number | null }
-/** The longest a set's time is taken to be (its rest before it and the set): a long break before it doesn't count. */
-const MAX_SET_S = 10 * 60;
-/**
- * Heart rate per exercise of a workout, from the workout's series. A set's time runs from the set ticked before it (any
- * exercise, so supersets split correctly; the first from the workout's start) to its own tick, at most MAX_SET_S: the
- * rest before a set and the set itself. An exercise's heart rate is every reading in its sets' times. Exercises whose
- * sets have no tick times fall back to the exercise's own start and end (`spans`), if it has them. A workout typed in
- * afterwards has every set ticked at the same moment, which says nothing about when each was done: its ticks are not used.
- */
+export type HrSet = HrTick;
+/** Heart rate per exercise of a workout, from the workout's series: shared exercisePeaks (the workout's page counts the same way). */
 export function exerciseHr(hr: unknown, startS: number, sets: HrSet[], spans: Map<string, [number, number]> = new Map()): { workoutExerciseId: string; avgHr: number; maxHr: number }[] {
   if (!Array.isArray(hr) || !hr.length) return [];
   const pts = (hr as [number, number][]).filter((p) => Array.isArray(p) && Number.isFinite(p[0]) && Number.isFinite(p[1])).sort((a, b) => a[0] - b[0]);
-  const windows = new Map<string, [number, number][]>();
-  const add = (we: string, a: number, b: number) => (windows.get(we) ?? windows.set(we, []).get(we)!).push([a, b]);
-  let prev = startS;
-  const ticked = sets.filter((x) => x.doneS != null).sort((a, b) => a.doneS! - b.doneS!);
-  const told = ticked.length < 2 || new Set(ticked.map((x) => x.doneS)).size > 1;
-  for (const s of told ? ticked : []) {
-    add(s.weId, Math.max(prev, s.doneS! - MAX_SET_S), s.doneS!);
-    prev = Math.max(prev, s.doneS!);
-  }
-  for (const [we, [a, b]] of spans) if (!windows.has(we) && b > a) add(we, a, b);
-  const out: { workoutExerciseId: string; avgHr: number; maxHr: number }[] = [];
-  for (const [we, ws] of windows) {
-    const mine = pts.filter((p) => ws.some(([a, b]) => p[0] > a && p[0] <= b));
-    if (!mine.length) continue;
-    out.push({ workoutExerciseId: we, avgHr: Math.round(mine.reduce((t, p) => t + p[1], 0) / mine.length), maxHr: Math.max(...mine.map((p) => p[1])) });
-  }
-  return out;
+  return [...exercisePeaks(pts, sets, startS, spans)].map(([workoutExerciseId, x]) => ({ workoutExerciseId, ...x }));
 }
 /** exerciseHr for each of these workouts that has a band's heart rate, by workout exercise id. Two queries for them all. */
 export async function exerciseHrOf(q: Sql, workoutIds: string[]): Promise<Map<string, { avgHr: number; maxHr: number }>> {
@@ -228,6 +206,42 @@ export async function exerciseHrOf(q: Sql, workoutIds: string[]): Promise<Map<st
   return out;
 }
 
+export interface LoadSession { kind: "workout" | "activity"; id: string; name: string | null; type: string | null; date: string; load: number; hr: boolean }
+/**
+ * Training load (@motus/shared sessionLoad, loadTrend) of every finished workout and activity on the days [from, to],
+ * plus the 28 days before `from` so the last day's 4-week comparison is whole. Off (null) while the Training load
+ * feature is. hr: whether the session's heart rate counted (a band was worn and a max heart rate is known).
+ */
+export async function trainingLoad(ctx: Ctx, from: string, to: string, tz: number): Promise<{ sessions: LoadSession[]; trend: LoadTrend; maxHr: boolean } | null> {
+  const st = await getSettings(ctx.q, ctx.userId);
+  if (!st.features.trainingLoad) return null;
+  const max = maxHeartRate(st.profile ?? {}, ctx.now())?.bpm ?? null;
+  // a day either side of the range: the app's calendar day of a session can fall on the UTC day before or after
+  const lo = shift(from, -CHRONIC_DAYS - 1), hi = shift(to, 2);
+  const parse = (v: unknown) => (typeof v === "string" ? JSON.parse(v) : v) as [number, number][] | null;
+  const ws = (await ctx.q.query<{ id: string; name: string | null; started_at: string; hr: unknown; sets: number }>(
+    `SELECT w.id, w.name, w.started_at, w.hr, (SELECT count(*) FROM workout_exercises we JOIN workout_sets s ON s.workout_exercise_id = we.id
+       AND s.done AND s.kind <> 'warmup' WHERE we.workout_id = w.id)::int AS sets
+     FROM workouts w WHERE w.status = 'completed' AND w.started_at >= $1::date AND w.started_at < $2::date`, [lo, hi])).rows;
+  const as = (await ctx.q.query<{ id: string; type: string; name: string | null; started_at: string; duration_s: number | string | null; hr: unknown }>(
+    "SELECT id, type, name, started_at, duration_s, hr FROM activities WHERE started_at >= $1::date AND started_at < $2::date", [lo, hi])).rows;
+  const all: LoadSession[] = [];
+  for (const w of ws) {
+    const hr = parse(w.hr), load = sessionLoad({ hr, maxHr: max, sets: w.sets });
+    all.push({ kind: "workout", id: w.id, name: w.name ?? null, type: null, date: dayIn(w.started_at, tz), load, hr: !!(hr?.length && max) });
+  }
+  for (const a of as) {
+    const hr = parse(a.hr), load = sessionLoad({ hr, maxHr: max, minutes: (Number(a.duration_s) || 0) / 60 });
+    all.push({ kind: "activity", id: a.id, name: a.name ?? null, type: a.type, date: dayIn(a.started_at, tz), load, hr: !!(hr?.length && max) });
+  }
+  // the 4 weeks need 3 weeks since the first session ever (not just the first loaded) before they say what's usual
+  const first = (await ctx.q.query<{ d: string | null }>(
+    `SELECT to_char(min(d), 'YYYY-MM-DD') AS d FROM (SELECT min(started_at)::date AS d FROM workouts WHERE status = 'completed'
+     UNION ALL SELECT min(started_at)::date FROM activities) x`)).rows[0]?.d ?? null;
+  const sessions = all.filter((x) => x.date >= shift(from, -CHRONIC_DAYS) && x.date <= to).sort((a, b) => a.date.localeCompare(b.date));
+  return { sessions, trend: loadTrend(sessions, to, first), maxHr: max != null };
+}
+
 /** The median of some numbers, null for none. */
 const median = (a: number[]) => {
   if (!a.length) return null;
@@ -236,8 +250,15 @@ const median = (a: number[]) => {
 };
 const BASELINE_DAYS = 28, MIN_BASELINE = 7;
 type Effect = "up" | "down" | "flat";
-export interface ReadinessPart { key: "sleep" | "restingHr" | "hrv"; value: number; baseline: number; change: number; effect: Effect }
-export interface ReadinessBuilding { key: ReadinessPart["key"]; value: number; days: number }
+export interface ReadinessPart { key: "sleep" | "restingHr" | "hrv" | "load"; value: number; baseline: number; change: number; effect: Effect }
+type BodyKey = Exclude<ReadinessPart["key"], "load">;
+// the one line that says why: the words for a part that raised or lowered the score, and what the label advises
+const WHY: Record<ReadinessPart["key"], { up: string; down: string }> = {
+  sleep: { up: "a long sleep", down: "short sleep" }, restingHr: { up: "low resting heart rate", down: "high resting heart rate" },
+  hrv: { up: "high HRV", down: "low HRV" }, load: { up: "a lighter week", down: "a heavy week of training" },
+};
+const ADVICE = { Ready: "a good day to train hard", Normal: "train as planned", "Take it easy": "take it easier" } as const;
+export interface ReadinessBuilding { key: BodyKey; value: number; days: number }
 /**
  * How ready for training the body looks today, from last night's sleep, today's resting heart rate and HRV, each against
  * the person's own usual (the median of the 28 days before, with at least 7 of them). Kept simple so it can be explained:
@@ -245,15 +266,22 @@ export interface ReadinessBuilding { key: ReadinessPart["key"]; value: number; d
  *   sleep: +10 per hour more than usual, -10 per hour less, within -20..+10;
  *   resting heart rate: -2 per % above usual, +2 per % below, within -20..+10 (a raised resting rate: tired, ill, stressed);
  *   HRV: +0.5 per % above usual, -0.5 per % below, within -20..+10 (HRV swings a lot from day to day, so it counts less);
- *   clamped to 0-100. Ready from 75, Normal from 50, else Take it easy. No score with fewer than 2 parts.
+ *   training load (only with the Training load feature on, and 3 weeks of sessions): the last 7 days' load against the
+ *   weekly average of the last 28 (acute:chronic, @motus/shared loadTrend): steady from 0.8 to 1.3 times the usual (no
+ *   points, as Stats → Heart's card calls it); above, -1 per 2 % beyond 1.3 (within -15); below, +1 per 4 % under 0.8 (within +5);
+ *   clamped to 0-100. Ready from 75, Normal from 50, else Take it easy. No score with fewer than 2 body parts (sleep,
+ *   resting heart rate, HRV): the load alone says nothing about how the body has recovered.
+ * why: one line from the (at most two) parts that moved the score most, then what the label advises ("Short sleep and
+ * high resting heart rate: take it easier"); M-247's Recovery score reuses this rather than working out its own.
  * change: sleep in minutes, resting heart rate and HRV in % (signed). effect: which way the part moves the score; flat
  * within a small margin (15 min of sleep, 3 % resting heart rate, 5 % HRV) that is everyday noise.
  * building: the parts with today's value but too few days for a usual yet (days of the `need`), so Home can show the
  * baseline filling up instead of nothing while a new band's first weeks come in.
  */
-export function readiness(parts: { key: ReadinessPart["key"]; value: number; history: number[] }[]): {
-  score: number | null; label: "Ready" | "Normal" | "Take it easy" | null; parts: ReadinessPart[]; building: ReadinessBuilding[]; need: number;
+export function readiness(parts: { key: BodyKey; value: number; history: number[] }[], load: LoadTrend | null = null): {
+  score: number | null; label: "Ready" | "Normal" | "Take it easy" | null; why: string | null; parts: ReadinessPart[]; building: ReadinessBuilding[]; need: number;
 } {
+  const moved = new Map<ReadinessPart["key"], number>();
   const clamp = (x: number, a: number, b: number) => Math.max(a, Math.min(b, x));
   const out: ReadinessPart[] = [], building: ReadinessBuilding[] = [];
   let score = 70;
@@ -274,11 +302,30 @@ export function readiness(parts: { key: ReadinessPart["key"]; value: number; his
       flat = Math.abs(change) < (p.key === "restingHr" ? 3 : 5);
     }
     score += pts;
+    if (!flat) moved.set(p.key, pts);
     out.push({ key: p.key, value: p.value, baseline: Math.round(base * 10) / 10, change, effect: flat ? "flat" : pts > 0 ? "up" : "down" });
   }
-  if (out.length < 2) return { score: null, label: null, parts: out, building, need: MIN_BASELINE };
+  const body = out.length;
+  if (load?.ratio != null) {
+    // value and baseline as weeks' loads; change in % (signed); the steady range (loadTrend's) is an ordinary week
+    const change = Math.round((load.ratio - 1) * 100), r = load.ratio;
+    const pts = r > 1.3 ? clamp(-(r - 1.3) * 50, -15, 0) : r < 0.8 ? clamp((0.8 - r) * 25, 0, 5) : 0, flat = pts === 0;
+    score += pts;
+    if (!flat) moved.set("load", pts);
+    out.push({ key: "load", value: load.week, baseline: load.usual, change, effect: flat ? "flat" : pts > 0 ? "up" : "down" });
+  }
+  if (body < 2) return { score: null, label: null, why: null, parts: out, building, need: MIN_BASELINE };
   const s = Math.round(clamp(score, 0, 100));
-  return { score: s, label: s >= 75 ? "Ready" : s >= 50 ? "Normal" : "Take it easy", parts: out, building, need: MIN_BASELINE };
+  const label = s >= 75 ? "Ready" : s >= 50 ? "Normal" : "Take it easy";
+  return { score: s, label, why: whyLine(moved, label), parts: out, building, need: MIN_BASELINE };
+}
+/** The readiness line: the one or two parts that moved the score most ("and" when they agree, "but" when not), then the advice */
+function whyLine(moved: Map<ReadinessPart["key"], number>, label: keyof typeof ADVICE): string {
+  const top = [...moved].sort((a, b) => Math.abs(b[1]) - Math.abs(a[1])).slice(0, 2);
+  if (!top.length) return `Everything as usual: ${ADVICE[label]}.`;
+  const word = ([k, p]: [ReadinessPart["key"], number]) => WHY[k][p > 0 ? "up" : "down"];
+  const two = top[1] ? `${word(top[0]!)} ${(top[0]![1] > 0) === (top[1][1] > 0) ? "and" : "but"} ${word(top[1])}` : word(top[0]!);
+  return `${two[0]!.toUpperCase()}${two.slice(1)}: ${ADVICE[label]}.`;
 }
 
 // one rule with the activity's Step sources sheet (@motus/shared); re-exported for the tests
@@ -834,7 +881,16 @@ export function healthRoutes(r: Router) {
       const from = shift(now.date, -BASELINE_DAYS);
       return [{ key, value: now.value, history: mine.filter((x) => x.date >= from && x.date < now.date && counts(x.value)).map((x) => x.value) }];
     });
-    return { ...readiness(parts), date: today };
+    const load = await trainingLoad(ctx, today, today, tzOf(qs));
+    return { ...readiness(parts, load?.trend ?? null), date: today };
+  });
+
+  // Training load over the days [from, to] (YYYY-MM-DD) for Stats: each session's load from the 28 days before `from`
+  // on, and the 4-week comparison as of `to`. null while the Training load feature is off. tz: the app's calendar
+  r.get("/health/load", async (ctx, _p, _b, qs) => {
+    const from = dateStr(qs.from), to = dateStr(qs.to);
+    if (!from || !to || to < from) throw bad("Pick a range");
+    return { load: await trainingLoad(ctx, from, to, tzOf(qs)) };
   });
 
   // The import log, newest first. A day's numbers (steps, sleep, resting heart rate, SpO2, HRV, distance, active calories) sort at the end of their day, above that day's readings.
