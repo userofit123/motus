@@ -5,7 +5,7 @@
 import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { GROUPS, muscleName, weekStartOf, weekStartDate, daysIntoWeek, weekdayOrder, statsPeriod, STATS_PERIODS, ymd, type StatsPeriod, WEEKLY_SET_RANGE, num, percentChange } from "@motus/shared";
-import { useStats, useSettings, useAchievements, useGoals, useHealthAvailable, useTypeName, useActivityFigures, loaded } from "../api/queries";
+import { useStats, useHealthScores, useSettings, useAchievements, useGoals, useHealthAvailable, useTypeName, useActivityFigures, loaded } from "../api/queries";
 import { useFmt, unitOf, localYmd, activityIcon } from "../core/format";
 import { startOpen } from "../core/ui";
 import { fromWhere, useDevice } from "../native/health";
@@ -24,6 +24,7 @@ import LearnButton from "../components/learn/LearnButton.vue";
 import SleepTab, { type SleepView } from "../components/stats/SleepTab.vue";
 import HeartTab, { type HeartView } from "../components/stats/HeartTab.vue";
 import StepsTab, { type StepsView } from "../components/stats/StepsTab.vue";
+import ScoresTab from "../components/stats/ScoresTab.vue";
 
 const route = useRoute(), router = useRouter();
 const s = useSettings();
@@ -65,8 +66,11 @@ const p = computed<any>(() => prev.data.value);
 // Steps, Sleep and Heart only once a band (or a script) has handed over that kind of data: never an empty tab for something
 // this person doesn't track
 const avail = useHealthAvailable();
+// Scores (the Health scores feature) once one of them has its data
+const scoresQ = useHealthScores(computed(() => !!s.value.features.scores));
+const hasScores = computed(() => !!s.value.features.scores && !!scoresQ.data.value && !!(scoresQ.data.value.sleep || scoresQ.data.value.activity || scoresQ.data.value.strength));
 const TABS = computed(() => [["overview", "Overview"], ["routines", "Routines"], ["exercises", "Exercises"], ["muscles", "Muscles"], ["activities", "Activities"],
-  ...(avail.data.value?.steps ? [["steps", "Steps"]] : []), ...(avail.data.value?.sleep ? [["sleep", "Sleep"]] : []), ...(avail.data.value?.heart ? [["heart", "Heart"]] : []), ...(s.value.features.reports ? [["reports", "Reports"]] : []), ...(s.value.features.achievements ? [["achievements", "Achievements"]] : [])]);
+  ...(avail.data.value?.steps ? [["steps", "Steps"]] : []), ...(avail.data.value?.sleep ? [["sleep", "Sleep"]] : []), ...(avail.data.value?.heart ? [["heart", "Heart"]] : []), ...(hasScores.value ? [["scores", "Scores"]] : []), ...(s.value.features.reports ? [["reports", "Reports"]] : []), ...(s.value.features.achievements ? [["achievements", "Achievements"]] : [])]);
 
 // an activity's distance only where its type tracks it, as its page shows it
 const figures = useActivityFigures(), distOf = (a: any) => figures.dist(a) ?? 0;
@@ -149,7 +153,8 @@ const avgOf = (pts: { y: number }[]) => pts.reduce((t, p) => t + p.y, 0) / Math.
 // show the page once its data is in, all at once
 await loaded(st, prev, ach, avail);
 // a tab that isn't there (Sleep in a link, after its data was deleted) falls back to Overview
-watch(() => avail.data.value, () => { if (!TABS.value.some(([k]) => k === tab.value)) tab.value = "overview"; }, { immediate: true });
+// (Scores waits for its scores, which load after the page)
+watch([() => avail.data.value, () => scoresQ.data.value], () => { if (!TABS.value.some(([k]) => k === tab.value) && !(tab.value === "scores" && scoresQ.isFetching.value)) tab.value = "overview"; }, { immediate: true });
 </script>
 
 <template>
@@ -158,7 +163,7 @@ watch(() => avail.data.value, () => { if (!TABS.value.some(([k]) => k === tab.va
       <div v-if="tab === 'steps'" class="acts"><AppSelect v-model="stepsView" :options="STEP_VIEWS" title="View" style="width:auto" /></div>
       <div v-else-if="tab === 'sleep'" class="acts"><AppSelect v-model="sleepView" :options="SLEEP_VIEWS" title="View" style="width:auto" /></div>
       <div v-else-if="tab === 'heart'" class="acts"><AppSelect v-model="heartView" :options="STEP_VIEWS" title="View" style="width:auto" /></div>
-      <div v-else-if="tab !== 'reports'" class="acts"><AppSelect v-model="rk" :options="PERIODS" title="Period" style="width:auto" /></div></div>
+      <div v-else-if="tab !== 'reports' && tab !== 'scores'" class="acts"><AppSelect v-model="rk" :options="PERIODS" title="Period" style="width:auto" /></div></div>
     <div class="tabs"><button v-for="[k, l] in TABS" :key="k" :class="{ on: tab === k }" @click="tab = k!">{{ l }}</button></div>
 <Transition name="sw" mode="out-in"><div :key="tab">
     <div v-if="!d && st.isError.value" class="card empty"><Icon name="info" :size="34" /><b>Couldn't load your stats</b>{{ (st.error.value as Error | null)?.message }}<br /><button class="btn tonal" @click="st.refetch()">Try again</button></div>
@@ -248,6 +253,7 @@ watch(() => avail.data.value, () => { if (!TABS.value.some(([k]) => k === tab.va
     <StepsTab v-else-if="tab === 'steps'" v-model:view="stepsView" :day="stepsDay" @update:day="setDay" />
     <SleepTab v-else-if="tab === 'sleep'" v-model:view="sleepView" :day="stepsDay" @update:day="setDay" />
     <HeartTab v-else-if="tab === 'heart'" v-model:view="heartView" :day="stepsDay" @update:day="setDay" />
+    <ScoresTab v-else-if="tab === 'scores'" />
 
     <Reports v-else-if="tab === 'reports'" />
 

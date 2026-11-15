@@ -732,6 +732,24 @@ describe("readiness", () => {
     expect(r.trend.state).toBe("much higher");
   });
 
+  it("scores the week's activity against WHO's minutes and the steps level once Health scores is on", async () => {
+    const S = uuidv7();
+    await eng.db.admin.query("INSERT INTO users (id, username) VALUES ($1, 'scores')", [S]);
+    const as = async (method: string, path: string, body?: unknown, query?: Record<string, string>) => (await eng.handle({ method, path, body, query, userId: S })).body as any;
+    const day = (n: number) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
+    expect(await as("GET", "/health/scores", undefined, { tz: "0" })).toEqual({ scores: null });
+    await as("PUT", "/settings", { features: { scores: true } });
+    // a 30-minute walk a day without heart rate (moderate: 210 of 150) and 4,000 steps a day (half of 8,000)
+    for (let i = 0; i < 7; i++)
+      await eng.db.admin.query("INSERT INTO activities (id, user_id, type, started_at, duration_s) VALUES ($1, $2, 'walk', $3, 1800)", [uuidv7(), S, day(i) + "T10:00:00Z"]);
+    await as("PUT", "/daily", { entries: Array.from({ length: 7 }, (_, i) => ({ date: day(i), kind: "steps", value: 4000 })) });
+    const r = (await as("GET", "/health/scores", undefined, { tz: "0" })).scores;
+    expect(r).toMatchObject({ from: day(6), to: day(0), sleep: null, strength: null });
+    expect(r.activity.parts.map((p: any) => [p.key, p.value, p.target])).toEqual([["minutes", 210, 150], ["steps", 4000, 8000]]);
+    // 60 * 1 + 40 * 0.5
+    expect(r.activity).toMatchObject({ score: 80, label: "Good", weakest: "steps" });
+  });
+
   it("does not list a part with a full history but a zero usual as building", () => {
     const r = readiness([P("sleep", 8, 7), P("hrv", 60, 50), P("restingHr", 55, 0, 28)]);
     expect(r.building).toEqual([]);

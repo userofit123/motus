@@ -4,14 +4,15 @@
 // (no reminder waiting, no goal due soon, no program running) stays away until it has; feature blocks need their feature.
 import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
-import { muscleName, num, fromM, percentChange, orderGoals, HOME_BLOCKS, type Goal, type HomePlan, type HomeRecord, type HomeGroup, type HomeWeek } from "@motus/shared";
-import { useHome, useSettings, saveSettings, useAchievements, useGoals, useHealthAvailable, useHealthDay, useReadiness, useSleep, useDaily, useTypeName, loaded, type HealthAvailable, type ReadinessPart, type ReadinessBuilding } from "../api/queries";
+import { muscleName, num, fromM, percentChange, orderGoals, HOME_BLOCKS, type Goal, type HomePlan, type HomeRecord, type HomeGroup, type HomeWeek, type ScoreKey } from "@motus/shared";
+import { useHome, useSettings, saveSettings, useAchievements, useGoals, useHealthAvailable, useHealthDay, useReadiness, useHealthScores, useSleep, useDaily, useTypeName, loaded, type HealthAvailable, type ReadinessPart, type ReadinessBuilding } from "../api/queries";
 import { api } from "../api/client";
 import { invalidate, queryClient } from "../api/live";
 import { confirm } from "../core/ask";
 import { toast } from "../core/toast";
 import { onHome, streakOnHome, toggleHomeGoal, setHomeStreak, periodWord, goalSub } from "../core/goals";
 import { asleepMin, inBedMin, efficiency, hasStages, isFull, mins, SHORT_WHY } from "../core/sleep";
+import { SCORE_META, scoreRow, scoreWhy } from "../core/scores";
 import { useFmt, unitOf, ago, goalLabel, localYmd, tomorrowYmd, hrPart } from "../core/format";
 import { reminderText } from "../core/reminderText";
 import { startPlan, unplanItems } from "../components/home/planActions";
@@ -67,9 +68,13 @@ const META: Record<string, { name: string; desc: string; icon: string; size: Siz
   sleep: { name: "Last night", get desc() { return `Time asleep and its stages, from your ${adviceWord(dev.value)}`; }, icon: "moon", size: "m" },
   heart: { name: "Heart", get desc() { return `Resting heart rate, HRV and today's range, from your ${adviceWord(dev.value)}`; }, icon: "heart", size: "m" },
   activityToday: { name: "Activity today", desc: "Steps, distance and active calories today, and your last 7 days", icon: "steps", size: "m" },
+  // Health scores: each only when its data is there (the server leaves a score out without it)
+  scoreSleep: { name: "Sleep score", desc: "Your last 7 nights against the sleep guidelines", icon: "moon", size: "m" },
+  scoreActivity: { name: "Activity score", desc: "Your last 7 days of active minutes and steps against the guidelines", icon: "run", size: "m" },
+  scoreStrength: { name: "Strength score", desc: "Your last 7 days of strength training against the guidelines", icon: "dumbbell", size: "m" },
 };
 // a block whose feature is off is absent everywhere, Edit home included
-const FEATURE: Record<string, string> = { program: "programs", daily: "dailyLog", achievements: "achievements" };
+const FEATURE: Record<string, string> = { program: "programs", daily: "dailyLog", achievements: "achievements", scoreSleep: "scores", scoreActivity: "scores", scoreStrength: "scores" };
 // the band's blocks are absent everywhere, Edit home included, until that kind of data has come in (as Stats' Sleep and
 // Heart tabs): the Health Connect switch is the Android app's, while the data can reach any device through the server
 const HEALTH: Record<string, (a: HealthAvailable) => boolean> = { readiness: (a) => a.sleep || a.heart, sleep: (a) => a.sleep, heart: (a) => a.heart, activityToday: (a) => a.distance || a.calories };
@@ -268,6 +273,11 @@ const readyWait = computed(() => {
       ? `Your score also needs ${missing.map((k) => (k === "hrv" ? PART[k].t : PART[k].t.toLowerCase())).join(" or ")} from your ${adviceWord(dev.value)}.`
       : `Learning your usual ${known.map((k) => PART[k].t.toLowerCase().replace("hrv", "HRV")).join(", ").replace(/, ([^,]*)$/, " and $1")}.` };
 });
+// ---- the health scores (a feature): each block is one score with its parts, as Stats → Scores shows them
+const scoresQ = useHealthScores(computed(() => !!s.value.features.scores));
+const SCORE_ID: Record<string, ScoreKey> = { scoreSleep: "sleep", scoreActivity: "activity", scoreStrength: "strength" };
+const scoreOf = (id: string) => (SCORE_ID[id] ? scoresQ.data.value?.[SCORE_ID[id]!] ?? null : null);
+const numOf = (v: number) => fmt.value.num(v, 0);
 // heart: the resting heart rate and HRV of today (else the latest readiness read), each against your usual, and the day's range
 const partOf = (k: ReadinessPart["key"]) => ready.data.value?.parts?.find((x) => x.key === k);
 const heartStats = computed<WStat[]>(() => {
@@ -351,6 +361,7 @@ const shows = (id: string): boolean => {
     case "sleep": return !!night.value;
     case "heart": return heartStats.value.length > 0;
     case "activityToday": return actStats.value.length > 0;
+    case "scoreSleep": case "scoreActivity": case "scoreStrength": return !!scoreOf(id);
     default: return true;
   }
 };
@@ -649,6 +660,22 @@ await loaded(home, ach, avail, hDay, ready, nightsQ, dailyQ);
           </div>
         </div>
 
+        <!-- a health score: as Readiness, the score with its word and ring, the line that says why, then its parts as a
+             report's highlights, and what it is based on; it opens Stats → Scores -->
+        <div v-else-if="SCORE_ID[id] && scoreOf(id)" class="card hb sz-m click" :data-solo="solo.has(id) || undefined" v-bind="link('/stats?tab=scores')">
+          <div class="ch"><span class="bi"><Icon :name="SCORE_META[SCORE_ID[id]!].icon" :size="15" /></span><span class="t grow">{{ SCORE_META[SCORE_ID[id]!].name }}</span><span class="tiny">{{ SCORE_META[SCORE_ID[id]!].span }}</span></div>
+          <div class="row"><div class="big grow">{{ scoreOf(id)!.score }}<small>{{ scoreOf(id)!.label }}</small></div><Ring :pct="scoreOf(id)!.score / 100" :size="40" :color="scoreOf(id)!.label === 'Low' ? 'var(--warn)' : undefined" /></div>
+          <div class="tiny">{{ scoreWhy(scoreOf(id)!, numOf) }}</div>
+          <div class="list hhl">
+            <div v-for="x in scoreOf(id)!.parts.map((p) => scoreRow(p, numOf))" :key="x.key" class="li">
+              <Icon :name="x.icon" :size="18" class="muted" />
+              <div class="grow"><div class="t">{{ x.t }}</div><div class="s">{{ x.s }}</div></div>
+              <b class="r rv" :class="x.tone">{{ x.r }}</b>
+            </div>
+          </div>
+          <div class="tiny hsrc">{{ SCORE_META[SCORE_ID[id]!].brief }}</div>
+        </div>
+
         <!-- the newest night: time asleep with the share of the time in bed as its ring (as Stats → Sleep's night), then its stages; it opens that night there -->
         <div v-else-if="id === 'sleep' && night" class="card hb sz-m click" :data-solo="solo.has(id) || undefined" v-bind="link(`/stats?tab=sleep&day=${night.date}`)">
           <div class="ch"><span class="bi"><Icon name="moon" :size="15" /></span><span class="t grow">{{ nightName }}</span><span class="tiny">{{ fmt.time(night.startAt) }}-{{ fmt.time(night.endAt) }}</span></div>
@@ -843,6 +870,8 @@ html.phone .gtile { grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); }
 .hhl .li:last-child { border-bottom: 0; padding-bottom: 0; }
 .hhl .grow { min-width: 0; }
 .hhl .s { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* a score's source under its parts, as the Stats cards' foot lines */
+.hsrc { margin-top: var(--tdy); }
 /* last night's stages under a faint line, as on Stats → Sleep's last-night card */
 .hstages { margin-top: var(--cpy); padding-top: var(--cpy); border-top: 1px solid var(--ol); }
 /* heart's line and the steps goal's bar sit at the foot of the block, as This week's bars */

@@ -30,6 +30,7 @@ import { isSum, DERIVED_DAYS, shift, lockRecords, loadReads, loadBlocks, appKind
   type DerivedType, type SpanBand, type SumType } from "./healthDerive";
 import { isNight, cleanWornDevice, plausibleSteps, stepsTyped, appSteps, bandStepsVerdict, daySteps, type WornDevice } from "@motus/shared";
 import { maxHeartRate, sessionLoad, loadTrend, CHRONIC_DAYS, exercisePeaks, type LoadTrend, type HrTick } from "@motus/shared";
+import { SCORE_DAYS, ageOf, effortMinutes, sleepScore, activityScore, strengthScore, groupSets, GROUPS } from "@motus/shared";
 import { getSettings } from "./settings";
 
 export const HEALTH_SOURCE = "health_connect";
@@ -888,6 +889,65 @@ export function healthRoutes(r: Router) {
     });
     const load = await trainingLoad(ctx, today, today, tzOf(qs));
     return { ...readiness(parts, load?.trend ?? null), date: today };
+  });
+
+  // Health scores (the Health scores feature, M-247; @motus/shared scores.ts says how each is worked out and from which
+  // guideline): sleep, activity and strength over the last 7 days, today in them, each null without the data it needs.
+  // Recovery is Readiness (/health/readiness), not a score of its own. null while the feature is off. tz: the app's calendar
+  r.get("/health/scores", async (ctx, _p, _b, qs) => {
+    const st = await getSettings(ctx.q, ctx.userId);
+    if (!st.features.scores) return { scores: null };
+    const tz = tzOf(qs), today = dayIn(ctx.now(), tz), from = shift(today, -(SCORE_DAYS - 1));
+    const age = ageOf(st.profile?.birthYear, ctx.now()), max = maxHeartRate(st.profile ?? {}, ctx.now())?.bpm ?? null;
+    const inWeek = (at: string | Date) => { const d = dayIn(at, tz); return d >= from && d <= today; };
+    // the app's minute of the day of an instant, counted from noon so a night's times don't wrap at midnight
+    const fromNoon = (iso: string) => { const d = new Date(Date.parse(iso) - tz * 60000); return (d.getUTCHours() * 60 + d.getUTCMinutes() + 720) % 1440; };
+
+    // sleep: the week's full nights (a nap or part of a night is no night, as everywhere); time asleep is the person's own
+    // when they changed it, as the night's page shows it
+    const ns = (await nights(ctx, "n.date >= $1::date AND n.date <= $2::date", [from, today], false)).map((n) => {
+      const asleep = n.edited && n.sleepH ? Math.round(n.sleepH * 60) : n.asleepMin;
+      const bedAt = fromNoon(n.startAt), inBedMin = Math.max(0, Math.round((Date.parse(n.endAt) - Date.parse(n.startAt)) / 60000));
+      return { asleepMin: asleep, inBedMin, bedAt, wakeAt: bedAt + inBedMin };
+    }).filter((n) => isNight(n.asleepMin / 60));
+
+    // activity: minutes of effort from each day's heart rate (with a max heart rate to place it); a day without heart rate
+    // counts its recorded activities' time as moderate (walks, runs and rides are at least that, by WHO's examples)
+    const hrDays = max ? (await ctx.q.query<{ date: string; hr: unknown }>(
+      "SELECT to_char(date, 'YYYY-MM-DD') AS date, hr FROM hr_days WHERE date >= $1::date AND date <= $2::date", [from, today])).rows : [];
+    let moderate = 0, vigorous = 0;
+    const hrDates = new Set<string>();
+    for (const d of hrDays) {
+      const hr = (typeof d.hr === "string" ? JSON.parse(d.hr) : d.hr) as [number, number][] | null;
+      if (!hr || hr.length < 2) continue;
+      const m = effortMinutes(hr, max!);
+      moderate += m.moderate; vigorous += m.vigorous; hrDates.add(d.date);
+    }
+    const lo = shift(from, -1), hi = shift(today, 2);
+    const acts = (await ctx.q.query<{ started_at: string; duration_s: number | string | null }>(
+      "SELECT started_at, duration_s FROM activities WHERE started_at >= $1::date AND started_at < $2::date", [lo, hi])).rows;
+    for (const a of acts) if (inWeek(a.started_at) && !hrDates.has(dayIn(a.started_at, tz))) moderate += (Number(a.duration_s) || 0) / 60;
+    const steps = (await stepsByDay(ctx.q, from, shift(today, 1), tz)).map((x) => Number(x.value) || 0);
+
+    // strength: only for someone who trains (a finished workout in the last 4 weeks); the week's days and hard sets per group
+    const sets = (await ctx.q.query<{ workout_id: string; started_at: string; primary_muscles: string[]; secondary_muscles: string[]; n: string | number }>(
+      `SELECT w.id AS workout_id, w.started_at, e.primary_muscles, e.secondary_muscles, count(s.id) AS n
+       FROM workouts w LEFT JOIN workout_exercises we ON we.workout_id = w.id LEFT JOIN exercises e ON e.id = we.exercise_id
+       LEFT JOIN workout_sets s ON s.workout_exercise_id = we.id AND s.done AND s.kind <> 'warmup'
+       WHERE w.status = 'completed' AND w.started_at >= $1::date AND w.started_at < $2::date GROUP BY w.id, e.id`, [shift(today, -29), hi])).rows;
+    const week = sets.filter((x) => inWeek(x.started_at));
+    const trains = sets.some((x) => dayIn(x.started_at, tz) <= today);
+    const strength = trains ? strengthScore({
+      days: new Set(week.map((x) => dayIn(x.started_at, tz))).size,
+      sets: groupSets(week.filter((x) => x.primary_muscles).map((x) => ({ primary: x.primary_muscles, secondary: x.secondary_muscles ?? [], sets: Number(x.n) })), GROUPS),
+    }) : null;
+
+    return { scores: {
+      from, to: today, age,
+      sleep: sleepScore(ns, age),
+      activity: activityScore({ moderate, vigorous, minutesDays: hrDates.size, stepDays: steps }, age),
+      strength,
+    } };
   });
 
   // Training load over the days [from, to] (YYYY-MM-DD) for Stats: each session's load from the 28 days before `from`

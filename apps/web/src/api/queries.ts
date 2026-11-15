@@ -1,7 +1,7 @@
 // Every screen's data, filed under a topic (the first part of the key) so live updates know what to reload.
 import { computed, type Ref, unref, watch, type MaybeRef } from "vue";
 import { useQuery, useMutation, useInfiniteQuery, keepPreviousData, type QueryClient } from "@tanstack/vue-query";
-import { withDefaults, type Settings, type Exercise, type RoutineSummary, type Goal, type Me, type Program, type GoalMetric, type HomeData, type ActivityType, type ActivityFigures, activityDistance, activityClimb } from "@motus/shared";
+import { withDefaults, type Settings, type Exercise, type RoutineSummary, type Goal, type Me, type Program, type GoalMetric, type Score, type HomeData, type ActivityType, type ActivityFigures, activityDistance, activityClimb } from "@motus/shared";
 import { api, httpTransport } from "./client";
 import { sync } from "./replica";
 import { endedHere } from "./outbox";
@@ -107,6 +107,11 @@ export interface ReadinessBuilding { key: Exclude<ReadinessPart["key"], "load">;
 export interface Readiness { score: number | null; label: "Ready" | "Normal" | "Take it easy" | null; why?: string | null; parts: ReadinessPart[]; building: ReadinessBuilding[]; need: number; date: string }
 // under "stats": a workout, activity, band sync or settings change (the Training load feature, the max heart rate) all touch stats
 export const useReadiness = (enabled: MaybeRef<boolean> = true) => useQuery({ queryKey: ["stats", "readiness"], queryFn: () => api.get<Readiness>("/health/readiness", { tz: new Date().getTimezoneOffset() }), enabled });
+/** Health scores (the Health scores feature): sleep, activity and strength over the last 7 days, each null without its
+ *  data; scores null while the feature is off. Under "stats" as readiness, so a workout, sync or settings change reloads them */
+export type HealthScores = { from: string; to: string; age: number | null; sleep: Score | null; activity: Score | null; strength: Score | null };
+export const useHealthScores = (enabled: MaybeRef<boolean> = true) => useQuery({ queryKey: ["stats", "scores"], enabled,
+  queryFn: () => api.get<{ scores: HealthScores | null }>("/health/scores", { tz: new Date().getTimezoneOffset() }).then((r) => r.scores) });
 /** Training load (Stats → Heart): each session's load over [from, to] and the 28 days before, and the 7:28 comparison as of `to`; load null while the feature is off */
 export interface LoadSession { kind: "workout" | "activity"; id: string; name: string | null; type: string | null; date: string; load: number; hr: boolean }
 export interface TrainingLoad { sessions: LoadSession[]; trend: { week: number; usual: number; ratio: number | null; state: "lighter" | "steady" | "higher" | "much higher" | null }; maxHr: boolean }
