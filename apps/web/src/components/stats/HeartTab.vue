@@ -21,6 +21,7 @@ import { useFmt, activityIcon } from "../../core/format";
 import Icon from "../Icon.vue";
 import { adviceWord, useDevice } from "../../native/health";
 import LineChart from "../LineChart.vue";
+import Sparkline from "../Sparkline.vue";
 import { useToday, stretchOf, stepDay, stretchTitle, WORKOUT_COLOR, ACTIVITY_COLOR, type StretchView, type DaySession } from "./daySessions";
 
 export type HeartView = StretchView;
@@ -136,6 +137,30 @@ const zBars = computed(() => {
 });
 // moderate or harder (zones 3 to 5): the minutes most activity advice counts
 const zHard = computed(() => zDays.value.reduce((t, [, m]) => t + m[2]! + m[3]! + m[4]!, 0));
+
+// the stretch's numbers on top, as Steps' and Sleep's tiles, each only with data: the average resting heart rate (the
+// first, with its days' line), the average HRV, the moderate-or-harder minutes a week (a stretch shorter than a week
+// counts as one), and the days with any heart data of the stretch's days so far. The charts' captions below say other
+// numbers (the trend, the latest), so none is said twice
+type HTile = { key: string; icon: string; label: string; value: string; unit: string; sub: string; spark?: number[] };
+const avgOf = (id: string) => { const xs = vitals.value.find((v) => v.id === id)?.pts ?? []; return xs.length ? { n: xs.length, v: xs.reduce((t, p) => t + p.y, 0) / xs.length, ys: xs.map((p) => p.y) } : null; };
+const nDays = (n: number) => `${n} ${n === 1 ? "day" : "days"}`;
+const tiles = computed(() => {
+  const out: HTile[] = [];
+  const r = avgOf("resting_hr");
+  if (r) out.push({ key: "rest", icon: "heart", label: "Resting heart rate", value: fmt.value.num(r.v, 0), unit: "bpm", sub: `average of ${nDays(r.n)}`, spark: r.ys.length > 1 ? r.ys : undefined });
+  const h = avgOf("hrv");
+  if (h) out.push({ key: "hrv", icon: "timer", label: "HRV", value: fmt.value.num(h.v, 0), unit: "ms", sub: `average of ${nDays(h.n)}` });
+  if (zBars.value.length) {
+    const weeks = Math.max(1, (zSpan.value.end.getTime() - zSpan.value.start.getTime()) / (7 * 86400000));
+    out.push({ key: "zone", icon: "bolt", label: "Zone minutes", value: mins(zHard.value / weeks), unit: "", sub: `moderate or harder a week${zSpan.value.cut ? " · last 3 months" : ""}` });
+  }
+  const seen = new Set([...hrDays.value, ...daily.value.filter((x) => (x.kind === "resting_hr" || x.kind === "spo2" || x.kind === "hrv") && inRange(x.date)).map((x) => x.date)]);
+  const end = range.value.to <= today.value ? range.value.to : ymd(new Date(new Date(today.value + "T12:00").getTime() + 86400000));
+  const sofar = Math.max(1, Math.round((new Date(end + "T12:00").getTime() - new Date(range.value.from + "T12:00").getTime()) / 86400000));
+  if (seen.size) out.push({ key: "days", icon: "calendar", label: "Days with data", value: String(seen.size), unit: seen.size === 1 ? "day" : "days", sub: `of ${sofar}${hasToday.value ? " so far" : ""}` });
+  return out;
+});
 </script>
 
 <template>
@@ -146,8 +171,14 @@ const zHard = computed(() => zDays.value.reduce((t, [, m]) => t + m[2]! + m[3]! 
     <div v-else-if="loading" class="empty">Loading…</div>
     <div v-else-if="!vitals.length && !sessions.length && !zBars.length" class="card empty"><Icon name="heart" :size="34" /><b>No heart data in this {{ view }}</b>Pick another {{ view }} with the arrows.</div>
     <template v-else>
+      <!-- the stretch's numbers, as Steps' and Sleep's tiles -->
+      <div v-if="tiles.length" class="grid g4" :class="tiles.length < 4 ? `n${tiles.length}` : ''">
+        <div v-for="(x, i) in tiles" :key="x.key" class="card stat" :class="{ hero: i === 0 }"><div class="lbl"><span class="bi"><Icon :name="x.icon" :size="15" /></span>{{ x.label }}</div>
+          <div class="val">{{ x.value }}<small v-if="x.unit">{{ x.unit }}</small></div><div class="sub">{{ x.sub }}</div><Sparkline v-if="i === 0 && x.spark" :values="x.spark" color="var(--onc)" /></div>
+      </div>
+
       <!-- as Stats → Sleep's -->
-      <div v-if="insights.length" class="card wkc">
+      <div v-if="insights.length" class="card wkc" :class="{ spt: tiles.length }">
         <div class="ch"><span class="bi"><Icon name="sparkle" :size="15" /></span><span class="t grow">What stands out</span></div>
         <div class="list ht-ins">
           <div v-for="(x, i) in insights" :key="i" class="li">
@@ -160,14 +191,13 @@ const zHard = computed(() => zDays.value.reduce((t, [, m]) => t + m[2]! + m[3]! 
       </div>
 
       <!-- each a card as the body measurements' -->
-      <div v-if="vitals.length" class="grid g2" :class="{ spt: insights.length }"><div v-for="v in vitals" :key="v.id" class="card"><div class="lbl hgap">{{ v.name }} ({{ v.unit }})</div>
+      <div v-if="vitals.length" class="grid g2" :class="{ spt: tiles.length || insights.length }"><div v-for="v in vitals" :key="v.id" class="card"><div class="lbl hgap">{{ v.name }} ({{ v.unit }})</div>
         <LineChart :points="v.pts" :height="140" :fmt="v.f" /><div class="tiny ht-line">{{ v.line }}</div></div></div>
 
-      <div v-if="zBars.length" class="card" :class="{ spt: insights.length || vitals.length }">
+      <div v-if="zBars.length" class="card" :class="{ spt: tiles.length || insights.length || vitals.length }">
         <div class="lbl hgap">Time in heart rate zones{{ zPerWeek ? ", by week" : "" }} · max {{ maxHr!.bpm }} bpm{{ maxHr!.own ? "" : " from your age" }}</div>
         <BarChart :bars="zBars" :height="170" :fmt="(v) => mins(v)" />
         <div class="bmlegend ht-leg"><span v-for="z in ZONES" :key="z.key"><i :style="{ background: z.color }" />{{ z.name }}</span></div>
-        <div class="tiny ht-line">{{ mins(zHard) }} moderate or harder{{ zSpan.cut ? " in the last 3 months" : "" }}.</div>
       </div>
 
       <!-- how hard each workout and activity was, over the stretch: its average heart rate -->

@@ -138,7 +138,7 @@ const beforeBed = (x: DaySession) => mins(Math.max(0, t0.value - x.b) / 60000);
     <div v-if="!isFull(n)" class="tiny nv-note">{{ SHORT_WHY }}</div>
     <div v-if="n.edited" class="tiny nv-note">Time asleep as you set it for this day; your {{ deviceWord(dev) }} measured {{ mins(n.asleepMin) }}.</div>
 
-    <div class="wstats rows2 nv-sec" :class="{ n4: tiles.length === 4 }">
+    <div class="wstats rows2 csec" :class="{ n4: tiles.length === 4 }">
       <div v-for="x in tiles" :key="x.key" class="ws" role="group" :aria-label="[x.label, x.value, x.unit, x.sub].filter(Boolean).join(' ')">
         <div class="wlb"><Icon :name="x.icon" :size="14" />{{ x.label }}</div>
         <div class="wv">{{ x.value }} <small v-if="x.unit">{{ x.unit }}</small></div>
@@ -146,7 +146,7 @@ const beforeBed = (x: DaySession) => mins(Math.max(0, t0.value - x.b) / 60000);
       </div>
     </div>
 
-    <div v-if="drawn || hasStages(n) || n.awakeMin" class="nv-sec">
+    <div v-if="drawn || hasStages(n) || n.awakeMin" class="csec">
       <div class="lbl hgap">Stages</div>
       <Hypnogram v-if="drawn" class="hgap" :segs="segs" :from="from" :to="to" :xt="xt" />
       <StageBar v-if="parts" :parts="parts" />
@@ -154,13 +154,13 @@ const beforeBed = (x: DaySession) => mins(Math.max(0, t0.value - x.b) / 60000);
       <div v-if="!drawn" class="tiny nv-line">{{ noRecords("night") }}</div>
     </div>
 
-    <div v-for="c in curves" :key="c.id" class="nv-sec">
+    <div v-for="c in curves" :key="c.id" class="csec">
       <div class="lbl hgap">{{ c.name }}</div>
       <LineChart v-if="c.pts.length > 1" :points="c.pts" :height="130" :fmt="c.f" :domain="[from, to]" :xt="xt" :gap="20 * 60_000" :xfmt="clock" />
       <div class="tiny nv-line">{{ c.line }}</div>
     </div>
 
-    <div v-if="before.length" class="nv-sec">
+    <div v-if="before.length" class="csec">
       <div class="lbl hgap">Before this night</div>
       <DaySessionList :sessions="before" :value="beforeBed" :sub="() => 'before bed'" />
     </div>
@@ -169,7 +169,5 @@ const beforeBed = (x: DaySession) => mins(Math.max(0, t0.value - x.b) / 60000);
 
 <style scoped>
 .nv-note { margin-top: var(--hg); }
-/* each part a block-padding below the one before, under a faint line, as Stats → Heart's day */
-.nv-sec { margin-top: var(--cpy); padding-top: var(--cpy); border-top: 1px solid var(--ol); }
 .nv-line { margin-top: var(--tdy); }
 </style>

@@ -939,3 +939,8 @@ html.phone #pop .aph::before { content: ""; position: absolute; left: 50%; top: 
 /* a day card's hero without a ring (Stats → Heart's day, Steps' day without a goal): its icon in a tinted circle the
    ring's size, so the number sits where it does beside a ring */
 .gs-ico { width: 64px; height: 64px; flex: none; border-radius: 50%; display: grid; place-items: center; color: var(--acc); background: color-mix(in srgb, var(--acc) 12%, transparent); }
+
+/* a part of a day or night card (Stats → Steps' and Heart's day, Sleep's night): a block-padding below the one before,
+   under a faint line; right under the card's header it needs no line */
+.csec { margin-top: var(--cpy); padding-top: var(--cpy); border-top: 1px solid var(--ol); }
+.ch + .csec { margin-top: 0; padding-top: 0; border-top: 0; }

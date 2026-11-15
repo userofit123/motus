@@ -51,8 +51,9 @@ const usual = computed(() => {
   return xs.length >= 7 ? Math.round(xs.reduce((t, x) => t + x.value, 0) / xs.length) : null;
 });
 const p = (v: number) => fmt.value.num(v, Number.isInteger(v) ? 0 : 1);
-// the hero: the day's average heart rate (else its resting one), with the resting heart rate against your usual as Steps'
-// day says its steps against your usual day: the difference in the good colour when lower and the warning one when
+// the hero: the day's average heart rate (else its resting one). Under it the pattern Steps' day uses: a line with what
+// the number is measured by (the resting heart rate, as Steps' goal), then a line with the resting heart rate against
+// your usual, as Steps' day says its steps against your usual day: the difference in the good colour when lower and the warning one when
 // higher (3 bpm either way, a band's day-to-day wobble), then "vs usual" and the usual
 const rest = computed(() => (day.data.value?.restingHr != null ? Math.round(day.data.value.restingHr) : null));
 const hero = computed(() => (avg.value != null ? { value: avg.value, unit: "bpm average" } : rest.value != null ? { value: rest.value, unit: "bpm resting" } : null));
@@ -106,10 +107,10 @@ watch(() => !recs.isLoading.value && !day.isLoading.value && !calQ.isLoading.val
     <div v-if="hero" class="gs-top">
       <span class="gs-ico"><Icon name="heart" :size="28" /></span>
       <div class="grow"><div class="gs-val">{{ hero.value }}<small>{{ hero.unit }}</small></div>
-        <div v-if="rest != null && hero.unit !== 'bpm resting'" class="tiny">resting {{ rest }} bpm<template v-if="vsUsual"> · <span :class="vsUsual.tone">{{ vsUsual.text }}</span> vs usual {{ vsUsual.usual }}</template></div>
-        <div v-else-if="vsUsual" class="tiny"><span :class="vsUsual.tone">{{ vsUsual.text }}</span> vs usual {{ vsUsual.usual }}</div></div>
+        <div v-if="rest != null && hero.unit !== 'bpm resting'" class="tiny">resting {{ rest }} bpm</div>
+        <div v-if="vsUsual" class="tiny"><span :class="vsUsual.tone">{{ vsUsual.text }}</span> vs usual {{ vsUsual.usual }}</div></div>
     </div>
-    <div v-if="tiles.length" class="wstats rows2 hd-sec" :class="{ n4: tiles.length === 4 }">
+    <div v-if="tiles.length" class="wstats rows2 csec" :class="{ n4: tiles.length === 4 }">
       <div v-for="x in tiles" :key="x.key" class="ws" role="group" :aria-label="label(x)">
         <div class="wlb"><Icon :name="x.icon" :size="14" />{{ x.label }}</div>
         <div class="wv">{{ x.value }} <small>{{ x.unit }}</small></div>
@@ -117,23 +118,19 @@ watch(() => !recs.isLoading.value && !day.isLoading.value && !calQ.isLoading.val
       </div>
     </div>
 
-    <div class="hd-sec"><div class="lbl hgap">Heart rate by hour</div>
+    <div class="csec"><div class="lbl hgap">Heart rate by hour</div>
       <template v-if="charted"><HeartRate inline chart :hr="samples" :height="170" :day="{ from: from.getTime(), to: to.getTime(), spans, ticks, color: DAY_DATA_COLOR }" @pick="(id) => router.push(id)" />
         <div v-if="legend.length" class="bmlegend hd-leg"><span><i :style="{ background: DAY_DATA_COLOR }" />Heart rate</span><span v-for="k in legend" :key="k.color"><i :style="{ background: k.color }" />{{ k.name }}</span></div></template>
       <div v-else class="tiny">{{ noRecords("day") }}</div></div>
 
-    <div v-if="zoned" class="hd-sec"><div class="lbl hgap">Time in heart rate zones · max {{ maxHr!.bpm }} bpm{{ maxHr!.own ? "" : " from your age" }}</div><StageBar :parts="zones" /></div>
-    <div v-else-if="!maxHr && charted" class="tiny hd-sec"><button class="lnk inl" @click="router.push('/body?tab=details')">Set your year of birth or max heart rate</button> to see the time in heart rate zones.</div>
+    <div v-if="zoned" class="csec"><div class="lbl hgap">Time in heart rate zones · max {{ maxHr!.bpm }} bpm{{ maxHr!.own ? "" : " from your age" }}</div><StageBar :parts="zones" /></div>
+    <div v-else-if="!maxHr && charted" class="tiny csec"><button class="lnk inl" @click="router.push('/body?tab=details')">Set your year of birth or max heart rate</button> to see the time in heart rate zones.</div>
 
-    <div v-if="sessions.length" class="hd-sec"><div class="lbl hgap">Workouts and activities</div>
+    <div v-if="sessions.length" class="csec"><div class="lbl hgap">Workouts and activities</div>
       <DaySessionList :sessions="sessions" :value="(x) => (x.avgHr != null ? `${Math.round(x.avgHr)} bpm` : '-')" :sub="(x) => (x.maxHr != null ? `highest ${Math.round(x.maxHr)} bpm` : '')" /></div>
   </div>
 </template>
 
 <style scoped>
-/* each part a block-padding below the one before, under a faint line, as Stats → Sleep's last night */
-.hd-sec { margin-top: var(--cpy); padding-top: var(--cpy); border-top: 1px solid var(--ol); }
-/* nothing above it but the header: no line */
-.ch + .hd-sec { margin-top: 0; padding-top: 0; border-top: 0; }
 .hd-leg { margin-top: var(--hg); }
 </style>

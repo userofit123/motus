@@ -1,5 +1,5 @@
 // The day charts' shared pieces (Stats → Steps and Stats → Heart): the day's workouts and activities with their exact
-// time spans, each in the colour the Calendar gives it (a workout its routine's, else the accent; an activity teal), the
+// time spans, each in the colour the Calendar gives it (a workout its routine's, else the palette's purple; an activity teal), the
 // legend naming each kind on the chart, the hours the axis labels sit at, and the title of a day in the day picker.
 import { computed, onScopeDispose, ref, type Ref } from "vue";
 import { ymd, weekStartDate } from "@motus/shared";
@@ -14,8 +14,10 @@ export interface DaySession {
   a: number; b: number; durationS: number;
   avgHr: number | null; maxHr: number | null; steps: number | null;
 }
-/** The colours the Calendar marks sessions in */
-export const WORKOUT_COLOR = "var(--acc)", ACTIVITY_COLOR = "var(--c3)";
+/** The colours the Calendar marks sessions in (it imports these, so the Calendar and Stats always match): a workout
+ *  without a routine colour in the palette's purple, not the accent, which the day charts' own data already uses (two
+ *  alike swatches in one legend), nor teal, which marks activities and REM */
+export const WORKOUT_COLOR = "var(--c5)", ACTIVITY_COLOR = "var(--c3)";
 /** The day charts' own data (steps, heart rate) in the accent as every other chart's; the sessions read apart from it by
  *  their tinted span, the strip along its foot, the legend and the list under the chart */
 export const DAY_DATA_COLOR = "var(--acc)";

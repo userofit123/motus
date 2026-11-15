@@ -24,6 +24,7 @@ import DotLine from "../components/DotLine.vue";
 import SearchField from "../components/SearchField.vue";
 import ScheduleEditor from "../components/ScheduleEditor.vue";
 import SessionStats from "../components/SessionStats.vue";
+import { WORKOUT_COLOR, ACTIVITY_COLOR } from "../components/stats/daySessions";
 
 const route = useRoute(), router = useRouter();
 const s = useSettings();
@@ -221,12 +222,12 @@ await loaded(cal, listWorkouts, listActs);
         <div v-for="d in grid" :key="d.getTime()" class="d" :class="{ out: d.getMonth() !== month.getMonth(), today: localYmd(d) === today, sel: sel === localYmd(d) }" @click="sel = localYmd(d)">
           <span class="n">{{ d.getDate() }}</span>
           <template v-if="!isPhone">
-            <div v-for="x in (byDay.get(localYmd(d)) ?? []).slice(0, 3)" :key="x.id ?? x.scheduleId" class="ent" :class="{ plan: x.kind === 'planned', missed: x.missed }" :style="{ '--ec': x.color ?? (x.kind === 'activity' ? 'var(--c3)' : 'var(--acc)') }" @click.stop="open(x)">
+            <div v-for="x in (byDay.get(localYmd(d)) ?? []).slice(0, 3)" :key="x.id ?? x.scheduleId" class="ent" :class="{ plan: x.kind === 'planned', missed: x.missed }" :style="{ '--ec': x.color ?? (x.kind === 'activity' ? ACTIVITY_COLOR : WORKOUT_COLOR) }" @click.stop="open(x)">
               <Icon :name="icon(x)" />{{ label(x) }}
             </div>
             <div v-if="(byDay.get(localYmd(d)) ?? []).length > 3" class="tiny">+{{ (byDay.get(localYmd(d)) ?? []).length - 3 }} more</div>
           </template>
-          <div v-else class="dots"><i v-for="x in (byDay.get(localYmd(d)) ?? []).slice(0, 4)" :key="x.id ?? x.scheduleId" :class="{ plan: x.kind === 'planned' }" :style="{ '--ec': x.color ?? (x.kind === 'activity' ? 'var(--c3)' : 'var(--acc)') }" /></div>
+          <div v-else class="dots"><i v-for="x in (byDay.get(localYmd(d)) ?? []).slice(0, 4)" :key="x.id ?? x.scheduleId" :class="{ plan: x.kind === 'planned' }" :style="{ '--ec': x.color ?? (x.kind === 'activity' ? ACTIVITY_COLOR : WORKOUT_COLOR) }" /></div>
           <template v-for="b in [stepBars.get(localYmd(d))]" :key="0"><i v-if="b" class="stp" :class="{ ok: b.ok }" role="img" :aria-label="b.label" :title="b.label"><b :style="{ width: b.pct + '%' }" /></i></template>
         </div>
       </div>
@@ -245,7 +246,7 @@ await loaded(cal, listWorkouts, listActs);
           <div :class="{ dsess: dayTiles.length }">
           <div v-if="!(byDay.get(sel) ?? []).length" class="tiny">{{ sel >= today ? "Nothing planned. Use Plan to put a routine on this day." : "Nothing on this day." }}</div>
           <div class="list"><div v-for="x in byDay.get(sel) ?? []" :key="x.id ?? x.scheduleId" class="li click" @click="open(x)">
-            <Icon :name="icon(x)" :size="18" :style="{ color: x.color ?? (x.kind === 'activity' ? 'var(--c3)' : 'var(--acc)') }" /><div class="grow"><div class="t" :style="x.missed ? { opacity: .5 } : undefined">{{ label(x) }}</div><div class="s"><template v-if="x.kind === 'planned'">{{ x.missed ? "Missed" : "Planned workout" }}</template><DotLine v-else :parts="[fmt.time(x.startedAt), hrPart(x)].filter((p) => p != null)" /></div></div><SessionStats v-if="x.kind !== 'planned'" :x="x" /><span v-if="x.kind === 'planned'" @click.stop><Menu :items="unplanItems(x)" :label="`Options for ${x.name}`" /></span><Icon v-else name="right" class="muted" /></div></div>
+            <Icon :name="icon(x)" :size="18" :style="{ color: x.color ?? (x.kind === 'activity' ? ACTIVITY_COLOR : WORKOUT_COLOR) }" /><div class="grow"><div class="t" :style="x.missed ? { opacity: .5 } : undefined">{{ label(x) }}</div><div class="s"><template v-if="x.kind === 'planned'">{{ x.missed ? "Missed" : "Planned workout" }}</template><DotLine v-else :parts="[fmt.time(x.startedAt), hrPart(x)].filter((p) => p != null)" /></div></div><SessionStats v-if="x.kind !== 'planned'" :x="x" /><span v-if="x.kind === 'planned'" @click.stop><Menu :items="unplanItems(x)" :label="`Options for ${x.name}`" /></span><Icon v-else name="right" class="muted" /></div></div>
           </div>
         </div>
       </div>
@@ -266,7 +267,7 @@ await loaded(cal, listWorkouts, listActs);
       <div v-if="!list.length" class="card empty"><Icon name="calendar" :size="34" /><b>Nothing yet</b>Finished workouts and activities show here.</div>
       <section v-for="[m, xs] in listGroups" :key="m"><div class="sh"><h2>{{ m }}</h2><span class="tiny">{{ xs.length }}</span></div>
         <div class="card"><div class="list"><div v-for="x in xs" :key="x.id" class="li click" @click="open(x)">
-          <Icon :name="icon(x)" :size="18" :style="{ color: x.color ?? (x.kind === 'activity' ? 'var(--c3)' : 'var(--acc)') }" />
+          <Icon :name="icon(x)" :size="18" :style="{ color: x.color ?? (x.kind === 'activity' ? ACTIVITY_COLOR : WORKOUT_COLOR) }" />
           <div class="grow"><div class="t">{{ label(x) }}</div><DotLine class="s" :parts="[fmt.date(x.startedAt, { weekday: 'short', day: 'numeric', month: 'short' }), fmt.time(x.startedAt), hrPart(x)].filter((p) => p != null)" /></div>
           <SessionStats :x="x" />
         </div></div></div>

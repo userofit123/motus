@@ -127,7 +127,8 @@ const dayTiles = computed(() => {
   if (hours.value.length) out.push({ key: "active", icon: "bolt", label: "Active hours", value: String(activeH.value), unit: "h", sub: `${ACTIVE}+ steps an hour` });
   return out;
 });
-// the day against your usual day, in the hero's line as Heart's day says its resting heart rate against your usual: the
+// the day against your usual day, the hero's second line (under the goal's) as Heart's day says its resting heart rate
+// against your usual under its resting line: the
 // difference in the good colour when more and the warning one when fewer (5% either way), then "vs usual" and the usual
 const vsUsual = computed(() => {
   if (!usual.value) return null;
@@ -196,14 +197,14 @@ const openDay = (d: string | null) => { if (d) { anchor.value = d; view.value = 
           <div class="grow"><div class="gs-val">{{ n0(dayN) }}<small>steps</small></div><div v-if="goalLine" class="tiny">{{ goalLine }}</div>
             <div v-if="vsUsual" class="tiny"><span :class="vsUsual.tone">{{ vsUsual.text }}</span> vs usual {{ vsUsual.usual }}</div></div>
         </div>
-        <div v-if="dayTiles.length" class="wstats rows2 st-sec">
+        <div v-if="dayTiles.length" class="wstats rows2 csec">
           <div v-for="x in dayTiles" :key="x.key" class="ws" role="group" :aria-label="[x.label, x.value, x.unit, x.sub].filter(Boolean).join(' ')">
             <div class="wlb"><Icon :name="x.icon" :size="14" />{{ x.label }}</div>
             <div class="wv">{{ x.value }} <small v-if="x.unit">{{ x.unit }}</small></div>
             <div class="wd">{{ x.sub }}</div>
           </div>
         </div>
-        <div class="st-sec"><div class="lbl hgap">Steps by hour</div>
+        <div class="csec"><div class="lbl hgap">Steps by hour</div>
           <template v-if="hours.length">
             <BarChart :bars="hours" :height="170" :fmt="n0" :shade="shade" :xt="xt" @pick="(id) => router.push(id)" />
             <div v-if="legend.length" class="bmlegend st-leg"><span><i :style="{ background: DAY_DATA_COLOR }" />Steps</span><span v-for="k in legend" :key="k.color"><i :style="{ background: k.color }" />{{ k.name }}</span></div>
@@ -213,7 +214,7 @@ const openDay = (d: string | null) => { if (d) { anchor.value = d; view.value = 
           <div v-else-if="!hourQ.isFetching.value" class="tiny">{{ noRecords("day") }}</div>
           <div v-else class="tiny">Loading…</div>
         </div>
-        <div v-if="sessions.length" class="st-sec"><div class="lbl hgap">Workouts and activities</div>
+        <div v-if="sessions.length" class="csec"><div class="lbl hgap">Workouts and activities</div>
           <DaySessionList :sessions="sessions" :value="(x) => (x.steps != null ? `${n0(x.steps)} steps` : x.durationS ? fmt.dur(x.durationS, true) : '-')" /></div>
       </div>
     </template>
@@ -242,7 +243,5 @@ const openDay = (d: string | null) => { if (d) { anchor.value = d; view.value = 
 
 <style scoped>
 .st-line { margin-top: var(--tdy); }
-/* each part a block-padding below the one before, under a faint line, as Heart's day and Sleep's night */
-.st-sec { margin-top: var(--cpy); padding-top: var(--cpy); border-top: 1px solid var(--ol); }
 .st-leg { margin-top: var(--hg); }
 </style>

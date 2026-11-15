@@ -56,12 +56,14 @@ const olderQ = useSleep(computed(() => ({ from: "1970-01-01", to: mStart.value }
 const newerQ = useSleep(computed(() => ({ from: mEnd.value, to: plus(mEnd.value, 400) })), isNight, { keep: true });
 // newest first
 const stepList = computed(() => [...new Set([...(newerQ.data.value?.nights ?? []), ...(monthQ.data.value?.nights ?? []), ...(olderQ.data.value?.nights ?? [])].map((n) => n.date))].sort().reverse());
-// the chosen day's own night, never another one: a day without one says so (with its logged hours, when it has them)
-const night = computed(() => (monthQ.data.value?.nights ?? []).find((n) => n.date === anchor.value) ?? null);
+// the chosen day's own night, never another one: a day without one says so (with its logged hours, when it has them).
+// Looked up in all three lists, so a step (or the first jump to the newest night) into another month finds it in the
+// list that already held it while the month's own list loads, instead of saying "No night" for a moment
+const night = computed(() => [monthQ, olderQ, newerQ].flatMap((x) => x.data.value?.nights ?? []).find((n) => n.date === anchor.value) ?? null);
 const prevNight = computed(() => stepList.value.find((d) => d < anchor.value) ?? null);
 // the next night, else today ("Last night") so the newest night is always one step from the latest
 const nextNight = computed(() => [...stepList.value].reverse().find((d) => d > anchor.value && d <= today.value) ?? (anchor.value < today.value ? today.value : null));
-watch(() => stepList.value[0], (d) => { if (!picked.value && d && !monthQ.isPlaceholderData.value) { anchor.value = d <= today.value ? d : today.value; picked.value = true; } }, { immediate: true });
+watch([() => stepList.value[0], () => monthQ.isPlaceholderData.value], ([d, ph]) => { if (!picked.value && d && !ph) { anchor.value = d <= today.value ? d : today.value; picked.value = true; } }, { immediate: true });
 // a day with only its hours of sleep (an older import, a typed number): shown as those hours, said plainly
 const dayQ = useHealthDay(computed(() => (isNight.value && !night.value ? anchor.value : null)), computed(() => isNight.value && !night.value), { keep: true });
 const dayHours = computed(() => { const d = dayQ.data.value; return d && d.date === anchor.value && !night.value && d.sleepH ? d.sleepH : null; });
@@ -97,7 +99,9 @@ const wkRange = computed(() => ({ from: new Date(plus(range.value.from, -1) + "T
 const wq = useWorkouts(wkRange);
 const nightQs = [monthQ, olderQ, newerQ];
 const periodQs = [q, recentQ, dailyQ];
-const loading = computed(() => (isNight.value ? nightQs : periodQs).some((x) => x.isLoading.value));
+// opened without a day, the night view waits for the newest night (it may be in the month before), so it never says
+// "No night" for today first
+const loading = computed(() => (isNight.value ? nightQs : periodQs).some((x) => x.isLoading.value) || (isNight.value && !picked.value && stepList.value.length > 0));
 const failed = computed(() => (isNight.value ? nightQs : periodQs).some((x) => x.isError.value));
 const failure = computed(() => (isNight.value ? nightQs : periodQs).map((x) => x.error.value).find(Boolean) as Error | undefined);
 const retry = () => { for (const x of isNight.value ? nightQs : periodQs) x.refetch(); };
