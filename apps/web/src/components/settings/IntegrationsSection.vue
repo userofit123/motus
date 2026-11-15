@@ -41,7 +41,7 @@ onBeforeUnmount(() => document.removeEventListener("visibilitychange", readHc));
 const KIND_NAMES: Record<string, string> = { steps: "steps", sleep: "sleep", weight: "weight", sessions: "workouts", heartRate: "heart rate", restingHr: "resting heart rate", spo2: "blood oxygen", hrv: "HRV", respiratoryRate: "breathing rate", distance: "distance", activeKcal: "active calories", bodyFat: "body fat", hydration: "water", vo2max: "VO2 max", elevation: "climb", floors: "floors",
   totalKcal: "total calories", bmr: "basal metabolic rate", speed: "speed", power: "power", skinTemp: "skin temperature", bodyTemp: "body temperature",
   basalBodyTemp: "basal body temperature", bloodPressure: "blood pressure", bloodGlucose: "blood sugar", height: "height", leanMass: "lean mass",
-  boneMass: "bone mass", bodyWater: "body water", wheelchairPushes: "wheelchair pushes", mindfulness: "mindfulness", nutrition: "nutrition" };
+  boneMass: "bone mass", bodyWater: "body water", wheelchairPushes: "wheelchair pushes", nutrition: "nutrition" };
 const allowed = computed(() => {
   const names = (hc.value?.granted ?? []).map((k) => KIND_NAMES[k]).filter(Boolean) as string[];
   return andList(names);

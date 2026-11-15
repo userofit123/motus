@@ -65,12 +65,14 @@ class MotusHealthPlugin : Plugin() {
         "basalBodyTemp" to BasalBodyTemperatureRecord::class, "bloodPressure" to BloodPressureRecord::class,
         "bloodGlucose" to BloodGlucoseRecord::class, "height" to HeightRecord::class, "leanMass" to LeanBodyMassRecord::class,
         "boneMass" to BoneMassRecord::class, "bodyWater" to BodyWaterMassRecord::class, "wheelchairPushes" to WheelchairPushesRecord::class,
-        "mindfulness" to MindfulnessSessionRecord::class, "nutrition" to NutritionRecord::class,
+        "nutrition" to NutritionRecord::class,
+        // mindfulness returns with the connect-client 1.1.0 upgrade: alpha12 asks for READ_MINDFULNESS_SESSION, which
+        // Health Connect doesn't know (it is READ_MINDFULNESS), so it could never be allowed
     )
     // every type read: the kinds', and cadence, whose permissions are steps' and workouts' (Health Connect's own pairing)
     private val TYPES: List<KClass<out Record>> = KINDS.map { it.second } + listOf(StepsCadenceRecord::class, CyclingPedalingCadenceRecord::class)
 
-    // the types this phone's Health Connect has: skin temperature and mindfulness came in newer versions, which say so
+    // the types this phone's Health Connect has: skin temperature came in newer versions, which say so
     // as a feature (asking for or reading a type the version lacks fails)
     private fun featureOn(c: HealthConnectClient, f: Int): Boolean = try {
         c.features.getFeatureStatus(f) == HealthConnectFeatures.FEATURE_STATUS_AVAILABLE
@@ -78,7 +80,6 @@ class MotusHealthPlugin : Plugin() {
     private fun offered(c: HealthConnectClient): List<KClass<out Record>> = TYPES.filter {
         when (it) {
             SkinTemperatureRecord::class -> featureOn(c, HealthConnectFeatures.FEATURE_SKIN_TEMPERATURE)
-            MindfulnessSessionRecord::class -> featureOn(c, HealthConnectFeatures.FEATURE_MINDFULNESS_SESSION)
             else -> true
         }
     }
@@ -422,9 +423,6 @@ class MotusHealthPlugin : Plugin() {
                     iv(o, r.endTime, r.startZoneOffset); samples(o, r.deltas.map { it.time to it.delta.inCelsius })
                     r.baseline?.let { o.put("v", it.inCelsius) }; o.put("a", JSObject().put("loc", r.measurementLocation))
                 }
-                kind("mindfulness", MindfulnessSessionRecord::class, { it.startTime }) { r, o ->
-                    iv(o, r.endTime, r.startZoneOffset); r.title?.let { o.put("t", it) }; o.put("a", JSObject().put("type", r.mindfulnessSessionType))
-                }
                 kind("nutrition", NutritionRecord::class, { it.startTime }) { r, o ->
                     iv(o, r.endTime, r.startZoneOffset); r.energy?.let { o.put("v", it.inKilocalories) }
                     val a = JSObject().put("meal", r.mealType)
@@ -493,7 +491,6 @@ class MotusHealthPlugin : Plugin() {
         is StepsCadenceRecord -> r.startTime
         is CyclingPedalingCadenceRecord -> r.startTime
         is SkinTemperatureRecord -> r.startTime
-        is MindfulnessSessionRecord -> r.startTime
         is NutritionRecord -> r.startTime
         is BasalMetabolicRateRecord -> r.time
         is BodyTemperatureRecord -> r.time

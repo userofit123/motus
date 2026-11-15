@@ -103,8 +103,8 @@
     <uses-permission android:name="android.permission.health.READ_VO2_MAX" />
     <uses-permission android:name="android.permission.health.READ_ELEVATION_GAINED" />
     <uses-permission android:name="android.permission.health.READ_FLOORS_CLIMBED" />
-    <!-- every other kind a band, watch, scale or phone app can write (M-239); skin temperature and mindfulness only on
-         Health Connect versions that have them. Cadence is under steps and workouts; routes are not read (see records()) -->
+    <!-- every other kind a band, watch, scale or phone app can write (M-239); skin temperature only on
+         Health Connect versions that have it. Mindfulness returns with the connect-client 1.1.0 upgrade (READ_MINDFULNESS). Cadence is under steps and workouts; routes are not read (see records()) -->
     <uses-permission android:name="android.permission.health.READ_TOTAL_CALORIES_BURNED" />
     <uses-permission android:name="android.permission.health.READ_BASAL_METABOLIC_RATE" />
     <uses-permission android:name="android.permission.health.READ_SPEED" />
@@ -119,7 +119,6 @@
     <uses-permission android:name="android.permission.health.READ_BONE_MASS" />
     <uses-permission android:name="android.permission.health.READ_BODY_WATER_MASS" />
     <uses-permission android:name="android.permission.health.READ_WHEELCHAIR_PUSHES" />
-    <uses-permission android:name="android.permission.health.READ_MINDFULNESS_SESSION" />
     <uses-permission android:name="android.permission.health.READ_NUTRITION" />
     <!-- data older than 30 days before the first grant (Health Connect versions that offer it; asked for only there) -->
     <uses-permission android:name="android.permission.health.READ_HEALTH_DATA_HISTORY" />

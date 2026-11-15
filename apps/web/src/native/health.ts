@@ -15,9 +15,10 @@ export const DAILY_KINDS = ["steps", "sleep", "weight", "sessions", "heartRate",
 /** Everything the plugin asks Health Connect for: someone who allowed an earlier version lacks the kinds added since.
  *  The kinds after the daily ones (M-239) are only kept as records (syncRecords) for now. */
 export const HEALTH_KINDS = [...DAILY_KINDS, "totalKcal", "bmr", "speed", "power", "skinTemp", "bodyTemp", "basalBodyTemp", "bloodPressure",
-  "bloodGlucose", "height", "leanMass", "boneMass", "bodyWater", "wheelchairPushes", "mindfulness", "nutrition"] as const;
+  "bloodGlucose", "height", "leanMass", "boneMass", "bodyWater", "wheelchairPushes", "nutrition"] as const;
+// mindfulness returns with the connect-client 1.1.0 upgrade (alpha12 asks for a permission Health Connect doesn't know)
 type Kind = (typeof HEALTH_KINDS)[number];
-// offered: the kinds this phone's Health Connect has (skin temperature and mindfulness need a newer one; absent from an
+// offered: the kinds this phone's Health Connect has (skin temperature needs a newer one; absent from an
 // older app build); history: Motus may read further back than 30 days; historyAvailable: this phone's Health Connect can
 // allow that at all (someone who allowed Motus before past data could be asked for has historyAvailable but not history
 // until connect() again)

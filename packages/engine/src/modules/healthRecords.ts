@@ -48,7 +48,7 @@ const logKey = (t: RecordType, id: string, day: string) => (LOG_KIND[t] ? `${LOG
  * [[start, end, stage]] (stage as Health Connect numbers it), x the exercise type (Health Connect's number), lp a
  * workout's laps [[start, end, metres?]], sg its segments [[start, end, segment type, repetitions]], t a title, a what
  * else Health Connect says, by name (diastolic mmHg, where it was measured, body position, meal type, a meal's
- * nutrients in grams, a mindfulness session's type; Health Connect's numbers). src: the phone (an id it made when
+ * name, nutrients in grams and kcalFromFat (kcal), a mindfulness session's type; Health Connect's numbers). src: the phone (an id it made when
  * Motus was installed) that last sent it: only that phone may take it out for no longer being in its reads (saveRecords).
  */
 export interface Rec {
