@@ -28,7 +28,8 @@ import java.util.HashSet;
  * or silent doesn't play, while these are on the media stream like the sound on screen. A note whose moment passed
  * more than LATE_MS ago is dropped. Android 5-7 have no notification channels, where the plugin that shows the web
  * app's "Rest over" gives it the phone's sound and vibration whatever the settings: there the web app leaves it out and
- * the end's alarm shows it itself (OWN_NOTICE), silent and vibrating only when that is on.
+ * the end's alarm shows it itself (OWN_NOTICE), silent and vibrating only when that is on. With Voice cues on, the
+ * 10 seconds and the end are also spoken (Voice), SAY_AFTER_MS after their sound as on screen.
  */
 public class RestCues extends BroadcastReceiver {
     private static final String ACTION = "org.motus.app.REST_CUE";
@@ -42,6 +43,9 @@ public class RestCues extends BroadcastReceiver {
     // the longest a rest over sound plays (Level up, the longest in the library, is 0.73 s), with room to spare
     private static final long END_MS = 2000;
     private static final int FADE_MS = 80, FADE_STEPS = 4;
+    // a voice cue starts this long after its sound (SAY_AFTER_MS in runtime.ts), and the broadcast is kept open for
+    // SAY_MS more so the phone stays awake while it is said ("Rest over. Bench Press, set 3, 8 reps at 80 kilos")
+    private static final long SAY_AFTER_MS = 700, SAY_MS = 6000;
     // the notes waiting to play, so taking the cues off (the app came back) also stops a 3-2-1 already under way
     private static final Object NOTES = new Object();
     private static final Handler main = new Handler(Looper.getMainLooper());
@@ -55,24 +59,26 @@ public class RestCues extends BroadcastReceiver {
     }
 
     /** The cues for a rest ending at `endAt`, in place of any scheduled before. `countdown`: the 3-2-1 (only the
-     *  seconds still to come). `sound`: the countdown sound; `endSound`: the rest over sound (null: none at the end). `body`, `vibrate`: the "Rest over" shown on Android 5-7. */
-    static void schedule(Context ctx, long endAt, boolean warn10, boolean countdown, String sound, String endSound, int volume, String body, boolean vibrate) {
+     *  seconds still to come). `sound`: the countdown sound; `endSound`: the rest over sound (null: none at the end). `body`, `vibrate`: the "Rest over" shown on Android 5-7. `say10`, `sayEnd`: spoken after the 10 seconds' sound and the
+     *  end's (null: nothing); only with the sounds, as Voice cues sit under Play sounds. */
+    static void schedule(Context ctx, long endAt, boolean warn10, boolean countdown, String sound, String endSound, int volume, String body, boolean vibrate, String say10, String sayEnd) {
         cancel(ctx);
+        if (say10 != null || sayEnd != null) Voice.warm(ctx);
         // loaded now, so each is ready when its first cue comes
         Context app = ctx.getApplicationContext();
         if (warn10 || countdown) audio.post(() -> load(app, sound));
         if (endSound != null) audio.post(() -> load(app, endSound));
         long now = System.currentTimeMillis();
-        if (warn10 && endAt - 10_000 > now) set(ctx, WARN, endAt - 10_000, endAt, sound, volume, body, vibrate);
-        if (countdown && endAt - 1000 > now) set(ctx, COUNT, Math.max(endAt - 3000, now), endAt, sound, volume, body, vibrate);
-        if ((endSound != null || OWN_NOTICE) && endAt > now) set(ctx, END, endAt, endAt, endSound, volume, body, vibrate);
+        if (warn10 && endAt - 10_000 > now) set(ctx, WARN, endAt - 10_000, endAt, sound, volume, body, vibrate, say10);
+        if (countdown && endAt - 1000 > now) set(ctx, COUNT, Math.max(endAt - 3000, now), endAt, sound, volume, body, vibrate, null);
+        if ((endSound != null || OWN_NOTICE) && endAt > now) set(ctx, END, endAt, endAt, endSound, volume, body, vibrate, endSound != null ? sayEnd : null);
     }
 
-    private static void set(Context ctx, int code, long at, long endAt, String sound, int volume, String body, boolean vibrate) {
+    private static void set(Context ctx, int code, long at, long endAt, String sound, int volume, String body, boolean vibrate, String say) {
         AlarmManager am = (AlarmManager) ctx.getSystemService(Context.ALARM_SERVICE);
         if (am == null) return;
         Intent it = intent(ctx).putExtra("warn", code == WARN).putExtra("end", code == END).putExtra("from", at).putExtra("endAt", endAt)
-            .putExtra("sound", sound).putExtra("volume", volume).putExtra("body", body).putExtra("vibrate", vibrate);
+            .putExtra("sound", sound).putExtra("volume", volume).putExtra("body", body).putExtra("vibrate", vibrate).putExtra("say", say);
         PendingIntent pi = PendingIntent.getBroadcast(ctx, code, it, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
         // without the exact-alarm permission (Android 12+ can take it away) the alarm may come late; its notes are then dropped
         boolean exact = Build.VERSION.SDK_INT < Build.VERSION_CODES.S || am.canScheduleExactAlarms();
@@ -108,22 +114,30 @@ public class RestCues extends BroadcastReceiver {
         // cut off; the end is the rest over sound, played whole (restOver())
         long[] due = end ? new long[] { endAt } : warn ? new long[] { endAt - 10_000 } : new long[] { endAt - 3000, endAt - 2000, endAt - 1000 };
         long now = System.currentTimeMillis(), last = now;
+        boolean played = false;
         for (long d : due) {
             if (d < from - 50 || now - d > LATE_MS) continue; // played on screen before the app went away, or long gone
             long wait = Math.max(0, d - now);
             audio.postAtTime(() -> play(app, sound, volume, d, !end), NOTES, SystemClock.uptimeMillis() + wait);
             last = Math.max(last, now + wait);
+            played = true;
         }
+        // the voice after the sound (the WARN and END alarms have one note each), dropped with it when it is too late,
+        // and taken off with the notes when the app comes back (cancel; MotusWorkoutPlugin.cancelRestCues also stops one being said)
+        String say = intent.getStringExtra("say");
+        float level = (float) Math.pow(Math.max(10, Math.min(100, volume)) / 100.0, 2);
+        boolean speaks = played && say != null;
+        if (speaks) audio.postAtTime(() -> Voice.say(app, say, level), NOTES, SystemClock.uptimeMillis() + (last - now) + SAY_AFTER_MS);
         // the 3-2-1 takes up to 3 seconds: kept awake (and the broadcast open) until its last note has played (the
         // rest over sound, uncut, is shorter than END_MS)
         PendingResult pending = goAsync();
         PowerManager pm = (PowerManager) ctx.getSystemService(Context.POWER_SERVICE);
         PowerManager.WakeLock wl = pm == null ? null : pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "motus:restcue");
-        if (wl != null) wl.acquire(5000);
+        if (wl != null) wl.acquire(speaks ? 5000 + SAY_AFTER_MS + SAY_MS : 5000);
         main.postDelayed(() -> {
             if (wl != null && wl.isHeld()) wl.release();
             pending.finish();
-        }, last - now + (end ? END_MS : CUT_MS) + 400);
+        }, last - now + (speaks ? SAY_AFTER_MS + SAY_MS : end ? END_MS : CUT_MS) + 400);
     }
 
     /** "Rest over" on Android 5-7 (OWN_NOTICE), like the web app's elsewhere: silent (its sound is the rest over sound

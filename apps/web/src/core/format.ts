@@ -60,6 +60,18 @@ export function makeFmt(s: Settings) {
       const rest = [r, d, time].filter(Boolean).join(" ");
       return kg && rest ? (r ? `${kg} ${rest}` : `${kg} · ${rest}`) : kg || rest;
     },
+    /** one set as a voice cue says it, in words a speech engine reads right: "8 reps at 80 kilos", "12 reps",
+     *  "1 minute 30 seconds", "2.5 kilometres in 12 minutes" (the same figures as set above) */
+    spoken: (x: SetFigures, t: Tracking | null | undefined) => {
+      const plural = (n: number, one: string, many = one + "s") => `${num(n, 2)} ${n === 1 ? one : many}`;
+      const kg = x.weightKg != null && !!t && usesWeight(t) ? plural(fromKg(x.weightKg, wu), wu === "lb" ? "pound" : "kilo") : "";
+      const r = x.reps != null && !!t && (usesReps(t) || (!!x.reps && !x.durationS)) ? plural(x.reps, "rep") : "";
+      const d = x.distanceM ? plural(fromM(x.distanceM, du), du === "mi" ? "mile" : "kilometre") : "";
+      const m = Math.floor((x.durationS ?? 0) / 60), sec = (x.durationS ?? 0) % 60;
+      const time = x.durationS ? [m ? plural(m, "minute") : "", sec ? plural(sec, "second") : ""].filter(Boolean).join(" ") : "";
+      const amount = [r || d, r || d ? (time ? `in ${time}` : "") : time].filter(Boolean).join(" ");
+      return kg && amount ? `${amount} at ${kg}` : kg || amount;
+    },
     /** a date (ISO string, YYYY-MM-DD, time in ms or Date) in your date format: "13 Nov" by default */
     date: (d: string | number | Date | null | undefined, o: Intl.DateTimeFormatOptions = { day: "numeric", month: "short" }) => (d == null || d === "" ? "" : loc(toDate(d), o)),
     /** a planned day in words: "today", "tomorrow", else "Tue 10 Nov" (with the year when it isn't this year) */

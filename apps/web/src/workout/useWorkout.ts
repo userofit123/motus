@@ -162,20 +162,21 @@ export function useWorkout() {
     // stops being a drop set or a drop set is added, so a rest of the set's own or the routine set's own rest stays
     return { secs, last };
   }
-  function describeNext(after: WorkoutExercise, si: number): string {
+  /** What comes after set `si`: `next` as the rest timer shows it ("Set 3 · Bench Press · 80 kg × 8"), `say` as the
+   *  voice cue speaks it ("Bench Press, set 3, 8 reps at 80 kilos"; a new exercise starts "Next: "). */
+  function describeNext(after: WorkoutExercise, si: number): { next: string; say: string } {
     const w = state.w!;
     const i = w.exercises.indexOf(after);
     const following = after.sets.slice(si + 1).find((x) => !x.done);
     const f = fmt.value;
     const txt = (e: WorkoutExercise, s: WorkoutSet) => [e.exercise.name, f.set(s, e.exercise.tracking)].filter(Boolean).join(" · ");
     // named as the table's badge and the bar name it: warm-ups and drops have no number of their own, sides share one
-    if (following) {
-      const k = after.sets.indexOf(following);
-      return `${following.kind === "warmup" ? "Warm-up set" : `Set ${setNo(after.sets, k, !!settings.value.features.unilateral)}`} · ${txt(after, following)}`;
-    }
+    const name = (e: WorkoutExercise, s: WorkoutSet) => (s.kind === "warmup" ? "Warm-up set" : `Set ${setNo(e.sets, e.sets.indexOf(s), !!settings.value.features.unilateral)}`);
+    const say = (e: WorkoutExercise, s: WorkoutSet) => [e.exercise.name, name(e, s).toLowerCase(), f.spoken(s, e.exercise.tracking)].filter(Boolean).join(", ");
+    if (following) return { next: `${name(after, following)} · ${txt(after, following)}`, say: say(after, following) };
     const ne = w.exercises.slice(i + 1).find((e) => e.status === "pending") ?? w.exercises.find((e) => e.status === "pending" && e !== after);
     const ns = ne && nextSet(ne.sets);
-    return ne && ns ? `Next: ${txt(ne, ns)}` : "Last set done";
+    return ne && ns ? { next: `Next: ${txt(ne, ns)}`, say: `Next: ${say(ne, ns)}` } : { next: "Last set done", say: "" };
   }
 
   /** Make exercise i the one being done; the screen follows unless you were looking at another exercise */
@@ -206,7 +207,7 @@ export function useWorkout() {
   function afterDone(e: WorkoutExercise, si: number, s: WorkoutSet, allDone: boolean) {
     const { secs } = restFor(e, si);
     const isFinal = state.w!.exercises.every((x) => x.status !== "pending");
-    if (prefs.value.autoRest && secs > 0 && !isFinal) startRest(secs, { setId: s.id, label: allDone ? "Next exercise" : "Rest", next: describeNext(e, si), workoutId: state.w!.id });
+    if (prefs.value.autoRest && secs > 0 && !isFinal) startRest(secs, { setId: s.id, label: allDone ? "Next exercise" : "Rest", ...describeNext(e, si), workoutId: state.w!.id });
     if (allDone && prefs.value.autoAdvance) {
       // the next exercise still to do, by id: the workout may be reloaded from the server before the moment below
       const ws = state.w!.exercises, i = ws.indexOf(e);

@@ -7,7 +7,7 @@ import { withDefaults, cleanWorkoutSound, cleanCueVolume, SOUND_IDS, REST_OVER_S
 import { soundUrl } from "../core/sounds";
 import { api } from "../api/client";
 import { queryClient } from "../api/live";
-import { showRestCountdown, clearRestCountdown, scheduleRestAlarm, cancelRestAlarm, scheduleRestCues, cancelRestCues, notifyRestOverWeb, isNativeApp, backgroundTimers, nativeVibrate } from "./native";
+import { showRestCountdown, clearRestCountdown, scheduleRestAlarm, cancelRestAlarm, scheduleRestCues, cancelRestCues, notifyRestOverWeb, isNativeApp, backgroundTimers, nativeVibrate, nativeSpeak } from "./native";
 
 export interface RestState {
   endAt: number | null; // ms
@@ -17,16 +17,17 @@ export interface RestState {
   setId: string | null; // the set this rest follows (its actual rest is saved when the rest ends)
   label: string; // "Rest" or "Next exercise"
   next: string; // "Set 3 · 80 kg × 8"
+  say: string; // the same for the voice cue: "Bench Press, set 3, 8 reps at 80 kilos" ("": none)
   workoutId: string | null;
   done: boolean;
 }
-const EMPTY: RestState = { endAt: null, startedAt: 0, totalS: 0, pausedLeftS: null, setId: null, label: "", next: "", workoutId: null, done: false };
+const EMPTY: RestState = { endAt: null, startedAt: 0, totalS: 0, pausedLeftS: null, setId: null, label: "", next: "", say: "", workoutId: null, done: false };
 export const rest = reactive<RestState>({ ...EMPTY, ...readJson("motusRest", {}) });
 export const now = ref(Date.now());
 const save = () => writeJson("motusRest", rest);
 
 /** The sounds the cues play (rest over, countdown), and how loud (10-100 %). `sound` false ("Workout sounds" off):
- *  none plays; a preview leaves it out. */
+ *  none plays; a preview leaves it out. `voice` (Voice cues, under Play sounds): the cues are also spoken, at the same level. */
 export interface CueVoice { cueSound: WorkoutSound; tickSound: WorkoutSound; cueVolume: number; sound?: boolean }
 export interface Cues extends CueVoice { sound: boolean; vibrate: boolean; warn10: boolean; voice: boolean; countdown: boolean; next?: boolean }
 let cues: Cues = { sound: true, cueSound: REST_OVER_SOUND_DEFAULT, tickSound: COUNTDOWN_SOUND_DEFAULT, cueVolume: 100, vibrate: true, warn10: true, voice: false, countdown: true, next: true };
@@ -37,9 +38,9 @@ let workoutCues = false;
 export const setCues = (c: Cues, forWorkout = true) => { cues = c; workoutCues = forWorkout; if (restActive()) prepare(c); };
 /** Sound and vibration as chosen in Settings → Workout, read from the settings the app has loaded, so they are right
  *  on any page (the cues above are only filled once a workout screen has been opened). */
-export function savedCues(): CueVoice & { sound: boolean; vibrate: boolean; warn10: boolean; countdown: boolean } {
-  const w = withDefaults(queryClient.getQueryData<{ settings?: unknown }>(["settings", "me"])?.settings ?? {}).workout;
-  return { sound: w.sound, vibrate: w.vibrate, cueSound: w.cueSound, tickSound: w.tickSound, cueVolume: w.cueVolume, warn10: w.warn10, countdown: w.countdown };
+export function savedCues(): CueVoice & { sound: boolean; vibrate: boolean; warn10: boolean; countdown: boolean; voice: boolean } {
+  const all = withDefaults(queryClient.getQueryData<{ settings?: unknown }>(["settings", "me"])?.settings ?? {}), w = all.workout;
+  return { sound: w.sound, vibrate: w.vibrate, cueSound: w.cueSound, tickSound: w.tickSound, cueVolume: w.cueVolume, warn10: w.warn10, countdown: w.countdown, voice: w.voice && !!all.features.voice };
 }
 /** Vibrates in a pattern of on/off milliseconds. In the Android app through the phone itself (MotusWorkoutPlugin.vibrate):
  *  the WebView's navigator.vibrate counts as touch feedback (off or faint on many phones), is refused until the page
@@ -62,7 +63,7 @@ setInterval(() => {
     const left = (rest.endAt - now.value) / 1000;
     // in the background with the alarm set, the alarm alone announces the end: no warning or 3-2-1 leading up to it
     const quiet = alarmCovers();
-    if (left <= 10 && left > 9 && !warned && cues.sound && cues.warn10) { warned = true; if (!quiet) beep(); }
+    if (left <= 10 && left > 9 && !warned && cues.sound && cues.warn10) { warned = true; if (!quiet) { beep(); if (cues.voice) speak(TEN_SECONDS); } }
     // 3-2-1 in the last seconds (not on rests too short for it to mean anything); the end's own beep is the "now"
     const s = Math.ceil(left);
     if (s >= 1 && s <= 3 && s !== lastCount && rest.totalS > 5 && cues.sound && cues.countdown) { lastCount = s; if (!quiet) beep(); }
@@ -74,10 +75,10 @@ setInterval(() => {
 export const restLeft = () => (rest.pausedLeftS != null ? rest.pausedLeftS : rest.endAt ? Math.max(0, Math.ceil((rest.endAt - now.value) / 1000)) : 0);
 export const restActive = () => !!rest.endAt && !rest.done;
 
-export function startRest(seconds: number, o: { setId: string | null; label: string; next: string; workoutId: string }) {
+export function startRest(seconds: number, o: { setId: string | null; label: string; next: string; say?: string; workoutId: string }) {
   finishRest(false);
   if (seconds <= 0) return;
-  Object.assign(rest, { ...EMPTY, endAt: Date.now() + seconds * 1000, startedAt: Date.now(), totalS: seconds, setId: o.setId, label: o.label, next: o.next, workoutId: o.workoutId });
+  Object.assign(rest, { ...EMPTY, endAt: Date.now() + seconds * 1000, startedAt: Date.now(), totalS: seconds, setId: o.setId, label: o.label, next: o.next, say: o.say ?? "", workoutId: o.workoutId });
   warned = false; lastCount = 0;
   save();
   restTimeSet();
@@ -141,7 +142,7 @@ function restEnded() {
   if (late) { if (hidden() || !document.hasFocus()) void notifyRestOverWeb(rest.next); return; }
   if (cues.sound) restOver();
   if (cues.vibrate) vibrate([300, 150, 300]);
-  if (cues.voice && rest.next) speak(`Rest over. ${rest.next}`);
+  if (cues.sound && cues.voice) speak(restOverWords());
   // A browser's or the desktop app's own notification, when you're in another tab, window or app (the Android app has
   // its alarm); a phone's browser allows only the service worker's kind, which also carries a "+30s" button.
   if (hidden() || !document.hasFocus()) void notifyRestOverWeb(rest.next);
@@ -178,7 +179,10 @@ function planAlarm() {
   void scheduleRestAlarm(rest.endAt!, rest.next, c); alarmOn = true;
   // the same choices as the in-app cues above: the 10 seconds and the 3-2-1 each have their own switch, and all three
   // need the workout sounds on; the end plays the rest over sound, as on screen (the alarm itself is silent)
-  scheduleRestCues(rest.endAt!, { warn10: c.sound && c.warn10, countdown: c.sound && c.countdown && rest.totalS > 5, tickSound: cleanWorkoutSound(c.tickSound, COUNTDOWN_SOUND_DEFAULT), endSound: c.sound ? cleanWorkoutSound(c.cueSound) : null, cueVolume: c.cueVolume, body: rest.next, vibrate: c.vibrate });
+  // the voice too (Voice cues): Android's own speech, spoken after the sound as on screen
+  const voice = c.sound && c.voice;
+  scheduleRestCues(rest.endAt!, { warn10: c.sound && c.warn10, countdown: c.sound && c.countdown && rest.totalS > 5, tickSound: cleanWorkoutSound(c.tickSound, COUNTDOWN_SOUND_DEFAULT), endSound: c.sound ? cleanWorkoutSound(c.cueSound) : null, cueVolume: c.cueVolume, body: rest.next, vibrate: c.vibrate,
+    say10: voice && c.warn10 ? TEN_SECONDS : null, sayEnd: voice ? restOverWords() : null });
 }
 function dropAlarm() {
   if (!alarmOn) return;
@@ -286,8 +290,19 @@ export function restOver(v: CueVoice = cues) {
   if (v.sound === false) return;
   playSound(cleanWorkoutSound(v.cueSound), { level: levelOf(v.cueVolume) });
 }
-function speak(text: string) {
-  try { const u = new SpeechSynthesisUtterance(text); u.rate = 1.05; speechSynthesis.cancel(); speechSynthesis.speak(u); } catch { /* no voice */ }
+// Voice cues: the 10 seconds warning and what's next at the rest's end, each spoken just after its sound (SAY_AFTER_MS)
+// so the two don't talk over each other. In the background the Android app speaks them itself (RestCues), never both.
+const TEN_SECONDS = "10 seconds";
+const SAY_AFTER_MS = 700;
+const restOverWords = () => (rest.say ? `Rest over. ${rest.say}` : "Rest over");
+/** Speaks `text` at the cue volume: in the Android app through the phone's own speech (its WebView has none), else
+ *  through the browser's (the desktop app and browsers). */
+function speak(text: string, v: CueVoice = cues) {
+  const level = levelOf(v.cueVolume);
+  setTimeout(() => {
+    if (nativeSpeak(text, level)) return;
+    try { const u = new SpeechSynthesisUtterance(text); u.rate = 1.05; u.volume = level; speechSynthesis.cancel(); speechSynthesis.speak(u); } catch { /* no voice */ }
+  }, v.sound === false ? 0 : SAY_AFTER_MS);
 }
 /** Elapsed seconds of a workout, without its paused time */
 export function elapsed(w: { startedAt: string; pausedS: number; pauseStartedAt: string | null; endedAt?: string | null }) {

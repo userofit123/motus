@@ -327,19 +327,30 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener2 {
 
     /** The rest's 10 seconds warning, 3-2-1 and end while the app is in the background (`endAt`, `warn10`, `countdown`,
      *  `tickSound`: the countdown sound, `endSound`: the rest over sound or null for none, `cueVolume`; `body`, `vibrate`: the "Rest over" that
-     *  RestCues shows itself on Android 5-7), in place of any scheduled before: RestCues. */
+     *  RestCues shows itself on Android 5-7; `say10`, `sayEnd`: the Voice cues spoken after the 10 seconds and the end, null for none), in
+     *  place of any scheduled before: RestCues. */
     @PluginMethod
     public void scheduleRestCues(PluginCall call) {
         Long endAt = call.getLong("endAt");
         if (endAt == null) { call.reject("endAt missing"); return; }
         RestCues.schedule(getContext(), endAt, call.getBoolean("warn10", false), call.getBoolean("countdown", false), call.getString("tickSound", "progressStep"), call.getString("endSound", null), call.getInt("cueVolume", 100),
-            call.getString("body", ""), call.getBoolean("vibrate", false));
+            call.getString("body", ""), call.getBoolean("vibrate", false), call.getString("say10", null), call.getString("sayEnd", null));
+        call.resolve();
+    }
+
+    /** A Voice cue spoken now while the app is on screen (`text`, `level` 0-1): the WebView has no speech of its own. */
+    @PluginMethod
+    public void speak(PluginCall call) {
+        Double level = call.getDouble("level", 1.0);
+        Voice.say(getContext(), call.getString("text", ""), level == null ? 1f : level.floatValue());
         call.resolve();
     }
 
     @PluginMethod
     public void cancelRestCues(PluginCall call) {
         RestCues.cancel(getContext());
+        // back on screen (or the rest changed): a voice cue still being said from the background stops, the app speaks its own
+        Voice.stop();
         call.resolve();
     }
 

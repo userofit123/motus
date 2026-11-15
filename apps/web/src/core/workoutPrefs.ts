@@ -29,7 +29,6 @@ export const WORKOUT_PREF_GROUPS: PrefGroup[] = [
     { key: "autoRest", label: "Start the rest timer when a set is ticked", hint: "" },
     { key: "restEndNext", label: "Go to the next set when the rest ends", hint: "Otherwise it waits on \"Rest over\" until you tap the button to go on" },
     { key: "vibrate", label: "Vibrate when the rest ends", hint: "On Android phones, also when an interval part starts" },
-    { key: "voice", label: "Voice cues", hint: "Says what's next when a rest ends", feature: "voice" },
     { key: "lockScreen", label: "Rest timer on the lock screen", hint: "In the Android app" },
   ] },
   // the switch first, then which cues play, then how they sound: the two sounds and the level
@@ -37,9 +36,10 @@ export const WORKOUT_PREF_GROUPS: PrefGroup[] = [
     { key: "sound", label: "Play sounds", hint: "For the rest timer, timed sets and the interval timer" },
     { key: "warn10", label: "Warn 10 seconds before the rest ends", hint: "One beep in the countdown sound", under: "sound" },
     { key: "countdown", label: "3-2-1 countdown", hint: "Three beeps in the countdown sound before a rest ends or a timed set starts", under: "sound" },
+    { key: "voice", label: "Voice cues", hint: "Says the next exercise and set when a rest ends, and \"10 seconds\" with the warning", feature: "voice", under: "sound" },
     { key: "cueSound", label: "Rest over sound", hint: "When a rest or a timed set reaches 0", preview: true, under: "sound", options: CUE_SOUND_OPTIONS },
     { key: "tickSound", label: "Countdown sound", hint: "The 10 second warning and every 3-2-1", preview: true, under: "sound", options: CUE_SOUND_OPTIONS },
-    { key: "cueVolume", label: "Sound level", hint: "How loud all workout and timer sounds play", under: "sound", num: { min: 10, max: 100, step: 10, unit: "%" } },
+    { key: "cueVolume", label: "Sound level", hint: "How loud all workout and timer sounds and the voice play", under: "sound", num: { min: 10, max: 100, step: 10, unit: "%" } },
   ] },
   { id: "during", title: "During a workout", rows: [
     { key: "autoAdvance", label: "Go to the next exercise when one is done", hint: "" },

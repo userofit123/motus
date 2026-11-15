@@ -146,9 +146,9 @@ export function cancelRestAlarm() {
 // stopped there): the 10 seconds warning and the 3-2-1 in the chosen countdown sound, and the end in the rest over
 // sound (`endSound`, null: none), at their times and the chosen level (MotusWorkoutPlugin.scheduleRestCues), also with
 // the screen off. The "Rest over" notification is the alarm above (`body`, `vibrate`: on Android 5-7 RestCues shows
-// it). Scheduled and taken off together with it
+// it; `say10`, `sayEnd`: Voice cues, spoken after the sound, null: none). Scheduled and taken off together with it
 // (workout/runtime.ts); each call replaces the ones scheduled before.
-export function scheduleRestCues(endAt: number, o: { warn10: boolean; countdown: boolean; tickSound: string; endSound: string | null; cueVolume: number; body: string; vibrate: boolean }) {
+export function scheduleRestCues(endAt: number, o: { warn10: boolean; countdown: boolean; tickSound: string; endSound: string | null; cueVolume: number; body: string; vibrate: boolean; say10: string | null; sayEnd: string | null }) {
   plugin("MotusWorkout")?.scheduleRestCues?.({ endAt, ...o }).catch?.(() => {});
 }
 export function cancelRestCues() {
@@ -275,6 +275,14 @@ export function showIntervalNotice(o: { title: string; body: string; endAt: numb
 export function clearIntervalNotice() {
   plugin("MotusWorkout")?.clearTimer?.().catch?.(() => {});
   void closeWebNotice("motus-timer");
+}
+/** Speaks a voice cue through the phone's own speech in the Android app (MotusWorkoutPlugin.speak), at `level` (0-1,
+ *  workout/runtime.ts levelOf); false outside it or in an older app without it, where the caller uses the browser's. */
+export function nativeSpeak(text: string, level: number) {
+  const p = plugin("MotusWorkout");
+  if (!p || !isNativeApp() || typeof p.speak !== "function") return false;
+  Promise.resolve(p.speak({ text, level })).catch(() => {});
+  return true;
 }
 /** A vibration through the phone in the Android app (workout/runtime.ts vibrate says why); false outside it. An older
  *  app without it falls back to the WebView's own. */

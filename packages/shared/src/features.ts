@@ -12,7 +12,7 @@ export const FEATURES: FeatureDef[] = [
   { id: "unilateral", group: "Logging", name: "Left / right sides", desc: "Left and right sets for exercises done one side at a time, with the weight one side moves. Switch it for any exercise from its menu.", on: true },
   { id: "timedSets", group: "Logging", name: "Set tracking", desc: "What each exercise is counted by (reps, time or distance) and its weight, such as a weighted plank or a ruck. Choose it for any exercise from its menu.", on: true },
   { id: "quickEntry", group: "Logging", name: "Quick entry", desc: 'Type "3x8 80" to fill sets.', on: false },
-  { id: "voice", group: "Logging", name: "Voice cues", desc: "Hear what's next when a rest ends.", on: false },
+  { id: "voice", group: "Logging", name: "Voice cues", desc: "Hear the next exercise and set spoken when a rest ends.", on: false },
   { id: "adaptiveRest", group: "Logging", name: "Longer rest after a missed set", desc: "Adds 30s to the rest when a set falls short of its target.", on: true },
   { id: "notifLogging", group: "Logging", name: "Log from the notification", desc: "Tick the next set from the lock-screen timer (Android).", on: true },
   // Training

@@ -123,6 +123,8 @@
     <!-- data older than 30 days before the first grant (Health Connect versions that offer it; asked for only there) -->
     <uses-permission android:name="android.permission.health.READ_HEALTH_DATA_HISTORY" />
     <queries><package android:name="com.google.android.apps.healthdata" /></queries>
+    <!-- Voice cues: Android 11+ hides the phone's speech engine from an app that doesn't name it here (TextToSpeech then never starts) -->
+    <queries><intent><action android:name="android.intent.action.TTS_SERVICE" /></intent></queries>
     <!-- installing updates downloaded from GitHub (sideloaded app; not for a Play Store build) -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 </manifest>
