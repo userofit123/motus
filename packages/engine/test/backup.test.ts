@@ -1,7 +1,7 @@
 // A full backup holds every table of a person's data and restores it as it was: into an empty account on another
 // server (merge), over the same account (replace), and from an older backup without the newer tables and columns.
 // Health data included: the import log with its deleted marks (031/034 must not mark or block anything on the way
-// back), nights, heart rate days, and the daily log's source and worn.
+// back), nights, heart rate days, and the daily log's source, worn and device.
 import fs from "node:fs";
 import path from "node:path";
 import { describe, it, expect, beforeAll } from "vitest";
@@ -73,7 +73,7 @@ beforeAll(async () => {
   await c("PUT", "/settings", { units: { system: "imperial", weight: "lb", distance: "mi", length: "in" } });
   // the band: days (steps from the phone alone: not worn), a night, heart rate through a day, a weight, a session
   await c("POST", "/health/import", {
-    steps: [{ date: "2026-10-01", value: 8000 }, { date: "2026-10-02", value: 4000, worn: false }, { date: "2026-10-04", value: 7000 }],
+    steps: [{ date: "2026-10-01", value: 8000 }, { date: "2026-10-02", value: 4000, worn: false }, { date: "2026-10-04", value: 7000 }, { date: "2026-10-05", value: 6000, device: "ring" }],
     sleep: [{ date: "2026-10-02", hours: 7.5 }],
     sleepNights: [{ date: "2026-10-02", start: "2026-10-01T23:00:00Z", end: "2026-10-02T07:00:00Z", asleepMin: 450, awakeMin: 30, deepMin: 80, lightMin: 270, remMin: 100, avgHr: 55 }],
     restingHr: [{ date: "2026-10-02", value: 52 }],
@@ -98,6 +98,8 @@ describe("a full backup", () => {
     const daily = file.tables.daily_logs;
     expect(daily.find((d: any) => d.date.startsWith?.("2026-10-02") || String(d.date).includes("2026-10-02"))).toBeTruthy();
     expect(daily.some((d: any) => d.worn === false)).toBe(true);
+    // the worn device's kind travels with its day (038), so a restore says "your ring" as before
+    expect(daily.filter((d: any) => d.device === "ring").length).toBe(1);
     expect(file.tables.health_imports.some((h: any) => h.deleted_at)).toBe(true);
     // the file says which schema it was written with: one per migration, so a new migration gets checked here
     expect(file.schema).toBe(fs.readdirSync(path.join(__dirname, "../src/migrations")).filter((f) => /^\d{3}_.*\.ts$/.test(f)).length);

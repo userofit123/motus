@@ -103,6 +103,30 @@ describe("sync", () => {
     expect((await server.db.admin.query("SELECT worn FROM daily_logs WHERE user_id = $1 AND date = '2026-08-04' AND kind = 'steps'", [U])).rows[0].worn).toBe(true);
   }, 60000);
 
+  it("a phone's read on its stale copy names the worn device without undoing settings changed elsewhere (M-227)", async () => {
+    await sync();
+    // changed on another device after this phone's last sync
+    await S()("PUT", "/settings", { firstDay: 1 });
+    const settingsRows = async () => Number((await server.db.admin.query("SELECT count(*) AS n FROM sync_log WHERE tbl = 'user_settings'")).rows[0].n);
+    const before = await settingsRows();
+    // the phone reads Health Connect on its own copy, which still has the old settings row
+    await D()("POST", "/health/import", { steps: [{ date: "2026-08-10", value: 6000, device: "watch" }, { date: "2026-08-11", value: 6500, device: "watch" }],
+      device: { kind: "watch" } });
+    expect((await D()("GET", "/health/device")).kind).toBe("watch");
+    await sync();
+    expect((await S()("GET", "/me")).settings.firstDay).toBe(1);
+    expect(await settingsRows()).toBe(before);
+    expect((await S()("GET", "/health/device")).kind).toBe("watch");
+    expect((await D()("GET", "/me")).settings.firstDay).toBe(1);
+    // an app from before 038 sends the day's row without the column: the day keeps its kind
+    const at = new Date().toISOString();
+    await S()("POST", "/sync/push", { device: deviceId, changes: [{ tbl: "daily_logs", op: "upsert", pk: { user_id: U, date: "2026-08-10", kind: "steps" }, at,
+      row: { user_id: U, date: "2026-08-10", kind: "steps", value: 6100, source: "health_connect", worn: true } }] });
+    expect((await server.db.admin.query("SELECT device FROM daily_logs WHERE user_id = $1 AND date = '2026-08-10' AND kind = 'steps'", [U])).rows[0].device).toBe("watch");
+    await S()("PUT", "/settings", { firstDay: 0 });
+    await sync();
+  }, 60000);
+
   it("keeps the newest of two changes to the same thing", async () => {
     await D()("PUT", `/routines/${routineId}`, { name: "Older, from the device" });
     await new Promise((r) => setTimeout(r, 20));

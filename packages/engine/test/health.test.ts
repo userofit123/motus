@@ -57,29 +57,6 @@ describe("health connect import", () => {
     expect(body.map((x: any) => Number(x.value))).toEqual([80.46]);
   });
 
-  it("learns the kind of worn device from the newest read that names one, and keeps it through reads that don't", async () => {
-    const worn = async () => (await call("GET", "/me")).settings.wornDevice;
-    expect(await worn()).toBe(null);
-    await call("POST", "/health/import", { device: { kind: "watch", name: "Pixel Watch 3" } });
-    expect(await worn()).toBe("watch");
-    // an older app sends no device, and a read without a worn day neither: the saved kind stays
-    await call("POST", "/health/import", { steps: [] });
-    expect(await worn()).toBe("watch");
-    await call("POST", "/health/import", { device: { kind: "ring" } });
-    expect(await worn()).toBe("ring");
-    // a device that doesn't say its kind (Gadgetbridge often) or a kind this version doesn't know: not known
-    await call("POST", "/health/import", { device: { kind: "unknown" } });
-    expect(await worn()).toBe(null);
-    await call("POST", "/health/import", { device: { kind: "band" } });
-    await call("PUT", "/settings", { wornDevice: "toaster" });
-    expect(await worn()).toBe(null);
-    // the rest of the settings are left as they were
-    await call("PUT", "/settings", { firstDay: 1 });
-    await call("POST", "/health/import", { device: { kind: "band" } });
-    expect((await call("GET", "/me")).settings).toMatchObject({ wornDevice: "band", firstDay: 1 });
-    await call("PUT", "/settings", { firstDay: 0, wornDevice: null });
-  });
-
   it("adds sessions as activities once, keeps edits, and files unknown types under Other", async () => {
     const s = { id: "abc", type: "run", start: "2026-10-04T06:00:00Z", end: "2026-10-04T06:30:00Z", distanceM: 5000, steps: 5200, avgHr: 150, calories: 320 };
     const odd = { id: "def", type: "kitesurf", start: "2026-10-05T10:00:00Z", end: "2026-10-05T11:00:00Z" };
@@ -990,5 +967,57 @@ describe("what the band measured during an activity", () => {
     await ranges([{ kind: "activity", id: old, covered: false, bandFields: true }]);
     expect(await ids({ band: "1" })).not.toContain(old);
     expect(await act(old)).toMatchObject({ bandDistanceM: null });
+  });
+});
+
+// the worn device's kind (038), on an account of its own so its days stay out of the other tests' lists
+describe("the kind of worn device", () => {
+  beforeAll(async () => {
+    U = uuidv7();
+    await eng.db.admin.query("INSERT INTO users (id, username) VALUES ($1, 'worn')", [U]);
+  });
+
+  it("works out the kind of worn device from the days it counted, and a read that doesn't know never takes it away", async () => {
+    const kind = async () => (await call("GET", "/health/device")).kind;
+    const dev = async () => (await eng.db.admin.query("SELECT date::text AS d, device FROM daily_logs WHERE kind = 'steps' AND date >= '2026-09-01' AND date < '2026-10-01' ORDER BY date")).rows;
+    const day = (n: number) => `2026-09-${String(n).padStart(2, "0")}`;
+    expect(await kind()).toBe(null);
+    await call("POST", "/health/import", { steps: [1, 2, 3].map((n) => ({ date: day(n), value: 5000, device: "band" })) });
+    expect(await kind()).toBe("band");
+    // the same days again without a kind (a gadget that doesn't say, or another phone) or with one this version doesn't
+    // know: the days keep theirs, and so does the wording
+    await call("POST", "/health/import", { steps: [1, 2, 3].map((n) => ({ date: day(n), value: 5000, device: "unknown" })) });
+    await call("POST", "/health/import", { steps: [1, 2, 3].map((n) => ({ date: day(n), value: 5000 })), device: { kind: "unknown" } });
+    expect((await dev()).map((r: any) => r.device)).toEqual(["band", "band", "band"]);
+    expect(await kind()).toBe("band");
+    // one day from another device doesn't flip it; a device that counts most of the newest days takes over
+    await call("POST", "/health/import", { steps: [{ date: day(4), value: 4000, device: "watch" }] });
+    expect(await kind()).toBe("band");
+    await call("POST", "/health/import", { steps: [5, 6, 7].map((n) => ({ date: day(n), value: 4000, device: "watch" })) });
+    expect(await kind()).toBe("watch");
+    // a day no worn device counted (the phone's own steps) says nothing of the kind
+    await call("POST", "/health/import", { steps: [8, 9, 10, 11, 12].map((n) => ({ date: day(n), value: 3000, worn: false, device: "ring" })) });
+    expect(await kind()).toBe("watch");
+    // a typed day is the person's: no kind is written on it
+    await call("PUT", "/daily", { date: day(13), kind: "steps", value: 100 });
+    await call("POST", "/health/import", { steps: [{ date: day(13), value: 9000, device: "ring" }] });
+    expect((await dev()).find((r: any) => r.d === day(13)).device).toBe(null);
+  });
+
+  it("keeps the kind out of the person's settings: no settings write, no \"Changed settings\" entry", async () => {
+    const settingsRows = async () => Number((await eng.db.admin.query("SELECT count(*) AS n FROM sync_log WHERE tbl = 'user_settings'")).rows[0].n);
+    const logged = async () => (await call("GET", "/activity-log")).entries.filter((e: any) => e.kind === "settings").length;
+    const before = await settingsRows(), loggedBefore = await logged();
+    // the release before saved the newest day's kind as a setting from b.device; an app of it still sends that
+    await call("POST", "/health/import", { steps: [{ date: "2026-09-20", value: 7000, device: "ring" }], device: { kind: "ring" } });
+    await call("POST", "/health/import", { steps: [{ date: "2026-09-21", value: 7000, device: "band" }], device: { kind: "band" } });
+    expect(await settingsRows()).toBe(before);
+    expect(await logged()).toBe(loggedBefore);
+    // a copy of the old setting sent along with a settings change (an app of that release) is dropped, the change kept
+    await call("PUT", "/settings", { firstDay: 1, wornDevice: "toaster" });
+    const s = (await call("GET", "/me")).settings;
+    expect(s.firstDay).toBe(1);
+    expect("wornDevice" in s).toBe(false);
+    await call("PUT", "/settings", { firstDay: 0 });
   });
 });

@@ -25,8 +25,7 @@ import { uuidv7, isUuid } from "../ids";
 import { bad, notFound } from "../errors";
 import { ensureTypes, saveActivity, stepsByDay } from "./activities";
 import { dayIn } from "./achievements";
-import { isNight, cleanWornDevice } from "@motus/shared";
-import { getSettings, saveSettings } from "./settings";
+import { isNight, cleanWornDevice, type WornDevice } from "@motus/shared";
 
 export const HEALTH_SOURCE = "health_connect";
 // a band's number for an activity's time: a measure that can't be (below 0, absurdly large, not a number) is left out
@@ -303,7 +302,10 @@ export function healthRoutes(r: Router) {
     // a typed value (source "manual", or null on rows from before sources) is never replaced. worn: a band, watch or
     // ring counted the day (036); the phone says so for steps, distance and active calories, and one that doesn't
     // (an older app) is taken as worn, as before
-    const day = async (kind: Daily, date: unknown, value: number | null, worn = true) => {
+    // device: the kind of worn device whose count the day is (038), from the phone per day; recorded beside the value and
+    // never cleared by a read that doesn't know it (null), so a gadget that sometimes says its kind and sometimes not, or
+    // a second phone that can't tell, doesn't take a known kind away. Not counted as a new day: only the wording follows it.
+    const day = async (kind: Daily, date: unknown, value: number | null, worn = true, device: WornDevice | null = null) => {
       const d = dateStr(date);
       if (!d || value == null) return false;
       const key = `${kind}:${d}`, dk = `${DAILY_KIND[kind]}:${d}`;
@@ -312,6 +314,9 @@ export function healthRoutes(r: Router) {
         `INSERT INTO daily_logs (user_id, date, kind, value, source, worn) VALUES ($1,$2,$3,$4,$5,$6)
          ON CONFLICT (user_id, date, kind) DO UPDATE SET value = $4, source = $5, worn = $6
          WHERE daily_logs.source = $5 AND (daily_logs.value <> $4 OR daily_logs.worn <> $6) RETURNING 1`, [ctx.userId, d, DAILY_KIND[kind], value, HEALTH_SOURCE, worn]);
+      if (device && worn && (await ctx.q.query(
+        "UPDATE daily_logs SET device = $3 WHERE date = $1::date AND kind = $2 AND source = $4 AND worn AND device IS DISTINCT FROM $3 RETURNING 1",
+        [d, DAILY_KIND[kind], device, HEALTH_SOURCE])).rows.length) touched = true;
       const known = imps.has(key);
       // noted when it came from the phone: now, or by an app from before the log (a typed day is not an import)
       if (rows.length || (!known && daily.get(dk) === HEALTH_SOURCE)) {
@@ -321,13 +326,13 @@ export function healthRoutes(r: Router) {
       }
       return rows.length > 0;
     };
-    for (const e of list(b.steps, 400)) if (await day("steps", e?.date, intOrNull(e?.value, 0, 1e6), e?.worn !== false)) out.steps++;
+    for (const e of list(b.steps, 400)) if (await day("steps", e?.date, intOrNull(e?.value, 0, 1e6), e?.worn !== false, cleanWornDevice(e?.device))) out.steps++;
     for (const e of list(b.sleep, 400)) {
       const h = numOrNull(e?.hours, 0, 24);
       if (await day("sleep", e?.date, h == null ? null : Math.round(h * 10) / 10)) out.sleep++;
     }
     for (const [field, kind] of [["restingHr", "resting_hr"], ["spo2", "spo2"], ["hrv", "hrv"], ["distance", "distance"], ["activeKcal", "active_kcal"], ["vo2max", "vo2max"]] as const)
-      for (const e of list(b[field], 400)) if (await day(kind, e?.date, lenient(kind, e?.value), e?.worn !== false)) out[field]++;
+      for (const e of list(b[field], 400)) if (await day(kind, e?.date, lenient(kind, e?.value), e?.worn !== false, cleanWornDevice(e?.device))) out[field]++;
     for (const e of list(b.hydration, 400)) if (await day("water", e?.date, lenient("water", e?.ml))) out.hydration++;
 
     // nights: after the daily sleep, whose key they share
@@ -413,13 +418,8 @@ export function healthRoutes(r: Router) {
       if (rows.length) out.hrDays++;
     }
 
-    // the kind of watch, band or ring behind the newest day it counted, so screens name it ("your watch"); an older app
-    // sends none, and a read without such a day says nothing new, so both leave the saved one. Saved only when it
-    // differs: a settings change on every read would reload every screen.
-    if (b.device && typeof b.device === "object") {
-      const kind = cleanWornDevice(b.device.kind);
-      if ((await getSettings(ctx.q, ctx.userId)).wornDevice !== kind) await saveSettings(ctx, { wornDevice: kind });
-    }
+    // b.device (the kind behind the newest worn day, which the release before saved in settings) is not used: each
+    // day carries its own kind now (above), and the kind screens use is worked out from those days (GET /health/device)
 
     if (touched || Object.values(out).some((n) => n > 0)) ctx.changed("health");
     return out;
@@ -582,6 +582,17 @@ export function healthRoutes(r: Router) {
   // Everything the band had for one day, for Home, the calendar and a day's view. null where there is nothing.
   // sleepH: the day's sleep hours, there also for a day without a night's detail (typed, or synced before nights were)
   // tz: the app's calendar, for the day's steps (recorded activities count in, as on Home)
+  // The kind of the person's worn device, so screens say "your watch" or "your ring": the kind most of the newest days
+  // with a known kind came from (about ten days of steps, distance and active calories), the newer one on a tie. Worked
+  // out from the days, never saved: one odd day, a gadget that only sometimes says its kind, or two devices worn by turns
+  // don't flip the wording; a new device takes over once it has counted most of those days. null: none known.
+  r.get("/health/device", async (ctx) => {
+    const { rows } = await ctx.q.query(
+      `SELECT device FROM (SELECT date, device FROM daily_logs WHERE kind IN ('steps', 'distance_m', 'active_kcal') AND source = $1 AND worn
+         AND device IS NOT NULL ORDER BY date DESC LIMIT 30) t GROUP BY device ORDER BY count(*) DESC, max(date) DESC LIMIT 1`, [HEALTH_SOURCE]);
+    return { kind: cleanWornDevice(rows[0]?.device) };
+  });
+
   r.get("/health/day/:date", async (ctx, p, _b, qs) => {
     const d = dateStr(p.date);
     if (!d) throw bad("Pick a day");

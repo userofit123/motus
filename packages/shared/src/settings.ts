@@ -91,12 +91,10 @@ export interface Settings {
   noteTags: string[];
   /** the interval timer's saved setups (feature "intervalTimer"); empty: the starting ones are offered */
   intervals: IntervalPreset[];
-  /** the kind of watch, band or ring whose numbers Health Connect brought in last (POST /health/import learns it from
-   *  the phone), so screens say "your watch" or "your ring" rather than "your band"; null: not known (none yet, or a
-   *  device that doesn't say, such as many through Gadgetbridge), and the screens use a neutral word */
-  wornDevice: WornDevice | null;
 }
 
+/** The kinds of worn device Health Connect names, so screens say "your watch" or "your ring" (GET /health/device works
+ *  out the person's from the days it counted; not a setting, see engine migration 038). */
 export const WORN_DEVICES = ["watch", "band", "ring", "chestStrap"] as const;
 export type WornDevice = (typeof WORN_DEVICES)[number];
 /** A worn device's kind made safe (it comes from the phone and syncs from any device): unknown kinds are null. */
@@ -176,7 +174,6 @@ export const DEFAULT_SETTINGS: Settings = {
   activeGym: null,
   noteTags: NOTE_TAGS_DEFAULT,
   intervals: [],
-  wornDevice: null,
 };
 
 /** Deep-merges saved settings over the defaults, so new settings get their default value. */
@@ -198,7 +195,9 @@ export function withDefaults(saved: unknown): Settings {
   // synced from any device, so made safe here before a screen or the timer uses them
   out.intervals = cleanIntervalPresets(out.intervals);
   out.goalsOrder = cleanGoalsOrder(out.goalsOrder);
-  out.wornDevice = cleanWornDevice(out.wornDevice);
+  // the worn device's kind was kept here for one release (an app of that release still sends it): it lives with the days
+  // now (GET /health/device), so a copy here is dropped
+  delete (out as Settings & { wornDevice?: unknown }).wornDevice;
   // the older Home's section list (and its list of cards before that) belonged to a different set of blocks: dropped, so
   // everyone starts from the new layout
   const { cards: _c, sections: _s, ...home } = out.home as Settings["home"] & { cards?: unknown; sections?: unknown };

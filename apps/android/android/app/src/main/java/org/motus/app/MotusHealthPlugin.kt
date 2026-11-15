@@ -491,9 +491,13 @@ class MotusHealthPlugin : Plugin() {
         if (deviceType != null && deviceType in WORN) return true
         return BAND_APPS.any { pkg == it || pkg.startsWith("$it.") }
     }
-    // an app's records in the range, by its first one: the worn device it writes for, or null when it isn't one
+    // an app's records in the range: the worn device it writes for, or null when it isn't one. Its kind comes from its
+    // newest record that names a type (not just its first: an app may write some records without one, and the first in a
+    // window that moves every read would make the kind come and go), else the newest record's ("unknown" kind).
     private suspend fun <R : Record> bandOrigin(c: HealthConnectClient, type: KClass<R>, range: TimeRangeFilter, o: DataOrigin): Worn? {
-        val d = c.readRecords(ReadRecordsRequest(type, range, dataOriginFilter = setOf(o), pageSize = 1)).records.firstOrNull()?.metadata?.device
+        val records = c.readRecords(ReadRecordsRequest(type, range, dataOriginFilter = setOf(o), ascendingOrder = false, pageSize = 100)).records
+        val typed = records.firstOrNull { r -> r.metadata.device?.type.let { it != null && it != Device.TYPE_UNKNOWN } }
+        val d = (typed ?: records.firstOrNull())?.metadata?.device
         return if (isBand(o.packageName, d?.type)) wornOf(d) else null
     }
 
@@ -511,12 +515,14 @@ class MotusHealthPlugin : Plugin() {
         return Worn(kind, name.takeIf { it.isNotEmpty() }?.take(60))
     }
     private fun putWorn(o: JSONObject, w: Worn) { o.put("device", w.kind); if (w.name != null) o.put("deviceName", w.name) }
-    // the device behind the newest day a worn device counted (steps first, then distance, then active calories)
+    // the device behind the newest day a worn device of a known kind counted (steps first, then distance, then active
+    // calories), for an engine of the release before, which saved it as the person's: an "unknown" day is skipped, so it
+    // never takes a known kind away there. A newer engine takes each day's own device instead.
     private fun latestWorn(vararg days: JSArray): JSObject? {
         var best: JSONObject? = null
         for (a in days) for (i in a.length() - 1 downTo 0) {
             val d = a.optJSONObject(i) ?: continue
-            if (!d.has("device")) continue
+            if (!d.has("device") || d.optString("device") == "unknown") continue
             if (best == null || d.optString("date") > best.optString("date")) best = d
             break
         }

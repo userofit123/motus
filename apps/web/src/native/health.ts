@@ -3,10 +3,10 @@
 // typed values and never adds the same thing twice. Read while the app is on screen, as often as Settings → Integrations
 // → Read Health Connect says (this phone's choice), on pull to refresh, and from Settings → Integrations by hand.
 import { computed, onScopeDispose, ref, shallowRef, watch, type Ref } from "vue";
+import { useQuery } from "@tanstack/vue-query";
 import { TOPICS, cleanWornDevice, type WornDevice } from "@motus/shared";
 import { api } from "../api/client";
 import { invalidate, queryClient } from "../api/live";
-import { useSettings, type SettingsMe } from "../api/queries";
 import { readJson, writeJson, readStr, writeStr } from "../core/prefs";
 import { accounts } from "./accounts";
 
@@ -29,7 +29,8 @@ export interface HealthData {
   // body fat, water drunk, VO2 max and each day's heart rate: passed on as they come, absent from an older app build
   bodyFat?: unknown[]; hydration?: unknown[]; vo2max?: unknown[]; hrDays?: unknown[];
   // the watch, band or ring behind the newest day one counted (kind: watch, band, ring, chestStrap or unknown; name: its
-  // maker and model when Health Connect has them); the engine keeps the kind (settings.wornDevice); absent from an older build
+  // maker and model when Health Connect has them); not used by the engine any more, which keeps each day's kind (the
+  // device on each steps, distance and active calories day) and works out the person's from those (GET /health/device)
   device?: { kind: string; name?: string };
 }
 /** What POST /health/import added, and ranges: what POST /health/ranges filled in on activities and workouts recorded in
@@ -77,15 +78,22 @@ export function sourceName(s: StepSource, phoneName?: string): string {
   return APP_NAMES.find(([p]) => s.app === p || s.app.startsWith(p + "."))?.[1] ?? s.label ?? s.app;
 }
 
-/** The worn device in words, by the kind Health Connect last named (settings.wornDevice): "watch", "band", "ring",
- *  "chest strap", or "device" when it isn't known (none yet, or one that doesn't say, as many through Gadgetbridge) */
+/** The worn device in words, by its kind (useDevice): "watch", "band", "ring", "chest strap", or "device" when it isn't
+ *  known (none yet, or one that doesn't say, as many through Gadgetbridge) */
 export const deviceWord = (k: WornDevice | null | undefined) => (k === "chestStrap" ? "chest strap" : k ?? "device");
 /** The same for advice ("wear your watch or band to bed"): both kinds while it isn't known */
 export const adviceWord = (k: WornDevice | null | undefined) => (k ? deviceWord(k) : "watch or band");
-/** The kind of the person's worn device (settings), for deviceWord and fromWhere */
-export function useDevice(): Ref<WornDevice | null> { const s = useSettings(); return computed(() => s.value.wornDevice); }
+// the kind of the person's worn device, worked out by the engine from the days it counted (not a setting: an automatic
+// write to settings could undo what the person changed on another device); filed under "health", so a read refreshes it
+const DEVICE_KEY = ["health", "device"] as const;
+const fetchDevice = () => api.get<{ kind: unknown }>("/health/device").then((r) => cleanWornDevice(r?.kind)).catch(() => null);
+/** The kind of the person's worn device, for deviceWord and fromWhere (null while not known) */
+export function useDevice(): Ref<WornDevice | null> {
+  const q = useQuery({ queryKey: DEVICE_KEY, queryFn: fetchDevice, staleTime: 5 * 60_000 });
+  return computed(() => q.data.value ?? null);
+}
 // the same once, outside a screen (a toast after a read)
-const deviceNow = () => cleanWornDevice(queryClient.getQueryData<SettingsMe>(["settings", "me"])?.settings?.wornDevice);
+const deviceNow = () => queryClient.getQueryData<WornDevice | null>(DEVICE_KEY) ?? null;
 
 /** Where a day's steps, distance or active calories came from, in words: "your watch" (by the kind, deviceWord) when a
  *  band, watch or ring counted it (worn; a value from before Motus knew, or from an older app, counts as one), else
@@ -174,6 +182,8 @@ async function read(past?: Date): Promise<HealthResult | null> {
     // a read of the past also reads up to now, so the next one may start here; never earlier than a read already done
     if (!lastSync.value || started > lastSync.value) remember(started);
     rememberRead(reads);
+    // the kind may have changed with the days just read (also when no count did), and the toast below names it
+    await queryClient.fetchQuery({ queryKey: DEVICE_KEY, queryFn: fetchDevice, staleTime: 0 });
     // then what the band saw during activities and workouts recorded in Motus over the same days: its steps (a phone in
     // a pocket counts fewer) and heart rate. A failure here keeps the import above; the next sync asks again.
     try { r.ranges = await readRanges(from < rangesFrom() ? from : rangesFrom()); } catch (e) { console.warn("Health Connect ranges", e); }
