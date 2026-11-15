@@ -202,7 +202,7 @@ async function read(past?: Date, recent = false): Promise<HealthResult | null> {
     try { r.ranges = await readRanges(from < rangesFrom() ? from : rangesFrom(), recent); } catch (e) { console.warn("Health Connect ranges", e); }
     // and every record as Health Connect has it (M-238): the readings behind the numbers above, kept for later. A failure
     // keeps the rest; the next read carries on from where this one got to.
-    try { await syncRecords(); } catch (e) { console.warn("Health Connect records", e); }
+    try { await syncRecords(`${[...st.granted].sort().join(",")}${st.history ? "+history" : ""}`); } catch (e) { console.warn("Health Connect records", e); }
     if (r.steps || r.sleep || r.activities || r.weight || r.restingHr || r.spo2 || r.hrv || r.sleepNights || r.distance || r.activeKcal || r.bodyFat || r.hydration || r.vo2max || r.hrDays) invalidate([...TOPICS.health]);
     if (r.ranges?.steps || r.ranges?.hr || r.ranges?.band) invalidate([...TOPICS.health, "workouts"]);
     return r;
@@ -294,8 +294,6 @@ const canChanges = () => typeof plugin()?.changes === "function";
 let mark: { key: string; token: string } | null = null;
 async function markChanges() {
   if (!canChanges()) return;
-  // what changed since the last mark first, for the records (noteChanges): a fresh mark alone would lose it
-  if (mark && mark.key === key()) try { noteChanges(await plugin().changes({ token: mark.token })); } catch { /* the read below covers recent days */ }
   try { const r = await plugin().changes({}); mark = r.token ? { key: key(), token: r.token } : null; } catch { mark = null; }
 }
 /** Whether Health Connect holds something new since the last full read; true when it can't tell (also when the look
@@ -305,7 +303,6 @@ async function changedSince(): Promise<boolean> {
   try {
     const r = await plugin().changes({ token: mark.token }) as Changes;
     mark = r.token ? { key: mark.key, token: r.token } : null;
-    noteChanges(r);
     return r.changed;
   } catch { mark = null; return true; }
 }
@@ -314,50 +311,88 @@ async function changedSince(): Promise<boolean> {
 // /health/records, M-238). Each read saves the days since the last one (from a day before it, as a band hands days over
 // late), then reaches further back a stretch at a time until the oldest record Health Connect holds (the back-fill), so
 // one read never carries years of minute heart rate. Records written or deleted in Health Connect since (its changes
-// list, noted on every look) are read again or deleted here, also on days long past. A server account's records go
-// straight to the server (api/replica.ts): offline, nothing moves on, and Health Connect still has them for the next read.
-// Kept per account on this phone: to (where the last read reached), back (how far back the back-fill got), oldest.
-interface Changes { changed: boolean; token: string; deleted?: string[]; touched?: number[] }
-interface RecState { to?: number; back?: number; oldest?: number | null; deleted: string[]; touched: number[] }
-const RECORDS_KEY = "motusHealthRecords", REC_CHUNK_MS = 2 * DAY_MS, REC_FIRST_MS = 2 * DAY_MS, REC_BACK_MS = 30 * DAY_MS, REC_PENDING_MAX = 20_000;
+// list, from a token of its own kept here, so nothing is lost between reads or to a failed one) are read again or
+// deleted there, also on days long past; so is a stretch whose import log entry was taken back (restore). A server
+// account's records go straight to the server (api/replica.ts): offline, nothing moves on, and Health Connect still has
+// them for the next read. Each read says which phone sent it (source, an id made once per install): the engine takes
+// out only this phone's own records for being missing from a read, never what another phone (or this one before Motus
+// was installed again) sent.
+// Kept per account on this phone: to (where the last read reached), back (how far back the back-fill got), oldest,
+// perms (what was allowed then), token (the changes list), deleted and touched (from it, still to do), redone (restores
+// read again, key@restoredAt).
+interface Changes { changed: boolean; token: string; deleted?: string[]; touched?: number[]; more?: boolean }
+interface RecState { to?: number; back?: number; oldest?: number | null; perms?: string; token?: string; deleted: string[]; touched: number[]; redone?: string[] }
+interface Waiting { key: string; restoredAt: string; from: string; to: string }
+const RECORDS_KEY = "motusHealthRecords", INSTALL_KEY = "motusInstallId", REC_CHUNK_MS = 2 * DAY_MS, REC_FIRST_MS = 2 * DAY_MS, REC_BACK_MS = 30 * DAY_MS,
+  REC_PENDING_MAX = 20_000, REC_REDONE_MAX = 500;
 const recState = (): RecState => ({ deleted: [], touched: [], ...(readJson<Record<string, RecState>>(RECORDS_KEY, {})[key()] ?? {}) });
 const saveRecState = (st: RecState) => { const all = readJson<Record<string, RecState>>(RECORDS_KEY, {}); all[key()] = st; writeJson(RECORDS_KEY, all); };
-function noteChanges(r: Changes | null | undefined) {
-  if (!r?.deleted?.length && !r?.touched?.length) return;
-  const st = recState();
+function installId() {
+  let id = readStr(INSTALL_KEY, "");
+  if (!id) { id = crypto.randomUUID(); writeStr(INSTALL_KEY, id); }
+  return id;
+}
+function noteChanges(st: RecState, r: Changes) {
   st.deleted = [...new Set([...st.deleted, ...(r.deleted ?? [])])].slice(-REC_PENDING_MAX);
   st.touched = [...new Set([...st.touched, ...(r.touched ?? []).map((t) => Math.floor((t * 1000) / DAY_MS) * DAY_MS)])].slice(-REC_PENDING_MAX);
-  saveRecState(st);
 }
-async function syncRecords() {
+async function syncRecords(perms: string) {
   if (typeof plugin()?.records !== "function") return; // an app build from before
   const iso = (t: number) => new Date(t).toISOString();
-  const save = async (a: number, b: number, deleted: string[] = []) => {
+  const source = installId();
+  const save = async (a: number, b: number) => {
     const data = await plugin().records({ from: iso(a), to: iso(b) });
-    await api.post("/health/records", { ...data, tz: new Date().getTimezoneOffset(), deleted });
+    await api.post("/health/records", { ...data, tz: new Date().getTimezoneOffset(), source });
   };
   let st = recState();
+  // a kind (or past data) allowed since isn't in the back-fill already done, nor in the changes token's kinds: both
+  // start over (the engine adds nothing twice)
+  if (st.perms !== perms) { st.perms = perms; st.back = undefined; st.oldest = undefined; st.token = undefined; saveRecState(st); }
+  // Health Connect's changes list since the last read, a part at a time (more); the token moves on only with what it
+  // gave, saved together, and stays when a look fails
+  if (canChanges()) {
+    try {
+      for (let i = 0; i < 10; i++) {
+        const had = st.token, r = await plugin().changes(had ? { token: had } : {}) as Changes;
+        st = recState();
+        if (had) noteChanges(st, r);
+        st.token = r.token || undefined; saveRecState(st);
+        if (!had || !r.more) break;
+      }
+    } catch (e) { console.warn("Health Connect changes", e); }
+  }
+  st = recState();
   const now = Date.now(), start = st.to ? st.to - OVERLAP_MS : now - REC_FIRST_MS;
-  // deleted in Health Connect, and days written to there that the read below doesn't reach (at most 30 a read)
+  // deleted in Health Connect
   if (st.deleted.length) {
     const gone = st.deleted;
-    await api.post("/health/records", { from: iso(now), to: iso(now), types: {}, deleted: gone });
+    await api.post("/health/records", { from: iso(now), to: iso(now), types: {}, deleted: gone, source });
     st = recState(); st.deleted = st.deleted.filter((x) => !gone.includes(x)); saveRecState(st);
   }
-  for (const d of st.touched.filter((t) => t + DAY_MS <= start).sort((a, b) => a - b).slice(0, 30)) {
-    await save(d, d + DAY_MS);
+  // days written to there that the read below doesn't reach (at most 30 a read), up to where it starts
+  for (const d of st.touched.filter((t) => t < start).sort((a, b) => a - b).slice(0, 30)) {
+    await save(d, Math.min(d + DAY_MS, start));
     st = recState(); st.touched = st.touched.filter((t) => t !== d); saveRecState(st);
   }
-  st = recState(); st.touched = st.touched.filter((t) => t + DAY_MS <= start); saveRecState(st);
+  st = recState(); st.touched = st.touched.filter((t) => t < start); saveRecState(st);
+  // what was taken back in the import log and isn't here again (the import above brought its numbers back)
+  try {
+    for (const w of (await api.get<{ items: Waiting[] }>("/health/records/waiting")).items) {
+      const tag = `${w.key}@${w.restoredAt}`;
+      if (st.redone?.includes(tag)) continue;
+      await save(Date.parse(w.from), Date.parse(w.to));
+      st = recState(); st.redone = [...(st.redone ?? []), tag].slice(-REC_REDONE_MAX); saveRecState(st);
+    }
+  } catch (e) { console.warn("Health Connect records taken back", e); }
   // the days since the last read
   for (let a = start; a < now; a += REC_CHUNK_MS) {
     const b = Math.min(now, a + REC_CHUNK_MS);
     await save(a, b);
     st = recState(); st.to = b; st.back ??= start; saveRecState(st);
   }
-  // the back-fill
+  // the back-fill, down to the oldest record Health Connect holds (asked again while it had none)
   st = recState();
-  if (st.oldest === undefined && typeof plugin()?.oldest === "function") {
+  if (st.oldest == null && typeof plugin()?.oldest === "function") {
     const o = await plugin().oldest() as { at?: string };
     st.oldest = o.at ? Date.parse(o.at) : null; saveRecState(st);
   }

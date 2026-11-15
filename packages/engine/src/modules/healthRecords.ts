@@ -4,6 +4,7 @@
 // The daily log, nights and activities stay what they are (modules/health.ts); these are the readings behind them, for
 // a day's records and an hourly rollup on the Sleep, Steps and Heart pages.
 import type { Router, Ctx } from "../router";
+import type { Sql } from "../db";
 import { bad } from "../errors";
 import { dateStr, tzOf } from "../util";
 import { RECORD_TYPES } from "../migrations/040_health_records";
@@ -33,21 +34,27 @@ const logKey = (t: RecordType, id: string, day: string) => (LOG_KIND[t] ? `${LOG
  * Health Connect numbers it, maker, model), m last modified (unix ms), and by shape: v the amount or reading (steps,
  * metres, kcal, floors, metres climbed, ml, bpm, %, ms, breaths a minute, VO2 max, kg, %), p heart rate samples
  * [[unix seconds, bpm]], st sleep stages [[start, end, stage]] (stage as Health Connect numbers it), x the exercise
- * type (Health Connect's number), t a title.
+ * type (Health Connect's number), t a title. src: the phone (an id it made when Motus was installed) that last sent it:
+ * only that phone may take it out for no longer being in its reads (saveRecords).
  */
 export interface Rec {
   s: number; e?: number; z: number; o: string; dv?: { type?: number; maker?: string; model?: string }; m: number;
-  v?: number; p?: [number, number][]; st?: [number, number, number][]; x?: number; t?: string;
+  v?: number; p?: [number, number][]; st?: [number, number, number][]; x?: number; t?: string; src?: string;
 }
-const MAX_PER_TYPE = 20000, MAX_SAMPLES = 5000, MAX_STAGES = 500;
+type Raw = Record<string, unknown>;
+// MAX_SAMPLES: one a second over the longest record taken (7 days), so a heart rate record is kept as it is; one with
+// more can't be a real one and is left out whole rather than cut short
+const MAX_PER_TYPE = 20000, MAX_SAMPLES = 7 * 86400, MAX_STAGES = 500;
 const fin = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+const isObj = (v: unknown): v is Raw => !!v && typeof v === "object" && !Array.isArray(v);
+const nums = (q: unknown, n: number): q is number[] => Array.isArray(q) && q.length >= n && q.slice(0, n).every(fin);
 const text = (v: unknown, max: number) => (typeof v === "string" && v ? v.slice(0, max) : undefined);
 // a time Motus could have: from 1990 to a day from now
 const okTime = (t: number) => t > 631152000 && t < Date.now() / 1000 + 86400;
 
 /** A record as the phone sent it, checked and kept as it is; null when it can't be one (no id, no time, end before start). */
-export function cleanRecord(type: RecordType, x: any, zone: number): { id: string; rec: Rec } | null {
-  if (!x || typeof x !== "object") return null;
+export function cleanRecord(type: RecordType, x: unknown, zone: number): { id: string; rec: Rec } | null {
+  if (!isObj(x)) return null;
   const id = text(x.id, 100);
   if (!id || !fin(x.s) || !okTime(x.s)) return null;
   const shape = SHAPE[type];
@@ -56,7 +63,7 @@ export function cleanRecord(type: RecordType, x: any, zone: number): { id: strin
     if (!fin(x.e) || x.e < x.s || x.e - x.s > 7 * 86400) return null;
     rec.e = Math.round(x.e);
   }
-  if (x.dv && typeof x.dv === "object") {
+  if (isObj(x.dv)) {
     const dv = { type: fin(x.dv.type) ? x.dv.type : undefined, maker: text(x.dv.maker, 100), model: text(x.dv.model, 100) };
     if (dv.type != null || dv.maker || dv.model) rec.dv = JSON.parse(JSON.stringify(dv));
   }
@@ -64,11 +71,11 @@ export function cleanRecord(type: RecordType, x: any, zone: number): { id: strin
     if (!fin(x.v)) return null;
     rec.v = x.v;
   } else if (shape === "series") {
-    if (!Array.isArray(x.p)) return null;
-    rec.p = x.p.slice(0, MAX_SAMPLES).filter((q: any) => Array.isArray(q) && fin(q[0]) && fin(q[1])).map((q: any) => [Math.round(q[0]), Math.round(q[1])]);
+    if (!Array.isArray(x.p) || x.p.length > MAX_SAMPLES) return null;
+    rec.p = (x.p as unknown[]).filter((q) => nums(q, 2)).map((q) => { const [t, b] = q as number[]; return [Math.round(t!), Math.round(b!)] as [number, number]; });
   } else if (shape === "sleep") {
-    rec.st = (Array.isArray(x.st) ? x.st : []).slice(0, MAX_STAGES)
-      .filter((q: any) => Array.isArray(q) && fin(q[0]) && fin(q[1]) && fin(q[2]) && q[1] >= q[0]).map((q: any) => [Math.round(q[0]), Math.round(q[1]), Math.round(q[2])]);
+    rec.st = (Array.isArray(x.st) ? (x.st as unknown[]) : []).slice(0, MAX_STAGES)
+      .filter((q) => nums(q, 3) && q[1]! >= q[0]!).map((q) => { const [a, b, k] = q as number[]; return [Math.round(a!), Math.round(b!), Math.round(k!)] as [number, number, number]; });
   }
   if (shape === "session" && fin(x.x)) rec.x = Math.round(x.x);
   const t = text(x.t, 200);
@@ -81,8 +88,10 @@ export const recordDay = (type: RecordType, r: Rec) => new Date(((type === "slee
 const shiftDay = (d: string, n: number) => new Date(Date.parse(d + "T00:00:00Z") + n * 86400000).toISOString().slice(0, 10);
 // the same record with its keys in one order, to tell a changed one from one sent again (jsonb keeps its own key order)
 const stable = (v: unknown): string => (Array.isArray(v) ? `[${v.map(stable).join(",")}]`
-  : v && typeof v === "object" ? `{${Object.keys(v).sort().filter((k) => (v as any)[k] !== undefined).map((k) => `${JSON.stringify(k)}:${stable((v as any)[k])}`).join(",")}}`
+  : isObj(v) ? `{${Object.keys(v).sort().filter((k) => v[k] !== undefined).map((k) => `${JSON.stringify(k)}:${stable(v[k])}`).join(",")}}`
   : JSON.stringify(v));
+// what Health Connect holds, without who sent it: the same record from another phone is not a change
+const same = (a: Rec, b: Rec) => stable({ ...a, src: undefined }) === stable({ ...b, src: undefined });
 const parse = (v: unknown) => (typeof v === "string" ? JSON.parse(v) : v) as Record<string, Rec>;
 const secs = (v: unknown, what: string) => {
   const t = Date.parse(String(v ?? ""));
@@ -90,13 +99,31 @@ const secs = (v: unknown, what: string) => {
   return t / 1000;
 };
 
-/** The blocks of one type that may hold records of [fromS, toS) (a zone up to 14 hours away, a night ending the next day). */
+/**
+ * One person's records are changed one save at a time (a transaction lock, also taken by migration 041's trigger when
+ * an import log key is deleted): saveRecords reads blocks, merges and writes them back, so two at once would lose one's
+ * records, or bring back what a deletion took meanwhile.
+ */
+export const lockRecords = (q: Sql, userId: string) => q.query("SELECT pg_advisory_xact_lock(hashtext('health_records:' || $1::uuid::text))", [userId]);
+
+interface BlockRow { day: string; recs: unknown }
+/**
+ * The blocks of one type that may hold records of [fromS, toS) (a zone up to 14 hours away, a night ending the next day),
+ * and those elsewhere holding any of alsoIds (a record moved to another day), looked up only for ids not found here.
+ */
 async function blocks(ctx: Ctx, type: RecordType, fromS: number, toS: number, alsoIds: string[] = []) {
   const a = shiftDay(new Date(fromS * 1000).toISOString().slice(0, 10), -2), b = shiftDay(new Date(toS * 1000).toISOString().slice(0, 10), 1);
-  const { rows } = await ctx.q.query(
-    "SELECT to_char(day, 'YYYY-MM-DD') AS day, recs FROM health_records WHERE type = $1 AND ((day >= $2::date AND day <= $3::date) OR ids && $4::text[])",
-    [type, a, b, alsoIds]);
-  return new Map<string, Record<string, Rec>>(rows.map((x: any) => [x.day as string, parse(x.recs)]));
+  const { rows } = await ctx.q.query<BlockRow>(
+    "SELECT to_char(day, 'YYYY-MM-DD') AS day, recs FROM health_records WHERE type = $1 AND day >= $2::date AND day <= $3::date", [type, a, b]);
+  const out = new Map<string, Record<string, Rec>>(rows.map((x) => [x.day, parse(x.recs)]));
+  const found = new Set<string>();
+  for (const recs of out.values()) for (const id of Object.keys(recs)) found.add(id);
+  const missing = alsoIds.filter((id) => !found.has(id));
+  if (missing.length)
+    for (const x of (await ctx.q.query<BlockRow>(
+      "SELECT to_char(day, 'YYYY-MM-DD') AS day, recs FROM health_records WHERE type = $1 AND ids && $2::text[] AND NOT (day >= $3::date AND day <= $4::date)",
+      [type, missing, a, b])).rows) out.set(x.day, parse(x.recs));
+  return out;
 }
 const writeBlock = (ctx: Ctx, type: RecordType, day: string, recs: Record<string, Rec>) => Object.keys(recs).length
   ? ctx.q.query(
@@ -107,23 +134,27 @@ const writeBlock = (ctx: Ctx, type: RecordType, day: string, recs: Record<string
 
 /**
  * Saves what the phone read of one type over [fromS, toS): new and changed records go in, by id (a record moved to
- * another day leaves its old one); complete: the phone read every record of the stretch, so one it no longer has was
- * deleted in Health Connect and goes here too. A record whose import log key is deleted stays out.
+ * another day leaves its old one); complete: the phone read every record of the stretch, so one it sent before (source,
+ * the same phone) and no longer has was deleted in Health Connect and goes here too. Another phone's records stay: it
+ * may hold what this one never had (a phone without past data allowed, a new one, Motus installed again); a deletion
+ * there reaches here through its own changes list (POST deleted). A record whose import log key is deleted stays out.
+ * Runs under lockRecords.
  */
-export async function saveRecords(ctx: Ctx, type: RecordType, fromS: number, toS: number, sent: { id: string; rec: Rec }[], complete: boolean, deletedKeys: Set<string>) {
+export async function saveRecords(ctx: Ctx, type: RecordType, fromS: number, toS: number, sent: { id: string; rec: Rec }[], complete: boolean, deletedKeys: Set<string>, source?: string) {
   const out = { saved: 0, removed: 0 };
+  if (source) for (const x of sent) x.rec.src = source;
   const keep = sent.filter((x) => { const k = logKey(type, x.id, recordDay(type, x.rec)); return !k || !deletedKeys.has(k); });
   const have = await blocks(ctx, type, fromS, toS, keep.map((x) => x.id));
   const where = new Map<string, string>();
   for (const [day, recs] of have) for (const id of Object.keys(recs)) where.set(id, day);
   const dirty = new Set<string>();
   const incoming = new Set(sent.map((x) => x.id));
-  if (complete)
+  if (complete && source)
     for (const [day, recs] of have) for (const [id, r] of Object.entries(recs))
-      if (r.s >= fromS && r.s < toS && !incoming.has(id)) { delete recs[id]; where.delete(id); dirty.add(day); out.removed++; }
+      if (r.src === source && r.s >= fromS && r.s < toS && !incoming.has(id)) { delete recs[id]; where.delete(id); dirty.add(day); out.removed++; }
   for (const { id, rec } of keep) {
     const day = recordDay(type, rec), was = where.get(id), old = was ? have.get(was)![id] : undefined;
-    if (old && (stable(old) === stable(rec) || (old.m && rec.m && old.m > rec.m))) continue;
+    if (old && (same(old, rec) || (old.m && rec.m && old.m > rec.m))) continue;
     if (was && was !== day) { delete have.get(was)![id]; dirty.add(was); }
     (have.get(day) ?? have.set(day, {}).get(day)!)[id] = rec;
     where.set(id, day); dirty.add(day); out.saved++;
@@ -145,18 +176,46 @@ const overlaps = (r: Rec, fromS: number, toS: number) => r.s < toS && (r.e ?? r.
 
 export interface Hour { at: string; n: number; sum?: number; min?: number; max?: number; avg?: number; stages?: Record<string, number> }
 /**
- * One type's records over [fromS, toS) by hour of the app's calendar (tz: minutes behind UTC, as getTimezoneOffset):
+ * The offset from UTC (seconds) at a time: of a fixed one (minutes behind UTC, as getTimezoneOffset), or of an IANA zone
+ * ("Europe/Berlin"), which changes over the year (daylight saving time), looked up per quarter hour (zones change on one).
+ */
+export function offsetFn(zone: string | number): (t: number) => number {
+  if (typeof zone === "number") return () => -zone * 60;
+  const f = new Intl.DateTimeFormat("en-US", { timeZone: zone, hourCycle: "h23", year: "numeric", month: "numeric", day: "numeric", hour: "numeric", minute: "numeric", second: "numeric" });
+  const seen = new Map<number, number>();
+  return (t) => {
+    const q = Math.floor(t / 900) * 900, got = seen.get(q);
+    if (got != null) return got;
+    const p: Record<string, number> = {};
+    for (const x of f.formatToParts(new Date(q * 1000))) if (x.type !== "literal") p[x.type] = Number(x.value);
+    const off = Date.UTC(p.year!, p.month! - 1, p.day!, p.hour!, p.minute!, p.second!) / 1000 - q;
+    seen.set(q, off);
+    return off;
+  };
+}
+const isZone = (z: unknown): z is string => {
+  if (typeof z !== "string" || !z || z.length > 64) return false;
+  try { new Intl.DateTimeFormat("en-US", { timeZone: z }); return true; } catch { return false; }
+};
+
+/**
+ * One type's records over [fromS, toS) by hour of the app's calendar (zone: an IANA zone, so a day with a clock change
+ * is right, or minutes behind UTC as getTimezoneOffset):
  * amounts (steps, distance, calories, floors, climb, water) shared out over the hours by how much of each record's time
  * falls in them; heart rate samples and readings as lowest, highest and average; sleep as minutes of each stage
  * (a night without stages as "2", asleep, as Health Connect numbers it); sessions as minutes. Hours without data are left out.
  */
-export function hourly(type: RecordType, recs: Rec[], fromS: number, toS: number, tz: number): Hour[] {
-  const off = -tz * 60, hourOf = (t: number) => Math.floor((t + off) / 3600) * 3600 - off;
+export function hourly(type: RecordType, recs: Rec[], fromS: number, toS: number, zone: string | number): Hour[] {
+  const offAt = offsetFn(zone), hourOf = (t: number) => { const off = offAt(t); return Math.floor((t + off) / 3600) * 3600 - off; };
   const hours = new Map<number, Hour & { total?: number }>();
   const at = (h: number) => hours.get(h) ?? hours.set(h, { at: new Date(h * 1000).toISOString(), n: 0 }).get(h)!;
   const spread = (a: number, b: number, f: (h: Hour, secsIn: number) => void) => {
     a = Math.max(a, fromS); b = Math.min(b, toS);
-    for (let h = hourOf(a); h < b; h += 3600) { const s = Math.min(b, h + 3600) - Math.max(a, h); if (s > 0) f(at(h), s); }
+    // a quarter hour at a time (every zone's hours start on one), each in the hour of the calendar it falls in, so a
+    // clock change of half an hour is right too; then once per hour
+    const secsIn = new Map<number, number>();
+    for (let q = a; q < b;) { const n = Math.min(b, Math.floor(q / 900) * 900 + 900), h = hourOf(q); secsIn.set(h, (secsIn.get(h) ?? 0) + n - q); q = n; }
+    for (const [h, s] of secsIn) if (s > 0) f(at(h), s);
   };
   const point = (t: number, v: number) => {
     if (t < fromS || t >= toS) return;
@@ -199,36 +258,93 @@ const span = (qs: Record<string, string>) => {
   return { fromS, toS };
 };
 
+/** The kinds of the import log that hold records, and the record type of each (LOG_KIND the other way), in SQL (h: health_imports). */
+const RECORD_KIND = `CASE h.kind ${Object.entries(LOG_KIND).map(([t, k]) => `WHEN '${k}' THEN '${t}'`).join(" ")} END`;
+const KINDS_SQL = Object.values(LOG_KIND).map((k) => `'${k}'`).join(", ");
+
+/**
+ * A backup's block merged into one already here (a merge restore, modules/data.ts): records are added by id, one kept
+ * here wins over the file's copy, and one kept here on another day stays there. 1 when it added any.
+ */
+export async function mergeBlock(q: Sql, userId: string, row: Raw): Promise<number> {
+  if (!isType(row.type) || row.day == null) return 0;
+  await lockRecords(q, userId);
+  const recs = { ...parse(row.recs ?? {}) };
+  const ids = Object.keys(recs);
+  if (!ids.length) return 0;
+  const { rows } = await q.query<{ i: string }>(
+    "SELECT DISTINCT i FROM health_records, unnest(ids) i WHERE type = $1 AND ids && $2::text[] AND i = ANY($2::text[])",
+    [row.type, ids]);
+  for (const x of rows) delete recs[x.i];
+  const add = Object.keys(recs);
+  if (!add.length) return 0;
+  await q.query(
+    `INSERT INTO health_records (user_id, type, day, recs, ids, updated_at) VALUES ($1, $2, $3::date, $4::jsonb, $5::text[], coalesce($6::timestamptz, now()))
+     ON CONFLICT (user_id, type, day) DO UPDATE SET recs = health_records.recs || EXCLUDED.recs, ids = health_records.ids || EXCLUDED.ids, updated_at = now()`,
+    [userId, row.type, row.day, JSON.stringify(recs), add, row.updated_at ?? null]);
+  return 1;
+}
+
+interface Sent { complete?: unknown; records?: unknown }
 export function healthRecordRoutes(r: Router) {
-  // { from, to: ISO times the phone read; tz?: minutes behind UTC (records without their own zone);
+  // { from, to: ISO times the phone read; tz?: minutes behind UTC (records without their own zone); source?: the
+  //   phone's own id (saveRecords: only its own records are taken out for being missing from its reads);
   //   types: { [type]: { complete?: boolean, records: [...] } }; deleted?: Health Connect ids deleted there }
   r.post("/health/records", async (ctx, _p, b) => {
     const fromS = secs(b.from, "start"), toS = secs(b.to, "end");
     if (toS < fromS) throw bad("Invalid time");
     const zone = -tzOf({ tz: b.tz == null ? "" : String(b.tz) }) * 60;
-    const deletedKeys = new Set<string>((await ctx.q.query("SELECT key FROM health_imports WHERE deleted_at IS NOT NULL")).rows.map((x: any) => x.key));
+    const source = text(b.source, 100);
+    await lockRecords(ctx.q, ctx.userId);
+    // read under the lock: a key deleted meanwhile has taken its records (the trigger waits for the lock) and is seen here
+    const deletedKeys = new Set((await ctx.q.query<{ key: string }>("SELECT key FROM health_imports WHERE deleted_at IS NOT NULL")).rows.map((x) => x.key));
     const out = { saved: 0, removed: 0 };
-    for (const [type, v] of Object.entries((b.types && typeof b.types === "object" ? b.types : {}) as Record<string, any>)) {
-      if (!isType(type) || !v || !Array.isArray(v.records)) continue;
-      const sent = v.records.slice(0, MAX_PER_TYPE).map((x: any) => cleanRecord(type, x, zone)).filter((x: any): x is { id: string; rec: Rec } => !!x);
+    for (const [type, v] of Object.entries(isObj(b.types) ? (b.types as Record<string, Sent>) : {})) {
+      if (!isType(type) || !isObj(v) || !Array.isArray(v.records)) continue;
+      const list = v.records as unknown[];
+      const sent = list.slice(0, MAX_PER_TYPE).map((x) => cleanRecord(type, x, zone)).filter((x): x is { id: string; rec: Rec } => !!x);
       // a list cut short (over the most per request) can't say what is missing
-      const n = await saveRecords(ctx, type, fromS, toS, sent, v.complete === true && v.records.length <= MAX_PER_TYPE, deletedKeys);
+      const n = await saveRecords(ctx, type, fromS, toS, sent, v.complete === true && list.length <= MAX_PER_TYPE, deletedKeys, source);
       out.saved += n.saved; out.removed += n.removed;
     }
-    const gone = (Array.isArray(b.deleted) ? b.deleted : []).filter((x: unknown) => typeof x === "string" && x).slice(0, 10000) as string[];
+    const gone = (Array.isArray(b.deleted) ? (b.deleted as unknown[]) : []).filter((x): x is string => typeof x === "string" && !!x).slice(0, 10000);
     if (gone.length) {
-      const n = Number((await ctx.q.query(
-        "SELECT count(*)::int AS n FROM health_records h, unnest(h.ids) i WHERE h.ids && $1::text[] AND i = ANY($1::text[])", [gone])).rows[0].n);
+      const n = Number((await ctx.q.query<{ n: number }>(
+        "SELECT count(*)::int AS n FROM health_records h, unnest(h.ids) i WHERE h.ids && $1::text[] AND i = ANY($1::text[])", [gone])).rows[0]!.n);
       if (n) {
+        // blocks left with nothing go; only those holding the ids are touched (the ids index)
+        await ctx.q.query("DELETE FROM health_records WHERE ids && $1::text[] AND ids <@ $1::text[]", [gone]);
         await ctx.q.query(
           `UPDATE health_records SET recs = recs - $1::text[], ids = ARRAY(SELECT unnest(ids) EXCEPT SELECT unnest($1::text[])), updated_at = now()
            WHERE ids && $1::text[]`, [gone]);
-        await ctx.q.query("DELETE FROM health_records WHERE cardinality(ids) = 0");
         out.removed += n;
       }
     }
     if (out.saved || out.removed) ctx.changed("readings");
     return out;
+  });
+
+  // What was taken back from the import log (restore, in the last 60 days) whose records aren't here: the phone reads
+  // that stretch of Health Connect again (native/health.ts), once per restore (restoredAt). A day's number: the day
+  // and the ones around it (any zone, the night before); a reading or session: once the import made its row again, the
+  // day around its time. { items: [{ key, restoredAt, from, to }] }
+  r.get("/health/records/waiting", async (ctx) => {
+    const { rows } = await ctx.q.query<{ key: string; restored_at: Date | string; date: string | null; at: Date | string | null }>(
+      `SELECT h.key, h.restored_at, to_char(h.date, 'YYYY-MM-DD') AS date, coalesce(bm.measured_at, a.started_at) AS at
+       FROM health_imports h
+       LEFT JOIN body_metrics bm ON h.kind IN ('weight', 'body_fat') AND bm.id::text = h.ref
+       LEFT JOIN activities a ON h.kind = 'activity' AND a.id::text = h.ref
+       WHERE h.deleted_at IS NULL AND h.restored_at > now() - interval '60 days' AND h.kind IN (${KINDS_SQL})
+         AND (h.date IS NOT NULL OR bm.id IS NOT NULL OR a.id IS NOT NULL)
+         AND NOT EXISTS (SELECT 1 FROM health_records r WHERE r.type = ${RECORD_KIND} AND CASE WHEN h.kind IN ('weight', 'body_fat', 'activity')
+           THEN r.ids @> ARRAY[substr(h.key, length(h.kind) + 2)] ELSE r.day = h.date END)
+       ORDER BY h.restored_at DESC LIMIT 100`);
+    const iso = (t: number) => new Date(t * 1000).toISOString();
+    return { items: rows.map((x) => {
+      const t = x.date ? Date.parse(x.date + "T00:00:00Z") / 1000 : new Date(x.at!).getTime() / 1000;
+      return x.date ? { key: x.key, restoredAt: new Date(x.restored_at).toISOString(), from: iso(t - 86400), to: iso(t + 2 * 86400) }
+        : { key: x.key, restoredAt: new Date(x.restored_at).toISOString(), from: iso(t - 86400), to: iso(t + 86400) };
+    }) };
   });
 
   // The records of one or more types (type=heart_rate or type=steps,distance) overlapping [from, to) (ISO times; at
@@ -242,23 +358,23 @@ export function healthRecordRoutes(r: Router) {
     return { records: out.sort((a, b) => a.start.localeCompare(b.start) || a.id.localeCompare(b.id)) };
   });
 
-  // One type's records over [from, to) by hour (hourly() says how); tz: the app's calendar
+  // One type's records over [from, to) by hour (hourly() says how); zone: the app's IANA zone (else tz: minutes behind UTC)
   r.get("/health/records/hourly", async (ctx, _p, _b, qs) => {
     const { fromS, toS } = span(qs);
     const [type] = typesOf(qs.type);
     const recs = [...(await blocks(ctx, type!, fromS, toS)).values()].flatMap((x) => Object.values(x)).filter((x) => overlaps(x, fromS, toS));
-    return { type, hours: hourly(type!, recs, fromS, toS, tzOf(qs)) };
+    return { type, hours: hourly(type!, recs, fromS, toS, isZone(qs.zone) ? qs.zone : tzOf(qs)) };
   });
 
   // Which days have records of which types, and how many (from, to: days, to not included), so screens offer only what
   // there is. Read from the blocks' id lists, not their records.
   r.get("/health/records/days", async (ctx, _p, _b, qs) => {
     const from = dateStr(qs.from) ?? "1970-01-01", to = dateStr(qs.to) ?? "9999-01-01";
-    const { rows } = await ctx.q.query(
+    const { rows } = await ctx.q.query<{ day: string; type: string; n: number | string }>(
       "SELECT to_char(day, 'YYYY-MM-DD') AS day, type, cardinality(ids) AS n FROM health_records WHERE day >= $1::date AND day < $2::date ORDER BY day, type",
       [from, to]);
     const days = new Map<string, Record<string, number>>();
-    for (const x of rows as any[]) (days.get(x.day) ?? days.set(x.day, {}).get(x.day)!)[x.type] = Number(x.n);
+    for (const x of rows) (days.get(x.day) ?? days.set(x.day, {}).get(x.day)!)[x.type] = Number(x.n);
     return { days: [...days].map(([date, types]) => ({ date, types })) };
   });
 }

@@ -10,12 +10,13 @@ import { historyNow } from "../migrations/016_history_now";
 import { repRangeMove } from "../migrations/022_progression_rep_range";
 import { unpinSeededGoals, type SeededGoals } from "../migrations/026_unpin_seeded_goals";
 import { clearAutoTitles } from "../migrations/033_goal_names_only";
+import { mergeBlock } from "./healthRecords";
 
 const EXPORT_FORMAT = 1;
 // The schema a file was written with: the number of migrations (migrate.ts) when it was made, so a restore knows which
 // of their changes to existing rows the file's rows still need. A test keeps it equal to the number of migrations, so a
 // new one is checked against backups (does the file carry it, does an older file need converting).
-const BACKUP_SCHEMA = 40; // 40: health_records (an older file has none: nothing to convert)
+const BACKUP_SCHEMA = 41; // 40: health_records (an older file has none: nothing to convert); 41: its trigger only
 const NEWER = "This backup is from a newer version of Motus. Update the app first.";
 const DAMAGED = "This backup is damaged and can't be restored.";
 /** The schema a file says it has (refused when newer than this version, or not a whole number from 0 up), or
@@ -246,6 +247,8 @@ export async function importAll(ctx: Ctx, data: any, mode: "replace" | "merge") 
           if (same) { map.set(oldId, same.id); seen.add(same.id); continue; }
         }
       }
+      // a day's block of Health Connect records (M-238) already here: the file's records are added to it by id
+      if (t === "health_records" && mode !== "replace") { n += await mergeBlock(q, ctx.userId, row); continue; }
       let ok = await insert(row);
       if (!ok && oldId && isUuid(oldId)) {
         // another account on this server has this id (a copy into a second account): a new id, the same one each time,

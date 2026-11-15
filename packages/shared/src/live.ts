@@ -13,7 +13,8 @@ export const TOPICS = {
   body: ["body", "stats", "goals", "home", "health"],
   // workouts: a band's heart rate is added to workouts afterwards (/health/ranges); routines and exercises show it per
   // routine and per exercise session; goals: sleep hours
-  health: ["health", "activities", "workouts", "routines", "exercises", "body", "stats", "goals", "home", "calendar"],
+  // readings: an import log key deleted (or its data deleted elsewhere) takes its Health Connect records (migration 040)
+  health: ["health", "activities", "workouts", "routines", "exercises", "body", "stats", "goals", "home", "calendar", "readings"],
   // every Health Connect record as it is (M-238): only screens that read the records themselves
   readings: ["readings"],
   schedule: ["schedules", "calendar", "home"],

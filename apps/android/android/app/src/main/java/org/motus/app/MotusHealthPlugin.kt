@@ -259,8 +259,10 @@ class MotusHealthPlugin : Plugin() {
      * one cheap call, so the page can look every minute and run the full read() only when there is something new.
      * { token?: string } → { changed: boolean, token: string, deleted: string[], touched: number[] } (no token, or one
      * Health Connect let expire: changed is true, and the new token starts from now). deleted: the ids of records
-     * deleted since (at most 5000), touched: the start times (unix seconds) of records written or changed since (at most
-     * 5000), so the page can delete those here and read their days again (POST /health/records, M-238).
+     * deleted since, touched: the start times (unix seconds) of records written or changed since, so the page can delete
+     * those here and read their days again (POST /health/records, M-238). A page of the list is taken whole (its token
+     * is the only way on); after about 5000 of either (or 20 pages) the look stops there with more: true, and the token
+     * it returns picks up the rest, so no deletion is skipped.
      */
     @PluginMethod
     fun changes(call: PluginCall) {
@@ -275,27 +277,23 @@ class MotusHealthPlugin : Plugin() {
                 suspend fun fresh(): String = c.getChangesToken(ChangesTokenRequest(types))
                 if (given.isNullOrEmpty()) { call.resolve(JSObject().put("changed", true).put("token", fresh())); return@launch }
                 var token: String = given
-                var changed = false; var pages = 0
+                var changed = false; var more = false; var pages = 0
                 val deleted = JSArray(); val touched = JSArray()
                 while (true) {
                     val res = c.getChanges(token)
                     if (res.changesTokenExpired) { call.resolve(JSObject().put("changed", true).put("token", fresh())); return@launch }
                     if (res.changes.isNotEmpty()) changed = true
                     for (ch in res.changes) when (ch) {
-                        is DeletionChange -> if (deleted.length() < 5000) deleted.put(ch.recordId)
-                        is UpsertionChange -> if (touched.length() < 5000) when (val r = ch.record) {
-                            is IntervalRecord -> touched.put(r.startTime.epochSecond)
-                            is InstantaneousRecord -> touched.put(r.time.epochSecond)
-                            else -> {}
-                        }
+                        is DeletionChange -> deleted.put(ch.recordId)
+                        is UpsertionChange -> recordStart(ch.record)?.let { touched.put(it.epochSecond) }
                         else -> {}
                     }
                     token = res.nextChangesToken
-                    // the answer is known after the first change; the token still moves past every page so the next
-                    // look starts from now
-                    if (!res.hasMore || ++pages >= 20) break
+                    if (!res.hasMore) break
+                    // the rest waits for the next look, from this token: nothing is passed over unseen
+                    if (deleted.length() >= 5000 || touched.length() >= 5000 || ++pages >= 20) { more = true; break }
                 }
-                call.resolve(JSObject().put("changed", changed).put("token", token).put("deleted", deleted).put("touched", touched))
+                call.resolve(JSObject().put("changed", changed).put("token", token).put("deleted", deleted).put("touched", touched).put("more", more))
             } catch (e: Exception) { call.reject(e.message ?: "Health Connect could not be read") }
         }
     }
@@ -354,7 +352,8 @@ class MotusHealthPlugin : Plugin() {
                     o.put("p", JSArray().also { a -> for (x in r.samples) a.put(JSArray().put(x.time.epochSecond).put(x.beatsPerMinute)) })
                 }
                 kind("sleep", SleepSessionRecord::class, { it.startTime }) { r, o ->
-                    iv(o, r.endTime, r.startZoneOffset)
+                    // a night is filed by the day it ends (the engine's recordDay, wakeDay below), so its zone is the end's
+                    o.put("e", r.endTime.epochSecond).put("z", (r.endZoneOffset ?: zone.rules.getOffset(r.endTime)).totalSeconds)
                     o.put("st", JSArray().also { a -> for (x in r.stages) a.put(JSArray().put(x.startTime.epochSecond).put(x.endTime.epochSecond).put(x.stage)) })
                     r.title?.let { o.put("t", it) }
                 }
@@ -373,6 +372,28 @@ class MotusHealthPlugin : Plugin() {
         }
     }
 
+    // A record's start (or, for a reading, its time), per type: Health Connect's IntervalRecord and InstantaneousRecord
+    // aren't public. null for a type Motus doesn't read.
+    private fun recordStart(r: Record): Instant? = when (r) {
+        is StepsRecord -> r.startTime
+        is SleepSessionRecord -> r.startTime
+        is ExerciseSessionRecord -> r.startTime
+        is HeartRateRecord -> r.startTime
+        is DistanceRecord -> r.startTime
+        is ActiveCaloriesBurnedRecord -> r.startTime
+        is HydrationRecord -> r.startTime
+        is ElevationGainedRecord -> r.startTime
+        is FloorsClimbedRecord -> r.startTime
+        is WeightRecord -> r.time
+        is RestingHeartRateRecord -> r.time
+        is OxygenSaturationRecord -> r.time
+        is HeartRateVariabilityRmssdRecord -> r.time
+        is RespiratoryRateRecord -> r.time
+        is BodyFatRecord -> r.time
+        is Vo2MaxRecord -> r.time
+        else -> null
+    }
+
     /**
      * The start (or time) of the oldest record Motus may read, of any kind: where the back-fill of every record
      * (records(), M-238) stops. { at?: ISO time } (absent when there is none). One read per kind, oldest first, one record.
@@ -388,7 +409,7 @@ class MotusHealthPlugin : Plugin() {
                 for (type in TYPES) {
                     if (perm(type) !in granted) continue
                     val r = c.readRecords(ReadRecordsRequest(type, TimeRangeFilter.before(Instant.now().plusSeconds(86400)), ascendingOrder = true, pageSize = 1)).records.firstOrNull()
-                    val t = when (r) { is IntervalRecord -> r.startTime; is InstantaneousRecord -> r.time; else -> null } ?: continue
+                    val t = r?.let { recordStart(it) } ?: continue
                     if (oldest == null || t.isBefore(oldest)) oldest = t
                 }
                 call.resolve(JSObject().also { o -> oldest?.let { o.put("at", it.toString()) } })
