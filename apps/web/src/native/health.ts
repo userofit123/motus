@@ -10,12 +10,18 @@ import { invalidate, queryClient } from "../api/live";
 import { readJson, writeJson, readStr, writeStr } from "../core/prefs";
 import { accounts } from "./accounts";
 
-/** Everything the plugin asks Health Connect for: someone who allowed an earlier version lacks the kinds added since */
-export const HEALTH_KINDS = ["steps", "sleep", "weight", "sessions", "heartRate", "restingHr", "spo2", "hrv", "respiratoryRate", "distance", "activeKcal", "bodyFat", "hydration", "vo2max", "elevation", "floors"] as const;
+/** The kinds the daily read (read() below) uses, and all an app build from before M-239 asks for */
+export const DAILY_KINDS = ["steps", "sleep", "weight", "sessions", "heartRate", "restingHr", "spo2", "hrv", "respiratoryRate", "distance", "activeKcal", "bodyFat", "hydration", "vo2max", "elevation", "floors"] as const;
+/** Everything the plugin asks Health Connect for: someone who allowed an earlier version lacks the kinds added since.
+ *  The kinds after the daily ones (M-239) are only kept as records (syncRecords) for now. */
+export const HEALTH_KINDS = [...DAILY_KINDS, "totalKcal", "bmr", "speed", "power", "skinTemp", "bodyTemp", "basalBodyTemp", "bloodPressure",
+  "bloodGlucose", "height", "leanMass", "boneMass", "bodyWater", "wheelchairPushes", "mindfulness", "nutrition"] as const;
 type Kind = (typeof HEALTH_KINDS)[number];
-// history: Motus may read further back than 30 days; historyAvailable: this phone's Health Connect can allow that at all
-// (someone who allowed Motus before past data could be asked for has historyAvailable but not history until connect() again)
-export interface HealthStatus { available: "yes" | "update" | "no"; granted: Kind[]; history: boolean; historyAvailable: boolean }
+// offered: the kinds this phone's Health Connect has (skin temperature and mindfulness need a newer one; absent from an
+// older app build); history: Motus may read further back than 30 days; historyAvailable: this phone's Health Connect can
+// allow that at all (someone who allowed Motus before past data could be asked for has historyAvailable but not history
+// until connect() again)
+export interface HealthStatus { available: "yes" | "update" | "no"; granted: Kind[]; offered?: Kind[]; history: boolean; historyAvailable: boolean }
 /** What the plugin's read() hands over, passed to POST /health/import as it is */
 export interface HealthData {
   // worn (steps, distance, active calories): whether a band, watch or ring counted the day; absent from an older app build
@@ -128,11 +134,11 @@ const READ_KEY = "motusHealthRead";
 // then the band's records added up by Motus itself, as Health Connect's per-app total dropped steps where the band's own
 // records overlap (a day read 4,821 where the band showed 5,036), so days saved too low are read again and raised)
 const READS: Partial<Record<Kind, number>> = { sleep: 2, heartRate: 2, steps: 5, distance: 5, activeKcal: 5 };
-const readsOf = (granted: readonly string[]) => HEALTH_KINDS.filter((k) => granted.includes(k)).map((k) => (READS[k] ? `${k}.${READS[k]}` : k));
+const readsOf = (granted: readonly string[]) => DAILY_KINDS.filter((k) => granted.includes(k)).map((k) => (READS[k] ? `${k}.${READS[k]}` : k));
 const readBefore = () => readJson<Record<string, string[]>>(READ_KEY, {})[key()] ?? [];
 const rememberRead = (reads: string[]) => { const all = readJson<Record<string, string[]>>(READ_KEY, {}); all[key()] = reads; writeJson(READ_KEY, all); };
 
-export const healthStatus = async (): Promise<HealthStatus> => healthSupported() ? plugin().status() : { available: "no", granted: [], history: false, historyAvailable: false };
+export const healthStatus = async (): Promise<HealthStatus> => healthSupported() ? plugin().status() : { available: "no", granted: [], offered: [], history: false, historyAvailable: false };
 export const connectHealth = async (): Promise<HealthStatus> => plugin().connect();
 export const openHealthSettings = () => plugin()?.openSettings();
 

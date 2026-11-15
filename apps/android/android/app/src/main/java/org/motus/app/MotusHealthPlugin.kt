@@ -50,14 +50,38 @@ class MotusHealthPlugin : Plugin() {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     private fun perm(c: KClass<out Record>) = HealthPermission.getReadPermission(c)
-    private val TYPES: List<KClass<out Record>> = listOf(
-        StepsRecord::class, SleepSessionRecord::class, WeightRecord::class, ExerciseSessionRecord::class,
-        HeartRateRecord::class, DistanceRecord::class, ActiveCaloriesBurnedRecord::class,
-        RestingHeartRateRecord::class, OxygenSaturationRecord::class, HeartRateVariabilityRmssdRecord::class,
-        RespiratoryRateRecord::class, BodyFatRecord::class, HydrationRecord::class, Vo2MaxRecord::class,
-        ElevationGainedRecord::class, FloorsClimbedRecord::class,
+    // Each kind the page knows by name (status, Settings' list), and the record type whose permission it is. Every kind
+    // a band, watch, scale or phone app can write (M-239), but cycle tracking (not what Motus is for) and planned
+    // workouts (plans, not what was done); exercise routes: see records().
+    private val KINDS: List<Pair<String, KClass<out Record>>> = listOf(
+        "steps" to StepsRecord::class, "sleep" to SleepSessionRecord::class, "weight" to WeightRecord::class,
+        "sessions" to ExerciseSessionRecord::class, "heartRate" to HeartRateRecord::class, "restingHr" to RestingHeartRateRecord::class,
+        "spo2" to OxygenSaturationRecord::class, "hrv" to HeartRateVariabilityRmssdRecord::class, "respiratoryRate" to RespiratoryRateRecord::class,
+        "distance" to DistanceRecord::class, "activeKcal" to ActiveCaloriesBurnedRecord::class, "bodyFat" to BodyFatRecord::class,
+        "hydration" to HydrationRecord::class, "vo2max" to Vo2MaxRecord::class, "elevation" to ElevationGainedRecord::class,
+        "floors" to FloorsClimbedRecord::class,
+        "totalKcal" to TotalCaloriesBurnedRecord::class, "bmr" to BasalMetabolicRateRecord::class, "speed" to SpeedRecord::class,
+        "power" to PowerRecord::class, "skinTemp" to SkinTemperatureRecord::class, "bodyTemp" to BodyTemperatureRecord::class,
+        "basalBodyTemp" to BasalBodyTemperatureRecord::class, "bloodPressure" to BloodPressureRecord::class,
+        "bloodGlucose" to BloodGlucoseRecord::class, "height" to HeightRecord::class, "leanMass" to LeanBodyMassRecord::class,
+        "boneMass" to BoneMassRecord::class, "bodyWater" to BodyWaterMassRecord::class, "wheelchairPushes" to WheelchairPushesRecord::class,
+        "mindfulness" to MindfulnessSessionRecord::class, "nutrition" to NutritionRecord::class,
     )
-    private val PERMS = TYPES.map { perm(it) }.toSet()
+    // every type read: the kinds', and cadence, whose permissions are steps' and workouts' (Health Connect's own pairing)
+    private val TYPES: List<KClass<out Record>> = KINDS.map { it.second } + listOf(StepsCadenceRecord::class, CyclingPedalingCadenceRecord::class)
+
+    // the types this phone's Health Connect has: skin temperature and mindfulness came in newer versions, which say so
+    // as a feature (asking for or reading a type the version lacks fails)
+    private fun featureOn(c: HealthConnectClient, f: Int): Boolean = try {
+        c.features.getFeatureStatus(f) == HealthConnectFeatures.FEATURE_STATUS_AVAILABLE
+    } catch (e: Exception) { false }
+    private fun offered(c: HealthConnectClient): List<KClass<out Record>> = TYPES.filter {
+        when (it) {
+            SkinTemperatureRecord::class -> featureOn(c, HealthConnectFeatures.FEATURE_SKIN_TEMPERATURE)
+            MindfulnessSessionRecord::class -> featureOn(c, HealthConnectFeatures.FEATURE_MINDFULNESS_SESSION)
+            else -> true
+        }
+    }
 
     // Health Connect is part of Android 14+, an app from the Play Store on 9-13, and missing below 9
     private fun sdk(): Int =
@@ -69,16 +93,15 @@ class MotusHealthPlugin : Plugin() {
     // Without this permission Health Connect hands out only the 30 days before the first grant; it exists only on
     // newer Health Connect versions, so it is asked for (and reported) only where the phone offers it
     private val HISTORY = HealthPermission.PERMISSION_READ_HEALTH_DATA_HISTORY
-    private fun historyAvailable(c: HealthConnectClient): Boolean = try {
-        c.features.getFeatureStatus(HealthConnectFeatures.FEATURE_READ_HEALTH_DATA_HISTORY) == HealthConnectFeatures.FEATURE_STATUS_AVAILABLE
-    } catch (e: Exception) { false }
+    private fun historyAvailable(c: HealthConnectClient): Boolean = featureOn(c, HealthConnectFeatures.FEATURE_READ_HEALTH_DATA_HISTORY)
 
     override fun handleOnDestroy() { scope.cancel() }
 
     /**
-     * { available: "yes" | "update" | "no", granted: string[], history: boolean, historyAvailable: boolean }
-     * ("update": the Health Connect app needs installing or updating; history: data older than 30 days before the
-     * first grant may be read; historyAvailable: this phone's Health Connect can grant that at all)
+     * { available: "yes" | "update" | "no", granted: string[], offered: string[], history: boolean, historyAvailable: boolean }
+     * ("update": the Health Connect app needs installing or updating; offered: the kinds this phone's Health Connect has;
+     * history: data older than 30 days before the first grant may be read; historyAvailable: this phone's Health Connect
+     * can grant that at all)
      */
     @PluginMethod
     fun status(call: PluginCall) {
@@ -90,13 +113,15 @@ class MotusHealthPlugin : Plugin() {
             else -> "no"
         })
         if (s != HealthConnectClient.SDK_AVAILABLE) {
-            out.put("granted", JSArray()).put("history", false).put("historyAvailable", false); call.resolve(out); return
+            out.put("granted", JSArray()).put("offered", JSArray()).put("history", false).put("historyAvailable", false); call.resolve(out); return
         }
         scope.launch {
             try {
                 val c = client()
                 val granted = c.permissionController.getGrantedPermissions()
                 out.put("granted", JSArray(names(granted)))
+                val has = offered(c).toSet()
+                out.put("offered", JSArray(KINDS.filter { it.second in has }.map { it.first }))
                 out.put("history", HISTORY in granted)
                 out.put("historyAvailable", historyAvailable(c))
                 call.resolve(out)
@@ -104,13 +129,24 @@ class MotusHealthPlugin : Plugin() {
         }
     }
 
-    /** Health Connect's own screen asking for each kind; resolves with what is granted afterwards */
+    /**
+     * Health Connect's own screen asking for the kinds (and past data) not allowed yet, only those: someone who allowed
+     * an earlier version sees just the kinds added since, once, when they tap Allow. Resolves with what is granted
+     * afterwards (straight away when there is nothing left to ask).
+     */
     @PluginMethod
     fun connect(call: PluginCall) {
         if (sdk() != HealthConnectClient.SDK_AVAILABLE) { call.reject("Health Connect is not available"); return }
-        val perms = if (historyAvailable(client())) PERMS + HISTORY else PERMS
-        val intent = PermissionController.createRequestPermissionResultContract().createIntent(context, perms)
-        startActivityForResult(call, intent, "permissionsDone")
+        scope.launch {
+            try {
+                val c = client()
+                val all = offered(c).map { perm(it) }.toSet() + (if (historyAvailable(c)) setOf(HISTORY) else emptySet())
+                val ask = all - c.permissionController.getGrantedPermissions()
+                if (ask.isEmpty()) { status(call); return@launch }
+                val intent = PermissionController.createRequestPermissionResultContract().createIntent(context, ask)
+                activity.runOnUiThread { startActivityForResult(call, intent, "permissionsDone") }
+            } catch (e: Exception) { call.reject(e.message ?: "Health Connect could not be reached") }
+        }
     }
 
     @ActivityCallback
@@ -359,8 +395,13 @@ class MotusHealthPlugin : Plugin() {
                     o.put("st", JSArray().also { a -> for (x in r.stages) a.put(JSArray().put(x.startTime.epochSecond).put(x.endTime.epochSecond).put(x.stage)) })
                     r.title?.let { o.put("t", it) }
                 }
+                // laps and segments a watch recorded with the workout (M-239). Not its route: Health Connect hands another
+                // app's route only after asking the person about that one workout (ExerciseRouteRequestContract), a
+                // prompt per session that a background read can't show, so routes are left out
                 kind("exercise", ExerciseSessionRecord::class, { it.startTime }) { r, o ->
                     iv(o, r.endTime, r.startZoneOffset); o.put("x", r.exerciseType); r.title?.let { o.put("t", it) }
+                    if (r.laps.isNotEmpty()) o.put("lp", JSArray().also { a -> for (l in r.laps) a.put(JSArray().put(l.startTime.epochSecond).put(l.endTime.epochSecond).also { q -> l.length?.let { q.put(it.inMeters) } }) })
+                    if (r.segments.isNotEmpty()) o.put("sg", JSArray().also { a -> for (g in r.segments) a.put(JSArray().put(g.startTime.epochSecond).put(g.endTime.epochSecond).put(g.segmentType).put(g.repetitions)) })
                 }
                 kind("resting_hr", RestingHeartRateRecord::class, { it.time }) { r, o -> at(o, r.zoneOffset); o.put("v", r.beatsPerMinute) }
                 kind("spo2", OxygenSaturationRecord::class, { it.time }) { r, o -> at(o, r.zoneOffset); o.put("v", r.percentage.value) }
@@ -369,6 +410,58 @@ class MotusHealthPlugin : Plugin() {
                 kind("vo2max", Vo2MaxRecord::class, { it.time }) { r, o -> at(o, r.zoneOffset); o.put("v", r.vo2MillilitersPerMinuteKilogram) }
                 kind("weight", WeightRecord::class, { it.time }) { r, o -> at(o, r.zoneOffset); o.put("v", r.weight.inKilograms) }
                 kind("body_fat", BodyFatRecord::class, { it.time }) { r, o -> at(o, r.zoneOffset); o.put("v", r.percentage.value) }
+                // read since M-239 (the engine's healthRecords.ts says what each field is); a: what else Health Connect says
+                fun samples(o: JSObject, list: List<Pair<Instant, Double>>) = o.put("p", JSArray().also { a -> for ((t, v) in list) a.put(JSArray().put(t.epochSecond).put(v)) })
+                kind("total_kcal", TotalCaloriesBurnedRecord::class, { it.startTime }) { r, o -> iv(o, r.endTime, r.startZoneOffset); o.put("v", r.energy.inKilocalories) }
+                kind("wheelchair_pushes", WheelchairPushesRecord::class, { it.startTime }) { r, o -> iv(o, r.endTime, r.startZoneOffset); o.put("v", r.count) }
+                kind("speed", SpeedRecord::class, { it.startTime }) { r, o -> iv(o, r.endTime, r.startZoneOffset); samples(o, r.samples.map { it.time to it.speed.inMetersPerSecond }) }
+                kind("power", PowerRecord::class, { it.startTime }) { r, o -> iv(o, r.endTime, r.startZoneOffset); samples(o, r.samples.map { it.time to it.power.inWatts }) }
+                kind("steps_cadence", StepsCadenceRecord::class, { it.startTime }) { r, o -> iv(o, r.endTime, r.startZoneOffset); samples(o, r.samples.map { it.time to it.rate }) }
+                kind("cycling_cadence", CyclingPedalingCadenceRecord::class, { it.startTime }) { r, o -> iv(o, r.endTime, r.startZoneOffset); samples(o, r.samples.map { it.time to it.revolutionsPerMinute }) }
+                kind("skin_temp", SkinTemperatureRecord::class, { it.startTime }) { r, o ->
+                    iv(o, r.endTime, r.startZoneOffset); samples(o, r.deltas.map { it.time to it.delta.inCelsius })
+                    r.baseline?.let { o.put("v", it.inCelsius) }; o.put("a", JSObject().put("loc", r.measurementLocation))
+                }
+                kind("mindfulness", MindfulnessSessionRecord::class, { it.startTime }) { r, o ->
+                    iv(o, r.endTime, r.startZoneOffset); r.title?.let { o.put("t", it) }; o.put("a", JSObject().put("type", r.mindfulnessSessionType))
+                }
+                kind("nutrition", NutritionRecord::class, { it.startTime }) { r, o ->
+                    iv(o, r.endTime, r.startZoneOffset); r.energy?.let { o.put("v", it.inKilocalories) }
+                    val a = JSObject().put("meal", r.mealType)
+                    r.name?.let { a.put("name", it) }; r.energyFromFat?.let { a.put("kcalFromFat", it.inKilocalories) }
+                    // grams of each nutrient the app filled in
+                    for ((k, m) in listOf("protein" to r.protein, "carbs" to r.totalCarbohydrate, "fat" to r.totalFat, "sugar" to r.sugar,
+                        "fiber" to r.dietaryFiber, "saturatedFat" to r.saturatedFat, "unsaturatedFat" to r.unsaturatedFat,
+                        "monounsaturatedFat" to r.monounsaturatedFat, "polyunsaturatedFat" to r.polyunsaturatedFat, "transFat" to r.transFat,
+                        "cholesterol" to r.cholesterol, "sodium" to r.sodium, "potassium" to r.potassium, "calcium" to r.calcium,
+                        "iron" to r.iron, "magnesium" to r.magnesium, "zinc" to r.zinc, "phosphorus" to r.phosphorus, "caffeine" to r.caffeine,
+                        "vitaminA" to r.vitaminA, "vitaminB6" to r.vitaminB6, "vitaminB12" to r.vitaminB12, "vitaminC" to r.vitaminC,
+                        "vitaminD" to r.vitaminD, "vitaminE" to r.vitaminE, "vitaminK" to r.vitaminK, "biotin" to r.biotin, "folate" to r.folate,
+                        "folicAcid" to r.folicAcid, "niacin" to r.niacin, "pantothenicAcid" to r.pantothenicAcid, "riboflavin" to r.riboflavin,
+                        "thiamin" to r.thiamin, "chloride" to r.chloride, "chromium" to r.chromium, "copper" to r.copper, "iodine" to r.iodine,
+                        "manganese" to r.manganese, "molybdenum" to r.molybdenum, "selenium" to r.selenium))
+                        m?.let { a.put(k, it.inGrams) }
+                    o.put("a", a)
+                }
+                kind("bmr", BasalMetabolicRateRecord::class, { it.time }) { r, o -> at(o, r.zoneOffset); o.put("v", r.basalMetabolicRate.inKilocaloriesPerDay) }
+                kind("body_temp", BodyTemperatureRecord::class, { it.time }) { r, o ->
+                    at(o, r.zoneOffset); o.put("v", r.temperature.inCelsius); o.put("a", JSObject().put("loc", r.measurementLocation))
+                }
+                kind("basal_body_temp", BasalBodyTemperatureRecord::class, { it.time }) { r, o ->
+                    at(o, r.zoneOffset); o.put("v", r.temperature.inCelsius); o.put("a", JSObject().put("loc", r.measurementLocation))
+                }
+                kind("blood_pressure", BloodPressureRecord::class, { it.time }) { r, o ->
+                    at(o, r.zoneOffset); o.put("v", r.systolic.inMillimetersOfMercury)
+                    o.put("a", JSObject().put("dia", r.diastolic.inMillimetersOfMercury).put("pos", r.bodyPosition).put("loc", r.measurementLocation))
+                }
+                kind("blood_glucose", BloodGlucoseRecord::class, { it.time }) { r, o ->
+                    at(o, r.zoneOffset); o.put("v", r.level.inMillimolesPerLiter)
+                    o.put("a", JSObject().put("specimen", r.specimenSource).put("meal", r.mealType).put("relation", r.relationToMeal))
+                }
+                kind("height", HeightRecord::class, { it.time }) { r, o -> at(o, r.zoneOffset); o.put("v", r.height.inMeters) }
+                kind("lean_mass", LeanBodyMassRecord::class, { it.time }) { r, o -> at(o, r.zoneOffset); o.put("v", r.mass.inKilograms) }
+                kind("bone_mass", BoneMassRecord::class, { it.time }) { r, o -> at(o, r.zoneOffset); o.put("v", r.mass.inKilograms) }
+                kind("body_water", BodyWaterMassRecord::class, { it.time }) { r, o -> at(o, r.zoneOffset); o.put("v", r.mass.inKilograms) }
                 call.resolve(JSObject().put("from", from.toString()).put("to", to.toString()).put("types", types))
             } catch (e: Exception) { call.reject(e.message ?: "Health Connect could not be read") }
         }
@@ -393,6 +486,24 @@ class MotusHealthPlugin : Plugin() {
         is RespiratoryRateRecord -> r.time
         is BodyFatRecord -> r.time
         is Vo2MaxRecord -> r.time
+        is TotalCaloriesBurnedRecord -> r.startTime
+        is WheelchairPushesRecord -> r.startTime
+        is SpeedRecord -> r.startTime
+        is PowerRecord -> r.startTime
+        is StepsCadenceRecord -> r.startTime
+        is CyclingPedalingCadenceRecord -> r.startTime
+        is SkinTemperatureRecord -> r.startTime
+        is MindfulnessSessionRecord -> r.startTime
+        is NutritionRecord -> r.startTime
+        is BasalMetabolicRateRecord -> r.time
+        is BodyTemperatureRecord -> r.time
+        is BasalBodyTemperatureRecord -> r.time
+        is BloodPressureRecord -> r.time
+        is BloodGlucoseRecord -> r.time
+        is HeightRecord -> r.time
+        is LeanBodyMassRecord -> r.time
+        is BoneMassRecord -> r.time
+        is BodyWaterMassRecord -> r.time
         else -> null
     }
 
@@ -620,24 +731,7 @@ class MotusHealthPlugin : Plugin() {
         return out
     }
 
-    private fun names(granted: Set<String>): List<String> = buildList {
-        if (perm(StepsRecord::class) in granted) add("steps")
-        if (perm(SleepSessionRecord::class) in granted) add("sleep")
-        if (perm(WeightRecord::class) in granted) add("weight")
-        if (perm(ExerciseSessionRecord::class) in granted) add("sessions")
-        if (perm(HeartRateRecord::class) in granted) add("heartRate")
-        if (perm(RestingHeartRateRecord::class) in granted) add("restingHr")
-        if (perm(OxygenSaturationRecord::class) in granted) add("spo2")
-        if (perm(HeartRateVariabilityRmssdRecord::class) in granted) add("hrv")
-        if (perm(RespiratoryRateRecord::class) in granted) add("respiratoryRate")
-        if (perm(DistanceRecord::class) in granted) add("distance")
-        if (perm(ActiveCaloriesBurnedRecord::class) in granted) add("activeKcal")
-        if (perm(BodyFatRecord::class) in granted) add("bodyFat")
-        if (perm(HydrationRecord::class) in granted) add("hydration")
-        if (perm(Vo2MaxRecord::class) in granted) add("vo2max")
-        if (perm(ElevationGainedRecord::class) in granted) add("elevation")
-        if (perm(FloorsClimbedRecord::class) in granted) add("floors")
-    }
+    private fun names(granted: Set<String>): List<String> = KINDS.filter { perm(it.second) in granted }.map { it.first }
 
     // Daily totals (steps, distance, active calories; water sums every app, piece null). Health Connect adds up each day
     // itself, but where its first app (the band) has no record for a moment it adds the next one's (the phone's own step

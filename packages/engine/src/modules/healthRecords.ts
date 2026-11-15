@@ -7,18 +7,25 @@ import type { Router, Ctx } from "../router";
 import type { Sql } from "../db";
 import { bad } from "../errors";
 import { dateStr, tzOf } from "../util";
-import { RECORD_TYPES } from "../migrations/040_health_records";
+import { RECORD_TYPES } from "../migrations/045_health_records_more";
 import { HEALTH_DELETED_MAX } from "@motus/shared";
 import { afterRecords } from "./health";
 import { lockRecords, noteRead, shift } from "./healthDerive";
 
 export type RecordType = (typeof RECORD_TYPES)[number];
 const isType = (t: unknown): t is RecordType => typeof t === "string" && (RECORD_TYPES as readonly string[]).includes(t);
-/** What a record of each type holds besides its times: an amount over its time, heart rate samples, sleep stages, a session, or one reading. */
-const SHAPE: Record<RecordType, "sum" | "series" | "sleep" | "session" | "instant"> = {
-  steps: "sum", distance: "sum", active_kcal: "sum", floors: "sum", elevation: "sum", hydration: "sum",
-  heart_rate: "series", sleep: "sleep", exercise: "session",
+/**
+ * What a record of each type holds besides its times: an amount over its time, samples over its time (heart rate,
+ * speed, power, cadence, skin temperature's change from its baseline), sleep stages, a session, a meal (its energy if
+ * it says, and what was in it), or one reading.
+ */
+const SHAPE: Record<RecordType, "sum" | "series" | "sleep" | "session" | "meal" | "instant"> = {
+  steps: "sum", distance: "sum", active_kcal: "sum", floors: "sum", elevation: "sum", hydration: "sum", total_kcal: "sum", wheelchair_pushes: "sum",
+  heart_rate: "series", speed: "series", power: "series", steps_cadence: "series", cycling_cadence: "series", skin_temp: "series",
+  sleep: "sleep", exercise: "session", mindfulness: "session", nutrition: "meal",
   resting_hr: "instant", spo2: "instant", hrv: "instant", resp_rate: "instant", vo2max: "instant", weight: "instant", body_fat: "instant",
+  bmr: "instant", body_temp: "instant", basal_body_temp: "instant", blood_pressure: "instant", blood_glucose: "instant",
+  height: "instant", lean_mass: "instant", bone_mass: "instant", body_water: "instant",
 };
 /**
  * The import log's key that covers a record (027): a day's number for kinds the daily log has, the record itself for
@@ -35,23 +42,39 @@ const logKey = (t: RecordType, id: string, day: string) => (LOG_KIND[t] ? `${LOG
  * A record as stored (the block's value under its id), as the phone sends it: s start or the reading's time and e end
  * (unix seconds), z the zone offset it was written with (seconds), o the app that wrote it, dv the device (type as
  * Health Connect numbers it, maker, model), m last modified (unix ms), and by shape: v the amount or reading (steps,
- * metres, kcal, floors, metres climbed, ml, bpm, %, ms, breaths a minute, VO2 max, kg, %), p heart rate samples
- * [[unix seconds, bpm]], st sleep stages [[start, end, stage]] (stage as Health Connect numbers it), x the exercise
- * type (Health Connect's number), t a title. src: the phone (an id it made when Motus was installed) that last sent it:
- * only that phone may take it out for no longer being in its reads (saveRecords).
+ * metres, kcal, floors, metres climbed, ml, bpm, %, ms, breaths a minute, VO2 max, kg, %; total kcal, pushes, a meal's
+ * kcal, skin temperature's baseline °C, kcal a day, °C, systolic mmHg, mmol/L, metres tall, kg), p samples [[unix
+ * seconds, value]] (bpm, metres a second, watts, steps a minute, turns a minute, °C from the baseline), st sleep stages
+ * [[start, end, stage]] (stage as Health Connect numbers it), x the exercise type (Health Connect's number), lp a
+ * workout's laps [[start, end, metres?]], sg its segments [[start, end, segment type, repetitions]], t a title, a what
+ * else Health Connect says, by name (diastolic mmHg, where it was measured, body position, meal type, a meal's
+ * nutrients in grams, a mindfulness session's type; Health Connect's numbers). src: the phone (an id it made when
+ * Motus was installed) that last sent it: only that phone may take it out for no longer being in its reads (saveRecords).
  */
 export interface Rec {
   s: number; e?: number; z: number; o: string; dv?: { type?: number; maker?: string; model?: string }; m: number;
   v?: number; p?: [number, number][]; st?: [number, number, number][]; x?: number; t?: string; src?: string;
+  lp?: number[][]; sg?: [number, number, number, number][]; a?: Record<string, number | string>;
 }
 type Raw = Record<string, unknown>;
 // MAX_SAMPLES: one a second over the longest record taken (7 days), so a heart rate record is kept as it is; one with
 // more can't be a real one and is left out whole rather than cut short
-const MAX_PER_TYPE = 20000, MAX_SAMPLES = 7 * 86400, MAX_STAGES = 500;
+const MAX_PER_TYPE = 20000, MAX_SAMPLES = 7 * 86400, MAX_STAGES = 500, MAX_LAPS = 1000, MAX_EXTRA = 64;
 const fin = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
 const isObj = (v: unknown): v is Raw => !!v && typeof v === "object" && !Array.isArray(v);
 const nums = (q: unknown, n: number): q is number[] => Array.isArray(q) && q.length >= n && q.slice(0, n).every(fin);
 const text = (v: unknown, max: number) => (typeof v === "string" && v ? v.slice(0, max) : undefined);
+// what else a record says (a): short names with a number or a short text each
+const extra = (v: unknown) => {
+  if (!isObj(v)) return undefined;
+  const out: Record<string, number | string> = {};
+  for (const [k, x] of Object.entries(v).slice(0, MAX_EXTRA)) {
+    if (!/^[A-Za-z][A-Za-z0-9]{0,31}$/.test(k)) continue;
+    if (fin(x)) out[k] = x;
+    else { const t = text(x, 200); if (t) out[k] = t; }
+  }
+  return Object.keys(out).length ? out : undefined;
+};
 // a time Motus could have: from 1990 to a day from now
 const okTime = (t: number) => t > 631152000 && t < Date.now() / 1000 + 86400;
 
@@ -75,12 +98,27 @@ export function cleanRecord(type: RecordType, x: unknown, zone: number): { id: s
     rec.v = x.v;
   } else if (shape === "series") {
     if (!Array.isArray(x.p) || x.p.length > MAX_SAMPLES) return null;
-    rec.p = (x.p as unknown[]).filter((q) => nums(q, 2)).map((q) => { const [t, b] = q as number[]; return [Math.round(t!), Math.round(b!)] as [number, number]; });
-  } else if (shape === "sleep") {
+    // heart rate in whole beats as Health Connect has it; the others (metres a second, °C) keep their decimals
+    const val = type === "heart_rate" ? Math.round : (b: number) => Math.round(b * 1000) / 1000;
+    rec.p = (x.p as unknown[]).filter((q) => nums(q, 2)).map((q) => { const [t, b] = q as number[]; return [Math.round(t!), val(b!)] as [number, number]; });
+    if (fin(x.v)) rec.v = x.v; // skin temperature's baseline
+  } else if (shape === "meal" && fin(x.v)) rec.v = x.v; else if (shape === "sleep") {
     rec.st = (Array.isArray(x.st) ? (x.st as unknown[]) : []).slice(0, MAX_STAGES)
       .filter((q) => nums(q, 3) && q[1]! >= q[0]!).map((q) => { const [a, b, k] = q as number[]; return [Math.round(a!), Math.round(b!), Math.round(k!)] as [number, number, number]; });
   }
   if (shape === "session" && fin(x.x)) rec.x = Math.round(x.x);
+  if (shape === "session" && Array.isArray(x.lp)) {
+    const lp = (x.lp as unknown[]).slice(0, MAX_LAPS).filter((q) => nums(q, 2) && q[1]! >= q[0]!)
+      .map((q) => { const [a, b, m] = q as number[]; return fin(m) ? [Math.round(a!), Math.round(b!), m] : [Math.round(a!), Math.round(b!)]; });
+    if (lp.length) rec.lp = lp;
+  }
+  if (shape === "session" && Array.isArray(x.sg)) {
+    const sg = (x.sg as unknown[]).slice(0, MAX_LAPS).filter((q) => nums(q, 4) && q[1]! >= q[0]!)
+      .map((q) => (q as number[]).slice(0, 4).map(Math.round) as [number, number, number, number]);
+    if (sg.length) rec.sg = sg;
+  }
+  const a = extra(x.a);
+  if (a) rec.a = a;
   const t = text(x.t, 200);
   if (t && (shape === "sleep" || shape === "session")) rec.t = t;
   return { id, rec };
@@ -187,6 +225,7 @@ const view = (type: RecordType, id: string, r: Rec, fromS = -Infinity, toS = Inf
   // a heart rate record's samples inside the asked time only (a record can run for hours on either side)
   ...(r.p ? { samples: r.p.filter((q) => q[0] >= fromS && q[0] < toS) } : {}),
   ...(r.st ? { stages: r.st } : {}), ...(r.x != null ? { exerciseType: r.x } : {}), ...(r.t ? { title: r.t } : {}),
+  ...(r.lp ? { laps: r.lp } : {}), ...(r.sg ? { segments: r.sg } : {}), ...(r.a ? { extra: r.a } : {}),
   origin: r.o, ...(r.dv ? { device: r.dv } : {}), zoneOffset: r.z, modified: r.m ? new Date(r.m).toISOString() : null,
 });
 const overlaps = (r: Rec, fromS: number, toS: number) => r.s < toS && (r.e ?? r.s) >= fromS && (r.e == null || r.e > fromS || r.e === r.s);
@@ -219,8 +258,9 @@ const isZone = (z: unknown): z is string => {
  * One type's records over [fromS, toS) by hour of the app's calendar (zone: an IANA zone, so a day with a clock change
  * is right, or minutes behind UTC as getTimezoneOffset):
  * amounts (steps, distance, calories, floors, climb, water) shared out over the hours by how much of each record's time
- * falls in them; heart rate samples and readings as lowest, highest and average; sleep as minutes of each stage
- * (a night without stages as "2", asleep, as Health Connect numbers it); sessions as minutes. Hours without data are left out.
+ * falls in them; samples and readings as lowest, highest and average; sleep as minutes of each stage (a night without
+ * stages as "2", asleep, as Health Connect numbers it); sessions as minutes; meals' energy in the hour they began.
+ * Hours without data are left out.
  */
 export function hourly(type: RecordType, recs: Rec[], fromS: number, toS: number, zone: string | number): Hour[] {
   const offAt = offsetFn(zone), hourOf = (t: number) => { const off = offAt(t); return Math.floor((t + off) / 3600) * 3600 - off; };
@@ -246,6 +286,7 @@ export function hourly(type: RecordType, recs: Rec[], fromS: number, toS: number
       if (e <= r.s) { if (r.s >= fromS && r.s < toS) { const h = at(hourOf(r.s)); h.sum = (h.sum ?? 0) + r.v!; h.n++; } continue; }
       spread(r.s, e, (h, s) => { h.sum = (h.sum ?? 0) + (r.v! * s) / (e - r.s); h.n++; });
     } else if (shape === "series") for (const [t, v] of r.p ?? []) point(t, v);
+    else if (shape === "meal") { if (r.v != null && r.s >= fromS && r.s < toS) { const h = at(hourOf(r.s)); h.sum = (h.sum ?? 0) + r.v; h.n++; } }
     else if (shape === "instant") point(r.s, r.v!);
     else if (shape === "sleep") {
       const st = r.st?.length ? r.st : [[r.s, r.e ?? r.s, 2] as [number, number, number]];

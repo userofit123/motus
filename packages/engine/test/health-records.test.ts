@@ -150,6 +150,26 @@ describe("health connect records", () => {
     expect(cleanRecord("resting_hr", { id: "r", s: T0, v: 50 }, 3600)).toEqual({ id: "r", rec: { s: T0, z: 3600, o: "", m: 0, v: 50 } });
   });
 
+  it("keeps the kinds read since M-239 with what else they say: decimals, laps and segments, a meal's nutrients", async () => {
+    // speed keeps its decimals (heart rate is whole beats); blood pressure's diastolic and where it was taken ride in a
+    expect(cleanRecord("speed", { id: "sp", s: T0, e: T0 + 60, p: [[T0, 2.71828], [T0 + 30, 3]] }, 0)!.rec.p).toEqual([[T0, 2.718], [T0 + 30, 3]]);
+    expect(cleanRecord("blood_pressure", { id: "bp", s: T0, v: 121, a: { dia: 79, loc: 3, "bad key": 1, obj: {} } }, 0)!.rec.a).toEqual({ dia: 79, loc: 3 });
+    const ex = cleanRecord("exercise", { id: "x", s: T0, e: T0 + 600, x: 56, lp: [[T0, T0 + 300, 1000], [T0 + 300, T0 + 600], [T0 + 9, T0]], sg: [[T0, T0 + 60, 3, 12]] }, 0)!.rec;
+    expect(ex).toMatchObject({ lp: [[T0, T0 + 300, 1000], [T0 + 300, T0 + 600]], sg: [[T0, T0 + 60, 3, 12]] });
+    // a meal without its energy is still one
+    expect(cleanRecord("nutrition", { id: "n", s: T0, e: T0 + 900, a: { protein: 30, name: "Lunch" } }, 0)!.rec).toMatchObject({ e: T0 + 900, a: { protein: 30, name: "Lunch" } });
+    const d = { from: "2026-10-20T00:00:00Z", to: "2026-10-21T00:00:00Z" }, t = Date.parse(d.from) / 1000;
+    expect(await call("POST", "/health/records", { ...d, source: "A", types: {
+      total_kcal: { complete: true, records: [steps("tk", t + 3600, t + 7200, 120)] },
+      skin_temp: { complete: true, records: [{ id: "sk", s: t, e: t + 3600, z: 0, o: "gb", m: 1, v: 33.5, p: [[t, -0.25], [t + 1800, 0.5]], a: { loc: 2 } }] },
+      mindfulness: { complete: true, records: [{ id: "mi", s: t + 3600, e: t + 4200, z: 0, o: "app", m: 1, t: "Breathe", a: { type: 1 } }] },
+      height: { complete: true, records: [{ id: "he", s: t + 60, z: 0, o: "app", m: 1, v: 1.82 }] },
+    } })).toEqual({ saved: 4, removed: 0 });
+    const r = await call("GET", "/health/records", undefined, { type: "skin_temp,mindfulness", ...d });
+    expect(r.records).toMatchObject([{ id: "sk", value: 33.5, samples: [[t, -0.25], [t + 1800, 0.5]], extra: { loc: 2 } }, { id: "mi", title: "Breathe", extra: { type: 1 } }]);
+    expect((await call("GET", "/health/records/hourly", undefined, { type: "total_kcal", ...d, zone: "UTC" })).hours).toMatchObject([{ at: "2026-10-20T01:00:00.000Z", sum: 120 }]);
+  });
+
   it("a merge restore adds a backup's records by id to a day already here, keeping the copy here", async () => {
     const d = { from: "2026-10-22T00:00:00Z", to: "2026-10-23T00:00:00Z" }, t = Date.parse(d.from) / 1000;
     await call("POST", "/health/records", { ...d, source: "C", types: { floors: { records: [steps("c1", t + 60, t + 120, 7), steps("c9", t + 300, t + 360, 2)] } } }, undefined, V);

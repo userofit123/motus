@@ -13,7 +13,7 @@ import AppSelect from "../AppSelect.vue";
 import { toast } from "../../core/toast";
 import { useSettings, useHealthAvailable } from "../../api/queries";
 import { computed, onMounted, onBeforeUnmount, ref } from "vue";
-import { HEALTH_KINDS, adviceWord, useDevice, healthSupported, healthStatus, connectHealth, openHealthSettings, syncHealth, healthAdded, lastSync, syncing, readEvery, setReadEvery, READ_EVERY, type HealthStatus, type HealthResult } from "../../native/health";
+import { DAILY_KINDS, adviceWord, useDevice, healthSupported, healthStatus, connectHealth, openHealthSettings, syncHealth, healthAdded, lastSync, syncing, readEvery, setReadEvery, READ_EVERY, type HealthStatus, type HealthResult } from "../../native/health";
 
 const s = useSettings();
 const dev = useDevice();
@@ -38,7 +38,10 @@ const hc = ref<HealthStatus | null>(null);
 const readHc = async () => { if (healthSupported() && s.value.features.healthConnect) hc.value = await healthStatus().catch(() => null); };
 onMounted(() => { void readHc(); document.addEventListener("visibilitychange", readHc); });
 onBeforeUnmount(() => document.removeEventListener("visibilitychange", readHc));
-const KIND_NAMES: Record<string, string> = { steps: "steps", sleep: "sleep", weight: "weight", sessions: "workouts", heartRate: "heart rate", restingHr: "resting heart rate", spo2: "blood oxygen", hrv: "HRV", respiratoryRate: "breathing rate", distance: "distance", activeKcal: "active calories", bodyFat: "body fat", hydration: "water", vo2max: "VO2 max", elevation: "climb", floors: "floors" };
+const KIND_NAMES: Record<string, string> = { steps: "steps", sleep: "sleep", weight: "weight", sessions: "workouts", heartRate: "heart rate", restingHr: "resting heart rate", spo2: "blood oxygen", hrv: "HRV", respiratoryRate: "breathing rate", distance: "distance", activeKcal: "active calories", bodyFat: "body fat", hydration: "water", vo2max: "VO2 max", elevation: "climb", floors: "floors",
+  totalKcal: "total calories", bmr: "basal metabolic rate", speed: "speed", power: "power", skinTemp: "skin temperature", bodyTemp: "body temperature",
+  basalBodyTemp: "basal body temperature", bloodPressure: "blood pressure", bloodGlucose: "blood sugar", height: "height", leanMass: "lean mass",
+  boneMass: "bone mass", bodyWater: "body water", wheelchairPushes: "wheelchair pushes", mindfulness: "mindfulness", nutrition: "nutrition" };
 const allowed = computed(() => {
   const names = (hc.value?.granted ?? []).map((k) => KIND_NAMES[k]).filter(Boolean) as string[];
   return andList(names);
@@ -51,9 +54,10 @@ const hcText = computed(() => {
   return hc.value.granted.length ? `Allowed: ${allowed.value}` : "Not allowed yet";
 });
 const connected = computed(() => !!hc.value?.granted.length);
-// allowed before Motus read some kinds (heart data, distance, sleep details came later): Health Connect only asks again
-// when Motus does, so the row offers it
-const missing = computed(() => connected.value ? HEALTH_KINDS.filter((k) => !hc.value!.granted.includes(k)) : []);
+// allowed before Motus read some kinds (heart data, distance, sleep details, every other kind came later): Health Connect
+// only asks again when Motus does, so the row offers it (Allow asks for just these); only kinds this phone's Health
+// Connect has (offered), or from an older app build the kinds it asks for
+const missing = computed(() => connected.value ? (hc.value!.offered ?? DAILY_KINDS).filter((k) => !hc.value!.granted.includes(k)) : []);
 const missingText = computed(() => { const n = missing.value.map((k) => KIND_NAMES[k]!); const t = andList(n); return t.charAt(0).toUpperCase() + t.slice(1); });
 async function connect() {
   try {
