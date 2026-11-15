@@ -5,6 +5,7 @@ import type { Sql } from "../db";
 import { camel, id, str, intOrNull, numOrNull, bool, isoTime, dateStr, startOfDay, tzOf } from "../util";
 import { uuidv7 } from "../ids";
 import { notFound, bad } from "../errors";
+import { lockRecords } from "./healthDerive";
 
 const DEFAULT_TYPES: ActivityType[] = [
   { slug: "walk", name: "Walk", icon: "walk", hasDistance: true, hasGps: true, hasSteps: true },
@@ -191,6 +192,9 @@ export function activityRoutes(r: Router) {
     return { ok: true };
   });
   r.del("/activities/:id", async (ctx, p) => {
+    // an imported one marks its import deleted, which takes the records lock (034, 041): taken first, before the row
+    // (lockRecords: every path takes it before row locks)
+    await lockRecords(ctx.q, ctx.userId);
     await ctx.q.query("DELETE FROM activities WHERE id = $1", [id(p.id)]);
     ctx.changed("activity");
     return { ok: true };
@@ -233,6 +237,7 @@ export function activityRoutes(r: Router) {
     return Array.isArray(b.entries) ? { ids } : { id: ids[0] };
   });
   r.del("/body/:id", async (ctx, p) => {
+    await lockRecords(ctx.q, ctx.userId); // as deleting an activity
     await ctx.q.query("DELETE FROM body_metrics WHERE id = $1", [id(p.id)]);
     ctx.changed("body");
     return { ok: true };
@@ -264,6 +269,10 @@ export function activityRoutes(r: Router) {
     const entries = Array.isArray(b.entries) ? b.entries : [b];
     // only answered for a choice of the synced value: false while the day waits for it (its value isn't known yet)
     let restored: boolean | undefined;
+    // a value cleared marks its import deleted, which takes the records lock (034, 041): taken first, before any row of
+    // the request (lockRecords: every path takes it before row locks)
+    if (entries.slice(0, 1000).some((e: { value?: unknown; use?: unknown; band?: unknown }) => e?.value == null && e?.use == null && e?.band !== true))
+      await lockRecords(ctx.q, ctx.userId);
     for (const e of entries.slice(0, 1000)) {
       const d = dateStr(e.date), k = str(e.kind, 20);
       if (!d || !k) continue;

@@ -4,6 +4,7 @@ import { cleanProgression } from "@motus/shared";
 import type { Sql } from "../db";
 import { isUuid } from "../ids";
 import { SYNCED, SYNCED_BY_NAME } from "./tables";
+import { lockRecords } from "../modules/healthDerive";
 
 export interface Change { tbl: string; pk: Record<string, unknown>; op: "upsert" | "delete"; at: string; row?: Record<string, unknown> | null }
 
@@ -180,6 +181,7 @@ export function perColumn(c: Change) {
 }
 
 /** `own`: keys (keyOf) of days whose synced value, worn and device stay as they are here (a device's unsent import). */
+const HEALTH_TABLES = new Set(["daily_logs", "activities", "body_metrics", "health_imports"]);
 export async function applyChanges(q: Sql, userId: string, changes: Change[], opts: { origin?: string; apply?: boolean; own?: Set<string> } = {}) {
   const ord = (c: Change) => SYNCED_BY_NAME.get(c.tbl)!.order;
   const list = [
@@ -187,6 +189,9 @@ export async function applyChanges(q: Sql, userId: string, changes: Change[], op
     ...changes.filter((c) => c.op === "delete").sort((a, b) => ord(b) - ord(a)),
   ];
   if (opts.apply) await q.query("SELECT set_config('motus.sync_apply', '1', true)");
+  // a row of these deleted or written marks or writes the import log, whose deletion takes the records lock (034, 041),
+  // and afterRecords writes them under it: taken first, before any row (modules/healthDerive.ts lockRecords)
+  if (changes.some((c) => HEALTH_TABLES.has(c.tbl))) await lockRecords(q, userId);
   const failed: { change: Change; error: string }[] = [];
   // upserts that were not written: the row here is a finished workout and the change would reopen it, or a trigger
   // skipped it (the device then gets the row as it is here, or its deletion)

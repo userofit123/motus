@@ -41,6 +41,7 @@ import m038 from "./migrations/038_daily_device";
 import m039, { TYPED_AT } from "./migrations/039_daily_both_values";
 import m040 from "./migrations/040_health_records";
 import m041 from "./migrations/041_health_records_lock";
+import m042 from "./migrations/042_health_record_reads";
 
 const MIGRATIONS: [string, string][] = [
   ["001_init", m001],
@@ -84,6 +85,7 @@ const MIGRATIONS: [string, string][] = [
   ["039_daily_both_values", m039],
   ["040_health_records", m040],
   ["041_health_records_lock", m041],
+  ["042_health_record_reads", m042],
 ];
 
 /**

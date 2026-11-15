@@ -35,7 +35,7 @@ const same = (gotFile: any, wantFile: any) => {
 
 // the tables of a person's data that are not in a backup on purpose: sign-in and sync bookkeeping, live-update events,
 // and uploaded files (media rows point at files on the server's disk; a backup carries the photos themselves, see below)
-const NOT_DATA = new Set(["users", "sessions", "invites", "app_meta", "sync_log", "events", "media", "user_settings"]);
+const NOT_DATA = new Set(["users", "sessions", "invites", "app_meta", "sync_log", "events", "media", "user_settings", "health_record_reads"]); // health_record_reads: when the phone read what, filled again by its next read
 
 let file: any;
 beforeAll(async () => {

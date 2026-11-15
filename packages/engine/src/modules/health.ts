@@ -26,7 +26,8 @@ import { uuidv7, isUuid } from "../ids";
 import { bad, notFound } from "../errors";
 import { ensureTypes, saveActivity, stepsByDay, setTyped } from "./activities";
 import { dayIn } from "./achievements";
-import { storedDays, storedSleep, storedSpan, isSum, DERIVED_DAYS, type DerivedType } from "./healthDerive";
+import { isSum, DERIVED_DAYS, shift, lockRecords, loadReads, loadBlocks, appKinds, dayBlocks, derivedDays, sleepBlocks, sleepFrom, spanBlocks, spanFrom,
+  type DerivedType, type SpanBand, type SumType } from "./healthDerive";
 import { isNight, cleanWornDevice, plausibleSteps, stepsTyped, appSteps, bandStepsVerdict, daySteps, type WornDevice } from "@motus/shared";
 
 export const HEALTH_SOURCE = "health_connect";
@@ -305,166 +306,207 @@ export async function putSynced(ctx: Ctx, kind: Daily, d: string, value: number,
   return { changed: rows.length > 0, touched, noted };
 }
 
+/** One result of POST /health/ranges as the phone sends it (applyRange checks each field), or one worked out here (withStored). */
+interface RangeIn {
+  kind: "activity" | "workout"; id: string;
+  steps?: unknown; covered?: unknown; bandOnly?: unknown; hr?: unknown;
+  bandFields?: unknown; bandCovered?: unknown; distanceM?: unknown; activeKcal?: unknown; elevationM?: unknown; floors?: unknown;
+}
+
 /**
  * What the band had for one activity or workout (POST /health/ranges, one result; afterRecords): its steps when it
- * covered the time, heart rate, and the band's distance, calories and climb (bandFields). fromRecords: worked out here
- * from the saved records only (afterRecords), so e holds nothing from the phone.
+ * covered the time, heart rate, and the band's distance, calories and climb (bandFields). span: what the saved records
+ * have for its time (spanFrom), which stands for the band's steps and heart rate when they cover it (withStored).
+ * Writes only what changed.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function applyRange(ctx: Ctx, e: any, recheck: boolean, fromRecords = false) {
+async function applyRange(ctx: Ctx, e: RangeIn, recheck: boolean, span: SpanBand | null) {
   const res = { steps: 0, hr: 0, band: 0, acts: false, works: false };
-    if (e.kind === "workout") {
-      const w = (await ctx.q.query("SELECT started_at, ended_at, hr, max_hr, avg_hr FROM workouts WHERE id = $1 AND status = 'completed'", [e.id])).rows[0];
-    if (w?.ended_at) e = await withStored(ctx, e, w.started_at, w.ended_at, fromRecords);
-      const h = w?.ended_at ? heartRate(e.hr, new Date(w.started_at).getTime() / 1000, new Date(w.ended_at).getTime() / 1000, HR_POINTS, 1) : null;
-      // listed until settled, so it comes back on every read: the same readings again change nothing
-      if (!h || (w.max_hr === h.max && JSON.stringify(w.hr) === JSON.stringify(h.hr))) return res;
-      // an average typed in stays; the band's own follows as more readings arrive (as for activities, below)
-      await ctx.q.query("UPDATE workouts SET hr = $2, max_hr = $3, avg_hr = $4, updated_at = $5 WHERE id = $1",
-        [e.id, JSON.stringify(h.hr), h.max, bandAvg(w.hr, w.avg_hr, h.avg), ctx.now().toISOString()]);
-      res.hr++; res.works = true;
-      return res;
-    }
-    const a = (await ctx.q.query(
-      `SELECT a.started_at, a.ended_at, a.source, a.steps, a.steps_source, a.steps_app, coalesce(t.has_steps, a.type IN ('walk', 'run', 'hike')) AS counts,
-         a.band_distance_m, a.band_kcal, a.band_elevation_m, a.band_floors, a.band_at, a.hr, a.max_hr, a.avg_hr
-       FROM activities a LEFT JOIN activity_types t ON t.slug = a.type WHERE a.id = $1`, [e.id])).rows[0];
-    if (!a?.ended_at) return res;
-    // the saved records (M-238) stand for the band's steps and heart rate when they reach past the activity on both sides
-    // (all of it is here); else the phone's read does, until the records come (afterRecords works it out again then)
-    e = await withStored(ctx, e, a.started_at, a.ended_at, fromRecords);
-    const steps = e.steps == null ? null : intOrNull(e.steps, 0, 1e7);
-    // never over a count the person typed: changed by hand later ('manual'), or typed when the walk was logged by hand
-    const fig = { steps: a.steps, stepsSource: a.steps_source, stepsApp: a.steps_app, source: a.source };
-    const typed = stepsTyped(fig);
-    // the app's own count: kept aside once the band's replaced it
-    const app = appSteps(fig);
-    // a count equal to the app's own is the phone's step counter (the sensor Motus counted with), not the band: an
-    // older app build took it for the band's
-    const phone = steps != null && app != null && steps === app;
-    if (a.steps_source === "band" && !typed && (phone || (e.bandOnly === true && (steps == null || steps === 0 || (recheck && e.covered !== true && a.steps !== steps))))) {
-      // the band's count was wrong (the phone's, or no band counted then, or, on the one-time recheck only, the band didn't
-      // cover the activity and its count isn't the one saved, which an older build took from some other app: on any
-      // later sync a partial count may just be band data since deleted, so a saved band count stays): back to the app's own count
-      await ctx.q.query("UPDATE activities SET steps = $2, steps_app = NULL, steps_source = NULL WHERE id = $1", [e.id, app]);
-      res.steps++; res.acts = true;
-    } else if (bandStepsVerdict({ steps, covered: e.covered === true, app, counts: a.counts, typed }) === "use" && !(a.steps_source === "band" && a.steps === steps)) {
-      await ctx.q.query("UPDATE activities SET steps_app = $2, steps = $3, steps_source = 'band' WHERE id = $1", [e.id, app, steps]);
-      res.steps++; res.acts = true;
-    }
-    // taken whether or not the band covered the whole time (that rule is for its steps and totals): any reading inside
-    // is the heart rate then
-    const h = heartRate(e.hr, new Date(a.started_at).getTime() / 1000, new Date(a.ended_at).getTime() / 1000, HR_POINTS, 1);
-    // an activity still listed for its band numbers comes back on every read: the same readings again change nothing
-    if (h && !(a.max_hr === h.max && JSON.stringify(a.hr) === JSON.stringify(h.hr))) {
-      await ctx.q.query("UPDATE activities SET hr = $2, max_hr = $3, avg_hr = $4 WHERE id = $1", [e.id, JSON.stringify(h.hr), h.max, bandAvg(a.hr, a.avg_hr, h.avg)]);
-      res.hr++; res.acts = true;
-    }
-    if (e.bandFields === true) {
-      if ((e.bandCovered ?? e.covered) === true) {
-        const v = [bandNum(e.distanceM, 1e6), bandNum(e.activeKcal, 1e5), bandNum(e.elevationM, 1e5), bandNum(e.floors, 1e4)];
-        const kcal = v[1] == null ? null : Math.round(v[1]);
-        const had = [a.band_distance_m, a.band_kcal, a.band_elevation_m, a.band_floors].map((x) => (x == null ? null : Number(x)));
-        const differs = had[0] !== v[0] || had[1] !== kcal || had[2] !== v[2] || had[3] !== v[3];
-        // an activity still listed for its heart rate comes back on every read: the same numbers again change nothing
-        // (no new band_at, no row to sync)
-        if (differs || a.band_at == null)
-          await ctx.q.query("UPDATE activities SET band_distance_m = $2, band_kcal = $3, band_elevation_m = $4, band_floors = $5, band_at = $6 WHERE id = $1",
-            [e.id, v[0], kcal, v[2], v[3], ctx.now().toISOString()]);
-        if (differs) { res.band++; res.acts = true; }
-      } else if (ctx.now().getTime() - new Date(a.ended_at).getTime() > SETTLED_MS)
-        await ctx.q.query("UPDATE activities SET band_at = $2 WHERE id = $1 AND band_at IS NULL", [e.id, ctx.now().toISOString()]);
-    }
+  e = withStored(e, span);
+  if (e.kind === "workout") {
+    const w = (await ctx.q.query("SELECT started_at, ended_at, hr, max_hr, avg_hr FROM workouts WHERE id = $1 AND status = 'completed'", [e.id])).rows[0];
+    const h = w?.ended_at ? heartRate(e.hr, new Date(w.started_at).getTime() / 1000, new Date(w.ended_at).getTime() / 1000, HR_POINTS, 1) : null;
+    // listed until settled, so it comes back on every read: the same readings again change nothing
+    if (!h || (w.max_hr === h.max && JSON.stringify(w.hr) === JSON.stringify(h.hr))) return res;
+    // an average typed in stays; the band's own follows as more readings arrive (as for activities, below)
+    await ctx.q.query("UPDATE workouts SET hr = $2, max_hr = $3, avg_hr = $4, updated_at = $5 WHERE id = $1",
+      [e.id, JSON.stringify(h.hr), h.max, bandAvg(w.hr, w.avg_hr, h.avg), ctx.now().toISOString()]);
+    res.hr++; res.works = true;
+    return res;
+  }
+  const a = (await ctx.q.query(
+    `SELECT a.started_at, a.ended_at, a.source, a.steps, a.steps_source, a.steps_app, coalesce(t.has_steps, a.type IN ('walk', 'run', 'hike')) AS counts,
+       a.band_distance_m, a.band_kcal, a.band_elevation_m, a.band_floors, a.band_at, a.hr, a.max_hr, a.avg_hr
+     FROM activities a LEFT JOIN activity_types t ON t.slug = a.type WHERE a.id = $1`, [e.id])).rows[0];
+  if (!a?.ended_at) return res;
+  const steps = e.steps == null ? null : intOrNull(e.steps, 0, 1e7);
+  // never over a count the person typed: changed by hand later ('manual'), or typed when the walk was logged by hand
+  const fig = { steps: a.steps, stepsSource: a.steps_source, stepsApp: a.steps_app, source: a.source };
+  const typed = stepsTyped(fig);
+  // the app's own count: kept aside once the band's replaced it
+  const app = appSteps(fig);
+  // a count equal to the app's own is the phone's step counter (the sensor Motus counted with), not the band: an
+  // older app build took it for the band's
+  const phone = steps != null && app != null && steps === app;
+  if (a.steps_source === "band" && !typed && (phone || (e.bandOnly === true && (steps == null || steps === 0 || (recheck && e.covered !== true && a.steps !== steps))))) {
+    // the band's count was wrong (the phone's, or no band counted then, or, on the one-time recheck only, the band didn't
+    // cover the activity and its count isn't the one saved, which an older build took from some other app: on any
+    // later sync a partial count may just be band data since deleted, so a saved band count stays): back to the app's own count
+    await ctx.q.query("UPDATE activities SET steps = $2, steps_app = NULL, steps_source = NULL WHERE id = $1", [e.id, app]);
+    res.steps++; res.acts = true;
+  } else if (bandStepsVerdict({ steps, covered: e.covered === true, app, counts: a.counts, typed }) === "use" && !(a.steps_source === "band" && a.steps === steps)) {
+    await ctx.q.query("UPDATE activities SET steps_app = $2, steps = $3, steps_source = 'band' WHERE id = $1", [e.id, app, steps]);
+    res.steps++; res.acts = true;
+  }
+  // taken whether or not the band covered the whole time (that rule is for its steps and totals): any reading inside
+  // is the heart rate then
+  const h = heartRate(e.hr, new Date(a.started_at).getTime() / 1000, new Date(a.ended_at).getTime() / 1000, HR_POINTS, 1);
+  // an activity still listed for its band numbers comes back on every read: the same readings again change nothing
+  if (h && !(a.max_hr === h.max && JSON.stringify(a.hr) === JSON.stringify(h.hr))) {
+    await ctx.q.query("UPDATE activities SET hr = $2, max_hr = $3, avg_hr = $4 WHERE id = $1", [e.id, JSON.stringify(h.hr), h.max, bandAvg(a.hr, a.avg_hr, h.avg)]);
+    res.hr++; res.acts = true;
+  }
+  if (e.bandFields === true) {
+    if ((e.bandCovered ?? e.covered) === true) {
+      const v = [bandNum(e.distanceM, 1e6), bandNum(e.activeKcal, 1e5), bandNum(e.elevationM, 1e5), bandNum(e.floors, 1e4)];
+      const kcal = v[1] == null ? null : Math.round(v[1]);
+      const had = [a.band_distance_m, a.band_kcal, a.band_elevation_m, a.band_floors].map((x) => (x == null ? null : Number(x)));
+      const differs = had[0] !== v[0] || had[1] !== kcal || had[2] !== v[2] || had[3] !== v[3];
+      // an activity still listed for its heart rate comes back on every read: the same numbers again change nothing
+      // (no new band_at, no row to sync)
+      if (differs || a.band_at == null)
+        await ctx.q.query("UPDATE activities SET band_distance_m = $2, band_kcal = $3, band_elevation_m = $4, band_floors = $5, band_at = $6 WHERE id = $1",
+          [e.id, v[0], kcal, v[2], v[3], ctx.now().toISOString()]);
+      if (differs) { res.band++; res.acts = true; }
+    } else if (ctx.now().getTime() - new Date(a.ended_at).getTime() > SETTLED_MS)
+      await ctx.q.query("UPDATE activities SET band_at = $2 WHERE id = $1 AND band_at IS NULL", [e.id, ctx.now().toISOString()]);
+  }
   return res;
 }
 
 /**
- * A result with the band's steps and heart rate from the saved records (storedSpan), when they reach past both ends of
- * the time (covered: everything the band had then is here), or always for fromRecords when there are step records
- * around it (heart rate: when there are readings). Distance, calories and climb stay the phone's (bandFields), with the
- * phone's covered for them (bandCovered).
+ * A result with the band's steps and heart rate from the saved records when they cover its time (the band's step
+ * records reach past both ends, spanBand: everything the band had then is here); else as it came (the phone's read, or
+ * nothing for afterRecords, which then changes nothing: the one rule for both, so they never take turns). Distance,
+ * calories and climb stay the phone's (bandFields), with the phone's covered for them (bandCovered).
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function withStored(ctx: Ctx, e: any, startedAt: unknown, endedAt: unknown, fromRecords: boolean) {
-  const startS = new Date(startedAt as string).getTime() / 1000, endS = new Date(endedAt as string).getTime() / 1000;
-  if (!(endS > startS)) return e;
-  const d = await storedSpan(ctx.q, startS, endS);
-  if (!(fromRecords ? d.stepsKnown || d.hr : d.covered)) return e;
-  const x = { ...e, bandCovered: e.covered === true };
-  if (fromRecords ? d.stepsKnown : true) { x.steps = d.steps; x.covered = d.covered; x.bandOnly = true; }
-  if (d.hr) x.hr = d.hr;
-  return x;
+function withStored(e: RangeIn, d: SpanBand | null): RangeIn {
+  if (!d?.covered) return e;
+  return { ...e, bandCovered: e.covered === true, steps: d.steps, covered: true, bandOnly: true, ...(d.hr ? { hr: d.hr } : {}) };
 }
 
+/** The saved records' span for each activity or workout (one load of the blocks they need; spanFrom). */
+async function spansOf(q: Sql, items: { key: string; startS: number; endS: number }[]) {
+  const wanted = new Map<string, Set<string>>();
+  for (const x of items) if (x.endS > x.startS) spanBlocks(x.startS, x.endS, wanted);
+  const blocks = await loadBlocks(q, wanted);
+  return new Map(items.map((x) => [x.key, x.endS > x.startS ? spanFrom(blocks, x.startS, x.endS) : null]));
+}
+const secsOf = (t: unknown) => new Date(t as string).getTime() / 1000;
+
+// the order a day's numbers are written in, by the import and afterRecords alike (both under the records lock)
+const DAY_ORDER = ["steps", "sleep", "resting_hr", "spo2", "hrv", "distance", "active_kcal", "vo2max"] as const;
+// activities and workouts worked out again per load of their blocks
+const SPAN_BATCH = 100;
+
 /**
- * After records were saved or deleted (POST /health/records, M-238): the numbers that come from them worked out again,
- * so they trace back to the readings. changed: per record type, the days whose blocks changed.
- * A day's steps, distance and active calories where a band counted, and its resting heart rate, SpO2, HRV and VO2 max
- * (storedDays; a day without records stays the phone's), on those days and, for amounts, the day after (a record across
- * midnight); a night's sleep and its detail (storedSleep) when its sessions or readings during it changed; and the steps and heart rate of activities and workouts recorded in Motus around changed step or heart
- * rate records (applyRange, as the phone's read would give them). A day under a deleted import log key stays out; typed
- * values and a day's chosen value are never touched (putSynced sets the synced value only).
+ * After records were saved or deleted (POST /health/records, M-238; runs under its records lock): the numbers that come
+ * from them worked out again, so they trace back to the readings. changed: per record type, the days whose blocks
+ * changed or were read whole. A day's steps, distance and active calories where a band counted, and its resting heart
+ * rate, SpO2, HRV and VO2 max (derivedDays; only days read whole, a day without stays the phone's), on those days and,
+ * for amounts, the day after (a record across midnight); a night's sleep and its detail (sleepFrom) when its sessions or
+ * readings during it changed; and the steps and heart rate of every activity and workout recorded in Motus around
+ * changed step or heart rate records whose time the records cover (applyRange, as /health/ranges would give them). A day
+ * under a deleted import log key stays out; typed values and a day's chosen value are never touched (putSynced sets the
+ * synced value only). Only what changed is written and announced.
  */
 export async function afterRecords(ctx: Ctx, changed: Map<string, Set<string>>) {
-  const shift = (d: string, n: number) => new Date(Date.parse(d + "T00:00:00Z") + n * 86400000).toISOString().slice(0, 10);
   let health = false, acts = false, works = false;
+  const dayWant = new Map<DerivedType, Set<string>>();
   for (const kind of DERIVED_DAYS) {
     const days = new Set<string>();
     for (const d of changed.get(kind) ?? []) { days.add(d); if (isSum(kind)) days.add(shift(d, 1)); }
-    if (!days.size) continue;
-    const got = await storedDays(ctx.q, kind, [...days]);
-    const keys = new Map((await ctx.q.query<{ key: string; deleted: boolean }>(
-      "SELECT key, deleted_at IS NOT NULL AS deleted FROM health_imports WHERE key = ANY($1::text[])", [[...got.keys()].map((d) => `${kind}:${d}`)])).rows
-      .map((x) => [x.key, x.deleted]));
-    for (const [d, v] of got) {
-      const deleted = keys.get(`${kind}:${d}`), value = kind === "steps" ? Math.min(v.value, 1e6) : lenient(kind, v.value);
-      if (deleted === true || value == null) continue;
-      const r = await putSynced(ctx, kind, d, value, true, v.device, deleted === false);
-      if (r.changed || r.touched) health = true;
-    }
+    if (days.size) dayWant.set(kind, days);
   }
   // a night: its own records changed, or readings during it (filed under the day they began: the night may end the next day)
   const sleepSet = new Set(changed.get("sleep") ?? []);
   for (const t of ["heart_rate", "spo2", "resp_rate"]) for (const d of changed.get(t) ?? []) { sleepSet.add(d); sleepSet.add(shift(d, 1)); }
-  for (const [d, v] of await storedSleep(ctx.q, [...sleepSet])) {
-    const key = `sleep:${d}`;
-    const k = (await ctx.q.query<{ deleted: boolean }>("SELECT deleted_at IS NOT NULL AS deleted FROM health_imports WHERE key = $1", [key])).rows[0];
-    if (k?.deleted) continue;
-    // as the import: the day's hours, else the night's time asleep
-    const hours = v.hours != null ? Math.round(Math.min(v.hours, 24) * 10) / 10 : v.night ? Math.round(v.night.asleepMin / 6) / 10 : null;
-    let known = !!k;
-    if (hours != null) {
-      const r = await putSynced(ctx, "sleep", d, hours, true, null, known);
-      if (r.changed || r.touched) health = true;
-      known = true;
+  if (dayWant.size || sleepSet.size) {
+    const reads = await loadReads(ctx.q, [...dayWant.keys(), "sleep", "heart_rate"]);
+    const wanted = new Map<string, Set<string>>();
+    for (const [kind, days] of dayWant) dayBlocks(kind, days, reads, wanted);
+    sleepBlocks(sleepSet, reads, wanted);
+    const blocks = await loadBlocks(ctx.q, wanted), kinds = await appKinds(ctx.q, [...dayWant.keys()].filter(isSum));
+    const got = new Map([...dayWant].map(([kind, days]) => [kind as string, derivedDays(kind, blocks, days, reads, isSum(kind) ? kinds.get(kind) : undefined)]));
+    const slept = sleepFrom(blocks, sleepSet, reads);
+    const keys = [...[...got].flatMap(([kind, m]) => [...m.keys()].map((d) => `${kind}:${d}`)), ...[...slept.keys()].map((d) => `sleep:${d}`)];
+    const imp = new Map((await ctx.q.query<{ key: string; deleted: boolean }>(
+      "SELECT key, deleted_at IS NOT NULL AS deleted FROM health_imports WHERE key = ANY($1::text[])", [keys])).rows.map((x) => [x.key, x.deleted]));
+    for (const kind of DAY_ORDER) {
+      if (kind === "sleep") {
+        for (const d of [...slept.keys()].sort()) {
+          const v = slept.get(d)!, key = `sleep:${d}`;
+          if (imp.get(key) === true) continue;
+          // as the import: the day's hours, else the night's time asleep
+          const hours = v.hours != null ? Math.round(Math.min(v.hours, 24) * 10) / 10 : v.night ? Math.round(v.night.asleepMin / 6) / 10 : null;
+          let known = imp.has(key);
+          if (hours != null) {
+            const r = await putSynced(ctx, "sleep", d, hours, true, null, known);
+            if (r.changed || r.touched) health = true;
+            known = true;
+          }
+          const n = v.night && readNight(v.night);
+          if (!n || !known) continue;
+          const { rows } = await ctx.q.query(UPSERT_NIGHT, [ctx.userId, n.date, n.start, n.end, n.asleep, n.awake, n.light, n.deep, n.rem,
+            n.avgHr, n.minHr, n.hr && JSON.stringify(n.hr), n.avgSpo2, n.minSpo2, n.respRate, HEALTH_SOURCE]);
+          if (rows.length) health = true;
+        }
+        continue;
+      }
+      const m = got.get(kind);
+      if (!m) continue;
+      for (const d of [...m.keys()].sort()) {
+        const v = m.get(d)!, deleted = imp.get(`${kind}:${d}`), value = kind === "steps" ? Math.min(v.value, 1e6) : lenient(kind, v.value);
+        if (deleted === true || value == null) continue;
+        const r = await putSynced(ctx, kind, d, value, true, v.device, deleted === false);
+        if (r.changed || r.touched) health = true;
+      }
     }
-    const n = v.night && readNight(v.night);
-    if (!n || !known) continue;
-    const { rows } = await ctx.q.query(UPSERT_NIGHT, [ctx.userId, n.date, n.start, n.end, n.asleep, n.awake, n.light, n.deep, n.rem,
-      n.avgHr, n.minHr, n.hr && JSON.stringify(n.hr), n.avgSpo2, n.minSpo2, n.respRate, HEALTH_SOURCE]);
-    if (rows.length) health = true;
   }
-  const stepDays = changed.get("steps") ?? new Set<string>(), hrDays = changed.get("heart_rate") ?? new Set<string>();
-  const all = [...stepDays, ...hrDays].sort();
-  if (all.length) {
-    // a day's blocks hold records of that day in any zone (14 hours either way) and up to a week long
-    const from = new Date(Date.parse(shift(all[0]!, -1) + "T00:00:00Z")).toISOString(), to = new Date(Date.parse(shift(all.at(-1)!, 9) + "T00:00:00Z")).toISOString();
-    const { rows } = await ctx.q.query<{ kind: "activity" | "workout"; id: string }>(
+  const spanDays = [...new Set([...(changed.get("steps") ?? []), ...(changed.get("heart_rate") ?? [])])];
+  if (spanDays.length) {
+    // every activity and workout whose time (30 minutes either side) the changed blocks' records may reach: a day's
+    // blocks hold records begun that day in any zone (14 hours either way), up to a week long
+    const { rows } = await ctx.q.query<{ kind: "activity" | "workout"; id: string; started_at: unknown; ended_at: unknown }>(
       `SELECT * FROM (
-         SELECT 'activity' AS kind, id, started_at FROM activities WHERE source <> $3 AND ended_at IS NOT NULL AND ended_at > $1 AND started_at < $2
+         SELECT 'activity' AS kind, id::text AS id, started_at, ended_at FROM activities WHERE source <> $2 AND ended_at IS NOT NULL
          UNION ALL
-         SELECT 'workout', id, started_at FROM workouts WHERE status = 'completed' AND ended_at IS NOT NULL AND ended_at > $1 AND started_at < $2
-       ) x ORDER BY started_at DESC LIMIT 200`, [from, to, HEALTH_SOURCE]);
-    for (const x of rows) {
-      const n = await applyRange(ctx, { kind: x.kind, id: x.id }, false, true);
-      acts ||= n.acts; works ||= n.works;
+         SELECT 'workout', id::text, started_at, ended_at FROM workouts WHERE status = 'completed' AND ended_at IS NOT NULL
+       ) x WHERE EXISTS (SELECT 1 FROM unnest($1::date[]) d WHERE x.ended_at > d - interval '1 day' AND x.started_at < d + interval '9 days')
+       ORDER BY started_at, id`, [spanDays, HEALTH_SOURCE]);
+    for (let i = 0; i < rows.length; i += SPAN_BATCH) {
+      const batch = rows.slice(i, i + SPAN_BATCH);
+      const spans = await spansOf(ctx.q, batch.map((x) => ({ key: x.id, startS: secsOf(x.started_at), endS: secsOf(x.ended_at) })));
+      for (const x of batch) {
+        const d = spans.get(x.id) ?? null;
+        // records that don't cover its time leave the phone's numbers as they are (withStored)
+        if (!d?.covered) continue;
+        const n = await applyRange(ctx, { kind: x.kind, id: x.id }, false, d);
+        acts ||= n.acts; works ||= n.works;
+      }
     }
   }
   if (health || acts || works) ctx.changed("health", ...(acts ? ["activity"] as const : []), ...(works ? ["workout"] as const : []));
 }
 
+// the payload's fields of numbers worked out from the records, in the order a day's numbers are written (DAY_ORDER)
+const DERIVED_FIELDS = [["steps", "steps"], ["restingHr", "resting_hr"], ["spo2", "spo2"], ["hrv", "hrv"], ["distance", "distance"],
+  ["activeKcal", "active_kcal"], ["vo2max", "vo2max"]] as const;
+
 export function healthRoutes(r: Router) {
   r.post("/health/import", async (ctx, _p, b) => {
+    // first, before any row: what it writes is also worked out from the records (afterRecords, under the same lock), so
+    // the two never interleave, and every path takes this lock before row locks (lockRecords)
+    await lockRecords(ctx.q, ctx.userId);
     const list = (v: unknown, max: number): any[] => (Array.isArray(v) ? v.slice(0, max) : []);
     const out = { steps: 0, sleep: 0, sleepNights: 0, restingHr: 0, spo2: 0, hrv: 0, distance: 0, activeKcal: 0, hydration: 0, vo2max: 0, weight: 0, bodyFat: 0, activities: 0, hrDays: 0 };
     let touched = false; // the log changed (a row noted), even when no number did
@@ -496,26 +538,35 @@ export function healthRoutes(r: Router) {
       if (r.touched) touched = true;
       return r.changed;
     };
-    // a day the records saved here have (M-238; a band's count, a reading): worked out from them (storedDays), so the
-    // number traces back to its readings; the phone's stays for days without (Health Connect's own total when no band
-    // counted, a day whose records aren't here). Both give the same number for the same data: the day is set, never added to.
-    const derived = async (kind: Daily, field: string) => {
-      const entries = list(b[field], 400);
-      const got = await storedDays(ctx.q, kind as DerivedType, entries.map((e) => dateStr(e?.date)).filter((d): d is string => !!d));
-      return entries.map((e) => ({ e, rec: got.get(dateStr(e?.date) ?? "") }));
+    // a day the records saved here have whole (M-238; a band's count, a reading; readDay): worked out from them
+    // (derivedDays), so the number traces back to its readings; the phone's stays for days without (Health Connect's own
+    // total when no band counted, a day not read whole). Both give the same number for the same data: the day is set,
+    // never added to. One load of only the blocks the payload's days need, and the days in date order (as afterRecords).
+    const byDate = (v: unknown) => list(v, 400).sort((x, y) => String(dateStr(x?.date) ?? "").localeCompare(String(dateStr(y?.date) ?? "")));
+    const asked = (field: string) => list(b[field], 400).map((e) => dateStr(e?.date)).filter((d): d is string => !!d);
+    const sleepAsked = [...new Set([...asked("sleep"), ...asked("sleepNights")])];
+    const reads = await loadReads(ctx.q, [...DERIVED_DAYS, "sleep", "heart_rate"]);
+    const wanted = new Map<string, Set<string>>();
+    for (const [field, kind] of DERIVED_FIELDS) dayBlocks(kind, asked(field), reads, wanted);
+    sleepBlocks(sleepAsked, reads, wanted);
+    const blocks = await loadBlocks(ctx.q, wanted);
+    const kinds = await appKinds(ctx.q, DERIVED_FIELDS.map((x) => x[1]).filter((k) => isSum(k) && wanted.has(k)) as SumType[]);
+    const derived = (kind: DerivedType, field: string) => {
+      const got = derivedDays(kind, blocks, asked(field), reads, isSum(kind) ? kinds.get(kind) : undefined);
+      return byDate(b[field]).map((e) => ({ e, rec: got.get(dateStr(e?.date) ?? "") }));
     };
-    for (const { e, rec } of await derived("steps", "steps"))
+    for (const { e, rec } of derived("steps", "steps"))
       if (rec ? await day("steps", e?.date, Math.min(rec.value, 1e6), true, rec.device)
         : await day("steps", e?.date, intOrNull(e?.value, 0, 1e6), e?.worn !== false, cleanWornDevice(e?.device))) out.steps++;
-    // a night the records saved here have (M-238): its hours and detail worked out from them (storedSleep), else the phone's
-    const slept = await storedSleep(ctx.q, [...new Set([...list(b.sleep, 400), ...list(b.sleepNights, 400)].map((e) => dateStr(e?.date)).filter((d): d is string => !!d))]);
-    for (const e of list(b.sleep, 400)) {
+    // a night the records saved here have whole (M-238): its hours and detail worked out from them (sleepFrom), else the phone's
+    const slept = sleepFrom(blocks, sleepAsked, reads);
+    for (const e of byDate(b.sleep)) {
       const got = slept.get(dateStr(e?.date) ?? "")?.hours;
       const h = got != null ? Math.min(got, 24) : numOrNull(e?.hours, 0, 24);
       if (await day("sleep", e?.date, h == null ? null : Math.round(h * 10) / 10)) out.sleep++;
     }
-    for (const [field, kind] of [["restingHr", "resting_hr"], ["spo2", "spo2"], ["hrv", "hrv"], ["distance", "distance"], ["activeKcal", "active_kcal"], ["vo2max", "vo2max"]] as const)
-      for (const { e, rec } of await derived(kind, field))
+    for (const [field, kind] of DERIVED_FIELDS.slice(1))
+      for (const { e, rec } of derived(kind, field))
         if (rec ? await day(kind, e?.date, lenient(kind, rec.value), true, rec.device)
           : await day(kind, e?.date, lenient(kind, e?.value), e?.worn !== false, cleanWornDevice(e?.device))) out[field]++;
     for (const e of list(b.hydration, 400)) if (await day("water", e?.date, lenient("water", e?.ml))) out.hydration++;
@@ -648,9 +699,16 @@ export function healthRoutes(r: Router) {
   r.post("/health/ranges", async (ctx, _p, b) => {
     const out = { steps: 0, hr: 0, band: 0 };
     let acts = false, works = false;
-    for (const e of (Array.isArray(b.results) ? b.results : []).slice(0, 200)) {
-      if (!e || (e.kind !== "activity" && e.kind !== "workout") || !isUuid(e.id)) throw bad("Invalid result");
-      const n = await applyRange(ctx, e, b.recheck === true);
+    const results = (Array.isArray(b.results) ? b.results : []).slice(0, 200) as RangeIn[];
+    for (const e of results) if (!e || (e.kind !== "activity" && e.kind !== "workout") || !isUuid(e.id)) throw bad("Invalid result");
+    // the saved records for all of them, loaded once (spansOf)
+    const ids = results.map((e) => e.id);
+    const { rows: times } = await ctx.q.query<{ kind: string; id: string; started_at: unknown; ended_at: unknown }>(
+      `SELECT 'activity' AS kind, id::text AS id, started_at, ended_at FROM activities WHERE id = ANY($1::uuid[]) AND ended_at IS NOT NULL
+       UNION ALL SELECT 'workout', id::text, started_at, ended_at FROM workouts WHERE id = ANY($1::uuid[]) AND status = 'completed' AND ended_at IS NOT NULL`, [ids]);
+    const spans = await spansOf(ctx.q, times.map((x) => ({ key: `${x.kind}:${x.id}`, startS: secsOf(x.started_at), endS: secsOf(x.ended_at) })));
+    for (const e of results) {
+      const n = await applyRange(ctx, e, b.recheck === true, spans.get(`${e.kind}:${e.id}`) ?? null);
       out.steps += n.steps; out.hr += n.hr; out.band += n.band; acts ||= n.acts; works ||= n.works;
     }
     if (acts || works) ctx.changed("health", ...(acts ? ["activity"] as const : []), ...(works ? ["workout"] as const : []));
@@ -758,7 +816,6 @@ export function healthRoutes(r: Router) {
   // hasn't synced today yet), against the 28 days before it. tz: the app's calendar
   r.get("/health/readiness", async (ctx, _p, _b, qs) => {
     const today = dayIn(ctx.now(), tzOf(qs));
-    const shift = (day: string, n: number) => new Date(Date.parse(day + "T12:00:00Z") + n * 86400000).toISOString().slice(0, 10);
     const { rows } = await ctx.q.query(
       `SELECT to_char(date, 'YYYY-MM-DD') AS date, kind, value FROM daily_logs
        WHERE kind IN ('sleep_h', 'resting_hr', 'hrv') AND date >= $1::date AND date <= $2::date`, [shift(today, -BASELINE_DAYS - 1), today]);
@@ -853,6 +910,9 @@ export function healthRoutes(r: Router) {
   // deletes what it became and keeps the key, marked deleted, so the next sync doesn't bring it back. A day's number:
   // marking it takes the synced value out (and the night's detail with a day's sleep), a typed one stays (039)
   r.del("/health/imports/:key", async (ctx, p) => {
+    // first, before any row: marking the key deleted takes the records lock (041's trigger), and afterRecords holds that
+    // lock while writing these rows, so taking it after them could wait on each other in opposite orders
+    await lockRecords(ctx.q, ctx.userId);
     const h = await entry(ctx, p.key!);
     if (!h) throw notFound("This import is gone");
     if (!isDaily(h.kind)) await ctx.q.query(`DELETE FROM ${isBody(h.kind) ? "body_metrics" : "activities"} WHERE id::text = $1`, [h.ref]);

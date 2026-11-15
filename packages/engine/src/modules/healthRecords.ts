@@ -10,6 +10,7 @@ import { dateStr, tzOf } from "../util";
 import { RECORD_TYPES } from "../migrations/040_health_records";
 import { HEALTH_DELETED_MAX } from "@motus/shared";
 import { afterRecords } from "./health";
+import { lockRecords, noteRead, shift } from "./healthDerive";
 
 export type RecordType = (typeof RECORD_TYPES)[number];
 const isType = (t: unknown): t is RecordType => typeof t === "string" && (RECORD_TYPES as readonly string[]).includes(t);
@@ -101,12 +102,10 @@ const secs = (v: unknown, what: string) => {
   return t / 1000;
 };
 
-/**
- * One person's records are changed one save at a time (a transaction lock, also taken by migration 041's trigger when
- * an import log key is deleted): saveRecords reads blocks, merges and writes them back, so two at once would lose one's
- * records, or bring back what a deletion took meanwhile.
- */
-export const lockRecords = (q: Sql, userId: string) => q.query("SELECT pg_advisory_xact_lock(hashtext('health_records:' || $1::uuid::text))", [userId]);
+// One person's records are changed one save at a time (a transaction lock, also taken by migration 041's trigger when
+// an import log key is deleted): saveRecords reads blocks, merges and writes them back, so two at once would lose one's
+// records, or bring back what a deletion took meanwhile. Defined with what is worked out from the records (healthDerive).
+export { lockRecords };
 
 interface BlockRow { day: string; recs: unknown }
 /**
@@ -331,9 +330,16 @@ export function healthRecordRoutes(r: Router) {
       const sent = taken.map((x) => cleanRecord(type, x, zone)).filter((x): x is { id: string; rec: Rec } => !!x);
       const sentIds = new Set(taken.map((x) => (isObj(x) ? text(x.id, 100) : undefined)).filter((x): x is string => !!x));
       // a list cut short (over the most per request) can't say what is missing
-      const n = await saveRecords(ctx, type, fromS, toS, sent, v.complete === true && list.length <= MAX_PER_TYPE, deletedKeys, source, sentIds);
+      const complete = v.complete === true && list.length <= MAX_PER_TYPE;
+      const n = await saveRecords(ctx, type, fromS, toS, sent, complete, deletedKeys, source, sentIds);
       out.saved += n.saved; out.removed += n.removed;
       for (const d of n.days) touch(type, d);
+      if (complete) {
+        // read whole: its days may now be worked out from the records (readDay), changed or not, so they are looked at again
+        await noteRead(ctx.q, ctx.userId, type, fromS, toS, zone);
+        const day = (s: number) => new Date((s + zone) * 1000).toISOString().slice(0, 10);
+        for (let d = day(fromS), last = day(toS); d <= last; d = shift(d, 1)) touch(type, d);
+      }
     }
     const gone = (Array.isArray(b.deleted) ? (b.deleted as unknown[]) : []).filter((x): x is string => typeof x === "string" && !!x).slice(0, HEALTH_DELETED_MAX);
     if (gone.length) {

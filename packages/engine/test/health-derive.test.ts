@@ -4,7 +4,9 @@ import { describe, it, expect, beforeAll } from "vitest";
 import { createEngine, type Engine } from "../src/index";
 import { pgliteDb } from "../src/adapters/pglite";
 import { uuidv7 } from "../src/ids";
-import { bandDays, readingDays, spanBand, isBand, sleepDays } from "../src/modules/healthDerive";
+import fs from "node:fs";
+import path from "node:path";
+import { bandDays, readingDays, spanBand, isBand, sleepDays, rangeHr } from "../src/modules/healthDerive";
 import type { Rec } from "../src/modules/healthRecords";
 
 const GB = "nodomain.freeyourgadget.gadgetbridge";
@@ -120,7 +122,7 @@ describe("through the engine", () => {
   const daily = async (date: string) => (await call("GET", "/daily", undefined, { from: "2026-10-01", tz: "0" })).find((x: any) => x.kind === "steps" && x.date === date);
   const wire = (id: string, r: Rec) => ({ id, ...r });
   const save = (from: string, to: string, steps: { id: string; r: Rec }[], hr: { id: string; r: Rec }[] = []) => call("POST", "/health/records", {
-    from, to, source: "A", types: { steps: { records: steps.map((x) => wire(x.id, x.r)) }, ...(hr.length ? { heart_rate: { records: hr.map((x) => wire(x.id, x.r)) } } : {}) },
+    from, to, source: "A", types: { steps: { complete: true, records: steps.map((x) => wire(x.id, x.r)) }, ...(hr.length ? { heart_rate: { complete: true, records: hr.map((x) => wire(x.id, x.r)) } } : {}) },
   });
   beforeAll(async () => {
     eng = await createEngine(await pgliteDb("memory://"));
@@ -129,10 +131,14 @@ describe("through the engine", () => {
   }, 120000);
 
   it("works a band day's steps out from the saved records; the phone's total stays for a day without; a typed value stays in use", async () => {
-    await save("2026-10-12T00:00:00Z", "2026-10-13T00:00:00Z", [
+    const day1 = [
       { id: "a", r: st(GB, T + 8 * H, T + 8 * H + 10 * M, 500) }, { id: "b", r: st(GB, T + 9 * H, T + 9 * H + 10 * M, 650) },
       { id: "p", r: st("android", T + 9 * H, T + 10 * H, 4000) },
-    ]);
+    ];
+    // read in part only (up to 9:30): the phone's number stands until the whole day was read
+    await save("2026-10-12T00:00:00Z", "2026-10-12T09:30:00Z", day1);
+    expect(await daily(D)).toBeUndefined();
+    await save("2026-10-12T09:30:00Z", "2026-10-13T00:00:00Z", day1);
     expect(await daily(D)).toMatchObject({ value: 1150, synced: 1150, worn: true, source: "health_connect" });
     // the phone's import later: the records stand for the band's day (no flip back), its total for a day without records
     const out = await call("POST", "/health/import", { steps: [{ date: D, value: 5150, worn: true }, { date: "2026-10-10", value: 777, worn: false }] });
@@ -142,17 +148,44 @@ describe("through the engine", () => {
     expect((await call("GET", "/health/imports", undefined, { tz: "0" })).items.some((x: any) => x.key === `steps:${D}`)).toBe(true);
     // typed by hand: the day keeps using it while the band's goes on following its records
     await call("PUT", "/daily", { date: D, kind: "steps", value: 2000 });
-    await save("2026-10-12T00:00:00Z", "2026-10-13T00:00:00Z", [{ id: "c", r: st(GB, T + 11 * H, T + 11 * H + 10 * M, 100) }]);
+    await save("2026-10-12T00:00:00Z", "2026-10-13T00:00:00Z", [...day1, { id: "c", r: st(GB, T + 11 * H, T + 11 * H + 10 * M, 100) }]);
     expect(await daily(D)).toMatchObject({ value: 2000, typed: 2000, synced: 1250 });
+    // the synced one chosen (M-230): a recompute changes the synced value only, the choice stays
+    await call("POST", `/health/imports/steps:${D}/use`);
+    await save("2026-10-12T00:00:00Z", "2026-10-13T00:00:00Z", [...day1, { id: "c", r: st(GB, T + 11 * H, T + 11 * H + 10 * M, 120) }]);
+    expect(await daily(D)).toMatchObject({ value: 1270, typed: 2000, synced: 1270, chosen: "synced" });
     // a record deleted in Health Connect
     await call("POST", "/health/records", { from: "2026-10-12T00:00:00Z", to: "2026-10-12T00:00:01Z", deleted: ["c"] });
     expect(await daily(D)).toMatchObject({ synced: 1150 });
   });
 
+  it("leaves a day alone once its import log key is deleted", async () => {
+    const D3 = "2026-10-15", T3 = Date.parse(D3 + "T00:00:00Z") / 1000;
+    await save(`${D3}T00:00:00Z`, "2026-10-16T00:00:00Z", [{ id: "k1", r: st(GB, T3 + 8 * H, T3 + 9 * H, 700) }]);
+    expect(await daily(D3)).toMatchObject({ synced: 700 });
+    await call("DELETE", `/health/imports/steps:${D3}`);
+    await save(`${D3}T00:00:00Z`, "2026-10-16T00:00:00Z", [{ id: "k1", r: st(GB, T3 + 8 * H, T3 + 9 * H, 700) }, { id: "k2", r: st(GB, T3 + 10 * H, T3 + 11 * H, 300) }]);
+    expect(await daily(D3)).toBeUndefined();
+    expect((await eng.db.admin.query("SELECT 1 FROM daily_logs WHERE user_id = $1 AND date = $2", [U, D3])).rows).toHaveLength(0);
+  });
+
+  it("classifies an app writing for the phone and a watch the same way in the import and after records", async () => {
+    // Samsung Health: its newest record naming a device says watch; the day's own records name none
+    const SH = "com.sec.android.app.shealth", D4 = "2026-10-25", T4 = Date.parse(D4 + "T00:00:00Z") / 1000;
+    await save("2026-10-24T00:00:00Z", "2026-10-26T00:00:00Z", [
+      { id: "x1", r: st(SH, T4 - 20 * H, T4 - 19 * H, 900, { dv: { type: 1 } }) }, { id: "x2", r: st(SH, T4 + 8 * H, T4 + 9 * H, 2222) },
+    ]);
+    expect(await daily(D4)).toMatchObject({ synced: 2222, worn: true });
+    expect(await daily("2026-10-24")).toMatchObject({ synced: 900 });
+    await call("POST", "/health/import", { steps: [{ date: D4, value: 6000, worn: true }] });
+    expect(await daily(D4)).toMatchObject({ synced: 2222 });
+  });
+
   it("works a night and the day's sleep out from the records", async () => {
     const r = nightRecs(), w = (p: string, l: Rec[]) => l.map((x, i) => ({ id: `${p}${i}`, ...x }));
     await call("POST", "/health/records", { from: "2026-10-11T00:00:00Z", to: "2026-10-13T00:00:00Z", source: "A", types: {
-      sleep: { records: w("n", r.sleep) }, heart_rate: { records: w("hh", r.hr) }, spo2: { records: w("o", r.spo2) }, resp_rate: { records: w("b", r.resp) } } });
+      sleep: { complete: true, records: w("n", r.sleep) }, heart_rate: { complete: true, records: w("hh", r.hr) }, spo2: { complete: true, records: w("o", r.spo2) },
+      resp_rate: { complete: true, records: w("b", r.resp) } } });
     const rows = (await call("GET", "/daily", undefined, { from: "2026-10-01", tz: "0" })).filter((x: any) => x.date === D && x.kind === "sleep_h");
     expect(rows[0]).toMatchObject({ value: 9, synced: 9 });
     const n = (await eng.db.admin.query<any>("SELECT asleep_min, awake_min, light_min, deep_min, rem_min, avg_hr, min_hr, hr, avg_spo2, min_spo2, resp_rate FROM sleep_nights WHERE user_id = $1 AND date = $2", [U, D])).rows[0];
@@ -166,8 +199,8 @@ describe("through the engine", () => {
   it("works a day's resting heart rate and distance out from the records", async () => {
     const T2 = Date.parse("2026-10-20T00:00:00Z") / 1000;
     await call("POST", "/health/records", { from: "2026-10-20T00:00:00Z", to: "2026-10-21T00:00:00Z", source: "A", types: {
-      resting_hr: { records: [{ id: "r1", s: T2 + 6 * H, z: 0, o: GB, m: 1, v: 51 }, { id: "r2", s: T2 + 7 * H, z: 0, o: GB, m: 1, v: 54 }] },
-      distance: { records: [{ id: "d1", s: T2 + 8 * H, e: T2 + 9 * H, z: 0, o: GB, m: 1, v: 2500.6 }] },
+      resting_hr: { complete: true, records: [{ id: "r1", s: T2 + 6 * H, z: 0, o: GB, m: 1, v: 51 }, { id: "r2", s: T2 + 7 * H, z: 0, o: GB, m: 1, v: 54 }] },
+      distance: { complete: true, records: [{ id: "d1", s: T2 + 8 * H, e: T2 + 9 * H, z: 0, o: GB, m: 1, v: 2500.6 }] },
     } });
     const rows = (await call("GET", "/daily", undefined, { from: "2026-10-20", tz: "0" })).filter((x: any) => x.date === "2026-10-20");
     expect(rows.find((x: any) => x.kind === "resting_hr")).toMatchObject({ value: 53, synced: 53 });
@@ -180,14 +213,77 @@ describe("through the engine", () => {
     await save("2026-11-02T00:00:00Z", "2026-11-03T00:00:00Z", [
       { id: "w1", r: st(GB, s - 10 * M, s + 10 * M, 2000) }, { id: "w2", r: st(GB, s + 10 * M, s + 20 * M, 1500) },
     ], [{ id: "h1", r: hrRec(GB, s, 30) }]);
-    // not reaching past the end yet: the band's count isn't taken, its heart rate is
+    // not reaching past the end yet: the records don't stand for the walk, so neither its steps nor its heart rate are
+    // taken from them (the phone's read keeps them, below: no taking turns)
     let a = await call("GET", `/activities/${id}`);
-    expect(a).toMatchObject({ steps: 3000, stepsSource: null, maxHr: 109 });
+    expect(a).toMatchObject({ steps: 3000, stepsSource: null, maxHr: null });
+    const phoneHr = Array.from({ length: 10 }, (_, i) => [s + i * 60, 120]);
+    await call("POST", "/health/ranges", { results: [{ kind: "activity", id, hr: phoneHr }] });
+    expect(await call("GET", `/activities/${id}`)).toMatchObject({ maxHr: 120 });
+    await save("2026-11-02T00:00:00Z", "2026-11-03T00:00:00Z", [
+      { id: "w1", r: st(GB, s - 10 * M, s + 10 * M, 2000) }, { id: "w2", r: st(GB, s + 10 * M, s + 20 * M, 1500) },
+    ], [{ id: "h1", r: hrRec(GB, s, 30) }, { id: "h2", r: hrRec(GB, s + 40 * M, 5) }]);
+    expect(await call("GET", `/activities/${id}`)).toMatchObject({ steps: 3000, maxHr: 120 });
+    await save("2026-11-02T00:00:00Z", "2026-11-03T00:00:00Z", [
+      { id: "w1", r: st(GB, s - 10 * M, s + 10 * M, 2000) }, { id: "w2", r: st(GB, s + 10 * M, s + 20 * M, 1500) }, { id: "w3", r: st(GB, e - 5 * M, e + 5 * M, 1800) },
+    ], [{ id: "h1", r: hrRec(GB, s, 30) }]);
+    a = await call("GET", `/activities/${id}`);
+    expect(a).toMatchObject({ steps: 3400, stepsSource: "band", stepsApp: 3000, maxHr: 109 });
     expect(a.hr).toHaveLength(30);
-    await save("2026-11-02T00:00:00Z", "2026-11-03T00:00:00Z", [{ id: "w3", r: st(GB, e - 5 * M, e + 5 * M, 1800) }]);
-    expect(await call("GET", `/activities/${id}`)).toMatchObject({ steps: 3400, stepsSource: "band", stepsApp: 3000 });
     // the phone's read says otherwise: the records cover the walk, so they stand
     expect((await call("POST", "/health/ranges", { results: [{ kind: "activity", id, steps: 9000, covered: true, bandOnly: true }] })).steps).toBe(0);
     expect(await call("GET", `/activities/${id}`)).toMatchObject({ steps: 3400, stepsSource: "band" });
+  });
+
+  it("takes a workout's heart rate from the records once they cover it, and writes nothing when nothing changed", async () => {
+    const s = Date.parse("2026-11-05T18:00:00Z") / 1000, wid = uuidv7();
+    await eng.db.admin.query("INSERT INTO workouts (id, user_id, name, status, started_at, ended_at) VALUES ($1, $2, 'Gym', 'completed', to_timestamp($3), to_timestamp($4))", [wid, U, s, s + 40 * M]);
+    const recs = [{ id: "g1", r: st(GB, s - 40 * M, s + 20 * M, 100) }, { id: "g2", r: st(GB, s + 20 * M, s + 80 * M, 100) }];
+    await save("2026-11-05T00:00:00Z", "2026-11-06T00:00:00Z", recs, [{ id: "gh", r: hrRec(GB, s, 40) }]);
+    const w = (await eng.db.admin.query<any>("SELECT max_hr, updated_at FROM workouts WHERE id = $1", [wid])).rows[0];
+    expect(w.max_hr).toBe(119);
+    await save("2026-11-05T00:00:00Z", "2026-11-06T00:00:00Z", recs, [{ id: "gh", r: hrRec(GB, s, 40) }]);
+    expect((await eng.db.admin.query<any>("SELECT updated_at FROM workouts WHERE id = $1", [wid])).rows[0].updated_at).toEqual(w.updated_at);
+  });
+});
+
+describe("an activity's heart rate over 600 readings", () => {
+  it("is averaged into 600 buckets in milliseconds, as the phone's rangeHr", () => {
+    const start = 1_760_000_000.25, end = start + 1234.5;
+    const recs: Rec[] = [{ s: start, e: end, z: 0, o: GB, m: 1, p: Array.from({ length: 2000 }, (_, i) => [Math.floor(start) + 1 + Math.floor(i * 0.6), 60 + (i % 50)] as [number, number]) }];
+    // the phone's arithmetic: whole milliseconds, Long division
+    const t0 = BigInt(Math.round(start * 1000)), span = BigInt(Math.round(end * 1000)) - t0;
+    const sumT = new Array(600).fill(0), sumB = new Array(600).fill(0), n = new Array(600).fill(0);
+    for (const [t, b] of recs[0]!.p!) {
+      if (t < start || t > end) continue;
+      const ms = BigInt(t) * 1000n, i = Math.min(599, Math.max(0, Number(((ms - t0) * 600n) / span)));
+      sumT[i] += Number(ms); sumB[i] += b; n[i]++;
+    }
+    const want = [];
+    for (let i = 0; i < 600; i++) if (n[i]) want.push([Math.round(sumT[i] / n[i] / 1000), Math.round(sumB[i] / n[i])]);
+    expect(rangeHr(recs, start, end)).toEqual(want);
+  });
+});
+
+describe("the records lock", () => {
+  // Postgres can't be made to race here (PGlite is one connection): the order is checked in the code instead. Every
+  // path that marks an import deleted (041's trigger takes the lock) or writes what afterRecords writes takes the lock
+  // before its first row write, as POST /health/records does
+  const src = (f: string) => fs.readFileSync(path.join(__dirname, "../src", f), "utf8");
+  const before = (code: string, from: string, row: RegExp) => {
+    const at = code.indexOf(from), body = code.slice(at, at + 2500), lock = body.indexOf("lockRecords("), m = body.search(row);
+    expect(at, from).toBeGreaterThanOrEqual(0);
+    expect(lock, from).toBeGreaterThan(0);
+    expect(m === -1 || lock < m, from).toBe(true);
+  };
+  it("is taken before any row lock", () => {
+    const rows = /(UPDATE|DELETE FROM|INSERT INTO) \w|putSynced\(|forget\(|remember\(|clearDaily\(|setTyped\(|chooseDaily\(/;
+    before(src("modules/health.ts"), 'r.post("/health/import"', rows);
+    before(src("modules/health.ts"), 'r.del("/health/imports/:key"', rows);
+    before(src("modules/activities.ts"), 'r.del("/activities/:id"', rows);
+    before(src("modules/activities.ts"), 'r.del("/body/:id"', rows);
+    before(src("modules/activities.ts"), 'r.put("/daily"', rows);
+    before(src("modules/healthRecords.ts"), 'r.post("/health/records"', rows);
+    before(src("sync/core.ts"), "export async function applyChanges(", /DELETE FROM|INSERT INTO|mergeDay\(/);
   });
 });

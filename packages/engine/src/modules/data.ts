@@ -16,7 +16,7 @@ const EXPORT_FORMAT = 1;
 // The schema a file was written with: the number of migrations (migrate.ts) when it was made, so a restore knows which
 // of their changes to existing rows the file's rows still need. A test keeps it equal to the number of migrations, so a
 // new one is checked against backups (does the file carry it, does an older file need converting).
-const BACKUP_SCHEMA = 41; // 40: health_records (an older file has none: nothing to convert); 41: its trigger only
+const BACKUP_SCHEMA = 42; // 40: health_records (an older file has none: nothing to convert); 41: its trigger only; 42: health_record_reads, not in backups
 const NEWER = "This backup is from a newer version of Motus. Update the app first.";
 const DAMAGED = "This backup is damaged and can't be restored.";
 /** The schema a file says it has (refused when newer than this version, or not a whole number from 0 up), or
@@ -181,6 +181,8 @@ export async function importAll(ctx: Ctx, data: any, mode: "replace" | "merge") 
       if (t === "exercises") await q.query("DELETE FROM exercises WHERE owner_id = $1 AND id NOT IN (SELECT exercise_id FROM workout_exercises UNION SELECT exercise_id FROM routine_exercises)", [ctx.userId]);
       else await q.query(`DELETE FROM ${t}`);
     }
+    // when the phone read what (042) goes with the records it read: its next reads say again
+    await q.query("DELETE FROM health_record_reads");
     if (data.settings) {
       await q.query("INSERT INTO user_settings (user_id, data) VALUES ($1, $2) ON CONFLICT (user_id) DO UPDATE SET data = $2", [ctx.userId, JSON.stringify(data.settings)]);
       settingsWritten = true;
