@@ -10,7 +10,7 @@ import { historyNow } from "../migrations/016_history_now";
 import { repRangeMove } from "../migrations/022_progression_rep_range";
 import { unpinSeededGoals, type SeededGoals } from "../migrations/026_unpin_seeded_goals";
 import { clearAutoTitles } from "../migrations/033_goal_names_only";
-import { mergeBlock } from "./healthRecords";
+import { lockRecords, mergeBlock } from "./healthRecords";
 
 const EXPORT_FORMAT = 1;
 // The schema a file was written with: the number of migrations (migrate.ts) when it was made, so a restore knows which
@@ -174,6 +174,9 @@ export async function importAll(ctx: Ctx, data: any, mode: "replace" | "merge") 
   };
   let settingsWritten = false;
   if (mode === "replace") {
+    // Health Connect records are changed one save at a time (lockRecords): a phone's save running meanwhile would write
+    // back blocks this deletes, or the import log's trigger take the lock after rows it locked here
+    await lockRecords(q, ctx.userId);
     for (const t of [...TABLES].reverse()) {
       if (t === "exercises") await q.query("DELETE FROM exercises WHERE owner_id = $1 AND id NOT IN (SELECT exercise_id FROM workout_exercises UNION SELECT exercise_id FROM routine_exercises)", [ctx.userId]);
       else await q.query(`DELETE FROM ${t}`);

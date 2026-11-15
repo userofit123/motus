@@ -67,3 +67,6 @@ export function daySteps(own: number | null, typed: boolean, walked: number): { 
   if (typed && own != null) return { value: own, from: "typed" };
   return walked > (own ?? 0) ? { value: walked, from: "walks" } : { value: own ?? 0, from: "synced" };
 }
+
+/** The most Health Connect deletions one POST /health/records takes (the engine keeps no more, the phone sends no more at once). */
+export const HEALTH_DELETED_MAX = 10_000;

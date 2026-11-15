@@ -158,4 +158,40 @@ describe("health connect records", () => {
     const got = (await call("GET", "/health/records", undefined, { type: "floors", ...d }, V)).records;
     expect(got.map((x) => `${x.id}:${x.value}`)).toEqual(["c1:7", "c2:1", "c3:1", "c9:2"]);
   });
+
+  it("a merge restore leaves out records whose import log entry is deleted here", async () => {
+    const d = { from: "2026-10-24T00:00:00Z", to: "2026-10-25T00:00:00Z" }, t = Date.parse(d.from) / 1000;
+    const w = (id: string) => ({ id, s: t + 3600, z: 0, o: "scale", m: 1, v: 70 });
+    await call("POST", "/health/records", { ...d, source: "C", types: { weight: { records: [w("vw1"), w("vw2")] } } }, undefined, V);
+    const file = await call("GET", "/export", undefined, undefined, V);
+    // taken out of the import log after the backup (its trigger deletes the record)
+    await eng.db.admin.query("INSERT INTO health_imports (user_id, key, kind, deleted_at) VALUES ($1, 'weight:vw1', 'weight', now())", [V]);
+    expect((await call("GET", "/health/records", undefined, { type: "weight", ...d }, V)).records.map((x) => x.id)).toEqual(["vw2"]);
+    await call("POST", "/import", { data: file, mode: "merge" }, undefined, V);
+    expect((await call("GET", "/health/records", undefined, { type: "weight", ...d }, V)).records.map((x) => x.id)).toEqual(["vw2"]);
+  });
+
+  it("a complete read keeps a record it sent but that was refused here", async () => {
+    const d = { from: "2026-10-26T00:00:00Z", to: "2026-10-27T00:00:00Z" }, t = Date.parse(d.from) / 1000;
+    await call("POST", "/health/records", { ...d, source: "A", types: { floors: { complete: true, records: [steps("r1", t + 60, t + 120, 3)] } } });
+    // the same record read again, now in a shape this version refuses (no amount): still in Health Connect
+    const r = await call("POST", "/health/records", { ...d, source: "A", types: { floors: { complete: true, records: [{ id: "r1", s: t + 60, e: t + 120, z: 0, o: "gb", m: 2 }] } } });
+    expect(r).toEqual({ saved: 0, removed: 0 });
+    expect((await call("GET", "/health/records", undefined, { type: "floors", ...d })).records.map((x) => x.id)).toEqual(["r1"]);
+  });
+
+  it("a record saved without the phone that sent it becomes the next sender's, so its reads can take it out", async () => {
+    const d = { from: "2026-10-28T00:00:00Z", to: "2026-10-29T00:00:00Z" }, t = Date.parse(d.from) / 1000;
+    const o1 = steps("o1", t + 60, t + 120, 4), o2 = steps("o2", t + 180, t + 240, 5);
+    // saved before records said which phone sent them
+    await call("POST", "/health/records", { ...d, types: { elevation: { records: [o1, o2] } } });
+    // sent again unchanged by phone A: nothing new, but A owns them now
+    expect(await call("POST", "/health/records", { ...d, source: "A", types: { elevation: { complete: true, records: [o1, o2] } } })).toEqual({ saved: 0, removed: 0 });
+    const src = (await eng.db.admin.query<{ recs: Record<string, { src?: string }> }>("SELECT recs FROM health_records WHERE user_id = $1 AND type = 'elevation'", [U])).rows[0]!.recs;
+    expect([src.o1?.src, src.o2?.src]).toEqual(["A", "A"]);
+    // another phone doesn't take them over
+    await call("POST", "/health/records", { ...d, source: "B", types: { elevation: { complete: true, records: [o1] } } });
+    expect(await call("POST", "/health/records", { ...d, source: "A", types: { elevation: { complete: true, records: [o1] } } })).toEqual({ saved: 0, removed: 1 });
+    expect((await call("GET", "/health/records", undefined, { type: "elevation", ...d })).records.map((x) => x.id)).toEqual(["o1"]);
+  });
 });

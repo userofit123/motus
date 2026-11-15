@@ -258,7 +258,8 @@ class MotusHealthPlugin : Plugin() {
      * Whether any app wrote, changed or removed something Motus may read since `token` (Health Connect's changes list):
      * one cheap call, so the page can look every minute and run the full read() only when there is something new.
      * { token?: string } → { changed: boolean, token: string, deleted: string[], touched: number[] } (no token, or one
-     * Health Connect let expire: changed is true, and the new token starts from now). deleted: the ids of records
+     * Health Connect let expire: changed is true, and the new token starts from now; expired: true for the latter, as
+     * the changes in between are lost and the page has to read everything again). deleted: the ids of records
      * deleted since, touched: the start times (unix seconds) of records written or changed since, so the page can delete
      * those here and read their days again (POST /health/records, M-238). A page of the list is taken whole (its token
      * is the only way on); after about 5000 of either (or 20 pages) the look stops there with more: true, and the token
@@ -281,7 +282,8 @@ class MotusHealthPlugin : Plugin() {
                 val deleted = JSArray(); val touched = JSArray()
                 while (true) {
                     val res = c.getChanges(token)
-                    if (res.changesTokenExpired) { call.resolve(JSObject().put("changed", true).put("token", fresh())); return@launch }
+                    // what changed meanwhile is gone with the old token: expired says so, the page reads everything again
+                    if (res.changesTokenExpired) { call.resolve(JSObject().put("changed", true).put("token", fresh()).put("expired", true)); return@launch }
                     if (res.changes.isNotEmpty()) changed = true
                     for (ch in res.changes) when (ch) {
                         is DeletionChange -> deleted.put(ch.recordId)

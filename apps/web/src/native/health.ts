@@ -4,7 +4,7 @@
 // → Read Health Connect says (this phone's choice), on pull to refresh, and from Settings → Integrations by hand.
 import { computed, onScopeDispose, ref, shallowRef, watch, type Ref } from "vue";
 import { useQuery } from "@tanstack/vue-query";
-import { TOPICS, cleanWornDevice, type WornDevice } from "@motus/shared";
+import { TOPICS, cleanWornDevice, HEALTH_DELETED_MAX, type WornDevice } from "@motus/shared";
 import { api } from "../api/client";
 import { invalidate, queryClient } from "../api/live";
 import { readJson, writeJson, readStr, writeStr } from "../core/prefs";
@@ -318,9 +318,9 @@ async function changedSince(): Promise<boolean> {
 // out only this phone's own records for being missing from a read, never what another phone (or this one before Motus
 // was installed again) sent.
 // Kept per account on this phone: to (where the last read reached), back (how far back the back-fill got), oldest,
-// perms (what was allowed then), token (the changes list), deleted and touched (from it, still to do), redone (restores
-// read again, key@restoredAt).
-interface Changes { changed: boolean; token: string; deleted?: string[]; touched?: number[]; more?: boolean }
+// perms (what was allowed then), token (the changes list), deleted and touched (from it, still to do, never dropped:
+// the token has moved past them), redone (restores read again, key@restoredAt).
+interface Changes { changed: boolean; token: string; deleted?: string[]; touched?: number[]; more?: boolean; expired?: boolean }
 interface RecState { to?: number; back?: number; oldest?: number | null; perms?: string; token?: string; deleted: string[]; touched: number[]; redone?: string[] }
 interface Waiting { key: string; restoredAt: string; from: string; to: string }
 const RECORDS_KEY = "motusHealthRecords", INSTALL_KEY = "motusInstallId", REC_CHUNK_MS = 2 * DAY_MS, REC_FIRST_MS = 2 * DAY_MS, REC_BACK_MS = 30 * DAY_MS,
@@ -332,9 +332,10 @@ function installId() {
   if (!id) { id = crypto.randomUUID(); writeStr(INSTALL_KEY, id); }
   return id;
 }
+// touched holds days, so stays small; deleted is kept from growing past REC_PENDING_MAX by not asking for more meanwhile
 function noteChanges(st: RecState, r: Changes) {
-  st.deleted = [...new Set([...st.deleted, ...(r.deleted ?? [])])].slice(-REC_PENDING_MAX);
-  st.touched = [...new Set([...st.touched, ...(r.touched ?? []).map((t) => Math.floor((t * 1000) / DAY_MS) * DAY_MS)])].slice(-REC_PENDING_MAX);
+  st.deleted = [...new Set([...st.deleted, ...(r.deleted ?? [])])];
+  st.touched = [...new Set([...st.touched, ...(r.touched ?? []).map((t) => Math.floor((t * 1000) / DAY_MS) * DAY_MS)])];
 }
 async function syncRecords(perms: string) {
   if (typeof plugin()?.records !== "function") return; // an app build from before
@@ -349,25 +350,28 @@ async function syncRecords(perms: string) {
   // start over (the engine adds nothing twice)
   if (st.perms !== perms) { st.perms = perms; st.back = undefined; st.oldest = undefined; st.token = undefined; saveRecState(st); }
   // Health Connect's changes list since the last read, a part at a time (more); the token moves on only with what it
-  // gave, saved together, and stays when a look fails
+  // gave, saved together, and stays when a look fails. While as many deletions wait as are kept, the token stays where
+  // it is and the rest comes on a later read, once those are sent. An expired token lost what changed in between: the
+  // back-fill starts over, as for a kind allowed since, and reads everything again (a complete read takes out what is gone).
   if (canChanges()) {
     try {
-      for (let i = 0; i < 10; i++) {
+      for (let i = 0; i < 10 && recState().deleted.length < REC_PENDING_MAX; i++) {
         const had = st.token, r = await plugin().changes(had ? { token: had } : {}) as Changes;
         st = recState();
         if (had) noteChanges(st, r);
+        if (r.expired) { st.back = undefined; st.oldest = undefined; }
         st.token = r.token || undefined; saveRecState(st);
-        if (!had || !r.more) break;
+        if (!had || !r.more || r.expired) break;
       }
     } catch (e) { console.warn("Health Connect changes", e); }
   }
   st = recState();
   const now = Date.now(), start = st.to ? st.to - OVERLAP_MS : now - REC_FIRST_MS;
-  // deleted in Health Connect
-  if (st.deleted.length) {
-    const gone = st.deleted;
+  // deleted in Health Connect, as many at once as the engine takes; only those sent leave the list
+  while (st.deleted.length) {
+    const gone = st.deleted.slice(0, HEALTH_DELETED_MAX), sent = new Set(gone);
     await api.post("/health/records", { from: iso(now), to: iso(now), types: {}, deleted: gone, source });
-    st = recState(); st.deleted = st.deleted.filter((x) => !gone.includes(x)); saveRecState(st);
+    st = recState(); st.deleted = st.deleted.filter((x) => !sent.has(x)); saveRecState(st);
   }
   // days written to there that the read below doesn't reach (at most 30 a read), up to where it starts
   for (const d of st.touched.filter((t) => t < start).sort((a, b) => a - b).slice(0, 30)) {

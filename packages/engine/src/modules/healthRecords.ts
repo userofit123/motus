@@ -8,6 +8,7 @@ import type { Sql } from "../db";
 import { bad } from "../errors";
 import { dateStr, tzOf } from "../util";
 import { RECORD_TYPES } from "../migrations/040_health_records";
+import { HEALTH_DELETED_MAX } from "@motus/shared";
 
 export type RecordType = (typeof RECORD_TYPES)[number];
 const isType = (t: unknown): t is RecordType => typeof t === "string" && (RECORD_TYPES as readonly string[]).includes(t);
@@ -138,9 +139,12 @@ const writeBlock = (ctx: Ctx, type: RecordType, day: string, recs: Record<string
  * the same phone) and no longer has was deleted in Health Connect and goes here too. Another phone's records stay: it
  * may hold what this one never had (a phone without past data allowed, a new one, Motus installed again); a deletion
  * there reaches here through its own changes list (POST deleted). A record whose import log key is deleted stays out.
+ * sentIds: every id the phone sent, also of records refused here (cleanRecord): such a record is still in Health
+ * Connect, so a complete read doesn't take out the copy kept here. A copy saved before records said which phone sent
+ * them (no src) becomes the sending phone's, so its reads can take it out later.
  * Runs under lockRecords.
  */
-export async function saveRecords(ctx: Ctx, type: RecordType, fromS: number, toS: number, sent: { id: string; rec: Rec }[], complete: boolean, deletedKeys: Set<string>, source?: string) {
+export async function saveRecords(ctx: Ctx, type: RecordType, fromS: number, toS: number, sent: { id: string; rec: Rec }[], complete: boolean, deletedKeys: Set<string>, source?: string, sentIds?: Set<string>) {
   const out = { saved: 0, removed: 0 };
   if (source) for (const x of sent) x.rec.src = source;
   const keep = sent.filter((x) => { const k = logKey(type, x.id, recordDay(type, x.rec)); return !k || !deletedKeys.has(k); });
@@ -148,13 +152,16 @@ export async function saveRecords(ctx: Ctx, type: RecordType, fromS: number, toS
   const where = new Map<string, string>();
   for (const [day, recs] of have) for (const id of Object.keys(recs)) where.set(id, day);
   const dirty = new Set<string>();
-  const incoming = new Set(sent.map((x) => x.id));
+  const incoming = sentIds ?? new Set(sent.map((x) => x.id));
   if (complete && source)
     for (const [day, recs] of have) for (const [id, r] of Object.entries(recs))
       if (r.src === source && r.s >= fromS && r.s < toS && !incoming.has(id)) { delete recs[id]; where.delete(id); dirty.add(day); out.removed++; }
   for (const { id, rec } of keep) {
     const day = recordDay(type, rec), was = where.get(id), old = was ? have.get(was)![id] : undefined;
-    if (old && (same(old, rec) || (old.m && rec.m && old.m > rec.m))) continue;
+    if (old && (same(old, rec) || (old.m && rec.m && old.m > rec.m))) {
+      if (source && !old.src) { old.src = source; dirty.add(was!); }
+      continue;
+    }
     if (was && was !== day) { delete have.get(was)![id]; dirty.add(was); }
     (have.get(day) ?? have.set(day, {}).get(day)!)[id] = rec;
     where.set(id, day); dirty.add(day); out.saved++;
@@ -270,6 +277,18 @@ export async function mergeBlock(q: Sql, userId: string, row: Raw): Promise<numb
   if (!isType(row.type) || row.day == null) return 0;
   await lockRecords(q, userId);
   const recs = { ...parse(row.recs ?? {}) };
+  // a record whose import log key is deleted here stays out, as in saveRecords (read under the lock, see there)
+  const keyOf = new Map<string, string>();
+  for (const [id, r] of Object.entries(recs)) {
+    const k = isObj(r) && fin(r.s) && fin(r.z) && (r.e == null || fin(r.e)) ? logKey(row.type, id, recordDay(row.type, r)) : null;
+    if (k) keyOf.set(id, k);
+  }
+  if (keyOf.size) {
+    const { rows: gone } = await q.query<{ key: string }>(
+      "SELECT key FROM health_imports WHERE deleted_at IS NOT NULL AND key = ANY($1::text[])", [[...new Set(keyOf.values())]]);
+    const deleted = new Set(gone.map((x) => x.key));
+    for (const [id, k] of keyOf) if (deleted.has(k)) delete recs[id];
+  }
   const ids = Object.keys(recs);
   if (!ids.length) return 0;
   const { rows } = await q.query<{ i: string }>(
@@ -289,7 +308,8 @@ interface Sent { complete?: unknown; records?: unknown }
 export function healthRecordRoutes(r: Router) {
   // { from, to: ISO times the phone read; tz?: minutes behind UTC (records without their own zone); source?: the
   //   phone's own id (saveRecords: only its own records are taken out for being missing from its reads);
-  //   types: { [type]: { complete?: boolean, records: [...] } }; deleted?: Health Connect ids deleted there }
+  //   types: { [type]: { complete?: boolean, records: [...] } }; deleted?: Health Connect ids deleted there, at
+  //   most HEALTH_DELETED_MAX a request (the phone sends no more at once) }
   r.post("/health/records", async (ctx, _p, b) => {
     const fromS = secs(b.from, "start"), toS = secs(b.to, "end");
     if (toS < fromS) throw bad("Invalid time");
@@ -301,13 +321,14 @@ export function healthRecordRoutes(r: Router) {
     const out = { saved: 0, removed: 0 };
     for (const [type, v] of Object.entries(isObj(b.types) ? (b.types as Record<string, Sent>) : {})) {
       if (!isType(type) || !isObj(v) || !Array.isArray(v.records)) continue;
-      const list = v.records as unknown[];
-      const sent = list.slice(0, MAX_PER_TYPE).map((x) => cleanRecord(type, x, zone)).filter((x): x is { id: string; rec: Rec } => !!x);
+      const list = v.records as unknown[], taken = list.slice(0, MAX_PER_TYPE);
+      const sent = taken.map((x) => cleanRecord(type, x, zone)).filter((x): x is { id: string; rec: Rec } => !!x);
+      const sentIds = new Set(taken.map((x) => (isObj(x) ? text(x.id, 100) : undefined)).filter((x): x is string => !!x));
       // a list cut short (over the most per request) can't say what is missing
-      const n = await saveRecords(ctx, type, fromS, toS, sent, v.complete === true && list.length <= MAX_PER_TYPE, deletedKeys, source);
+      const n = await saveRecords(ctx, type, fromS, toS, sent, v.complete === true && list.length <= MAX_PER_TYPE, deletedKeys, source, sentIds);
       out.saved += n.saved; out.removed += n.removed;
     }
-    const gone = (Array.isArray(b.deleted) ? (b.deleted as unknown[]) : []).filter((x): x is string => typeof x === "string" && !!x).slice(0, 10000);
+    const gone = (Array.isArray(b.deleted) ? (b.deleted as unknown[]) : []).filter((x): x is string => typeof x === "string" && !!x).slice(0, HEALTH_DELETED_MAX);
     if (gone.length) {
       const n = Number((await ctx.q.query<{ n: number }>(
         "SELECT count(*)::int AS n FROM health_records h, unnest(h.ids) i WHERE h.ids && $1::text[] AND i = ANY($1::text[])", [gone])).rows[0]!.n);
