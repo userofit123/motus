@@ -8,9 +8,7 @@ import { GROUPS, muscleName, weekStartOf, weekStartDate, daysIntoWeek, weekdayOr
 import { useStats, useSettings, useAchievements, useGoals, useHealthAvailable, useTypeName, useActivityFigures, loaded } from "../api/queries";
 import { useFmt, unitOf, localYmd, activityIcon } from "../core/format";
 import { startOpen } from "../core/ui";
-import { useStepGoal } from "../core/goals";
 import { fromWhere, useDevice } from "../native/health";
-const stepGoal = useStepGoal();
 import Icon from "../components/Icon.vue";
 import DotLine from "../components/DotLine.vue";
 import SearchField from "../components/SearchField.vue";
@@ -25,17 +23,23 @@ import FilterRow from "../components/FilterRow.vue";
 import LearnButton from "../components/learn/LearnButton.vue";
 import SleepTab from "../components/stats/SleepTab.vue";
 import HeartTab from "../components/stats/HeartTab.vue";
+import StepsTab, { type StepsView } from "../components/stats/StepsTab.vue";
 
 const route = useRoute(), router = useRouter();
 const s = useSettings();
 const dev = useDevice();
 const fmt = useFmt();
 const tab = ref(String(route.query.tab ?? "overview"));
-watch(tab, (t) => router.replace({ query: t === "overview" ? {} : { tab: t } }));
+watch(tab, (t) => router.replace({ query: t === "overview" ? {} : { tab: t, ...(t === "steps" && stepsDay.value ? { day: stepsDay.value } : {}) } }));
 // opened again from elsewhere (Home's muscles card) while this page is still around
 watch(() => route.query.tab, (t) => { if (route.name === "stats") tab.value = String(t ?? "overview"); });
 // calendar periods (today, this week, last month…) and rolling ones (the last 3 months…); weeks start on the day chosen in Settings
 const PERIODS = [...STATS_PERIODS];
+// Steps has its own stretch (a day, week, month or year, moved with its arrows) in the period's place; a link with a day
+// (Home's Activity today, the calendar) opens that day
+const STEP_VIEWS = [{ value: "day", label: "Day" }, { value: "week", label: "Week" }, { value: "month", label: "Month" }, { value: "year", label: "Year" }];
+const stepsView = ref<StepsView>("day");
+const stepsDay = computed(() => (typeof route.query.day === "string" && /^\d{4}-\d\d-\d\d$/.test(route.query.day) ? route.query.day : undefined));
 const rk = ref<StatsPeriod>("3m");
 const per = computed(() => statsPeriod(rk.value, new Date(), s.value.firstDay));
 const range = computed(() => { const p = per.value; return p.from ? { from: p.from.toISOString(), ...(p.to ? { to: p.to.toISOString() } : {}) } : {}; });
@@ -51,11 +55,11 @@ const typeName = useTypeName();
 const achAmount = (unit: string, v: number) => fmt.value.ach(unit, v);
 const d = computed<any>(() => st.data.value);
 const p = computed<any>(() => prev.data.value);
-// Sleep and Heart only once a band (or a script) has handed over that kind of data: never an empty tab for something
+// Steps, Sleep and Heart only once a band (or a script) has handed over that kind of data: never an empty tab for something
 // this person doesn't track
 const avail = useHealthAvailable();
 const TABS = computed(() => [["overview", "Overview"], ["routines", "Routines"], ["exercises", "Exercises"], ["muscles", "Muscles"], ["activities", "Activities"],
-  ...(avail.data.value?.sleep ? [["sleep", "Sleep"]] : []), ...(avail.data.value?.heart ? [["heart", "Heart"]] : []), ...(s.value.features.reports ? [["reports", "Reports"]] : []), ...(s.value.features.achievements ? [["achievements", "Achievements"]] : [])]);
+  ...(avail.data.value?.steps ? [["steps", "Steps"]] : []), ...(avail.data.value?.sleep ? [["sleep", "Sleep"]] : []), ...(avail.data.value?.heart ? [["heart", "Heart"]] : []), ...(s.value.features.reports ? [["reports", "Reports"]] : []), ...(s.value.features.achievements ? [["achievements", "Achievements"]] : [])]);
 
 // an activity's distance only where its type tracks it, as its page shows it
 const figures = useActivityFigures(), distOf = (a: any) => figures.dist(a) ?? 0;
@@ -126,17 +130,12 @@ const actTypes = computed(() => { const m = new Map<string, any>(); for (const a
     // pace as the activity page shows it: moving time where known, else total, over the sessions that have a distance
     if (distOf(a)) x.ps += a.movingS || a.durationS; m.set(a.type, x); } return [...m.values()].sort((a, b) => b.n - a.n); });
 const actWeeks = computed(() => weeks.value.map((w) => ({ week: w.week, label: wlabel(w.week), value: (d.value?.activities ?? []).filter((a: any) => weekStartOf(new Date(a.startedAt), s.value.firstDay) === w.week).reduce((t: number, a: any) => t + distOf(a), 0) / (fmt.value.du === "km" ? 1000 : 1609.344) })));
-const steps = computed(() => (d.value?.daily ?? []).filter((x: any) => x.kind === "steps").map((x: any) => ({ x: new Date(x.date).getTime(), y: Number(x.value) })));
 // a band's whole-day distance and active calories (Health Connect), each only when it has data in the period: the day's
 // total, so recorded activities are already in it and aren't added on top
 const inPeriod = (x: any) => { const k = String(x.date).slice(0, 10), p = per.value; return (!p.from || k >= ymd(p.from)) && (!p.to || k < ymd(p.to)); };
 const dayPts = (kind: string, f: (v: number) => number) => (d.value?.daily ?? []).filter((x: any) => x.kind === kind && inPeriod(x)).map((x: any) => ({ x: new Date(String(x.date).slice(0, 10) + "T12:00").getTime(), y: f(Number(x.value)) })).sort((a: any, b: any) => a.x - b.x) as { x: number; y: number }[];
 const bandDist = computed(() => dayPts("distance_m", (m) => Math.round(fmt.value.distNum(m) * 100) / 100));
 const bandKcal = computed(() => dayPts("active_kcal", (v) => Math.round(v)));
-// the chart says where the steps came from only when every plotted day's did: not typed (manual, or no source on old
-// rows) and not the recorded activities' count. "your band" when a band counted every one of them, else "Health Connect"
-const stepsFrom = computed(() => { const r = (d.value?.daily ?? []).filter((x: any) => x.kind === "steps");
-  return r.length > 0 && r.every((x: any) => x.source != null && x.source !== "manual" && x.source !== "activities") ? fromWhere(r.every((x: any) => x.worn !== false), dev.value) : ""; });
 // the same for the day totals' charts (only ever from Health Connect)
 const totalsFrom = (kind: string) => fromWhere((d.value?.daily ?? []).filter((x: any) => x.kind === kind && inPeriod(x)).every((x: any) => x.worn !== false), dev.value);
 const avgOf = (pts: { y: number }[]) => pts.reduce((t, p) => t + p.y, 0) / Math.max(1, pts.length);
@@ -149,7 +148,8 @@ watch(() => avail.data.value, () => { if (!TABS.value.some(([k]) => k === tab.va
 <template>
   <div class="page">
     <div class="ph"><div><h1>Stats</h1></div>
-      <div v-if="tab !== 'reports'" class="acts"><AppSelect v-model="rk" :options="PERIODS" title="Period" style="width:auto" /></div></div>
+      <div v-if="tab === 'steps'" class="acts"><AppSelect v-model="stepsView" :options="STEP_VIEWS" title="View" style="width:auto" /></div>
+      <div v-else-if="tab !== 'reports'" class="acts"><AppSelect v-model="rk" :options="PERIODS" title="Period" style="width:auto" /></div></div>
     <div class="tabs"><button v-for="[k, l] in TABS" :key="k" :class="{ on: tab === k }" @click="tab = k!">{{ l }}</button></div>
 <Transition name="sw" mode="out-in"><div :key="tab">
     <div v-if="!d && st.isError.value" class="card empty"><Icon name="info" :size="34" /><b>Couldn't load your stats</b>{{ (st.error.value as Error | null)?.message }}<br /><button class="btn tonal" @click="st.refetch()">Try again</button></div>
@@ -225,10 +225,9 @@ watch(() => avail.data.value, () => { if (!TABS.value.some(([k]) => k === tab.va
     </template>
 
     <template v-else-if="tab === 'activities'">
-      <div v-if="!d.activities.length && !steps.length && !bandDist.length && !bandKcal.length" class="card empty"><Icon name="walk" :size="34" /><b>No activities in this period</b></div>
+      <div v-if="!d.activities.length && !bandDist.length && !bandKcal.length" class="card empty"><Icon name="walk" :size="34" /><b>No activities in this period</b></div>
       <div class="grid g3"><div v-for="t in actTypes" :key="t.type" class="card stat"><div class="lbl"><span class="bi"><Icon :name="activityIcon(t.type)" :size="15" /></span>{{ typeName(t.type) }}</div><div class="val"><template v-if="t.m">{{ unitOf(fmt.dist(t.m, 1)).value }}<small>{{ unitOf(fmt.dist(t.m, 1)).unit }}</small></template><template v-else>{{ fmt.dur(t.s, true) }}</template></div><div class="sub">{{ t.n }} {{ t.n === 1 ? "time" : "times" }}{{ t.m ? " · " + fmt.dur(t.s, true) : "" }}{{ t.m && t.ps ? " · average pace " + fmt.pace(t.ps, t.m) : "" }}</div></div></div>
       <div v-if="d.activities.length" class="card spt"><div class="lbl hgap">Distance per week ({{ fmt.du }})</div><BarChart :bars="actWeeks.slice(-16).map((w) => ({ ...w, label: w.label.split(' ')[0]!, full: w.label, group: monthOf(w.week) }))" :height="160" :fmt="(v) => fmt.num(v, 1)" /></div>
-      <div v-if="steps.length" class="card spt"><div class="lbl hgap">Steps per day{{ stepsFrom ? ` · ${stepsFrom}` : "" }}{{ stepGoal ? ` · goal ${fmt.num(stepGoal.target, 0)}` : "" }}</div><LineChart :points="steps" :height="160" :fmt="(v) => fmt.num(v, 0)" /><div class="tiny" style="margin-top:6px">Average {{ fmt.num(avgOf(steps), 0) }} steps a day</div></div>
       <!-- the band's whole-day totals: everything the person did that day, recorded activities included -->
       <!-- the source after a dot without "from" ("· Health Connect"), so the longer title stays on one line on a 360px phone -->
       <div v-if="bandDist.length || bandKcal.length" class="spt" :class="bandDist.length && bandKcal.length ? 'grid g2' : ''">
@@ -237,6 +236,7 @@ watch(() => avail.data.value, () => { if (!TABS.value.some(([k]) => k === tab.va
       </div>
     </template>
 
+    <StepsTab v-else-if="tab === 'steps'" v-model:view="stepsView" :day="stepsDay" />
     <SleepTab v-else-if="tab === 'sleep'" :from="per.from" :to="per.to" :daily="d.daily" />
     <HeartTab v-else-if="tab === 'heart'" :from="per.from" :to="per.to" :daily="d.daily" />
 

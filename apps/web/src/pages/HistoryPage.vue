@@ -163,7 +163,8 @@ const dayTiles = computed(() => {
   else if (d.sleepH) out.push({ key: "sleep", icon: "moon", label: "Sleep", value: mins(d.sleepH * 60), unit: "", sub: "Daily log" });
   if (d.restingHr != null) out.push({ key: "rhr", icon: "heart", label: "Resting heart rate", value: String(Math.round(d.restingHr)), unit: "bpm", sub: d.hrv != null ? `HRV ${Math.round(d.hrv)} ms` : "" });
   const dist = d.distanceM ? fmt.value.dist(d.distanceM, 1) : "";
-  if (d.steps) out.push({ key: "steps", icon: "steps", label: "Steps", value: fmt.value.num(d.steps, 0), unit: "", sub: dist });
+  // the day's steps open it on Stats → Steps (its hours, against your usual day)
+  if (d.steps) out.push({ key: "steps", icon: "steps", label: "Steps", value: fmt.value.num(d.steps, 0), unit: "", sub: dist, open: () => router.push(`/stats?tab=steps&day=${d.date}`) });
   else if (dist) { const i = dist.lastIndexOf(" "); out.push({ key: "dist", icon: "walk", label: "Distance", value: dist.slice(0, i), unit: dist.slice(i + 1), sub: "" }); }
   return out;
 });

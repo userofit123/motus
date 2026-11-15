@@ -671,7 +671,7 @@ await loaded(home, ach, avail, hDay, ready, nightsQ, dailyQ);
 
         <!-- what the band counted today, the steps against the steps goal when there is one, then the last 7 days' bars
              with their weekday letters and the goal's line -->
-        <div v-else-if="id === 'activityToday'" class="card hb wkc sz-m click" :data-solo="solo.has(id) || undefined" v-bind="link('/stats?tab=activities')">
+        <div v-else-if="id === 'activityToday'" class="card hb wkc sz-m click" :data-solo="solo.has(id) || undefined" v-bind="link(avail.data.value?.steps ? `/stats?tab=steps&day=${today}` : '/stats?tab=activities')">
           <div class="ch"><span class="bi"><Icon name="steps" :size="15" /></span><span class="t grow">Activity today</span><span v-if="stepGoal" class="tiny">Goal {{ fmt.num(stepGoal.target, 0) }} a day</span></div>
           <div class="wstats hrows" :class="{ plain: !stepGoal }">
             <div v-for="x in actStats" :key="x.key" class="ws" role="group" :aria-label="[x.label, x.value, x.unit, x.delta].filter(Boolean).join(' ')">

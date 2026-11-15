@@ -575,13 +575,16 @@ export function healthRoutes(r: Router) {
       'resting_hr' = ANY (hk.kinds) AS resting_hr,
       'hrv' = ANY (hk.kinds) AS hrv,
       'spo2' = ANY (hk.kinds) AS spo2,
-      EXISTS (SELECT 1 FROM health_imports WHERE deleted_at IS NULL) AS imports
+      EXISTS (SELECT 1 FROM health_imports WHERE deleted_at IS NULL) AS imports,
+      EXISTS (SELECT 1 FROM daily_logs WHERE kind = 'steps' AND value > 0) OR EXISTS (SELECT 1 FROM activities WHERE steps > 0) AS steps
       FROM hk, sn`, [HEALTH_SOURCE]);
     const x = rows[0] as any;
     return {
       sleep: !!x.sleep, heart: !!x.heart, distance: !!x.distance, calories: !!x.calories,
       vo2max: !!x.vo2max, hrDay: !!x.hr_day, bodyFat: !!x.body_fat, hydration: !!x.hydration,
       nights: !!x.nights, restingHr: !!x.resting_hr, hrv: !!x.hrv, spo2: !!x.spo2, imports: !!x.imports,
+      // steps: any day's steps, typed, from a band or from recorded walks (Stats → Steps shows them all)
+      steps: !!x.steps,
     };
   });
 

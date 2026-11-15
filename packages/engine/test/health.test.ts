@@ -532,18 +532,21 @@ describe("nights of sleep, daily distance and active calories from a band", () =
   });
 
   it("says which kinds of band data there are", async () => {
-    expect(await call("GET", "/health/available")).toEqual({ sleep: true, heart: true, distance: true, calories: false, nights: true, restingHr: true, hrv: false, spo2: true, imports: true, ...NO_NEW });
+    expect(await call("GET", "/health/available")).toEqual({ sleep: true, heart: true, distance: true, calories: false, nights: true, restingHr: true, hrv: false, spo2: true, imports: true, steps: true, ...NO_NEW });
     const V = uuidv7();
     await eng.db.admin.query("INSERT INTO users (id, username) VALUES ($1, 'v')", [V]);
     const as = async (method: string, path: string, body?: unknown) => (await eng.handle({ method, path, body, userId: V })).body as any;
-    expect(await as("GET", "/health/available")).toEqual({ sleep: false, heart: false, distance: false, calories: false, nights: false, restingHr: false, hrv: false, spo2: false, imports: false, ...NO_NEW });
+    expect(await as("GET", "/health/available")).toEqual({ sleep: false, heart: false, distance: false, calories: false, nights: false, restingHr: false, hrv: false, spo2: false, imports: false, steps: false, ...NO_NEW });
     // typed by hand, not from a band
     await as("PUT", "/daily", { date: "2026-11-20", kind: "sleep_h", value: 8 });
     expect((await as("GET", "/health/available")).sleep).toBe(false);
     await as("POST", "/health/import", { activeKcal: [{ date: "2026-11-20", value: 300 }], sleepNights: [n20] });
-    expect(await as("GET", "/health/available")).toEqual({ sleep: true, heart: false, distance: false, calories: true, nights: true, restingHr: false, hrv: false, spo2: false, imports: true, ...NO_NEW });
+    expect(await as("GET", "/health/available")).toEqual({ sleep: true, heart: false, distance: false, calories: true, nights: true, restingHr: false, hrv: false, spo2: false, imports: true, steps: false, ...NO_NEW });
     await as("POST", "/health/import", { restingHr: [{ date: "2026-11-24", value: 58 }], spo2: [{ date: "2026-11-24", value: 96 }], hrv: [{ date: "2026-11-24", value: 42 }] });
-    expect(await as("GET", "/health/available")).toEqual({ sleep: true, heart: true, distance: false, calories: true, nights: true, restingHr: true, hrv: true, spo2: true, imports: true, ...NO_NEW });
+    expect(await as("GET", "/health/available")).toEqual({ sleep: true, heart: true, distance: false, calories: true, nights: true, restingHr: true, hrv: true, spo2: true, imports: true, steps: false, ...NO_NEW });
+    // steps typed by hand count: Stats → Steps shows every day's steps, wherever they came from
+    await as("PUT", "/daily", { date: "2026-11-20", kind: "steps", value: 4000 });
+    expect((await as("GET", "/health/available")).steps).toBe(true);
     // the other person's nights are not this one's
     expect((await as("GET", "/health/sleep")).nights.map((n: any) => n.date)).toEqual(["2026-11-20"]);
   });
