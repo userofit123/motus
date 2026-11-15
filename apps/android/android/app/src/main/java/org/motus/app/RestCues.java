@@ -96,9 +96,8 @@ public class RestCues extends BroadcastReceiver {
     @Override
     public void onReceive(Context ctx, Intent intent) {
         boolean warn = intent.getBooleanExtra("warn", false), end = intent.getBooleanExtra("end", false);
-        // the app is gone (swiped away): no lead-up for a rest nothing shows any more, but its end still sounds, since
-        // its "Rest over" still comes (the notifications plugin's alarm outlives the app) and that one is silent
-        if (!MotusWorkoutPlugin.live && !end) return;
+        // also when the app is gone (swiped away, or closed by Android): the developer wants the 10 seconds, the 3-2-1
+        // and the end alike in every case, and a rest's "Rest over" still comes then (its alarm outlives the app)
         long endAt = intent.getLongExtra("endAt", 0), from = intent.getLongExtra("from", 0);
         String sound = intent.getStringExtra("sound");
         Context app = ctx.getApplicationContext();
