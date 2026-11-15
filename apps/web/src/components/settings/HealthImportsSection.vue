@@ -1,10 +1,11 @@
 <script setup lang="ts">
 // Settings → Integrations → Imported data: everything that came in from Health Connect, newest first, a day at a time.
 // A value (steps, sleep, weight) is corrected in place; an activity opens on its own page. Deleting one keeps it deleted:
-// the engine remembers it, so the next sync doesn't bring it back.
+// the engine remembers it, so the next sync doesn't bring it back, and it is listed under Deleted, where it can be
+// restored. A day's number is listed also when the day uses a typed one instead: it says so, with the way to use it.
 import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
-import { useInfiniteQuery } from "@tanstack/vue-query";
+import { useInfiniteQuery, useQuery } from "@tanstack/vue-query";
 import { TOPICS, toM } from "@motus/shared";
 import { api } from "../../api/client";
 import { invalidate } from "../../api/live";
@@ -15,18 +16,23 @@ import { useFmt, localYmd, activityIcon } from "../../core/format";
 import { mins } from "../../core/sleep";
 import { confirm, prompt } from "../../core/ask";
 import { toast, toastError } from "../../core/toast";
+import DotLine from "../DotLine.vue";
 import Icon from "../Icon.vue";
 import Menu, { type MenuItem } from "../Menu.vue";
 import SessionStats from "../SessionStats.vue";
 import Sheet from "../Sheet.vue";
 import StepSourceRows from "../StepSourceRows.vue";
-import { canStepSources, stepSources, adviceWord, useDevice, type StepSources } from "../../native/health";
+import { canStepSources, stepSources, adviceWord, useDevice, healthSupported, syncHealth, fromWhere, type StepSources } from "../../native/health";
 
 interface Item {
   key: string; kind: "steps" | "sleep" | "weight" | "resting_hr" | "spo2" | "hrv" | "distance" | "active_kcal" | "body_fat" | "water" | "vo2max" | "activity"; date: string; at: string | null; value: number | null;
   activity: { id: string; type: string; name: string | null; startedAt: string; durationS: number; distanceM: number | null; steps: number | null; avgHr: number | null } | null;
-  ref: string | null; edited: boolean; importedAt: string;
+  // typed: the day's typed value when the day uses it instead of this one (else null); walks: the walks' steps when
+  // they count instead of this synced count (daySteps), so using this one would change nothing
+  ref: string | null; edited: boolean; importedAt: string; typed?: number | null; walks?: number | null; worn?: boolean | null;
 }
+// restored: taken back and not in again yet (no deletedAt): it comes with the phone's next read
+interface Deleted { key: string; kind: Item["kind"]; date: string | null; deletedAt: string | null; restored?: boolean }
 
 type Page = { items: Item[]; cursor: string | null };
 const router = useRouter();
@@ -60,7 +66,8 @@ const typeName = (slug: string) => (types.data.value ?? []).find((t: any) => t.s
 const icon = (x: Item) => (x.kind === "activity" ? activityIcon(x.activity?.type) : ICON[x.kind]);
 const title = (x: Item) => (x.kind === "activity" ? x.activity?.name || typeName(x.activity?.type ?? "activity") : NAME[x.kind]);
 // the value in the person's units: "8,432", "7h 30m", "72.4 kg", "58 bpm", "97%", "6.42 km", "412 kcal"
-const value = (x: Item) => x.value == null ? "-" : x.kind === "distance" ? fmt.value.dist(x.value) : x.kind === "active_kcal" ? `${fmt.value.num(x.value, 0)} kcal` : x.kind === "water" ? `${fmt.value.num(x.value, 0)} ml` : x.kind === "body_fat" ? `${fmt.value.num(x.value, 1)}%` : isVital(x.kind) ? `${vitalNum(x.kind, x.value)}${x.kind === "spo2" ? "" : " "}${UNIT[x.kind]}` : x.kind === "steps" ? fmt.value.num(x.value, 0) : x.kind === "sleep" ? mins(x.value * 60) : `${fmt.value.w(x.value)} ${fmt.value.wu}`;
+const valueOf = (k: Item["kind"], v: number | null) => v == null || k === "activity" ? "-" : k === "distance" ? fmt.value.dist(v) : k === "active_kcal" ? `${fmt.value.num(v, 0)} kcal` : k === "water" ? `${fmt.value.num(v, 0)} ml` : k === "body_fat" ? `${fmt.value.num(v, 1)}%` : isVital(k) ? `${vitalNum(k, v)}${k === "spo2" ? "" : " "}${UNIT[k]}` : k === "steps" ? fmt.value.num(v, 0) : k === "sleep" ? mins(v * 60) : `${fmt.value.w(v)} ${fmt.value.wu}`;
+const value = (x: Item) => valueOf(x.kind, x.value);
 // the nights shown here, for their times in bed: the list's own days, oldest to newest (steps, heart values and the like
 // are a whole day, which says nothing a row's title doesn't, so they have no second line)
 const sleepDays = computed(() => items.value.filter((x) => x.kind === "sleep").map((x) => x.date.slice(0, 10)).sort());
@@ -106,9 +113,45 @@ async function loadOrigin(day: string, kept: number | null) {
   try { const data = await stepSources(day); if (origin.value?.day === day) origin.value.data = data; }
   catch (e) { if (origin.value?.day === day) origin.value.error = (e as Error)?.message || "Health Connect could not be read"; }
 }
+// What was deleted, newest deletion first, so a deletion (also one made on another device) can be taken back
+const deleted = useQuery({ queryKey: ["health", "imports", "deleted"], staleTime: 0, queryFn: () => api.get<{ items: Deleted[] }>("/health/imports/deleted") });
+const delTitle = (x: Deleted) => (x.kind === "activity" ? "Activity" : NAME[x.kind]);
+const delIcon = (x: Deleted) => (x.kind === "activity" ? "activity" : ICON[x.kind]);
+// every row the same: the data's day when it has one (a day's number; a reading's or session's is gone with it), then
+// when it was deleted ("Friday 13 November · deleted 15 November", "Deleted 15 November"); a restore says so below
+const delParts = (x: Deleted) => {
+  const when = x.deletedAt ? `deleted ${fmt.value.date(x.deletedAt, { day: "numeric", month: "long" })}` : "";
+  return x.date ? [dayName(x.date), when].filter(Boolean) : when ? [when[0]!.toUpperCase() + when.slice(1)] : [];
+};
+const delSub = (x: Deleted) => delParts(x).join(" · ");
+const NEXT_SYNC = "Restored - comes back with your phone's next sync";
+// On the phone the read starts right away (that day's, from the evening before for a night that began then; a reading
+// or session has no day, so the usual read): it says once it's back, as Use synced value in the daily log does.
+// Elsewhere (a computer, a browser) no read starts here, so it says it comes with the phone's next sync.
+async function restore(x: Deleted) {
+  try {
+    await api.post(`/health/imports/${encodeURIComponent(x.key)}/restore`);
+    changed();
+    if (!healthSupported()) return toast(NEXT_SYNC);
+    toast("Restored");
+    await syncHealth(x.date ? { from: new Date(new Date(x.date + "T00:00").getTime() - 86_400_000) } : {});
+    changed();
+    const back = await deleted.refetch();
+    toast((back.data?.items ?? []).some((d) => d.key === x.key) ? NEXT_SYNC : "It's back");
+  } catch (e) { toastError(e); }
+}
 const originDay = (d: string) => { const n = dayName(d); return n === "Today" || n === "Yesterday" ? n.toLowerCase() : n; };
+// the day uses its typed value instead of this one: make it use this one (the typed one stays, for the way back in the daily log)
+async function use(x: Item) {
+  // as the daily log says it: "Using your watch's value", or Health Connect's for a day no band, watch or ring counted
+  try { await api.post(`${path(x)}/use`); changed(); toast(`Using ${fromWhere(x.kind === "water" ? false : x.worn ?? undefined, dev.value)}'s value`); } catch (e) { toastError(e); }
+}
+// what the day uses instead of this value, in the daily log's word for it ("Used"): a typed value (the default when there
+// is one), or for steps the walks in Motus when they are more. Short, so it stays one line beside the value at 360px.
+const notUsed = (x: Item) => x.typed != null ? `Typed ${valueOf(x.kind, x.typed)} used` : x.walks != null ? `Walks ${valueOf(x.kind, x.walks)} used` : "";
 const menu = (x: Item): MenuItem[] => [
   x.kind === "activity" ? { label: "Open", icon: "right", run: () => edit(x) } : { label: "Edit", icon: "edit", run: () => edit(x) },
+  { label: "Use this value", icon: "check", hidden: x.typed == null || x.walks != null, run: () => use(x) },
   { label: "Step sources", icon: "info", hidden: x.kind !== "steps" || !canStepSources(), run: () => showOrigin(x) },
   { label: "Delete", icon: "trash", danger: true, sep: true, run: () => del(x) },
 ];
@@ -117,7 +160,7 @@ const menu = (x: Item): MenuItem[] => [
 <template>
   <!-- on a computer the page's header stays "Settings" (it would move the section list), so the screen names itself here -->
   <div v-if="!isPhone" class="sh first"><h2>Imported data</h2><button class="lnk" @click="goBack(router, '/settings/integrations')"><Icon name="left" :size="14" />Integrations</button></div>
-  <p class="muted" style="margin:0">What Motus read from Health Connect. Tap a value to correct it or an activity to open it. Anything you delete isn't imported again.</p>
+  <p class="muted" style="margin:0">What Motus read from Health Connect. Tap a value to correct it or an activity to open it. Anything you delete isn't imported again unless you restore it under Deleted.</p>
   <div v-if="q.isLoading.value" class="card" style="opacity:.4;min-height:120px" />
   <div v-else-if="q.isError.value" class="card empty sm"><b>Couldn't load the imported data</b>{{ (q.error.value as Error)?.message }}<br /><button class="btn tonal" @click="q.refetch()">Try again</button></div>
   <div v-else-if="!items.length" class="card empty sm"><b>Nothing imported yet</b>Steps, sleep, weight, body fat, heart data, distance, calories, water and workouts from Health Connect will be listed here after the first sync.</div>
@@ -126,7 +169,8 @@ const menu = (x: Item): MenuItem[] => [
     <div class="card"><div class="list">
       <div v-for="x in d.items" :key="x.key" class="li click" role="button" tabindex="0" @click="edit(x)" @keydown.enter.self="edit(x)">
         <span class="bi sg"><Icon :name="icon(x)" :size="16" /></span>
-        <div class="grow"><div class="t">{{ title(x) }}<span v-if="x.edited" class="mchip hi-chip">Edited</span></div><div v-if="sub(x)" class="s">{{ sub(x) }}</div></div>
+        <div class="grow"><div class="t">{{ title(x) }}<span v-if="x.edited" class="mchip hi-chip">Edited</span></div><div v-if="sub(x)" class="s">{{ sub(x) }}</div>
+          <div v-if="notUsed(x)" class="s">{{ notUsed(x) }}</div></div>
         <SessionStats v-if="x.kind === 'activity' && x.activity" :x="{ kind: 'activity', durationS: x.activity.durationS, distanceM: x.activity.distanceM, steps: x.activity.steps, type: x.activity.type, source: 'health_connect' }" />
         <b v-else class="num">{{ value(x) }}</b>
         <span @click.stop><Menu :items="menu(x)" :label="`Options for ${title(x)}`" /></span>
@@ -146,6 +190,17 @@ const menu = (x: Item): MenuItem[] => [
     </template>
   </Sheet>
   <div v-if="q.hasNextPage.value" class="center"><button class="qb" :disabled="q.isFetchingNextPage.value" @click="q.fetchNextPage()">{{ q.isFetchingNextPage.value ? "Loading…" : "Show older" }}</button></div>
+  <template v-if="deleted.data.value?.items.length">
+    <div class="sh"><h2>Deleted</h2></div>
+    <div class="card"><div class="list">
+      <div v-for="x in deleted.data.value.items" :key="x.key" class="li">
+        <span class="bi sg"><Icon :name="delIcon(x)" :size="16" /></span>
+        <div class="grow"><div class="t">{{ delTitle(x) }}</div><DotLine v-if="delSub(x)" class="s" :parts="delParts(x)" />
+          <div v-if="x.restored" class="s">{{ NEXT_SYNC }}</div></div>
+        <button v-if="!x.restored" class="qb acc" :aria-label="`Restore ${delTitle(x)}, ${delSub(x)}`" @click="restore(x)">Restore</button>
+      </div>
+    </div></div>
+  </template>
 </template>
 
 <style scoped>

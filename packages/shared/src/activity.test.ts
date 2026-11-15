@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { activityClimb, activityDistance, tracksDistance, bandStepsVerdict, stepsTyped, appSteps } from "./activity";
+import { activityClimb, activityDistance, tracksDistance, bandStepsVerdict, stepsTyped, appSteps, daySteps } from "./activity";
 
 const walk = { hasDistance: true, hasGps: true }, yoga = { hasDistance: false, hasGps: false }, swim = { hasDistance: true, hasGps: false };
 
@@ -51,5 +51,14 @@ describe("bandStepsVerdict", () => {
     expect(stepsTyped({ source: "gps", steps: 900, stepsSource: null })).toBe(false);
     expect(appSteps({ steps: 1500, stepsSource: "band", stepsApp: 1387 })).toBe(1387);
     expect(appSteps({ steps: 1387, stepsSource: null })).toBe(1387);
+  });
+});
+
+describe("a day's steps", () => {
+  it("takes a typed count, else the larger of the synced count and the walks, never both added", () => {
+    expect(daySteps(5000, true, 9000)).toEqual({ value: 5000, from: "typed" });
+    expect(daySteps(5000, false, 3000)).toEqual({ value: 5000, from: "synced" });
+    expect(daySteps(4100, false, 6000)).toEqual({ value: 6000, from: "walks" });
+    expect(daySteps(null, false, 0)).toEqual({ value: 0, from: "synced" });
   });
 });

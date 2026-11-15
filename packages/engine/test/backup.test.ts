@@ -100,6 +100,9 @@ describe("a full backup", () => {
     expect(daily.some((d: any) => d.worn === false)).toBe(true);
     // the worn device's kind travels with its day (038), so a restore says "your ring" as before
     expect(daily.filter((d: any) => d.device === "ring").length).toBe(1);
+    // a day typed over the band's carries both values and the choice (039)
+    expect(daily.find((d: any) => String(d.date).includes("2026-10-01") && d.kind === "steps")).toMatchObject({ value: 8500, typed: 8500, synced: 8000, chosen: null });
+    expect(file.tables.health_imports[0]).toHaveProperty("restored_at");
     expect(file.tables.health_imports.some((h: any) => h.deleted_at)).toBe(true);
     // the file says which schema it was written with: one per migration, so a new migration gets checked here
     expect(file.schema).toBe(fs.readdirSync(path.join(__dirname, "../src/migrations")).filter((f) => /^\d{3}_.*\.ts$/.test(f)).length);
@@ -116,7 +119,10 @@ describe("a full backup", () => {
     // the band's deleted day stays deleted, the typed day stays typed, nothing came back marked deleted that wasn't
     const { rows } = await B.db.admin.query("SELECT key FROM health_imports WHERE user_id = $1 AND deleted_at IS NOT NULL", [V]);
     expect(rows.map((r: any) => r.key)).toEqual(["steps:2026-10-04"]);
-    expect((await call(B, V, "GET", "/health/imports", undefined, { limit: "200" })).items.find((x: any) => x.key === "steps:2026-10-01")).toMatchObject({ edited: true });
+    // both of the day's values came along (039): the typed one in use, the band's beside it
+    expect((await call(B, V, "GET", "/health/imports", undefined, { limit: "200" })).items.find((x: any) => x.key === "steps:2026-10-01")).toMatchObject({ value: 8000, typed: 8500 });
+    expect((await call(B, V, "GET", "/daily", undefined, { from: "2026-10-01", tz: "0" })).find((x: any) => x.kind === "steps" && x.date === "2026-10-01"))
+      .toMatchObject({ value: 8500, typed: 8500, synced: 8000 });
     expect((await call(B, V, "POST", "/health/import", { steps: [{ date: "2026-10-04", value: 7100 }] })).steps).toBe(0);
   });
 

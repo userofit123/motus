@@ -185,4 +185,83 @@ describe("sync", () => {
     expect((await D()("GET", "/goals")).some((g: any) => g.id === before)).toBe(true);
     expect(await replica.waitingCount(device.db)).toBe(0);
   }, 120000);
+  // M-230: a day's number is merged per column, not newest-row-wins: web types at 10:00, the phone imported its watch's
+  // count offline at 09:59 and sends later; the server keeps the typed value and takes the phone's synced one, and a
+  // pull before the phone has sent keeps the phone's synced value
+  it("keeps a value typed on the web and the phone's offline import of the same day, whichever way it syncs", async () => {
+    const steps = async (e: Engine, date: string) => (await e.db.admin.query(
+      "SELECT typed::float AS typed, synced::float AS synced, value::float AS value, device FROM daily_logs WHERE user_id = $1 AND date = $2 AND kind = 'steps'", [U, date])).rows[0];
+    const phoneImports = async (date: string, n: number) => {
+      await device.db.tx((q) => q.query("UPDATE daily_logs SET synced = $3, worn = true, device = 'watch' WHERE user_id = $1 AND date = $2 AND kind = 'steps'", [U, date, n]));
+      // imported at 09:59, before the web's edit at 10:00
+      await device.db.admin.query("UPDATE sync_log SET at = now() - interval '1 minute' WHERE tbl = 'daily_logs'");
+    };
+    for (const date of ["2026-07-10", "2026-07-11"]) await S()("PUT", "/daily", { date, kind: "steps", value: 5000 });
+    await sync();
+
+    // the phone sends first (sync() pushes, then pulls)
+    await phoneImports("2026-07-10", 7000);
+    await S()("PUT", "/daily", { date: "2026-07-10", kind: "steps", value: 6000 });
+    await sync();
+    expect(await steps(server, "2026-07-10")).toMatchObject({ typed: 6000, synced: 7000, value: 6000, device: "watch" });
+    expect(await steps(device, "2026-07-10")).toMatchObject({ typed: 6000, synced: 7000, value: 6000, device: "watch" });
+
+    // the phone pulls before it has sent
+    await phoneImports("2026-07-11", 7100);
+    await S()("PUT", "/daily", { date: "2026-07-11", kind: "steps", value: 6100 });
+    const m = await replica.replicaMeta(device.db);
+    const p = await S()("GET", "/sync/pull", undefined, { since: String(m.cursor), device: deviceId });
+    await replica.applyRemote(device.db, U, p.changes, p.cursor);
+    expect(await steps(device, "2026-07-11")).toMatchObject({ typed: 6100, synced: 7100, value: 6100, device: "watch" });
+    expect(await replica.waitingCount(device.db)).toBeGreaterThan(0);
+    await sync();
+    expect(await steps(server, "2026-07-11")).toMatchObject({ typed: 6100, synced: 7100, value: 6100, device: "watch" });
+    expect(await steps(device, "2026-07-11")).toMatchObject({ typed: 6100, synced: 7100 });
+    expect(await replica.waitingCount(device.db)).toBe(0);
+  }, 60000);
+  // M-230: the web clears a typed-only day (the row is deleted at t1); the phone, not yet told, imports its watch's count
+  // into its old copy of the day at t2. Whichever way it syncs, both end with only the watch's count, the cleared typed
+  // value never coming back. A day that used the watch's count and was cleared stays cleared (its import marked deleted, 034).
+  it("doesn't bring back a typed value cleared on the web through the phone's later import, whichever way it syncs", async () => {
+    const day = async (e: Engine, date: string) => (await e.db.admin.query(
+      "SELECT typed::float AS typed, synced::float AS synced, value::float AS value, source, chosen FROM daily_logs WHERE user_id = $1 AND date = $2 AND kind = 'steps'", [U, date])).rows[0];
+    const phoneImports = (date: string, n: number) =>
+      device.db.tx((q) => q.query("UPDATE daily_logs SET synced = $3, worn = true, device = 'watch' WHERE user_id = $1 AND date = $2 AND kind = 'steps'", [U, date, n]));
+    for (const date of ["2026-07-12", "2026-07-13"]) await S()("PUT", "/daily", { date, kind: "steps", value: 5000 });
+    await S()("PUT", "/daily", { date: "2026-07-14", kind: "steps", value: 4000, source: "health_connect" });
+    await server.db.admin.query("INSERT INTO health_imports (user_id, key, kind, date) VALUES ($1, 'steps:2026-07-14', 'steps', '2026-07-14')", [U]);
+    await sync();
+    expect(await day(device, "2026-07-14")).toMatchObject({ synced: 4000, value: 4000 });
+
+    // the phone sends first
+    await S()("PUT", "/daily", { date: "2026-07-12", kind: "steps", value: null });
+    expect(await day(server, "2026-07-12")).toBeUndefined();
+    await phoneImports("2026-07-12", 7000);
+    await sync();
+    expect(await day(server, "2026-07-12")).toMatchObject({ typed: null, chosen: null, synced: 7000, value: 7000, source: "health_connect" });
+    expect(await day(device, "2026-07-12")).toMatchObject({ typed: null, chosen: null, synced: 7000, value: 7000, source: "health_connect" });
+    expect(await replica.waitingCount(device.db)).toBe(0);
+
+    // the phone pulls before it has sent
+    await S()("PUT", "/daily", { date: "2026-07-13", kind: "steps", value: null });
+    await phoneImports("2026-07-13", 7100);
+    const m = await replica.replicaMeta(device.db);
+    const p = await S()("GET", "/sync/pull", undefined, { since: String(m.cursor), device: deviceId });
+    await replica.applyRemote(device.db, U, p.changes, p.cursor);
+    expect(await day(device, "2026-07-13")).toMatchObject({ typed: null, chosen: null, synced: 7100, value: 7100 });
+    await sync();
+    expect(await day(server, "2026-07-13")).toMatchObject({ typed: null, synced: 7100, value: 7100, source: "health_connect" });
+    expect(await day(device, "2026-07-13")).toMatchObject({ typed: null, synced: 7100, value: 7100 });
+    expect(await replica.waitingCount(device.db)).toBe(0);
+
+    // a day that used the watch's count, cleared on the web: its import is marked deleted, and the phone's later
+    // import of it doesn't bring it back
+    await S()("PUT", "/daily", { date: "2026-07-14", kind: "steps", value: null });
+    expect(await day(server, "2026-07-14")).toBeUndefined();
+    await phoneImports("2026-07-14", 4500);
+    await sync();
+    expect(await day(server, "2026-07-14")).toBeUndefined();
+    expect(await day(device, "2026-07-14")).toBeUndefined();
+    expect(await replica.waitingCount(device.db)).toBe(0);
+  }, 60000);
 });

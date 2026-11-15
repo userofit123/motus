@@ -3,7 +3,7 @@
 // how much of its own log has been sent, this device's name for itself, and which catalog it has.
 import type { Db, Sql } from "../db";
 import { SYNCED } from "./tables";
-import { readRows, applyChanges, latestPerRow, keyOf, overrule, RULED, type Change } from "./core";
+import { readRows, applyChanges, latestPerRow, keyOf, overrule, perColumn, RULED, type Change } from "./core";
 import { uuidv7 } from "../ids";
 
 /**
@@ -108,13 +108,29 @@ export async function applyRemote(db: Db, userId: string, changes: Change[], cur
       mine.set(keyOf(e.tbl, e.pk), { at: new Date(e.at).getTime(), op: e.op });
     const here = await readRows(q, changes.filter((c) => RULED.has(c.tbl)));
     const keep: Change[] = [];
+    // a day changed here and not yet sent, older or newer than the server's: merged per column (perColumn), the
+    // server's typed value or choice coming in when newer (typed_at), this copy's synced value staying; sent again
+    const own = new Set<string>();
     const take = changes.filter((c) => {
       const k = keyOf(c.tbl, c.pk), t = mine.get(k);
       const o = overrule(c, { row: here.get(k) ?? null, lastOp: t?.op ?? null });
       if (o === false) keep.push(c);
-      return o ?? (t == null || t.at <= new Date(c.at).getTime());
+      if (o != null) return o;
+      if (perColumn(c) && t?.op === "upsert") { own.add(k); keep.push(c); return true; }
+      return t == null || t.at <= new Date(c.at).getTime();
     });
-    const r = await applyChanges(q, userId, take, { apply: true });
+    // a day deleted on the server after its typed value or choice was made here, while this copy changed it since (an
+    // import): this copy's row stands, but without the cleared typed value or choice (as the server's mergeDay does on
+    // the send); nothing synced left, the day goes. Stamped with the deletion, so the send carries the clearing.
+    for (const c of changes) {
+      const t = mine.get(keyOf(c.tbl, c.pk));
+      if (c.tbl !== "daily_logs" || c.op !== "delete" || t?.op !== "upsert" || take.includes(c)) continue;
+      const w = "user_id = $1 AND date = $2::date AND kind = $3 AND (typed_at IS NULL OR typed_at < $4::timestamptz)";
+      const a = [userId, c.pk.date, c.pk.kind, c.at];
+      await q.query(`DELETE FROM daily_logs WHERE ${w} AND synced IS NULL`, a);
+      await q.query(`UPDATE daily_logs SET typed = NULL, chosen = NULL, typed_at = $4::timestamptz WHERE ${w} AND (typed IS NOT NULL OR chosen IS NOT NULL)`, a);
+    }
+    const r = await applyChanges(q, userId, take, { apply: true, own });
     // the server's version replaced an older change made here: that one need not be sent any more
     for (const c of take) await q.query("DELETE FROM sync_log WHERE seq > $1 AND tbl = $2 AND pk = $3::jsonb", [m.pushed, c.tbl, JSON.stringify(c.pk)]);
     // this copy's version stands against the server's: send it (again), so the server ends up the same

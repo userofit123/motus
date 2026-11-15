@@ -5,7 +5,7 @@ import type { Sql } from "../db";
 import { bad, HttpError } from "../errors";
 import { str } from "../util";
 import { SYNCED_BY_NAME } from "../sync/tables";
-import { readRows, allRows, applyChanges, latestPerRow, keyOf, overrule, RULED, type Change } from "../sync/core";
+import { readRows, allRows, applyChanges, latestPerRow, keyOf, overrule, perColumn, RULED, type Change } from "../sync/core";
 
 const PAGE = 5000;
 
@@ -60,12 +60,13 @@ export function syncRoutes(r: Router) {
       c && SYNCED_BY_NAME.has(c.tbl) && (c.op === "upsert" || c.op === "delete") && c.pk && typeof c.pk === "object" && !Number.isNaN(Date.parse(c.at)));
     // last change wins: a newer change from somewhere else beats this one, and the device gets that one instead.
     // Except where overrule() decides first: a cancelled workout stays cancelled, a finished one stays finished.
+    // A day's number from a current app is merged per column instead (perColumn), unless the newer change deleted it.
     const accepted: Change[] = [], rejected: Change[] = [];
     const here = await readRows(ctx.q, list.filter((c) => RULED.has(c.tbl))); // the only rows the rules look at
     for (const c of list) {
       const last = (await ctx.q.query("SELECT at, origin, op FROM sync_log WHERE tbl = $1 AND pk = $2::jsonb ORDER BY seq DESC LIMIT 1", [c.tbl, JSON.stringify(c.pk)])).rows[0];
       const o = overrule(c, { row: here.get(keyOf(c.tbl, c.pk)) ?? null, lastOp: last?.op });
-      const wins = o ?? !(last && last.origin !== device && new Date(last.at) > new Date(c.at));
+      const wins = o ?? (!(last && last.origin !== device && new Date(last.at) > new Date(c.at)) || (perColumn(c) && last.op !== "delete"));
       (wins ? accepted : rejected).push(c);
     }
     const { applied, failed, kept, cleared } = await applyChanges(ctx.q, ctx.userId, accepted, { origin: device });

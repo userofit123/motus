@@ -31,16 +31,17 @@ beforeAll(async () => {
 }, 120000);
 
 describe("health connect import", () => {
-  it("fills steps and sleep, updates them on the next sync, and never replaces a typed value", async () => {
+  it("fills steps and sleep, updates them on the next sync, and keeps a typed value in use beside the synced one", async () => {
     await call("PUT", "/daily", { date: "2026-10-02", kind: "steps", value: 1200 }); // typed by hand
     const r = await call("POST", "/health/import", {
       steps: [{ date: "2026-10-01", value: 8000 }, { date: "2026-10-02", value: 9500 }],
       sleep: [{ date: "2026-10-01", hours: 7.34 }],
     });
-    expect(r).toMatchObject({ steps: 1, sleep: 1 });
+    // the typed day's synced value is stored too (039): nothing from the band is skipped
+    expect(r).toMatchObject({ steps: 2, sleep: 1 });
     const steps = await daily("steps");
-    expect(steps.find((x: any) => x.date === "2026-10-01")).toMatchObject({ value: 8000, source: "health_connect" });
-    expect(steps.find((x: any) => x.date === "2026-10-02")).toMatchObject({ value: 1200, source: "manual" });
+    expect(steps.find((x: any) => x.date === "2026-10-01")).toMatchObject({ value: 8000, source: "health_connect", typed: null, synced: 8000 });
+    expect(steps.find((x: any) => x.date === "2026-10-02")).toMatchObject({ value: 1200, source: "manual", typed: 1200, synced: 9500, chosen: null });
     expect(Number((await daily("sleep_h"))[0].value)).toBe(7.3);
 
     // later in the day the count grew; an unchanged day is not counted as a change
@@ -74,18 +75,18 @@ describe("health connect import", () => {
   it("lists what came in, newest first, a page at a time", async () => {
     const all = await log();
     expect(all.items.map((x: any) => x.key)).toEqual([
-      "activity:def", "activity:abc", "weight:2026-10-03T07:00:00.000Z", "steps:2026-10-01", "sleep:2026-10-01",
+      "activity:def", "activity:abc", "weight:2026-10-03T07:00:00.000Z", "steps:2026-10-02", "steps:2026-10-01", "sleep:2026-10-01",
     ]);
     expect(all.cursor).toBeNull();
-    const steps = all.items.find((x: any) => x.kind === "steps");
+    const steps = all.items.find((x: any) => x.key === "steps:2026-10-01");
     expect(steps).toMatchObject({ date: "2026-10-01", at: null, value: 8600, activity: null, ref: null, edited: false });
     expect(all.items.find((x: any) => x.kind === "sleep").value).toBe(7.3);
     expect(all.items.find((x: any) => x.kind === "weight")).toMatchObject({ date: "2026-10-03", at: "2026-10-03T07:00:00.000Z", value: 80.46, edited: false });
     const run = all.items.find((x: any) => x.key === "activity:abc");
     expect(run).toMatchObject({ date: "2026-10-04", value: null, activity: { type: "run", name: "Morning run", durationS: 1800, distanceM: 5000, steps: 5200, avgHr: 150 } });
     expect(run.ref).toBe(run.activity.id);
-    // the typed day (2026-10-02) was never an import
-    expect(all.items.some((x: any) => x.key === "steps:2026-10-02")).toBe(false);
+    // the typed day (2026-10-02) is listed with the band's number, which the day doesn't use: the typed one says why
+    expect(all.items.find((x: any) => x.key === "steps:2026-10-02")).toMatchObject({ value: 9500, typed: 1200, edited: false });
 
     const p1 = await log({ limit: "2" });
     expect(p1.items.map((x: any) => x.key)).toEqual(["activity:def", "activity:abc"]);
@@ -97,9 +98,11 @@ describe("health connect import", () => {
 
   it("keeps a day's steps edited in the log through later syncs", async () => {
     await call("PUT", "/health/imports/steps:2026-10-01", { value: 10000 });
-    expect(await entry("steps:2026-10-01")).toMatchObject({ value: 10000, edited: true });
-    expect((await call("POST", "/health/import", { steps: [{ date: "2026-10-01", value: 9100 }] })).steps).toBe(0);
-    expect((await daily("steps")).find((x: any) => x.date === "2026-10-01")).toMatchObject({ value: 10000, source: "manual" });
+    expect(await entry("steps:2026-10-01")).toMatchObject({ value: 8600, typed: 10000 });
+    // the band's later count is kept as the synced value; the day keeps the typed one
+    expect((await call("POST", "/health/import", { steps: [{ date: "2026-10-01", value: 9100 }] })).steps).toBe(1);
+    expect((await daily("steps")).find((x: any) => x.date === "2026-10-01")).toMatchObject({ value: 10000, source: "manual", synced: 9100 });
+    expect(await entry("steps:2026-10-01")).toMatchObject({ value: 9100, typed: 10000 });
     await send(400, "PUT", `/health/imports/${encodeURIComponent("activity:abc")}`, { value: 1 });
     await send(404, "PUT", "/health/imports/steps:1999-01-01", { value: 1 });
   });
@@ -373,7 +376,8 @@ describe("daily resting heart rate, SpO2 and HRV from a band", () => {
       restingHr: [{ date: "2026-11-10", value: 58 }, { date: "2026-11-11", value: 61 }, { date: "2026-11-12", value: 300 }],
       spo2: [{ date: "2026-11-10", value: 96.44 }], hrv: [{ date: "2026-11-10", value: 42.6 }],
     };
-    expect(await call("POST", "/health/import", batch)).toMatchObject({ restingHr: 1, spo2: 1, hrv: 1 });
+    // the typed day's synced value is stored too (039)
+    expect(await call("POST", "/health/import", batch)).toMatchObject({ restingHr: 2, spo2: 1, hrv: 1 });
     const d = await call("GET", "/daily", undefined, { from: "2026-11-01", tz: "0" });
     // a day comes back as text or as a date, depending on the database
     const day = (v: unknown) => (v instanceof Date ? v.toISOString() : String(v)).slice(0, 10);
@@ -387,13 +391,14 @@ describe("daily resting heart rate, SpO2 and HRV from a band", () => {
     expect(await entry("resting_hr:2026-11-10")).toMatchObject({ kind: "resting_hr", date: "2026-11-10", value: 58, edited: false });
     expect(await entry("spo2:2026-11-10")).toMatchObject({ kind: "spo2", value: 96.4 });
     expect(await entry("hrv:2026-11-10")).toMatchObject({ kind: "hrv", value: 43 });
-    expect(await entry("resting_hr:2026-11-11")).toBeUndefined();
+    expect(await entry("resting_hr:2026-11-11")).toMatchObject({ value: 61, typed: 50 });
 
+    // corrected in the log: typed, used by the day; the band's number stays beside it and keeps updating
     await call("PUT", "/health/imports/resting_hr:2026-11-10", { value: 57 });
-    expect(await entry("resting_hr:2026-11-10")).toMatchObject({ value: 57, edited: true });
+    expect(await entry("resting_hr:2026-11-10")).toMatchObject({ value: 58, typed: 57 });
     await send(400, "PUT", "/health/imports/spo2:2026-11-10", { value: 20 });
-    expect((await call("POST", "/health/import", { restingHr: [{ date: "2026-11-10", value: 59 }] })).restingHr).toBe(0);
-    expect((await entry("resting_hr:2026-11-10")).value).toBe(57);
+    expect((await call("POST", "/health/import", { restingHr: [{ date: "2026-11-10", value: 59 }] })).restingHr).toBe(1);
+    expect(await entry("resting_hr:2026-11-10")).toMatchObject({ value: 59, typed: 57 });
 
     await call("DELETE", "/health/imports/hrv:2026-11-10");
     expect((await call("POST", "/health/import", { hrv: [{ date: "2026-11-10", value: 45 }] })).hrv).toBe(0);
@@ -430,7 +435,7 @@ describe("nights of sleep, daily distance and active calories from a band", () =
     expect(r2).toMatchObject({ sleepNights: 2 });
     const d = await daily("sleep_h");
     expect(d.find((x: any) => String(x.date).includes("2026-11-21") || (x.date instanceof Date && x.date.toISOString().startsWith("2026-11-21")))).toBeTruthy();
-    expect(await entry("sleep:2026-11-21")).toMatchObject({ kind: "sleep", value: 8, edited: true });
+    expect(await entry("sleep:2026-11-21")).toMatchObject({ kind: "sleep", value: 6.7, typed: 8, edited: false });
     expect(await entry("sleep:2026-11-22")).toMatchObject({ kind: "sleep", value: 7.4, edited: false });
 
     const all = await nights({ from: "2026-11-01" });
@@ -468,7 +473,7 @@ describe("nights of sleep, daily distance and active calories from a band", () =
     // one entry per day in the log, the typed hours kept
     const items = (await as("GET", "/health/imports", undefined, { tz: "0", limit: "200" })).items.filter((x: any) => x.kind === "sleep");
     expect(items.map((x: any) => x.date).sort()).toEqual(["2026-10-05", "2026-10-06"]);
-    expect(items.find((x: any) => x.date === "2026-10-06")).toMatchObject({ value: 6.5, edited: true });
+    expect(items.find((x: any) => x.date === "2026-10-06")).toMatchObject({ value: 6, typed: 6.5, edited: false });
     expect((await as("GET", "/health/sleep", undefined, { from: "2026-10-01" })).nights.map((x: any) => x.date)).toEqual(["2026-10-06", "2026-10-05"]);
   });
 
@@ -495,7 +500,7 @@ describe("nights of sleep, daily distance and active calories from a band", () =
       distance: [{ date: "2026-11-20", value: 6123.4 }, { date: "2026-11-21", value: 7000 }, { date: "2026-11-22", value: 600000 }],
       activeKcal: [{ date: "2026-11-20", value: 412.6 }, { date: "2026-11-22", value: 30000 }],
     };
-    expect(await call("POST", "/health/import", batch)).toMatchObject({ distance: 1, activeKcal: 1 });
+    expect(await call("POST", "/health/import", batch)).toMatchObject({ distance: 2, activeKcal: 1 });
     expect(await call("POST", "/health/import", batch)).toMatchObject({ distance: 0, activeKcal: 0 });
     const d = await call("GET", "/daily", undefined, { from: "2026-11-01", tz: "0" });
     const day = (v: unknown) => (v instanceof Date ? v.toISOString() : String(v)).slice(0, 10);
@@ -507,13 +512,13 @@ describe("nights of sleep, daily distance and active calories from a band", () =
 
     expect(await entry("distance:2026-11-20")).toMatchObject({ kind: "distance", date: "2026-11-20", value: 6123, edited: false });
     expect(await entry("active_kcal:2026-11-20")).toMatchObject({ kind: "active_kcal", value: 413 });
-    expect(await entry("distance:2026-11-21")).toBeUndefined();
+    expect(await entry("distance:2026-11-21")).toMatchObject({ value: 7000, typed: 3000 });
 
     await call("PUT", "/health/imports/distance:2026-11-20", { value: 6500 });
-    expect(await entry("distance:2026-11-20")).toMatchObject({ value: 6500, edited: true });
+    expect(await entry("distance:2026-11-20")).toMatchObject({ value: 6123, typed: 6500 });
     await send(400, "PUT", "/health/imports/active_kcal:2026-11-20", { value: 25000 });
-    expect((await call("POST", "/health/import", { distance: [{ date: "2026-11-20", value: 7000 }] })).distance).toBe(0);
-    expect((await entry("distance:2026-11-20")).value).toBe(6500);
+    expect((await call("POST", "/health/import", { distance: [{ date: "2026-11-20", value: 7000 }] })).distance).toBe(1);
+    expect(await entry("distance:2026-11-20")).toMatchObject({ value: 7000, typed: 6500 });
 
     await call("DELETE", "/health/imports/active_kcal:2026-11-20");
     expect((await call("POST", "/health/import", { activeKcal: [{ date: "2026-11-20", value: 450 }] })).activeKcal).toBe(0);
@@ -578,7 +583,7 @@ describe("body fat, water, VO2 max and a day's heart rate from Health Connect", 
       hydration: [{ date: "2026-12-01", ml: 1500.4 }, { date: "2026-12-02", ml: 2000 }, { date: "2026-12-03", ml: 30000 }],
       vo2max: [{ date: "2026-12-01", value: 45.26 }, { date: "2026-12-02", value: 5 }],
     };
-    expect(await call("POST", "/health/import", batch)).toMatchObject({ hydration: 1, vo2max: 1 });
+    expect(await call("POST", "/health/import", batch)).toMatchObject({ hydration: 2, vo2max: 1 });
     expect(await call("POST", "/health/import", batch)).toEqual(NONE);
     expect(await dailyAt("water_ml", "2026-12-01")).toMatchObject({ source: "health_connect" });
     expect(Number((await dailyAt("water_ml", "2026-12-01")).value)).toBe(1500);
@@ -587,11 +592,12 @@ describe("body fat, water, VO2 max and a day's heart rate from Health Connect", 
     expect(Number((await dailyAt("vo2max", "2026-12-01")).value)).toBe(45.3);
     expect(await entry("water:2026-12-01")).toMatchObject({ kind: "water", value: 1500, edited: false });
     expect(await entry("vo2max:2026-12-01")).toMatchObject({ kind: "vo2max", value: 45.3 });
-    expect(await entry("water:2026-12-02")).toBeUndefined();
+    expect(await entry("water:2026-12-02")).toMatchObject({ value: 2000, typed: 500 });
 
     await call("PUT", "/health/imports/vo2max:2026-12-01", { value: 46 });
-    expect(await entry("vo2max:2026-12-01")).toMatchObject({ value: 46, edited: true });
-    expect((await call("POST", "/health/import", { vo2max: [{ date: "2026-12-01", value: 47 }] })).vo2max).toBe(0);
+    expect(await entry("vo2max:2026-12-01")).toMatchObject({ value: 45.3, typed: 46 });
+    expect((await call("POST", "/health/import", { vo2max: [{ date: "2026-12-01", value: 47 }] })).vo2max).toBe(1);
+    expect(Number((await dailyAt("vo2max", "2026-12-01")).value)).toBe(46);
     await call("DELETE", "/health/imports/water:2026-12-01");
     expect((await call("POST", "/health/import", { hydration: [{ date: "2026-12-01", ml: 1800 }] })).hydration).toBe(0);
     expect(await dailyAt("water_ml", "2026-12-01")).toBeUndefined();
@@ -639,8 +645,12 @@ describe("body fat, water, VO2 max and a day's heart rate from Health Connect", 
   });
 
   it("says which of these there are", async () => {
-    expect(await call("GET", "/health/available")).toMatchObject({ vo2max: true, hrDay: true, bodyFat: true, hydration: false });
-    // water typed by hand is not from Health Connect; the import's water was deleted above
+    // the typed day's water from Health Connect counts (kept beside the typed one)
+    expect(await call("GET", "/health/available")).toMatchObject({ vo2max: true, hrDay: true, bodyFat: true, hydration: true });
+    // deleted from the log: only the typed water is left, which is not from Health Connect
+    await call("DELETE", "/health/imports/water:2026-12-02");
+    expect(await dailyAt("water_ml", "2026-12-02")).toMatchObject({ value: 500, source: "manual", synced: null });
+    expect((await call("GET", "/health/available")).hydration).toBe(false);
     await call("POST", "/health/import", { hydration: [{ date: "2026-12-04", ml: 1200 }] });
     expect((await call("GET", "/health/available")).hydration).toBe(true);
   });
@@ -823,10 +833,13 @@ describe("an import log entry is deleted only when the person deleted something"
   it("not when a number typed over the band's is cleared: the band's comes back", async () => {
     await call("POST", "/health/import", { steps: [{ date: "2027-02-02", value: 6000 }] });
     await call("PUT", "/daily", { date: "2027-02-02", kind: "steps", value: 6500 });
+    // the band's was kept beside the typed one (039), so it is back at once
+    expect(await dayRow("2027-02-02")).toMatchObject({ value: 6500, source: "manual" });
     await call("PUT", "/daily", { date: "2027-02-02", kind: "steps", value: null });
     expect((await imp("steps:2027-02-02")).deleted_at).toBeNull();
-    expect((await call("POST", "/health/import", { steps: [{ date: "2027-02-02", value: 6000 }] })).steps).toBe(1);
     expect(await dayRow("2027-02-02")).toMatchObject({ value: 6000, source: "health_connect" });
+    expect((await call("POST", "/health/import", { steps: [{ date: "2027-02-02", value: 6100 }] })).steps).toBe(1);
+    expect(await dayRow("2027-02-02")).toMatchObject({ value: 6100, source: "health_connect" });
   });
 
   it("not for a deletion a sync brings, which carries its own mark if it was one", async () => {
@@ -897,10 +910,10 @@ describe("a day's steps read again", () => {
     await call("POST", "/health/import", { steps: [{ date: "2026-11-13", value: 5100, worn: true }] });
     expect(await call("POST", "/health/import", { steps: [{ date: "2026-11-13", value: 5100, worn: false }] })).toMatchObject({ steps: 1 });
     expect((await call("GET", "/health/day/2026-11-13", undefined, { tz: "0" })).worn).toBe(false);
-    // typed by hand: a re-read never touches it
+    // typed by hand: a re-read keeps the band's count beside it, and the day keeps the typed one
     await call("PUT", "/daily", { date: "2026-11-12", kind: "steps", value: 7000 });
-    expect(await call("POST", "/health/import", { steps: [{ date: "2026-11-12", value: 3000, worn: true }] })).toMatchObject({ steps: 0 });
-    expect((await daily("steps")).find((x: any) => x.date === "2026-11-12")).toMatchObject({ value: 7000 });
+    expect(await call("POST", "/health/import", { steps: [{ date: "2026-11-12", value: 3000, worn: true }] })).toMatchObject({ steps: 1 });
+    expect((await daily("steps")).find((x: any) => x.date === "2026-11-12")).toMatchObject({ value: 7000, typed: 7000, synced: 3000 });
   });
 });
 
@@ -1053,10 +1066,10 @@ describe("the kind of worn device", () => {
     // a day no worn device counted (the phone's own steps) says nothing of the kind
     await call("POST", "/health/import", { steps: [8, 9, 10, 11, 12].map((n) => ({ date: day(n), value: 3000, worn: false, device: "ring" })) });
     expect(await kind()).toBe("watch");
-    // a typed day is the person's: no kind is written on it
+    // a typed day keeps the band's count beside it (039), with the kind that counted it
     await call("PUT", "/daily", { date: day(13), kind: "steps", value: 100 });
     await call("POST", "/health/import", { steps: [{ date: day(13), value: 9000, device: "ring" }] });
-    expect((await dev()).find((r: any) => r.d === day(13)).device).toBe(null);
+    expect((await dev()).find((r: any) => r.d === day(13)).device).toBe("ring");
   });
 
   it("keeps the kind out of the person's settings: no settings write, no \"Changed settings\" entry", async () => {

@@ -57,3 +57,13 @@ export function bandStepsVerdict(x: { steps: number | null; covered: boolean; ap
   if (!plausibleSteps(x.steps, x.app)) return "far";
   return "use";
 }
+
+/**
+ * A day's steps (039): the typed count when the day uses it, else the larger of the day's own count (the synced one) and
+ * what the walks recorded in Motus add up to, never the two added. from: which of them counts. The engine's stepsByDay
+ * and the daily log's choices both read it, so a choice offered is one that changes what counts.
+ */
+export function daySteps(own: number | null, typed: boolean, walked: number): { value: number; from: "typed" | "synced" | "walks" } {
+  if (typed && own != null) return { value: own, from: "typed" };
+  return walked > (own ?? 0) ? { value: walked, from: "walks" } : { value: own ?? 0, from: "synced" };
+}

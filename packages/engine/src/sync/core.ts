@@ -68,9 +68,13 @@ export function overrule(c: Change, here: { row: Record<string, unknown> | null;
   }
   // a Health Connect import deleted anywhere stays deleted: a phone that hadn't heard yet and synced the same day again
   // (a newer imported_at) must not bring it back
+  // A deletion taken back (Imported data → Restore, restored_at, 039) wins over that same deletion still on a copy that
+  // hadn't heard of the restore; a deletion made after the restore wins again.
   if (c.tbl === "health_imports" && c.op === "upsert" && c.row && here.row) {
-    if (c.row.deleted_at != null) return true;
-    if (here.row.deleted_at != null) return false;
+    const t = (v: unknown) => (v == null ? null : Date.parse(String(v)));
+    const inDel = t(c.row.deleted_at), hereDel = t(here.row.deleted_at), inBack = t(c.row.restored_at), hereBack = t(here.row.restored_at);
+    if (inDel != null) return !(hereDel == null && hereBack != null && hereBack >= inDel);
+    if (hereDel != null) return inBack != null && inBack >= hereDel;
   }
   if (c.tbl === "workouts" && c.op === "upsert" && c.row && here.row) {
     const a = finished(c.row.status), b = finished(here.row.status);
@@ -166,7 +170,17 @@ async function progressionOn(q: Sql, userId: string) {
  * the server's rows (not logged at all; those were checked by the server, and a row may come before what it points at).
  * Rows from a device have their references checked (ownRefs); cleared lists the ones written with some cleared.
  */
-export async function applyChanges(q: Sql, userId: string, changes: Change[], opts: { origin?: string; apply?: boolean } = {}) {
+/**
+ * A day's number from an app that knows typed_at (039) is merged per column (mergeDay), so it never loses whole to a
+ * newer change of the same day elsewhere: a phone that imported offline and sends later still brings its synced value,
+ * while a value typed elsewhere since stays. A deletion stays a whole-row matter.
+ */
+export function perColumn(c: Change) {
+  return c.tbl === "daily_logs" && c.op === "upsert" && c.row != null && "typed_at" in c.row;
+}
+
+/** `own`: keys (keyOf) of days whose synced value, worn and device stay as they are here (a device's unsent import). */
+export async function applyChanges(q: Sql, userId: string, changes: Change[], opts: { origin?: string; apply?: boolean; own?: Set<string> } = {}) {
   const ord = (c: Change) => SYNCED_BY_NAME.get(c.tbl)!.order;
   const list = [
     ...changes.filter((c) => c.op === "upsert" && c.row).sort((a, b) => ord(a) - ord(b)),
@@ -176,7 +190,9 @@ export async function applyChanges(q: Sql, userId: string, changes: Change[], op
   const failed: { change: Change; error: string }[] = [];
   // upserts that were not written: the row here is a finished workout and the change would reopen it, or a trigger
   // skipped it (the device then gets the row as it is here, or its deletion)
+  // skipped: those of kept not written at all (the rest of kept were written, differently: a day's number, below)
   const kept: Change[] = [], cleared: Change[] = [];
+  let skipped = 0;
   const foreign = new Map<string, boolean>();
   for (const c of list) {
     const def = SYNCED_BY_NAME.get(c.tbl)!;
@@ -199,6 +215,7 @@ export async function applyChanges(q: Sql, userId: string, changes: Change[], op
           if ("prefill" in row && !("fixed" in row)) row.fixed = row.prefill === "target";
         }
         const fixed = !opts.apply && (await ownRefs(q, c.tbl, row, foreign));
+        if (c.tbl === "daily_logs") await mergeDay(q, row, c.pk, opts.own?.has(keyOf(c.tbl, c.pk)) ?? false);
         // only the columns the JSON has: a device on an older app doesn't know newer columns, so a new row takes their
         // default and an existing row keeps its value, instead of both becoming NULL
         const has = all.filter((x) => x in row);
@@ -207,10 +224,15 @@ export async function applyChanges(q: Sql, userId: string, changes: Change[], op
         const guard = c.tbl === "workouts" ? " WHERE NOT (workouts.status <> 'in_progress' AND EXCLUDED.status = 'in_progress')" : "";
         // RETURNING tells a row not written: by that guard, or by a trigger that skips it (a day's number from Health
         // Connect under a deleted import, 031). Not with DO NOTHING, where a row already here returns nothing either.
+        // A day's number returns what the trigger made of it (039), to tell one written other than as sent.
+        const ret = c.tbl === "daily_logs" ? "value::text AS value, source, typed::text AS typed, chosen" : "1 AS ok";
         const r = await q.query(
           `INSERT INTO ${c.tbl} (${has.join(", ")}) SELECT ${has.join(", ")} FROM jsonb_populate_record(NULL::${c.tbl}, $1::jsonb)
-           ON CONFLICT (${def.pk.join(", ")}) DO ${rest.length ? `UPDATE SET ${rest.map((x) => `${x} = EXCLUDED.${x}`).join(", ")}${guard} RETURNING 1 AS ok` : "NOTHING"}`, [JSON.stringify(row)]);
-        if (rest.length && !r.rows.length) kept.push(c);
+           ON CONFLICT (${def.pk.join(", ")}) DO ${rest.length ? `UPDATE SET ${rest.map((x) => `${x} = EXCLUDED.${x}`).join(", ")}${guard} RETURNING ${ret}` : "NOTHING"}`, [JSON.stringify(row)]);
+        if (rest.length && !r.rows.length) { kept.push(c); skipped++; }
+        // written, but not as sent: a value from an app before 039 filed beside a typed one the day keeps using, or a
+        // typed value or choice made more recently here (mergeDay). The sender gets the row as it is here.
+        else if (c.tbl === "daily_logs" && r.rows[0] && !sameDay(c.row!, r.rows[0])) kept.push(c);
         else if (fixed) cleared.push(c);
       } else if (def.pk.length === 1 && def.pk[0] === "id") {
         await q.query(`DELETE FROM ${c.tbl} WHERE id = $1`, [c.pk.id]);
@@ -224,7 +246,50 @@ export async function applyChanges(q: Sql, userId: string, changes: Change[], op
     }
   }
   if (opts.apply) await q.query("SELECT set_config('motus.sync_apply', '', true)");
-  return { applied: list.length - failed.length - kept.length, failed, kept, cleared };
+  return { applied: list.length - failed.length - skipped, failed, kept, cleared };
+}
+
+/**
+ * A day's number is merged per column (039), not taken whole: its typed value and choice from whichever copy changed
+ * them last (typed_at), its synced value, worn and device from the row coming in (the newest import). A phone that
+ * hadn't heard of a value typed or a choice made elsewhere still brings its import in, without its stale typed value.
+ * Only for a row that knows typed_at (an app from before 039 sends value and source, which the trigger files). value
+ * and source are left as they are here, so the trigger works them out from the three and never reads the row as an
+ * older app's write. `own`: this copy's synced value, worn and device stand (a device's import not yet sent, against
+ * the server's older one).
+ */
+async function mergeDay(q: Sql, row: Record<string, unknown>, pk: Record<string, unknown>, own: boolean) {
+  if (!("typed_at" in row)) return;
+  const here = (await q.query<{ value: string; source: string | null; typed: string | null; chosen: string | null; typed_at: string | null; newer: boolean; synced: string | null; worn: boolean; device: string | null }>(
+    `SELECT value::text AS value, source, typed::text AS typed, chosen, to_jsonb(typed_at) #>> '{}' AS typed_at,
+       synced::text AS synced, worn, device,
+       typed_at IS NOT NULL AND ($4::timestamptz IS NULL OR typed_at > $4::timestamptz) AS newer
+     FROM daily_logs WHERE user_id = $1 AND date = $2::date AND kind = $3`, [row.user_id, row.date, row.kind, row.typed_at ?? null])).rows[0];
+  if (!here) {
+    // the day was deleted here after its typed value or choice was made (the web cleared it while the phone, not yet
+    // told, imported into it): only the import comes in, never the cleared typed value. Nothing synced either: the
+    // trigger writes nothing (value filed as synced, both empty), and the sender gets the deletion.
+    const last = (await q.query<{ op: string; at: string; after: boolean }>(
+      `SELECT op, to_jsonb(at) #>> '{}' AS at, ($2::timestamptz IS NULL OR at > $2::timestamptz) AS after FROM sync_log WHERE tbl = 'daily_logs' AND pk = $1::jsonb ORDER BY seq DESC LIMIT 1`,
+      [JSON.stringify(pk), row.typed_at ?? null])).rows[0];
+    if (last?.op === "delete" && last.after)
+      // stamped with the deletion, so a copy still holding the old typed value takes the clearing over it (here.newer)
+      Object.assign(row, { typed: null, chosen: null, typed_at: last.at, value: row.synced ?? null, source: "health_connect" });
+    return;
+  }
+  if (here.newer) Object.assign(row, { typed: here.typed, chosen: here.chosen, typed_at: here.typed_at });
+  if (own) Object.assign(row, { synced: here.synced, worn: here.worn, device: here.device });
+  Object.assign(row, { value: here.value, source: here.source });
+}
+
+/** Whether a day's number was written as sent: the value it uses and where from, and (when sent) its typed value and choice. */
+function sameDay(sent: Record<string, unknown>, got: { value: string | null; source: string | null; typed: string | null; chosen: string | null }) {
+  const n = (v: unknown) => (v == null ? null : Number(v));
+  if ("value" in sent && n(sent.value) !== n(got.value)) return false;
+  if ("source" in sent && (sent.source ?? null) !== got.source) return false;
+  if ("typed" in sent && n(sent.typed) !== n(got.typed)) return false;
+  if ("chosen" in sent && (sent.chosen ?? null) !== got.chosen) return false;
+  return true;
 }
 
 /** The latest change per row among log entries (oldest first, as they come from the log). */

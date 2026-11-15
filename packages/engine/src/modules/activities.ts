@@ -1,5 +1,5 @@
 // Activities (walks, runs, rides…), body measurements and the daily log (steps, sleep, water, mood).
-import { routeStats, DAILY_KINDS, type ActivityType } from "@motus/shared";
+import { routeStats, daySteps, type ActivityType } from "@motus/shared";
 import type { Router, Ctx } from "../router";
 import type { Sql } from "../db";
 import { camel, id, str, intOrNull, numOrNull, bool, isoTime, dateStr, startOfDay, tzOf } from "../util";
@@ -54,7 +54,11 @@ export function parseTrack(text: string): { name: string; type: string; route: n
 /** A day's steps: value is what counts; logged is the daily log's own count (typed or from the phone, null when none),
  *  walked what the day's activities add up to, so the log box can show what was entered and the walks under it. */
 /** worn: false when Health Connect's count came without a band, watch or ring (036) */
-export interface StepsDay { date: string; kind: "steps"; value: number; source: string | null; logged: number | null; walked: number; worn: boolean }
+/** typed, synced: the day's own two counts (039), either null; chosen: 'synced' when the person chose the synced one */
+export interface StepsDay {
+  date: string; kind: "steps"; value: number; source: string | null; logged: number | null; walked: number; worn: boolean;
+  typed: number | null; synced: number | null; chosen: string | null;
+}
 
 /**
  * Steps per calendar day (the app's calendar: tzMin as for goals), newest first. Never the log's count and the walks added
@@ -67,17 +71,19 @@ export interface StepsDay { date: string; kind: "steps"; value: number; source: 
  * toDay is exclusive; null runs to the end.
  */
 export async function stepsByDay(q: Sql, fromDay: string, toDay: string | null, tzMin: number): Promise<StepsDay[]> {
-  const { rows } = await q.query<{ date: string; logged: string | number | null; walked: string | number; source: string | null; worn: boolean | null }>(
-    `SELECT to_char(coalesce(l.date, a.date), 'YYYY-MM-DD') AS date, l.value AS logged, coalesce(a.steps, 0) AS walked, l.source, l.worn
-     FROM (SELECT date, value, source, worn FROM daily_logs WHERE kind = 'steps' AND date >= $1::date AND ($2::date IS NULL OR date < $2::date)) l
+  const { rows } = await q.query<{ date: string; logged: string | number | null; walked: string | number; source: string | null; worn: boolean | null;
+    typed: string | number | null; synced: string | number | null; chosen: string | null }>(
+    `SELECT to_char(coalesce(l.date, a.date), 'YYYY-MM-DD') AS date, l.value AS logged, coalesce(a.steps, 0) AS walked, l.source, l.worn, l.typed, l.synced, l.chosen
+     FROM (SELECT date, value, source, worn, typed, synced, chosen FROM daily_logs WHERE kind = 'steps' AND date >= $1::date AND ($2::date IS NULL OR date < $2::date)) l
      FULL JOIN (SELECT (started_at AT TIME ZONE 'UTC' - $3::float8 * interval '1 minute')::date AS date, sum(steps) AS steps FROM activities
        WHERE steps > 0 AND started_at >= $4::timestamptz AND ($5::timestamptz IS NULL OR started_at < $5::timestamptz) GROUP BY 1) a ON a.date = l.date
      ORDER BY 1 DESC`, [fromDay, toDay, tzMin, startOfDay(fromDay, tzMin).toISOString(), toDay ? startOfDay(toDay, tzMin).toISOString() : null]);
   return rows.map((r) => {
     const logged = r.logged == null ? null : Number(r.logged), walked = Number(r.walked);
     const typed = logged != null && (r.source == null || r.source === "manual");
-    const value = typed ? logged : Math.max(logged ?? 0, walked);
-    return { date: r.date, kind: "steps", value, source: typed ? "manual" : walked > (logged ?? 0) ? "activities" : r.source, logged, walked, worn: r.worn !== false };
+    const { value, from } = daySteps(logged, typed, walked);
+    return { date: r.date, kind: "steps", value, source: from === "typed" ? "manual" : from === "walks" ? "activities" : r.source, logged, walked, worn: r.worn !== false,
+      typed: r.typed == null ? null : Number(r.typed), synced: r.synced == null ? null : Number(r.synced), chosen: r.chosen };
   });
 }
 
@@ -234,42 +240,43 @@ export function activityRoutes(r: Router) {
 
   // daily log: steps, sleep (h), water (ml), mood (1-5); from a band also resting_hr (bpm), spo2 (%) and hrv (ms)
   // steps: a typed count, else the day's recorded activities (stepsByDay); tz: the app's calendar, as for goals
+  // Each day's row has both of its values (039): typed and synced, and chosen ('synced' when the person chose the synced
+  // one); value is the one the day uses.
   r.get("/daily", async ({ q }, _p, _b, qs) => {
     const from = dateStr(qs.from) ?? "1970-01-01";
-    const { rows } = await q.query<{ date: string | Date; kind: string; value: number | string; source: string | null; worn: boolean }>(`SELECT date, kind, value, source, worn FROM daily_logs WHERE date >= $1::date AND kind <> 'steps' ORDER BY date DESC`, [from]);
-    // band: Health Connect brought this day's value in (an import log entry not deleted), so a value typed over it can
-    // go back to the band's (PUT with band: true); the daily log marks it either way
+    const { rows } = await q.query<{ date: string | Date; kind: string; value: number | string; source: string | null; worn: boolean }>(
+      `SELECT date, kind, value, source, worn, typed, synced, chosen FROM daily_logs WHERE date >= $1::date AND kind <> 'steps' ORDER BY date DESC`, [from]);
+    // band: Health Connect brought this day's value in (an import log entry not deleted)
     const banded = new Set((await q.query<{ k: string }>(
       `SELECT ${IMPORT_DAILY} || ':' || to_char(h.date, 'YYYY-MM-DD') AS k FROM health_imports h WHERE h.deleted_at IS NULL AND h.date >= $1::date`, [from])).rows.map((x) => x.k));
-    const all: { date: string | Date; kind: string; value: unknown; logged?: number | null }[] = [...rows, ...(await stepsByDay(q, from, null, tzOf(qs)))];
-    const out: Record<string, unknown>[] = all.map((x) => {
-      const k = `${x.kind}:${ymdOf(x.date)}`, band = banded.delete(k);
-      // waiting: gone back to the band's value (PUT band: true), which the band's next read of the day brings
-      return { ...x, band, waiting: band && (x.kind === "steps" ? x.logged == null : x.value == null) };
-    });
-    // a day with no value of its own left, only for what the daily log shows (other readers take every row as a number)
-    for (const k of banded) {
-      const i = k.lastIndexOf(":"), kind = k.slice(0, i);
-      if (DAILY_KINDS.some((x) => x.id === kind)) out.push({ date: k.slice(i + 1), kind, value: null, source: null, band: true, waiting: true });
-    }
-    return out.sort((a, b) => String(b.date).localeCompare(String(a.date)));
+    const num = (v: unknown) => (v == null ? null : Number(v));
+    const all: { date: string | Date; kind: string; typed?: unknown; synced?: unknown; chosen?: string | null }[] = [...rows, ...(await stepsByDay(q, from, null, tzOf(qs)))];
+    return all.map((x) => {
+      const synced = num(x.synced);
+      // waiting: the synced value was chosen on a day whose synced value isn't known (typed over before 039 kept both),
+      // so the day keeps its typed value until the band's next read of the day brings the synced one
+      return { ...x, typed: num(x.typed), synced, chosen: x.chosen ?? null, band: banded.has(`${x.kind}:${ymdOf(x.date)}`), waiting: x.chosen === "synced" && synced == null };
+    }).sort((a, b) => String(b.date).localeCompare(String(a.date)));
   });
+  // { date, kind, value }: a typed value (null clears the value the day shows); { date, kind, use: 'typed' | 'synced' }
+  // chooses which of the day's values it uses (band: true, from before, is use: 'synced')
   r.put("/daily", async (ctx, _p, b) => {
     const entries = Array.isArray(b.entries) ? b.entries : [b];
-    // only answered for values going back to the band's (a typed value restores nothing)
+    // only answered for a choice of the synced value: false while the day waits for it (its value isn't known yet)
     let restored: boolean | undefined;
     for (const e of entries.slice(0, 1000)) {
       const d = dateStr(e.date), k = str(e.kind, 20);
       if (!d || !k) continue;
-      if (e.band) { restored = (await toBand(ctx, d, k)) && restored !== false; continue; }
-      if (e.value == null) await ctx.q.query("DELETE FROM daily_logs WHERE date = $1 AND kind = $2", [d, k]);
-      else await ctx.q.query(
-        `INSERT INTO daily_logs (user_id, date, kind, value, source) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (user_id, date, kind) DO UPDATE SET value = $4, source = $5`,
-        [ctx.userId, d, k, numOrNull(e.value, 0, 1e7), str(e.source, 20) || "manual"]);
+      const use = e.band === true ? "synced" : e.use === "synced" || e.use === "typed" ? e.use : null;
+      if (use) { const ok = await chooseDaily(ctx, d, k, use); if (use === "synced") restored = ok && restored !== false; continue; }
+      if (e.value == null) await clearDaily(ctx, d, k);
+      else if (e.source === "health_connect") await ctx.q.query(
+        `INSERT INTO daily_logs (user_id, date, kind, value, source, synced) VALUES ($1,$2,$3,$4,'health_connect',$4) ON CONFLICT (user_id, date, kind) DO UPDATE SET synced = $4`,
+        [ctx.userId, d, k, numOrNull(e.value, 0, 1e7)]);
+      else await setTyped(ctx, d, k, numOrNull(e.value, 0, 1e7)!, str(e.source, 20) || "manual");
     }
     // the daily log is not a body measurement: it touches activity, stats, goals and home, not the body log
     ctx.changed("activity");
-    // restored: false when a value going back to the band's waits for the phone's next read of that day
     return restored === undefined ? { ok: true } : { ok: true, restored };
   });
 }
@@ -278,24 +285,44 @@ export function activityRoutes(r: Router) {
 const IMPORT_DAILY = "CASE h.kind WHEN 'sleep' THEN 'sleep_h' WHEN 'water' THEN 'water_ml' WHEN 'distance' THEN 'distance_m' ELSE h.kind END";
 const ymdOf = (d: string | Date) => (d instanceof Date ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}` : String(d).slice(0, 10));
 
+/** A typed value for a day: the day uses it from now on (typing makes it the chosen one); the synced value stays stored. */
+export async function setTyped(ctx: Ctx, d: string, k: string, v: number, source = "manual") {
+  await ctx.q.query(
+    `INSERT INTO daily_logs (user_id, date, kind, value, source, typed) VALUES ($1,$2,$3,$4,$5,$4)
+     ON CONFLICT (user_id, date, kind) DO UPDATE SET typed = $4, chosen = NULL, source = $5`, [ctx.userId, d, k, v, source]);
+}
+
 /**
- * A value typed over the band's goes back to the band's. A typed value replaced the band's in daily_logs, so the band's
- * number is only still known for sleep, as the night's time asleep (sleep_nights keeps the band's): that is written back
- * at once, as an import would. Otherwise the typed value goes, and the band's comes back with its next read of that day:
- * the import log entry stays, not marked deleted (clearing a typed number never marks it, 034), so that import writes the
- * band's value again, and meanwhile GET /daily says the day is waiting for it. True when the band's value is back now,
- * false when it waits for that import.
+ * Which of the day's values it uses. The synced one is chosen also while it isn't known (a value typed over the band's
+ * before 039 kept both): the day keeps its typed value meanwhile and takes the band's with its next read of that day.
+ * True when the day now uses the synced value (or the typed one, for 'typed').
  */
-async function toBand(ctx: Ctx, d: string, k: string): Promise<boolean> {
-  if (k === "sleep_h") {
-    const n = (await ctx.q.query<{ asleep_min: number }>("SELECT asleep_min FROM sleep_nights WHERE date = $1", [d])).rows[0];
-    if (n) {
-      await ctx.q.query(
-        `INSERT INTO daily_logs (user_id, date, kind, value, source) VALUES ($1,$2,'sleep_h',$3,'health_connect') ON CONFLICT (user_id, date, kind) DO UPDATE SET value = $3, source = 'health_connect'`,
-        [ctx.userId, d, Math.round(Number(n.asleep_min) / 6) / 10]);
-      return true;
-    }
+async function chooseDaily(ctx: Ctx, d: string, k: string, use: "typed" | "synced"): Promise<boolean> {
+  const r = (await ctx.q.query<{ synced: unknown }>("UPDATE daily_logs SET chosen = $3 WHERE date = $1 AND kind = $2 RETURNING synced", [d, k, use === "synced" ? "synced" : null])).rows[0];
+  return use === "typed" ? !!r : r?.synced != null;
+}
+
+/** The import log's key for a day's number of this kind (as KEY in 031). */
+const importKey = (k: string, d: string) => `${k === "sleep_h" ? "sleep" : k === "distance_m" ? "distance" : k === "water_ml" ? "water" : k}:${d}`;
+const importKind = (k: string) => importKey(k, "").slice(0, -1);
+
+/**
+ * Clears the value the day shows. A typed one goes and the synced one (if any) takes over; the synced one is removed as
+ * deleting it from Imported data does (its import marked deleted, so the next read doesn't bring it back), and the typed
+ * one (if any) takes over. A day with nothing left goes.
+ */
+async function clearDaily(ctx: Ctx, d: string, k: string) {
+  const r = (await ctx.q.query<{ source: string; typed: unknown; synced: unknown }>("SELECT source, typed, synced FROM daily_logs WHERE date = $1 AND kind = $2", [d, k])).rows[0];
+  if (!r) return;
+  if (r.source !== "health_connect") {
+    if (r.synced == null) await ctx.q.query("DELETE FROM daily_logs WHERE date = $1 AND kind = $2", [d, k]);
+    else await ctx.q.query("UPDATE daily_logs SET typed = NULL, chosen = NULL WHERE date = $1 AND kind = $2", [d, k]);
+    return;
   }
-  await ctx.q.query("DELETE FROM daily_logs WHERE date = $1 AND kind = $2 AND source IS DISTINCT FROM 'health_connect'", [d, k]);
-  return false;
+  // a row deleted with the band's value in use marks its import deleted itself (034)
+  if (r.typed == null) { await ctx.q.query("DELETE FROM daily_logs WHERE date = $1 AND kind = $2", [d, k]); return; }
+  // marking the import deleted takes the synced value out (039's motus_health_deleted_clear)
+  await ctx.q.query(
+    `INSERT INTO health_imports (user_id, key, kind, date, deleted_at) VALUES ($1,$2,$3,$4,now())
+     ON CONFLICT (user_id, key) DO UPDATE SET deleted_at = now() WHERE health_imports.deleted_at IS NULL`, [ctx.userId, importKey(k, d), importKind(k), d]);
 }

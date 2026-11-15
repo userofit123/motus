@@ -38,6 +38,7 @@ import m035 from "./migrations/035_foreign_rows";
 import m036 from "./migrations/036_daily_worn";
 import m037 from "./migrations/037_activity_band_fields";
 import m038 from "./migrations/038_daily_device";
+import m039, { TYPED_AT } from "./migrations/039_daily_both_values";
 
 const MIGRATIONS: [string, string][] = [
   ["001_init", m001],
@@ -78,7 +79,17 @@ const MIGRATIONS: [string, string][] = [
   ["036_daily_worn", m036],
   ["037_activity_band_fields", m037],
   ["038_daily_device", m038],
+  ["039_daily_both_values", m039],
 ];
+
+/**
+ * 039 gained daily_logs.typed_at after a development copy had already run it (it was never released without it): such a
+ * copy gets the column and the trigger that stamps it here, once. Nothing to do anywhere else.
+ */
+async function typedAt(db: Db) {
+  const has = (await db.admin.query("SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'daily_logs' AND column_name = 'typed_at'")).rows.length;
+  if (!has) await db.tx((q) => q.exec(TYPED_AT));
+}
 
 /** `until`: stop after that one (tests run a migration against rows written in the shape before it). */
 export async function migrate(db: Db, until?: string): Promise<string[]> {
@@ -86,7 +97,11 @@ export async function migrate(db: Db, until?: string): Promise<string[]> {
   const done = new Set((await db.admin.query<{ name: string }>("SELECT name FROM schema_migrations")).rows.map((r) => r.name));
   const ran: string[] = [];
   for (const [name, sql] of MIGRATIONS) {
-    if (done.has(name)) { if (name === until) break; continue; }
+    if (done.has(name)) {
+      if (name === "039_daily_both_values") await typedAt(db);
+      if (name === until) break;
+      continue;
+    }
     await db.tx(async (q) => {
       await q.exec(sql);
       await q.query("INSERT INTO schema_migrations (name) VALUES ($1)", [name]);

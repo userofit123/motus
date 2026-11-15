@@ -1,9 +1,10 @@
 // Health Connect (Android): what other apps on the phone recorded (a band through Gadgetbridge, a scale, a watch) comes
 // in here. The Android app reads Health Connect and sends one batch; the engine decides what to keep, so the rules hold
 // for a local account and for a server account's copy on the phone alike.
-// - Daily steps and sleep go into the daily log as source "health_connect". A value typed in by hand stays: the person's
-//   own number wins over a device's (as for steps, PLAN.md decision M-155). The same for a band's daily resting heart
-//   rate, SpO2 and HRV (028), daily distance (metres) and active calories (029), water (ml) and VO2 max (030).
+// - Daily steps and sleep go into the daily log as the day's synced value (039), always, also beside a value typed in by
+//   hand, which the day keeps using until the person chooses the synced one: the person's own number wins over a
+//   device's by default (as for steps, PLAN.md decision M-155). The same for a band's daily resting heart rate, SpO2 and
+//   HRV (028), daily distance (metres) and active calories (029), water (ml) and VO2 max (030).
 // - A night of sleep in detail (stages, heart rate, SpO2, breathing) goes into sleep_nights (029), under the day's
 //   sleep key: the night is the detail, the daily sleep hours stay the person's when typed.
 // - Weight and body fat go into the body log once: by their Health Connect id, or (from an app that doesn't send one) a
@@ -23,9 +24,9 @@ import type { Sql } from "../db";
 import { dateStr, isoTime, numOrNull, intOrNull, str, tzOf } from "../util";
 import { uuidv7, isUuid } from "../ids";
 import { bad, notFound } from "../errors";
-import { ensureTypes, saveActivity, stepsByDay } from "./activities";
+import { ensureTypes, saveActivity, stepsByDay, setTyped } from "./activities";
 import { dayIn } from "./achievements";
-import { isNight, cleanWornDevice, plausibleSteps, stepsTyped, appSteps, bandStepsVerdict, type WornDevice } from "@motus/shared";
+import { isNight, cleanWornDevice, plausibleSteps, stepsTyped, appSteps, bandStepsVerdict, daySteps, type WornDevice } from "@motus/shared";
 
 export const HEALTH_SOURCE = "health_connect";
 // a band's number for an activity's time: a measure that can't be (below 0, absurdly large, not a number) is left out
@@ -70,7 +71,6 @@ const dailyValue = (k: Daily, v: unknown) => {
 /** A value from a band that is out of range (a glitch, a reading taken off the wrist) is skipped, not the whole batch. */
 const lenient = (k: Daily, v: unknown) => { try { return dailyValue(k, v); } catch { return null; } };
 const lenientBody = (k: Body, v: unknown) => { try { return bodyValue(k, v); } catch { return null; } };
-const DAILY_SQL = `(${Object.values(DAILY_KIND).map((k) => `'${k}'`).join(", ")})`;
 /** The daily log's kind for an import log row's kind, in SQL (h: health_imports). */
 const DAILY_CASE = `CASE h.kind ${Object.entries(DAILY_KIND).map(([i, d]) => `WHEN '${i}' THEN '${d}'`).join(" ")} END`;
 interface Imp { kind: Kind; date: string | null; ref: string | null; deleted: boolean }
@@ -290,9 +290,6 @@ export function healthRoutes(r: Router) {
 
     const imps = new Map<string, Imp>((await ctx.q.query("SELECT key, kind, to_char(date, 'YYYY-MM-DD') AS date, ref, deleted_at IS NOT NULL AS deleted FROM health_imports")).rows
       .map((x: any) => [x.key, { kind: x.kind, date: x.date, ref: x.ref, deleted: x.deleted }]));
-    // the day's numbers here and where each came from: one from the phone that the log doesn't have yet is noted below
-    const daily = new Map<string, string>((await ctx.q.query(`SELECT kind || ':' || to_char(date, 'YYYY-MM-DD') AS k, source FROM daily_logs WHERE kind IN ${DAILY_SQL}`)).rows
-      .map((x: any) => [x.k, x.source]));
     /**
      * Whether to bring this key in: not when deleted, from the log or by deleting its data elsewhere in the app (034
      * marks it then). Data missing here is not taken as deleted: a copy may have the log entry before the day's number
@@ -300,27 +297,27 @@ export function healthRoutes(r: Router) {
      */
     const open = (key: string) => !imps.get(key)?.deleted;
 
-    // a typed value (source "manual", or null on rows from before sources) is never replaced. worn: a band, watch or
-    // ring counted the day (036); the phone says so for steps, distance and active calories, and one that doesn't
-    // (an older app) is taken as worn, as before
+    // Every value is kept (039): as the day's synced value, beside a typed one if there is one, which the day keeps using
+    // (the person's own number wins over a device's by default, PLAN.md decision M-155) until the person chooses the
+    // synced one. worn: a band, watch or ring counted the day (036); the phone says so for steps, distance and active
+    // calories, and one that doesn't (an older app) is taken as worn, as before
     // device: the kind of worn device whose count the day is (038), from the phone per day; recorded beside the value and
     // never cleared by a read that doesn't know it (null), so a gadget that sometimes says its kind and sometimes not, or
     // a second phone that can't tell, doesn't take a known kind away. Not counted as a new day: only the wording follows it.
+    // Every day is noted in the import log, typed or not, so Imported data lists it.
     const day = async (kind: Daily, date: unknown, value: number | null, worn = true, device: WornDevice | null = null) => {
       const d = dateStr(date);
       if (!d || value == null) return false;
-      const key = `${kind}:${d}`, dk = `${DAILY_KIND[kind]}:${d}`;
+      const key = `${kind}:${d}`;
       if (!open(key)) return false;
       const { rows } = await ctx.q.query(
-        `INSERT INTO daily_logs (user_id, date, kind, value, source, worn) VALUES ($1,$2,$3,$4,$5,$6)
-         ON CONFLICT (user_id, date, kind) DO UPDATE SET value = $4, source = $5, worn = $6
-         WHERE daily_logs.source = $5 AND (daily_logs.value <> $4 OR daily_logs.worn <> $6) RETURNING 1`, [ctx.userId, d, DAILY_KIND[kind], value, HEALTH_SOURCE, worn]);
+        `INSERT INTO daily_logs (user_id, date, kind, value, source, worn, synced) VALUES ($1,$2,$3,$4,$5,$6,$4)
+         ON CONFLICT (user_id, date, kind) DO UPDATE SET synced = $4, worn = $6
+         WHERE daily_logs.synced IS DISTINCT FROM $4 OR daily_logs.worn <> $6 RETURNING 1`, [ctx.userId, d, DAILY_KIND[kind], value, HEALTH_SOURCE, worn]);
       if (device && worn && (await ctx.q.query(
-        "UPDATE daily_logs SET device = $3 WHERE date = $1::date AND kind = $2 AND source = $4 AND worn AND device IS DISTINCT FROM $3 RETURNING 1",
-        [d, DAILY_KIND[kind], device, HEALTH_SOURCE])).rows.length) touched = true;
-      const known = imps.has(key);
-      // noted when it came from the phone: now, or by an app from before the log (a typed day is not an import)
-      if (rows.length || (!known && daily.get(dk) === HEALTH_SOURCE)) {
+        "UPDATE daily_logs SET device = $3 WHERE date = $1::date AND kind = $2 AND synced IS NOT NULL AND worn AND device IS DISTINCT FROM $3 RETURNING 1",
+        [d, DAILY_KIND[kind], device])).rows.length) touched = true;
+      if (rows.length || !imps.has(key)) {
         await remember(ctx, key, kind, d, null);
         imps.set(key, { kind, date: d, ref: null, deleted: false });
         touched = true;
@@ -364,8 +361,9 @@ export function healthRoutes(r: Router) {
       const id = e.id != null ? str(String(e.id), 100) : "";
       // an app without record ids keys a reading by its time; with ids, that older key still counts as the same reading
       const key = id ? `${kind}:${id}` : `${kind}:${at}`, legacy = imps.get(`${kind}:${at}`);
+      // an entry without its row (ref null): a deletion taken back (restore), so the reading comes in again
       const h = imps.get(key);
-      if (!open(key) || h) return false;
+      if (!open(key) || h?.ref) return false;
       if (id && legacy?.deleted) return false;
       const same = (await ctx.q.query("SELECT id::text AS id FROM body_metrics WHERE kind = $2 AND measured_at BETWEEN $1::timestamptz - interval '1 minute' AND $1::timestamptz + interval '1 minute' LIMIT 1", [at, kind])).rows[0];
       let ref: string | null = same?.id ?? null, added = false;
@@ -389,8 +387,9 @@ export function healthRoutes(r: Router) {
     if (sessions.length) await ensureTypes(ctx);
     for (const s of sessions) {
       const hcId = str(String(s.id), 70), key = `activity:${hcId}`, clientId = `hc:${hcId}`;
+      // an entry without its activity (ref null): a deletion taken back (restore), so the session comes in again
       const h = imps.get(key);
-      if (!open(key) || h) continue;
+      if (!open(key) || h?.ref) continue;
       // brought in before the log existed: noted, not added again
       let ref: string | null = (await ctx.q.query("SELECT id::text AS id FROM activities WHERE client_id = $1", [clientId])).rows[0]?.id ?? null;
       if (!ref) {
@@ -562,7 +561,7 @@ export function healthRoutes(r: Router) {
         SELECT COALESCE(array_agg(DISTINCT kind::text), '{}'::text[]) AS kinds FROM daily_logs WHERE kind IN ('resting_hr', 'spo2', 'hrv')
       ), sn AS (SELECT EXISTS (SELECT 1 FROM sleep_nights) AS any)
       SELECT
-      sn.any OR EXISTS (SELECT 1 FROM daily_logs WHERE kind = 'sleep_h' AND source = $1) AS sleep,
+      sn.any OR EXISTS (SELECT 1 FROM daily_logs WHERE kind = 'sleep_h' AND synced IS NOT NULL) AS sleep,
       cardinality(hk.kinds) > 0
         OR EXISTS (SELECT 1 FROM activities WHERE hr IS NOT NULL OR (source = $1 AND avg_hr IS NOT NULL))
         OR EXISTS (SELECT 1 FROM workouts WHERE hr IS NOT NULL) OR EXISTS (SELECT 1 FROM hr_days) AS heart,
@@ -571,7 +570,7 @@ export function healthRoutes(r: Router) {
       EXISTS (SELECT 1 FROM daily_logs WHERE kind = 'vo2max') AS vo2max,
       EXISTS (SELECT 1 FROM hr_days) AS hr_day,
       EXISTS (SELECT 1 FROM health_imports h JOIN body_metrics b ON b.id::text = h.ref WHERE h.kind = 'body_fat' AND h.deleted_at IS NULL) AS body_fat,
-      EXISTS (SELECT 1 FROM daily_logs WHERE kind = 'water_ml' AND source = $1) AS hydration,
+      EXISTS (SELECT 1 FROM daily_logs WHERE kind = 'water_ml' AND synced IS NOT NULL) AS hydration,
       sn.any AS nights,
       'resting_hr' = ANY (hk.kinds) AS resting_hr,
       'hrv' = ANY (hk.kinds) AS hrv,
@@ -595,8 +594,8 @@ export function healthRoutes(r: Router) {
   // don't flip the wording; a new device takes over once it has counted most of those days. null: none known.
   r.get("/health/device", async (ctx) => {
     const { rows } = await ctx.q.query(
-      `SELECT device FROM (SELECT date, device FROM daily_logs WHERE kind IN ('steps', 'distance_m', 'active_kcal') AND source = $1 AND worn
-         AND device IS NOT NULL ORDER BY date DESC LIMIT 30) t GROUP BY device ORDER BY count(*) DESC, max(date) DESC LIMIT 1`, [HEALTH_SOURCE]);
+      `SELECT device FROM (SELECT date, device FROM daily_logs WHERE kind IN ('steps', 'distance_m', 'active_kcal') AND synced IS NOT NULL AND worn
+         AND device IS NOT NULL ORDER BY date DESC LIMIT 30) t GROUP BY device ORDER BY count(*) DESC, max(date) DESC LIMIT 1`);
     return { kind: cleanWornDevice(rows[0]?.device) };
   });
 
@@ -654,7 +653,7 @@ export function healthRoutes(r: Router) {
     const { rows } = await ctx.q.query(`
       SELECT *, sort_at::text AS sort_text FROM (
         SELECT h.key, h.kind, h.ref, h.imported_at,
-          d.value AS d_value, d.source AS d_source, bm.value AS w_value, bm.measured_at,
+          d.value AS d_value, d.source AS d_source, d.typed AS d_typed, d.synced AS d_synced, d.worn AS d_worn, bm.value AS w_value, bm.measured_at,
           a.id AS a_id, a.type AS a_type, a.name AS a_name, a.started_at, a.duration_s, a.distance_m, a.steps AS a_steps, a.avg_hr,
           to_char(coalesce(h.date, (coalesce(bm.measured_at, a.started_at) AT TIME ZONE 'UTC' - $1::float8 * interval '1 minute')::date), 'YYYY-MM-DD') AS day,
           coalesce(bm.measured_at, a.started_at, ((h.date + 1)::timestamp AT TIME ZONE 'UTC') + $1::float8 * interval '1 minute' - interval '1 millisecond') AS sort_at
@@ -669,22 +668,37 @@ export function healthRoutes(r: Router) {
     const page = rows.slice(0, limit);
     const iso = (v: unknown) => (v == null ? null : new Date(v as string).toISOString());
     const num = (v: unknown) => (v == null ? null : Number(v));
+    // the walks' steps on the page's steps days: a synced count less than them doesn't count (daySteps), as in the daily log
+    const stepDays = page.filter((x: any) => x.kind === "steps" && x.d_synced != null).map((x: any) => x.day as string).sort();
+    const walked = new Map<string, number>();
+    if (stepDays.length) {
+      const next = new Date(Date.parse(stepDays.at(-1)! + "T00:00:00Z") + 86_400_000).toISOString().slice(0, 10);
+      for (const d of await stepsByDay(ctx.q, stepDays[0]!, next, tz)) walked.set(d.date, d.walked);
+    }
     const items = page.map((x: any) => ({
       key: x.key as string, kind: x.kind as Kind, date: x.day as string,
       at: iso(x.measured_at ?? x.started_at),
-      value: x.kind === "activity" ? null : num(isBody(x.kind) ? x.w_value : x.d_value),
+      // a day's number: the synced one (also when the day uses a typed one), else (typed over before 039 kept both) the day's
+      value: x.kind === "activity" ? null : num(isBody(x.kind) ? x.w_value : x.d_synced ?? x.d_value),
+      // a day's synced value that the day doesn't use: the typed one it uses instead, for "Typed … used"
+      typed: isDaily(x.kind) && x.d_source !== HEALTH_SOURCE && x.d_synced != null ? num(x.d_typed) : null,
+      // steps whose synced count is less than the day's walks in Motus: the walks' total, which counts instead (daySteps);
+      // using the synced count then changes nothing, so it isn't offered
+      walks: x.kind === "steps" && x.d_synced != null && daySteps(num(x.d_synced), false, walked.get(x.day) ?? 0).from === "walks" ? walked.get(x.day)! : null,
       activity: x.a_id ? { id: x.a_id, type: x.a_type, name: x.a_name ?? "", startedAt: iso(x.started_at), durationS: num(x.duration_s), distanceM: num(x.distance_m), steps: num(x.a_steps), avgHr: num(x.avg_hr) } : null,
       ref: x.ref as string | null,
-      // a day's number changed by hand since (it then stays as typed); a reading or session can't tell
-      edited: isDaily(x.kind) ? x.d_source !== HEALTH_SOURCE : false,
+      // a day's number typed over before 039 kept both (its synced value isn't known); a reading or session can't tell
+      edited: isDaily(x.kind) ? x.d_source !== HEALTH_SOURCE && x.d_synced == null : false,
       importedAt: iso(x.imported_at),
+      // a day's number: false when no band, watch or ring counted it (036), so it is named as from Health Connect
+      worn: isDaily(x.kind) ? x.d_worn !== false : null,
     }));
     const last: any = rows.length > limit ? page.at(-1) : null;
     return { items, cursor: last ? `${last.sort_text}|${last.key}` : null };
   });
 
   // a day's number (steps, sleep, resting heart rate, SpO2, HRV, water, VO2 max...) set by hand from the log is typed
-  // ("manual"): later syncs keep it; a weight or body fat reading is corrected in place
+  // ("manual"): the day uses it, and later syncs keep the synced one beside it; a weight or body fat reading is corrected in place
   r.put("/health/imports/:key", async (ctx, p, b) => {
     const h = await entry(ctx, p.key!);
     if (!h || !h.there) throw notFound("This import is gone");
@@ -692,9 +706,7 @@ export function healthRoutes(r: Router) {
     if (isDaily(h.kind)) {
       const v = dailyValue(h.kind, b.value);
       if (v == null) throw bad("Enter a value");
-      await ctx.q.query(
-        `INSERT INTO daily_logs (user_id, date, kind, value, source) VALUES ($1,$2,$3,$4,'manual') ON CONFLICT (user_id, date, kind) DO UPDATE SET value = $4, source = 'manual'`,
-        [ctx.userId, h.date, DAILY_KIND[h.kind], v]);
+      await setTyped(ctx, h.date!, DAILY_KIND[h.kind], v);
     } else {
       const v = bodyValue(h.kind as Body, b.value);
       if (v == null) throw bad("Enter a value");
@@ -704,15 +716,48 @@ export function healthRoutes(r: Router) {
     return { ok: true };
   });
 
-  // deletes what it became and keeps the key, marked deleted, so the next sync doesn't bring it back
+  // deletes what it became and keeps the key, marked deleted, so the next sync doesn't bring it back. A day's number:
+  // marking it takes the synced value out (and the night's detail with a day's sleep), a typed one stays (039)
   r.del("/health/imports/:key", async (ctx, p) => {
     const h = await entry(ctx, p.key!);
     if (!h) throw notFound("This import is gone");
-    if (isDaily(h.kind)) await ctx.q.query("DELETE FROM daily_logs WHERE date = $1 AND kind = $2", [h.date, DAILY_KIND[h.kind]]);
-    // a day's sleep takes its night's detail with it
-    if (h.kind === "sleep") await ctx.q.query("DELETE FROM sleep_nights WHERE date = $1", [h.date]);
-    else if (!isDaily(h.kind)) await ctx.q.query(`DELETE FROM ${isBody(h.kind) ? "body_metrics" : "activities"} WHERE id::text = $1`, [h.ref]);
+    if (!isDaily(h.kind)) await ctx.q.query(`DELETE FROM ${isBody(h.kind) ? "body_metrics" : "activities"} WHERE id::text = $1`, [h.ref]);
     await forget(ctx, p.key!);
+    ctx.changed("health");
+    return { ok: true };
+  });
+
+  // the day's synced value is the one it uses (Imported data → Use this value)
+  r.post("/health/imports/:key/use", async (ctx, p) => {
+    const h = await entry(ctx, p.key!);
+    if (!h || !h.there || !isDaily(h.kind)) throw notFound("This import is gone");
+    await ctx.q.query("UPDATE daily_logs SET chosen = 'synced' WHERE date = $1 AND kind = $2", [h.date, DAILY_KIND[h.kind]]);
+    ctx.changed("health");
+    return { ok: true };
+  });
+
+  // What the person deleted from the import log (or deleted elsewhere), newest first, so a deletion can be taken back. A
+  // day keeps its day; a reading or session its kind only (its data is gone). Also what was restored and isn't back yet
+  // (restored: true, with no deletedAt), so it doesn't vanish from both lists until the phone's next read brings it.
+  r.get("/health/imports/deleted", async (ctx, _p, _b, qs) => {
+    const limit = intOrNull(qs.limit, 1, 500) ?? 200;
+    const { rows } = await ctx.q.query(
+      `SELECT key, kind, to_char(date, 'YYYY-MM-DD') AS date, deleted_at FROM health_imports h
+       WHERE deleted_at IS NOT NULL OR (restored_at IS NOT NULL AND NOT CASE
+         WHEN h.kind IN ('weight', 'body_fat') THEN EXISTS (SELECT 1 FROM body_metrics bm WHERE bm.id::text = h.ref)
+         WHEN h.kind = 'activity' THEN EXISTS (SELECT 1 FROM activities a WHERE a.id::text = h.ref)
+         ELSE EXISTS (SELECT 1 FROM daily_logs d WHERE d.date = h.date AND d.kind = ${DAILY_CASE} AND d.synced IS NOT NULL) END)
+       ORDER BY coalesce(deleted_at, restored_at) DESC, key LIMIT ${limit}`);
+    return { items: rows.map((x: any) => ({ key: x.key as string, kind: x.kind as Kind, date: x.date as string | null,
+      deletedAt: x.deleted_at == null ? null : new Date(x.deleted_at).toISOString(), restored: x.deleted_at == null })) };
+  });
+  // takes a deletion back: the next read of Health Connect imports it again (restored_at wins over a copy still holding the
+  // deletion, sync/core overrule). A reading's or session's row is gone, so its entry lets go of it (ref): that read makes
+  // a new one, instead of taking the entry as already in.
+  r.post("/health/imports/:key/restore", async (ctx, p) => {
+    const { rows } = await ctx.q.query(
+      "UPDATE health_imports SET deleted_at = NULL, restored_at = now(), ref = NULL WHERE key = $1 AND deleted_at IS NOT NULL RETURNING 1", [p.key]);
+    if (!rows.length) throw notFound("Nothing to restore");
     ctx.changed("health");
     return { ok: true };
   });
