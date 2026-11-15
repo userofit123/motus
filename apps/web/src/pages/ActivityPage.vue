@@ -72,10 +72,10 @@ const tiles = computed<Tile[]>(() => {
   if (pace.value) out.push({ key: "pace", icon: "timer", label: "Average pace", value: pace.value, unit: `/${f.du}` });
   if (x.steps > 0) out.push({ key: "steps", icon: "steps", label: "Steps", value: f.num(x.steps, 0), sub: stepsSub.value });
   // the climb takes the steps' place as before (one or the other, so a walk keeps its two rows of two)
-  if (!(x.steps > 0) && ownClimb.value != null) out.push({ key: "climb", icon: "arrowUp", label: "Climb", value: String(Math.round(ownClimb.value)), unit: "m", sub: bClimb ? said(`${Math.round(bClimb)} m`) : [] });
+  if (!(x.steps > 0) && ownClimb.value != null) out.push({ key: "climb", icon: "arrowUp", label: "Climb", value: String(Math.round(ownClimb.value)), unit: "m", sub: bClimb ? said(`${Math.round(bClimb)} m`) : [] });
   else if (!(x.steps > 0) && bClimb) out.push({ key: "climb", icon: "arrowUp", label: "Climb", value: String(Math.round(bClimb)), unit: "m", sub: bandSub });
   else if (!(x.steps > 0) && bFloors) out.push({ key: "floors", icon: "arrowUp", label: "Floors", value: f.num(bFloors, bFloors % 1 ? 1 : 0), sub: bandSub });
-  if (x.calories > 0) out.push({ key: "kcal", icon: "flame", label: "Active calories", value: f.num(x.calories, 0), unit: "kcal", sub: bKcal ? said(`${f.num(bKcal, 0)} kcal`) : [] });
+  if (x.calories > 0) out.push({ key: "kcal", icon: "flame", label: "Active calories", value: f.num(x.calories, 0), unit: "kcal", sub: bKcal ? said(`${f.num(bKcal, 0)} kcal`) : [] });
   else if (bKcal) out.push({ key: "kcal", icon: "flame", label: "Active calories", value: f.num(bKcal, 0), unit: "kcal", sub: bandSub });
   return out;
 });
