@@ -91,8 +91,10 @@ const HR_POINTS = 600;
  * A band's heart rate for one activity or workout: [unix seconds, bpm] pairs inside its time (a minute either side, for
  * clocks a little apart), sorted, at most HR_POINTS (averaged in even runs, so a long session keeps its shape).
  * Average and max come from every reading, before thinning. Readings out of 25-250 bpm are glitches and left out.
+ * least: the fewest readings that count; an activity takes one (a band may measure only every 10 minutes, so a short walk
+ * can hold a single reading, and it is still the heart rate then).
  */
-export function heartRate(v: unknown, startS: number, endS: number, points = HR_POINTS): { hr: [number, number][]; avg: number; max: number; min: number } | null {
+export function heartRate(v: unknown, startS: number, endS: number, points = HR_POINTS, least = 2): { hr: [number, number][]; avg: number; max: number; min: number } | null {
   if (!Array.isArray(v)) return null;
   const pts = new Map<number, number>();
   for (const p of v.slice(0, 100000)) {
@@ -102,7 +104,7 @@ export function heartRate(v: unknown, startS: number, endS: number, points = HR_
     pts.set(Math.round(t), Math.round(b));
   }
   const all = [...pts].sort((a, b) => a[0] - b[0]);
-  if (all.length < 2) return null;
+  if (all.length < Math.max(1, least)) return null;
   const avg = Math.round(all.reduce((s, p) => s + p[1], 0) / all.length);
   const max = all.reduce((m, p) => Math.max(m, p[1]), 0), min = all.reduce((m, p) => Math.min(m, p[1]), 999);
   if (all.length <= points) return { hr: all, avg, max, min };
@@ -457,7 +459,7 @@ export function healthRoutes(r: Router) {
       const steps = e.steps == null ? null : intOrNull(e.steps, 0, 1e7);
       if (e.kind === "workout") {
         const w = (await ctx.q.query("SELECT started_at, ended_at FROM workouts WHERE id = $1 AND status = 'completed'", [e.id])).rows[0];
-        const h = w?.ended_at ? heartRate(e.hr, new Date(w.started_at).getTime() / 1000, new Date(w.ended_at).getTime() / 1000) : null;
+        const h = w?.ended_at ? heartRate(e.hr, new Date(w.started_at).getTime() / 1000, new Date(w.ended_at).getTime() / 1000, HR_POINTS, 1) : null;
         if (!h) continue;
         // an average typed in stays; the band's only fills an empty one
         await ctx.q.query("UPDATE workouts SET hr = $2, max_hr = $3, avg_hr = coalesce(avg_hr, $4), updated_at = $5 WHERE id = $1",
@@ -467,7 +469,7 @@ export function healthRoutes(r: Router) {
       }
       const a = (await ctx.q.query(
         `SELECT a.started_at, a.ended_at, a.source, a.steps, a.steps_source, a.steps_app, coalesce(t.has_steps, a.type IN ('walk', 'run', 'hike')) AS counts,
-           a.band_distance_m, a.band_kcal, a.band_elevation_m, a.band_floors, a.band_at
+           a.band_distance_m, a.band_kcal, a.band_elevation_m, a.band_floors, a.band_at, a.hr, a.max_hr, a.avg_hr
          FROM activities a LEFT JOIN activity_types t ON t.slug = a.type WHERE a.id = $1`, [e.id])).rows[0];
       if (!a?.ended_at) continue;
       // never over a count the person typed: changed by hand later ('manual'), or typed when the walk was logged by hand
@@ -488,9 +490,16 @@ export function healthRoutes(r: Router) {
         await ctx.q.query("UPDATE activities SET steps_app = $2, steps = $3, steps_source = 'band' WHERE id = $1", [e.id, app, steps]);
         out.steps++; acts = true;
       }
-      const h = heartRate(e.hr, new Date(a.started_at).getTime() / 1000, new Date(a.ended_at).getTime() / 1000);
-      if (h) {
-        await ctx.q.query("UPDATE activities SET hr = $2, max_hr = $3, avg_hr = coalesce(avg_hr, $4) WHERE id = $1", [e.id, JSON.stringify(h.hr), h.max, h.avg]);
+      // taken whether or not the band covered the whole time (that rule is for its steps and totals): any reading inside
+      // is the heart rate then
+      const h = heartRate(e.hr, new Date(a.started_at).getTime() / 1000, new Date(a.ended_at).getTime() / 1000, HR_POINTS, 1);
+      // an activity still listed for its band numbers comes back on every read: the same readings again change nothing
+      if (h && !(a.max_hr === h.max && JSON.stringify(a.hr) === JSON.stringify(h.hr))) {
+        // an average typed in stays; the band's own (the one its earlier readings gave, within rounding of the thinned
+        // series) follows as more of them arrive
+        const had = Array.isArray(a.hr) && a.hr.length ? a.hr.reduce((t: number, p: [number, number]) => t + Number(p[1]), 0) / a.hr.length : null;
+        const typedAvg = a.avg_hr != null && !(had != null && Math.abs(Number(a.avg_hr) - had) <= 1);
+        await ctx.q.query("UPDATE activities SET hr = $2, max_hr = $3, avg_hr = $4 WHERE id = $1", [e.id, JSON.stringify(h.hr), h.max, typedAvg ? Number(a.avg_hr) : h.avg]);
         out.hr++; acts = true;
       }
       if (e.bandFields === true) {

@@ -8,6 +8,7 @@ import { newActivityType } from "../core/activityTypes";
 import { api } from "../api/client";
 import { invalidate } from "../api/live";
 import { toast, toastError } from "../core/toast";
+import { syncAfterSession } from "../native/health";
 import { useFmt, localYmd } from "../core/format";
 import { toM } from "@motus/shared";
 import { recording, recordPath } from "../workout/recording";
@@ -39,6 +40,7 @@ async function save() {
     await api.post("/activities", { type: type.value, name: f.value.name, startedAt, durationS: Math.round((f.value.minutes ?? 0) * 60), distanceM: dist ? toM(dist, fmt.value.du) : null, steps: t.value?.hasSteps ? f.value.steps : null, notes: f.value.notes, source: "manual" });
     invalidate(["activities", "stats", "goals", "home", "calendar"]);
     toast(`${t.value?.name ?? "Activity"} saved`);
+    syncAfterSession(); // the band's heart rate for that time
     emit("close");
   } catch (e) { toastError(e); } finally { busy.value = false; }
 }

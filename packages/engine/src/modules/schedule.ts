@@ -142,7 +142,7 @@ export function scheduleRoutes(r: Router) {
          ${SET_COUNT_SQL} AS sets, ${VOLUME_SQL} AS volume_kg
        FROM workouts w LEFT JOIN routines r ON r.id = w.routine_id WHERE w.status <> 'discarded' AND w.started_at >= $1::date AND w.started_at < $2::date ORDER BY w.started_at`, [lo, hi])).rows.map((x: any) => ({ ...camel(x), sets: Number(x.sets), volumeKg: Number(x.volume_kg) }));
     const activities = (await q.query(
-      `SELECT id, type, name, started_at, duration_s, distance_m, steps, source, route IS NOT NULL AS has_route FROM activities WHERE started_at >= $1::date AND started_at < $2::date ORDER BY started_at`, [lo, hi])).rows.map((x: any) => camel(x));
+      `SELECT id, type, name, started_at, duration_s, distance_m, steps, source, avg_hr, max_hr, route IS NOT NULL AS has_route FROM activities WHERE started_at >= $1::date AND started_at < $2::date ORDER BY started_at`, [lo, hi])).rows.map((x: any) => camel(x));
     const planned = await plannedOpen(q, from, to, tzOf(qs));
     return { workouts, activities, planned };
   });

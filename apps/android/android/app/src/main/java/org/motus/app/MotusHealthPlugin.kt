@@ -197,7 +197,7 @@ class MotusHealthPlugin : Plugin() {
      * { results: [{kind, id, steps?: number, covered: boolean, hr?: [[unixSeconds, bpm], ...]}] }
      * steps: the band's only (bestBand), absent when no band, watch or ring counted then; bandOnly: steps were read
      * this way (an older build took the app with the most, often the phone's own counter). covered: the worn device's
-     * data stands for the whole span (spanByApp, coverage: synced past it, worn throughout; false when the band was off
+     * data stands for the whole span (spanByApp, coverage: its step records reach past it on both sides; false when the band was off
      * or has not synced yet).
      * hr: at most 600 points. For an activity the worn device covered, also what it measured meanwhile (rangeBand):
      * distanceM, activeKcal, elevationM, floors, each absent when it had none; bandFields: this build reads them.
@@ -329,24 +329,20 @@ class MotusHealthPlugin : Plugin() {
     // Whether a worn device's numbers stand for a whole span (an activity recorded in Motus): one rule for its steps
     // (readRanges), what else it measured then (rangeBand) and the activity's Step sources sheet (activitySources).
     // A band app writes step records only for minutes with steps (Gadgetbridge), so a hole in them inside a walk is
-    // standing still, 0 steps, not missing data. What says the data is all there: the device's app has something (steps
-    // or heart rate) at or before the start and at or after the end, each within 30 minutes (it synced past the walk),
-    // and, where it measures heart rate, its heart rate has no hole over 15 minutes inside (it was worn). A device with
-    // no heart rate at all: its step records start within 10 minutes of the start and reach within 10 of the end.
+    // standing still, 0 steps, not missing data. What says the data is all there: the device's app has step records
+    // reaching past the walk on both sides, one at or before the start and one at or after the end, each within 30
+    // minutes (it synced past the walk). Heart rate is never asked: its measuring may be off while steps almost never are.
     private val SYNC_SLACK_MS = 30L * 60 * 1000
-    private val WORN_GAP_MS = 15L * 60 * 1000
-    private val EDGE_SLACK_MS = 10L * 60 * 1000
-    // why: null when covered, else "after" (nothing at or after the end: not synced yet), "before" (nothing at or before
-    // the start), "worn" (a heart rate hole over 15 minutes: gap), "edges" (no heart rate, and its steps don't reach
-    // within 10 minutes of the start or end: gap)
-    private class Coverage(val covered: Boolean, val why: String?, val gap: Pair<Instant, Instant>?)
+    // why: null when covered, else "after" (no step record at or after the end: not synced yet) or "before" (none at or
+    // before the start)
+    private class Coverage(val covered: Boolean, val why: String?)
     // One app's numbers around a span: its step records (from 30 minutes before to 30 after), the steps inside (records
     // crossing the edges count by their share of time inside; count null when it has no step record inside), its heart
     // rate sample times and the device its records name. band: a band's, watch's or ring's (isBand, per record: an app
     // may write both the phone's and a watch's). coverage: for a band only (the phone's own counting is never the device's).
     private class AppSpan(val app: String, val band: Boolean, val steps: List<StepsRecord>, val raw: Double, val inside: Boolean,
                           val hr: List<Instant>, val device: Device?) {
-        var coverage = Coverage(false, null, null)
+        var coverage = Coverage(false, null)
         val count: Long? get() = if (inside) Math.round(raw) else null
     }
     private fun named(devices: List<Device?>): Device? = devices.firstOrNull { d -> d?.type.let { it != null && it != Device.TYPE_UNKNOWN } } ?: devices.firstOrNull()
@@ -377,30 +373,12 @@ class MotusHealthPlugin : Plugin() {
         }.filter { it.inside || it.hr.isNotEmpty() }
     }
     private fun coverage(a: AppSpan, start: Instant, end: Instant): Coverage {
-        if (a.hr.isNotEmpty()) {
-            val after = a.steps.any { !it.endTime.isBefore(end) } || a.hr.any { !it.isBefore(end) }
-            val before = a.steps.any { !it.startTime.isAfter(start) } || a.hr.any { !it.isAfter(start) }
-            if (!after) return Coverage(false, "after", null)
-            if (!before) return Coverage(false, "before", null)
-            // the largest hole in its heart rate inside the span, the edges included
-            var prev = start; var most = 0L; var gap: Pair<Instant, Instant>? = null
-            for (t in a.hr.filter { !it.isBefore(start) && !it.isAfter(end) } + end) {
-                val g = t.toEpochMilli() - prev.toEpochMilli()
-                if (g > most) { most = g; gap = prev to t }
-                prev = t
-            }
-            return if (most > WORN_GAP_MS) Coverage(false, "worn", gap) else Coverage(true, null, null)
-        }
-        val inSpan = a.steps.filter { it.endTime.isAfter(start) && it.startTime.isBefore(end) }
-        if (inSpan.isEmpty()) return Coverage(false, "edges", start to end)
-        if (end.toEpochMilli() - start.toEpochMilli() < EDGE_SLACK_MS) return Coverage(true, null, null)
-        val head = inSpan.minOf { it.startTime }; val tail = inSpan.maxOf { it.endTime }
-        val lead = head.toEpochMilli() - start.toEpochMilli(); val trail = end.toEpochMilli() - tail.toEpochMilli()
-        return when {
-            lead <= EDGE_SLACK_MS && trail <= EDGE_SLACK_MS -> Coverage(true, null, null)
-            lead >= trail -> Coverage(false, "edges", start to head)
-            else -> Coverage(false, "edges", tail to end)
-        }
+        // a record overlapping the edge or ending/starting within 30 minutes of it (the read already covers that much)
+        val before = a.steps.any { !it.startTime.isAfter(start) }
+        val after = a.steps.any { !it.endTime.isBefore(end) }
+        if (!after) return Coverage(false, "after")
+        if (!before) return Coverage(false, "before")
+        return Coverage(true, null)
     }
     // The worn device whose numbers stand for the span: the band app with the most steps inside it (two apps writing for
     // the same band: the larger), else one with heart rate then (a type without steps). Only a band, watch or ring
@@ -474,12 +452,15 @@ class MotusHealthPlugin : Plugin() {
         }
     }
 
-    // Heart rate samples in the span as [unixSeconds, bpm], averaged into at most 600 time buckets
+    // Heart rate samples in the span as [unixSeconds, bpm], averaged into at most 600 time buckets. Only a worn device's
+    // (isBand, as for steps): an app on the phone may write a reading measured some other way. No coverage needed: any
+    // reading inside the span is the person's heart rate then, and one is enough (a band may measure only every 10 minutes).
     private suspend fun rangeHr(c: HealthConnectClient, start: Instant, end: Instant): JSArray? {
-        val samples = readBetween(c, HeartRateRecord::class, start, end).flatMap { it.samples }
+        val samples = readBetween(c, HeartRateRecord::class, start, end)
+            .filter { isBand(it.metadata.dataOrigin.packageName, it.metadata.device?.type) }.flatMap { it.samples }
             .filter { !it.time.isBefore(start) && !it.time.isAfter(end) }
             .sortedBy { it.time }
-        if (samples.size < 2) return null
+        if (samples.isEmpty()) return null
         val out = JSArray()
         if (samples.size <= 600) {
             for (s in samples) out.put(JSArray().put(s.time.epochSecond).put(s.beatsPerMinute))
@@ -684,7 +665,7 @@ class MotusHealthPlugin : Plugin() {
      * { start, end } (ISO times), read as readRanges reads them (spanByApp, bestBand), so the sheet shows what Motus went by.
      * { phoneName, used: the worn device's app readRanges takes, or null, sources: [{ app, label?, steps, band, phone,
      *   device: "band" | "watch" | "phone" | "unknown" | ..., deviceName?, covered, heartRate: it measured heart rate then,
-     *   why?: why it isn't covered (coverage), gapStart?, gapEnd? (ISO: the heart rate hole, or the steps' missing edge) }] }
+     *   why?: why it isn't covered (coverage: "after" or "before") }] }
      */
     @PluginMethod
     fun activitySources(call: PluginCall) {
@@ -704,7 +685,6 @@ class MotusHealthPlugin : Plugin() {
                         .put("phone", !sp.band && (phoneApp(sp.app) || d?.type == Device.TYPE_PHONE)).put("covered", sp.coverage.covered)
                         .put("heartRate", sp.hr.isNotEmpty())
                     if (sp.band) { wornOf(d).name?.let { o.put("deviceName", it) }; sp.coverage.why?.let { o.put("why", it) } }
-                    sp.coverage.gap?.let { o.put("gapStart", it.first.toString()).put("gapEnd", it.second.toString()) }
                     appLabel(sp.app)?.let { o.put("label", it) }
                     sources.put(o)
                 }

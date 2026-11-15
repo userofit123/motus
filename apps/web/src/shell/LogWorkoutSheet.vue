@@ -8,6 +8,7 @@ import { api } from "../api/client";
 import { invalidate } from "../api/live";
 import { useFmt, localYmd } from "../core/format";
 import { toastError, toast } from "../core/toast";
+import { syncAfterSession } from "../native/health";
 import { confirm } from "../core/ask";
 import Sheet from "../components/Sheet.vue";
 import Icon from "../components/Icon.vue";
@@ -69,7 +70,7 @@ async function save() {
     const startedAt = new Date(`${f.value.date}T${f.value.time}`).toISOString();
     await api.post("/workouts/log", { routineId: f.value.routineId || null, name: f.value.name || "Workout", startedAt, durationS: f.value.minutes * 60, notes: f.value.notes,
       exercises: exs.value.map((e) => ({ exerciseId: e.exerciseId, sets: e.sets.filter((s) => s.reps != null || s.weight != null || s.durationS != null).map((s) => ({ kind: "normal", weightKg: s.weight != null ? fmt.value.toKg(s.weight) : null, reps: s.reps, durationS: s.durationS })) })) });
-    invalidate(["*"]); toast("Workout logged"); emit("close");
+    invalidate(["*"]); toast("Workout logged"); syncAfterSession(); emit("close");
   } catch (e) { toastError(e); } finally { busy.value = false; }
 }
 </script>

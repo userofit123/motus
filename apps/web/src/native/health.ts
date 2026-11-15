@@ -66,10 +66,9 @@ export const stepSources = (date: string): Promise<StepSources> => plugin().step
 /** An activity's steps per Health Connect app for its time, read as the sync reads them (the activity's ⋮ → Step
  *  sources). used: the worn device's app the sync takes, null when none counted. covered: its data stands for the whole
  *  time (synced past it, worn throughout). */
-// why: why a worn device's data doesn't stand for the whole time: "after" (nothing after it yet: not synced), "before"
-// (nothing from before it), "worn" (no heart rate gapStart-gapEnd), "edges" (no heart rate at all, and its steps start or
-// end over 10 minutes inside: gapStart-gapEnd)
-export interface SpanSource extends StepSource { deviceName?: string; covered: boolean; heartRate?: boolean; why?: "after" | "before" | "worn" | "edges"; gapStart?: string; gapEnd?: string }
+// why: why a worn device's data doesn't stand for the whole time: "after" (no step record after it yet: not synced) or
+// "before" (none from before it); an older app build may send others
+export interface SpanSource extends StepSource { deviceName?: string; covered: boolean; heartRate?: boolean; why?: string }
 export interface ActivitySources { used: string | null; phoneName?: string; sources: SpanSource[] }
 export const canActivitySources = () => healthSupported() && typeof plugin()?.activitySources === "function"; // an app build from before has none
 export const activitySources = (start: string, end: string): Promise<ActivitySources> => plugin().activitySources({ start, end });
@@ -212,11 +211,13 @@ const RANGES_DAYS = 30, SETTLE_MS = 3 * DAY_MS, CHECKED_KEY = "motusHealthChecke
 // bumped when the app reads the band's side differently, so the last 30 days are asked about once more, also activities
 // that already have the band's steps (recheck) and ones remembered as checked: 2, steps only from a band, watch or ring
 // (an older build took the app with the most steps, often the phone's own counter, and called it the band's); 3, an app
-// build that takes a worn device's data as whole when it synced past the activity and was worn (heart rate) throughout,
+// build that takes a worn device's data as whole when its step records reach past the activity on both sides,
 // a hole in its step records being standing still (told by activitySources, which came in the same build)
 const RANGES_KEY = "motusHealthRanges";
 const rangesVersion = () => (typeof plugin()?.activitySources === "function" ? 3 : 2);
 const rangesFrom = () => new Date(Date.now() - RANGES_DAYS * DAY_MS);
+/** Whether a session started inside the look-back that syncs and pull to refresh ask about (older ones are never checked) */
+export const inRangesWindow = (startedAt: string) => Date.parse(startedAt) >= rangesFrom().getTime();
 // Sessions the band had nothing for, once they ended more than 3 days ago (it has synced by then, or never will), so a
 // session without band data isn't read from Health Connect on every sync. Kept per account on this phone.
 const checkedIds = () => new Set(readJson<Record<string, string[]>>(CHECKED_KEY, {})[key()] ?? []);
@@ -290,14 +291,21 @@ async function changedSince(): Promise<boolean> {
 }
 
 let watching = false, looking = false, failures = 0, retryAt = 0, lookedAt = 0;
+// While a workout or a recording runs, and for a while after one ends, the look is every minute whatever the chosen
+// time: the band hands over the session's heart rate when it next syncs, and it should show on the session soon after.
+// A look is one call when nothing is new (the changes list), so this stays cheap. "Only on refresh" still means never.
+const AFTER_MS = 30 * 60_000;
+let fastUntil = 0, healthOn: () => boolean = () => false;
+const sessionLive = () => [...readers.values()].some((r) => r.users > 0);
 /** Reads on open, when the app comes back and on a timer while it stays on screen, as often as chosen and while the
  *  feature is on (on() says so at that moment). Nothing while hidden. */
 export function watchHealth(on: () => boolean) {
   if (!healthSupported() || watching) return;
-  watching = true;
+  watching = true; healthOn = on;
   let timer: ReturnType<typeof setInterval> | undefined;
   const tick = async () => {
-    const every = readEvery.value === "pull" ? 0 : Number(readEvery.value) * 60_000;
+    const chosen = readEvery.value === "pull" ? 0 : Number(readEvery.value) * 60_000;
+    const every = chosen && (sessionLive() || Date.now() < fastUntil) ? TICK_MS : chosen;
     if (!every || !on() || document.visibilityState !== "visible" || syncing.value || looking) return;
     // due once the chosen time has passed since the last read, or since the last look that found nothing new (or found
     // nothing allowed yet)
@@ -323,6 +331,23 @@ export function watchHealth(on: () => boolean) {
   document.addEventListener("visibilitychange", visible);
   watch(readEvery, () => { retryAt = 0; lookedAt = 0; void tick(); });
   setTimeout(visible, 3000);
+}
+
+let afterQueued: Promise<unknown> | null = null;
+/** A workout or an activity was just saved (finished, recorded or logged by hand): a full read now, so its heart rate
+ *  fills in as soon as the band has synced it, then a look every minute for a while (watchHealth). After a read already
+ *  going, since that one asked about the sessions before this was saved; one such read at a time. Quiet: it fails as
+ *  any background read does, and not at all when the feature is off, set to only on refresh or Health Connect is
+ *  refusing reads for now. */
+export function syncAfterSession() {
+  if (!healthSupported() || !healthOn() || readEvery.value === "pull") return;
+  fastUntil = Date.now() + AFTER_MS;
+  if (afterQueued || Date.now() < retryAt) return;
+  const go = async () => {
+    while (running) await running.catch(() => null);
+    try { await syncHealth(); lookedAt = Date.now(); } catch { /* the next look tries again */ }
+  };
+  afterQueued = go().finally(() => { afterQueued = null; });
 }
 
 // Live heart rate while a workout or a recording runs: the band's readings since the session started, read straight from

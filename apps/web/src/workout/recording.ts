@@ -17,6 +17,7 @@ import { invalidate, queryClient } from "../api/live";
 import type { SettingsMe } from "../api/queries";
 import { makeFmt } from "../core/format";
 import { keepAwake, showRecording, clearRecording, isNativeApp, onNoticeAction, askNotificationsOnce } from "./native";
+import { syncAfterSession } from "../native/health";
 import { fromM, clock, num, routeStats, takesPoint, addStepReading, stepsPaused, MotionSteps, ROUTE_ROUGH_M, type StepReading } from "@motus/shared";
 
 export interface Rec {
@@ -291,6 +292,7 @@ export async function finishRecording(): Promise<string> {
   const res = await api.post("/activities", { type: r.type, startedAt: new Date(r.startedAt).toISOString(), endedAt: new Date(end).toISOString(), durationS: Math.round(recElapsedS.value), route: r.route, distanceM: rs?.distanceM, movingS: rs?.movingS, elevationM: rs?.elevationM, steps: recStepsCounted.value ? r.steps : null, source: "gps", clientId: `gps:${r.startedAt}` });
   recording.value = null; persist(); stopAll();
   invalidate(["activities", "stats", "goals", "home", "calendar"]);
+  syncAfterSession(); // its heart rate from the band
   return res.id;
 }
 export function discardRecording() { recording.value = null; persist(); stopAll(); }

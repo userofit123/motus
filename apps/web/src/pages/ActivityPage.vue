@@ -21,7 +21,7 @@ import HeartRate from "../components/HeartRate.vue";
 import Sheet from "../components/Sheet.vue";
 import StepSourceRows from "../components/StepSourceRows.vue";
 import { routeSplits, M_PER_MI, fromM, activityDistance, activityClimb, appSteps, stepsTyped, bandStepsVerdict, type ActivityType } from "@motus/shared";
-import { fromWhere, useDevice, adviceWord, canActivitySources, activitySources, type ActivitySources } from "../native/health";
+import { fromWhere, useDevice, adviceWord, canActivitySources, activitySources, inRangesWindow, type ActivitySources } from "../native/health";
 
 const route = useRoute(), router = useRouter();
 const id = computed(() => String(route.params.id));
@@ -122,15 +122,14 @@ const srcReason = computed(() => {
     case "none": return `Your ${word} has no steps for this time`;
     case "partial": {
       // the plugin's coverage rule says which part is missing
-      const gap = best?.gapStart && best.gapEnd ? `${f.time(best.gapStart)}-${f.time(best.gapEnd)}` : "";
-      if (best?.why === "after") return `Your ${word} has no data after this ${what} yet - it hasn't synced`;
+      if (best?.why === "after") return `Your ${word} hasn't synced past this ${what} yet`;
       if (best?.why === "before") return `Your ${word} has no data from before this ${what}`;
-      if (best?.why === "worn") return `Your ${word} wasn't worn during part of this ${what}${gap ? ` (no heart rate ${gap})` : ""}`;
-      return `Your ${word}'s steps don't cover the whole ${what}${gap ? ` (gap ${gap})` : ""}`;
+      return `Your ${word}'s steps don't cover the whole ${what}`;
     }
     case "phone": return `Your ${word}'s count is the same as Motus's, so it's the phone's own count`;
     case "far": return `Your ${word}'s count is far from Motus's (${f.num(best!.steps, 0)} vs ${f.num(app ?? 0, 0)}), so it may be from another time`;
-    default: return "Not checked yet - pull down to refresh";
+    // syncs only ask about the last 30 days, so pulling down does nothing for an older one
+    default: return inRangesWindow(x.startedAt) ? "Not checked yet - pull down to refresh" : "Motus only checks activities from the last 30 days";
   }
 });
 // show the page once its data is in, all at once

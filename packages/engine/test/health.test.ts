@@ -298,6 +298,36 @@ describe("a band's side of what was recorded in Motus", () => {
     await send(400, "POST", "/health/ranges", { results: [{ kind: "set", id: wid }] });
   });
 
+  it("fills heart rate from any readings inside the activity, whether or not the band covered it", async () => {
+    // a walk the band didn't cover (it synced only part of it): no steps taken, but its heart rate is
+    const w = await walk("2026-11-10T13:00:00Z", 30, { steps: 2800 });
+    const t = Date.parse("2026-11-10T13:00:00Z") / 1000;
+    expect((await ranges()).some((x) => x.id === w)).toBe(true);
+    const r = await call("POST", "/health/ranges", { results: [{ kind: "activity", id: w, steps: 900, covered: false, hr: [[t + 300, 104], [t + 900, 118], [t + 4000, 70]] }] });
+    expect(r).toEqual({ steps: 0, hr: 1, band: 0 });
+    expect(await act(w)).toMatchObject({ steps: 2800, stepsSource: null, avgHr: 111, maxHr: 118, hr: [[t + 300, 104], [t + 900, 118]] });
+    // the same readings on the next read change nothing
+    expect((await call("POST", "/health/ranges", { results: [{ kind: "activity", id: w, covered: false, hr: [[t + 300, 104], [t + 900, 118]] }] })).hr).toBe(0);
+    // more arrive once the band synced the rest: taken
+    expect((await call("POST", "/health/ranges", { results: [{ kind: "activity", id: w, covered: false, hr: [[t + 300, 104], [t + 900, 118], [t + 1500, 121]] }] })).hr).toBe(1);
+    expect(await act(w)).toMatchObject({ avgHr: 114, maxHr: 121 });
+
+    // a single reading is enough (a band measuring every 10 minutes, a short walk)
+    const short = await walk("2026-11-10T16:00:00Z", 8);
+    const s = Date.parse("2026-11-10T16:00:00Z") / 1000;
+    expect((await call("POST", "/health/ranges", { results: [{ kind: "activity", id: short, covered: false, hr: [[s + 240, 97]] }] })).hr).toBe(1);
+    expect(await act(short)).toMatchObject({ avgHr: 97, maxHr: 97 });
+
+    // logged by hand with an average typed in: listed until heart rate arrives, and the typed average stays
+    const hand = (await call("POST", "/activities", { type: "walk", startedAt: "2026-11-10T18:00:00Z", endedAt: "2026-11-10T18:30:00Z", source: "manual", avgHr: 100 })).id as string;
+    const m = Date.parse("2026-11-10T18:00:00Z") / 1000;
+    expect((await ranges()).some((x) => x.id === hand)).toBe(true);
+    expect((await call("POST", "/health/ranges", { results: [{ kind: "activity", id: hand, covered: false, hr: [[m + 60, 120], [m + 120, 130]] }] })).hr).toBe(1);
+    expect(await act(hand)).toMatchObject({ avgHr: 100, maxHr: 130 });
+    expect((await call("POST", "/health/ranges", { results: [{ kind: "activity", id: hand, covered: false, hr: [[m + 60, 120], [m + 120, 130], [m + 600, 140]] }] })).hr).toBe(1);
+    expect(await act(hand)).toMatchObject({ avgHr: 100, maxHr: 140 });
+  });
+
   it("keeps heart rate and the steps' source when a device on an older app syncs the row without them", async () => {
     const { user_id: _u, steps_source: _s, steps_app: _a, max_hr: _m, hr: _h, ...old } = (await eng.db.admin.query("SELECT to_jsonb(a) AS r FROM activities a WHERE id = $1", [gps])).rows[0].r;
     const r = await eng.handle({ method: "POST", path: "/sync/push", userId: U, body: {

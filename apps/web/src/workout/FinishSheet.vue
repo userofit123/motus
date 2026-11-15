@@ -12,6 +12,7 @@ import { settle } from "../api/outbox";
 import { invalidate } from "../api/live";
 import { useRoutine } from "../api/queries";
 import { toast, toastError } from "../core/toast";
+import { syncAfterSession } from "../native/health";
 import { elapsed, finishRest } from "./runtime";
 import { keepAwake } from "./native";
 import { maybeAutoBackup } from "../core/backup";
@@ -221,6 +222,7 @@ async function finish() {
     // leave first, then drop it everywhere (this sheet lives on the workout screen, which needs it until then)
     await router.replace(`/workouts/${id}?done=1`);
     endWorkout(id);
+    syncAfterSession(); // its heart rate from the band
     maybeAutoBackup(W.settings.value.backup, true, (run) => toast("Back up now?", { action: { label: "Download", run }, ms: 10000 }));
   } catch (e) { toastError(e); invalidate(["workouts"]); } finally { busy.value = false; }
 }

@@ -81,6 +81,10 @@ export const localYmd = ymd;
 export const tomorrowYmd = () => { const n = new Date(); return ymd(new Date(n.getFullYear(), n.getMonth(), n.getDate() + 1)); };
 // the icon for an activity type: its own for the common ones, else the general one (shared by Home and History)
 const ACTIVITY_ICONS = ["walk", "run", "cycle", "hike", "swim", "yoga"];
+/** A finished session's average heart rate as a DotLine part (a heart and "112 bpm"), for list entries' second line
+ *  (History, Home, Today); null without one: the band's fills in once it has synced. */
+export const hrPart = (x: { kind?: string; avgHr?: number | string | null }) =>
+  x.kind !== "planned" && Number(x.avgHr) > 0 ? { text: `${Math.round(Number(x.avgHr))} bpm`, icon: "heart" } : null;
 export const activityIcon = (type?: string | null) => (type && ACTIVITY_ICONS.includes(type) ? type : "activity");
 
 /** "62.5 / 80 kg" in your units: goals keep weights in kg and distances in km.

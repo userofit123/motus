@@ -12,7 +12,7 @@ import { confirm } from "../core/ask";
 import { toast } from "../core/toast";
 import { onHome, streakOnHome, toggleHomeGoal, setHomeStreak, periodWord, goalSub } from "../core/goals";
 import { asleepMin, inBedMin, efficiency, hasStages, isFull, mins, SHORT_WHY } from "../core/sleep";
-import { useFmt, unitOf, ago, goalLabel, localYmd, tomorrowYmd } from "../core/format";
+import { useFmt, unitOf, ago, goalLabel, localYmd, tomorrowYmd, hrPart } from "../core/format";
 import { reminderText } from "../core/reminderText";
 import { startPlan, unplanItems } from "../components/home/planActions";
 import { startOpen, dailySheet, reminderView } from "../core/ui";
@@ -28,6 +28,7 @@ import Sheet from "../components/Sheet.vue";
 import ScheduleEditor from "../components/ScheduleEditor.vue";
 import GoalSheet from "../components/GoalSheet.vue";
 import SessionStats from "../components/SessionStats.vue";
+import DotLine from "../components/DotLine.vue";
 import TodayHero from "../components/home/TodayHero.vue";
 import StageBar from "../components/stats/StageBar.vue";
 import NightSheet from "../components/stats/NightSheet.vue";
@@ -618,7 +619,7 @@ await loaded(home, ach, avail, hDay, ready, nightsQ, dailyQ);
         <div v-else-if="id === 'feed'" class="card hb sz-m" :data-solo="solo.has(id) || undefined">
           <div class="ch"><span class="bi"><Icon name="history" :size="15" /></span><span class="t grow">Recent activity</span><button class="lnk" @click="router.push('/history?view=list')">All</button></div>
           <div class="list"><div v-for="x in h.feed.slice(0, 5)" :key="x.id" class="li click" v-bind="link(x.kind === 'workout' ? `/workouts/${x.id}` : `/activities/${x.id}`)">
-            <Icon :name="x.kind === 'workout' ? 'dumbbell' : x.type === 'walk' ? 'walk' : 'activity'" :size="18" class="muted" /><div class="grow"><div class="t">{{ x.kind === "workout" ? x.name : x.name || typeName(x.type) }}</div><div class="s">{{ fmt.date(x.startedAt, { weekday: "short", day: "numeric", month: "short" }) }}</div></div>
+            <Icon :name="x.kind === 'workout' ? 'dumbbell' : x.type === 'walk' ? 'walk' : 'activity'" :size="18" class="muted" /><div class="grow"><div class="t">{{ x.kind === "workout" ? x.name : x.name || typeName(x.type) }}</div><DotLine class="s" :parts="[fmt.date(x.startedAt, { weekday: 'short', day: 'numeric', month: 'short' }), hrPart(x)].filter((p) => p != null)" /></div>
             <SessionStats :x="x" /></div></div>
         </div>
 

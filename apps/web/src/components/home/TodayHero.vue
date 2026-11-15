@@ -12,11 +12,12 @@ import { computed, ref } from "vue";
 import { daysIntoWeek, type HomePlan, type HomeToday } from "@motus/shared";
 import { useRouter } from "vue-router";
 import { useCalendar, useSettings, useTypeName } from "../../api/queries";
-import { useFmt, ago, localYmd, tomorrowYmd, activityIcon } from "../../core/format";
+import { useFmt, ago, localYmd, tomorrowYmd, activityIcon, hrPart } from "../../core/format";
 import { startOpen } from "../../core/ui";
 import Icon from "../Icon.vue";
 import MuscleFig from "../MuscleFig.vue";
 import SessionStats from "../SessionStats.vue";
+import DotLine from "../DotLine.vue";
 import Menu from "../Menu.vue";
 import { startPlan, planMenu, unplanItems } from "./planActions";
 
@@ -222,7 +223,7 @@ const doneCount = computed(() => week.value.filter((d) => d.done).length);
           </div>
           <div v-else role="listitem" class="prow click" tabindex="0" :aria-label="`Open ${r.name}`" @click="openRow(r)" @keydown.enter.self.prevent="openRow(r)">
             <span class="pk"><Icon :name="r.icon" :size="18" /></span>
-            <div class="pt"><div class="pn">{{ r.name }}</div><div class="ps">{{ r.sub }}</div></div>
+            <div class="pt"><div class="pn">{{ r.name }}</div><DotLine class="ps" :parts="[...r.sub.split(' · '), hrPart(r.x)].filter((p) => p != null)" /></div>
             <SessionStats :x="r.x" />
             <Icon name="right" class="pgo" />
           </div>

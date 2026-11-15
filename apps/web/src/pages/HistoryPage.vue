@@ -16,10 +16,11 @@ import { useStepGoal } from "../core/goals";
 import { asleepMin, mins } from "../core/sleep";
 import Menu from "../components/Menu.vue";
 import { unplanItems } from "../components/home/planActions";
-import { useFmt, localYmd, activityIcon } from "../core/format";
+import { useFmt, localYmd, activityIcon, hrPart } from "../core/format";
 import { isPhone } from "../core/device";
 import { logSheet, activitySheet } from "../core/ui";
 import Icon from "../components/Icon.vue";
+import DotLine from "../components/DotLine.vue";
 import SearchField from "../components/SearchField.vue";
 import ScheduleEditor from "../components/ScheduleEditor.vue";
 import SessionStats from "../components/SessionStats.vue";
@@ -167,7 +168,6 @@ const dayTiles = computed(() => {
   return out;
 });
 // a workout's average heart rate from a band, after its time in the row's line
-const hrOf = (x: any) => (x.kind !== "planned" && x.avgHr ? Math.round(Number(x.avgHr)) : null);
 // the shown month's totals, as stat tiles at the end of the calendar (they follow the month you are looking at); the
 // tiles of Home's This week and Stats' month reports, in their order (Activities in Volume's place), without a change column: the calendar loads only this month
 const monthTiles = computed(() => {
@@ -244,7 +244,7 @@ await loaded(cal, listWorkouts, listActs);
           <div :class="{ dsess: dayTiles.length }">
           <div v-if="!(byDay.get(sel) ?? []).length" class="tiny">{{ sel >= today ? "Nothing planned. Use Plan to put a routine on this day." : "Nothing on this day." }}</div>
           <div class="list"><div v-for="x in byDay.get(sel) ?? []" :key="x.id ?? x.scheduleId" class="li click" @click="open(x)">
-            <Icon :name="icon(x)" :size="18" :style="{ color: x.color ?? 'var(--acc)' }" /><div class="grow"><div class="t" :style="x.missed ? { opacity: .5 } : undefined">{{ label(x) }}</div><div class="s">{{ x.kind === "planned" ? (x.missed ? "Missed" : "Planned workout") : fmt.time(x.startedAt) }}<template v-if="hrOf(x)"> · <span class="hr"><Icon name="heart" :size="12" />{{ hrOf(x) }} bpm</span></template></div></div><SessionStats v-if="x.kind !== 'planned'" :x="x" /><span v-if="x.kind === 'planned'" @click.stop><Menu :items="unplanItems(x)" :label="`Options for ${x.name}`" /></span><Icon v-else name="right" class="muted" /></div></div>
+            <Icon :name="icon(x)" :size="18" :style="{ color: x.color ?? 'var(--acc)' }" /><div class="grow"><div class="t" :style="x.missed ? { opacity: .5 } : undefined">{{ label(x) }}</div><div class="s"><template v-if="x.kind === 'planned'">{{ x.missed ? "Missed" : "Planned workout" }}</template><DotLine v-else :parts="[fmt.time(x.startedAt), hrPart(x)].filter((p) => p != null)" /></div></div><SessionStats v-if="x.kind !== 'planned'" :x="x" /><span v-if="x.kind === 'planned'" @click.stop><Menu :items="unplanItems(x)" :label="`Options for ${x.name}`" /></span><Icon v-else name="right" class="muted" /></div></div>
           </div>
         </div>
       </div>
@@ -266,7 +266,7 @@ await loaded(cal, listWorkouts, listActs);
       <section v-for="[m, xs] in listGroups" :key="m"><div class="sh"><h2>{{ m }}</h2><span class="tiny">{{ xs.length }}</span></div>
         <div class="card"><div class="list"><div v-for="x in xs" :key="x.id" class="li click" @click="open(x)">
           <Icon :name="icon(x)" :size="18" :style="{ color: x.color ?? 'var(--acc)' }" />
-          <div class="grow"><div class="t">{{ label(x) }}</div><div class="s">{{ fmt.date(x.startedAt, { weekday: "short", day: "numeric", month: "short" }) }} · {{ fmt.time(x.startedAt) }}<template v-if="hrOf(x)"> · <span class="hr"><Icon name="heart" :size="12" />{{ hrOf(x) }} bpm</span></template></div></div>
+          <div class="grow"><div class="t">{{ label(x) }}</div><DotLine class="s" :parts="[fmt.date(x.startedAt, { weekday: 'short', day: 'numeric', month: 'short' }), fmt.time(x.startedAt), hrPart(x)].filter((p) => p != null)" /></div>
           <SessionStats :x="x" />
         </div></div></div>
       </section>
@@ -288,8 +288,6 @@ await loaded(cal, listWorkouts, listActs);
 .dtiles .wlb { white-space: normal; }
 .dtiles .ws.click { border-radius: var(--r-sm); cursor: pointer; }
 /* a workout's heart rate in its row's line: the small heart in the line's colour, beside its number */
-.hr { display: inline-flex; align-items: center; gap: 2px; white-space: nowrap; }
-.hr svg { flex: none; }
 /* a day's steps: a thin bar on the cell's bottom edge, out of the way of its entries and dots; the track (the cell's width
    inside its padding) has no colour of its own, so a short bar reads as few steps and none as no steps */
 /* the month's cells keep room for it under their entries, all alike, so a full day's last entry never sits on it */

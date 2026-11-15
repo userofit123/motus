@@ -906,6 +906,8 @@ html.phone .scr.leaving .sht { animation: up .22s ease-in reverse forwards; }
 .dotl.end .dotl-in { justify-content: flex-end; margin-left: 0; margin-right: calc(-1 * (var(--dw) + var(--dg))); }
 .dotl-p { display: inline-flex; gap: var(--dg); min-width: 0; }
 .dotl .sep { width: var(--dw); text-align: center; }
+.dotl-ic { display: inline-flex; align-items: center; gap: 2px; white-space: nowrap; }
+.dotl-ic svg { flex: none; }
 
 /* the Appearance sheet's grab handle, as on the other sheets */
 html.phone #pop .aph { position: relative; padding-top: 22px; }

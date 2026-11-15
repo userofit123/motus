@@ -45,7 +45,7 @@ export const stepsTyped = (a: StepsFigures) => a.stepsSource === "manual" || (a.
 /** The app's own count: kept aside (stepsApp) once the device's replaced it */
 export const appSteps = (a: StepsFigures): number | null => (a.stepsSource === "band" ? a.stepsApp ?? null : a.stepsApp ?? a.steps ?? null);
 /** use: the device's count is taken; else why not: typed (the person's own), notCounted (the type counts no steps),
- *  none (no worn device counted then), partial (its records don't reach across the whole time), phone (the same as the
+ *  none (no worn device counted then), partial (its step records don't reach past the time on both sides: it hasn't synced past it; heart rate is never asked), phone (the same as the
  *  app's own count: the phone's counter, not the device), far (not plausibleSteps) */
 export type BandStepsVerdict = "use" | "typed" | "notCounted" | "none" | "partial" | "phone" | "far";
 export function bandStepsVerdict(x: { steps: number | null; covered: boolean; app: number | null; counts: boolean; typed: boolean }): BandStepsVerdict {
