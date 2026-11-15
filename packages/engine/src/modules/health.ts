@@ -33,6 +33,13 @@ export const HEALTH_SOURCE = "health_connect";
 const bandNum = (v: unknown, max: number) => (typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= max ? v : null);
 // an activity's band data has settled: it has synced by then, or never will (the app uses the same 3 days)
 const SETTLED_MS = 3 * 86400000;
+
+// The average to keep when new band readings come in: one typed in stays; the band's own (the one its earlier readings
+// gave, within rounding of the thinned series) follows as more of them arrive
+function bandAvg(stored: unknown, avg: unknown, next: number): number {
+  const had = Array.isArray(stored) && stored.length ? stored.reduce((t: number, p: [number, number]) => t + Number(p[1]), 0) / stored.length : null;
+  return avg != null && !(had != null && Math.abs(Number(avg) - had) <= 1) ? Number(avg) : next;
+}
 type Daily = "steps" | "sleep" | "resting_hr" | "spo2" | "hrv" | "distance" | "active_kcal" | "water" | "vo2max";
 /** Readings that go into the body log (body_metrics), one row each. */
 type Body = "weight" | "body_fat";
@@ -439,8 +446,9 @@ export function healthRoutes(r: Router) {
               AND NOT (a.source = 'manual' AND a.steps IS NOT NULL)))
          UNION ALL
          SELECT 'workout', w.id, w.started_at, w.ended_at FROM workouts w
-          WHERE w.status = 'completed' AND w.ended_at IS NOT NULL AND w.started_at >= $1 AND w.hr IS NULL
-       ) x ORDER BY started_at DESC LIMIT 200`, [from, HEALTH_SOURCE, recheck, band]);
+          -- listed until settled, not only while it has none: the read right after it ended may have had one reading
+          WHERE w.status = 'completed' AND w.ended_at IS NOT NULL AND w.started_at >= $1 AND (w.hr IS NULL OR w.ended_at > $5)
+       ) x ORDER BY started_at DESC LIMIT 200`, [from, HEALTH_SOURCE, recheck, band, new Date(ctx.now().getTime() - SETTLED_MS).toISOString()]);
     const iso = (v: unknown) => new Date(v as string).toISOString();
     return { ranges: rows.map((x: any) => ({ kind: x.kind as "activity" | "workout", id: x.id as string, start: iso(x.started_at), end: iso(x.ended_at) })) };
   });
@@ -458,12 +466,13 @@ export function healthRoutes(r: Router) {
       if (!e || (e.kind !== "activity" && e.kind !== "workout") || !isUuid(e.id)) throw bad("Invalid result");
       const steps = e.steps == null ? null : intOrNull(e.steps, 0, 1e7);
       if (e.kind === "workout") {
-        const w = (await ctx.q.query("SELECT started_at, ended_at FROM workouts WHERE id = $1 AND status = 'completed'", [e.id])).rows[0];
+        const w = (await ctx.q.query("SELECT started_at, ended_at, hr, max_hr, avg_hr FROM workouts WHERE id = $1 AND status = 'completed'", [e.id])).rows[0];
         const h = w?.ended_at ? heartRate(e.hr, new Date(w.started_at).getTime() / 1000, new Date(w.ended_at).getTime() / 1000, HR_POINTS, 1) : null;
-        if (!h) continue;
-        // an average typed in stays; the band's only fills an empty one
-        await ctx.q.query("UPDATE workouts SET hr = $2, max_hr = $3, avg_hr = coalesce(avg_hr, $4), updated_at = $5 WHERE id = $1",
-          [e.id, JSON.stringify(h.hr), h.max, h.avg, ctx.now().toISOString()]);
+        // listed until settled, so it comes back on every read: the same readings again change nothing
+        if (!h || (w.max_hr === h.max && JSON.stringify(w.hr) === JSON.stringify(h.hr))) continue;
+        // an average typed in stays; the band's own follows as more readings arrive (as for activities, below)
+        await ctx.q.query("UPDATE workouts SET hr = $2, max_hr = $3, avg_hr = $4, updated_at = $5 WHERE id = $1",
+          [e.id, JSON.stringify(h.hr), h.max, bandAvg(w.hr, w.avg_hr, h.avg), ctx.now().toISOString()]);
         out.hr++; works = true;
         continue;
       }
@@ -495,11 +504,7 @@ export function healthRoutes(r: Router) {
       const h = heartRate(e.hr, new Date(a.started_at).getTime() / 1000, new Date(a.ended_at).getTime() / 1000, HR_POINTS, 1);
       // an activity still listed for its band numbers comes back on every read: the same readings again change nothing
       if (h && !(a.max_hr === h.max && JSON.stringify(a.hr) === JSON.stringify(h.hr))) {
-        // an average typed in stays; the band's own (the one its earlier readings gave, within rounding of the thinned
-        // series) follows as more of them arrive
-        const had = Array.isArray(a.hr) && a.hr.length ? a.hr.reduce((t: number, p: [number, number]) => t + Number(p[1]), 0) / a.hr.length : null;
-        const typedAvg = a.avg_hr != null && !(had != null && Math.abs(Number(a.avg_hr) - had) <= 1);
-        await ctx.q.query("UPDATE activities SET hr = $2, max_hr = $3, avg_hr = $4 WHERE id = $1", [e.id, JSON.stringify(h.hr), h.max, typedAvg ? Number(a.avg_hr) : h.avg]);
+        await ctx.q.query("UPDATE activities SET hr = $2, max_hr = $3, avg_hr = $4 WHERE id = $1", [e.id, JSON.stringify(h.hr), h.max, bandAvg(a.hr, a.avg_hr, h.avg)]);
         out.hr++; acts = true;
       }
       if (e.bandFields === true) {

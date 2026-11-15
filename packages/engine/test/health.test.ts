@@ -298,6 +298,31 @@ describe("a band's side of what was recorded in Motus", () => {
     await send(400, "POST", "/health/ranges", { results: [{ kind: "set", id: wid }] });
   });
 
+  it("keeps asking about a just-finished workout and takes its fuller heart rate, never the same twice nor over a typed average", async () => {
+    // ended an hour ago: the read right after it may have had only one reading
+    const end = Math.floor(Date.now() / 1000) - 3600, start = end - 1800;
+    const iso = (s: number) => new Date(s * 1000).toISOString();
+    const recent = (await call("POST", "/workouts/log", { name: "Push", startedAt: iso(start), endedAt: iso(end) })).id;
+    const since = { from: iso(start - 86400) };
+    const listed = async () => ((await call("GET", "/health/ranges", undefined, since)).ranges as any[]).some((x) => x.id === recent);
+    const post = (hr: number[][]) => call("POST", "/health/ranges", { results: [{ kind: "workout", id: recent, hr }] });
+    expect(await post([[start + 60, 100], [start + 120, 102]])).toEqual({ steps: 0, hr: 1, band: 0 });
+    expect(await call("GET", `/workouts/${recent}`)).toMatchObject({ avgHr: 101, maxHr: 102 });
+    expect(await listed()).toBe(true); // not settled yet
+    // the watch synced the rest
+    const full = [[start + 60, 100], [start + 120, 102], [start + 900, 160], [start + 1500, 130]];
+    expect(await post(full)).toEqual({ steps: 0, hr: 1, band: 0 });
+    expect(await call("GET", `/workouts/${recent}`)).toMatchObject({ avgHr: 123, maxHr: 160, hr: full });
+    // the same readings again: no write
+    const at = (await eng.db.admin.query("SELECT updated_at FROM workouts WHERE id = $1", [recent])).rows[0].updated_at;
+    expect(await post(full)).toEqual({ steps: 0, hr: 0, band: 0 });
+    expect((await eng.db.admin.query("SELECT updated_at FROM workouts WHERE id = $1", [recent])).rows[0].updated_at).toEqual(at);
+    // an average typed in (not the band series' mean) stays as more readings arrive
+    await eng.db.admin.query("UPDATE workouts SET avg_hr = 95 WHERE id = $1", [recent]);
+    expect(await post([...full, [start + 1700, 170]])).toEqual({ steps: 0, hr: 1, band: 0 });
+    expect(await call("GET", `/workouts/${recent}`)).toMatchObject({ avgHr: 95, maxHr: 170 });
+  });
+
   it("fills heart rate from any readings inside the activity, whether or not the band covered it", async () => {
     // a walk the band didn't cover (it synced only part of it): no steps taken, but its heart rate is
     const w = await walk("2026-11-10T13:00:00Z", 30, { steps: 2800 });

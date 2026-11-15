@@ -145,9 +145,11 @@ let running: Promise<HealthResult | null> | null = null;
 export const syncing = ref(false);
 
 /** Reads Health Connect and saves what's new. null: nothing allowed yet (or not the Android app).
- *  from: read from that day instead (Settings → Integrations → Import past data); it runs after a read already going. */
-export async function syncHealth(o: { from?: Date } = {}): Promise<HealthResult | null> {
-  if (!o.from) return running ??= read();
+ *  from: read from that day instead (Settings → Integrations → Import past data); it runs after a read already going.
+ *  recent: a look in the minute-by-minute stretch after a session (watchHealth), which asks about the last day's sessions
+ *  only, unless the whole look-back wasn't asked about for a while (readRanges). */
+export async function syncHealth(o: { from?: Date; recent?: boolean } = {}): Promise<HealthResult | null> {
+  if (!o.from) return running ??= read(undefined, o.recent);
   while (running) await running.catch(() => null);
   return running = read(o.from);
 }
@@ -160,7 +162,7 @@ async function oldestWaiting(): Promise<Date | null> {
     return days.length ? new Date(days[0] + "T00:00") : null;
   } catch { return null; }
 }
-async function read(past?: Date): Promise<HealthResult | null> {
+async function read(past?: Date, recent = false): Promise<HealthResult | null> {
   syncing.value = true;
   try {
     const st = await healthStatus();
@@ -197,7 +199,7 @@ async function read(past?: Date): Promise<HealthResult | null> {
     await queryClient.fetchQuery({ queryKey: DEVICE_KEY, queryFn: fetchDevice, staleTime: 0 });
     // then what the band saw during activities and workouts recorded in Motus over the same days: its steps (a phone in
     // a pocket counts fewer) and heart rate. A failure here keeps the import above; the next sync asks again.
-    try { r.ranges = await readRanges(from < rangesFrom() ? from : rangesFrom()); } catch (e) { console.warn("Health Connect ranges", e); }
+    try { r.ranges = await readRanges(from < rangesFrom() ? from : rangesFrom(), recent); } catch (e) { console.warn("Health Connect ranges", e); }
     if (r.steps || r.sleep || r.activities || r.weight || r.restingHr || r.spo2 || r.hrv || r.sleepNights || r.distance || r.activeKcal || r.bodyFat || r.hydration || r.vo2max || r.hrDays) invalidate([...TOPICS.health]);
     if (r.ranges?.steps || r.ranges?.hr || r.ranges?.band) invalidate([...TOPICS.health, "workouts"]);
     return r;
@@ -228,10 +230,22 @@ const rememberChecked = (ids: string[]) => {
   writeJson(CHECKED_KEY, all);
 };
 
-async function readRanges(from: Date): Promise<RangesAdded | undefined> {
+// Every session in the look-back can be dozens of sessions, each read from Health Connect, too much for each look in the
+// minute-by-minute stretch after one: those ask about the last day's sessions only (the one just finished among them),
+// and the whole look-back at most this often. A pending recheck always reads it whole, so it isn't marked done early.
+const ALL_RANGES_MS = 10 * 60_000;
+let allRangesAt = 0;
+async function readRanges(all: Date, recent = false): Promise<RangesAdded | undefined> {
   if (typeof plugin()?.readRanges !== "function") return undefined; // an app build from before
   const versions = readJson<Record<string, number>>(RANGES_KEY, {});
   const version = rangesVersion(), recheck = (versions[key()] ?? 0) < version;
+  const quick = recent && !recheck && Date.now() - allRangesAt < ALL_RANGES_MS;
+  const from = quick ? new Date(Date.now() - DAY_MS) : all;
+  const out = await readRangesFrom(from, recheck, version);
+  if (!quick) allRangesAt = Date.now();
+  return out;
+}
+async function readRangesFrom(from: Date, recheck: boolean, version: number): Promise<RangesAdded | undefined> {
   // band: this phone's app build reads what the band measured during an activity, so every activity without those
   // numbers yet is asked about (also ones that already have heart rate); an older build would be asked about them on
   // every sync for nothing. Told by the build: the changes list came in the same one.
@@ -306,6 +320,8 @@ export function watchHealth(on: () => boolean) {
   const tick = async () => {
     const chosen = readEvery.value === "pull" ? 0 : Number(readEvery.value) * 60_000;
     const every = chosen && (sessionLive() || Date.now() < fastUntil) ? TICK_MS : chosen;
+    // faster than chosen: the stretch after a session, where a read asks about recent sessions only (readRanges)
+    const recent = every < chosen;
     if (!every || !on() || document.visibilityState !== "visible" || syncing.value || looking) return;
     // due once the chosen time has passed since the last read, or since the last look that found nothing new (or found
     // nothing allowed yet)
@@ -313,7 +329,7 @@ export function watchHealth(on: () => boolean) {
     if (now < retryAt || now - Math.max(last, lookedAt) < every - SLACK_MS) return;
     looking = true;
     try {
-      if (!(now - last < FULL_MS - SLACK_MS && canChanges() && !(await changedSince()))) await syncHealth();
+      if (!(now - last < FULL_MS - SLACK_MS && canChanges() && !(await changedSince()))) await syncHealth({ recent });
       failures = 0; lookedAt = now;
     } catch {
       // Health Connect refused (often its limit on reads) or the server is away: wait twice as long each time, up to an
