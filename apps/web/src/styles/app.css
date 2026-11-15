@@ -876,7 +876,7 @@ html.phone .scr.leaving .sht { animation: up .22s ease-in reverse forwards; }
 }
 /* controls */
 .fchip, .tick, .cal .d, .stt, .qb, .ib, .tabs button { transition: background .2s, color .2s, border-color .2s, transform .15s; }
-.tick:active, .fchip:active, .btn:active, .ib:active, .qb:active:not(:disabled) { transform: scale(.96); }
+.tick:active, .fchip:active, .btn:active, .ib:not(:disabled):active, .qb:active:not(:disabled) { transform: scale(.96); }
 @media (prefers-reduced-motion: no-preference) { .tick.on svg { animation: pop .28s var(--ease); } }
 @keyframes pop { 0% { transform: scale(.4); opacity: 0; } 70% { transform: scale(1.15); } 100% { transform: scale(1); } }
 .pbar i, .bodymap .m { transition: width .5s var(--ease), fill .4s; }

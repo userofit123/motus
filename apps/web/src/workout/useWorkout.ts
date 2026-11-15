@@ -8,7 +8,7 @@ import { api } from "../api/client";
 import { invalidate, queryClient } from "../api/live";
 import { toastError } from "../core/toast";
 import { readJson, writeJson } from "../core/prefs";
-import { startRest, finishRest, rest, setCues, restActive, adjustRest, setRest, pauseRest, resumeRest } from "./runtime";
+import { startRest, finishRest, rest, setCues, restActive, adjustRest, pauseRest, resumeRest } from "./runtime";
 import { haptic, enableNotificationActions, showSession, clearSession, isNativeApp, onNoticeAction, type NoticeButton } from "./native";
 import { makeFmt, setNo } from "../core/format";
 import { choose } from "../core/ask";
@@ -119,7 +119,7 @@ export function useWorkout() {
   const restLonger = () => startRest(30, { setId: null, label: "Rest", next: "", workoutId: state.w?.id ?? "" });
   watch(() => settings.value.features.notifLogging, (on) => enableNotificationActions(!!on), { immediate: true });
   // the buttons on the workout's and the rest's notifications (native.ts), registered once; a rest that is over (still
-  // saying "Rest over") gets 30 seconds from now, one that runs 30 more, and with none a new one starts; all of them
+  // saying "Rest over") gets 30 seconds from now (adjustRest), one that runs 30 more, and with none a new one starts; all of them
   // only during a workout. Pause and Resume do nothing when the workout already is so. Each waits for the workout to
   // load (activeReady), for a tap that opened the app.
   if (!actionsWired) {
@@ -128,7 +128,7 @@ export function useWorkout() {
     onNoticeAction("workout-done", () => { if (going()) tickNext(); }, activeReady);
     onNoticeAction("workout-pause", () => { if (going() && !state.w!.pauseStartedAt) togglePause(); }, activeReady);
     onNoticeAction("workout-resume", () => { if (going() && state.w!.pauseStartedAt) togglePause(); }, activeReady);
-    onNoticeAction("rest-more", () => { if (!going()) return; if (!rest.endAt) restLonger(); else if (rest.done) setRest(30); else adjustRest(30); }, activeReady);
+    onNoticeAction("rest-more", () => { if (!going()) return; if (!rest.endAt) restLonger(); else adjustRest(30); }, activeReady);
     onNoticeAction("rest-skip", () => finishRest(true), activeReady);
   }
 

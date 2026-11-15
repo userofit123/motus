@@ -198,7 +198,7 @@ function goOn() {
 .ab-side { display: flex; flex-direction: column; gap: var(--hg); }
 .ab-adj { font: inherit; font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
 /* -15 once the rest is over: nothing left to take away, dimmed as a disabled button */
-.ab-adj:disabled { opacity: .55; cursor: not-allowed; }
+.ab-adj:disabled { opacity: .35; cursor: default; }
 .ab-ringg { display: flex; flex-direction: column; gap: var(--hg); }
 .ab-slot { width: 48px; height: 48px; }
 .ab-on { justify-content: center; }
