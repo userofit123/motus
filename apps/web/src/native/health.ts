@@ -47,7 +47,28 @@ export function healthAdded(r: HealthResult): string {
     r.ranges?.hr && `${many(r.ranges.hr, "session", "sessions")} with heart rate`].filter(Boolean).join(", ");
 }
 type Range = { kind: "activity" | "workout"; id: string; start: string; end: string };
-type RangeResult = { kind: "activity" | "workout"; id: string; steps?: number; covered: boolean; hr?: [number, number][] };
+type RangeResult = { kind: "activity" | "workout"; id: string; steps?: number; covered: boolean; bandOnly?: boolean; hr?: [number, number][] };
+
+/** One day's steps per Health Connect app, and which Motus used (Imported data → a steps day → Where these steps came
+ *  from). used: the band app whose count is the day's, null when no band counted (Health Connect's total is used). */
+export interface StepSource { app: string; label?: string; steps: number; band: boolean; phone?: boolean; device: string }
+export interface StepSources { date: string; total: number; used: string | null; phoneName?: string; sources: StepSource[] }
+export const canStepSources = () => healthSupported() && typeof plugin()?.stepSources === "function"; // an app build from before has none
+export const stepSources = (date: string): Promise<StepSources> => plugin().stepSources({ date });
+// the names Health Connect's own screen shows for the apps that write steps most often (the phone's name is used where
+// it is the phone's own counting)
+const APP_NAMES: [string, string][] = [
+  ["nodomain.freeyourgadget.gadgetbridge", "Gadgetbridge"], ["com.xiaomi.wearable", "Mi Fitness"], ["com.xiaomi.hm.health", "Zepp Life"],
+  ["com.huami.watch.hmwatchmanager", "Zepp"], ["com.huami.midong", "Amazfit"], ["com.google.android.apps.fitness", "Google Fit"],
+  ["com.fitbit.FitbitMobile", "Fitbit"], ["com.garmin.android.apps.connectmobile", "Garmin Connect"], ["com.huawei.health", "Huawei Health"],
+  ["com.sec.android.app.shealth", "Samsung Health"], ["com.mi.health", "Mi Health"], ["com.ouraring.oura", "Oura"],
+];
+/** A step source's name in plain words: "This phone (Robin)" for the phone's own counting, else the app's name. */
+export function sourceName(s: StepSource, phoneName?: string): string {
+  if (s.phone && (s.app === "android" || s.app.startsWith("com.android.healthconnect") || s.app.startsWith("com.google.android.healthconnect")))
+    return phoneName ? `This phone (${phoneName})` : "This phone";
+  return APP_NAMES.find(([p]) => s.app === p || s.app.startsWith(p + "."))?.[1] ?? s.label ?? s.app;
+}
 
 /** Where a day's steps, distance or active calories came from, in words: "your band" when a band, watch or ring counted
  *  it (worn; a value from before Motus knew, or from an older app, counts as one), else "Health Connect" */
@@ -67,8 +88,9 @@ const READ_KEY = "motusHealthRead";
 // what a version reads of a kind beyond its first: bumped when one starts handing over more (sleep: each night in
 // detail, 0.1.25; heart rate: the day's heart rate, 0.1.26; steps, distance and active calories: one app's count a day,
 // not the band's plus the phone's in between, so days saved too high are read again and corrected; then whether a band
-// counted each day, so days no band counted stop saying "from your band")
-const READS: Partial<Record<Kind, number>> = { sleep: 2, heartRate: 2, steps: 3, distance: 3, activeKcal: 3 };
+// counted each day, so days no band counted stop saying "from your band"; then a band's day is the band's own total, not
+// with the phone's own step counting added in where the band had none, so days saved too high are read again and lowered)
+const READS: Partial<Record<Kind, number>> = { sleep: 2, heartRate: 2, steps: 4, distance: 4, activeKcal: 4 };
 const readsOf = (granted: readonly string[]) => HEALTH_KINDS.filter((k) => granted.includes(k)).map((k) => (READS[k] ? `${k}.${READS[k]}` : k));
 const readBefore = () => readJson<Record<string, string[]>>(READ_KEY, {})[key()] ?? [];
 const rememberRead = (reads: string[]) => { const all = readJson<Record<string, string[]>>(READ_KEY, {}); all[key()] = reads; writeJson(READ_KEY, all); };
@@ -138,6 +160,10 @@ async function read(past?: Date): Promise<HealthResult | null> {
 // connects, which can be days after the session, so a window that follows the sync would never ask again. The engine
 // leaves out sessions that already have what they need, so this stays cheap.
 const RANGES_DAYS = 30, SETTLE_MS = 3 * DAY_MS, CHECKED_KEY = "motusHealthChecked", CHECKED_MAX = 400;
+// bumped when the app reads the band's side differently, so the last 30 days are asked about once more, also activities
+// that already have the band's steps (recheck) and ones remembered as checked: 2, steps only from a band, watch or ring
+// (an older build took the app with the most steps, often the phone's own counter, and called it the band's)
+const RANGES_VERSION = 2, RANGES_KEY = "motusHealthRanges";
 const rangesFrom = () => new Date(Date.now() - RANGES_DAYS * DAY_MS);
 // Sessions the band had nothing for, once they ended more than 3 days ago (it has synced by then, or never will), so a
 // session without band data isn't read from Health Connect on every sync. Kept per account on this phone.
@@ -151,16 +177,20 @@ const rememberChecked = (ids: string[]) => {
 
 async function readRanges(from: Date): Promise<{ steps: number; hr: number } | undefined> {
   if (typeof plugin()?.readRanges !== "function") return undefined; // an app build from before
-  const got = await api.get<{ ranges: Range[] }>("/health/ranges", { from: from.toISOString() });
-  const checked = checkedIds();
+  const versions = readJson<Record<string, number>>(RANGES_KEY, {});
+  const recheck = (versions[key()] ?? 0) < RANGES_VERSION;
+  const got = await api.get<{ ranges: Range[] }>("/health/ranges", { from: from.toISOString(), ...(recheck ? { recheck: 1 } : {}) });
+  const checked = recheck ? new Set<string>() : checkedIds();
+  const done = () => { if (recheck) writeJson(RANGES_KEY, { ...readJson<Record<string, number>>(RANGES_KEY, {}), [key()]: RANGES_VERSION }); };
   const ranges = (got.ranges ?? []).filter((x) => !checked.has(x.id));
-  if (!ranges.length) return undefined;
+  if (!ranges.length) { done(); return undefined; }
   const { results } = await plugin().readRanges({ ranges }) as { results: RangeResult[] };
-  if (!results?.length) return undefined;
+  if (!results?.length) { done(); return undefined; }
   const settled = new Set(ranges.filter((x) => Date.now() - Date.parse(x.end) > SETTLE_MS).map((x) => x.id));
   const out = await api.post<{ steps: number; hr: number }>("/health/ranges", { results });
   // marked only after the server took the results, and only for a session the band had neither heart rate nor steps for
   rememberChecked(results.filter((x) => settled.has(x.id) && !x.hr?.length && !(x.covered && x.steps)).map((x) => x.id));
+  done();
   return out;
 }
 

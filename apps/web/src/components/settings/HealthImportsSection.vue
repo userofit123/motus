@@ -2,7 +2,7 @@
 // Settings → Integrations → Imported data: everything that came in from Health Connect, newest first, a day at a time.
 // A value (steps, sleep, weight) is corrected in place; an activity opens on its own page. Deleting one keeps it deleted:
 // the engine remembers it, so the next sync doesn't bring it back.
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
 import { useInfiniteQuery } from "@tanstack/vue-query";
 import { TOPICS, toM } from "@motus/shared";
@@ -18,6 +18,8 @@ import { toast, toastError } from "../../core/toast";
 import Icon from "../Icon.vue";
 import Menu, { type MenuItem } from "../Menu.vue";
 import SessionStats from "../SessionStats.vue";
+import Sheet from "../Sheet.vue";
+import { canStepSources, stepSources, sourceName, type StepSources, type StepSource } from "../../native/health";
 
 interface Item {
   key: string; kind: "steps" | "sleep" | "weight" | "resting_hr" | "spo2" | "hrv" | "distance" | "active_kcal" | "body_fat" | "water" | "vo2max" | "activity"; date: string; at: string | null; value: number | null;
@@ -91,8 +93,25 @@ async function del(x: Item) {
   if (!(await confirm(act ? "Delete this activity?" : "Delete this entry?", { text: "It won't come back on the next sync.", ok: "Delete", danger: true }))) return;
   try { await api.del(path(x)); changed(); toast(act ? "Activity deleted" : "Entry deleted"); } catch (e) { toastError(e); }
 }
+// Where a day's steps came from (the Android app only): each app that wrote steps to Health Connect that day, read from
+// Health Connect as it is now, and which one Motus counts, so a day that looks wrong can be checked on the phone
+// kept is the steps Motus holds for the day, so a day Health Connect no longer has (it keeps about 30 days) says so
+// instead of "no steps" next to a row that shows some
+const origin = ref<{ day: string; kept: number | null; data: StepSources | null; error: string | null } | null>(null);
+const showOrigin = (x: Item) => loadOrigin(x.date.slice(0, 10), x.value);
+async function loadOrigin(day: string, kept: number | null) {
+  origin.value = { day, kept, data: null, error: null };
+  try { const data = await stepSources(day); if (origin.value?.day === day) origin.value.data = data; }
+  catch (e) { if (origin.value?.day === day) origin.value.error = (e as Error)?.message || "Health Connect could not be read"; }
+}
+const srcSub = (s: StepSource) => s.band ? `Counted by the ${s.device === "watch" ? "watch" : s.device === "ring" ? "ring" : "band"}` : s.phone ? "Counted by the phone" : "Another app";
+const originDay = (d: string) => { const n = dayName(d); return n === "Today" || n === "Yesterday" ? n.toLowerCase() : n; };
+// the band first, then the rest by count
+const srcList = (d: StepSources) => [...d.sources].sort((a, b) => Number(b.band) - Number(a.band) || b.steps - a.steps);
+const srcIcon = (s: StepSource) => (s.band ? "activity" : s.phone ? "device" : "link");
 const menu = (x: Item): MenuItem[] => [
   x.kind === "activity" ? { label: "Open", icon: "right", run: () => edit(x) } : { label: "Edit", icon: "edit", run: () => edit(x) },
+  { label: "Step sources", icon: "info", hidden: x.kind !== "steps" || !canStepSources(), run: () => showOrigin(x) },
   { label: "Delete", icon: "trash", danger: true, sep: true, run: () => del(x) },
 ];
 </script>
@@ -116,9 +135,32 @@ const menu = (x: Item): MenuItem[] => [
       </div>
     </div></div>
   </template>
+  <Sheet v-if="origin" title="Where these steps came from" @close="origin = null">
+    <p class="muted hgap">Steps each app saved to Health Connect for {{ originDay(origin.day) }}. When a band counted, Motus uses only the band's total.</p>
+    <div v-if="origin.error" class="empty sm"><b>Couldn't read Health Connect</b>{{ origin.error }}<br /><button class="btn tonal" @click="loadOrigin(origin.day, origin.kept)">Try again</button></div>
+    <div v-else-if="!origin.data" class="empty sm">Reading Health Connect…</div>
+    <div v-else-if="!origin.data.sources.length && origin.kept" class="empty sm"><b>No longer in Health Connect</b>Health Connect keeps about 30 days. Motus kept the {{ fmt.num(origin.kept, 0) }} steps it read before.</div>
+    <div v-else-if="!origin.data.sources.length" class="empty sm"><b>No steps that day</b>No app wrote steps to Health Connect for this day.</div>
+    <template v-else>
+      <div class="list">
+        <div v-for="src in srcList(origin.data)" :key="src.app" class="li">
+          <span class="bi sg"><Icon :name="srcIcon(src)" :size="16" /></span>
+          <div class="grow"><div class="t">{{ sourceName(src, origin.data.phoneName) }}<span v-if="origin.data.used === src.app" class="mchip hi-chip">Used</span></div><div class="s">{{ srcSub(src) }}</div></div>
+          <b class="num">{{ fmt.num(src.steps, 0) }}</b>
+        </div>
+      </div>
+      <!-- the sum under the apps, set apart by a line; less than the rows added up when two apps counted the same steps -->
+      <div class="li hc-tot">
+        <span class="bi sg"><Icon name="layers" :size="16" /></span>
+        <div class="grow"><div class="t">Health Connect's total<span v-if="!origin.data.used" class="mchip hi-chip">Used</span></div><div class="s">{{ origin.data.sources.length > 1 ? "Steps two apps both counted are only counted once" : origin.data.used ? "All apps together" : "No band counted this day" }}</div></div>
+        <b class="num">{{ fmt.num(origin.data.total, 0) }}</b>
+      </div>
+    </template>
+  </Sheet>
   <div v-if="q.hasNextPage.value" class="center"><button class="qb" :disabled="q.isFetchingNextPage.value" @click="q.fetchNextPage()">{{ q.isFetchingNextPage.value ? "Loading…" : "Show older" }}</button></div>
 </template>
 
 <style scoped>
 .hi-chip { margin-inline-start: 6px; }
+.hc-tot { margin-top: var(--tdy); border-top: 1px solid var(--ol); border-bottom: 0; }
 </style>

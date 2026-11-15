@@ -414,19 +414,22 @@ export function healthRoutes(r: Router) {
   // Activities recorded and workouts done in Motus that the band may have more for: its steps (a type that counts steps,
   // not yet from the band nor typed later) or heart rate. The phone reads Health Connect for each time and answers below.
   // Sessions that came from Health Connect itself already have what the band had.
+  // recheck: also activities that already have the band's steps, once after the app changed how it reads them (an
+  // older build took the phone's own step counter for the band), so a wrong count goes back to the app's own (below).
   r.get("/health/ranges", async (ctx, _p, _b, qs) => {
     const from = isoTime(qs.from, new Date(ctx.now().getTime() - 30 * 86400000).toISOString());
+    const recheck = qs.recheck === "1" || qs.recheck === "true";
     const { rows } = await ctx.q.query(
       `SELECT * FROM (
          SELECT 'activity' AS kind, a.id, a.started_at, a.ended_at FROM activities a LEFT JOIN activity_types t ON t.slug = a.type
           WHERE a.source <> $2 AND a.ended_at IS NOT NULL AND a.started_at >= $1
-            AND (a.hr IS NULL OR (a.steps_source IS NULL AND coalesce(t.has_steps, a.type IN ('walk', 'run', 'hike'))
+            AND (a.hr IS NULL OR ($3::boolean AND a.steps_source = 'band') OR (a.steps_source IS NULL AND coalesce(t.has_steps, a.type IN ('walk', 'run', 'hike'))
               -- a count typed when the walk was logged by hand is the person's: the band's never replaces it
               AND NOT (a.source = 'manual' AND a.steps IS NOT NULL)))
          UNION ALL
          SELECT 'workout', w.id, w.started_at, w.ended_at FROM workouts w
           WHERE w.status = 'completed' AND w.ended_at IS NOT NULL AND w.started_at >= $1 AND w.hr IS NULL
-       ) x ORDER BY started_at DESC LIMIT 200`, [from, HEALTH_SOURCE]);
+       ) x ORDER BY started_at DESC LIMIT 200`, [from, HEALTH_SOURCE, recheck]);
     const iso = (v: unknown) => new Date(v as string).toISOString();
     return { ranges: rows.map((x: any) => ({ kind: x.kind as "activity" | "workout", id: x.id as string, start: iso(x.started_at), end: iso(x.ended_at) })) };
   });
@@ -457,7 +460,14 @@ export function healthRoutes(r: Router) {
       const typed = a.steps_source === "manual" || (a.steps_source == null && a.source === "manual" && a.steps != null);
       // the app's own count: kept aside once the band's replaced it
       const app: number | null = a.steps_source === "band" ? a.steps_app : (a.steps_app ?? a.steps);
-      if (e.covered === true && steps != null && steps > 0 && a.counts && !typed && !(a.steps_source === "band" && a.steps === steps) && plausibleSteps(steps, app)) {
+      // a count equal to the app's own is the phone's step counter (the sensor Motus counted with), not the band: an
+      // older app build took it for the band's
+      const phone = steps != null && app != null && steps === app;
+      if (a.steps_source === "band" && !typed && (phone || (e.bandOnly === true && (steps == null || steps === 0)))) {
+        // the band's count was wrong (the phone's, or no band counted then): back to the app's own count
+        await ctx.q.query("UPDATE activities SET steps = $2, steps_app = NULL, steps_source = NULL WHERE id = $1", [e.id, app]);
+        out.steps++; acts = true;
+      } else if (e.covered === true && steps != null && steps > 0 && !phone && a.counts && !typed && !(a.steps_source === "band" && a.steps === steps) && plausibleSteps(steps, app)) {
         await ctx.q.query("UPDATE activities SET steps_app = $2, steps = $3, steps_source = 'band' WHERE id = $1", [e.id, app, steps]);
         out.steps++; acts = true;
       }

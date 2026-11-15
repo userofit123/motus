@@ -831,4 +831,71 @@ describe("a day's steps read again", () => {
     expect((await daily("steps")).find((x: any) => x.date === "2026-10-20")).toMatchObject({ value: 8640, source: "health_connect" });
     expect(await entry("steps:2026-10-20")).toMatchObject({ value: 8640, edited: false });
   });
+
+  it("lowers the 14 Nov case to the band's own total and says when no band counted, keeping a typed day", async () => {
+    // 0.1.26 saved Health Connect's total (band 3,656 plus the phone's own counting in between); the band's own comes in
+    await call("POST", "/health/import", { steps: [{ date: "2026-11-14", value: 4972, worn: true }], distance: [{ date: "2026-11-14", value: 3900, worn: true }] });
+    expect(await call("POST", "/health/import", { steps: [{ date: "2026-11-14", value: 3656, worn: true }], distance: [{ date: "2026-11-14", value: 2700, worn: true }] }))
+      .toMatchObject({ steps: 1, distance: 1 });
+    expect((await daily("steps")).find((x: any) => x.date === "2026-11-14")).toMatchObject({ value: 3656, source: "health_connect" });
+    // a day only the phone counted: Health Connect's total, not from the band
+    await call("POST", "/health/import", { steps: [{ date: "2026-11-13", value: 5100, worn: true }] });
+    expect(await call("POST", "/health/import", { steps: [{ date: "2026-11-13", value: 5100, worn: false }] })).toMatchObject({ steps: 1 });
+    expect((await call("GET", "/health/day/2026-11-13", undefined, { tz: "0" })).worn).toBe(false);
+    // typed by hand: a re-read never touches it
+    await call("PUT", "/daily", { date: "2026-11-12", kind: "steps", value: 7000 });
+    expect(await call("POST", "/health/import", { steps: [{ date: "2026-11-12", value: 3000, worn: true }] })).toMatchObject({ steps: 0 });
+    expect((await daily("steps")).find((x: any) => x.date === "2026-11-12")).toMatchObject({ value: 7000 });
+  });
+});
+
+describe("an activity's band steps that were the phone's", () => {
+  const FROM = "2026-11-10T00:00:00Z";
+  const act = (id: string) => call("GET", `/activities/${id}`);
+  const walk = async (startedAt: string, extra: Record<string, unknown> = {}) => (await call("POST", "/activities", {
+    type: "walk", startedAt, endedAt: new Date(Date.parse(startedAt) + 20 * 60000).toISOString(), source: "gps", ...extra,
+  })).id as string;
+  const asBand = (id: string, steps: number, app: number | null) =>
+    eng.db.admin.query("UPDATE activities SET steps = $2, steps_app = $3, steps_source = 'band' WHERE id = $1", [id, steps, app]);
+  const ids = async (q: Record<string, string> = {}) => ((await call("GET", "/health/ranges", undefined, { from: FROM, ...q })).ranges as any[]).map((x) => x.id);
+
+  it("asks about activities that already have band steps only on a recheck", async () => {
+    const a = await walk("2026-11-14T10:00:00Z", { steps: 1387 });
+    await asBand(a, 1387, 1387);
+    await eng.db.admin.query("UPDATE activities SET hr = '[[1,90],[2,95]]' WHERE id = $1", [a]);
+    expect(await ids()).not.toContain(a);
+    expect(await ids({ recheck: "1" })).toContain(a);
+  });
+
+  it("goes back to the app's count when the band's equals the phone's or no band counted, and never sets it again", async () => {
+    // an older build took the phone's own counter (the same sensor) for the band: 1387 = 1387
+    const same = await walk("2026-11-14T11:00:00Z", { steps: 1387 });
+    await asBand(same, 1387, 1387);
+    expect((await call("POST", "/health/ranges", { results: [{ kind: "activity", id: same, steps: 1387, covered: true }] })).steps).toBe(1);
+    expect(await act(same)).toMatchObject({ steps: 1387, stepsSource: null, stepsApp: null });
+    // the old build sends it again: not taken for the band's
+    expect((await call("POST", "/health/ranges", { results: [{ kind: "activity", id: same, steps: 1387, covered: true }] })).steps).toBe(0);
+    expect(await act(same)).toMatchObject({ stepsSource: null });
+
+    // the new build found no band steps then: back to the app's own count
+    const none = await walk("2026-11-14T12:00:00Z", { steps: 1200 });
+    await asBand(none, 1500, 1200);
+    expect((await call("POST", "/health/ranges", { results: [{ kind: "activity", id: none, covered: false, bandOnly: true }] })).steps).toBe(1);
+    expect(await act(none)).toMatchObject({ steps: 1200, stepsSource: null, stepsApp: null });
+
+    // an older build that read nothing (no bandOnly): may be a read that failed, so the band's stays
+    const kept = await walk("2026-11-14T13:00:00Z", { steps: 1000 });
+    await asBand(kept, 1100, 1000);
+    expect((await call("POST", "/health/ranges", { results: [{ kind: "activity", id: kept, covered: false }] })).steps).toBe(0);
+    expect(await act(kept)).toMatchObject({ steps: 1100, stepsSource: "band", stepsApp: 1000 });
+    // the band really counted, differently from the phone: stays the band's
+    expect((await call("POST", "/health/ranges", { results: [{ kind: "activity", id: kept, steps: 1100, covered: true, bandOnly: true }] })).steps).toBe(0);
+    expect(await act(kept)).toMatchObject({ steps: 1100, stepsSource: "band" });
+
+    // a count changed by hand later stays the person's
+    const typed = await walk("2026-11-14T14:00:00Z", { steps: 900 });
+    await eng.db.admin.query("UPDATE activities SET steps = 950, steps_app = 900, steps_source = 'manual' WHERE id = $1", [typed]);
+    expect((await call("POST", "/health/ranges", { results: [{ kind: "activity", id: typed, covered: false, bandOnly: true }] })).steps).toBe(0);
+    expect(await act(typed)).toMatchObject({ steps: 950, stepsSource: "manual" });
+  });
 });

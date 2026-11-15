@@ -11,7 +11,6 @@ import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.*
 import androidx.health.connect.client.records.metadata.DataOrigin
 import androidx.health.connect.client.records.metadata.Device
-import androidx.health.connect.client.request.AggregateGroupByDurationRequest
 import androidx.health.connect.client.request.AggregateGroupByPeriodRequest
 import androidx.health.connect.client.request.AggregateRequest
 import androidx.health.connect.client.request.ReadRecordsRequest
@@ -28,7 +27,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
-import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -36,6 +34,7 @@ import java.time.Period
 import java.time.ZoneId
 import java.time.ZoneOffset
 import kotlin.reflect.KClass
+import org.json.JSONObject
 
 /**
  * Reads what other apps wrote to Health Connect (Gadgetbridge for a band, a scale's app, a watch's) so it shows in
@@ -188,9 +187,10 @@ class MotusHealthPlugin : Plugin() {
      * Steps and heart rate inside given time spans (e.g. a workout, a day), each looked up on its own.
      * { ranges: [{kind, id, start, end}] } (at most 200) →
      * { results: [{kind, id, steps?: number, covered: boolean, hr?: [[unixSeconds, bpm], ...]}] }
-     * steps: from one app only (the one with the most steps in the span; Motus's own left out), since Health Connect
-     * may hold the same steps from a band and from the phone. covered: that app's records reach across the whole span
-     * with no hole over 10 minutes (false when the band was off or has not synced yet). hr: at most 600 points.
+     * steps: the band's only (rangeSteps), absent when no band, watch or ring counted then; bandOnly: steps were read
+     * this way (an older build took the app with the most, often the phone's own counter). covered: the band's records
+     * reach across the whole span with no hole over 10 minutes (false when the band was off or has not synced yet).
+     * hr: at most 600 points.
      */
     @PluginMethod
     fun readRanges(call: PluginCall) {
@@ -214,12 +214,13 @@ class MotusHealthPlugin : Plugin() {
                             val (n, cov) = rangeSteps(c, start, end)
                             if (n != null) o.put("steps", n)
                             covered = cov
+                            o.put("bandOnly", true)
                         }
                         o.put("covered", covered)
                         if (hasHr && end.isAfter(start)) rangeHr(c, start, end)?.let { o.put("hr", it) }
                     } catch (e: Exception) {
                         if (e is kotlinx.coroutines.CancellationException) throw e
-                        o.remove("steps"); o.remove("hr"); o.put("covered", false)
+                        o.remove("steps"); o.remove("hr"); o.remove("bandOnly"); o.put("covered", false)
                     }
                     results.put(o)
                 }
@@ -268,11 +269,12 @@ class MotusHealthPlugin : Plugin() {
         return all
     }
 
-    // Steps of the app with the most in the span (records crossing the edges count by their share of time inside),
-    // and whether that app's records cover the span without a hole over 10 minutes
+    // The band's steps in the span (records crossing the edges count by their share of time inside), and whether its
+    // records cover the span without a hole over 10 minutes. Only a band, watch or ring counts (isBand): the phone's own
+    // step counter is the same sensor Motus counted with, not the band. Two apps writing for the same band: the larger.
     private suspend fun rangeSteps(c: HealthConnectClient, start: Instant, end: Instant): Pair<Long?, Boolean> {
         val recs = readBetween(c, StepsRecord::class, start, end).filter {
-            it.metadata.dataOrigin.packageName != context.packageName && it.endTime.isAfter(start) && it.startTime.isBefore(end)
+            it.endTime.isAfter(start) && it.startTime.isBefore(end) && isBand(it.metadata.dataOrigin.packageName, it.metadata.device?.type)
         }
         if (recs.isEmpty()) return null to false
         val byOrigin = recs.groupBy { it.metadata.dataOrigin.packageName }
@@ -339,18 +341,12 @@ class MotusHealthPlugin : Plugin() {
     }
 
     // Daily totals (steps, distance, active calories; water sums every app, num null). Health Connect adds up each day
-    // itself, but its priority list only decides who wins where two apps both have a record for the same moment: where
-    // the first app has none, the next one's count is added in. A band app writes a record per minute with steps
-    // (Gadgetbridge does) and the phone's own step counter writes longer ones, so every quiet minute between the band's
-    // took a share of the phone's count and a day read 1,000+ steps more than the band. So on a day more than one app
-    // counted and one of them is worn (band, watch, ring), each quarter hour is taken from the worn device when it
-    // counted anything then (the largest, if two apps write for the same band), else Health Connect's own count for it:
-    // the time the band was off (charging, not yet put on) keeps the phone's count, as Health Connect's screen does.
-    // With no worn device among them, or when Health Connect refuses the quarter hours, its own daily total stands.
-    // Each of these days also says whether a worn device counted it (worn), so the app says "from your band" only then
-    // and not for a day only the phone's own counter or Google Fit wrote.
-    // A long range (years) is asked for 90 days at a time: one request for thousands of day buckets can fail; quarter
-    // hours are asked a week at a time, and only for weeks with such days.
+    // itself, but where its first app (the band) has no record for a moment it adds the next one's (the phone's own step
+    // counter, Google Fit), so a day read thousands of steps more than the band and Health Connect's own screen showed
+    // (14 Nov: band 3,656, Motus 6,205). So on a day a band, watch or ring counted anything (bandOrigin), the day is that
+    // device's own total only (the largest, if two apps write for the same band), as Gadgetbridge shows it; on a day
+    // without one, Health Connect's total stands and says so (worn false: "from Health Connect", not "from your band").
+    // A long range (years) is asked for 90 days at a time: one request for thousands of day buckets can fail.
     private suspend fun <R : Record, T : Any> dailyTotal(c: HealthConnectClient, from: Instant, zone: ZoneId, type: KClass<R>, startOf: (R) -> Instant,
                                                        metric: AggregateMetric<T>, key: String = "value", num: ((T) -> Double)? = null, value: (T) -> Any): JSArray {
         // start at the oldest record Health Connect will give us, not at `from`: "everything" asks from 2000, and
@@ -365,35 +361,29 @@ class MotusHealthPlugin : Plugin() {
             val next = minOf(day.plusDays(90), end)
             val range = TimeRangeFilter.between(day.atStartOfDay(), next.atStartOfDay())
             val res = c.aggregateGroupByPeriod(AggregateGroupByPeriodRequest(setOf(metric), range, Period.ofDays(1)))
-            val fixed = mutableMapOf<LocalDate, Double>()
+            val band = mutableMapOf<LocalDate, T>()
             if (num != null) {
-                val mixed = res.filter { it.result.dataOrigins.size > 1 }
-                for (o in res.flatMap { it.result.dataOrigins }.toSet())
-                    if (o.packageName !in worn) worn[o.packageName] = isWorn(c, type, range, o)
-                val days = mixed.map { it.startTime.toLocalDate() }.filter { d -> res.first { it.startTime.toLocalDate() == d }.result.dataOrigins.any { worn[it.packageName] == true } }
-                for ((wk, ds) in days.groupBy { it.toEpochDay() / 7 }) {
-                    val wFrom = LocalDate.ofEpochDay(wk * 7).atStartOfDay(); val wTo = wFrom.plusDays(7)
-                    val wr = TimeRangeFilter.between(wFrom, wTo)
-                    val origins = mixed.filter { it.startTime.toLocalDate() in ds }.flatMap { it.result.dataOrigins }.filter { worn[it.packageName] == true }.toSet()
-                    val (all, band) = try {
-                        val band = mutableMapOf<Instant, Double>()
-                        for (o in origins) for ((h, v) in quarters(c, metric, wr, setOf(o), num)) band[h] = maxOf(band[h] ?: 0.0, v)
-                        quarters(c, metric, wr, emptySet(), num) to band
-                    } catch (e: Exception) { if (e is kotlinx.coroutines.CancellationException) throw e; continue }
-                    for ((h, v) in all) {
-                        val d = h.atZone(zone).toLocalDate()
-                        if (d !in ds) continue
-                        val b = band[h]
-                        fixed[d] = (fixed[d] ?: 0.0) + (if (b != null && b > 0) b else v)
+                val origins = res.flatMap { it.result.dataOrigins }.toSet()
+                for (o in origins) if (o.packageName !in worn) worn[o.packageName] = bandOrigin(c, type, range, o)
+                for (o in origins) {
+                    if (worn[o.packageName] != true) continue
+                    // a failure here fails the whole read (not this band's days quietly saved with the phone's
+                    // steps mixed in), so the read isn't remembered as done and the next sync asks again
+                    val own = c.aggregateGroupByPeriod(AggregateGroupByPeriodRequest(setOf(metric), range, Period.ofDays(1), setOf(o)))
+                    for (r in own) {
+                        val v = r.result[metric] ?: continue
+                        val d = r.startTime.toLocalDate()
+                        val cur = band[d]
+                        if (num(v) > 0 && (cur == null || num(v) > num(cur))) band[d] = v
                     }
                 }
             }
             for (r in res) {
                 val date = r.startTime.toLocalDate()
-                val f = fixed[date]
                 val n = r.result[metric] ?: continue
-                val o = JSObject().put("date", date.toString()).put(key, if (f != null) Math.round(f) else value(n))
-                if (num != null) o.put("worn", r.result.dataOrigins.any { worn[it.packageName] == true })
+                val b = band[date]
+                val o = JSObject().put("date", date.toString()).put(key, value(b ?: n))
+                if (num != null) o.put("worn", b != null)
                 arr.put(o)
             }
             day = next
@@ -401,16 +391,78 @@ class MotusHealthPlugin : Plugin() {
         return arr
     }
 
-    // one count per quarter hour over a week, from the given apps (empty: as Health Connect adds them up), keyed by the
-    // moment it starts (local times repeat when the clocks go back)
-    private suspend fun <T : Any> quarters(c: HealthConnectClient, metric: AggregateMetric<T>, range: TimeRangeFilter, origins: Set<DataOrigin>, num: (T) -> Double): Map<Instant, Double> =
-        c.aggregateGroupByDuration(AggregateGroupByDurationRequest(setOf(metric), range, Duration.ofMinutes(15), origins))
-            .mapNotNull { r -> r.result[metric]?.let { r.startTime to num(it) } }.toMap()
-
-    // whether an app's records come from something worn (band, watch, ring, chest strap), going by its first one in the range
+    // Which apps' data comes from a band, watch or ring. Health Connect also holds steps the phone counted itself: its own
+    // step tracking (package "android", or "com.android.healthconnect.phone.<id>" since mid 2026), Google Fit, a phone
+    // maker's health app. Those count the same sensor Motus's own pedometer reads, so taking them for the band's made a
+    // walk say "From your band" with exactly the phone's count. A band app's records say so by their device type, but
+    // Gadgetbridge writes "unknown" for gadgets it has no kind for, so known band apps count as a band as well; Samsung
+    // Health and other apps that also count on the phone only when their records say watch, band or ring.
     private val WORN = setOf(Device.TYPE_WATCH, Device.TYPE_FITNESS_BAND, Device.TYPE_RING, Device.TYPE_CHEST_STRAP)
-    private suspend fun <R : Record> isWorn(c: HealthConnectClient, type: KClass<R>, range: TimeRangeFilter, o: DataOrigin): Boolean =
-        c.readRecords(ReadRecordsRequest(type, range, dataOriginFilter = setOf(o), pageSize = 1)).records.firstOrNull()?.metadata?.device?.type in WORN
+    private val PHONE_APPS = setOf("android", "com.google.android.apps.fitness", "com.google.android.apps.healthdata", "com.mi.health")
+    private val BAND_APPS = listOf(
+        "nodomain.freeyourgadget.gadgetbridge", // Gadgetbridge, with its nightly and other builds (".nightly", ...)
+        "com.xiaomi.wearable", "com.xiaomi.hm.health", "com.huami.watch.hmwatchmanager", "com.huami.midong", // Mi Fitness, Mi Fit / Zepp Life, Zepp, Amazfit
+        "com.fitbit.FitbitMobile", "com.garmin.android.apps.connectmobile", "com.huawei.health", "com.ouraring.oura",
+        "com.whoop.android", "fi.polar.polarflow", "com.suunto.android",
+    )
+    private fun phoneApp(pkg: String) = pkg in PHONE_APPS || pkg.startsWith("com.android.healthconnect") || pkg.startsWith("com.google.android.healthconnect")
+    private fun isBand(pkg: String, deviceType: Int?): Boolean {
+        if (pkg == context.packageName || phoneApp(pkg) || deviceType == Device.TYPE_PHONE) return false
+        if (deviceType != null && deviceType in WORN) return true
+        return BAND_APPS.any { pkg == it || pkg.startsWith("$it.") }
+    }
+    // an app's records in the range, by its first one
+    private suspend fun <R : Record> bandOrigin(c: HealthConnectClient, type: KClass<R>, range: TimeRangeFilter, o: DataOrigin): Boolean =
+        isBand(o.packageName, c.readRecords(ReadRecordsRequest(type, range, dataOriginFilter = setOf(o), pageSize = 1)).records.firstOrNull()?.metadata?.device?.type)
+
+    private fun deviceName(t: Int?): String = when (t) {
+        Device.TYPE_WATCH -> "watch"; Device.TYPE_FITNESS_BAND -> "band"; Device.TYPE_RING -> "ring"; Device.TYPE_CHEST_STRAP -> "chest strap"
+        Device.TYPE_PHONE -> "phone"; Device.TYPE_SCALE -> "scale"; else -> "unknown"
+    }
+    // the name Health Connect shows the phone's own steps under ("Robin"): the name set in the phone's settings
+    private fun phoneName(): String = try {
+        android.provider.Settings.Global.getString(context.contentResolver, "device_name")?.takeIf { it.isNotBlank() } ?: Build.MODEL
+    } catch (e: Exception) { Build.MODEL }
+    private fun appLabel(pkg: String): String? = try {
+        val pm = context.packageManager
+        @Suppress("DEPRECATION") pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString()
+    } catch (e: Exception) { null }
+
+    /**
+     * Where one day's steps came from, so the person can check what Motus used (Settings → Integrations → Imported data):
+     * { date, total: Health Connect's own total, used: the band app whose count is the day's, or null (Health Connect's
+     *   total), phoneName: this phone's name, sources: [{ app: package, label?: its name on this phone, steps, band: boolean,
+     *   phone: the phone's own step counting, device: "band" | "watch" | "phone" | "unknown" | ... }] }
+     */
+    @PluginMethod
+    fun stepSources(call: PluginCall) {
+        if (sdk() != HealthConnectClient.SDK_AVAILABLE) { call.reject("Health Connect is not available"); return }
+        val date = try { LocalDate.parse(call.getString("date")) } catch (e: Exception) { call.reject("Pick a day"); return }
+        scope.launch {
+            try {
+                val c = client()
+                if (perm(StepsRecord::class) !in c.permissionController.getGrantedPermissions()) { call.reject("Motus may not read steps"); return@launch }
+                val range = TimeRangeFilter.between(date.atStartOfDay(), date.plusDays(1).atStartOfDay())
+                val all = c.aggregate(AggregateRequest(setOf(StepsRecord.COUNT_TOTAL), range))
+                val sources = JSArray()
+                var used: String? = null; var best = -1L
+                for (o in all.dataOrigins.sortedBy { it.packageName }) {
+                    val n = c.aggregate(AggregateRequest(setOf(StepsRecord.COUNT_TOTAL), range, setOf(o)))[StepsRecord.COUNT_TOTAL] ?: 0L
+                    val t = c.readRecords(ReadRecordsRequest(StepsRecord::class, range, dataOriginFilter = setOf(o), pageSize = 1)).records.firstOrNull()?.metadata?.device?.type
+                    val band = isBand(o.packageName, t)
+                    if (band && n > 0 && n > best) { best = n; used = o.packageName }
+                    val s = JSObject().put("app", o.packageName).put("steps", n).put("band", band).put("device", deviceName(t))
+                        .put("phone", !band && (phoneApp(o.packageName) || t == Device.TYPE_PHONE))
+                    appLabel(o.packageName)?.let { s.put("label", it) }
+                    sources.put(s)
+                }
+                val out = JSObject().put("date", date.toString()).put("total", all[StepsRecord.COUNT_TOTAL] ?: 0L).put("sources", sources)
+                    .put("phoneName", phoneName())
+                out.put("used", used ?: JSONObject.NULL)
+                call.resolve(out)
+            } catch (e: Exception) { call.reject(e.message ?: "Health Connect could not be read") }
+        }
+    }
 
     private suspend fun <T : Record> readAll(c: HealthConnectClient, type: KClass<T>, from: Instant): List<T> {
         val all = mutableListOf<T>()
