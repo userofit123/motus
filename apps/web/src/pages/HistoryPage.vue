@@ -24,7 +24,9 @@ import DotLine from "../components/DotLine.vue";
 import SearchField from "../components/SearchField.vue";
 import ScheduleEditor from "../components/ScheduleEditor.vue";
 import SessionStats from "../components/SessionStats.vue";
-import { WORKOUT_COLOR, ACTIVITY_COLOR } from "../components/stats/daySessions";
+import DayTimeline from "../components/stats/DayTimeline.vue";
+import { WORKOUT_COLOR, ACTIVITY_COLOR, useDaySessions } from "../components/stats/daySessions";
+import { useDayTimeline } from "../components/stats/dayTimeline";
 
 const route = useRoute(), router = useRouter();
 const s = useSettings();
@@ -169,6 +171,13 @@ const dayTiles = computed(() => {
   else if (dist) { const i = dist.lastIndexOf(" "); out.push({ key: "dist", icon: "walk", label: "Distance", value: dist.slice(0, i), unit: dist.slice(i + 1), sub: "" }); }
   return out;
 });
+// the day at a glance under its tiles (M-244): the night, the steps by hour and the heart rate on one timeline with the
+// day's sessions shaded on it, only from what the band saved; each part opens its Stats tab on this day, as the tiles do
+const tlDay = computed(() => sel.value ?? today);
+const tlOn = computed(() => banded.value && !!sel.value && sel.value <= today);
+const { sessions: tlSessions } = useDaySessions(tlDay, tlOn);
+const { tl, has: tlHas } = useDayTimeline(tlDay, computed(() => hDay.data.value), tlOn);
+const dayTop = computed(() => dayTiles.value.length > 0 || tlHas.value);
 // a workout's average heart rate from a band, after its time in the row's line
 // the shown month's totals, as stat tiles at the end of the calendar (they follow the month you are looking at); the
 // tiles of Home's This week and Stats' month reports, in their order (Activities in Volume's place), without a change column: the calendar loads only this month
@@ -235,7 +244,7 @@ await loaded(cal, listWorkouts, listActs);
       <div v-if="sel" :key="sel" class="spt dayfade">
         <div class="sh first"><h2>{{ fmt.date(sel, { weekday: "long", day: "numeric", month: "long" }) }}</h2><div class="grow" /><span v-if="sel <= today" @click.stop><Menu label="Log on this day" align="start" :items="[{ label: 'Log a workout', icon: 'dumbbell', run: () => (logSheet = { date: sel ?? undefined }) }, { label: 'Log an activity', icon: 'activity', run: () => (activitySheet = {}) }]" /></span><button v-if="sel >= today" class="lnk" @click="planDay = sel"><Icon name="plus" :size="14" />Plan</button></div>
         <!-- the band's numbers for the day as a report's tiles, then the day's sessions under a faint line -->
-        <div class="card" :class="{ wkc: dayTiles.length }">
+        <div class="card" :class="{ wkc: dayTop }">
           <div v-if="dayTiles.length" class="wstats dtiles">
             <div v-for="x in dayTiles" :key="x.key" class="ws" :class="{ click: x.open }" :role="x.open ? 'button' : 'group'" :tabindex="x.open ? 0 : undefined" :aria-label="[x.label, x.value, x.unit, x.sub].filter(Boolean).join(' ')" @click="x.open?.()" @keydown.enter="x.open?.()">
               <div class="wlb"><Icon :name="x.icon" :size="14" />{{ x.label }}<Icon v-if="x.open" name="right" :size="14" class="wgo" /></div>
@@ -243,7 +252,9 @@ await loaded(cal, listWorkouts, listActs);
               <div class="wd">{{ x.sub }}</div>
             </div>
           </div>
-          <div :class="{ 'csec dsess': dayTiles.length }">
+          <div v-if="tlHas" :class="{ csec: dayTiles.length }"><div class="lbl hgap">Day by hour</div>
+            <DayTimeline :tl="tl" :day="tlDay" :sessions="tlSessions" @open="(tab) => router.push(`/stats?tab=${tab}&day=${tlDay}`)" @pick="(id) => router.push(id)" /></div>
+          <div :class="{ 'csec dsess': dayTop }">
           <div v-if="!(byDay.get(sel) ?? []).length" class="tiny">{{ sel >= today ? "Nothing planned. Use Plan to put a routine on this day." : "Nothing on this day." }}</div>
           <div class="list"><div v-for="x in byDay.get(sel) ?? []" :key="x.id ?? x.scheduleId" class="li click" @click="open(x)">
             <Icon :name="icon(x)" :size="18" :style="{ color: x.color ?? (x.kind === 'activity' ? ACTIVITY_COLOR : WORKOUT_COLOR) }" /><div class="grow"><div class="t" :style="x.missed ? { opacity: .5 } : undefined">{{ label(x) }}</div><div class="s"><template v-if="x.kind === 'planned'">{{ x.missed ? "Missed" : "Planned workout" }}</template><DotLine v-else :parts="[fmt.time(x.startedAt), hrPart(x)].filter((p) => p != null)" /></div></div><SessionStats v-if="x.kind !== 'planned'" :x="x" /><span v-if="x.kind === 'planned'" @click.stop><Menu :items="unplanItems(x)" :label="`Options for ${x.name}`" /></span><Icon v-else name="right" class="muted" /></div></div>
