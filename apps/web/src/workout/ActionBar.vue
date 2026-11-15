@@ -2,8 +2,9 @@
 // The controls of the running workout, in one sheet at the bottom: everything you press is here, always for the exercise
 // being done now (state.active), whichever one is on screen above. A set to do: which set, the
 // weight and reps with - and + for thumbs, the rest after it, then Pause, Skip and Done. Resting: a ring counting down,
-// with -15 and +15 either side. When an exercise is finished: on to the next, or Finish. The workout's Pause is always
-// the first button of the bottom row.
+// with Pause above -15 on its left and Skip above +15 on its right, so a rest needs no bottom row and the sheet stays
+// short. When an exercise is finished: on to the next, or Finish. The workout's Pause is the first button: of the bottom
+// row, or top left while resting.
 import { computed, ref, watch, onBeforeUnmount } from "vue";
 import { clock, nextSet, usesWeight, usesReps, usesDuration, type WorkoutSet, type SetKind } from "@motus/shared";
 import { useWorkout } from "./useWorkout";
@@ -102,13 +103,20 @@ const RING = 2 * Math.PI * 58;
         <span class="ab-k grow ellipsis ab-rtitle">{{ rest.done ? "Rest over" : rest.label === "Next exercise" ? "Rest before the next exercise" : "Resting" }}</span>
       </div>
       <div class="ab-ringg">
-      <div class="ab-rest" role="timer">
-        <button class="btn o" @click="adjustRest(-15)">-15</button>
-        <div class="ring">
+      <div class="ab-rest">
+        <div class="ab-side">
+          <button class="ib ab-pause" :class="{ on: paused }" :aria-label="paused ? 'Resume the workout' : 'Pause the workout'" :aria-pressed="paused" @click="emit('pause')"><Icon :name="paused ? 'play' : 'pause'" /></button>
+          <button class="ib ab-adj" aria-label="15 seconds less rest" @click="adjustRest(-15)">-15</button>
+        </div>
+        <div class="ring" role="timer">
           <svg viewBox="0 0 132 132" aria-hidden="true"><circle cx="66" cy="66" r="58" class="rb" /><circle cx="66" cy="66" r="58" class="rf" :style="{ strokeDasharray: RING, strokeDashoffset: RING * (1 - pct) }" /></svg>
           <span class="ab-time" :class="{ over: rest.done }">{{ clock(left) }}</span>
         </div>
-        <button class="btn o" @click="adjustRest(15)">+15</button>
+        <div class="ab-side">
+          <!-- when the rest is over this is the way on, so it fills as the pressed Pause does -->
+          <button class="ib ab-pause" :class="{ on: rest.done }" :aria-label="rest.done ? 'Next set' : 'Skip rest'" @click="finishRest(true)"><Icon name="skip" /></button>
+          <button class="ib ab-adj" aria-label="15 seconds more rest" @click="adjustRest(15)">+15</button>
+        </div>
       </div>
       <div class="ab-k ellipsis ab-next">{{ rest.next }}</div>
       </div>
@@ -117,10 +125,6 @@ const RING = 2 * Math.PI * 58;
         <span class="ab-why">This rest was planned at {{ clock(W.restPlannedNow.value ?? 0) }}, now {{ clock(rest.totalS) }}</span>
         <span class="ab-act">Use {{ clock(rest.totalS) }} {{ offerFor(W.restKeeps.value) }}</span>
       </button>
-      <div class="ab-row">
-        <button class="ib ab-pause" :class="{ on: paused }" :aria-label="paused ? 'Resume the workout' : 'Pause the workout'" :aria-pressed="paused" @click="emit('pause')"><Icon :name="paused ? 'play' : 'pause'" /></button>
-        <button class="btn ab-go" @click="finishRest(true)">{{ rest.done ? "Next set" : "Skip rest" }}</button>
-      </div>
     </template>
 
     <!-- a set to do -->
@@ -170,8 +174,10 @@ const RING = 2 * Math.PI * 58;
 .ab-pause.on { background: var(--accc); color: var(--onc); border-color: transparent; }
 .ab-sm { min-height: 48px; padding-inline: 14px; }
 .ab-go { margin-inline-start: auto; flex: 1; max-width: 260px; min-height: 48px; font-size: 15px; }
-/* resting: the ring between -15 and +15 */
+/* resting: the ring between two columns of round buttons, Pause over -15 and Skip over +15, all one size so they line up */
 .ab-rest { display: flex; align-items: center; justify-content: center; gap: var(--hg); }
+.ab-side { display: flex; flex-direction: column; gap: var(--hg); }
+.ab-adj { width: 48px; height: 48px; font: inherit; font-size: 14px; font-weight: 600; color: var(--acc); font-variant-numeric: tabular-nums; }
 .ab-ringg { display: flex; flex-direction: column; gap: var(--hg); }
 .ring { position: relative; width: 132px; height: 132px; display: grid; place-items: center; flex: none; }
 .ring svg { position: absolute; inset: 0; transform: rotate(-90deg); }
