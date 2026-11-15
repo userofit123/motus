@@ -144,11 +144,13 @@ let alarmOn = false;
 const hidden = () => typeof document !== "undefined" && document.hidden;
 // Back in the foreground: the Android app played the cues already due while hidden, so mark them played here or the
 // next tick would play them again. `covered`: the alarm was set; a rest that ran out meanwhile was announced by it (its
-// rest over sound and "Rest over"), so it ends here without the in-app cues, as the tick would have ended it.
+// rest over sound and "Rest over"), so it ends here without the in-app cues, as the tick would have ended it. Only when it
+// ended at least LATE_MS ago: a few hundred ms after the end the alarm may not have fired yet, and taking it off now
+// (dropAlarm) would leave nothing to sound, so then the tick's in-app cue plays instead (the one sound that is left).
 function catchUpCues(covered: boolean) {
   if (!rest.endAt || rest.done || rest.pausedLeftS != null) return;
   const left = (rest.endAt - Date.now()) / 1000;
-  if (covered && left <= 0) { rest.done = true; save(); if (cues.next) finishRest(true, true); return; }
+  if (covered && left <= -LATE_MS / 1000) { rest.done = true; save(); if (cues.next) finishRest(true, true); return; }
   if (left <= 10) warned = true;
   const s = Math.ceil(left);
   if (s >= 1 && s <= 3) lastCount = s;
