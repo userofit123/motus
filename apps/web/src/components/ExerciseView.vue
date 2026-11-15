@@ -218,7 +218,7 @@ const menu = computed<MenuItem[]>(() => [
         <ReminderItem v-for="r in pending" :key="r.id" :reminder="r" when />
       </div>
       <div v-if="notes.data.value?.length" class="list">
-        <NoteItem v-for="n in notes.data.value" :key="n.id" :note="n" flat date
+        <NoteItem v-for="n in notes.data.value" :key="n.id" :note="n" flat
           :menu="noteMenu(n, e.name)" />
       </div>
     </div>

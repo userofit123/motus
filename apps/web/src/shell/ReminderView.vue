@@ -74,7 +74,7 @@ const dismiss = useChange(async () => {
       <span class="oi"><Icon name="bell" /></span>
       <div class="grow">
         <div class="rvt">{{ reminderText(r, fmt) }}</div>
-        <div class="tiny">{{ r.createdAt ? `Set ${fmt.ago(r.createdAt)}` : "Reminder" }}{{ pending ? "" : r.status === "done" ? " · done" : " · dismissed" }}</div>
+        <div class="tiny">{{ r.createdAt ? `Set ${fmt.stamp(r.createdAt)}` : "Reminder" }}{{ pending ? "" : r.status === "done" ? " · done" : " · dismissed" }}</div>
       </div>
     </div>
     <div class="list">

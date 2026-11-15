@@ -11,7 +11,7 @@ import { useFmt } from "../core/format";
 import Icon from "./Icon.vue";
 import Menu, { type MenuItem } from "./Menu.vue";
 
-const props = defineProps<{ note: any; flat?: boolean; date?: boolean; where?: string | null; menu?: MenuItem[] }>();
+const props = defineProps<{ note: any; flat?: boolean; where?: string | null; menu?: MenuItem[] }>();
 const fmt = useFmt();
 // "shows every time" only means something for notes on an exercise or routine; workout notes stay with their workout
 const repeats = computed(() => props.note.pinned && ["exercise", "routine_exercise", "routine"].includes(props.note.targetType));
@@ -19,7 +19,7 @@ const repeats = computed(() => props.note.pinned && ["exercise", "routine_exerci
 const text = computed(() => (props.note.body && props.note.body !== (props.note.tags ?? []).join(", ") ? props.note.body : ""));
 const meta = computed(() => [
   props.where,
-  props.date ? fmt.value.date(props.note.createdAt, { day: "numeric", month: "short", year: "numeric" }) : null,
+  fmt.value.stamp(props.note.createdAt) || null,
   props.flat ? props.note.workoutName : null,
   props.note.difficulty ? DIFFICULTY[props.note.difficulty - 1] : null,
   props.flat && repeats.value ? "Shows in every workout" : null,

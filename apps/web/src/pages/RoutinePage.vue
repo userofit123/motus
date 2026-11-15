@@ -173,7 +173,7 @@ await loaded(r, summaries, notes, rems, schedules, history);
       <div class="row hgap"><button class="btn tonal s" @click="noteSheet = { targets: [{ type: 'routine', id, label: routine.name }] }"><Icon name="plus" :size="16" />Note</button></div>
       <div v-if="!notes.data.value?.length" class="empty"><b>No notes yet</b>Write how it went, or what to change next time.</div>
       <div v-if="notes.data.value?.length" class="list">
-        <NoteItem v-for="n in notes.data.value" :key="n.id" :note="n" flat date :where="noteWhere(n)"
+        <NoteItem v-for="n in notes.data.value" :key="n.id" :note="n" flat :where="noteWhere(n)"
           :menu="noteMenu(n, noteWhere(n) ?? routine.name)" />
       </div>
     </div>

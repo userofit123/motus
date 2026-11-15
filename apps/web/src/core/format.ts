@@ -57,6 +57,8 @@ export function makeFmt(s: Settings) {
     day: (d: string) => { const t = new Date(); if (d === ymd(t)) return "today"; t.setDate(t.getDate() + 1); if (d === ymd(t)) return "tomorrow"; const x = new Date(d + "T12:00:00"); return loc(x, { weekday: "short", day: "numeric", month: "short", ...(x.getFullYear() !== new Date().getFullYear() ? { year: "numeric" } : {}) }); },
     dateLong: (iso: string | null | undefined) => (iso ? loc(toDate(iso), { weekday: "long", day: "numeric", month: "long", year: "numeric" }) : ""),
     time: (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleTimeString(locale, { hour: "numeric", minute: "2-digit", hour12 }) : ""),
+    /** when something was written: "13 Nov 2026, 14:05" (empty without a time) */
+    stamp: (iso: string | null | undefined) => (iso ? `${loc(toDate(iso), { day: "numeric", month: "short", year: "numeric" })}, ${new Date(iso).toLocaleTimeString(locale, { hour: "numeric", minute: "2-digit", hour12 })}` : ""),
     ago: (iso: string | null | undefined) => ago(iso),
     /** an achievement's amount in its unit, the same on Home and in Stats: "12.3k kg", "48.5 km", "3h 28m", "4 weeks" */
     ach: (unit: string, v: number) => unit === "kg" ? vol(v) : unit === "m" ? dist(v, v < 10000 ? 1 : 0) : unit === "s" ? dur(v, true) : unit === "weeks" ? `${num(v, 0)} ${v === 1 ? "week" : "weeks"}` : num(v, 0),
