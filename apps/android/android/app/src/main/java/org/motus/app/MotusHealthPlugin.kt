@@ -7,6 +7,8 @@ import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.HealthConnectFeatures
 import androidx.health.connect.client.PermissionController
 import androidx.health.connect.client.aggregate.AggregateMetric
+import androidx.health.connect.client.changes.DeletionChange
+import androidx.health.connect.client.changes.UpsertionChange
 import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.*
 import androidx.health.connect.client.records.metadata.DataOrigin
@@ -255,8 +257,10 @@ class MotusHealthPlugin : Plugin() {
     /**
      * Whether any app wrote, changed or removed something Motus may read since `token` (Health Connect's changes list):
      * one cheap call, so the page can look every minute and run the full read() only when there is something new.
-     * { token?: string } → { changed: boolean, token: string } (no token, or one Health Connect let expire: changed is
-     * true, and the new token starts from now)
+     * { token?: string } → { changed: boolean, token: string, deleted: string[], touched: number[] } (no token, or one
+     * Health Connect let expire: changed is true, and the new token starts from now). deleted: the ids of records
+     * deleted since (at most 5000), touched: the start times (unix seconds) of records written or changed since (at most
+     * 5000), so the page can delete those here and read their days again (POST /health/records, M-238).
      */
     @PluginMethod
     fun changes(call: PluginCall) {
@@ -272,16 +276,122 @@ class MotusHealthPlugin : Plugin() {
                 if (given.isNullOrEmpty()) { call.resolve(JSObject().put("changed", true).put("token", fresh())); return@launch }
                 var token: String = given
                 var changed = false; var pages = 0
+                val deleted = JSArray(); val touched = JSArray()
                 while (true) {
                     val res = c.getChanges(token)
                     if (res.changesTokenExpired) { call.resolve(JSObject().put("changed", true).put("token", fresh())); return@launch }
                     if (res.changes.isNotEmpty()) changed = true
+                    for (ch in res.changes) when (ch) {
+                        is DeletionChange -> if (deleted.length() < 5000) deleted.put(ch.recordId)
+                        is UpsertionChange -> if (touched.length() < 5000) when (val r = ch.record) {
+                            is IntervalRecord -> touched.put(r.startTime.epochSecond)
+                            is InstantaneousRecord -> touched.put(r.time.epochSecond)
+                            else -> {}
+                        }
+                        else -> {}
+                    }
                     token = res.nextChangesToken
                     // the answer is known after the first change; the token still moves past every page so the next
                     // look starts from now
                     if (!res.hasMore || ++pages >= 20) break
                 }
-                call.resolve(JSObject().put("changed", changed).put("token", token))
+                call.resolve(JSObject().put("changed", changed).put("token", token).put("deleted", deleted).put("touched", touched))
+            } catch (e: Exception) { call.reject(e.message ?: "Health Connect could not be read") }
+        }
+    }
+
+    /**
+     * Every record of every kind Motus may read that starts in [from, to) (ISO times), as Health Connect has it, for
+     * POST /health/records (M-238; the engine says what each field is: modules/healthRecords.ts).
+     * { from, to } → { from, to, tz, types: { [type]: { complete: boolean, records: [{id, s, e?, z, o, dv?, m, v? | p? | st?, x?, t?}] } } }
+     * Health Connect picks records by their start time (or, for some versions, wants them to end inside too), so each
+     * kind is read from a day earlier to a day later and only those starting inside are kept: a record never runs past a
+     * day (sleep and sessions included, as far as Motus cares). complete: false when the read stopped at its cap
+     * (readBetween), so the engine deletes nothing it didn't see. Kinds without permission are left out.
+     */
+    @PluginMethod
+    fun records(call: PluginCall) {
+        if (sdk() != HealthConnectClient.SDK_AVAILABLE) { call.reject("Health Connect is not available"); return }
+        val from = try { Instant.parse(call.getString("from")) } catch (e: Exception) { call.reject("from is missing"); return }
+        val to = try { Instant.parse(call.getString("to")) } catch (e: Exception) { Instant.now() }
+        scope.launch {
+            try {
+                val c = client()
+                val granted = c.permissionController.getGrantedPermissions()
+                val zone = ZoneId.systemDefault()
+                val types = JSObject()
+                suspend fun <T : Record> kind(name: String, type: KClass<T>, start: (T) -> Instant, fill: (T, JSObject) -> Unit) {
+                    if (perm(type) !in granted) return
+                    val all = readBetween(c, type, from.minus(HR_RECORD_BACK), to.plus(HR_RECORD_BACK))
+                    val list = JSArray()
+                    for (r in all) {
+                        val t = start(r)
+                        if (t.isBefore(from) || !t.isBefore(to)) continue
+                        val m = r.metadata
+                        val o = JSObject().put("id", m.id).put("s", t.epochSecond).put("o", m.dataOrigin.packageName)
+                            .put("m", m.lastModifiedTime.toEpochMilli()).put("z", zone.rules.getOffset(t).totalSeconds)
+                        m.device?.let { d ->
+                            val dv = JSObject().put("type", d.type)
+                            d.manufacturer?.let { dv.put("maker", it) }; d.model?.let { dv.put("model", it) }
+                            o.put("dv", dv)
+                        }
+                        fill(r, o)
+                        list.put(o)
+                    }
+                    types.put(name, JSObject().put("complete", all.size < 50000).put("records", list))
+                }
+                // the zone the record was written with, when it says (else the phone's, above)
+                fun iv(o: JSObject, e: Instant, z: ZoneOffset?) { o.put("e", e.epochSecond); z?.let { o.put("z", it.totalSeconds) } }
+                fun at(o: JSObject, z: ZoneOffset?) { z?.let { o.put("z", it.totalSeconds) } }
+                kind("steps", StepsRecord::class, { it.startTime }) { r, o -> iv(o, r.endTime, r.startZoneOffset); o.put("v", r.count) }
+                kind("distance", DistanceRecord::class, { it.startTime }) { r, o -> iv(o, r.endTime, r.startZoneOffset); o.put("v", r.distance.inMeters) }
+                kind("active_kcal", ActiveCaloriesBurnedRecord::class, { it.startTime }) { r, o -> iv(o, r.endTime, r.startZoneOffset); o.put("v", r.energy.inKilocalories) }
+                kind("floors", FloorsClimbedRecord::class, { it.startTime }) { r, o -> iv(o, r.endTime, r.startZoneOffset); o.put("v", r.floors) }
+                kind("elevation", ElevationGainedRecord::class, { it.startTime }) { r, o -> iv(o, r.endTime, r.startZoneOffset); o.put("v", r.elevation.inMeters) }
+                kind("hydration", HydrationRecord::class, { it.startTime }) { r, o -> iv(o, r.endTime, r.startZoneOffset); o.put("v", r.volume.inMilliliters) }
+                kind("heart_rate", HeartRateRecord::class, { it.startTime }) { r, o ->
+                    iv(o, r.endTime, r.startZoneOffset)
+                    o.put("p", JSArray().also { a -> for (x in r.samples) a.put(JSArray().put(x.time.epochSecond).put(x.beatsPerMinute)) })
+                }
+                kind("sleep", SleepSessionRecord::class, { it.startTime }) { r, o ->
+                    iv(o, r.endTime, r.startZoneOffset)
+                    o.put("st", JSArray().also { a -> for (x in r.stages) a.put(JSArray().put(x.startTime.epochSecond).put(x.endTime.epochSecond).put(x.stage)) })
+                    r.title?.let { o.put("t", it) }
+                }
+                kind("exercise", ExerciseSessionRecord::class, { it.startTime }) { r, o ->
+                    iv(o, r.endTime, r.startZoneOffset); o.put("x", r.exerciseType); r.title?.let { o.put("t", it) }
+                }
+                kind("resting_hr", RestingHeartRateRecord::class, { it.time }) { r, o -> at(o, r.zoneOffset); o.put("v", r.beatsPerMinute) }
+                kind("spo2", OxygenSaturationRecord::class, { it.time }) { r, o -> at(o, r.zoneOffset); o.put("v", r.percentage.value) }
+                kind("hrv", HeartRateVariabilityRmssdRecord::class, { it.time }) { r, o -> at(o, r.zoneOffset); o.put("v", r.heartRateVariabilityMillis) }
+                kind("resp_rate", RespiratoryRateRecord::class, { it.time }) { r, o -> at(o, r.zoneOffset); o.put("v", r.rate) }
+                kind("vo2max", Vo2MaxRecord::class, { it.time }) { r, o -> at(o, r.zoneOffset); o.put("v", r.vo2MillilitersPerMinuteKilogram) }
+                kind("weight", WeightRecord::class, { it.time }) { r, o -> at(o, r.zoneOffset); o.put("v", r.weight.inKilograms) }
+                kind("body_fat", BodyFatRecord::class, { it.time }) { r, o -> at(o, r.zoneOffset); o.put("v", r.percentage.value) }
+                call.resolve(JSObject().put("from", from.toString()).put("to", to.toString()).put("types", types))
+            } catch (e: Exception) { call.reject(e.message ?: "Health Connect could not be read") }
+        }
+    }
+
+    /**
+     * The start (or time) of the oldest record Motus may read, of any kind: where the back-fill of every record
+     * (records(), M-238) stops. { at?: ISO time } (absent when there is none). One read per kind, oldest first, one record.
+     */
+    @PluginMethod
+    fun oldest(call: PluginCall) {
+        if (sdk() != HealthConnectClient.SDK_AVAILABLE) { call.reject("Health Connect is not available"); return }
+        scope.launch {
+            try {
+                val c = client()
+                val granted = c.permissionController.getGrantedPermissions()
+                var oldest: Instant? = null
+                for (type in TYPES) {
+                    if (perm(type) !in granted) continue
+                    val r = c.readRecords(ReadRecordsRequest(type, TimeRangeFilter.before(Instant.now().plusSeconds(86400)), ascendingOrder = true, pageSize = 1)).records.firstOrNull()
+                    val t = when (r) { is IntervalRecord -> r.startTime; is InstantaneousRecord -> r.time; else -> null } ?: continue
+                    if (oldest == null || t.isBefore(oldest)) oldest = t
+                }
+                call.resolve(JSObject().also { o -> oldest?.let { o.put("at", it.toString()) } })
             } catch (e: Exception) { call.reject(e.message ?: "Health Connect could not be read") }
         }
     }

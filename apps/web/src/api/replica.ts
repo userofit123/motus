@@ -10,7 +10,9 @@ import { readStr, writeStr } from "../core/prefs";
 export const sync = reactive({ on: false, online: true, syncing: false, waiting: 0, lastAt: 0, error: "" });
 
 // what only the server can do: signing in, the admin pages, files, and sync itself
-const SERVER_ONLY = /^\/(auth|admin|media|upload|share|version|update-check|events|sync)(\/|\?|$)/;
+// health/records: every Health Connect record (M-238), kept by the server only (too many for the copy here; Health
+// Connect holds them while offline)
+const SERVER_ONLY = /^\/(auth|admin|media|upload|share|version|update-check|events|sync|health\/records)(\/|\?|$)/;
 // A backup is made and restored on the server, not from the copy here: only the server has the uploaded photos (they go
 // into the file), and a restore done there once reaches every device the usual way. The copy's changes go first.
 const ON_SERVER = /^\/(export|import|import\/preview)(\?|$)/;

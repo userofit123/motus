@@ -15,7 +15,7 @@ const EXPORT_FORMAT = 1;
 // The schema a file was written with: the number of migrations (migrate.ts) when it was made, so a restore knows which
 // of their changes to existing rows the file's rows still need. A test keeps it equal to the number of migrations, so a
 // new one is checked against backups (does the file carry it, does an older file need converting).
-const BACKUP_SCHEMA = 39;
+const BACKUP_SCHEMA = 40; // 40: health_records (an older file has none: nothing to convert)
 const NEWER = "This backup is from a newer version of Motus. Update the app first.";
 const DAMAGED = "This backup is damaged and can't be restored.";
 /** The schema a file says it has (refused when newer than this version, or not a whole number from 0 up), or
@@ -51,7 +51,7 @@ const DATA_URL = /^data:[\w.+-]+\/[\w.+-]+;base64,[A-Za-z0-9+/=]*$/;
 const TABLES = [
   "exercises", "exercise_prefs", "folders", "routines", "routine_exercises", "routine_sets", "routine_versions", "programs", "schedules", "schedule_exceptions",
   "workouts", "workout_exercises", "workout_sets", "activity_types", "activities", "notes", "reminders", "goals", "body_metrics", "daily_logs",
-  "sleep_nights", "hr_days", "health_imports", // health_imports after what it points at (ref: a body entry or an activity), so a merge swaps those ids in it too
+  "sleep_nights", "hr_days", "health_records", "health_imports", // health_imports after what it points at (ref: a body entry or an activity), so a merge swaps those ids in it too
 ] as const;
 type Table = (typeof TABLES)[number];
 // A Motus file holds all of these or some of them, e.g. only routines to copy into another account.

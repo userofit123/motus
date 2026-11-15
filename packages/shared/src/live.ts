@@ -14,6 +14,8 @@ export const TOPICS = {
   // workouts: a band's heart rate is added to workouts afterwards (/health/ranges); routines and exercises show it per
   // routine and per exercise session; goals: sleep hours
   health: ["health", "activities", "workouts", "routines", "exercises", "body", "stats", "goals", "home", "calendar"],
+  // every Health Connect record as it is (M-238): only screens that read the records themselves
+  readings: ["readings"],
   schedule: ["schedules", "calendar", "home"],
   settings: ["settings", "home", "stats", "goals"],
   everything: ["*"],

@@ -81,6 +81,10 @@ beforeAll(async () => {
     weight: [{ id: "w1", at: "2026-10-02T07:00:00Z", kg: 80.4 }],
     sessions: [{ id: "s1", type: "run", start: "2026-10-03T06:00:00Z", end: "2026-10-03T06:30:00Z", steps: 5200 }],
   });
+  // and the band's records as Health Connect has them (040)
+  await c("POST", "/health/records", { from: "2026-10-02T00:00:00Z", to: "2026-10-03T00:00:00Z", types: {
+    heart_rate: { complete: true, records: [{ id: "hr1", s: 1759392000, e: 1759395600, z: 0, o: "gb", m: 1, p: [[1759392000, 60], [1759395600, 90]] }] },
+  } });
   await c("PUT", "/daily", { date: "2026-10-01", kind: "steps", value: 8500 }); // typed over the band's
   await c("PUT", "/daily", { date: "2026-10-03", kind: "water_ml", value: 1500 });
   await c("DELETE", `/health/imports/${encodeURIComponent("steps:2026-10-04")}`); // deleted for good

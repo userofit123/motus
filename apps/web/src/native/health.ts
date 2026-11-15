@@ -200,6 +200,9 @@ async function read(past?: Date, recent = false): Promise<HealthResult | null> {
     // then what the band saw during activities and workouts recorded in Motus over the same days: its steps (a phone in
     // a pocket counts fewer) and heart rate. A failure here keeps the import above; the next sync asks again.
     try { r.ranges = await readRanges(from < rangesFrom() ? from : rangesFrom(), recent); } catch (e) { console.warn("Health Connect ranges", e); }
+    // and every record as Health Connect has it (M-238): the readings behind the numbers above, kept for later. A failure
+    // keeps the rest; the next read carries on from where this one got to.
+    try { await syncRecords(); } catch (e) { console.warn("Health Connect records", e); }
     if (r.steps || r.sleep || r.activities || r.weight || r.restingHr || r.spo2 || r.hrv || r.sleepNights || r.distance || r.activeKcal || r.bodyFat || r.hydration || r.vo2max || r.hrDays) invalidate([...TOPICS.health]);
     if (r.ranges?.steps || r.ranges?.hr || r.ranges?.band) invalidate([...TOPICS.health, "workouts"]);
     return r;
@@ -291,6 +294,8 @@ const canChanges = () => typeof plugin()?.changes === "function";
 let mark: { key: string; token: string } | null = null;
 async function markChanges() {
   if (!canChanges()) return;
+  // what changed since the last mark first, for the records (noteChanges): a fresh mark alone would lose it
+  if (mark && mark.key === key()) try { noteChanges(await plugin().changes({ token: mark.token })); } catch { /* the read below covers recent days */ }
   try { const r = await plugin().changes({}); mark = r.token ? { key: key(), token: r.token } : null; } catch { mark = null; }
 }
 /** Whether Health Connect holds something new since the last full read; true when it can't tell (also when the look
@@ -298,10 +303,70 @@ async function markChanges() {
 async function changedSince(): Promise<boolean> {
   if (!mark || mark.key !== key()) return true;
   try {
-    const r = await plugin().changes({ token: mark.token }) as { changed: boolean; token: string };
+    const r = await plugin().changes({ token: mark.token }) as Changes;
     mark = r.token ? { key: mark.key, token: r.token } : null;
+    noteChanges(r);
     return r.changed;
   } catch { mark = null; return true; }
+}
+
+// Every record of every kind Motus reads, as Health Connect has it, saved by the engine with its times (POST
+// /health/records, M-238). Each read saves the days since the last one (from a day before it, as a band hands days over
+// late), then reaches further back a stretch at a time until the oldest record Health Connect holds (the back-fill), so
+// one read never carries years of minute heart rate. Records written or deleted in Health Connect since (its changes
+// list, noted on every look) are read again or deleted here, also on days long past. A server account's records go
+// straight to the server (api/replica.ts): offline, nothing moves on, and Health Connect still has them for the next read.
+// Kept per account on this phone: to (where the last read reached), back (how far back the back-fill got), oldest.
+interface Changes { changed: boolean; token: string; deleted?: string[]; touched?: number[] }
+interface RecState { to?: number; back?: number; oldest?: number | null; deleted: string[]; touched: number[] }
+const RECORDS_KEY = "motusHealthRecords", REC_CHUNK_MS = 2 * DAY_MS, REC_FIRST_MS = 2 * DAY_MS, REC_BACK_MS = 30 * DAY_MS, REC_PENDING_MAX = 20_000;
+const recState = (): RecState => ({ deleted: [], touched: [], ...(readJson<Record<string, RecState>>(RECORDS_KEY, {})[key()] ?? {}) });
+const saveRecState = (st: RecState) => { const all = readJson<Record<string, RecState>>(RECORDS_KEY, {}); all[key()] = st; writeJson(RECORDS_KEY, all); };
+function noteChanges(r: Changes | null | undefined) {
+  if (!r?.deleted?.length && !r?.touched?.length) return;
+  const st = recState();
+  st.deleted = [...new Set([...st.deleted, ...(r.deleted ?? [])])].slice(-REC_PENDING_MAX);
+  st.touched = [...new Set([...st.touched, ...(r.touched ?? []).map((t) => Math.floor((t * 1000) / DAY_MS) * DAY_MS)])].slice(-REC_PENDING_MAX);
+  saveRecState(st);
+}
+async function syncRecords() {
+  if (typeof plugin()?.records !== "function") return; // an app build from before
+  const iso = (t: number) => new Date(t).toISOString();
+  const save = async (a: number, b: number, deleted: string[] = []) => {
+    const data = await plugin().records({ from: iso(a), to: iso(b) });
+    await api.post("/health/records", { ...data, tz: new Date().getTimezoneOffset(), deleted });
+  };
+  let st = recState();
+  const now = Date.now(), start = st.to ? st.to - OVERLAP_MS : now - REC_FIRST_MS;
+  // deleted in Health Connect, and days written to there that the read below doesn't reach (at most 30 a read)
+  if (st.deleted.length) {
+    const gone = st.deleted;
+    await api.post("/health/records", { from: iso(now), to: iso(now), types: {}, deleted: gone });
+    st = recState(); st.deleted = st.deleted.filter((x) => !gone.includes(x)); saveRecState(st);
+  }
+  for (const d of st.touched.filter((t) => t + DAY_MS <= start).sort((a, b) => a - b).slice(0, 30)) {
+    await save(d, d + DAY_MS);
+    st = recState(); st.touched = st.touched.filter((t) => t !== d); saveRecState(st);
+  }
+  st = recState(); st.touched = st.touched.filter((t) => t + DAY_MS <= start); saveRecState(st);
+  // the days since the last read
+  for (let a = start; a < now; a += REC_CHUNK_MS) {
+    const b = Math.min(now, a + REC_CHUNK_MS);
+    await save(a, b);
+    st = recState(); st.to = b; st.back ??= start; saveRecState(st);
+  }
+  // the back-fill
+  st = recState();
+  if (st.oldest === undefined && typeof plugin()?.oldest === "function") {
+    const o = await plugin().oldest() as { at?: string };
+    st.oldest = o.at ? Date.parse(o.at) : null; saveRecState(st);
+  }
+  const stop = Math.max(st.oldest ?? (st.back ?? now), (st.back ?? now) - REC_BACK_MS);
+  for (let b = st.back ?? now; b > stop; b -= REC_CHUNK_MS) {
+    const a = Math.max(stop, b - REC_CHUNK_MS);
+    await save(a, b);
+    st = recState(); st.back = a; saveRecState(st);
+  }
 }
 
 let watching = false, looking = false, failures = 0, retryAt = 0, lookedAt = 0;
