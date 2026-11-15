@@ -55,7 +55,7 @@ const days = computed(() => {
 });
 const dayName = (d: string) => d === localYmd(new Date()) ? "Today" : d === localYmd(new Date(Date.now() - 86400000)) ? "Yesterday" : fmt.value.date(d, { weekday: "long", day: "numeric", month: "long", ...(d.slice(0, 4) !== String(new Date().getFullYear()) ? { year: "numeric" } : {}) });
 
-const ICON = { steps: "steps", sleep: "moon", weight: "scale", resting_hr: "heart", spo2: "water", hrv: "heartPulse", distance: "map", active_kcal: "flame", body_fat: "scale", water: "water", vo2max: "heartPulse" } as const;
+const ICON = { steps: "steps", sleep: "moon", weight: "scale", resting_hr: "heartPulse", spo2: "water", hrv: "wave", distance: "walk", active_kcal: "flame", body_fat: "scale", water: "water", vo2max: "run" } as const;
 const NAME = { steps: "Steps", sleep: "Sleep", weight: "Body weight", resting_hr: "Resting heart rate", spo2: "Blood oxygen", hrv: "HRV", distance: "Distance", active_kcal: "Active calories", body_fat: "Body fat", water: "Water", vo2max: "VO2 max" } as const;
 // a day's heart values: whole beats and milliseconds, blood oxygen to a tenth when the band gave one
 const UNIT = { resting_hr: "bpm", spo2: "%", hrv: "ms", vo2max: "ml/kg/min" } as const;

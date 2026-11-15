@@ -1,6 +1,8 @@
-// The day charts' shared pieces (Stats → Steps and Stats → Heart): the day's workouts and activities with their exact
-// time spans, each in the colour the Calendar gives it (a workout its routine's, else the palette's purple; an activity teal), the
-// legend naming each kind on the chart, the hours the axis labels sit at, and the title of a day in the day picker.
+// The day pages' shared pieces (Stats → Steps, Heart and Sleep, and their helpers): the day's workouts and activities with
+// their exact time spans, each in the colour the Calendar gives it (a workout its routine's, else the palette's purple; an
+// activity teal), the legend naming each kind on the chart, the hours the axis labels sit at, the line said when a day or
+// night has no saved records, the title of a day or night in the day picker, and the week, month and year stretches the
+// arrows step through.
 import { computed, onScopeDispose, ref, type Ref } from "vue";
 import { ymd, weekStartDate } from "@motus/shared";
 import { useCalendar, useTypeName } from "../../api/queries";

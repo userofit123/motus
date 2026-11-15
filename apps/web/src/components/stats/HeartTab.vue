@@ -65,7 +65,7 @@ const resting = computed(() => daily.value.filter((x) => x.kind === "resting_hr"
 // line starts with the smoothed trend and how far it moved over the last 7 days, then the latest
 const VITALS = [{ id: "resting_hr", name: "Resting heart rate", unit: "bpm" }, { id: "spo2", name: "Blood oxygen", unit: "%" }, { id: "hrv", name: "HRV", unit: "ms" }] as const;
 const vitals = computed(() => VITALS.map((v) => {
-  const pts = daily.value.filter((x) => x.kind === v.id && inRange(x.date)).map((x) => ({ x: new Date(x.date + "T12:00").getTime(), y: Number(x.value) })).sort((a, b) => a.x - b.x);
+  const pts = daily.value.filter((x) => x.kind === v.id && inRange(x.date)).map((x) => ({ x: new Date(x.date + "T12:00").getTime(), y: Number(x.value), id: x.date })).sort((a, b) => a.x - b.x);
   let ema: number | null = null;
   const trend = pts.map((p) => (ema = ema == null ? p.y : ema + 0.15 * (p.y - ema)));
   // rounded before its sign is chosen, so a small move reads "+0", never "-0"
@@ -136,6 +136,9 @@ const zBars = computed(() => {
       value: m.reduce((t, v) => t + v, 0), parts: m.map((v, i) => ({ value: v, color: ZONES[i]!.color })) }; });
 });
 // moderate or harder (zones 3 to 5): the minutes most activity advice counts
+// the charts open what was tapped, as Steps' and Sleep's: a vitals point or a zones bar its day, a zones bar by week its week
+const openDay = (d: string) => { anchor.value = d; view.value = "day"; };
+const openZone = (k: string) => { anchor.value = k; view.value = zPerWeek.value ? "week" : "day"; };
 const zHard = computed(() => zDays.value.reduce((t, [, m]) => t + m[2]! + m[3]! + m[4]!, 0));
 
 // the stretch's numbers on top, as Steps' and Sleep's tiles, each only with data: the average resting heart rate (the
@@ -148,9 +151,9 @@ const nDays = (n: number) => `${n} ${n === 1 ? "day" : "days"}`;
 const tiles = computed(() => {
   const out: HTile[] = [];
   const r = avgOf("resting_hr");
-  if (r) out.push({ key: "rest", icon: "heart", label: "Resting heart rate", value: fmt.value.num(r.v, 0), unit: "bpm", sub: `average of ${nDays(r.n)}`, spark: r.ys.length > 1 ? r.ys : undefined });
+  if (r) out.push({ key: "rest", icon: "heartPulse", label: "Resting heart rate", value: fmt.value.num(r.v, 0), unit: "bpm", sub: `average of ${nDays(r.n)}`, spark: r.ys.length > 1 ? r.ys : undefined });
   const h = avgOf("hrv");
-  if (h) out.push({ key: "hrv", icon: "timer", label: "HRV", value: fmt.value.num(h.v, 0), unit: "ms", sub: `average of ${nDays(h.n)}` });
+  if (h) out.push({ key: "hrv", icon: "wave", label: "HRV", value: fmt.value.num(h.v, 0), unit: "ms", sub: `average of ${nDays(h.n)}` });
   if (zBars.value.length) {
     const weeks = Math.max(1, (zSpan.value.end.getTime() - zSpan.value.start.getTime()) / (7 * 86400000));
     out.push({ key: "zone", icon: "bolt", label: "Zone minutes", value: mins(zHard.value / weeks), unit: "", sub: `moderate or harder a week${zSpan.value.cut ? " · last 3 months" : ""}` });
@@ -191,28 +194,29 @@ const tiles = computed(() => {
       </div>
 
       <!-- each a card as the body measurements' -->
-      <div v-if="vitals.length" class="grid g2" :class="{ spt: tiles.length || insights.length }"><div v-for="v in vitals" :key="v.id" class="card"><div class="lbl hgap">{{ v.name }} ({{ v.unit }})</div>
-        <LineChart :points="v.pts" :height="140" :fmt="v.f" /><div class="tiny ht-line">{{ v.line }}</div></div></div>
+      <div v-if="vitals.length" class="grid g2" :class="{ spt: tiles.length || insights.length }"><div v-for="(v, i) in vitals" :key="v.id" class="card"><div class="lbl hgap">{{ v.name }} ({{ v.unit }})</div>
+        <LineChart :points="v.pts" :height="140" :fmt="v.f" @pick="openDay" /><div class="tiny ht-line">{{ v.line }}{{ !zBars.length && i === 0 ? " Tap a day to open it." : "" }}</div></div></div>
 
       <div v-if="zBars.length" class="card" :class="{ spt: tiles.length || insights.length || vitals.length }">
         <div class="lbl hgap">Time in heart rate zones{{ zPerWeek ? ", by week" : "" }} · max {{ maxHr!.bpm }} bpm{{ maxHr!.own ? "" : " from your age" }}</div>
-        <BarChart :bars="zBars" :height="170" :fmt="(v) => mins(v)" />
+        <BarChart :bars="zBars" :height="170" :fmt="(v) => mins(v)" @pick="openZone" />
         <div class="bmlegend ht-leg"><span v-for="z in ZONES" :key="z.key"><i :style="{ background: z.color }" />{{ z.name }}</span></div>
+        <div class="tiny ht-line">{{ zPerWeek ? "Tap a week to open it." : "Tap a day to open it." }}</div>
       </div>
 
-      <!-- how hard each workout and activity was, over the stretch: its average heart rate -->
-      <div class="sh"><h2>Heart rate in workouts</h2><span v-if="sessions.length" class="tiny">{{ sessions.length }}</span></div>
-      <template v-if="sessions.length">
-        <p class="tiny">How hard each workout and activity was: its average and highest heart rate.{{ total > sessions.length ? ` ${total - sessions.length} more in this ${view} have none: wear your ${adviceWord(dev)} while you record to add it.` : "" }}</p>
-        <div v-if="sessions.length > 2" class="card"><div class="lbl hgap">Average per session (bpm)</div>
-          <LineChart :points="sessions.map((x) => ({ x: x.a, y: x.avgHr!, id: x.key, label: x.name }))" :height="160" :fmt="(v) => fmt.num(v, 0)" @pick="(id) => router.push(id)" /></div>
-        <div class="card" :class="{ spt: sessions.length > 2 }">
-          <DaySessionList :sessions="newest" dated :value="(x) => `${Math.round(x.avgHr!)} bpm`" :sub="(x) => (x.maxHr != null ? `highest ${Math.round(x.maxHr)} bpm` : '')" />
-        </div>
-        <div v-if="sessions.length > 10 && !showAll" class="center spt"><button class="qb" @click="showAll = true">Show all {{ sessions.length }} sessions</button></div>
-      </template>
-      <div v-else-if="total" class="card empty"><Icon name="heart" :size="34" /><b>No heart rate in workouts yet</b>Workouts and activities you record while wearing your {{ adviceWord(dev) }} show their heart rate here once it has synced.</div>
-      <div v-else class="card empty"><Icon name="heart" :size="34" /><b>No workouts in this {{ view }}</b>Pick another {{ view }}, or record one while wearing your {{ adviceWord(dev) }}.</div>
+      <!-- how hard each workout and activity was, over the stretch: its average and highest heart rate, as Stats → Sleep's
+           "Sleep after workouts"; nothing at all when the stretch has no workouts -->
+      <div v-if="total" class="card wkc" :class="{ spt: tiles.length || insights.length || vitals.length || zBars.length }">
+        <div class="ch"><span class="bi"><Icon name="dumbbell" :size="15" /></span><span class="t grow">Heart rate in workouts</span><span v-if="sessions.length" class="tiny">{{ sessions.length }}</span></div>
+        <template v-if="sessions.length">
+          <template v-if="sessions.length > 2"><div class="lbl hgap">Average per session (bpm)</div>
+            <LineChart :points="sessions.map((x) => ({ x: x.a, y: x.avgHr!, id: x.key, label: x.name }))" :height="160" :fmt="(v) => fmt.num(v, 0)" @pick="(id) => router.push(id)" /></template>
+          <div :class="{ csec: sessions.length > 2 }"><DaySessionList :sessions="newest" dated :value="(x) => `${Math.round(x.avgHr!)} bpm`" :sub="(x) => (x.maxHr != null ? `highest ${Math.round(x.maxHr)} bpm` : '')" /></div>
+          <div class="tiny ht-line">How hard each workout and activity was: its average and highest heart rate.{{ total > sessions.length ? ` ${total - sessions.length} more in this ${view} have none: wear your ${adviceWord(dev)} while you record to add it.` : "" }}</div>
+        </template>
+        <div v-else class="tiny">None of this {{ view }}'s workouts and activities has a heart rate yet. Record them while wearing your {{ adviceWord(dev) }} and they show it here once it has synced.</div>
+      </div>
+      <div v-if="sessions.length > 10 && !showAll" class="center spt"><button class="qb" @click="showAll = true">Show all {{ sessions.length }} sessions</button></div>
     </template>
   </template>
 </template>

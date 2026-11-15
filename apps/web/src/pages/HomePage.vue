@@ -62,7 +62,7 @@ const META: Record<string, { name: string; desc: string; icon: string; size: Siz
   feed: { name: "Recent activity", desc: "Your latest workouts and activities", icon: "history", size: "m" },
   daily: { name: "Daily log", desc: "Steps, sleep, water and mood you type in for today", icon: "note", size: "m" },
   achievements: { name: "Achievements", desc: "The latest reached and the next one", icon: "star", size: "m" },
-  readiness: { name: "Readiness", desc: "How ready you are to train, from last night's sleep and your heart", icon: "heartPulse", size: "m" },
+  readiness: { name: "Readiness", desc: "How ready you are to train, from last night's sleep and your heart", icon: "gauge", size: "m" },
   // named by the person's device (a getter, so Edit home follows it)
   sleep: { name: "Last night", get desc() { return `Time asleep and its stages, from your ${adviceWord(dev.value)}`; }, icon: "moon", size: "m" },
   heart: { name: "Heart", get desc() { return `Resting heart rate, HRV and today's range, from your ${adviceWord(dev.value)}`; }, icon: "heart", size: "m" },
@@ -226,7 +226,7 @@ const READY_TEXT: Record<string, string> = { Ready: "Rested and recovered. A goo
 const bpm = (v: number) => `${Math.round(v)} bpm`, ms = (v: number) => `${Math.round(v)} ms`;
 const PART: Record<ReadinessPart["key"], { icon: string; t: string; f: (v: number) => string }> = {
   // sleep comes in hours, as the day's log keeps it
-  sleep: { icon: "moon", t: "Sleep", f: (h) => mins(h * 60) }, restingHr: { icon: "heart", t: "Resting heart rate", f: bpm }, hrv: { icon: "heartPulse", t: "HRV", f: ms },
+  sleep: { icon: "moon", t: "Sleep", f: (h) => mins(h * 60) }, restingHr: { icon: "heartPulse", t: "Resting heart rate", f: bpm }, hrv: { icon: "wave", t: "HRV", f: ms },
 };
 const signedBy = (d: number, f: (v: number) => string) => `${Math.round(d) < 0 ? "-" : "+"}${f(Math.abs(d))}`;
 const readyParts = computed(() => (rd.value?.parts ?? []).filter((x) => x.value != null && PART[x.key]).map((x) => {
@@ -274,12 +274,12 @@ const heartStats = computed<WStat[]>(() => {
     out.push({ key, icon, label, value: String(Math.round(v)), unit, delta: d == null ? "" : `${d < 0 ? "-" : "+"}${Math.abs(d)} ${unit}`,
       tone: p?.effect === "up" ? "pos" : p?.effect === "down" ? "neg" : undefined });
   };
-  vital("restingHr", "heart", "Resting heart rate", "bpm");
-  vital("hrv", "heartPulse", "HRV", "ms");
+  vital("restingHr", "heartPulse", "Resting heart rate", "bpm");
+  vital("hrv", "wave", "HRV", "ms");
   // blood oxygen whole, its percent right after the number, as the Heart tab writes it; it has no usual to compare with
   if (day.value?.spo2 != null) out.push({ key: "spo2", icon: "water", label: "Blood oxygen", value: `${Math.round(day.value.spo2)}%`, unit: "", delta: "" });
   const hr = day.value?.hr;
-  if (hr) out.push({ key: "today", icon: "activity", label: "Range today", value: `${Math.round(hr.min)}-${Math.round(hr.max)}`, unit: "bpm", delta: `average ${Math.round(hr.avg)}` });
+  if (hr) out.push({ key: "today", icon: "heart", label: "Range today", value: `${Math.round(hr.min)}-${Math.round(hr.max)}`, unit: "bpm", delta: `average ${Math.round(hr.avg)}` });
   return out;
 });
 const heartDelta = computed(() => heartStats.value.some((x) => (x.key === "restingHr" || x.key === "hrv") && !!x.delta));
@@ -629,7 +629,7 @@ await loaded(home, ach, avail, hDay, ready, nightsQ, dailyQ);
         <!-- readiness: the score as a pinned goal's value and ring, what it means, then what made it as a report's highlights;
              while the usual is being learnt, the days the score waits for in their place, and each part's days so far -->
         <div v-else-if="id === 'readiness' && rd" class="card hb sz-m click" :data-solo="solo.has(id) || undefined" v-bind="link('/stats?tab=heart')">
-          <div class="ch"><span class="bi"><Icon name="heartPulse" :size="15" /></span><span class="t grow">Readiness</span><span v-if="readyParts.length && !readyWait" class="tiny">Vs your usual</span></div>
+          <div class="ch"><span class="bi"><Icon name="gauge" :size="15" /></span><span class="t grow">Readiness</span><span v-if="readyParts.length && !readyWait" class="tiny">Vs your usual</span></div>
           <div v-if="readyWait" class="row"><div class="big grow">{{ readyWait.left }}<small>{{ readyWait.left === 1 ? "day" : "days" }} until your score</small></div><Ring :pct="readyWait.days / readyWait.need" :size="40" /></div>
           <div v-else class="row"><div class="big grow">{{ rd.score }}<small v-if="rd.label">{{ rd.label }}</small></div><Ring :pct="rd.score! / 100" :size="40" :color="rd.label === 'Take it easy' ? 'var(--warn)' : undefined" /></div>
           <div v-if="readyWait" class="tiny">{{ readyWait.text }}</div>

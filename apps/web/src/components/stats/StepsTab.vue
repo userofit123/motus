@@ -121,15 +121,15 @@ type Tile = { key: string; icon: string; label: string; value: string; unit: str
 const dayTiles = computed(() => {
   const out: Tile[] = [], d = anchor.value;
   const m = Number(dist.value.get(d)?.value ?? 0);
-  if (m) { const u = unitOf(fmt.value.dist(m, 1)); out.push({ key: "dist", icon: "map", label: "Distance", value: u.value, unit: u.unit, sub: "" }); }
+  if (m) { const u = unitOf(fmt.value.dist(m, 1)); out.push({ key: "dist", icon: "walk", label: "Distance", value: u.value, unit: u.unit, sub: "" }); }
   const k = Number(kcal.value.get(d)?.value ?? 0);
   if (k) out.push({ key: "kcal", icon: "flame", label: "Active calories", value: n0(k), unit: "kcal", sub: "" });
-  if (hours.value.length) out.push({ key: "active", icon: "bolt", label: "Active hours", value: String(activeH.value), unit: "h", sub: `${ACTIVE}+ steps an hour` });
+  if (hours.value.length) out.push({ key: "active", icon: "clock", label: "Active hours", value: String(activeH.value), unit: "h", sub: `${ACTIVE}+ steps an hour` });
   return out;
 });
 // the day against your usual day, the hero's second line (under the goal's) as Heart's day says its resting heart rate
-// against your usual under its resting line: the
-// difference in the good colour when more and the warning one when fewer (5% either way), then "vs usual" and the usual
+// against your usual under its resting line: the difference in the good colour when more and the warning one when fewer
+// (5% either way), then "vs usual" and the usual
 const vsUsual = computed(() => {
   if (!usual.value) return null;
   const pc = Math.round((dayN.value / usual.value - 1) * 100);
@@ -147,6 +147,9 @@ const days = computed(() => { const out: string[] = []; for (let d = range.value
 const withSteps = computed(() => days.value.filter((d) => stepsOn(d) > 0));
 const avg = computed(() => (withSteps.value.length ? withSteps.value.reduce((t, d) => t + stepsOn(d), 0) / withSteps.value.length : 0));
 const best = computed(() => withSteps.value.reduce<string | null>((m, d) => (!m || stepsOn(d) > stepsOn(m) ? d : m), null));
+const worst = computed(() => withSteps.value.reduce<string | null>((m, d) => (!m || stepsOn(d) < stepsOn(m) ? d : m), null));
+const sum = computed(() => withSteps.value.reduce((t, d) => t + stepsOn(d), 0));
+const day = (d: string) => fmt.value.date(d, { weekday: "short", day: "numeric", month: "short" });
 const reached = computed(() => (goal.value ? withSteps.value.filter((d) => stepsOn(d) >= goal.value!).length : 0));
 // the longest run of days in a row that reached the goal, in this stretch
 const streak = computed(() => {
@@ -173,7 +176,7 @@ const bars = computed(() => {
 });
 const pick = (d: string) => { anchor.value = d; view.value = view.value === "year" ? "week" : "day"; };
 const periodFrom = computed(() => { const r = withSteps.value.map((d) => steps.value.get(d)!); return r.length && r.every((x) => x.source && x.source !== "manual" && x.source !== "activities") ? fromWhere(r.every((x) => x.worn !== false), dev.value) : ""; });
-const tiles = computed(() => 2 + (goal.value ? 1 : 0) + (goal.value && streak.value ? 1 : 0));
+const tiles = computed(() => 1 + (goal.value ? 1 : 0) + (goal.value && streak.value ? 1 : 0));
 const openDay = (d: string | null) => { if (d) { anchor.value = d; view.value = "day"; } };
 </script>
 
@@ -225,10 +228,18 @@ const openDay = (d: string | null) => { if (d) { anchor.value = d; view.value = 
     <template v-else>
       <!-- the stretch's numbers, as Overview's and Sleep's tiles -->
       <div class="grid g4" :class="tiles < 4 ? `n${tiles}` : ''">
-        <div class="card hero stat"><div class="lbl"><span class="bi"><Icon name="steps" :size="15" /></span>Average</div><div class="val">{{ n0(avg) }}</div><div class="sub">steps a day · {{ withSteps.length }} {{ withSteps.length === 1 ? "day" : "days" }}</div><Sparkline v-if="withSteps.length > 1" :values="withSteps.map(stepsOn)" color="var(--onc)" /></div>
-        <div class="card stat click" role="button" tabindex="0" @click="openDay(best)" @keydown.enter="openDay(best)"><div class="lbl"><span class="bi"><Icon name="trophy" :size="15" /></span>Best day</div><div class="val">{{ n0(stepsOn(best!)) }}</div><div class="sub">{{ fmt.date(best!, { weekday: "short", day: "numeric", month: "short" }) }}</div></div>
+        <div class="card hero stat"><div class="lbl"><span class="bi"><Icon name="steps" :size="15" /></span>Steps</div><div class="val">{{ n0(avg) }}</div><div class="sub">average of {{ withSteps.length }} {{ withSteps.length === 1 ? "day" : "days" }}</div><Sparkline v-if="withSteps.length > 1" :values="withSteps.map(stepsOn)" color="var(--onc)" /></div>
         <div v-if="goal" class="card stat"><div class="lbl"><span class="bi"><Icon name="target" :size="15" /></span>Goal reached</div><div class="val">{{ reached }}<small>{{ reached === 1 ? "day" : "days" }}</small></div><div class="sub">of {{ withSteps.length }} · goal {{ n0(goal) }}</div></div>
         <div v-if="goal && streak" class="card stat"><div class="lbl"><span class="bi"><Icon name="link" :size="15" /></span>Longest streak</div><div class="val">{{ streak }}<small>{{ streak === 1 ? "day" : "days" }}</small></div><div class="sub">goal reached in a row</div></div>
+      </div>
+      <!-- the best and worst day and the stretch's total, once there are days to compare, as Sleep's best and worst nights -->
+      <div v-if="withSteps.length > 1" class="card wkc spt">
+        <div class="ch"><span class="bi"><Icon name="stats" :size="15" /></span><span class="t grow">Best and worst days</span></div>
+        <div class="wstats rows2">
+          <div class="ws click" role="button" tabindex="0" :aria-label="`Best day ${n0(stepsOn(best!))} steps ${day(best!)}`" @click="openDay(best)" @keydown.enter="openDay(best)"><div class="wlb"><Icon name="trophy" :size="14" />Best day<Icon name="right" :size="14" class="wgo" /></div><div class="wv">{{ n0(stepsOn(best!)) }} <small>steps</small></div><div class="wd">{{ day(best!) }}</div></div>
+          <div class="ws click" role="button" tabindex="0" :aria-label="`Lowest day ${n0(stepsOn(worst!))} steps ${day(worst!)}`" @click="openDay(worst)" @keydown.enter="openDay(worst)"><div class="wlb"><Icon name="arrowDown" :size="14" />Lowest day<Icon name="right" :size="14" class="wgo" /></div><div class="wv">{{ n0(stepsOn(worst!)) }} <small>steps</small></div><div class="wd">{{ day(worst!) }}</div></div>
+          <div class="ws" role="group" :aria-label="`Total ${n0(sum)} steps`"><div class="wlb"><Icon name="steps" :size="14" />Total</div><div class="wv">{{ n0(sum) }} <small>steps</small></div><div class="wd">in {{ withSteps.length }} days</div></div>
+        </div>
       </div>
 
       <div class="card spt">

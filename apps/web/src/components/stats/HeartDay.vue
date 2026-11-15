@@ -68,7 +68,7 @@ type Tile = { key: string; icon: string; label: string; value: string; unit: str
 const tiles = computed(() => {
   const d = day.data.value, out: Tile[] = [];
   if (lo.value != null) out.push({ key: "hr", icon: "heart", label: "Heart rate", value: `${lo.value}-${hi.value}`, unit: "bpm", sub: "lowest-highest" });
-  if (d?.hrv != null) out.push({ key: "hrv", icon: "timer", label: "HRV", value: fmt.value.num(d.hrv, 0), unit: "ms", sub: "average" });
+  if (d?.hrv != null) out.push({ key: "hrv", icon: "wave", label: "HRV", value: fmt.value.num(d.hrv, 0), unit: "ms", sub: "average" });
   if (d?.spo2 != null) out.push({ key: "spo2", icon: "water", label: "Blood oxygen", value: p(d.spo2), unit: "%", sub: "average" });
   return out;
 });
@@ -105,7 +105,7 @@ watch(() => !recs.isLoading.value && !day.isLoading.value && !calQ.isLoading.val
     <div class="ch"><span class="bi"><Icon name="heart" :size="15" /></span><span class="t grow">Heart</span></div>
     <!-- the day's heart rate, then its other numbers as a report's tiles under a faint line, as Steps' day -->
     <div v-if="hero" class="gs-top">
-      <span class="gs-ico"><Icon name="heart" :size="28" /></span>
+      <span class="gs-ico"><Icon :name="hero.unit === 'bpm resting' ? 'heartPulse' : 'heart'" :size="28" /></span>
       <div class="grow"><div class="gs-val">{{ hero.value }}<small>{{ hero.unit }}</small></div>
         <div v-if="rest != null && hero.unit !== 'bpm resting'" class="tiny">resting {{ rest }} bpm</div>
         <div v-if="vsUsual" class="tiny"><span :class="vsUsual.tone">{{ vsUsual.text }}</span> vs usual {{ vsUsual.usual }}</div></div>

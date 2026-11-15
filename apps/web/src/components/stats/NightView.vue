@@ -1,5 +1,6 @@
 <script setup lang="ts">
-// One night in full, for Stats → Sleep's Night view: time asleep against the time in bed as a ring; when you fell asleep
+// One night in full, for Stats → Sleep's Night view: time asleep against the time in bed as a ring, and against your usual
+// night; when you fell asleep
 // and woke up, the time awake and the lowest heart rate as a report's tiles; the stages across the night (a hypnogram,
 // from the band's saved sleep record) with the time of each, adding up to the ring's time asleep and the tile's time
 // awake; the heart rate, blood oxygen and breathing through the night; and the workouts and activities since the day
@@ -10,7 +11,7 @@ import { computed } from "vue";
 import { useQuery, keepPreviousData } from "@tanstack/vue-query";
 import { ymd } from "@motus/shared";
 import { api } from "../../api/client";
-import { useSleepNight } from "../../api/queries";
+import { useSleep, useSleepNight } from "../../api/queries";
 import { useFmt } from "../../core/format";
 import { asleepMin, inBedMin, efficiency, hasStages, isFull, mins, nightSegments, SEG_NAME, segColor, SHORT_WHY, type Seg, type SleepRecord } from "../../core/sleep";
 import { hrSamples } from "../../core/heart";
@@ -67,6 +68,17 @@ const awakeMin = computed(() => (segs.value.length ? wakes.value.reduce((t, s) =
 const samples = computed<[number, number][]>(() => (hrQ.data.value?.length ? hrQ.data.value : n.value?.hr ?? []));
 const low = computed(() => samples.value.reduce<[number, number] | null>((m, p) => (!m || p[1] < m[1] ? p : m), null));
 const lowHr = computed(() => low.value?.[1] ?? n.value?.minHr ?? null);
+
+// the night against your usual, the hero's second line as Steps' and Heart's days say theirs: the usual is the average
+// time asleep of the 30 days' nights before it (full nights only, from 5 on, as Stats → Sleep's 30-day average), the
+// difference in the good colour when longer and the warning one when shorter (10 minutes either way)
+const beforeQ = useSleep(computed(() => ({ from: ymd(new Date(new Date(props.date + "T12:00").getTime() - 30 * 86400000)), to: props.date })), on, { keep: true });
+const vsUsual = computed(() => {
+  const xs = (beforeQ.data.value?.nights ?? []).filter((x) => x.date < props.date && isFull(x));
+  if (!n.value || !isFull(n.value) || xs.length < 5) return null;
+  const usual = xs.reduce((t, x) => t + asleepMin(x), 0) / xs.length, d = Math.round(asleepMin(n.value) - usual);
+  return { text: d === 0 ? mins(0) : `${d > 0 ? "+" : "-"}${mins(Math.abs(d))}`, tone: Math.abs(d) < 10 ? undefined : d > 0 ? "pos" : "neg", usual: mins(usual) };
+});
 
 type Tile = { key: string; icon: string; label: string; value: string; unit: string; sub: string };
 const tiles = computed<Tile[]>(() => {
@@ -133,6 +145,7 @@ const beforeBed = (x: DaySession) => mins(Math.max(0, t0.value - x.b) / 60000);
       <div class="grow">
         <div class="gs-val">{{ mins(asleepMin(n)) }}<small>asleep</small></div>
         <div class="tiny"><template v-if="!noTimes">{{ fmt.time(n.startAt) }}-{{ fmt.time(n.endAt) }} · </template>{{ mins(inBedMin(n)) }} in bed · {{ Math.round(efficiency(n) * 100) }}% of it asleep</div>
+        <div v-if="vsUsual" class="tiny"><span :class="vsUsual.tone">{{ vsUsual.text }}</span> vs usual {{ vsUsual.usual }}</div>
       </div>
     </div>
     <div v-if="!isFull(n)" class="tiny nv-note">{{ SHORT_WHY }}</div>

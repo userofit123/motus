@@ -67,8 +67,8 @@ const tiles = computed<Tile[]>(() => {
   // as parts, so a half-width tile wraps at the dot ("Your watch · 1.21 km"), as the steps line does
   const said = (what: string) => [fromWhere(true, dev.value).replace(/^./, (c) => c.toUpperCase()), what], bandSub = [fromBand.value];
   out.push({ key: "time", icon: "clock", label: "Duration", value: f.dur(x.durationS, true), sub: x.movingS ? [`${f.dur(x.movingS, true)} moving`] : [], hero: true });
-  if (ownDist.value) out.push({ key: "dist", icon: "map", label: "Distance", ...distParts(ownDist.value), sub: bDist ? said(distText(bDist)) : [] });
-  else if (bDist) out.push({ key: "dist", icon: "map", label: "Distance", ...distParts(bDist), sub: bandSub });
+  if (ownDist.value) out.push({ key: "dist", icon: "walk", label: "Distance", ...distParts(ownDist.value), sub: bDist ? said(distText(bDist)) : [] });
+  else if (bDist) out.push({ key: "dist", icon: "walk", label: "Distance", ...distParts(bDist), sub: bandSub });
   if (pace.value) out.push({ key: "pace", icon: "timer", label: "Average pace", value: pace.value, unit: `/${f.du}` });
   if (x.steps > 0) out.push({ key: "steps", icon: "steps", label: "Steps", value: f.num(x.steps, 0), sub: stepsSub.value });
   // the climb takes the steps' place as before (one or the other, so a walk keeps its two rows of two)

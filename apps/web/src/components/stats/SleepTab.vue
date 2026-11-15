@@ -301,7 +301,8 @@ const list = computed(() => showAll.value ? nights.value : nights.value.slice(0,
       <div class="gs-top"><span class="gs-ico"><Icon name="moon" :size="28" /></span><div class="grow"><div class="gs-val">{{ mins(dayHours * 60) }}<small>asleep</small></div>
         <div class="tiny">Only the hours of sleep were logged for this day, no night from your {{ deviceWord(dev) }}: its stages and times show for nights it hands over.</div></div></div>
     </div>
-    <div v-else-if="dayQ.isFetching.value" class="empty">Loading…</div>
+    <!-- only while this day's hours aren't in yet: a refetch in the background keeps what is shown -->
+    <div v-else-if="dayQ.isFetching.value && dayQ.data.value?.date !== anchor" class="empty">Loading…</div>
     <div v-else-if="!stepList.length" class="card empty"><Icon name="moon" :size="34" /><b>No nights from your {{ adviceWord(dev) }} yet</b>Wear it to bed to see each night's stages and times. Pick Week, Month or Year for the hours of sleep you logged.</div>
     <div v-else class="card empty"><Icon name="moon" :size="34" /><b>{{ anchor === today ? "Last night isn't here yet" : "No night on this day" }}</b>{{ anchor === today ? `It shows once your ${deviceWord(dev)} has synced. ` : "" }}Pick another night with the arrows.</div>
   </template>

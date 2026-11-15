@@ -81,8 +81,13 @@ const ICONS: Record<string, string> = {
   bolt: "M13 2 4 14h7l-1 8 9-12h-7z",
   eye: "M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z",
   heart: "M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1.1L12 21l7.8-7.5 1-1.1a5.5 5.5 0 0 0 0-7.8z",
-  // heart with a beat through it: heart rate variability, apart from "activity" (an imported workout of an unknown type)
+  // a plain heart: heart rate (a day's range or average, the curves, a workout's); with a beat through it: resting heart
+  // rate; a wave: heart rate variability (HRV), the beat-to-beat swing; apart from "activity" (an imported workout of an
+  // unknown type)
   heartPulse: "M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1.1L12 21l7.8-7.5 1-1.1a5.5 5.5 0 0 0 0-7.8zM3.2 12h6.3l.5-1 2 4.5 2-7 1.5 3.5h5.3",
+  wave: "M2 12c1.5-4.5 3.5-4.5 5 0s3.5 4.5 5 0 3.5-4.5 5 0 3.5 4.5 5 0",
+  // a dial: Readiness, how ready you are to train
+  gauge: "M3.3 18a10 10 0 1 1 17.4 0M12 14l4-5",
   water: "M12 2.7S6 9.5 6 14a6 6 0 0 0 12 0c0-4.5-6-11.3-6-11.3z",
   smile: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM8 14s1.5 2 4 2 4-2 4-2M9 9h.01M15 9h.01",
   camera: "M4 8a2 2 0 0 1 2-2h2l2-2h4l2 2h2a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM12 17a4 4 0 1 0 0-8 4 4 0 0 0 0 8z",

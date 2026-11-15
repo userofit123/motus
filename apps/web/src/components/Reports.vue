@@ -130,9 +130,9 @@ const build = (m: Period, p: Totals | undefined, prev: string) => {
     // then what a band handed over, each only when there: sleep a night, resting heart rate (with HRV under it), and the
     // workouts' heart rate, the average on the right as the counts above
     ...(m.sleep.length ? [{ key: "sleep", icon: "moon", t: "Sleep", s: `Average of ${m.sleep.length} ${m.sleep.length === 1 ? "night" : "nights"}`, r: mins(mean(m.sleep)) }] : []),
-    ...(m.rhr.length ? [{ key: "rhr", icon: "heart", t: "Resting heart rate", s: `Average of ${m.rhr.length} ${m.rhr.length === 1 ? "day" : "days"}`, r: `${Math.round(mean(m.rhr))} bpm` }]
-      : m.hrv.length ? [{ key: "hrv", icon: "heartPulse", t: "HRV", s: "", r: `${Math.round(mean(m.hrv))} ms` }] : []),
-    ...(m.whr.length ? [{ key: "whr", icon: "heartPulse", t: "Heart rate in workouts", s: `Average of ${m.whr.length} ${m.whr.length === 1 ? "workout" : "workouts"}`, r: `${Math.round(mean(m.whr))} bpm` }] : []),
+    ...(m.rhr.length ? [{ key: "rhr", icon: "heartPulse", t: "Resting heart rate", s: `Average of ${m.rhr.length} ${m.rhr.length === 1 ? "day" : "days"}`, r: `${Math.round(mean(m.rhr))} bpm` }]
+      : m.hrv.length ? [{ key: "hrv", icon: "wave", t: "HRV", s: "", r: `${Math.round(mean(m.hrv))} ms` }] : []),
+    ...(m.whr.length ? [{ key: "whr", icon: "heart", t: "Heart rate in workouts", s: `Average of ${m.whr.length} ${m.whr.length === 1 ? "workout" : "workouts"}`, r: `${Math.round(mean(m.whr))} bpm` }] : []),
   ];
   return { k: m.k, title: m.k.length === 4 ? (m.k === String(new Date().getFullYear()) ? "This year so far" : `${m.k} in review`) : label(m.k), sub: span(m.k), prev, tiles, anyDelta: tiles.some((x) => x.delta), highlights };
 };

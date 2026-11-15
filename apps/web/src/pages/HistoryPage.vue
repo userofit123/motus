@@ -243,7 +243,7 @@ await loaded(cal, listWorkouts, listActs);
               <div class="wd">{{ x.sub }}</div>
             </div>
           </div>
-          <div :class="{ dsess: dayTiles.length }">
+          <div :class="{ 'csec dsess': dayTiles.length }">
           <div v-if="!(byDay.get(sel) ?? []).length" class="tiny">{{ sel >= today ? "Nothing planned. Use Plan to put a routine on this day." : "Nothing on this day." }}</div>
           <div class="list"><div v-for="x in byDay.get(sel) ?? []" :key="x.id ?? x.scheduleId" class="li click" @click="open(x)">
             <Icon :name="icon(x)" :size="18" :style="{ color: x.color ?? (x.kind === 'activity' ? ACTIVITY_COLOR : WORKOUT_COLOR) }" /><div class="grow"><div class="t" :style="x.missed ? { opacity: .5 } : undefined">{{ label(x) }}</div><div class="s"><template v-if="x.kind === 'planned'">{{ x.missed ? "Missed" : "Planned workout" }}</template><DotLine v-else :parts="[fmt.time(x.startedAt), hrPart(x)].filter((p) => p != null)" /></div></div><SessionStats v-if="x.kind !== 'planned'" :x="x" /><span v-if="x.kind === 'planned'" @click.stop><Menu :items="unplanItems(x)" :label="`Options for ${x.name}`" /></span><Icon v-else name="right" class="muted" /></div></div>
@@ -280,10 +280,10 @@ await loaded(cal, listWorkouts, listActs);
 </template>
 
 <style scoped>
-/* the day's sessions a block-padding below the band's tiles, under a faint line, as a report's highlights */
-.dsess { margin-top: var(--cpy); border-top: 1px solid var(--ol); }
+/* the day's sessions under the band's tiles in the shared section (.csec), as Stats' day cards: no line above the first row
+   or under the last, as their session list's */
+.dsess .li:first-child { padding-top: 0; }
 .dsess .li:last-child { border-bottom: 0; padding-bottom: 0; }
-.dsess > .tiny { padding-top: var(--cpy); }
 /* the phone shows these as rows whose label column is what the subtitles leave over: with the tighter gap "Resting heart rate" still fits beside a night's times; a longer label wraps instead of running under its value */
 .dtiles { column-gap: var(--hg); }
 .dtiles .wlb { white-space: normal; }
