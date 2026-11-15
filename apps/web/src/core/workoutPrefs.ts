@@ -27,7 +27,7 @@ export const WORKOUT_PREF_GROUPS: PrefGroup[] = [
   ] },
   { id: "timer", title: "Rest timer", rows: [
     { key: "autoRest", label: "Start the rest timer when a set is ticked", hint: "" },
-    { key: "restEndNext", label: "Go to the next set when the rest ends", hint: "Otherwise it waits on \"Rest over\" until you tap Next set" },
+    { key: "restEndNext", label: "Go to the next set when the rest ends", hint: "Otherwise it waits on \"Rest over\" until you tap the button to go on" },
     { key: "vibrate", label: "Vibrate when the rest ends", hint: "On Android phones, also when an interval part starts" },
     { key: "voice", label: "Voice cues", hint: "Says what's next when a rest ends", feature: "voice" },
     { key: "lockScreen", label: "Rest timer on the lock screen", hint: "In the Android app" },

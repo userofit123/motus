@@ -33,7 +33,7 @@ const ICONS: Record<string, string> = {
   bell: "M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.9 1.9 0 0 0 3.4 0",
   skip: "M5 4l10 8-10 8zM19 5v14",
   skipBack: "M19 4 9 12l10 8zM5 5v14",
-  forward: "M3 5l9 7-9 7zM12 5l9 7-9 7z",
+  forward: "M4 6l7 6-7 6zM13 6l7 6-7 6z",
   swap: "M16 3l4 4-4 4M20 7H4M8 21l-4-4 4-4M4 17h16",
   trash: "M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6",
   edit: "M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z",
