@@ -2,6 +2,16 @@
 
 The top entry's version is the one the release workflow publishes. Add a new `## [x.y.z]` section to release.
 
+## [0.1.32] - 2026-11-15
+
+- Motus saves every record from your watch or band with its time and source (each step count, heart rate reading, sleep stage and more), back as far as Health Connect holds. Daily steps, sleep, resting heart rate and an activity's steps and heart rate are worked out from them.
+- Stats → Sleep shows each night: a timeline of your stages, when you fell asleep and woke, heart rate, blood oxygen and breathing through the night, how it compares with your usual and what you did before. Week, month and year show best and worst nights, sleep debt and sleep after workout days.
+- A new Stats → Steps tab shows each day's steps by hour with your walks and workouts marked, and week, month and year summaries with your best and worst days and streaks.
+- Stats → Heart shows each day: your heart rate through the day with workouts shaded on it, time in each zone, resting heart rate, HRV and blood oxygen. Set your own max heart rate in Body → About you.
+- Sleep, Steps and Heart share one day picker and one look; the Calendar's and Home's tiles open them on the right day.
+- One icon for each health value across the app.
+- Updating adds a few database changes on first start, and the first sync after updating saves your band's past records, which can take a while.
+
 ## [0.1.31] - 2026-11-15
 
 - The end of rest sound plays every time: with the app open, minimised, with the screen locked, on vibrate, and after Motus was swiped away. All rest sounds (10 seconds, 3-2-1, end) now play in every one of those cases, once each.
