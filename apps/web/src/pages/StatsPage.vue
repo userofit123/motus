@@ -6,7 +6,7 @@ import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { GROUPS, muscleName, weekStartOf, weekStartDate, daysIntoWeek, weekdayOrder, statsPeriod, STATS_PERIODS, ymd, type StatsPeriod, WEEKLY_SET_RANGE, num, percentChange } from "@motus/shared";
 import { useStats, useSettings, useAchievements, useGoals, useHealthAvailable, useTypeName, useActivityFigures, loaded } from "../api/queries";
-import { useFmt, localYmd, activityIcon } from "../core/format";
+import { useFmt, unitOf, localYmd, activityIcon } from "../core/format";
 import { startOpen } from "../core/ui";
 import { useStepGoal } from "../core/goals";
 import { fromWhere, useDevice } from "../native/health";
@@ -66,6 +66,8 @@ const totals = (x: any) => x ? {
   days: new Set([...x.workouts, ...x.activities].map((w: any) => localYmd(new Date(w.startedAt)))).size,
 } : null;
 const T = computed(() => totals(d.value)), P = computed(() => totals(p.value));
+// the volume as the value with its unit small beside it ("12.4k" kg), as the other tiles' units
+const volParts = computed(() => unitOf(fmt.value.vol(T.value?.volumeKg ?? 0)));
 const change = (k: string) => { const pc = percentChange((T.value as any)?.[k], (P.value as any)?.[k]); return pc && `${pc} vs previous`; };
 // weeks in range
 const weeks = computed(() => {
@@ -160,7 +162,7 @@ watch(() => avail.data.value, () => { if (!TABS.value.some(([k]) => k === tab.va
       <div class="grid g4">
         <div class="card hero stat"><div class="lbl"><span class="bi"><Icon name="dumbbell" :size="15" /></span>Workouts</div><div class="val">{{ T!.workouts }}</div><div class="sub">{{ change("workouts") || `on ${T!.days} ${T!.days === 1 ? "day" : "days"}` }}</div><Sparkline :values="weeks.map((w) => w.workouts)" color="var(--onc)" /></div>
         <div class="card stat"><div class="lbl"><span class="bi"><Icon name="clock" :size="15" /></span>Training time</div><div class="val">{{ fmt.dur(T!.timeS, true) }}</div><div class="sub">{{ change("timeS") || "workouts and activities" }}</div><Sparkline :values="weeks.map((w) => w.timeS)" /></div>
-        <div class="card stat"><div class="lbl"><span class="bi"><Icon name="layers" :size="15" /></span>Volume</div><div class="val">{{ fmt.vol(T!.volumeKg) }}</div><div class="sub">{{ change("volumeKg") || `${T!.sets} sets` }}</div><Sparkline :values="weeks.map((w) => w.volumeKg)" /></div>
+        <div class="card stat"><div class="lbl"><span class="bi"><Icon name="layers" :size="15" /></span>Volume</div><div class="val">{{ volParts.value }}<small>{{ volParts.unit }}</small></div><div class="sub">{{ change("volumeKg") || `${T!.sets} sets` }}</div><Sparkline :values="weeks.map((w) => w.volumeKg)" /></div>
         <div class="card stat"><div class="lbl"><span class="bi"><Icon name="walk" :size="15" /></span>Activities</div><div class="val">{{ T!.activities }}</div><div class="sub nw">{{ fmt.dist(T!.distM, 1) }}</div></div>
       </div>
       <div class="grid g2 spt">

@@ -762,8 +762,9 @@ html.phone .calnav b { min-width: 124px; }
 html.phone .exspark { width: 44px; }
 html.phone .exchg { width: 36px; }
 html.phone .li:has(> .exspark) { gap: 8px; }
-/* big numbers in two-across stat cards shrink a little on narrow phones instead of wrapping */
-html.phone .grid.g4 .stat .val { font-size: clamp(24px, 7.4vw, var(--fs-val)); white-space: nowrap; }
+/* big numbers in stat cards side by side on a phone (a row of tiles, or a grid kept two or three across) shrink a little
+   instead of wrapping or being cut off; other two- and three-column grids stack on the phone, a full-width tile each */
+html.phone :is(.grid.g4, .grid.g3.keep, .grid.g2.keep) .stat .val { font-size: clamp(24px, 7.4vw, var(--fs-val)); white-space: nowrap; }
 /* and so do their labels, so a long one ("Active calories") fits one line and the values of a row stay level; still
    allowed to wrap, so a longer one ("Heart rate in workouts") never runs past the card's edge */
 html.phone .grid.g4 .stat .lbl { font-size: clamp(11.5px, 3.3vw, 13px); }

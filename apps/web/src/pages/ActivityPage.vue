@@ -53,7 +53,8 @@ const ownClimb = computed(() => (a.value ? activityClimb(a.value, type.value) : 
 const pace = computed(() => { const x = a.value, d = ownDist.value; if (!d || !(x.movingS || x.durationS)) return null; return fmt.value.clock((x.movingS || x.durationS) / fromM(d, fmt.value.du)); });
 // "3.42" and "km" apart, as the tiles show a value and its unit
 const distParts = (m: number) => ({ value: fmt.value.num(fmt.value.distNum(m), 2), unit: fmt.value.du });
-const distText = (m: number) => `${fmt.value.num(fmt.value.distNum(m), 2)} ${fmt.value.du}`;
+// a no-break space, so in a narrow tile's sub line the number never ends a line without its unit
+const distText = (m: number) => `${fmt.value.num(fmt.value.distNum(m), 2)}\u00a0${fmt.value.du}`;
 type Tile = { key: string; icon: string; label: string; value: string; unit?: string; sub?: string[]; hero?: boolean };
 // The stat tiles: only those with a value. A band's number for the activity's time (Health Connect, 037) fills a tile
 // the activity has nothing of its own for, said under it; beside the activity's own number (typed or GPS, which always

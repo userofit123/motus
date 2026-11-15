@@ -8,7 +8,7 @@
 // finished workout's card on Finish.
 import { computed } from "vue";
 import { musclesWorked, muscleName, workoutSoFar, type Trend, type Workout } from "@motus/shared";
-import { useFmt } from "../core/format";
+import { useFmt, unitOf } from "../core/format";
 import { elapsed } from "./runtime";
 import Icon from "../components/Icon.vue";
 import Ring from "../components/Ring.vue";
@@ -37,6 +37,8 @@ const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
 // Records = exercises that beat a personal best; Rep targets = sets that reached the reps the routine asked for. Two tiles, so
 // each label says what its number counts
 const recordsSub = computed(() => r.value.records ? "New personal bests" : props.final ? "No new records" : "None yet");
+// the volume as the value with its unit small beside it ("12.4k" kg), as the other tiles' units
+const volParts = computed(() => unitOf(fmt.value.vol(r.value.volumeKg)));
 const tileCount = computed(() => (props.final ? 2 : 3) + (r.value.targets ? 1 : 0));
 
 const settings = useSettings();
@@ -82,13 +84,12 @@ const rows = computed(() => r.value.perExercise.map((p, i) => {
       <div v-if="!final" class="card stat wsf-tile"><div class="lbl"><span class="bi"><Icon name="clock" :size="15" /></span>Duration</div>
         <div class="val">{{ fmt.clock(secs) }}</div><div class="sub">Since {{ fmt.time(w.startedAt) }}</div></div>
       <div class="card stat wsf-tile"><div class="lbl"><span class="bi"><Icon name="layers" :size="15" /></span>Volume</div>
-        <div class="val">{{ fmt.vol(r.volumeKg) }}</div><div class="sub">{{ plural(r.reps, "rep") }}</div></div>
+        <div class="val">{{ volParts.value }}<small>{{ volParts.unit }}</small></div><div class="sub">{{ plural(r.reps, "rep") }}</div></div>
       <div class="card stat wsf-tile" :class="{ rec: r.records }"><div class="lbl"><span class="bi"><Icon name="trophy" :size="15" /></span>Records</div>
         <div class="val">{{ r.records }}<small>{{ r.records === 1 ? "exercise" : "exercises" }}</small></div><div class="sub">{{ recordsSub }}</div></div>
       <div v-if="r.targets" class="card stat wsf-tile" :class="{ hit: r.targetsHit >= r.targets }"><div class="lbl"><span class="bi"><Icon name="check" :size="15" /></span>Rep targets</div>
         <div class="val">{{ r.targetsHit }}<small class="glue">/{{ r.targets }}</small></div>
-        <div class="sub">Sets on target</div>
-        <div class="sub">Sets that reached their reps</div></div>
+        <div class="sub">Sets on target</div></div>
     </div>
 
     <HeartRate v-if="final && hrSamples.length" :hr="hrSamples" />
@@ -124,7 +125,8 @@ const rows = computed(() => r.value.perExercise.map((p, i) => {
 </template>
 
 <style scoped>
-.wsf { display: flex; flex-direction: column; gap: var(--spg); }
+/* a container, so the row of tiles can change its columns by the width it gets */
+.wsf { display: flex; flex-direction: column; gap: var(--spg); container: wsf / inline-size; }
 .wsf .exh { margin-bottom: 0; }
 .wsf-h { cursor: default; }
 
@@ -137,10 +139,16 @@ const rows = computed(() => r.value.perExercise.map((p, i) => {
 .wsf-big { font-size: var(--fs-h1); font-weight: 700; letter-spacing: -.5px; line-height: 1.1; font-variant-numeric: tabular-nums; }
 .wsf-big small { font-size: var(--fs); font-weight: 500; letter-spacing: 0; color: color-mix(in srgb, var(--onc) 70%, transparent); }
 
-/* stat tiles: the app's .card.stat, three across, or two across when there are two or four tiles; the value shrinks with the
-   row like the phone stat cards (app.css) instead of being cut off, measured on the row so it also fits the desktop column */
+/* stat tiles: the app's .card.stat, three across, or two across when there are two or four tiles; the value's size follows
+   the row (measured on the row so it also fits the desktop column). A value never wraps (app.css), so a row too narrow
+   for three ("12 exercises" with Roomy spacing on a 360px phone) puts three as the phone's other stat rows do: the first
+   across the top, two below, where every value fits */
 .wsf-tiles { display: grid; gap: var(--hg); grid-template-columns: repeat(3, minmax(0, 1fr)); container-type: inline-size; }
 .wsf-tiles.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@container wsf (max-width: 460px) {
+  .wsf-tiles:not(.two) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .wsf-tiles:not(.two) > :first-child { grid-column: 1 / -1; }
+}
 .wsf-tile { min-height: 0; }
 .wsf-tile .lbl { font-size: var(--fs-sm); gap: 6px; }
 .wsf-tile .val { font-size: clamp(var(--fs-lg), 5.2cqi, var(--fs-val)); margin-top: var(--tdy); }

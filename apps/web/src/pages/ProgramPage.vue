@@ -8,7 +8,7 @@ import { useQuery } from "@tanstack/vue-query";
 import type { ProgramDetail } from "@motus/shared";
 import { api } from "../api/client";
 import { invalidate } from "../api/live";
-import { useFmt } from "../core/format";
+import { useFmt, unitOf } from "../core/format";
 import { toast, toastError } from "../core/toast";
 import Icon from "../components/Icon.vue";
 import MuscleFig from "../components/MuscleFig.vue";
@@ -22,6 +22,8 @@ const fmt = useFmt();
 // filed under "routines" so finishing a workout or changing a routine refreshes it
 const q = useQuery({ queryKey: computed(() => ["routines", "program", id.value]), queryFn: () => api.get<ProgramDetail>(`/programs/${id.value}`, { tz: new Date().getTimezoneOffset() }) });
 const p = computed(() => q.data.value);
+// the volume as the value with its unit small beside it ("12.4k" kg), as the other tiles' units
+const volParts = computed(() => unitOf(fmt.value.vol(p.value?.stats.volumeKg ?? 0)));
 const next = computed(() => p.value?.state.next ?? null);
 const editing = ref(false);
 /** weeks behind the calendar (only while following it) */
@@ -78,7 +80,7 @@ await loaded(q);
         <template v-if="p.stats.expected"><div class="val">{{ p.stats.adherencePct }}<small>%</small></div>
           <div class="sub">{{ Math.min(p.stats.done, p.stats.expected) }} of {{ p.stats.expected }} planned up to last week</div></template>
         <template v-else><div class="val na">Not yet</div><div class="sub">Starts counting after week 1</div></template></div>
-      <div class="card stat"><div class="lbl">Volume</div><div class="val">{{ fmt.vol(p.stats.volumeKg) }}</div><div class="sub">Weight × reps, all workouts</div></div>
+      <div class="card stat"><div class="lbl">Volume</div><div class="val">{{ volParts.value }}<small>{{ volParts.unit }}</small></div><div class="sub">Weight × reps, all workouts</div></div>
       <div class="card stat"><div class="lbl">Training time</div><div class="val">{{ fmt.dur(p.stats.durationS, true) }}</div><div class="sub">Since {{ fmt.date(p.startDate, { day: "numeric", month: "short", year: "numeric" }) }}</div></div>
     </div>
 
