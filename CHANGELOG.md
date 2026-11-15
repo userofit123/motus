@@ -2,6 +2,15 @@
 
 The top entry's version is the one the release workflow publishes. Add a new `## [x.y.z]` section to release.
 
+## [0.1.31] - 2026-11-15
+
+- The end of rest sound plays every time: with the app open, minimised, with the screen locked, on vibrate, and after Motus was swiped away. All rest sounds (10 seconds, 3-2-1, end) now play in every one of those cases, once each.
+- A running workout's summary shows your band's heart rate, updating every minute (as fresh as Gadgetbridge's last sync). Finished workouts and activities get their heart rate from the very start too.
+- The rest bar in a workout is much smaller: Pause sits above -15 and a fast-forward Skip rest above +15, next to the timer. When the rest is over the timer turns blue, +15 still adds time, and one button says Next set or Next exercise.
+- A walk's notification counts steps from the first step instead of showing 0 until 50.
+- Every note and reminder shows when it was written ("Sun 15 Nov · 14:05"), including Home's Reminders card.
+- Tile values fit on phones: a distance keeps its number and unit on one line, volume and distance show the unit small, and the workout summary reads "3 exercises" with a space.
+
 ## [0.1.30] - 2026-11-15
 
 - Nothing from your watch or band is skipped: every day's steps, sleep and other values are imported even when you typed your own, and every day shows in Imported data.
