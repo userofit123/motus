@@ -16,7 +16,7 @@ const EXPORT_FORMAT = 1;
 // The schema a file was written with: the number of migrations (migrate.ts) when it was made, so a restore knows which
 // of their changes to existing rows the file's rows still need. A test keeps it equal to the number of migrations, so a
 // new one is checked against backups (does the file carry it, does an older file need converting).
-const BACKUP_SCHEMA = 42; // 40: health_records (an older file has none: nothing to convert); 41: its trigger only; 42: health_record_reads, not in backups
+const BACKUP_SCHEMA = 43; // 40: health_records (an older file has none: nothing to convert); 41: its trigger only; 42, 43: health_record_reads, not in backups
 const NEWER = "This backup is from a newer version of Motus. Update the app first.";
 const DAMAGED = "This backup is damaged and can't be restored.";
 /** The schema a file says it has (refused when newer than this version, or not a whole number from 0 up), or
@@ -173,10 +173,11 @@ export async function importAll(ctx: Ctx, data: any, mode: "replace" | "merge") 
     return true;
   };
   let settingsWritten = false;
+  // Health Connect records are changed one save at a time (lockRecords), taken before any row in either mode: a phone's
+  // save running meanwhile would write back blocks a replace deletes, and the lock taken only later (mergeBlock, the
+  // import log's trigger) after daily_logs/activities/sleep rows locked here would wait on a save that waits on them
+  await lockRecords(q, ctx.userId);
   if (mode === "replace") {
-    // Health Connect records are changed one save at a time (lockRecords): a phone's save running meanwhile would write
-    // back blocks this deletes, or the import log's trigger take the lock after rows it locked here
-    await lockRecords(q, ctx.userId);
     for (const t of [...TABLES].reverse()) {
       if (t === "exercises") await q.query("DELETE FROM exercises WHERE owner_id = $1 AND id NOT IN (SELECT exercise_id FROM workout_exercises UNION SELECT exercise_id FROM routine_exercises)", [ctx.userId]);
       else await q.query(`DELETE FROM ${t}`);

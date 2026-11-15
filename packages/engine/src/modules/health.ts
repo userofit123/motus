@@ -475,14 +475,18 @@ export async function afterRecords(ctx: Ctx, changed: Map<string, Set<string>>) 
   const spanDays = [...new Set([...(changed.get("steps") ?? []), ...(changed.get("heart_rate") ?? [])])];
   if (spanDays.length) {
     // every activity and workout whose time (30 minutes either side) the changed blocks' records may reach: a day's
-    // blocks hold records begun that day in any zone (14 hours either way), up to a week long
+    // blocks hold records begun that day in any zone (14 hours either way), up to a week long. The range of all the days
+    // first, on started_at (each table's (user_id, started_at) index; a session over a month long is no real one), so
+    // the per-day test only looks at the sessions near them, not every one the account has
+    const lo = spanDays.reduce((a, b) => (a < b ? a : b)), hi = spanDays.reduce((a, b) => (a > b ? a : b));
+    const near = "started_at > $3::date - interval '32 days' AND started_at < $4::date + interval '9 days' AND ended_at > $3::date - interval '1 day'";
     const { rows } = await ctx.q.query<{ kind: "activity" | "workout"; id: string; started_at: unknown; ended_at: unknown }>(
       `SELECT * FROM (
-         SELECT 'activity' AS kind, id::text AS id, started_at, ended_at FROM activities WHERE source <> $2 AND ended_at IS NOT NULL
+         SELECT 'activity' AS kind, id::text AS id, started_at, ended_at FROM activities WHERE source <> $2 AND ended_at IS NOT NULL AND ${near}
          UNION ALL
-         SELECT 'workout', id::text, started_at, ended_at FROM workouts WHERE status = 'completed' AND ended_at IS NOT NULL
+         SELECT 'workout', id::text, started_at, ended_at FROM workouts WHERE status = 'completed' AND ended_at IS NOT NULL AND ${near}
        ) x WHERE EXISTS (SELECT 1 FROM unnest($1::date[]) d WHERE x.ended_at > d - interval '1 day' AND x.started_at < d + interval '9 days')
-       ORDER BY started_at, id`, [spanDays, HEALTH_SOURCE]);
+       ORDER BY started_at, id`, [spanDays, HEALTH_SOURCE, lo, hi]);
     for (let i = 0; i < rows.length; i += SPAN_BATCH) {
       const batch = rows.slice(i, i + SPAN_BATCH);
       const spans = await spansOf(ctx.q, batch.map((x) => ({ key: x.id, startS: secsOf(x.started_at), endS: secsOf(x.ended_at) })));

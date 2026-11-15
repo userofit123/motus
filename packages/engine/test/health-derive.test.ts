@@ -6,7 +6,8 @@ import { pgliteDb } from "../src/adapters/pglite";
 import { uuidv7 } from "../src/ids";
 import fs from "node:fs";
 import path from "node:path";
-import { bandDays, readingDays, spanBand, isBand, sleepDays, rangeHr } from "../src/modules/healthDerive";
+import { bandDays, readingDays, spanBand, isBand, sleepDays, rangeHr, noteRead, loadReads, readDay } from "../src/modules/healthDerive";
+import { withUser } from "../src/db";
 import type { Rec } from "../src/modules/healthRecords";
 
 const GB = "nodomain.freeyourgadget.gadgetbridge";
@@ -265,13 +266,56 @@ describe("an activity's heart rate over 600 readings", () => {
   });
 });
 
+describe("the times read whole", () => {
+  let eng: Engine, U: string;
+  const note = (type: string, a: number, b: number, z = 0) => withUser(eng.db, U, (q) => noteRead(q, U, type, a, b, z));
+  const reads = (type: string) => withUser(eng.db, U, (q) => loadReads(q, [type]));
+  const windows = async (type: string) => [...(await reads(type)).get(type)!].sort((x, y) => x.z - y.z || x.a - y.a);
+  beforeAll(async () => {
+    eng = await createEngine(await pgliteDb("memory://"));
+    U = uuidv7();
+    await eng.db.admin.query("INSERT INTO users (id, username) VALUES ($1, 'u')", [U]);
+  }, 120000);
+
+  it("merges reads that touch or overlap, and leaves a gap between two reads unread", async () => {
+    await note("steps", T, T + 6 * H);
+    await note("steps", T + 6 * H, T + 12 * H); // touching
+    await note("steps", T + 10 * H, T + 24 * H); // overlapping
+    expect(await windows("steps")).toEqual([{ a: T, b: T + 24 * H, z: 0 }]);
+    expect(readDay(await reads("steps"), "steps", D)).toBe(true);
+    // 30 seconds apart: two windows, and the day across the gap is not read whole
+    await note("distance", T, T + 12 * H);
+    await note("distance", T + 12 * H + 30, T + 24 * H);
+    expect(await windows("distance")).toEqual([{ a: T, b: T + 12 * H, z: 0 }, { a: T + 12 * H + 30, b: T + 24 * H, z: 0 }]);
+    expect(readDay(await reads("distance"), "distance", D)).toBe(false);
+  });
+
+  it("keeps each zone's reads apart: a day read where it was read stays read after a read in another zone", async () => {
+    const east = 2 * H; // the day began at T - 2h there
+    await note("heart_rate", T - 2 * H, T + 22 * H, east);
+    expect(readDay(await reads("heart_rate"), "heart_rate", D)).toBe(true);
+    // a later read at UTC overlapping it: its own window, the earlier one keeps its zone
+    await note("heart_rate", T + 20 * H, T + 30 * H, 0);
+    expect(await windows("heart_rate")).toEqual([{ a: T + 20 * H, b: T + 30 * H, z: 0 }, { a: T - 2 * H, b: T + 22 * H, z: east }]);
+    expect(readDay(await reads("heart_rate"), "heart_rate", D)).toBe(true);
+    // both zones together cover D at UTC, but no single read did
+    await note("resting_hr", T, T + 12 * H, 0);
+    await note("resting_hr", T + 10 * H, T + 24 * H, east);
+    expect(readDay(await reads("resting_hr"), "resting_hr", D)).toBe(false);
+    // two reads of different zones beginning at the same second are both kept
+    await note("oxygen", T, T + H, 0);
+    await note("oxygen", T, T + 2 * H, east);
+    expect((await windows("oxygen")).length).toBe(2);
+  });
+});
+
 describe("the records lock", () => {
   // Postgres can't be made to race here (PGlite is one connection): the order is checked in the code instead. Every
   // path that marks an import deleted (041's trigger takes the lock) or writes what afterRecords writes takes the lock
   // before its first row write, as POST /health/records does
   const src = (f: string) => fs.readFileSync(path.join(__dirname, "../src", f), "utf8");
-  const before = (code: string, from: string, row: RegExp) => {
-    const at = code.indexOf(from), body = code.slice(at, at + 2500), lock = body.indexOf("lockRecords("), m = body.search(row);
+  const before = (code: string, from: string, row: RegExp, span = 2500) => {
+    const at = code.indexOf(from), body = code.slice(at, at + span), lock = body.indexOf("lockRecords("), m = body.search(row);
     expect(at, from).toBeGreaterThanOrEqual(0);
     expect(lock, from).toBeGreaterThan(0);
     expect(m === -1 || lock < m, from).toBe(true);
@@ -285,5 +329,7 @@ describe("the records lock", () => {
     before(src("modules/activities.ts"), 'r.put("/daily"', rows);
     before(src("modules/healthRecords.ts"), 'r.post("/health/records"', rows);
     before(src("sync/core.ts"), "export async function applyChanges(", /DELETE FROM|INSERT INTO|mergeDay\(/);
+    // a restore in either mode: its first row write comes after its long setup (catalog refs, photos)
+    before(src("modules/data.ts"), "export async function importAll(", /(UPDATE|DELETE FROM|INSERT INTO) \w|mergeBlock\(|insert\(/, 4500);
   });
 });

@@ -313,7 +313,10 @@ export function healthRecordRoutes(r: Router) {
   //   types: { [type]: { complete?: boolean, records: [...] } }; deleted?: Health Connect ids deleted there, at
   //   most HEALTH_DELETED_MAX a request (the phone sends no more at once) }
   r.post("/health/records", async (ctx, _p, b) => {
-    const fromS = secs(b.from, "start"), toS = secs(b.to, "end");
+    const toS = secs(b.to, "end");
+    // at most MAX_SPAN_S, as a read: a wider window would claim (noteRead) and look again at (the day loop) any number of
+    // days. Cut to its newest part rather than refused: a list complete for the whole window is complete for that part
+    const fromS = Math.max(secs(b.from, "start"), toS - MAX_SPAN_S);
     if (toS < fromS) throw bad("Invalid time");
     const zone = -tzOf({ tz: b.tz == null ? "" : String(b.tz) }) * 60;
     const source = text(b.source, 100);

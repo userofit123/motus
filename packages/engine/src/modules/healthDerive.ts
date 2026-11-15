@@ -222,10 +222,15 @@ const around = (d: string) => [shift(d, -2), shift(d, -1), d, shift(d, 1)];
  * part (a forward read up to now, a back-fill not there yet) keeps the phone's number, which had all of it.
  */
 export type Reads = Map<string, { a: number; b: number; z: number }[]>;
-/** A complete read of [fromS, toS] (zone: seconds east of UTC) added to the type's read times. Runs under lockRecords. */
+/**
+ * A complete read of [fromS, toS] (zone: seconds east of UTC) added to the type's read times. Runs under lockRecords.
+ * It merges only with reads of the same zone that it touches or overlaps: a gap between two reads was never read, and a
+ * read in another zone keeps its own window and zone (its days begin where it was read).
+ */
 export async function noteRead(q: Sql, userId: string, type: string, fromS: number, toS: number, zone: number) {
   const { rows } = await q.query<{ a: string; b: string }>(
-    "DELETE FROM health_record_reads WHERE type = $1 AND from_s <= $3 + 60 AND to_s >= $2 - 60 RETURNING from_s::text AS a, to_s::text AS b", [type, Math.floor(fromS), Math.ceil(toS)]);
+    "DELETE FROM health_record_reads WHERE type = $1 AND zone = $4 AND from_s <= $3 AND to_s >= $2 RETURNING from_s::text AS a, to_s::text AS b",
+    [type, Math.floor(fromS), Math.ceil(toS), zone]);
   const a = Math.min(Math.floor(fromS), ...rows.map((x) => Number(x.a))), b = Math.max(Math.ceil(toS), ...rows.map((x) => Number(x.b)));
   await q.query("INSERT INTO health_record_reads (user_id, type, from_s, to_s, zone) VALUES ($1, $2, $3, $4, $5)", [userId, type, a, b, zone]);
 }
@@ -244,15 +249,18 @@ export const readDay = (reads: Reads, type: string, d: string) => {
 
 /**
  * Per amount type, each app's kind of device for bandDays: its newest record naming a device type among its newest
- * 100, else its newest (the phone's bandOrigin), over the 90 days up to the type's newest saved day. Independent of the
- * days a request asks about, so the import and afterRecords classify an app the same way.
+ * 100, else its newest (the phone's bandOrigin), over the KIND_DAYS days up to the type's newest saved day. Independent
+ * of the days a request asks about, so the import and afterRecords classify an app the same way. Runs on every save
+ * under the records lock, so it looks at a short recent stretch only (a band app writes well over 100 records in it); an
+ * app with no records there is classified by its records on the days asked about (bandDays), as before 90 days.
  */
+const KIND_DAYS = 14;
 export type AppKinds = Map<string, number | undefined>;
 export async function appKinds(q: Sql, types: SumType[]): Promise<Map<SumType, AppKinds>> {
   const out = new Map<SumType, AppKinds>(types.map((t) => [t, new Map()]));
   if (!types.length) return out;
   const { rows } = await q.query<{ type: SumType; o: string; t: number | null }>(
-    `WITH lim AS (SELECT type, max(day) - 90 AS d FROM health_records WHERE type = ANY($1::text[]) GROUP BY type),
+    `WITH lim AS (SELECT type, max(day) - ${KIND_DAYS} AS d FROM health_records WHERE type = ANY($1::text[]) GROUP BY type),
      r AS (SELECT h.type, x.r->>'o' AS o, nullif((x.r->'dv'->>'type')::int, 0) AS t, (x.r->>'s')::float8 AS s
            FROM health_records h JOIN lim ON lim.type = h.type AND h.day >= lim.d CROSS JOIN LATERAL jsonb_each(h.recs) x(id, r)),
      n AS (SELECT *, row_number() OVER (PARTITION BY type, o ORDER BY s DESC) AS i FROM r),
