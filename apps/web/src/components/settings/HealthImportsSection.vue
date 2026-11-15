@@ -95,7 +95,7 @@ async function del(x: Item) {
 }
 // Where a day's steps came from (the Android app only): each app that wrote steps to Health Connect that day, read from
 // Health Connect as it is now, and which one Motus counts, so a day that looks wrong can be checked on the phone
-// kept is the steps Motus holds for the day, so a day Health Connect no longer has (it keeps about 30 days) says so
+// kept is the steps Motus holds for the day, so a day Health Connect no longer has (Motus can only read so far back: without the history permission, 30 days before it was first allowed) says so
 // instead of "no steps" next to a row that shows some
 const origin = ref<{ day: string; kept: number | null; data: StepSources | null; error: string | null } | null>(null);
 const showOrigin = (x: Item) => loadOrigin(x.date.slice(0, 10), x.value);
@@ -139,7 +139,7 @@ const menu = (x: Item): MenuItem[] => [
     <p class="muted hgap">Steps each app saved to Health Connect for {{ originDay(origin.day) }}. When a band counted, Motus uses only the band's total.</p>
     <div v-if="origin.error" class="empty sm"><b>Couldn't read Health Connect</b>{{ origin.error }}<br /><button class="btn tonal" @click="loadOrigin(origin.day, origin.kept)">Try again</button></div>
     <div v-else-if="!origin.data" class="empty sm">Reading Health Connect…</div>
-    <div v-else-if="!origin.data.sources.length && origin.kept" class="empty sm"><b>No longer in Health Connect</b>Health Connect keeps about 30 days. Motus kept the {{ fmt.num(origin.kept, 0) }} steps it read before.</div>
+    <div v-else-if="!origin.data.sources.length && origin.kept" class="empty sm"><b>No longer in Health Connect</b>Motus can't read this day from Health Connect any more. It kept the {{ fmt.num(origin.kept, 0) }} steps it read before.</div>
     <div v-else-if="!origin.data.sources.length" class="empty sm"><b>No steps that day</b>No app wrote steps to Health Connect for this day.</div>
     <template v-else>
       <div class="list">
