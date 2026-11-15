@@ -2,9 +2,9 @@
 // The controls of the running workout, in one sheet at the bottom: everything you press is here, always for the exercise
 // being done now (state.active), whichever one is on screen above. A set to do: which set, the
 // weight and reps with - and + for thumbs, the rest after it, then Pause, Skip and Done. Resting: a ring counting down,
-// with Pause above -15 on its left and Skip above +15 on its right, so a rest needs no bottom row and the sheet stays
-// short. When an exercise is finished: on to the next, or Finish. The workout's Pause is the first button: of the bottom
-// row, or top left while resting.
+// with Pause above -15 on its left and Skip rest above +15 on its right, so a rest needs no bottom row and the sheet
+// stays short; once it's over, the ring gives way to Pause and Next set. When an exercise is finished: on to the next, or
+// Finish. The workout's Pause is the first button: of the bottom row, or top left while resting.
 import { computed, ref, watch, onBeforeUnmount } from "vue";
 import { clock, nextSet, usesWeight, usesReps, usesDuration, type WorkoutSet, type SetKind } from "@motus/shared";
 import { useWorkout } from "./useWorkout";
@@ -97,34 +97,41 @@ const RING = 2 * Math.PI * 58;
 <template>
   <div v-if="e" class="abar" :class="{ resting }">
 
-    <!-- resting -->
+    <!-- resting: the ring between two columns of round buttons -->
     <template v-if="resting">
+      <template v-if="!rest.done">
       <div class="ab-line">
-        <span class="ab-k grow ellipsis ab-rtitle">{{ rest.done ? "Rest over" : rest.label === "Next exercise" ? "Rest before the next exercise" : "Resting" }}</span>
+        <span class="ab-k grow ellipsis ab-rtitle">{{ rest.label === "Next exercise" ? "Rest before the next exercise" : "Resting" }}</span>
       </div>
       <div class="ab-ringg">
       <div class="ab-rest">
         <div class="ab-side">
-          <button class="ib ab-pause" :class="{ on: paused }" :aria-label="paused ? 'Resume the workout' : 'Pause the workout'" :aria-pressed="paused" @click="emit('pause')"><Icon :name="paused ? 'play' : 'pause'" /></button>
-          <button class="ib ab-adj" aria-label="15 seconds less rest" @click="adjustRest(-15)">-15</button>
+          <button class="ib ab-round" :class="{ on: paused }" :aria-label="paused ? 'Resume the workout' : 'Pause the workout'" :title="paused ? 'Resume the workout' : 'Pause the workout'" :aria-pressed="paused" @click="emit('pause')"><Icon :name="paused ? 'play' : 'pause'" /></button>
+          <button class="ib ab-round ab-adj" aria-label="15 seconds less rest" title="15 seconds less rest" @click="adjustRest(-15)">-15</button>
         </div>
         <div class="ring" role="timer">
           <svg viewBox="0 0 132 132" aria-hidden="true"><circle cx="66" cy="66" r="58" class="rb" /><circle cx="66" cy="66" r="58" class="rf" :style="{ strokeDasharray: RING, strokeDashoffset: RING * (1 - pct) }" /></svg>
-          <span class="ab-time" :class="{ over: rest.done }">{{ clock(left) }}</span>
+          <span class="ab-time">{{ clock(left) }}</span>
         </div>
         <div class="ab-side">
-          <!-- when the rest is over this is the way on, so it fills as the pressed Pause does -->
-          <button class="ib ab-pause" :class="{ on: rest.done }" :aria-label="rest.done ? 'Next set' : 'Skip rest'" @click="finishRest(true)"><Icon name="skip" /></button>
-          <button class="ib ab-adj" aria-label="15 seconds more rest" @click="adjustRest(15)">+15</button>
+          <button class="ib ab-round" aria-label="Skip rest" title="Skip rest" @click="finishRest(true)"><Icon name="forward" /></button>
+          <button class="ib ab-round ab-adj" aria-label="15 seconds more rest" title="15 seconds more rest" @click="adjustRest(15)">+15</button>
         </div>
       </div>
       <div class="ab-k ellipsis ab-next">{{ rest.next }}</div>
       </div>
+      </template>
+      <!-- the rest is over: worded and laid out as an exercise that's finished, with a labelled way on in place of the ring -->
+      <div v-else class="ab-line"><div class="grow" style="min-width:0"><div class="ab-k">Rest over</div><div class="ab-n2 ellipsis">{{ rest.next }}</div></div></div>
       <div v-if="saved" class="ab-saved" role="status"><span class="ab-sv"><Icon name="check" :size="14" />Saved</span><span class="ab-why">{{ saved }}</span></div>
       <button v-else-if="W.restChanged.value" class="qb ab-keep" @click="keep">
         <span class="ab-why">This rest was planned at {{ clock(W.restPlannedNow.value ?? 0) }}, now {{ clock(rest.totalS) }}</span>
         <span class="ab-act">Use {{ clock(rest.totalS) }} {{ offerFor(W.restKeeps.value) }}</span>
       </button>
+      <div v-if="rest.done" class="ab-row">
+        <button class="ib ab-round" :class="{ on: paused }" :aria-label="paused ? 'Resume the workout' : 'Pause the workout'" :title="paused ? 'Resume the workout' : 'Pause the workout'" :aria-pressed="paused" @click="emit('pause')"><Icon :name="paused ? 'play' : 'pause'" /></button>
+        <button class="btn ab-go" @click="finishRest(true)">Next set<Icon name="right" :size="18" /></button>
+      </div>
     </template>
 
     <!-- a set to do -->
@@ -139,7 +146,7 @@ const RING = 2 * Math.PI * 58;
         <NumStep v-else-if="usesDuration(tr)" big :value="s.durationS ?? 30" :step="5" :max="86400" unit="s" label="seconds" @set="(v) => W.editSet(s!, { durationS: v })" />
       </div>
       <div class="ab-row">
-        <button class="ib ab-pause" :class="{ on: paused }" :aria-label="paused ? 'Resume the workout' : 'Pause the workout'" :aria-pressed="paused" @click="emit('pause')"><Icon :name="paused ? 'play' : 'pause'" /></button>
+        <button class="ib ab-round" :class="{ on: paused }" :aria-label="paused ? 'Resume the workout' : 'Pause the workout'" :title="paused ? 'Resume the workout' : 'Pause the workout'" :aria-pressed="paused" @click="emit('pause')"><Icon :name="paused ? 'play' : 'pause'" /></button>
         <button class="btn o ab-sm" @click="skip"><Icon name="skip" :size="16" />Skip</button>
         <button class="btn ab-go" @click="done"><Icon name="check" :size="20" />Done</button>
       </div>
@@ -149,7 +156,7 @@ const RING = 2 * Math.PI * 58;
     <template v-else>
       <div class="ab-line"><div class="grow" style="min-width:0"><div class="ab-k">{{ e.status === "skipped" ? "Skipped" : "All sets done" }}</div><div class="ab-n2 ellipsis">{{ nextIdx >= 0 ? `Next: ${w!.exercises[nextIdx]!.exercise.name}` : "That was the last exercise" }}</div></div></div>
       <div class="ab-row">
-        <button class="ib ab-pause" :class="{ on: paused }" :aria-label="paused ? 'Resume the workout' : 'Pause the workout'" :aria-pressed="paused" @click="emit('pause')"><Icon :name="paused ? 'play' : 'pause'" /></button>
+        <button class="ib ab-round" :class="{ on: paused }" :aria-label="paused ? 'Resume the workout' : 'Pause the workout'" :title="paused ? 'Resume the workout' : 'Pause the workout'" :aria-pressed="paused" @click="emit('pause')"><Icon :name="paused ? 'play' : 'pause'" /></button>
         <button v-if="nextIdx >= 0" class="btn ab-go" @click="switchTo(nextIdx)">Next exercise<Icon name="right" :size="18" /></button>
         <button v-else class="btn ab-go" @click="emit('finish')"><Icon name="check" :size="18" />Finish workout</button>
       </div>
@@ -170,23 +177,24 @@ const RING = 2 * Math.PI * 58;
 .ab-in { display: flex; gap: 8px; }
 .ab-in :deep(.nstep) { flex: 1; justify-content: space-between; background: var(--bg); }
 .ab-row { display: flex; align-items: center; gap: 8px; }
-.ab-pause { width: 48px; height: 48px; flex: none; }
-.ab-pause.on { background: var(--accc); color: var(--onc); border-color: transparent; }
+/* the round buttons (Pause, and while resting -15, +15 and Skip rest): one size and one colour */
+.ab-round { width: 48px; height: 48px; flex: none; }
+.ab-round.on { background: var(--accc); color: var(--onc); border-color: transparent; }
 .ab-sm { min-height: 48px; padding-inline: 14px; }
 .ab-go { margin-inline-start: auto; flex: 1; max-width: 260px; min-height: 48px; font-size: 15px; }
-/* resting: the ring between two columns of round buttons, Pause over -15 and Skip over +15, all one size so they line up */
+/* resting: the ring between two columns of round buttons, Pause over -15 and Skip rest over +15; the ring is as tall as a
+   column (two buttons and the gap), so ring and buttons line up top and bottom */
 .ab-rest { display: flex; align-items: center; justify-content: center; gap: var(--hg); }
 .ab-side { display: flex; flex-direction: column; gap: var(--hg); }
-.ab-adj { width: 48px; height: 48px; font: inherit; font-size: 14px; font-weight: 600; color: var(--acc); font-variant-numeric: tabular-nums; }
+.ab-adj { font: inherit; font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .ab-ringg { display: flex; flex-direction: column; gap: var(--hg); }
-.ring { position: relative; width: 132px; height: 132px; display: grid; place-items: center; flex: none; }
+.ring { position: relative; width: calc(96px + var(--hg)); height: calc(96px + var(--hg)); display: grid; place-items: center; flex: none; }
 .ring svg { position: absolute; inset: 0; transform: rotate(-90deg); }
 html.he .ring svg { transform: rotate(-90deg) scaleY(-1); }
 .ring circle { fill: none; stroke-width: 8; }
 .ring .rb { stroke: var(--s2); }
 .ring .rf { stroke: var(--acc); stroke-linecap: round; transition: stroke-dashoffset 1s linear; }
-.ab-time { position: relative; font-size: 34px; font-weight: 600; letter-spacing: -1px; font-variant-numeric: tabular-nums; }
-.ab-time.over { color: var(--acc); }
+.ab-time { position: relative; font-size: 28px; font-weight: 600; letter-spacing: -1px; font-variant-numeric: tabular-nums; }
 .ab-next { text-align: center; }
 .ab-rtitle { text-align: center; }
 /* the offer and its Saved confirmation share one two-line box (same padding, line height and min height) so nothing jumps */
