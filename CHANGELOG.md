@@ -2,6 +2,13 @@
 
 The top entry's version is the one the release workflow publishes. Add a new `## [x.y.z]` section to release.
 
+## [0.1.30] - 2026-11-15
+
+- Nothing from your watch or band is skipped: every day's steps, sleep and other values are imported even when you typed your own, and every day shows in Imported data.
+- The daily log shows each value with where it came from (your watch, typed, walks in Motus) and lets you choose which one the day uses; your other numbers stay, so you can switch back. A typed value stays in use until you choose otherwise.
+- Imported data has a Deleted group: Restore brings a deleted import back on the next read.
+- Updating adds a small database change on first start.
+
 ## [0.1.29] - 2026-11-15
 
 - Daily steps match Gadgetbridge: Motus adds up your watch or band's own step records, as Gadgetbridge and Health Connect show them (Health Connect's own per-app total dropped some minutes). Past days are read again and corrected.
