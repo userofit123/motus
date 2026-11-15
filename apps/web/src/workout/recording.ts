@@ -307,14 +307,16 @@ if (typeof document !== "undefined") document.addEventListener("visibilitychange
 // The recording as a notification too (same setting as the workout's), also on the lock screen in the Android app: its
 // clock there (a browser's can't run one, so it says when it started; while paused the time so far is in the text), the
 // distance in your units and the steps where they're counted, and Pause or Resume. Shown again when those change: the
-// distance by a tenth, the steps by fifty, so not all the time. With the screen off this page is held up, so the Android
-// app carries the steps and distance on itself from where this one left them (`live`).
+// distance by a tenth, the steps by fifty, so not all the time. In between (and with the screen off, when this page is
+// held up) the Android app carries the steps and distance on itself from where this one left them (`live`). It can only
+// carry the steps on from the counter's session it was handed, so the notice is shown again once that is known: the
+// first one goes out before the counter's first reading, without it, and would stay at 0 until the next fifty.
 const recNotice = computed(() => {
   const r = recording.value;
   if (!r) return null;
   const du: "km" | "mi" = queryClient.getQueryData<SettingsMe>(["settings", "me"])?.settings?.units?.distance === "mi" ? "mi" : "km";
   return { type: r.type, paused: !!r.pauseAt, since: r.startedAt + r.pausedMs, startedAt: r.startedAt, du, dist: Math.floor(fromM(recDistM.value, du) * 10) / 10,
-    steps: countsSteps(r.type) && recStepsCounted.value ? Math.floor(r.steps / 50) * 50 : null, pausedFor: r.pauseAt ? clock(recElapsedS.value) : null, stepsRev: stepsRev.value };
+    steps: countsSteps(r.type) && recStepsCounted.value ? Math.floor(r.steps / 50) * 50 : null, pausedFor: r.pauseAt ? clock(recElapsedS.value) : null, stepsRev: stepsRev.value, stepSession: r.stepSession };
 });
 // compared as text, so a new GPS point that changes none of it shows nothing again. The setting is part of it, so
 // turning it off mid-recording takes the notification off. The settings come from the query cache, which isn't
