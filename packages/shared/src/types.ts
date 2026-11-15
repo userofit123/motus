@@ -381,6 +381,12 @@ export interface Activity {
   /** null: as recorded, or typed when logged; "band": the band's count (stepsApp keeps the app's); "manual": changed by hand later */
   stepsSource?: "band" | "manual" | null;
   stepsApp?: number | null;
+  /** what a band, watch or ring measured during it (Health Connect, only when its records cover the whole time), beside
+   *  the activity's own numbers and never over them; null when it had none */
+  bandDistanceM?: number | null;
+  bandKcal?: number | null;
+  bandElevationM?: number | null;
+  bandFloors?: number | null;
   calories: number | null;
   route: [number, number, number?, number?][] | null; // [lat, lon, unix seconds, altitude]
   notes: string;

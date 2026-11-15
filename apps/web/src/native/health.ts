@@ -1,12 +1,12 @@
 // Health Connect in the Android app (Settings → Features → Health Connect): reads what other apps on the phone wrote
 // there (a band through Gadgetbridge, a scale, a watch) and hands it to the engine (POST /health/import), which keeps
-// typed values and never adds the same thing twice. Read when the app opens or comes back to the screen, at most every
-// 15 minutes, and from Settings → Integrations by hand.
+// typed values and never adds the same thing twice. Read while the app is on screen, as often as Settings → Integrations
+// → Read Health Connect says (this phone's choice), on pull to refresh, and from Settings → Integrations by hand.
 import { computed, onScopeDispose, ref, shallowRef, watch, type Ref } from "vue";
 import { TOPICS } from "@motus/shared";
 import { api } from "../api/client";
 import { invalidate } from "../api/live";
-import { readJson, writeJson } from "../core/prefs";
+import { readJson, writeJson, readStr, writeStr } from "../core/prefs";
 import { accounts } from "./accounts";
 
 /** Everything the plugin asks Health Connect for: someone who allowed an earlier version lacks the kinds added since */
@@ -30,7 +30,7 @@ export interface HealthData {
 }
 /** What POST /health/import added, and ranges: what POST /health/ranges filled in on activities and workouts recorded in
  *  Motus (the band's steps, its heart rate) */
-export interface HealthResult { steps: number; sleep: number; weight: number; activities: number; restingHr?: number; spo2?: number; hrv?: number; sleepNights?: number; distance?: number; activeKcal?: number; bodyFat?: number; hydration?: number; vo2max?: number; hrDays?: number; ranges?: { steps: number; hr: number } }
+export interface HealthResult { steps: number; sleep: number; weight: number; activities: number; restingHr?: number; spo2?: number; hrv?: number; sleepNights?: number; distance?: number; activeKcal?: number; bodyFat?: number; hydration?: number; vo2max?: number; hrDays?: number; ranges?: RangesAdded }
 // what a read added, in words (Settings → Integrations and pull to refresh say it): "3 days of steps, 2 nights of sleep,
 // 2 activities with band steps, 3 sessions with heart rate"; "" when it added nothing (every part starts with its count,
 // so it reads right first in a list too)
@@ -44,10 +44,13 @@ export function healthAdded(r: HealthResult): string {
     r.bodyFat && `${r.bodyFat} body fat ${r.bodyFat === 1 ? "entry" : "entries"}`, r.hydration && `${many(r.hydration, "day", "days")} of water`,
     r.vo2max && `${many(r.vo2max, "day", "days")} of VO2 max`,
     r.ranges?.steps && `${many(r.ranges.steps, "activity", "activities")} with band steps`,
-    r.ranges?.hr && `${many(r.ranges.hr, "session", "sessions")} with heart rate`].filter(Boolean).join(", ");
+    r.ranges?.hr && `${many(r.ranges.hr, "session", "sessions")} with heart rate`,
+    r.ranges?.band && `${many(r.ranges.band, "activity", "activities")} with data from ${fromWhere(true)}`].filter(Boolean).join(", ");
 }
 type Range = { kind: "activity" | "workout"; id: string; start: string; end: string };
-type RangeResult = { kind: "activity" | "workout"; id: string; steps?: number; covered: boolean; bandOnly?: boolean; hr?: [number, number][] };
+type RangeResult = { kind: "activity" | "workout"; id: string; steps?: number; covered: boolean; bandOnly?: boolean; hr?: [number, number][]; bandFields?: boolean };
+// band: activities given what the band measured during them (distance, active calories, climb); absent from an older engine
+type RangesAdded = { steps: number; hr: number; band?: number };
 
 /** One day's steps per Health Connect app, and which Motus used (Imported data → a steps day → Where these steps came
  *  from). used: the band app whose count is the day's, null when no band counted (Health Connect's total is used). */
@@ -142,6 +145,8 @@ async function read(past?: Date): Promise<HealthResult | null> {
     const w = await oldestWaiting(), wait = w && new Date(w.getTime() - DAY_MS);
     const start = wait && wait < since ? wait : since;
     const from = past && past < start ? past : start;
+    // Health Connect's changes list from here on, taken before the read so what is written meanwhile counts as new
+    await markChanges();
     const data: HealthData = await plugin().read({ from: from.toISOString() });
     const r = await api.post<HealthResult>("/health/import", data);
     // a read of the past also reads up to now, so the next one may start here; never earlier than a read already done
@@ -151,7 +156,7 @@ async function read(past?: Date): Promise<HealthResult | null> {
     // a pocket counts fewer) and heart rate. A failure here keeps the import above; the next sync asks again.
     try { r.ranges = await readRanges(from < rangesFrom() ? from : rangesFrom()); } catch (e) { console.warn("Health Connect ranges", e); }
     if (r.steps || r.sleep || r.activities || r.weight || r.restingHr || r.spo2 || r.hrv || r.sleepNights || r.distance || r.activeKcal || r.bodyFat || r.hydration || r.vo2max || r.hrDays) invalidate([...TOPICS.health]);
-    if (r.ranges?.steps || r.ranges?.hr) invalidate([...TOPICS.health, "workouts"]);
+    if (r.ranges?.steps || r.ranges?.hr || r.ranges?.band) invalidate([...TOPICS.health, "workouts"]);
     return r;
   } finally { syncing.value = false; running = null; }
 }
@@ -163,7 +168,7 @@ const RANGES_DAYS = 30, SETTLE_MS = 3 * DAY_MS, CHECKED_KEY = "motusHealthChecke
 // bumped when the app reads the band's side differently, so the last 30 days are asked about once more, also activities
 // that already have the band's steps (recheck) and ones remembered as checked: 2, steps only from a band, watch or ring
 // (an older build took the app with the most steps, often the phone's own counter, and called it the band's)
-const RANGES_VERSION = 2, RANGES_KEY = "motusHealthRanges";
+const RANGES_VERSION = 2, RANGES_KEY = "motusHealthRanges", BAND_FIELDS_KEY = "motusHealthBandFields";
 const rangesFrom = () => new Date(Date.now() - RANGES_DAYS * DAY_MS);
 // Sessions the band had nothing for, once they ended more than 3 days ago (it has synced by then, or never will), so a
 // session without band data isn't read from Health Connect on every sync. Kept per account on this phone.
@@ -175,38 +180,96 @@ const rememberChecked = (ids: string[]) => {
   writeJson(CHECKED_KEY, all);
 };
 
-async function readRanges(from: Date): Promise<{ steps: number; hr: number } | undefined> {
+async function readRanges(from: Date): Promise<RangesAdded | undefined> {
   if (typeof plugin()?.readRanges !== "function") return undefined; // an app build from before
   const versions = readJson<Record<string, number>>(RANGES_KEY, {});
   const recheck = (versions[key()] ?? 0) < RANGES_VERSION;
-  const got = await api.get<{ ranges: Range[] }>("/health/ranges", { from: from.toISOString(), ...(recheck ? { recheck: 1 } : {}) });
+  // band: this phone's app build reads what the band measured during an activity (seen in an earlier answer), so every
+  // activity without those numbers yet is asked about; an older build would be asked about them on every sync for nothing
+  const band = readStr(BAND_FIELDS_KEY) === "1";
+  const got = await api.get<{ ranges: Range[] }>("/health/ranges", { from: from.toISOString(), ...(recheck ? { recheck: 1 } : {}), ...(band ? { band: 1 } : {}) });
   const checked = recheck ? new Set<string>() : checkedIds();
   const done = () => { if (recheck) writeJson(RANGES_KEY, { ...readJson<Record<string, number>>(RANGES_KEY, {}), [key()]: RANGES_VERSION }); };
   const ranges = (got.ranges ?? []).filter((x) => !checked.has(x.id));
   if (!ranges.length) { done(); return undefined; }
   const { results } = await plugin().readRanges({ ranges }) as { results: RangeResult[] };
   if (!results?.length) { done(); return undefined; }
+  if (!band && results.some((x) => x.bandFields)) writeStr(BAND_FIELDS_KEY, "1");
   const settled = new Set(ranges.filter((x) => Date.now() - Date.parse(x.end) > SETTLE_MS).map((x) => x.id));
-  const out = await api.post<{ steps: number; hr: number }>("/health/ranges", { results });
+  const out = await api.post<RangesAdded>("/health/ranges", { results, ...(recheck ? { recheck: true } : {}) });
   // marked only after the server took the results, and only for a session the band had neither heart rate nor steps for
   rememberChecked(results.filter((x) => settled.has(x.id) && !x.hr?.length && !(x.covered && x.steps)).map((x) => x.id));
   done();
   return out;
 }
 
-const EVERY_MS = 15 * 60_000;
-let watching = false;
-/** Reads on open and whenever the app comes back, while the feature is on (on() says so at that moment). */
+// How often Motus reads while it is on screen, chosen per phone (Health Connect is the phone's): minutes, or "pull" for
+// only on pull to refresh and Sync now. 10 minutes by default: close to the 15 it always was, and a look in between
+// costs one call when nothing is new.
+export type ReadEvery = "1" | "10" | "30" | "60" | "pull";
+// "min": a field next to a row's text gets at most 56% of a phone's width, and "Every 10 minutes" is cut off there
+export const READ_EVERY: { value: ReadEvery; label: string; hint?: string }[] = [
+  { value: "1", label: "Every minute" }, { value: "10", label: "Every 10 min" }, { value: "30", label: "Every 30 min" },
+  { value: "60", label: "Every hour" }, { value: "pull", label: "Only on refresh", hint: "When you pull down to refresh or tap Sync now" },
+];
+const EVERY_KEY = "motusHealthEvery";
+const stored = readStr(EVERY_KEY, "10") as ReadEvery;
+export const readEvery = ref<ReadEvery>(READ_EVERY.some((o) => o.value === stored) ? stored : "10");
+export function setReadEvery(v: ReadEvery) { readEvery.value = v; writeStr(EVERY_KEY, v); }
+
+// A full read asks Health Connect a few dozen times (each kind over the last day or two, heart rate, sessions, then the
+// sessions recorded in Motus), too much once a minute. In between, its changes list says in one call whether any app
+// wrote something; the full read runs only then, or once this long has passed anyway: Motus's side changes too (a
+// workout recorded, a day set back to the band's value). An app build from before has no changes list: full reads only.
+const FULL_MS = 15 * 60_000, TICK_MS = 60_000, SLACK_MS = 10_000, BACKOFF_MAX_MS = 60 * 60_000;
+const canChanges = () => typeof plugin()?.changes === "function";
+let mark: { key: string; token: string } | null = null;
+async function markChanges() {
+  if (!canChanges()) return;
+  try { const r = await plugin().changes({}); mark = r.token ? { key: key(), token: r.token } : null; } catch { mark = null; }
+}
+/** Whether Health Connect holds something new since the last full read; true when it can't tell. */
+async function changedSince(): Promise<boolean> {
+  if (!mark || mark.key !== key()) return true;
+  const r = await plugin().changes({ token: mark.token }) as { changed: boolean; token: string };
+  mark = r.token ? { key: mark.key, token: r.token } : null;
+  return r.changed;
+}
+
+let watching = false, looking = false, failures = 0, retryAt = 0, lookedAt = 0;
+/** Reads on open, when the app comes back and on a timer while it stays on screen, as often as chosen and while the
+ *  feature is on (on() says so at that moment). Nothing while hidden. */
 export function watchHealth(on: () => boolean) {
   if (!healthSupported() || watching) return;
   watching = true;
-  const maybe = () => {
-    if (!on() || document.visibilityState !== "visible") return;
-    if (lastSync.value && Date.now() - Date.parse(lastSync.value) < EVERY_MS) return;
-    void syncHealth().catch(() => { /* shown in Settings → Integrations when synced by hand */ });
+  let timer: ReturnType<typeof setInterval> | undefined;
+  const tick = async () => {
+    const every = readEvery.value === "pull" ? 0 : Number(readEvery.value) * 60_000;
+    if (!every || !on() || document.visibilityState !== "visible" || syncing.value || looking) return;
+    // due once the chosen time has passed since the last read, or since the last look that found nothing new (or found
+    // nothing allowed yet)
+    const now = Date.now(), last = lastSync.value ? Date.parse(lastSync.value) : 0;
+    if (now < retryAt || now - Math.max(last, lookedAt) < every - SLACK_MS) return;
+    looking = true;
+    try {
+      if (!(now - last < FULL_MS - SLACK_MS && canChanges() && !(await changedSince()))) await syncHealth();
+      failures = 0; lookedAt = now;
+    } catch {
+      // Health Connect refused (often its limit on reads) or the server is away: wait twice as long each time, up to an
+      // hour; pull to refresh and Sync now still read, and say what went wrong
+      failures++; retryAt = Date.now() + Math.min(every * 2 ** failures, BACKOFF_MAX_MS);
+    } finally { looking = false; }
   };
-  document.addEventListener("visibilitychange", maybe);
-  setTimeout(maybe, 3000);
+  // a look each minute is only a clock check unless a read is due
+  const visible = () => {
+    clearInterval(timer); timer = undefined;
+    if (document.visibilityState !== "visible") return;
+    void tick();
+    timer = setInterval(() => void tick(), TICK_MS);
+  };
+  document.addEventListener("visibilitychange", visible);
+  watch(readEvery, () => { retryAt = 0; lookedAt = 0; void tick(); });
+  setTimeout(visible, 3000);
 }
 
 // Live heart rate while a workout or a recording runs: the band's readings since the session started, read straight from

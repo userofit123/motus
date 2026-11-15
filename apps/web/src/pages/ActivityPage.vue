@@ -1,9 +1,10 @@
 <script setup lang="ts">
-// One activity: the map, time, distance, pace, climb, pace per km/mile, heart rate (from a band), notes; edit or delete.
+// One activity: the map, time, distance, pace, steps, climb, calories, pace per km/mile, heart rate (from a band), notes;
+// edit or delete. Only what there is: a time only type (climbing, yoga) shows its time, plus whatever a band measured then.
 import { goBack } from "../core/leave";
 import { computed } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { useActivity, useTypeName, loaded } from "../api/queries";
+import { useActivity, useActivityTypes, useTypeName, loaded } from "../api/queries";
 import { api } from "../api/client";
 import { invalidate } from "../api/live";
 import { useFmt } from "../core/format";
@@ -17,7 +18,8 @@ import RouteMap from "../components/RouteMap.vue";
 import DotLine from "../components/DotLine.vue";
 import BarChart from "../components/BarChart.vue";
 import HeartRate from "../components/HeartRate.vue";
-import { routeSplits, M_PER_MI, fromM } from "@motus/shared";
+import { routeSplits, M_PER_MI, fromM, type ActivityType } from "@motus/shared";
+import { fromWhere } from "../native/health";
 
 const route = useRoute(), router = useRouter();
 const id = computed(() => String(route.params.id));
@@ -26,17 +28,52 @@ const fmt = useFmt();
 const a = computed<any>(() => q.data.value);
 const typeName = useTypeName();
 // Where it came from, after the time like the workout page's "felt good": recorded live with the phone's GPS, or a
-// GPX/TCX file; one logged by hand needs no note.
-const source = computed(() => (a.value?.source === "gps" ? "recorded with GPS" : a.value?.source === "import" ? "imported from a file" : ""));
+// GPX/TCX file; one logged by hand needs no note. A time only type is recorded live without GPS, so no route: no GPS said.
+const source = computed(() => (a.value?.source === "gps" ? (a.value.route?.length ? "recorded with GPS" : "recorded live") : a.value?.source === "import" ? "imported from a file" : ""));
 // How long each km (or mile) took, moving; only worth a chart with two or more to compare. The fastest full one is marked.
 const splits = computed(() => (a.value?.route?.length ? routeSplits(a.value.route, fmt.value.du === "mi" ? M_PER_MI : 1000) : []));
 const fastest = computed(() => splits.value.filter((t) => !t.partial).reduce<(typeof splits.value)[number] | null>((b, t) => (!b || t.s < b.s ? t : b), null));
 // steps the band counted replace the phone's (a phone in a pocket or bag misses many): said under the number, with the
 // phone's own count beside it when there was one
 // as parts for DotLine: the tile is half the width on a phone, so the line wraps between parts, never at a dot
-const stepsSub = computed(() => a.value?.stepsSource !== "band" ? [] : a.value.stepsApp ? ["From your band", `phone counted ${fmt.value.num(a.value.stepsApp, 0)}`] : ["From your band"]);
-// the pace as the value with its unit small beside it ("5:12" /km), as the other tiles' units
-const pace = computed(() => { const x = a.value; if (!x?.distanceM || !(x.movingS || x.durationS)) return null; return fmt.value.clock((x.movingS || x.durationS) / fromM(x.distanceM, fmt.value.du)); });
+const fromBand = `From ${fromWhere(true)}`;
+const stepsSub = computed(() => a.value?.stepsSource !== "band" ? [] : a.value.stepsApp ? [fromBand, `phone counted ${fmt.value.num(a.value.stepsApp, 0)}`] : [fromBand]);
+const types = useActivityTypes();
+const type = computed(() => (types.data.value as ActivityType[] | undefined)?.find((t) => t.slug === a.value?.type));
+// the activity's own distance and climb count where its type tracks them, or where Health Connect brought the whole
+// session in (its numbers are the device's); a type since deleted shows what there is
+const ownDist = computed(() => { const x = a.value, t = type.value; return x?.distanceM > 0 && (!t || t.hasDistance || t.hasGps || x.source === "health_connect" || x.route?.length) ? Number(x.distanceM) : null; });
+const ownClimb = computed(() => { const x = a.value, t = type.value; return x?.elevationM != null && (!t || t.hasGps || x.route?.length) ? Number(x.elevationM) : null; });
+// the pace as the value with its unit small beside it ("5:12" /km), as the other tiles' units; from the activity's own
+// distance only, over its moving time where known
+const pace = computed(() => { const x = a.value, d = ownDist.value; if (!d || !(x.movingS || x.durationS)) return null; return fmt.value.clock((x.movingS || x.durationS) / fromM(d, fmt.value.du)); });
+// "3.42" and "km" apart, as the tiles show a value and its unit
+const distParts = (m: number) => ({ value: fmt.value.num(fmt.value.distNum(m), 2), unit: fmt.value.du });
+const distText = (m: number) => `${fmt.value.num(fmt.value.distNum(m), 2)} ${fmt.value.du}`;
+type Tile = { key: string; icon: string; label: string; value: string; unit?: string; sub?: string[]; hero?: boolean };
+// The stat tiles: only those with a value. A band's number for the activity's time (Health Connect, 037) fills a tile
+// the activity has nothing of its own for, said under it; beside the activity's own number (typed or GPS, which always
+// stays the activity's) it is said under that one.
+const tiles = computed<Tile[]>(() => {
+  const x = a.value, f = fmt.value, out: Tile[] = [];
+  if (!x) return out;
+  const band = (v: number | null | undefined) => (v != null && Number(v) > 0 ? Number(v) : null);
+  const bDist = band(x.bandDistanceM), bClimb = band(x.bandElevationM), bFloors = band(x.bandFloors), bKcal = band(x.bandKcal);
+  // as parts, so a half-width tile wraps at the dot ("Your band · 1.21 km"), as the steps line does
+  const said = (what: string) => [fromWhere(true).replace(/^./, (c) => c.toUpperCase()), what];
+  out.push({ key: "time", icon: "clock", label: "Duration", value: f.dur(x.durationS, true), sub: x.movingS ? [`${f.dur(x.movingS, true)} moving`] : [], hero: true });
+  if (ownDist.value) out.push({ key: "dist", icon: "map", label: "Distance", ...distParts(ownDist.value), sub: bDist ? said(distText(bDist)) : [] });
+  else if (bDist) out.push({ key: "dist", icon: "map", label: "Distance", ...distParts(bDist), sub: [fromBand] });
+  if (pace.value) out.push({ key: "pace", icon: "timer", label: "Average pace", value: pace.value, unit: `/${f.du}` });
+  if (x.steps > 0) out.push({ key: "steps", icon: "steps", label: "Steps", value: f.num(x.steps, 0), sub: stepsSub.value });
+  // the climb takes the steps' place as before (one or the other, so a walk keeps its two rows of two)
+  if (!(x.steps > 0) && ownClimb.value != null) out.push({ key: "climb", icon: "arrowUp", label: "Climb", value: String(Math.round(ownClimb.value)), unit: "m", sub: bClimb ? said(`${Math.round(bClimb)} m`) : [] });
+  else if (!(x.steps > 0) && bClimb) out.push({ key: "climb", icon: "arrowUp", label: "Climb", value: String(Math.round(bClimb)), unit: "m", sub: [fromBand] });
+  else if (!(x.steps > 0) && bFloors) out.push({ key: "floors", icon: "arrowUp", label: "Floors", value: f.num(bFloors, bFloors % 1 ? 1 : 0), sub: [fromBand] });
+  if (x.calories > 0) out.push({ key: "kcal", icon: "flame", label: "Active calories", value: f.num(x.calories, 0), unit: "kcal", sub: bKcal ? said(`${f.num(bKcal, 0)} kcal`) : [] });
+  else if (bKcal) out.push({ key: "kcal", icon: "flame", label: "Active calories", value: f.num(bKcal, 0), unit: "kcal", sub: [fromBand] });
+  return out;
+});
 async function del() { if (await confirm("Delete this activity?", { ok: "Delete", danger: true })) { await api.del(`/activities/${id.value}`); invalidate(["*"]); toast("Activity deleted"); router.replace("/history"); } }
 async function edit(field: "name" | "notes") { const v = await prompt(field === "name" ? "Name" : "Notes", { value: a.value[field] }); if (v != null) { await api.put(`/activities/${id.value}`, { ...a.value, [field]: v, route: null }); invalidate(["activities"]); toast(field === "name" ? "Activity renamed" : "Notes saved"); } }
 function gpx() {
@@ -45,7 +82,7 @@ function gpx() {
   saveFile(new Blob([x], { type: "application/gpx+xml" }), `${a.value.type}-${a.value.startedAt.slice(0, 10)}.gpx`).catch(toastError);
 }
 // show the page once its data is in, all at once
-await loaded(q);
+await loaded(q, types);
 </script>
 
 <template>
@@ -54,11 +91,8 @@ await loaded(q);
     <div class="ph"><div><h1>{{ a.name || typeName(a.type) }}</h1><DotLine class="sub" :parts="[fmt.dateLong(a.startedAt), `${fmt.time(a.startedAt)}-${fmt.time(a.endedAt)}`, source].filter(Boolean)" /></div>
       <div class="acts"><Menu :items="[{ label: 'Rename', icon: 'edit', run: () => edit('name') }, { label: 'Notes', icon: 'note', run: () => edit('notes') }, { label: 'Export GPX', icon: 'download', sep: true, run: gpx, hidden: !a.route?.length }, { label: 'Delete', icon: 'trash', danger: true, sep: true, run: del }]" /></div></div>
     <RouteMap v-if="a.route?.length" :route="a.route" />
-    <div class="grid g4 spt">
-      <div class="card stat hero"><div class="lbl"><span class="bi"><Icon name="clock" :size="15" /></span>Duration</div><div class="val">{{ fmt.dur(a.durationS, true) }}</div><div v-if="a.movingS" class="sub">{{ fmt.dur(a.movingS, true) }} moving</div></div>
-      <div class="card stat"><div class="lbl"><span class="bi"><Icon name="map" :size="15" /></span>Distance</div><div class="val">{{ a.distanceM ? fmt.num(fmt.distNum(a.distanceM), 2) : "-" }}<small v-if="a.distanceM">{{ fmt.du }}</small></div></div>
-      <div class="card stat"><div class="lbl"><span class="bi"><Icon name="timer" :size="15" /></span>Average pace</div><div class="val">{{ pace ?? "-" }}<small v-if="pace">/{{ fmt.du }}</small></div></div>
-      <div class="card stat"><div class="lbl"><span class="bi"><Icon :name="a.steps ? 'steps' : 'arrowUp'" :size="15" /></span>{{ a.steps ? "Steps" : "Climb" }}</div><div class="val">{{ a.steps ? fmt.num(a.steps, 0) : a.elevationM != null ? Math.round(a.elevationM) : "-" }}<small v-if="!a.steps && a.elevationM != null">m</small></div><DotLine v-if="a.steps && stepsSub.length" class="sub" :parts="stepsSub" /></div>
+    <div class="grid g4 spt" :class="`n${tiles.length}`">
+      <div v-for="t in tiles" :key="t.key" class="card stat" :class="{ hero: t.hero }"><div class="lbl"><span class="bi"><Icon :name="t.icon" :size="15" /></span>{{ t.label }}</div><div class="val">{{ t.value }}<small v-if="t.unit">{{ t.unit }}</small></div><DotLine v-if="t.sub?.length" class="sub" :parts="t.sub" /></div>
     </div>
     <div v-if="splits.length > 1" class="card spt">
       <div class="lbl hgap">Pace per {{ fmt.du }}{{ fastest ? ` · fastest ${fmt.clock(fastest.s)} in ${fmt.du} ${fastest.n}` : "" }}</div>

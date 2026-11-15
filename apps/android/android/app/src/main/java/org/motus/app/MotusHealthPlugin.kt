@@ -13,6 +13,7 @@ import androidx.health.connect.client.records.metadata.DataOrigin
 import androidx.health.connect.client.records.metadata.Device
 import androidx.health.connect.client.request.AggregateGroupByPeriodRequest
 import androidx.health.connect.client.request.AggregateRequest
+import androidx.health.connect.client.request.ChangesTokenRequest
 import androidx.health.connect.client.request.ReadRecordsRequest
 import androidx.health.connect.client.time.TimeRangeFilter
 import com.getcapacitor.JSArray
@@ -47,12 +48,14 @@ class MotusHealthPlugin : Plugin() {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     private fun perm(c: KClass<out Record>) = HealthPermission.getReadPermission(c)
-    private val PERMS = setOf(
-        perm(StepsRecord::class), perm(SleepSessionRecord::class), perm(WeightRecord::class), perm(ExerciseSessionRecord::class),
-        perm(HeartRateRecord::class), perm(DistanceRecord::class), perm(ActiveCaloriesBurnedRecord::class),
-        perm(RestingHeartRateRecord::class), perm(OxygenSaturationRecord::class), perm(HeartRateVariabilityRmssdRecord::class),
-        perm(RespiratoryRateRecord::class), perm(BodyFatRecord::class), perm(HydrationRecord::class), perm(Vo2MaxRecord::class),
+    private val TYPES: List<KClass<out Record>> = listOf(
+        StepsRecord::class, SleepSessionRecord::class, WeightRecord::class, ExerciseSessionRecord::class,
+        HeartRateRecord::class, DistanceRecord::class, ActiveCaloriesBurnedRecord::class,
+        RestingHeartRateRecord::class, OxygenSaturationRecord::class, HeartRateVariabilityRmssdRecord::class,
+        RespiratoryRateRecord::class, BodyFatRecord::class, HydrationRecord::class, Vo2MaxRecord::class,
+        ElevationGainedRecord::class, FloorsClimbedRecord::class,
     )
+    private val PERMS = TYPES.map { perm(it) }.toSet()
 
     // Health Connect is part of Android 14+, an app from the Play Store on 9-13, and missing below 9
     private fun sdk(): Int =
@@ -190,7 +193,8 @@ class MotusHealthPlugin : Plugin() {
      * steps: the band's only (rangeSteps), absent when no band, watch or ring counted then; bandOnly: steps were read
      * this way (an older build took the app with the most, often the phone's own counter). covered: the band's records
      * reach across the whole span with no hole over 10 minutes (false when the band was off or has not synced yet).
-     * hr: at most 600 points.
+     * hr: at most 600 points. For an activity the worn device covered, also what it measured meanwhile (rangeBand):
+     * distanceM, activeKcal, elevationM, floors, each absent when it had none; bandFields: this build reads them.
      */
     @PluginMethod
     fun readRanges(call: PluginCall) {
@@ -202,6 +206,7 @@ class MotusHealthPlugin : Plugin() {
                 val granted = c.permissionController.getGrantedPermissions()
                 val hasSteps = perm(StepsRecord::class) in granted
                 val hasHr = perm(HeartRateRecord::class) in granted
+                val has = { t: KClass<out Record> -> perm(t) in granted }
                 val results = JSArray()
                 for (i in 0 until minOf(list.length(), 200)) {
                     val r = list.optJSONObject(i) ?: continue
@@ -218,9 +223,19 @@ class MotusHealthPlugin : Plugin() {
                         }
                         o.put("covered", covered)
                         if (hasHr && end.isAfter(start)) rangeHr(c, start, end)?.let { o.put("hr", it) }
+                        if (kind == "activity") {
+                            o.put("bandFields", true)
+                            if (covered) {
+                                if (has(DistanceRecord::class)) rangeBand(c, DistanceRecord::class, start, end, { it.startTime to it.endTime }) { it.distance.inMeters }?.let { o.put("distanceM", it) }
+                                if (has(ActiveCaloriesBurnedRecord::class)) rangeBand(c, ActiveCaloriesBurnedRecord::class, start, end, { it.startTime to it.endTime }) { it.energy.inKilocalories }?.let { o.put("activeKcal", it) }
+                                if (has(ElevationGainedRecord::class)) rangeBand(c, ElevationGainedRecord::class, start, end, { it.startTime to it.endTime }) { it.elevation.inMeters }?.let { o.put("elevationM", it) }
+                                if (has(FloorsClimbedRecord::class)) rangeBand(c, FloorsClimbedRecord::class, start, end, { it.startTime to it.endTime }) { it.floors }?.let { o.put("floors", it) }
+                            }
+                        }
                     } catch (e: Exception) {
                         if (e is kotlinx.coroutines.CancellationException) throw e
                         o.remove("steps"); o.remove("hr"); o.remove("bandOnly"); o.put("covered", false)
+                        o.remove("bandFields"); o.remove("distanceM"); o.remove("activeKcal"); o.remove("elevationM"); o.remove("floors")
                     }
                     results.put(o)
                 }
@@ -234,6 +249,40 @@ class MotusHealthPlugin : Plugin() {
      * cheap read (at most 2 pages). { samples: [[unixSeconds, bpm], ...] } ascending, at most 600 (the newest);
      * empty without Health Connect or the heart rate permission.
      */
+    /**
+     * Whether any app wrote, changed or removed something Motus may read since `token` (Health Connect's changes list):
+     * one cheap call, so the page can look every minute and run the full read() only when there is something new.
+     * { token?: string } → { changed: boolean, token: string } (no token, or one Health Connect let expire: changed is
+     * true, and the new token starts from now)
+     */
+    @PluginMethod
+    fun changes(call: PluginCall) {
+        if (sdk() != HealthConnectClient.SDK_AVAILABLE) { call.reject("Health Connect is not available"); return }
+        val given = call.getString("token")
+        scope.launch {
+            try {
+                val c = client()
+                val granted = c.permissionController.getGrantedPermissions()
+                val types = TYPES.filter { perm(it) in granted }.toSet()
+                if (types.isEmpty()) { call.resolve(JSObject().put("changed", false).put("token", "")); return@launch }
+                suspend fun fresh(): String = c.getChangesToken(ChangesTokenRequest(types))
+                if (given.isNullOrEmpty()) { call.resolve(JSObject().put("changed", true).put("token", fresh())); return@launch }
+                var token: String = given
+                var changed = false; var pages = 0
+                while (true) {
+                    val res = c.getChanges(token)
+                    if (res.changesTokenExpired) { call.resolve(JSObject().put("changed", true).put("token", fresh())); return@launch }
+                    if (res.changes.isNotEmpty()) changed = true
+                    token = res.nextChangesToken
+                    // the answer is known after the first change; the token still moves past every page so the next
+                    // look starts from now
+                    if (!res.hasMore || ++pages >= 20) break
+                }
+                call.resolve(JSObject().put("changed", changed).put("token", token))
+            } catch (e: Exception) { call.reject(e.message ?: "Health Connect could not be read") }
+        }
+    }
+
     @PluginMethod
     fun latestHr(call: PluginCall) {
         val empty = { call.resolve(JSObject().put("samples", JSArray())) }
@@ -299,6 +348,27 @@ class MotusHealthPlugin : Plugin() {
             ok && reach >= end.toEpochMilli() - slack
         }
         return total to covered
+    }
+
+    // What a band, watch or ring measured in the span (distance, active calories, climb): records crossing the edges
+    // count by their share of time inside, as for steps; only a worn device (isBand), never the phone's own counting;
+    // two apps writing for the same device: the larger. null when none measured anything then.
+    // (span: a record's start and end time, given per type: Health Connect's IntervalRecord isn't public)
+    private suspend fun <T : Record> rangeBand(c: HealthConnectClient, type: KClass<T>, start: Instant, end: Instant, span: (T) -> Pair<Instant, Instant>, amount: (T) -> Double): Double? {
+        val recs = readBetween(c, type, start, end).filter {
+            val (s, e) = span(it)
+            e.isAfter(start) && s.isBefore(end) && isBand(it.metadata.dataOrigin.packageName, it.metadata.device?.type)
+        }
+        if (recs.isEmpty()) return null
+        fun inside(r: T): Double {
+            val (s, e) = span(r)
+            val len = e.toEpochMilli() - s.toEpochMilli()
+            if (len <= 0) return amount(r)
+            val a = maxOf(s, start).toEpochMilli(); val b = minOf(e, end).toEpochMilli()
+            return amount(r) * (b - a).coerceAtLeast(0) / len
+        }
+        val total = recs.groupBy { it.metadata.dataOrigin.packageName }.values.maxOf { rs -> rs.sumOf { inside(it) } }
+        return if (total > 0) Math.round(total * 10) / 10.0 else null
     }
 
     // Heart rate samples in the span as [unixSeconds, bpm], averaged into at most 600 time buckets

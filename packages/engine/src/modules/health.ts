@@ -28,6 +28,11 @@ import { dayIn } from "./achievements";
 import { isNight } from "@motus/shared";
 
 export const HEALTH_SOURCE = "health_connect";
+// a band's number for an activity's time: a measure that can't be (below 0, absurdly large, not a number) is left out
+// rather than failing the whole read
+const bandNum = (v: unknown, max: number) => (typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= max ? v : null);
+// an activity's band data has settled: it has synced by then, or never will (the app uses the same 3 days)
+const SETTLED_MS = 3 * 86400000;
 type Daily = "steps" | "sleep" | "resting_hr" | "spo2" | "hrv" | "distance" | "active_kcal" | "water" | "vo2max";
 /** Readings that go into the body log (body_metrics), one row each. */
 type Body = "weight" | "body_fat";
@@ -416,28 +421,35 @@ export function healthRoutes(r: Router) {
   // Sessions that came from Health Connect itself already have what the band had.
   // recheck: also activities that already have the band's steps, once after the app changed how it reads them (an
   // older build took the phone's own step counter for the band), so a wrong count goes back to the app's own (below).
+  // band: the app also reads the band's distance, active calories and climb for an activity (037), so every activity
+  // whose band numbers aren't in yet is asked about too; an older app doesn't say so and is asked what it always was.
   r.get("/health/ranges", async (ctx, _p, _b, qs) => {
     const from = isoTime(qs.from, new Date(ctx.now().getTime() - 30 * 86400000).toISOString());
     const recheck = qs.recheck === "1" || qs.recheck === "true";
+    const band = qs.band === "1" || qs.band === "true";
     const { rows } = await ctx.q.query(
       `SELECT * FROM (
          SELECT 'activity' AS kind, a.id, a.started_at, a.ended_at FROM activities a LEFT JOIN activity_types t ON t.slug = a.type
           WHERE a.source <> $2 AND a.ended_at IS NOT NULL AND a.started_at >= $1
-            AND (a.hr IS NULL OR ($3::boolean AND a.steps_source = 'band') OR (a.steps_source IS NULL AND coalesce(t.has_steps, a.type IN ('walk', 'run', 'hike'))
+            AND (a.hr IS NULL OR ($3::boolean AND a.steps_source = 'band') OR ($4::boolean AND a.band_at IS NULL) OR (a.steps_source IS NULL AND coalesce(t.has_steps, a.type IN ('walk', 'run', 'hike'))
               -- a count typed when the walk was logged by hand is the person's: the band's never replaces it
               AND NOT (a.source = 'manual' AND a.steps IS NOT NULL)))
          UNION ALL
          SELECT 'workout', w.id, w.started_at, w.ended_at FROM workouts w
           WHERE w.status = 'completed' AND w.ended_at IS NOT NULL AND w.started_at >= $1 AND w.hr IS NULL
-       ) x ORDER BY started_at DESC LIMIT 200`, [from, HEALTH_SOURCE, recheck]);
+       ) x ORDER BY started_at DESC LIMIT 200`, [from, HEALTH_SOURCE, recheck, band]);
     const iso = (v: unknown) => new Date(v as string).toISOString();
     return { ranges: rows.map((x: any) => ({ kind: x.kind as "activity" | "workout", id: x.id as string, start: iso(x.started_at), end: iso(x.ended_at) })) };
   });
 
   // What the band had for those times. steps only counts when covered: the band's data spans the whole activity, so its
   // count is for exactly that time (a band that synced half of it would undercount).
+  // distanceM, activeKcal, elevationM, floors: the band's for the activity's time (bandFields: an app that reads them),
+  // kept in their own columns (037) and never over the activity's own distance or climb; taken only when covered, as
+  // steps, so a band that synced half the time doesn't stand for the whole activity. An activity the band never covered
+  // is asked about until it settled (3 days, as the app's own list of sessions without band data).
   r.post("/health/ranges", async (ctx, _p, b) => {
-    const out = { steps: 0, hr: 0 };
+    const out = { steps: 0, hr: 0, band: 0 };
     let acts = false, works = false;
     for (const e of (Array.isArray(b.results) ? b.results : []).slice(0, 200)) {
       if (!e || (e.kind !== "activity" && e.kind !== "workout") || !isUuid(e.id)) throw bad("Invalid result");
@@ -453,7 +465,8 @@ export function healthRoutes(r: Router) {
         continue;
       }
       const a = (await ctx.q.query(
-        `SELECT a.started_at, a.ended_at, a.source, a.steps, a.steps_source, a.steps_app, coalesce(t.has_steps, a.type IN ('walk', 'run', 'hike')) AS counts
+        `SELECT a.started_at, a.ended_at, a.source, a.steps, a.steps_source, a.steps_app, coalesce(t.has_steps, a.type IN ('walk', 'run', 'hike')) AS counts,
+           a.band_distance_m, a.band_kcal, a.band_elevation_m, a.band_floors
          FROM activities a LEFT JOIN activity_types t ON t.slug = a.type WHERE a.id = $1`, [e.id])).rows[0];
       if (!a?.ended_at) continue;
       // never over a count the person typed: changed by hand later ('manual'), or typed when the walk was logged by hand
@@ -477,6 +490,17 @@ export function healthRoutes(r: Router) {
       if (h) {
         await ctx.q.query("UPDATE activities SET hr = $2, max_hr = $3, avg_hr = coalesce(avg_hr, $4) WHERE id = $1", [e.id, JSON.stringify(h.hr), h.max, h.avg]);
         out.hr++; acts = true;
+      }
+      if (e.bandFields === true) {
+        if (e.covered === true) {
+          const v = [bandNum(e.distanceM, 1e6), bandNum(e.activeKcal, 1e5), bandNum(e.elevationM, 1e5), bandNum(e.floors, 1e4)];
+          const kcal = v[1] == null ? null : Math.round(v[1]);
+          const had = [a.band_distance_m, a.band_kcal, a.band_elevation_m, a.band_floors].map((x) => (x == null ? null : Number(x)));
+          await ctx.q.query("UPDATE activities SET band_distance_m = $2, band_kcal = $3, band_elevation_m = $4, band_floors = $5, band_at = $6 WHERE id = $1",
+            [e.id, v[0], kcal, v[2], v[3], ctx.now().toISOString()]);
+          if (had[0] !== v[0] || had[1] !== kcal || had[2] !== v[2] || had[3] !== v[3]) { out.band++; acts = true; }
+        } else if (ctx.now().getTime() - new Date(a.ended_at).getTime() > SETTLED_MS)
+          await ctx.q.query("UPDATE activities SET band_at = $2 WHERE id = $1 AND band_at IS NULL", [e.id, ctx.now().toISOString()]);
       }
     }
     if (acts || works) ctx.changed("health", ...(acts ? ["activity"] as const : []), ...(works ? ["workout"] as const : []));

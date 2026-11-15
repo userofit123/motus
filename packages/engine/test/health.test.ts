@@ -216,9 +216,9 @@ describe("a band's side of what was recorded in Motus", () => {
   });
 
   it("takes the band's steps only when its data covers the whole activity", async () => {
-    expect(await call("POST", "/health/ranges", { results: [{ kind: "activity", id: gps, steps: 3400, covered: false }] })).toEqual({ steps: 0, hr: 0 });
+    expect(await call("POST", "/health/ranges", { results: [{ kind: "activity", id: gps, steps: 3400, covered: false }] })).toEqual({ steps: 0, hr: 0, band: 0 });
     expect(await act(gps)).toMatchObject({ steps: 3000, stepsSource: null, stepsApp: null });
-    expect(await call("POST", "/health/ranges", { results: [{ kind: "activity", id: gps, steps: 3400, covered: true }] })).toEqual({ steps: 1, hr: 0 });
+    expect(await call("POST", "/health/ranges", { results: [{ kind: "activity", id: gps, steps: 3400, covered: true }] })).toEqual({ steps: 1, hr: 0, band: 0 });
     expect(await act(gps)).toMatchObject({ steps: 3400, stepsSource: "band", stepsApp: 3000 });
     // the band's count again, now a little higher: the app's own stays kept aside
     expect((await call("POST", "/health/ranges", { results: [{ kind: "activity", id: gps, steps: 3400, covered: true }] })).steps).toBe(0);
@@ -272,7 +272,7 @@ describe("a band's side of what was recorded in Motus", () => {
     expect(heartRate(series(T0 - 4000, 10), T0, T0 + 1800)).toBeNull(); // another time
 
     const r = await call("POST", "/health/ranges", { results: [{ kind: "activity", id: gps, hr: series(T0, 1800) }] });
-    expect(r).toEqual({ steps: 0, hr: 1 });
+    expect(r).toEqual({ steps: 0, hr: 1, band: 0 });
     const a = await act(gps);
     expect(a).toMatchObject({ avgHr: 130, maxHr: 159 });
     expect(a.hr.length).toBe(600);
@@ -287,7 +287,7 @@ describe("a band's side of what was recorded in Motus", () => {
 
   it("adds heart rate to a workout", async () => {
     const t = Date.parse("2026-11-05T17:00:00Z") / 1000;
-    expect(await call("POST", "/health/ranges", { results: [{ kind: "workout", id: wid, hr: [[t + 10, 90], [t + 600, 150], [t + 1200, 120]] }] })).toEqual({ steps: 0, hr: 1 });
+    expect(await call("POST", "/health/ranges", { results: [{ kind: "workout", id: wid, hr: [[t + 10, 90], [t + 600, 150], [t + 1200, 120]] }] })).toEqual({ steps: 0, hr: 1, band: 0 });
     const w = await call("GET", `/workouts/${wid}`);
     expect(w).toMatchObject({ avgHr: 120, maxHr: 150, hr: [[t + 10, 90], [t + 600, 150], [t + 1200, 120]] });
     const listed = (await call("GET", "/workouts", undefined, { from: FROM })).find((x: any) => x.id === wid);
@@ -907,5 +907,62 @@ describe("an activity's band steps that were the phone's", () => {
     await eng.db.admin.query("UPDATE activities SET steps = 950, steps_app = 900, steps_source = 'manual' WHERE id = $1", [typed]);
     expect((await call("POST", "/health/ranges", { results: [{ kind: "activity", id: typed, covered: false, bandOnly: true }] })).steps).toBe(0);
     expect(await act(typed)).toMatchObject({ steps: 950, stepsSource: "manual" });
+  });
+});
+
+describe("what the band measured during an activity", () => {
+  const FROM = "2026-09-01T00:00:00Z";
+  const act = (id: string) => call("GET", `/activities/${id}`);
+  const ids = async (q: Record<string, string> = {}) => ((await call("GET", "/health/ranges", undefined, { from: FROM, ...q })).ranges as any[]).map((x) => x.id);
+  const ranges = (results: unknown[]) => call("POST", "/health/ranges", { results });
+  let climb: string, run: string, typed: string;
+
+  it("fills a time only activity's distance, calories and climb from the band, only when it covered the whole time", async () => {
+    await call("POST", "/activity-types", { name: "Climbing", hasDistance: false, hasGps: false });
+    // ended an hour ago: the band may not have synced yet
+    const start = new Date(Date.now() - 2 * 3600000).toISOString(), end = new Date(Date.now() - 3600000).toISOString();
+    climb = (await call("POST", "/activities", { type: "climbing", startedAt: start, endedAt: end, source: "manual" })).id;
+    // hr already in: an older app isn't asked about it again; one that reads the band's numbers is, once
+    await eng.db.admin.query("UPDATE activities SET hr = '[[1,90],[2,95]]' WHERE id = $1", [climb]);
+    expect(await ids()).not.toContain(climb);
+    expect(await ids({ band: "1" })).toContain(climb);
+    // not covered yet: nothing taken, and asked about again
+    expect(await ranges([{ kind: "activity", id: climb, covered: false, bandFields: true, distanceM: 300 }])).toMatchObject({ band: 0 });
+    expect(await act(climb)).toMatchObject({ bandDistanceM: null, bandAt: null });
+    // an older app's answer (no bandFields) takes nothing either
+    await ranges([{ kind: "activity", id: climb, covered: true, distanceM: 300 }]);
+    expect((await act(climb)).bandAt).toBeNull();
+    expect(await ranges([{ kind: "activity", id: climb, covered: true, bandFields: true, distanceM: 812.4, activeKcal: 402.6, elevationM: 145.2, floors: 48 }]))
+      .toMatchObject({ band: 1 });
+    expect(await act(climb)).toMatchObject({ distanceM: null, elevationM: null, calories: null, bandDistanceM: 812.4, bandKcal: 403, bandElevationM: 145.2, bandFloors: 48 });
+    expect(await ids({ band: "1" })).not.toContain(climb);
+    // the same again changes nothing; a value that can't be is left out rather than failing the read
+    expect(await ranges([{ kind: "activity", id: climb, covered: true, bandFields: true, distanceM: 812.4, activeKcal: 402.6, elevationM: 145.2, floors: 48 }])).toMatchObject({ band: 0 });
+    expect(await ranges([{ kind: "activity", id: climb, covered: true, bandFields: true, distanceM: -5, activeKcal: 402.6, elevationM: 145.2, floors: 48 }])).toMatchObject({ band: 1 });
+    expect((await act(climb)).bandDistanceM).toBeNull();
+  });
+
+  it("never puts the band's numbers over a GPS or typed distance and climb", async () => {
+    const route = [[52.5, 13.4, 1757757600, 30], [52.51, 13.41, 1757758800, 60], [52.52, 13.42, 1757760000, 40]];
+    run = (await call("POST", "/activities", { type: "run", startedAt: "2026-09-13T10:00:00Z", endedAt: "2026-09-13T10:40:00Z", route, source: "gps" })).id;
+    typed = (await call("POST", "/activities", { type: "run", startedAt: "2026-09-14T10:00:00Z", durationS: 1800, distanceM: 5000, source: "manual" })).id;
+    const before = await act(run);
+    expect(before.distanceM).toBeGreaterThan(0);
+    await ranges([{ kind: "activity", id: run, covered: true, bandFields: true, distanceM: 1234, elevationM: 99 },
+      { kind: "activity", id: typed, covered: true, bandFields: true, distanceM: 4800, activeKcal: 350 }]);
+    expect(await act(run)).toMatchObject({ distanceM: before.distanceM, elevationM: before.elevationM, bandDistanceM: 1234, bandElevationM: 99 });
+    expect(await act(typed)).toMatchObject({ distanceM: 5000, calories: null, bandDistanceM: 4800, bandKcal: 350 });
+    // editing the activity keeps the band's numbers beside it, and the person's distance stays theirs
+    await call("PUT", `/activities/${typed}`, { ...(await act(typed)), distanceM: 5100, route: null });
+    expect(await act(typed)).toMatchObject({ distanceM: 5100, bandDistanceM: 4800 });
+  });
+
+  it("stops asking about an activity the band never covered once it has settled", async () => {
+    const old = (await call("POST", "/activities", { type: "climbing", startedAt: "2026-09-20T10:00:00Z", endedAt: "2026-09-20T11:00:00Z", source: "manual" })).id;
+    await eng.db.admin.query("UPDATE activities SET hr = '[[1,90],[2,95]]' WHERE id = $1", [old]);
+    expect(await ids({ band: "1" })).toContain(old);
+    await ranges([{ kind: "activity", id: old, covered: false, bandFields: true }]);
+    expect(await ids({ band: "1" })).not.toContain(old);
+    expect(await act(old)).toMatchObject({ bandDistanceM: null });
   });
 });
