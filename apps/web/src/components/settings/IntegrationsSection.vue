@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Integrations: Health Connect on the Android app (a band through Gadgetbridge, a scale, a watch), personal API tokens
+// Integrations: Health Connect on the Android app (a watch, band or ring through its own app or Gadgetbridge, a scale), personal API tokens
 // (scripts, dashboards, Home Assistant), the address for automatic GPX uploads (FitoTrack, OpenTracks), and copying
 // workouts for an AI assistant.
 import { andList } from "@motus/shared";
@@ -13,9 +13,10 @@ import AppSelect from "../AppSelect.vue";
 import { toast } from "../../core/toast";
 import { useSettings, useHealthAvailable } from "../../api/queries";
 import { computed, onMounted, onBeforeUnmount, ref } from "vue";
-import { HEALTH_KINDS, healthSupported, healthStatus, connectHealth, openHealthSettings, syncHealth, healthAdded, lastSync, syncing, readEvery, setReadEvery, READ_EVERY, type HealthStatus, type HealthResult } from "../../native/health";
+import { HEALTH_KINDS, adviceWord, useDevice, healthSupported, healthStatus, connectHealth, openHealthSettings, syncHealth, healthAdded, lastSync, syncing, readEvery, setReadEvery, READ_EVERY, type HealthStatus, type HealthResult } from "../../native/health";
 
 const s = useSettings();
+const dev = useDevice();
 const avail = useHealthAvailable();
 // imports that exist while Health Connect is off here (a browser, another device) stay reachable
 const importsOnly = computed(() => !s.value.features.healthConnect && !!avail.data.value?.imports);
@@ -37,7 +38,7 @@ const hc = ref<HealthStatus | null>(null);
 const readHc = async () => { if (healthSupported() && s.value.features.healthConnect) hc.value = await healthStatus().catch(() => null); };
 onMounted(() => { void readHc(); document.addEventListener("visibilitychange", readHc); });
 onBeforeUnmount(() => document.removeEventListener("visibilitychange", readHc));
-const KIND_NAMES: Record<string, string> = { steps: "steps", sleep: "sleep", weight: "weight", sessions: "workouts", heartRate: "heart rate", restingHr: "resting heart rate", spo2: "blood oxygen", hrv: "HRV", respiratoryRate: "breathing rate", distance: "distance", activeKcal: "active calories", bodyFat: "body fat", hydration: "water", vo2max: "VO2 max" };
+const KIND_NAMES: Record<string, string> = { steps: "steps", sleep: "sleep", weight: "weight", sessions: "workouts", heartRate: "heart rate", restingHr: "resting heart rate", spo2: "blood oxygen", hrv: "HRV", respiratoryRate: "breathing rate", distance: "distance", activeKcal: "active calories", bodyFat: "body fat", hydration: "water", vo2max: "VO2 max", elevation: "climb", floors: "floors" };
 const allowed = computed(() => {
   const names = (hc.value?.granted ?? []).map((k) => KIND_NAMES[k]).filter(Boolean) as string[];
   return andList(names);
@@ -105,7 +106,7 @@ const lastText = computed(() => lastSync.value ? `${fmt.value.date(lastSync.valu
           <button v-else-if="connected" class="btn o s" @click="changeAccess">Change</button></div>
         <div v-if="s.features.healthConnect && missing.length" class="li"><div class="grow"><div class="t">Not allowed yet</div><div class="s">{{ missingText }}</div></div>
           <button class="btn s" @click="connect">Allow</button></div>
-        <div v-if="s.features.healthConnect && connected" class="li"><div class="grow"><div class="t">How often</div><div class="s">While Motus is open; new data comes only when Gadgetbridge syncs with your band</div></div>
+        <div v-if="s.features.healthConnect && connected" class="li"><div class="grow"><div class="t">How often</div><div class="s">While Motus is open; new data comes only when your {{ adviceWord(dev) }} syncs to Health Connect</div></div>
           <AppSelect :model-value="readEvery" :options="READ_EVERY" title="How often" style="width:auto" @update:model-value="setReadEvery" /></div>
         <div v-if="s.features.healthConnect && connected" class="li"><div class="grow"><div class="t">Last read</div><div class="s">{{ lastText }}</div></div></div>
         <div v-if="s.features.healthConnect && connected" class="li"><div class="grow"><div class="t">Import past data</div><div class="s">{{ pastText }}</div></div>
@@ -113,7 +114,7 @@ const lastText = computed(() => lastSync.value ? `${fmt.value.date(lastSync.valu
         <div class="li click" role="button" tabindex="0" @click="router.push('/settings/health')" @keydown.enter="router.push('/settings/health')"><div class="grow"><div class="t">Imported data</div><div class="s">Everything that came in, to correct or delete</div></div><Icon name="right" :size="16" class="muted" /></div>
       </div>
       <p v-if="importsOnly" class="tiny">{{ healthSupported() ? "Health Connect is switched off in Settings → Features; what it already brought in stays here." : "Connecting Health Connect happens in the Motus app for Android; what it already brought in stays here." }}</p>
-      <p v-else class="tiny">Motus reads what other apps wrote to Health Connect, such as a band connected through Gadgetbridge (its Settings → External integrations → Health Connect). It reads while the app is open, as often as chosen above, but sees only what is already there: Gadgetbridge writes when it syncs with the band, so reading more often than that brings nothing newer. Steps and sleep you type in yourself stay as they are.</p>
+      <p v-else class="tiny">Motus reads what other apps wrote to Health Connect: the app of your watch, band or ring, for example Gadgetbridge (its Settings → External integrations → Health Connect). It reads while the app is open, as often as chosen above, but sees only what is already there: your {{ adviceWord(dev) }}'s app writes when it syncs, so reading more often than that brings nothing newer. Steps and sleep you type in yourself stay as they are.</p>
     </template>
     <template v-if="s.features.apiTokens">
       <div class="sh" :class="{ first: !s.features.healthConnect && !importsOnly }"><h2>API tokens</h2><button class="lnk" @click="create">New token</button></div>

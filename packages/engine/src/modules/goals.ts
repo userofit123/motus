@@ -82,7 +82,10 @@ async function valueFor(q: Sql, g: Goal, w: Window, s: Settings, now: Date, tzMi
         JOIN workouts w ON w.id=we.workout_id JOIN exercises e ON e.id=we.exercise_id
         WHERE ${done} AND s.done AND s.kind<>'warmup' AND (e.primary_muscles && $3::text[] OR e.secondary_muscles && $3::text[])`, [...P, muscles]);
     }
-    case "activity_distance": return (await one(`SELECT coalesce(sum(distance_m),0) v FROM activities WHERE started_at >= $1 AND started_at < $2 AND ($3::text IS NULL OR type = $3)`, [...P, g.scopeId])) / 1000;
+    // only where the type tracks distance, as the app shows it (activityDistance in @motus/shared): a time only type's
+    // number left from before its type changed doesn't count
+    case "activity_distance": return (await one(`SELECT coalesce(sum(distance_m),0) v FROM activities a WHERE started_at >= $1 AND started_at < $2 AND ($3::text IS NULL OR type = $3)
+      AND (a.source = 'health_connect' OR a.route IS NOT NULL OR NOT EXISTS (SELECT 1 FROM activity_types t WHERE t.slug = a.type AND NOT t.has_distance AND NOT t.has_gps))`, [...P, g.scopeId])) / 1000;
     case "sessions": {
       const w = g.scopeId === null || g.scopeId === "workout" ? await one(`SELECT count(*) v FROM workouts w WHERE ${done}`, P) : 0;
       const a = g.scopeId === "workout" ? 0 : await one(`SELECT count(*) v FROM activities WHERE started_at >= $1 AND started_at < $2 AND ($3::text IS NULL OR type = $3)`, [...P, g.scopeId]);
@@ -188,8 +191,8 @@ async function goalLog(q: Sql, g: Goal, w: Window, tzMin: number): Promise<{ kin
     `SELECT w.id, w.name, w.started_at, extract(epoch FROM w.ended_at - w.started_at) - w.paused_s AS dur FROM workouts w WHERE ${done} ${extra} ORDER BY w.started_at DESC LIMIT 60`, [...P, ...params]))
     .rows.map((r: any) => ({ kind: "workout", id: r.id, name: r.name, at: r.started_at, durationS: r.dur == null ? null : Math.round(Number(r.dur)) }));
   const acts = async (type: string | null) => (await q.query(
-    `SELECT id, type, name, started_at, duration_s, distance_m FROM activities WHERE started_at >= $1 AND started_at < $2 AND ($3::text IS NULL OR type = $3) ORDER BY started_at DESC LIMIT 60`, [...P, type]))
-    .rows.map((r: any) => ({ kind: "activity", id: r.id, name: r.name ?? "", type: r.type, at: r.started_at, durationS: r.duration_s, distanceM: r.distance_m == null ? null : Number(r.distance_m) }));
+    `SELECT id, type, name, started_at, duration_s, distance_m, source, route IS NOT NULL AS has_route FROM activities WHERE started_at >= $1 AND started_at < $2 AND ($3::text IS NULL OR type = $3) ORDER BY started_at DESC LIMIT 60`, [...P, type]))
+    .rows.map((r: any) => ({ kind: "activity", id: r.id, name: r.name ?? "", type: r.type, at: r.started_at, durationS: r.duration_s, distanceM: r.distance_m == null ? null : Number(r.distance_m), source: r.source, hasRoute: r.has_route }));
   const both = (a: any[], b: any[]) => [...a, ...b].sort((x, y) => String(y.at).localeCompare(String(x.at))).slice(0, 60);
   switch (g.metric) {
     case "workouts": case "volume": return wk();

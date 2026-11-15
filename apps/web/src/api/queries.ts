@@ -1,7 +1,7 @@
 // Every screen's data, filed under a topic (the first part of the key) so live updates know what to reload.
 import { computed, type Ref, unref, watch, type MaybeRef } from "vue";
 import { useQuery, useMutation, useInfiniteQuery, type QueryClient } from "@tanstack/vue-query";
-import { withDefaults, type Settings, type Exercise, type RoutineSummary, type Goal, type Me, type Program, type GoalMetric, type HomeData } from "@motus/shared";
+import { withDefaults, type Settings, type Exercise, type RoutineSummary, type Goal, type Me, type Program, type GoalMetric, type HomeData, type ActivityType, type ActivityFigures, activityDistance, activityClimb } from "@motus/shared";
 import { api, httpTransport } from "./client";
 import { sync } from "./replica";
 import { endedHere } from "./outbox";
@@ -49,6 +49,16 @@ export const useActivityTypes = () => useQuery({ queryKey: ["activities", "types
 export function useTypeName() {
   const types = useActivityTypes();
   return (slug: string | null | undefined) => { const s = slug || "activity"; return (types.data.value as { slug: string; name: string }[] | undefined)?.find((t) => t.slug === s)?.name ?? s.charAt(0).toUpperCase() + s.slice(1); };
+}
+/** An activity's own distance (metres) and climb where its type tracks them, else null (activityDistance in
+ *  @motus/shared): the one rule for every list, tile and sum that shows or adds up an activity's distance or pace. */
+export function useActivityFigures() {
+  const types = useActivityTypes();
+  const typeOf = (slug: string | null | undefined) => (types.data.value as ActivityType[] | undefined)?.find((t) => t.slug === slug);
+  return {
+    dist: (a: ActivityFigures & { type?: string | null }) => activityDistance(a, typeOf(a.type)),
+    climb: (a: ActivityFigures & { type?: string | null }) => activityClimb(a, typeOf(a.type)),
+  };
 }
 export const useBody = (kind?: string) => useQuery({ queryKey: ["body", kind ?? "all"], queryFn: () => api.get("/body", { kind }) });
 export const useSchedules = () => useQuery({ queryKey: ["schedules"], queryFn: () => api.get("/schedules") });

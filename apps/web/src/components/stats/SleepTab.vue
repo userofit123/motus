@@ -11,6 +11,7 @@ import { useSleep, useSettings, type SleepNight } from "../../api/queries";
 import { useFmt, localYmd } from "../../core/format";
 import { STAGES, NO_STAGES_COLOR, NO_STAGES_SWATCH, SHORT_COLOR, SHORT_WHY, hasStages, isFull, asleepMin, inBedMin, efficiency, nightMin, nightIso, mins, typical } from "../../core/sleep";
 import Icon from "../Icon.vue";
+import { adviceWord, useDevice } from "../../native/health";
 import BarChart from "../BarChart.vue";
 import LineChart from "../LineChart.vue";
 import Sparkline from "../Sparkline.vue";
@@ -22,6 +23,7 @@ import NightSheet from "./NightSheet.vue";
 const props = defineProps<{ from: Date | null; to: Date | null; daily: { date: string; kind: string; value: number | string }[] }>();
 const fmt = useFmt();
 const s = useSettings();
+const dev = useDevice();
 // the API's days: from the period's first, up to (not including) the day after it
 const range = computed(() => ({ ...(props.from ? { from: ymd(props.from) } : {}), ...(props.to ? { to: ymd(props.to) } : {}) }));
 const q = useSleep(range);
@@ -195,7 +197,7 @@ const open = ref<string | null>(null);
       <div v-if="!isFull(last)" class="tiny sl-line">{{ SHORT_WHY }}</div>
     </div>
 
-    <div v-if="!days.length" class="card empty"><Icon name="moon" :size="34" /><b>No sleep in this period</b>Pick a longer period, or wear your band to bed.</div>
+    <div v-if="!days.length" class="card empty"><Icon name="moon" :size="34" /><b>No sleep in this period</b>Pick a longer period, or wear your {{ adviceWord(dev) }} to bed.</div>
     <template v-else>
       <!-- the period's averages, as Overview's tiles -->
       <div class="grid g4" :class="tiles < 4 ? `n${tiles}` : ''">

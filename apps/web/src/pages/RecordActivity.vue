@@ -19,7 +19,7 @@ import ChoiceTiles from "../components/ChoiceTiles.vue";
 import { newActivityType } from "../core/activityTypes";
 import HeartRate from "../components/HeartRate.vue";
 import { useSettings } from "../api/queries";
-import { useLiveHr } from "../native/health";
+import { useLiveHr, useDevice, deviceWord } from "../native/health";
 
 const route = useRoute(), router = useRouter();
 const types = useActivityTypes();
@@ -55,6 +55,7 @@ const pace = computed(() => {
 // the band's heart rate while recording (Android app, Health Connect on): a tile from the first reading on (so the tiles
 // don't move when one goes stale), and the line so far under them
 const settings = useSettings();
+const dev = useDevice();
 const hr = useLiveHr(() => (rec.value ? new Date(rec.value.startedAt).toISOString() : null), () => !!rec.value && !!settings.value.features.healthConnect);
 const hrLatest = hr.latest, hrSamples = hr.samples;
 const busy = ref(false);
@@ -80,7 +81,7 @@ await loaded(types, active);
       <div v-if="gps" class="card stat"><div class="lbl">Distance</div><div class="val">{{ fmt.num(fmt.distNum(recDistM), 2) }}<small>{{ fmt.du }}</small></div></div>
       <div v-if="gps" class="card stat"><div class="lbl">{{ ride ? "Speed" : "Pace" }}</div><div class="val">{{ pace ?? "-" }}<small v-if="pace">{{ ride ? `${fmt.du}/h` : `/${fmt.du}` }}</small></div></div>
       <div v-if="onFoot" class="card stat"><div class="lbl">Steps</div><div class="val">{{ stepsCounting ? fmt.num(rec!.steps, 0) : "-" }}</div><div v-if="stepsNote" class="sub">{{ stepsNote }}</div></div>
-      <div v-if="hrSamples.length" class="card stat"><div class="lbl">Heart rate</div><div class="val">{{ hrLatest ? hrLatest.bpm : "-" }}<small v-if="hrLatest">bpm</small></div><div class="sub">{{ hrLatest ? hrLatest.ago : "Waiting for the band" }}</div></div>
+      <div v-if="hrSamples.length" class="card stat"><div class="lbl">Heart rate</div><div class="val">{{ hrLatest ? hrLatest.bpm : "-" }}<small v-if="hrLatest">bpm</small></div><div class="sub">{{ hrLatest ? hrLatest.ago : `Waiting for your ${deviceWord(dev)}` }}</div></div>
     </div>
     <HeartRate v-if="hrSamples.length > 1" chart class="spt" :hr="hrSamples" />
     <div class="row spt" style="justify-content:center">

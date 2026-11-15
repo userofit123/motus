@@ -4,7 +4,7 @@
 import { computed } from "vue";
 import { useRouter } from "vue-router";
 import { fromM, bodyName, type Goal } from "@motus/shared";
-import { useGoalDetail, useSettings, useActivityTypes, useTypeName } from "../api/queries";
+import { useGoalDetail, useSettings, useActivityTypes, useTypeName, useActivityFigures } from "../api/queries";
 import { useFmt, goalLabel } from "../core/format";
 import { onHome, streakOnHome, toggleHomeGoal, setHomeStreak, periodWord, periodNow, goalSub } from "../core/goals";
 import Sheet from "./Sheet.vue";
@@ -18,6 +18,8 @@ const props = defineProps<{ id: string }>();
 const emit = defineEmits<{ close: []; edit: [Goal]; status: [Goal, string]; delete: [Goal] }>();
 const router = useRouter();
 const fmt = useFmt();
+// an activity's distance only where its type tracks it, as its page shows it (and the goal counts it)
+const figures = useActivityFigures();
 const s = useSettings();
 const types = useActivityTypes();
 const typeName = useTypeName();
@@ -39,7 +41,7 @@ const right = (x: any) => {
   if (x.kind === "body") return show(x.value) + " " + (g.value?.progress?.unit === "kg" ? fmt.value.wu : g.value?.progress?.unit === "cm" ? fmt.value.lu : "%");
   if (x.kind === "day") return g.value?.progress?.unit === "h" ? showU(x.value) : fmt.value.num(x.value, 0);
   if (x.value != null) return show(x.value) + (g.value?.progress?.unit === "kg" ? ` ${fmt.value.wu}` : "");
-  return [x.durationS ? fmt.value.dur(x.durationS, true) : "", x.distanceM ? `${fmt.value.num(fmt.value.distNum(x.distanceM), 1)} ${fmt.value.du}` : ""].filter(Boolean).join(" · ");
+  return [x.durationS ? fmt.value.dur(x.durationS, true) : "", figures.dist(x) ? `${fmt.value.num(fmt.value.distNum(figures.dist(x)!), 1)} ${fmt.value.du}` : ""].filter(Boolean).join(" · ");
 };
 const open = (x: any) => { if (x.kind === "workout" && x.id) router.push(`/workouts/${x.id}`); else if (x.kind === "activity") router.push(`/activities/${x.id}`); else if (x.kind === "body") router.push("/body"); else return; emit("close"); };
 const menu = computed(() => !g.value ? [] : [

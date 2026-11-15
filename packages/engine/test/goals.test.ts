@@ -340,3 +340,17 @@ describe("sleep goals", () => {
     expect(g.progress.history.at(-1).value).toBe(0);
   });
 });
+
+describe("activity distance goals", () => {
+  it("count only where the type tracks distance, as the app shows it", async () => {
+    const slug = (await call("POST", "/activity-types", { name: "Balance drills", hasDistance: false, hasGps: false })).slug;
+    const at = new Date(Date.now() - 60000).toISOString();
+    await call("POST", "/activities", { type: "walk", startedAt: at, durationS: 30, distanceM: 2000, source: "manual" });
+    // a number left from before the type changed (typed under Walk, then switched to a time only type)
+    await call("POST", "/activities", { type: slug, startedAt: at, durationS: 30, distanceM: 3000, source: "manual" });
+    const walk = (await call("POST", "/goals", { metric: "activity_distance", scopeId: "walk", target: 30, period: "month" })).id;
+    const stretch = (await call("POST", "/goals", { metric: "activity_distance", scopeId: slug, target: 30, period: "month" })).id;
+    expect((await goal(walk)).progress.current).toBe(2);
+    expect((await goal(stretch)).progress.current).toBe(0);
+  });
+});

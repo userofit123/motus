@@ -91,7 +91,16 @@ export interface Settings {
   noteTags: string[];
   /** the interval timer's saved setups (feature "intervalTimer"); empty: the starting ones are offered */
   intervals: IntervalPreset[];
+  /** the kind of watch, band or ring whose numbers Health Connect brought in last (POST /health/import learns it from
+   *  the phone), so screens say "your watch" or "your ring" rather than "your band"; null: not known (none yet, or a
+   *  device that doesn't say, such as many through Gadgetbridge), and the screens use a neutral word */
+  wornDevice: WornDevice | null;
 }
+
+export const WORN_DEVICES = ["watch", "band", "ring", "chestStrap"] as const;
+export type WornDevice = (typeof WORN_DEVICES)[number];
+/** A worn device's kind made safe (it comes from the phone and syncs from any device): unknown kinds are null. */
+export const cleanWornDevice = (v: unknown): WornDevice | null => (WORN_DEVICES as readonly unknown[]).includes(v) ? (v as WornDevice) : null;
 
 export interface HomeBlock { id: string; on: boolean }
 /** Every Home block, in the default order; `on` is whether a new account sees it. Blocks tied to a feature, or that only
@@ -167,6 +176,7 @@ export const DEFAULT_SETTINGS: Settings = {
   activeGym: null,
   noteTags: NOTE_TAGS_DEFAULT,
   intervals: [],
+  wornDevice: null,
 };
 
 /** Deep-merges saved settings over the defaults, so new settings get their default value. */
@@ -188,6 +198,7 @@ export function withDefaults(saved: unknown): Settings {
   // synced from any device, so made safe here before a screen or the timer uses them
   out.intervals = cleanIntervalPresets(out.intervals);
   out.goalsOrder = cleanGoalsOrder(out.goalsOrder);
+  out.wornDevice = cleanWornDevice(out.wornDevice);
   // the older Home's section list (and its list of cards before that) belonged to a different set of blocks: dropped, so
   // everyone starts from the new layout
   const { cards: _c, sections: _s, ...home } = out.home as Settings["home"] & { cards?: unknown; sections?: unknown };

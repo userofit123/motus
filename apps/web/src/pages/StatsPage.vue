@@ -5,11 +5,11 @@
 import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { GROUPS, muscleName, weekStartOf, weekStartDate, daysIntoWeek, weekdayOrder, statsPeriod, STATS_PERIODS, ymd, type StatsPeriod, WEEKLY_SET_RANGE, num, percentChange } from "@motus/shared";
-import { useStats, useSettings, useAchievements, useGoals, useHealthAvailable, useTypeName, loaded } from "../api/queries";
+import { useStats, useSettings, useAchievements, useGoals, useHealthAvailable, useTypeName, useActivityFigures, loaded } from "../api/queries";
 import { useFmt, localYmd, activityIcon } from "../core/format";
 import { startOpen } from "../core/ui";
 import { useStepGoal } from "../core/goals";
-import { fromWhere } from "../native/health";
+import { fromWhere, useDevice } from "../native/health";
 const stepGoal = useStepGoal();
 import Icon from "../components/Icon.vue";
 import DotLine from "../components/DotLine.vue";
@@ -28,6 +28,7 @@ import HeartTab from "../components/stats/HeartTab.vue";
 
 const route = useRoute(), router = useRouter();
 const s = useSettings();
+const dev = useDevice();
 const fmt = useFmt();
 const tab = ref(String(route.query.tab ?? "overview"));
 watch(tab, (t) => router.replace({ query: t === "overview" ? {} : { tab: t } }));
@@ -56,10 +57,12 @@ const avail = useHealthAvailable();
 const TABS = computed(() => [["overview", "Overview"], ["routines", "Routines"], ["exercises", "Exercises"], ["muscles", "Muscles"], ["activities", "Activities"],
   ...(avail.data.value?.sleep ? [["sleep", "Sleep"]] : []), ...(avail.data.value?.heart ? [["heart", "Heart"]] : []), ...(s.value.features.reports ? [["reports", "Reports"]] : []), ...(s.value.features.achievements ? [["achievements", "Achievements"]] : [])]);
 
+// an activity's distance only where its type tracks it, as its page shows it
+const figures = useActivityFigures(), distOf = (a: any) => figures.dist(a) ?? 0;
 const totals = (x: any) => x ? {
   workouts: x.workouts.length, timeS: x.workouts.reduce((a: number, w: any) => a + w.durationS, 0) + x.activities.reduce((a: number, w: any) => a + w.durationS, 0),
   volumeKg: x.workouts.reduce((a: number, w: any) => a + w.volumeKg, 0), sets: x.workouts.reduce((a: number, w: any) => a + w.sets, 0),
-  activities: x.activities.length, distM: x.activities.reduce((a: number, w: any) => a + Number(w.distanceM ?? 0), 0),
+  activities: x.activities.length, distM: x.activities.reduce((a: number, w: any) => a + distOf(w), 0),
   days: new Set([...x.workouts, ...x.activities].map((w: any) => localYmd(new Date(w.startedAt)))).size,
 } : null;
 const T = computed(() => totals(d.value)), P = computed(() => totals(p.value));
@@ -117,10 +120,10 @@ const pickMuscle = (m: string) => { mSel.value = !mSel.value?.tier && mSel.value
 const pickTier = (t: number, ms: string[]) => { mSel.value = mSel.value?.tier === t ? null : { tier: t, muscles: ms }; };
 const neglected = computed(() => GROUPS.filter((g) => g.id !== "neck" && g.muscles.every((m) => !(d.value?.muscles?.[m]))).map((g) => g.name));
 // activities
-const actTypes = computed(() => { const m = new Map<string, any>(); for (const a of d.value?.activities ?? []) { const x = m.get(a.type) ?? { type: a.type, n: 0, s: 0, m: 0, ps: 0 }; x.n++; x.s += a.durationS; x.m += Number(a.distanceM ?? 0);
+const actTypes = computed(() => { const m = new Map<string, any>(); for (const a of d.value?.activities ?? []) { const x = m.get(a.type) ?? { type: a.type, n: 0, s: 0, m: 0, ps: 0 }; x.n++; x.s += a.durationS; x.m += distOf(a);
     // pace as the activity page shows it: moving time where known, else total, over the sessions that have a distance
-    if (a.distanceM) x.ps += a.movingS || a.durationS; m.set(a.type, x); } return [...m.values()].sort((a, b) => b.n - a.n); });
-const actWeeks = computed(() => weeks.value.map((w) => ({ week: w.week, label: wlabel(w.week), value: (d.value?.activities ?? []).filter((a: any) => weekStartOf(new Date(a.startedAt), s.value.firstDay) === w.week).reduce((t: number, a: any) => t + Number(a.distanceM ?? 0), 0) / (fmt.value.du === "km" ? 1000 : 1609.344) })));
+    if (distOf(a)) x.ps += a.movingS || a.durationS; m.set(a.type, x); } return [...m.values()].sort((a, b) => b.n - a.n); });
+const actWeeks = computed(() => weeks.value.map((w) => ({ week: w.week, label: wlabel(w.week), value: (d.value?.activities ?? []).filter((a: any) => weekStartOf(new Date(a.startedAt), s.value.firstDay) === w.week).reduce((t: number, a: any) => t + distOf(a), 0) / (fmt.value.du === "km" ? 1000 : 1609.344) })));
 const steps = computed(() => (d.value?.daily ?? []).filter((x: any) => x.kind === "steps").map((x: any) => ({ x: new Date(x.date).getTime(), y: Number(x.value) })));
 // a band's whole-day distance and active calories (Health Connect), each only when it has data in the period: the day's
 // total, so recorded activities are already in it and aren't added on top
@@ -131,9 +134,9 @@ const bandKcal = computed(() => dayPts("active_kcal", (v) => Math.round(v)));
 // the chart says where the steps came from only when every plotted day's did: not typed (manual, or no source on old
 // rows) and not the recorded activities' count. "your band" when a band counted every one of them, else "Health Connect"
 const stepsFrom = computed(() => { const r = (d.value?.daily ?? []).filter((x: any) => x.kind === "steps");
-  return r.length > 0 && r.every((x: any) => x.source != null && x.source !== "manual" && x.source !== "activities") ? fromWhere(r.every((x: any) => x.worn !== false)) : ""; });
+  return r.length > 0 && r.every((x: any) => x.source != null && x.source !== "manual" && x.source !== "activities") ? fromWhere(r.every((x: any) => x.worn !== false), dev.value) : ""; });
 // the same for the day totals' charts (only ever from Health Connect)
-const totalsFrom = (kind: string) => fromWhere((d.value?.daily ?? []).filter((x: any) => x.kind === kind && inPeriod(x)).every((x: any) => x.worn !== false));
+const totalsFrom = (kind: string) => fromWhere((d.value?.daily ?? []).filter((x: any) => x.kind === kind && inPeriod(x)).every((x: any) => x.worn !== false), dev.value);
 const avgOf = (pts: { y: number }[]) => pts.reduce((t, p) => t + p.y, 0) / Math.max(1, pts.length);
 // show the page once its data is in, all at once
 await loaded(st, prev, ach, avail);

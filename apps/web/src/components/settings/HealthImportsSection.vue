@@ -19,7 +19,7 @@ import Icon from "../Icon.vue";
 import Menu, { type MenuItem } from "../Menu.vue";
 import SessionStats from "../SessionStats.vue";
 import Sheet from "../Sheet.vue";
-import { canStepSources, stepSources, sourceName, type StepSources, type StepSource } from "../../native/health";
+import { canStepSources, stepSources, sourceName, adviceWord, useDevice, type StepSources, type StepSource } from "../../native/health";
 
 interface Item {
   key: string; kind: "steps" | "sleep" | "weight" | "resting_hr" | "spo2" | "hrv" | "distance" | "active_kcal" | "body_fat" | "water" | "vo2max" | "activity"; date: string; at: string | null; value: number | null;
@@ -30,6 +30,7 @@ interface Item {
 type Page = { items: Item[]; cursor: string | null };
 const router = useRouter();
 const fmt = useFmt();
+const dev = useDevice();
 const types = useActivityTypes();
 // filed under "health", which every import, edit and delete announces
 const q = useInfiniteQuery({
@@ -104,7 +105,9 @@ async function loadOrigin(day: string, kept: number | null) {
   try { const data = await stepSources(day); if (origin.value?.day === day) origin.value.data = data; }
   catch (e) { if (origin.value?.day === day) origin.value.error = (e as Error)?.message || "Health Connect could not be read"; }
 }
-const srcSub = (s: StepSource) => s.band ? `Counted by the ${s.device === "watch" ? "watch" : s.device === "ring" ? "ring" : "band"}` : s.phone ? "Counted by the phone" : "Another app";
+// the kind the source's records name ("chest strap" from an older build); a band app that names none (Gadgetbridge often)
+const WORN_NAMES: Record<string, string> = { watch: "the watch", band: "the band", ring: "the ring", "chest strap": "the chest strap", chestStrap: "the chest strap" };
+const srcSub = (s: StepSource) => s.band ? `Counted by ${WORN_NAMES[s.device] ?? "the device you wear"}` : s.phone ? "Counted by the phone" : "Another app";
 const originDay = (d: string) => { const n = dayName(d); return n === "Today" || n === "Yesterday" ? n.toLowerCase() : n; };
 // the band first, then the rest by count
 const srcList = (d: StepSources) => [...d.sources].sort((a, b) => Number(b.band) - Number(a.band) || b.steps - a.steps);
@@ -129,14 +132,14 @@ const menu = (x: Item): MenuItem[] => [
       <div v-for="x in d.items" :key="x.key" class="li click" role="button" tabindex="0" @click="edit(x)" @keydown.enter.self="edit(x)">
         <span class="bi sg"><Icon :name="icon(x)" :size="16" /></span>
         <div class="grow"><div class="t">{{ title(x) }}<span v-if="x.edited" class="mchip hi-chip">Edited</span></div><div v-if="sub(x)" class="s">{{ sub(x) }}</div></div>
-        <SessionStats v-if="x.kind === 'activity' && x.activity" :x="{ kind: 'activity', durationS: x.activity.durationS, distanceM: x.activity.distanceM, steps: x.activity.steps }" />
+        <SessionStats v-if="x.kind === 'activity' && x.activity" :x="{ kind: 'activity', durationS: x.activity.durationS, distanceM: x.activity.distanceM, steps: x.activity.steps, type: x.activity.type, source: 'health_connect' }" />
         <b v-else class="num">{{ value(x) }}</b>
         <span @click.stop><Menu :items="menu(x)" :label="`Options for ${title(x)}`" /></span>
       </div>
     </div></div>
   </template>
   <Sheet v-if="origin" title="Where these steps came from" @close="origin = null">
-    <p class="muted hgap">Steps each app saved to Health Connect for {{ originDay(origin.day) }}. When a band counted, Motus uses only the band's total.</p>
+    <p class="muted hgap">Steps each app saved to Health Connect for {{ originDay(origin.day) }}. When your {{ adviceWord(dev) }} counted, Motus uses only its total.</p>
     <div v-if="origin.error" class="empty sm"><b>Couldn't read Health Connect</b>{{ origin.error }}<br /><button class="btn tonal" @click="loadOrigin(origin.day, origin.kept)">Try again</button></div>
     <div v-else-if="!origin.data" class="empty sm">Reading Health Connect…</div>
     <div v-else-if="!origin.data.sources.length && origin.kept" class="empty sm"><b>No longer in Health Connect</b>Motus can't read this day from Health Connect any more. It kept the {{ fmt.num(origin.kept, 0) }} steps it read before.</div>
@@ -152,7 +155,7 @@ const menu = (x: Item): MenuItem[] => [
       <!-- the sum under the apps, set apart by a line; less than the rows added up when two apps counted the same steps -->
       <div class="li hc-tot">
         <span class="bi sg"><Icon name="layers" :size="16" /></span>
-        <div class="grow"><div class="t">Health Connect's total<span v-if="!origin.data.used" class="mchip hi-chip">Used</span></div><div class="s">{{ origin.data.sources.length > 1 ? "Steps two apps both counted are only counted once" : origin.data.used ? "All apps together" : "No band counted this day" }}</div></div>
+        <div class="grow"><div class="t">Health Connect's total<span v-if="!origin.data.used" class="mchip hi-chip">Used</span></div><div class="s">{{ origin.data.sources.length > 1 ? "Steps two apps both counted are only counted once" : origin.data.used ? "All apps together" : `No ${adviceWord(dev)} counted this day` }}</div></div>
         <b class="num">{{ fmt.num(origin.data.total, 0) }}</b>
       </div>
     </template>

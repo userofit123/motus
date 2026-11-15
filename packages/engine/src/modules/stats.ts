@@ -96,7 +96,7 @@ export function statsRoutes(r: Router) {
     const from = qs.from || "1970-01-01";
     const workouts = await workoutRows(ctx.q, from, to);
     const activities = (await ctx.q.query(
-      "SELECT id, type, name, started_at, duration_s, moving_s, distance_m, steps, elevation_m FROM activities WHERE started_at >= $1 AND started_at < $2 ORDER BY started_at", [from, to])).rows.map((x: any) => camel(x));
+      "SELECT id, type, name, started_at, duration_s, moving_s, distance_m, steps, elevation_m, source, route IS NOT NULL AS has_route FROM activities WHERE started_at >= $1 AND started_at < $2 ORDER BY started_at", [from, to])).rows.map((x: any) => camel(x));
     const exercises = await exerciseStats(ctx.q, from, to);
     const routines = new Map<string, any>();
     for (const w of workouts) {
@@ -207,7 +207,7 @@ export function statsRoutes(r: Router) {
        LEFT JOIN routines r ON m.target_type='routine' AND r.id = m.target_id WHERE m.status = 'pending' ORDER BY m.created_at DESC LIMIT 5`)).rows.map((x: any) => camel(x));
     const feed = [
       ...done.map((w) => ({ kind: "workout", ...w })),
-      ...(await ctx.q.query("SELECT id, type, name, started_at, duration_s, distance_m, steps FROM activities ORDER BY started_at DESC LIMIT 8")).rows.map((x: any) => ({ kind: "activity", ...camel<any>(x) })),
+      ...(await ctx.q.query("SELECT id, type, name, started_at, duration_s, distance_m, steps, source, route IS NOT NULL AS has_route FROM activities ORDER BY started_at DESC LIMIT 8")).rows.map((x: any) => ({ kind: "activity", ...camel<any>(x) })),
     ].sort((a: any, b: any) => b.startedAt.localeCompare(a.startedAt)).slice(0, 8);
     // the days (in the app's calendar) with a finished workout or an activity: the week strip
     const days = [...new Set([...rows.map((x) => dayIn(x.startedAt, tzMin)), ...acts.map((x: any) => dayIn(x.started_at, tzMin))])].sort();

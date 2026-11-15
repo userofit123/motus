@@ -25,7 +25,8 @@ import { uuidv7, isUuid } from "../ids";
 import { bad, notFound } from "../errors";
 import { ensureTypes, saveActivity, stepsByDay } from "./activities";
 import { dayIn } from "./achievements";
-import { isNight } from "@motus/shared";
+import { isNight, cleanWornDevice } from "@motus/shared";
+import { getSettings, saveSettings } from "./settings";
 
 export const HEALTH_SOURCE = "health_connect";
 // a band's number for an activity's time: a measure that can't be (below 0, absurdly large, not a number) is left out
@@ -412,6 +413,14 @@ export function healthRoutes(r: Router) {
       if (rows.length) out.hrDays++;
     }
 
+    // the kind of watch, band or ring behind the newest day it counted, so screens name it ("your watch"); an older app
+    // sends none, and a read without such a day says nothing new, so both leave the saved one. Saved only when it
+    // differs: a settings change on every read would reload every screen.
+    if (b.device && typeof b.device === "object") {
+      const kind = cleanWornDevice(b.device.kind);
+      if ((await getSettings(ctx.q, ctx.userId)).wornDevice !== kind) await saveSettings(ctx, { wornDevice: kind });
+    }
+
     if (touched || Object.values(out).some((n) => n > 0)) ctx.changed("health");
     return out;
   });
@@ -466,7 +475,7 @@ export function healthRoutes(r: Router) {
       }
       const a = (await ctx.q.query(
         `SELECT a.started_at, a.ended_at, a.source, a.steps, a.steps_source, a.steps_app, coalesce(t.has_steps, a.type IN ('walk', 'run', 'hike')) AS counts,
-           a.band_distance_m, a.band_kcal, a.band_elevation_m, a.band_floors
+           a.band_distance_m, a.band_kcal, a.band_elevation_m, a.band_floors, a.band_at
          FROM activities a LEFT JOIN activity_types t ON t.slug = a.type WHERE a.id = $1`, [e.id])).rows[0];
       if (!a?.ended_at) continue;
       // never over a count the person typed: changed by hand later ('manual'), or typed when the walk was logged by hand
@@ -496,9 +505,13 @@ export function healthRoutes(r: Router) {
           const v = [bandNum(e.distanceM, 1e6), bandNum(e.activeKcal, 1e5), bandNum(e.elevationM, 1e5), bandNum(e.floors, 1e4)];
           const kcal = v[1] == null ? null : Math.round(v[1]);
           const had = [a.band_distance_m, a.band_kcal, a.band_elevation_m, a.band_floors].map((x) => (x == null ? null : Number(x)));
-          await ctx.q.query("UPDATE activities SET band_distance_m = $2, band_kcal = $3, band_elevation_m = $4, band_floors = $5, band_at = $6 WHERE id = $1",
-            [e.id, v[0], kcal, v[2], v[3], ctx.now().toISOString()]);
-          if (had[0] !== v[0] || had[1] !== kcal || had[2] !== v[2] || had[3] !== v[3]) { out.band++; acts = true; }
+          const differs = had[0] !== v[0] || had[1] !== kcal || had[2] !== v[2] || had[3] !== v[3];
+          // an activity still listed for its heart rate comes back on every read: the same numbers again change nothing
+          // (no new band_at, no row to sync)
+          if (differs || a.band_at == null)
+            await ctx.q.query("UPDATE activities SET band_distance_m = $2, band_kcal = $3, band_elevation_m = $4, band_floors = $5, band_at = $6 WHERE id = $1",
+              [e.id, v[0], kcal, v[2], v[3], ctx.now().toISOString()]);
+          if (differs) { out.band++; acts = true; }
         } else if (ctx.now().getTime() - new Date(a.ended_at).getTime() > SETTLED_MS)
           await ctx.q.query("UPDATE activities SET band_at = $2 WHERE id = $1 AND band_at IS NULL", [e.id, ctx.now().toISOString()]);
       }

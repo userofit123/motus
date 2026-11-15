@@ -3,14 +3,15 @@
 // typed values and never adds the same thing twice. Read while the app is on screen, as often as Settings → Integrations
 // → Read Health Connect says (this phone's choice), on pull to refresh, and from Settings → Integrations by hand.
 import { computed, onScopeDispose, ref, shallowRef, watch, type Ref } from "vue";
-import { TOPICS } from "@motus/shared";
+import { TOPICS, cleanWornDevice, type WornDevice } from "@motus/shared";
 import { api } from "../api/client";
-import { invalidate } from "../api/live";
+import { invalidate, queryClient } from "../api/live";
+import { useSettings, type SettingsMe } from "../api/queries";
 import { readJson, writeJson, readStr, writeStr } from "../core/prefs";
 import { accounts } from "./accounts";
 
 /** Everything the plugin asks Health Connect for: someone who allowed an earlier version lacks the kinds added since */
-export const HEALTH_KINDS = ["steps", "sleep", "weight", "sessions", "heartRate", "restingHr", "spo2", "hrv", "respiratoryRate", "distance", "activeKcal", "bodyFat", "hydration", "vo2max"] as const;
+export const HEALTH_KINDS = ["steps", "sleep", "weight", "sessions", "heartRate", "restingHr", "spo2", "hrv", "respiratoryRate", "distance", "activeKcal", "bodyFat", "hydration", "vo2max", "elevation", "floors"] as const;
 type Kind = (typeof HEALTH_KINDS)[number];
 // history: Motus may read further back than 30 days; historyAvailable: this phone's Health Connect can allow that at all
 // (someone who allowed Motus before past data could be asked for has historyAvailable but not history until connect() again)
@@ -27,6 +28,9 @@ export interface HealthData {
   sleepNights?: unknown[]; distance?: { date: string; value: number; worn?: boolean }[]; activeKcal?: { date: string; value: number; worn?: boolean }[];
   // body fat, water drunk, VO2 max and each day's heart rate: passed on as they come, absent from an older app build
   bodyFat?: unknown[]; hydration?: unknown[]; vo2max?: unknown[]; hrDays?: unknown[];
+  // the watch, band or ring behind the newest day one counted (kind: watch, band, ring, chestStrap or unknown; name: its
+  // maker and model when Health Connect has them); the engine keeps the kind (settings.wornDevice); absent from an older build
+  device?: { kind: string; name?: string };
 }
 /** What POST /health/import added, and ranges: what POST /health/ranges filled in on activities and workouts recorded in
  *  Motus (the band's steps, its heart rate) */
@@ -43,9 +47,9 @@ export function healthAdded(r: HealthResult): string {
     r.distance && `${many(r.distance, "day", "days")} of distance`, r.activeKcal && `${many(r.activeKcal, "day", "days")} of active calories`,
     r.bodyFat && `${r.bodyFat} body fat ${r.bodyFat === 1 ? "entry" : "entries"}`, r.hydration && `${many(r.hydration, "day", "days")} of water`,
     r.vo2max && `${many(r.vo2max, "day", "days")} of VO2 max`,
-    r.ranges?.steps && `${many(r.ranges.steps, "activity", "activities")} with band steps`,
+    r.ranges?.steps && `${many(r.ranges.steps, "activity", "activities")} with ${deviceWord(deviceNow())} steps`,
     r.ranges?.hr && `${many(r.ranges.hr, "session", "sessions")} with heart rate`,
-    r.ranges?.band && `${many(r.ranges.band, "activity", "activities")} with data from ${fromWhere(true)}`].filter(Boolean).join(", ");
+    r.ranges?.band && `${many(r.ranges.band, "activity", "activities")} with data from ${fromWhere(true, deviceNow())}`].filter(Boolean).join(", ");
 }
 type Range = { kind: "activity" | "workout"; id: string; start: string; end: string };
 type RangeResult = { kind: "activity" | "workout"; id: string; steps?: number; covered: boolean; bandOnly?: boolean; hr?: [number, number][]; bandFields?: boolean };
@@ -73,9 +77,20 @@ export function sourceName(s: StepSource, phoneName?: string): string {
   return APP_NAMES.find(([p]) => s.app === p || s.app.startsWith(p + "."))?.[1] ?? s.label ?? s.app;
 }
 
-/** Where a day's steps, distance or active calories came from, in words: "your band" when a band, watch or ring counted
- *  it (worn; a value from before Motus knew, or from an older app, counts as one), else "Health Connect" */
-export const fromWhere = (worn: boolean | undefined) => (worn === false ? "Health Connect" : "your band");
+/** The worn device in words, by the kind Health Connect last named (settings.wornDevice): "watch", "band", "ring",
+ *  "chest strap", or "device" when it isn't known (none yet, or one that doesn't say, as many through Gadgetbridge) */
+export const deviceWord = (k: WornDevice | null | undefined) => (k === "chestStrap" ? "chest strap" : k ?? "device");
+/** The same for advice ("wear your watch or band to bed"): both kinds while it isn't known */
+export const adviceWord = (k: WornDevice | null | undefined) => (k ? deviceWord(k) : "watch or band");
+/** The kind of the person's worn device (settings), for deviceWord and fromWhere */
+export function useDevice(): Ref<WornDevice | null> { const s = useSettings(); return computed(() => s.value.wornDevice); }
+// the same once, outside a screen (a toast after a read)
+const deviceNow = () => cleanWornDevice(queryClient.getQueryData<SettingsMe>(["settings", "me"])?.settings?.wornDevice);
+
+/** Where a day's steps, distance or active calories came from, in words: "your watch" (by the kind, deviceWord) when a
+ *  band, watch or ring counted it (worn; a value from before Motus knew, or from an older app, counts as one), else
+ *  "Health Connect" */
+export const fromWhere = (worn: boolean | undefined, kind: WornDevice | null | undefined) => (worn === false ? "Health Connect" : `your ${deviceWord(kind)}`);
 
 const plugin = () => (globalThis as any).Capacitor?.Plugins?.MotusHealth;
 export const healthSupported = () => !!plugin() && (globalThis as any).Capacitor?.getPlatform?.() === "android";
@@ -147,8 +162,15 @@ async function read(past?: Date): Promise<HealthResult | null> {
     const from = past && past < start ? past : start;
     // Health Connect's changes list from here on, taken before the read so what is written meanwhile counts as new
     await markChanges();
-    const data: HealthData = await plugin().read({ from: from.toISOString() });
-    const r = await api.post<HealthResult>("/health/import", data);
+    let r: HealthResult;
+    try {
+      const data: HealthData = await plugin().read({ from: from.toISOString() });
+      r = await api.post<HealthResult>("/health/import", data);
+    } catch (e) {
+      // the changes list already moved past what this read missed: without the mark the next look reads in full
+      mark = null;
+      throw e;
+    }
     // a read of the past also reads up to now, so the next one may start here; never earlier than a read already done
     if (!lastSync.value || started > lastSync.value) remember(started);
     rememberRead(reads);
@@ -168,7 +190,7 @@ const RANGES_DAYS = 30, SETTLE_MS = 3 * DAY_MS, CHECKED_KEY = "motusHealthChecke
 // bumped when the app reads the band's side differently, so the last 30 days are asked about once more, also activities
 // that already have the band's steps (recheck) and ones remembered as checked: 2, steps only from a band, watch or ring
 // (an older build took the app with the most steps, often the phone's own counter, and called it the band's)
-const RANGES_VERSION = 2, RANGES_KEY = "motusHealthRanges", BAND_FIELDS_KEY = "motusHealthBandFields";
+const RANGES_VERSION = 2, RANGES_KEY = "motusHealthRanges";
 const rangesFrom = () => new Date(Date.now() - RANGES_DAYS * DAY_MS);
 // Sessions the band had nothing for, once they ended more than 3 days ago (it has synced by then, or never will), so a
 // session without band data isn't read from Health Connect on every sync. Kept per account on this phone.
@@ -184,9 +206,10 @@ async function readRanges(from: Date): Promise<RangesAdded | undefined> {
   if (typeof plugin()?.readRanges !== "function") return undefined; // an app build from before
   const versions = readJson<Record<string, number>>(RANGES_KEY, {});
   const recheck = (versions[key()] ?? 0) < RANGES_VERSION;
-  // band: this phone's app build reads what the band measured during an activity (seen in an earlier answer), so every
-  // activity without those numbers yet is asked about; an older build would be asked about them on every sync for nothing
-  const band = readStr(BAND_FIELDS_KEY) === "1";
+  // band: this phone's app build reads what the band measured during an activity, so every activity without those
+  // numbers yet is asked about (also ones that already have heart rate); an older build would be asked about them on
+  // every sync for nothing. Told by the build: the changes list came in the same one.
+  const band = canChanges();
   const got = await api.get<{ ranges: Range[] }>("/health/ranges", { from: from.toISOString(), ...(recheck ? { recheck: 1 } : {}), ...(band ? { band: 1 } : {}) });
   const checked = recheck ? new Set<string>() : checkedIds();
   const done = () => { if (recheck) writeJson(RANGES_KEY, { ...readJson<Record<string, number>>(RANGES_KEY, {}), [key()]: RANGES_VERSION }); };
@@ -194,11 +217,12 @@ async function readRanges(from: Date): Promise<RangesAdded | undefined> {
   if (!ranges.length) { done(); return undefined; }
   const { results } = await plugin().readRanges({ ranges }) as { results: RangeResult[] };
   if (!results?.length) { done(); return undefined; }
-  if (!band && results.some((x) => x.bandFields)) writeStr(BAND_FIELDS_KEY, "1");
   const settled = new Set(ranges.filter((x) => Date.now() - Date.parse(x.end) > SETTLE_MS).map((x) => x.id));
   const out = await api.post<RangesAdded>("/health/ranges", { results, ...(recheck ? { recheck: true } : {}) });
-  // marked only after the server took the results, and only for a session the band had neither heart rate nor steps for
-  rememberChecked(results.filter((x) => settled.has(x.id) && !x.hr?.length && !(x.covered && x.steps)).map((x) => x.id));
+  // marked only after the server took the results, and only for a session the band had no heart rate for: one it covered
+  // has its steps and band numbers in by then (the engine took them, or never will), and would otherwise stay listed for
+  // its heart rate and be read again on every sync until it falls out of the 30 days
+  rememberChecked(results.filter((x) => settled.has(x.id) && !x.hr?.length).map((x) => x.id));
   done();
   return out;
 }
@@ -228,12 +252,15 @@ async function markChanges() {
   if (!canChanges()) return;
   try { const r = await plugin().changes({}); mark = r.token ? { key: key(), token: r.token } : null; } catch { mark = null; }
 }
-/** Whether Health Connect holds something new since the last full read; true when it can't tell. */
+/** Whether Health Connect holds something new since the last full read; true when it can't tell (also when the look
+ *  fails, a permission taken back or an expired token: the full read then says what is wrong, or starts a new mark). */
 async function changedSince(): Promise<boolean> {
   if (!mark || mark.key !== key()) return true;
-  const r = await plugin().changes({ token: mark.token }) as { changed: boolean; token: string };
-  mark = r.token ? { key: mark.key, token: r.token } : null;
-  return r.changed;
+  try {
+    const r = await plugin().changes({ token: mark.token }) as { changed: boolean; token: string };
+    mark = r.token ? { key: mark.key, token: r.token } : null;
+    return r.changed;
+  } catch { mark = null; return true; }
 }
 
 let watching = false, looking = false, failures = 0, retryAt = 0, lookedAt = 0;

@@ -34,7 +34,9 @@ async function save() {
   busy.value = true;
   try {
     const startedAt = new Date(`${f.value.date}T${f.value.time}`).toISOString();
-    await api.post("/activities", { type: type.value, name: f.value.name, startedAt, durationS: Math.round((f.value.minutes ?? 0) * 60), distanceM: f.value.distance ? toM(f.value.distance, fmt.value.du) : null, steps: t.value?.hasSteps ? f.value.steps : null, notes: f.value.notes, source: "manual" });
+    // only what the chosen type shows: a distance typed under Walk before switching to Yoga is not saved with it
+    const dist = t.value?.hasDistance !== false ? f.value.distance : null;
+    await api.post("/activities", { type: type.value, name: f.value.name, startedAt, durationS: Math.round((f.value.minutes ?? 0) * 60), distanceM: dist ? toM(dist, fmt.value.du) : null, steps: t.value?.hasSteps ? f.value.steps : null, notes: f.value.notes, source: "manual" });
     invalidate(["activities", "stats", "goals", "home", "calendar"]);
     toast(`${t.value?.name ?? "Activity"} saved`);
     emit("close");

@@ -140,7 +140,8 @@ class MotusHealthPlugin : Plugin() {
      * { steps: [{date, value}], sleep: [{date, hours}], weight: [{id, at, kg}], sessions: [{id, type, title, start, end, avgHr?, distanceM?, steps?, calories?}],
      *   restingHr: [{date, value}], spo2: [{date, value}], hrv: [{date, value}], (daily averages in bpm, % and ms)
      *   distance: [{date, value}], activeKcal: [{date, value}], (daily totals in metres and kcal; these two and steps
-     *   also have worn: whether a band, watch or ring counted that day)
+     *   also have worn: whether a band, watch or ring counted that day, and on such a day device: its kind, deviceName?)
+     *   device?: {kind, name?} the worn device behind the newest such day (kind: watch | band | ring | chestStrap | unknown)
      *   sleepNights: [{date, start, end, asleepMin, awakeMin, lightMin?, deepMin?, remMin?, avgHr?, minHr?, hr?, avgSpo2?, minSpo2?, respRate?}] }
      * (one per wake-up day; hr: [[unixSeconds, bpm], ...], at most 300 points)
      *   bodyFat: [{id, at, pct}], hydration: [{date, ml}] (daily totals), vo2max: [{date, value}] (the day's latest reading),
@@ -158,11 +159,13 @@ class MotusHealthPlugin : Plugin() {
                 val has = { k: KClass<out Record> -> perm(k) in granted }
                 val zone = ZoneId.systemDefault()
                 val out = JSObject()
-                out.put("steps", if (has(StepsRecord::class)) dailyTotal(c, from, zone, StepsRecord::class, { it.startTime }, StepsRecord.COUNT_TOTAL, num = { it.toDouble() }) { it } else JSArray())
-                out.put("distance", if (has(DistanceRecord::class)) dailyTotal(c, from, zone, DistanceRecord::class, { it.startTime }, DistanceRecord.DISTANCE_TOTAL, num = { it.inMeters }) {
-                    Math.round(it.inMeters) } else JSArray())
-                out.put("activeKcal", if (has(ActiveCaloriesBurnedRecord::class)) dailyTotal(c, from, zone, ActiveCaloriesBurnedRecord::class, { it.startTime },
-                    ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL, num = { it.inKilocalories }) { Math.round(it.inKilocalories) } else JSArray())
+                val steps = if (has(StepsRecord::class)) dailyTotal(c, from, zone, StepsRecord::class, { it.startTime }, StepsRecord.COUNT_TOTAL, num = { it.toDouble() }) { it } else JSArray()
+                val distance = if (has(DistanceRecord::class)) dailyTotal(c, from, zone, DistanceRecord::class, { it.startTime }, DistanceRecord.DISTANCE_TOTAL, num = { it.inMeters }) {
+                    Math.round(it.inMeters) } else JSArray()
+                val activeKcal = if (has(ActiveCaloriesBurnedRecord::class)) dailyTotal(c, from, zone, ActiveCaloriesBurnedRecord::class, { it.startTime },
+                    ActiveCaloriesBurnedRecord.ACTIVE_CALORIES_TOTAL, num = { it.inKilocalories }) { Math.round(it.inKilocalories) } else JSArray()
+                out.put("steps", steps).put("distance", distance).put("activeKcal", activeKcal)
+                latestWorn(steps, distance, activeKcal)?.let { out.put("device", it) }
                 val sleeps = if (has(SleepSessionRecord::class)) readAll(c, SleepSessionRecord::class, from) else emptyList()
                 val spo2 = if (has(OxygenSaturationRecord::class)) readAll(c, OxygenSaturationRecord::class, from) else emptyList()
                 out.put("sleep", sleep(sleeps, zone))
@@ -195,6 +198,7 @@ class MotusHealthPlugin : Plugin() {
      * reach across the whole span with no hole over 10 minutes (false when the band was off or has not synced yet).
      * hr: at most 600 points. For an activity the worn device covered, also what it measured meanwhile (rangeBand):
      * distanceM, activeKcal, elevationM, floors, each absent when it had none; bandFields: this build reads them.
+     * device, deviceName?: the kind of worn device whose steps these are (as in read()), with steps.
      */
     @PluginMethod
     fun readRanges(call: PluginCall) {
@@ -216,9 +220,10 @@ class MotusHealthPlugin : Plugin() {
                         val start = Instant.parse(r.getString("start")); val end = Instant.parse(r.getString("end"))
                         var covered = false
                         if (hasSteps && end.isAfter(start)) {
-                            val (n, cov) = rangeSteps(c, start, end)
+                            val (n, cov, w) = rangeSteps(c, start, end)
                             if (n != null) o.put("steps", n)
                             covered = cov
+                            w?.let { putWorn(o, it) }
                             o.put("bandOnly", true)
                         }
                         o.put("covered", covered)
@@ -234,7 +239,7 @@ class MotusHealthPlugin : Plugin() {
                         }
                     } catch (e: Exception) {
                         if (e is kotlinx.coroutines.CancellationException) throw e
-                        o.remove("steps"); o.remove("hr"); o.remove("bandOnly"); o.put("covered", false)
+                        o.remove("steps"); o.remove("hr"); o.remove("bandOnly"); o.put("covered", false); o.remove("device"); o.remove("deviceName")
                         o.remove("bandFields"); o.remove("distanceM"); o.remove("activeKcal"); o.remove("elevationM"); o.remove("floors")
                     }
                     results.put(o)
@@ -321,11 +326,12 @@ class MotusHealthPlugin : Plugin() {
     // The band's steps in the span (records crossing the edges count by their share of time inside), and whether its
     // records cover the span without a hole over 10 minutes. Only a band, watch or ring counts (isBand): the phone's own
     // step counter is the same sensor Motus counted with, not the band. Two apps writing for the same band: the larger.
-    private suspend fun rangeSteps(c: HealthConnectClient, start: Instant, end: Instant): Pair<Long?, Boolean> {
+    // Also which worn device it was (its first record's), so the app can name it.
+    private suspend fun rangeSteps(c: HealthConnectClient, start: Instant, end: Instant): Triple<Long?, Boolean, Worn?> {
         val recs = readBetween(c, StepsRecord::class, start, end).filter {
             it.endTime.isAfter(start) && it.startTime.isBefore(end) && isBand(it.metadata.dataOrigin.packageName, it.metadata.device?.type)
         }
-        if (recs.isEmpty()) return null to false
+        if (recs.isEmpty()) return Triple(null, false, null)
         val byOrigin = recs.groupBy { it.metadata.dataOrigin.packageName }
         fun inside(s: StepsRecord): Double {
             val len = s.endTime.toEpochMilli() - s.startTime.toEpochMilli()
@@ -347,7 +353,7 @@ class MotusHealthPlugin : Plugin() {
             }
             ok && reach >= end.toEpochMilli() - slack
         }
-        return total to covered
+        return Triple(total, covered, wornOf(best.first().metadata.device))
     }
 
     // What a band, watch or ring measured in the span (distance, active calories, climb): records crossing the edges
@@ -408,6 +414,8 @@ class MotusHealthPlugin : Plugin() {
         if (perm(BodyFatRecord::class) in granted) add("bodyFat")
         if (perm(HydrationRecord::class) in granted) add("hydration")
         if (perm(Vo2MaxRecord::class) in granted) add("vo2max")
+        if (perm(ElevationGainedRecord::class) in granted) add("elevation")
+        if (perm(FloorsClimbedRecord::class) in granted) add("floors")
     }
 
     // Daily totals (steps, distance, active calories; water sums every app, num null). Health Connect adds up each day
@@ -426,7 +434,8 @@ class MotusHealthPlugin : Plugin() {
         var day = maxOf(from, startOf(first)).atZone(zone).toLocalDate()
         val end = LocalDate.now(zone).plusDays(1)
         val arr = JSArray()
-        val worn = mutableMapOf<String, Boolean>()
+        val worn = mutableMapOf<String, Worn?>() // per app: the worn device it writes for, null when it isn't one
+        val whose = mutableMapOf<LocalDate, Worn>() // the device whose total a day is
         while (day.isBefore(end)) {
             val next = minOf(day.plusDays(90), end)
             val range = TimeRangeFilter.between(day.atStartOfDay(), next.atStartOfDay())
@@ -436,7 +445,7 @@ class MotusHealthPlugin : Plugin() {
                 val origins = res.flatMap { it.result.dataOrigins }.toSet()
                 for (o in origins) if (o.packageName !in worn) worn[o.packageName] = bandOrigin(c, type, range, o)
                 for (o in origins) {
-                    if (worn[o.packageName] != true) continue
+                    val w = worn[o.packageName] ?: continue
                     // a failure here fails the whole read (not this band's days quietly saved with the phone's
                     // steps mixed in), so the read isn't remembered as done and the next sync asks again
                     val own = c.aggregateGroupByPeriod(AggregateGroupByPeriodRequest(setOf(metric), range, Period.ofDays(1), setOf(o)))
@@ -444,7 +453,7 @@ class MotusHealthPlugin : Plugin() {
                         val v = r.result[metric] ?: continue
                         val d = r.startTime.toLocalDate()
                         val cur = band[d]
-                        if (num(v) > 0 && (cur == null || num(v) > num(cur))) band[d] = v
+                        if (num(v) > 0 && (cur == null || num(v) > num(cur))) { band[d] = v; whose[d] = w }
                     }
                 }
             }
@@ -454,6 +463,7 @@ class MotusHealthPlugin : Plugin() {
                 val b = band[date]
                 val o = JSObject().put("date", date.toString()).put(key, value(b ?: n))
                 if (num != null) o.put("worn", b != null)
+                if (b != null) whose[date]?.let { putWorn(o, it) }
                 arr.put(o)
             }
             day = next
@@ -481,9 +491,38 @@ class MotusHealthPlugin : Plugin() {
         if (deviceType != null && deviceType in WORN) return true
         return BAND_APPS.any { pkg == it || pkg.startsWith("$it.") }
     }
-    // an app's records in the range, by its first one
-    private suspend fun <R : Record> bandOrigin(c: HealthConnectClient, type: KClass<R>, range: TimeRangeFilter, o: DataOrigin): Boolean =
-        isBand(o.packageName, c.readRecords(ReadRecordsRequest(type, range, dataOriginFilter = setOf(o), pageSize = 1)).records.firstOrNull()?.metadata?.device?.type)
+    // an app's records in the range, by its first one: the worn device it writes for, or null when it isn't one
+    private suspend fun <R : Record> bandOrigin(c: HealthConnectClient, type: KClass<R>, range: TimeRangeFilter, o: DataOrigin): Worn? {
+        val d = c.readRecords(ReadRecordsRequest(type, range, dataOriginFilter = setOf(o), pageSize = 1)).records.firstOrNull()?.metadata?.device
+        return if (isBand(o.packageName, d?.type)) wornOf(d) else null
+    }
+
+    // Which kind of worn device a day's or a span's numbers came from, so the app says "your watch" or "your ring" and
+    // not "your band" for everyone: watch, band, ring, chestStrap, or unknown (Gadgetbridge writes no kind for many
+    // gadgets; the app then uses a neutral word). name: its maker and model when the record says, else absent.
+    private class Worn(val kind: String, val name: String?)
+    private fun wornOf(d: Device?): Worn {
+        val kind = when (d?.type) {
+            Device.TYPE_WATCH -> "watch"; Device.TYPE_FITNESS_BAND -> "band"; Device.TYPE_RING -> "ring"; Device.TYPE_CHEST_STRAP -> "chestStrap"
+            else -> "unknown"
+        }
+        val maker = d?.manufacturer?.trim().orEmpty(); val model = d?.model?.trim().orEmpty()
+        val name = if (maker.isNotEmpty() && !model.startsWith(maker, ignoreCase = true)) "$maker $model".trim() else model.ifEmpty { maker }
+        return Worn(kind, name.takeIf { it.isNotEmpty() }?.take(60))
+    }
+    private fun putWorn(o: JSONObject, w: Worn) { o.put("device", w.kind); if (w.name != null) o.put("deviceName", w.name) }
+    // the device behind the newest day a worn device counted (steps first, then distance, then active calories)
+    private fun latestWorn(vararg days: JSArray): JSObject? {
+        var best: JSONObject? = null
+        for (a in days) for (i in a.length() - 1 downTo 0) {
+            val d = a.optJSONObject(i) ?: continue
+            if (!d.has("device")) continue
+            if (best == null || d.optString("date") > best.optString("date")) best = d
+            break
+        }
+        val b = best ?: return null
+        return JSObject().put("kind", b.getString("device")).also { if (b.has("deviceName")) it.put("name", b.getString("deviceName")) }
+    }
 
     private fun deviceName(t: Int?): String = when (t) {
         Device.TYPE_WATCH -> "watch"; Device.TYPE_FITNESS_BAND -> "band"; Device.TYPE_RING -> "ring"; Device.TYPE_CHEST_STRAP -> "chest strap"

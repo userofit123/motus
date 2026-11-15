@@ -31,10 +31,12 @@ import SessionStats from "../components/SessionStats.vue";
 import TodayHero from "../components/home/TodayHero.vue";
 import StageBar from "../components/stats/StageBar.vue";
 import NightSheet from "../components/stats/NightSheet.vue";
+import { adviceWord, useDevice } from "../native/health";
 
 const router = useRouter();
 const home = useHome();
 const s = useSettings();
+const dev = useDevice();
 const fmt = useFmt();
 const h = computed(() => home.data.value);
 
@@ -61,8 +63,9 @@ const META: Record<string, { name: string; desc: string; icon: string; size: Siz
   daily: { name: "Daily log", desc: "Steps, sleep, water and mood you type in for today", icon: "note", size: "m" },
   achievements: { name: "Achievements", desc: "The latest reached and the next one", icon: "star", size: "m" },
   readiness: { name: "Readiness", desc: "How ready you are to train, from last night's sleep and your heart", icon: "heartPulse", size: "m" },
-  sleep: { name: "Last night", desc: "Time asleep and its stages, from your band", icon: "moon", size: "m" },
-  heart: { name: "Heart", desc: "Resting heart rate, HRV and today's range, from your band", icon: "heart", size: "m" },
+  // named by the person's device (a getter, so Edit home follows it)
+  sleep: { name: "Last night", get desc() { return `Time asleep and its stages, from your ${adviceWord(dev.value)}`; }, icon: "moon", size: "m" },
+  heart: { name: "Heart", get desc() { return `Resting heart rate, HRV and today's range, from your ${adviceWord(dev.value)}`; }, icon: "heart", size: "m" },
   activityToday: { name: "Activity today", desc: "Steps, distance and active calories today, and your last 7 days", icon: "steps", size: "m" },
 };
 // a block whose feature is off is absent everywhere, Edit home included
@@ -257,7 +260,7 @@ const readyWait = computed(() => {
   const known = ORDER.filter((k) => !missing.includes(k));
   return { days: days[1]!, need, left,
     text: r.parts.length + building.length < 2
-      ? `Your score also needs ${missing.map((k) => (k === "hrv" ? PART[k].t : PART[k].t.toLowerCase())).join(" or ")} from your band.`
+      ? `Your score also needs ${missing.map((k) => (k === "hrv" ? PART[k].t : PART[k].t.toLowerCase())).join(" or ")} from your ${adviceWord(dev.value)}.`
       : `Learning your usual ${known.map((k) => PART[k].t.toLowerCase().replace("hrv", "HRV")).join(", ").replace(/, ([^,]*)$/, " and $1")}.` };
 });
 // heart: the resting heart rate and HRV of today (else the latest readiness read), each against your usual, and the day's range
@@ -301,7 +304,7 @@ const actStats = computed<WStat[]>(() => {
   if (d.steps != null) out.push({ key: "steps", icon: "steps", label: "Steps", value: fmt.value.num(d.steps, 0), unit: "",
     ...(g ? { delta: `of ${fmt.value.num(g.target, 0)}`, tone: d.steps >= g.target ? "pos" : undefined } : {}) });
   if (d.distanceM) out.push({ key: "dist", icon: "walk", label: "Distance", ...unitOf(fmt.value.dist(d.distanceM, 1)) });
-  if (d.activeKcal) out.push({ key: "kcal", icon: "flame", label: "Active calories", value: fmt.value.num(d.activeKcal, 0), unit: "kcal" });
+  if (d.activeKcal) out.push({ key: "kcal", icon: "flame", label: "Calories", value: fmt.value.num(d.activeKcal, 0), unit: "kcal" });
   return out;
 });
 // the last 7 days' steps as This week's bars, each under its weekday's letter, today in full colour; with a goal its

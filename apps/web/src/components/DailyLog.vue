@@ -9,7 +9,7 @@ import { useSettings } from "../api/queries";
 import { localYmd, useFmt } from "../core/format";
 import { mins } from "../core/sleep";
 import { savedToast, savedError, toast } from "../core/toast";
-import { healthSupported, syncHealth, fromWhere } from "../native/health";
+import { healthSupported, syncHealth, fromWhere, useDevice } from "../native/health";
 import { DAILY_KINDS } from "@motus/shared";
 import Icon from "./Icon.vue";
 import { useStepGoal } from "../core/goals";
@@ -17,6 +17,7 @@ import { useStepGoal } from "../core/goals";
 // day: which day the boxes write to; history: the last week below, for the sheet (Home's block leaves it off)
 const props = defineProps<{ day?: string; history?: boolean }>();
 const s = useSettings();
+const dev = useDevice();
 const stepGoal = useStepGoal();
 const fmt = useFmt();
 const from = localYmd(new Date(Date.now() - 8 * 86400000));
@@ -36,7 +37,7 @@ const waiting = (k: string) => !!row(k, day.value)?.waiting;
 // (only steps can be such a day here; a value typed over it keeps the word, for the way back)
 // water comes from an app you log drinks in, never from a band, so it always says Health Connect
 const wornOf = (k: string, d = day.value) => (k === "water_ml" ? false : row(k, d)?.worn);
-const where = (k: string) => fromWhere(wornOf(k));
+const where = (k: string) => fromWhere(wornOf(k), dev.value);
 // Home's block asks only for what the band doesn't bring: steps and sleep from a band show in their own Home blocks, so
 // a kind the band filled in on any recent day is left out there (also before today's value arrives); the sheet keeps all
 const banded = computed(() => new Set((q.data.value ?? []).filter((r) => r.band && !typed(r)).map((r) => r.kind)));
@@ -108,7 +109,7 @@ const anyBand = computed(() => week.value.some((w) => w.b.some(Boolean)));
 const greyFrom = computed(() => {
   const grey = week.value.flatMap((w) => w.w.filter((_, i) => w.b[i]));
   const band = grey.some(Boolean), hc = grey.some((x) => !x);
-  return band && hc ? "your band and Health Connect" : fromWhere(band);
+  return band && hc ? `${fromWhere(true, dev.value)} and Health Connect` : fromWhere(band, dev.value);
 });
 // a cell is just the number, as the rows write it: "2,434", "7h 48m"; the unit, when it needs one, is in the header.
 // A band's value is grey (as the rows say "From your band"), so typed and band values tell apart without a mark that

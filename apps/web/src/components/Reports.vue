@@ -2,13 +2,15 @@
 // Monthly report and year in review (optional feature): what each month and year added up to.
 import { computed, ref } from "vue";
 import { GROUPS, groupOf, percentChange, isNight, sameSpanBefore, type HomeRecord } from "@motus/shared";
-import { useStats } from "../api/queries";
+import { useStats, useActivityFigures } from "../api/queries";
 import { useFmt, unitOf } from "../core/format";
 import { mins } from "../core/sleep";
 import BarChart from "./BarChart.vue";
 import Icon from "./Icon.vue";
 
 const fmt = useFmt();
+// an activity's distance only where its type tracks it, as its page shows it
+const figures = useActivityFigures();
 // the whole history, with every record set in it so each month can count its own
 const all = useStats(ref({ records: 1 as const }));
 const monthKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
@@ -20,7 +22,7 @@ interface Acc { k: string; workouts: number; timeS: number; volumeKg: number; se
 type Period = Omit<Acc, "days"> & { days: number; top?: [string, number]; group?: { name: string; sets: number } };
 interface StatsWorkout { startedAt: string; durationS: number; volumeKg: number; sets: number; name: string; muscles: Record<string, number>; avgHr?: number | string | null }
 interface StatsDaily { date: string | Date; kind: string; value: number | string }
-interface StatsActivity { startedAt: string; durationS: number; distanceM: number | string | null }
+interface StatsActivity { startedAt: string; durationS: number; distanceM: number | string | null; type: string; source?: string | null; hasRoute?: boolean | null }
 const by = (key: (d: Date) => string, dayKey: (d: string) => string) => computed<Period[]>(() => {
   const m = new Map<string, Acc>();
   const d = all.data.value as { workouts: StatsWorkout[]; activities: StatsActivity[]; records?: HomeRecord[]; daily?: StatsDaily[] } | undefined;
@@ -37,7 +39,7 @@ const by = (key: (d: Date) => string, dayKey: (d: string) => string) => computed
     for (const [mu, n] of Object.entries(w.muscles)) { const g = groupOf(mu); if (g !== "other") x.groups.set(g, (x.groups.get(g) ?? 0) + n); }
     if (Number(w.avgHr) > 0) x.whr.push(Number(w.avgHr));
   }
-  for (const a of d.activities) { const x = get(key(new Date(a.startedAt))); x.activities++; x.timeS += a.durationS; x.distM += Number(a.distanceM ?? 0); x.days.add(a.startedAt.slice(0, 10)); }
+  for (const a of d.activities) { const x = get(key(new Date(a.startedAt))); x.activities++; x.timeS += a.durationS; x.distM += figures.dist(a) ?? 0; x.days.add(a.startedAt.slice(0, 10)); }
   for (const r of d.records ?? []) m.get(key(new Date(r.at)))?.records.push(r);
   // a day's numbers count in the month (or year) it is a day of, in one that has a report (a workout or an activity);
   // sleep only as a night, not a nap or partial record (as Stats → Sleep averages it)

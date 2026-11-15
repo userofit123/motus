@@ -57,6 +57,29 @@ describe("health connect import", () => {
     expect(body.map((x: any) => Number(x.value))).toEqual([80.46]);
   });
 
+  it("learns the kind of worn device from the newest read that names one, and keeps it through reads that don't", async () => {
+    const worn = async () => (await call("GET", "/me")).settings.wornDevice;
+    expect(await worn()).toBe(null);
+    await call("POST", "/health/import", { device: { kind: "watch", name: "Pixel Watch 3" } });
+    expect(await worn()).toBe("watch");
+    // an older app sends no device, and a read without a worn day neither: the saved kind stays
+    await call("POST", "/health/import", { steps: [] });
+    expect(await worn()).toBe("watch");
+    await call("POST", "/health/import", { device: { kind: "ring" } });
+    expect(await worn()).toBe("ring");
+    // a device that doesn't say its kind (Gadgetbridge often) or a kind this version doesn't know: not known
+    await call("POST", "/health/import", { device: { kind: "unknown" } });
+    expect(await worn()).toBe(null);
+    await call("POST", "/health/import", { device: { kind: "band" } });
+    await call("PUT", "/settings", { wornDevice: "toaster" });
+    expect(await worn()).toBe(null);
+    // the rest of the settings are left as they were
+    await call("PUT", "/settings", { firstDay: 1 });
+    await call("POST", "/health/import", { device: { kind: "band" } });
+    expect((await call("GET", "/me")).settings).toMatchObject({ wornDevice: "band", firstDay: 1 });
+    await call("PUT", "/settings", { firstDay: 0, wornDevice: null });
+  });
+
   it("adds sessions as activities once, keeps edits, and files unknown types under Other", async () => {
     const s = { id: "abc", type: "run", start: "2026-10-04T06:00:00Z", end: "2026-10-04T06:30:00Z", distanceM: 5000, steps: 5200, avgHr: 150, calories: 320 };
     const odd = { id: "def", type: "kitesurf", start: "2026-10-05T10:00:00Z", end: "2026-10-05T11:00:00Z" };
@@ -936,8 +959,11 @@ describe("what the band measured during an activity", () => {
       .toMatchObject({ band: 1 });
     expect(await act(climb)).toMatchObject({ distanceM: null, elevationM: null, calories: null, bandDistanceM: 812.4, bandKcal: 403, bandElevationM: 145.2, bandFloors: 48 });
     expect(await ids({ band: "1" })).not.toContain(climb);
-    // the same again changes nothing; a value that can't be is left out rather than failing the read
+    // the same again changes nothing, not even when it was taken (an activity still listed for its heart rate comes back
+    // on every read); a value that can't be is left out rather than failing the read
+    await eng.db.admin.query("UPDATE activities SET band_at = '2026-01-01T00:00:00Z' WHERE id = $1", [climb]);
     expect(await ranges([{ kind: "activity", id: climb, covered: true, bandFields: true, distanceM: 812.4, activeKcal: 402.6, elevationM: 145.2, floors: 48 }])).toMatchObject({ band: 0 });
+    expect(new Date((await act(climb)).bandAt).toISOString()).toBe("2026-01-01T00:00:00.000Z");
     expect(await ranges([{ kind: "activity", id: climb, covered: true, bandFields: true, distanceM: -5, activeKcal: 402.6, elevationM: 145.2, floors: 48 }])).toMatchObject({ band: 1 });
     expect((await act(climb)).bandDistanceM).toBeNull();
   });

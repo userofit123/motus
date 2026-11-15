@@ -9,12 +9,14 @@ import { ymd } from "@motus/shared";
 import { useWorkouts, useActivities, useTypeName } from "../../api/queries";
 import { useFmt, activityIcon } from "../../core/format";
 import Icon from "../Icon.vue";
+import { adviceWord, useDevice } from "../../native/health";
 import LineChart from "../LineChart.vue";
 import Sparkline from "../Sparkline.vue";
 
 const props = defineProps<{ from: Date | null; to: Date | null; daily: { date: string; kind: string; value: number | string }[] }>();
 const router = useRouter();
 const fmt = useFmt();
+const dev = useDevice();
 const typeName = useTypeName();
 const range = computed(() => ({ ...(props.from ? { from: props.from.toISOString() } : {}), ...(props.to ? { to: props.to.toISOString() } : {}), limit: 1000 }));
 const ws = useWorkouts(range);
@@ -63,7 +65,7 @@ const tiles = computed(() => vitals.value.length + (sessions.value.length ? 1 : 
 
 <template>
   <div v-if="loading" class="empty">Loading…</div>
-  <div v-else-if="!vitals.length && !sessions.length" class="card empty"><Icon name="heart" :size="34" /><b>No heart data in this period</b>Pick a longer period, or wear your band through the day and during workouts.</div>
+  <div v-else-if="!vitals.length && !sessions.length" class="card empty"><Icon name="heart" :size="34" /><b>No heart data in this period</b>Pick a longer period, or wear your {{ adviceWord(dev) }} through the day and during workouts.</div>
   <template v-else>
     <div class="grid g4" :class="tiles < 4 ? `n${tiles}` : ''">
       <div v-for="(v, i) in vitals" :key="v.id" class="card stat" :class="{ hero: i === 0 }"><div class="lbl"><span class="bi"><Icon :name="v.icon" :size="15" /></span>{{ v.short }}</div>
@@ -79,7 +81,7 @@ const tiles = computed(() => vitals.value.length + (sessions.value.length ? 1 : 
     <!-- how hard each workout and activity was, over the period: its average heart rate -->
     <div class="sh"><h2>Heart rate in workouts</h2><span v-if="sessions.length" class="tiny">{{ sessions.length }}</span></div>
     <template v-if="sessions.length">
-      <p class="tiny">How hard each workout and activity was: its average and highest heart rate.{{ total > sessions.length ? ` ${total - sessions.length} more in this period have none: wear your band while you record to add it.` : "" }}</p>
+      <p class="tiny">How hard each workout and activity was: its average and highest heart rate.{{ total > sessions.length ? ` ${total - sessions.length} more in this period have none: wear your ${adviceWord(dev)} while you record to add it.` : "" }}</p>
       <div v-if="sessions.length > 2" class="card"><div class="lbl hgap">Average per session (bpm)</div>
         <LineChart :points="sessions.map((x) => ({ x: new Date(x.at).getTime(), y: x.avg, id: x.key, label: x.name }))" :height="160" :fmt="(v) => fmt.num(v, 0)" @pick="open" />
         <div v-if="top" class="tiny ht-line">Highest {{ top.max }} bpm in {{ top.name }} on {{ fmt.date(top.at) }}</div></div>
@@ -93,8 +95,8 @@ const tiles = computed(() => vitals.value.length + (sessions.value.length ? 1 : 
       </div></div>
       <div v-if="sessions.length > 10 && !showAll" class="center spt"><button class="qb" @click="showAll = true">Show all {{ sessions.length }} sessions</button></div>
     </template>
-    <div v-else-if="total" class="card empty"><Icon name="heart" :size="34" /><b>No heart rate in workouts yet</b>Workouts and activities you record while wearing your band show their heart rate here once it has synced.</div>
-    <div v-else class="card empty"><Icon name="heart" :size="34" /><b>No workouts in this period</b>Pick a longer period, or record one while wearing your band.</div>
+    <div v-else-if="total" class="card empty"><Icon name="heart" :size="34" /><b>No heart rate in workouts yet</b>Workouts and activities you record while wearing your {{ adviceWord(dev) }} show their heart rate here once it has synced.</div>
+    <div v-else class="card empty"><Icon name="heart" :size="34" /><b>No workouts in this period</b>Pick a longer period, or record one while wearing your {{ adviceWord(dev) }}.</div>
   </template>
 </template>
 
