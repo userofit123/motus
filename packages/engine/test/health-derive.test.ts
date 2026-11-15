@@ -182,6 +182,21 @@ describe("through the engine", () => {
     expect(await daily(D4)).toMatchObject({ synced: 2222 });
   });
 
+  it("classifies an app quiet for 30 days the same in the import and after records, whatever days each loads", async () => {
+    // a watch app whose newest records name the watch, then nothing for 30 days; a later day's records name no device
+    const WA = "com.example.watchapp", D5 = "2026-09-01", T5 = Date.parse(D5 + "T00:00:00Z") / 1000, D6 = "2026-10-01", T6 = T5 + 30 * 86400;
+    await save(`${D5}T00:00:00Z`, "2026-09-02T00:00:00Z", [{ id: "wa1", r: st(WA, T5 + 8 * H, T5 + 9 * H, 800, { dv: { type: 1 } }) }]);
+    await save(`${D6}T00:00:00Z`, "2026-10-02T00:00:00Z", [{ id: "wa2", r: st(WA, T6 + 8 * H, T6 + 9 * H, 3333) }]);
+    // after records: the day loaded holds only wa2 (no device), yet the app is the watch by its newest typed record
+    expect(await daily(D6)).toMatchObject({ synced: 3333, worn: true });
+    // the import loads other days around D6 and classifies it the same: the records' number stands
+    await call("POST", "/health/import", { steps: [{ date: D6, value: 9000, worn: true }] });
+    expect(await daily(D6)).toMatchObject({ synced: 3333 });
+    // and another save whose window doesn't reach D5 at all still counts the app as the watch
+    await save(`${D6}T00:00:00Z`, "2026-10-02T00:00:00Z", [{ id: "wa2", r: st(WA, T6 + 8 * H, T6 + 9 * H, 3400, { m: 2 }) }]);
+    expect(await daily(D6)).toMatchObject({ synced: 3400, worn: true });
+  });
+
   it("works a night and the day's sleep out from the records", async () => {
     const r = nightRecs(), w = (p: string, l: Rec[]) => l.map((x, i) => ({ id: `${p}${i}`, ...x }));
     await call("POST", "/health/records", { from: "2026-10-11T00:00:00Z", to: "2026-10-13T00:00:00Z", source: "A", types: {

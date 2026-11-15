@@ -64,9 +64,10 @@ function addByDay(r: Rec, into: Map<string, number>) {
  * The days a band, watch or ring counted on (steps, distance, active calories), with that device's own total (the
  * phone's dailyTotal): each band app's records added up one by one, and on a day two apps write for the same band, the
  * larger. An app is a band app by its newest record that names a device type, else its newest record (the phone's
- * bandOrigin), taken from kinds (appKinds: the same for every request, whatever days it reads) when given, else from
- * these records. recs: every record of the type that may fall on the days (a day either side). Days no band counted on
- * are left out: Health Connect's own total stands.
+ * bandOrigin), taken from kinds (appKinds: from the app's newest saved records, the same for every request, whatever days
+ * it reads) when given; only an app kinds doesn't know (no saved records of the type) from these records. recs: every
+ * record of the type that may fall on the days (a day either side). Days no band counted on are left out: Health
+ * Connect's own total stands.
  */
 export function bandDays(recs: Rec[], days: Iterable<string>, kinds?: AppKinds): Map<string, DayVal> {
   const byApp = new Map<string, Rec[]>();
@@ -249,23 +250,28 @@ export const readDay = (reads: Reads, type: string, d: string) => {
 
 /**
  * Per amount type, each app's kind of device for bandDays: its newest record naming a device type among its newest
- * 100, else its newest (the phone's bandOrigin), over the KIND_DAYS days up to the type's newest saved day. Independent
- * of the days a request asks about, so the import and afterRecords classify an app the same way. Runs on every save
- * under the records lock, so it looks at a short recent stretch only (a band app writes well over 100 records in it); an
- * app with no records there is classified by its records on the days asked about (bandDays), as before 90 days.
+ * KIND_RECS records, else its newest (the phone's bandOrigin), for every app with any saved records of the type, however
+ * long ago its last one. Independent of the days a request asks about, so the import and afterRecords classify an app
+ * the same way. Runs on every save under the records lock, so it stays cheap: the apps come from the blocks' app lists
+ * (migration 044, no records opened), and each app's newest records from its newest blocks only, read in the table's
+ * day order and stopped once it has KIND_RECS (a block within one day is ordered by start; the day order is the start's
+ * own calendar, so the cut is the same for every request). Only an app with no saved records at all (bandDays) is
+ * classified by the records a request loaded.
  */
-const KIND_DAYS = 14;
+const KIND_RECS = 100;
 export type AppKinds = Map<string, number | undefined>;
 export async function appKinds(q: Sql, types: SumType[]): Promise<Map<SumType, AppKinds>> {
   const out = new Map<SumType, AppKinds>(types.map((t) => [t, new Map()]));
   if (!types.length) return out;
   const { rows } = await q.query<{ type: SumType; o: string; t: number | null }>(
-    `WITH lim AS (SELECT type, max(day) - ${KIND_DAYS} AS d FROM health_records WHERE type = ANY($1::text[]) GROUP BY type),
-     r AS (SELECT h.type, x.r->>'o' AS o, nullif((x.r->'dv'->>'type')::int, 0) AS t, (x.r->>'s')::float8 AS s
-           FROM health_records h JOIN lim ON lim.type = h.type AND h.day >= lim.d CROSS JOIN LATERAL jsonb_each(h.recs) x(id, r)),
-     n AS (SELECT *, row_number() OVER (PARTITION BY type, o ORDER BY s DESC) AS i FROM r),
-     k AS (SELECT *, row_number() OVER (PARTITION BY type, o ORDER BY (t IS NOT NULL) DESC, s DESC) AS j FROM n WHERE i <= 100)
-     SELECT type, o, t FROM k WHERE j = 1`, [types]);
+    `WITH a AS (SELECT DISTINCT type, unnest(apps) AS o FROM health_records WHERE type = ANY($1::text[]))
+     SELECT a.type, a.o, k.t FROM a CROSS JOIN LATERAL (
+       SELECT n.t FROM (
+         SELECT nullif((x.r->'dv'->>'type')::int, 0) AS t, (x.r->>'s')::float8 AS s
+         FROM health_records h CROSS JOIN LATERAL jsonb_each(h.recs) x(id, r)
+         WHERE h.type = a.type AND h.apps @> ARRAY[a.o] AND x.r->>'o' = a.o
+         ORDER BY h.day DESC, (x.r->>'s')::float8 DESC, x.id LIMIT ${KIND_RECS}) n
+       ORDER BY (n.t IS NOT NULL) DESC, n.s DESC LIMIT 1) k`, [types]);
   for (const x of rows) out.get(x.type)?.set(x.o, x.t ?? undefined);
   return out;
 }

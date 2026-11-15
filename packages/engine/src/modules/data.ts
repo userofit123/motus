@@ -16,7 +16,7 @@ const EXPORT_FORMAT = 1;
 // The schema a file was written with: the number of migrations (migrate.ts) when it was made, so a restore knows which
 // of their changes to existing rows the file's rows still need. A test keeps it equal to the number of migrations, so a
 // new one is checked against backups (does the file carry it, does an older file need converting).
-const BACKUP_SCHEMA = 43; // 40: health_records (an older file has none: nothing to convert); 41: its trigger only; 42, 43: health_record_reads, not in backups
+const BACKUP_SCHEMA = 44; // 40: health_records (an older file has none: nothing to convert); 41: its trigger only; 42, 43: health_record_reads, not in backups; 44: health_records.apps, worked out again by its trigger on restore
 const NEWER = "This backup is from a newer version of Motus. Update the app first.";
 const DAMAGED = "This backup is damaged and can't be restored.";
 /** The schema a file says it has (refused when newer than this version, or not a whole number from 0 up), or

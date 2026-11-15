@@ -272,8 +272,9 @@ export function activityRoutes(r: Router) {
     // a value cleared marks its import deleted, which takes the records lock (034, 041): taken first, before any row of
     // the request (lockRecords: every path takes it before row locks)
     // the same reading of an entry as the loop below, so no entry that clears a value can skip the lock
-    const useOf = (e: any): "synced" | "typed" | null => e?.band === true ? "synced" : e?.use === "synced" || e?.use === "typed" ? e.use : null;
-    if (entries.slice(0, 1000).some((e: any) => e?.value == null && useOf(e) == null)) await lockRecords(ctx.q, ctx.userId);
+    type Entry = { value?: unknown; use?: unknown; band?: unknown } | null | undefined;
+    const useOf = (e: Entry): "synced" | "typed" | null => e?.band === true ? "synced" : e?.use === "synced" || e?.use === "typed" ? e.use : null;
+    if (entries.slice(0, 1000).some((e: Entry) => e?.value == null && useOf(e) == null)) await lockRecords(ctx.q, ctx.userId);
     for (const e of entries.slice(0, 1000)) {
       const d = dateStr(e.date), k = str(e.kind, 20);
       if (!d || !k) continue;

@@ -149,6 +149,14 @@ export async function saveRecords(ctx: Ctx, type: RecordType, fromS: number, toS
   if (source) for (const x of sent) x.rec.src = source;
   const keep = sent.filter((x) => { const k = logKey(type, x.id, recordDay(type, x.rec)); return !k || !deletedKeys.has(k); });
   const have = await blocks(ctx, type, fromS, toS, keep.map((x) => x.id));
+  // every day a kept record goes to is loaded before it is written: a block is written whole (writeBlock), so one not
+  // loaded would lose the records already in it (another phone's). The window covers them for what the phone sends;
+  // this holds whatever a record's own day is (a zone far off, a record sent outside the window it came with)
+  const unloaded = [...new Set(keep.map((x) => recordDay(type, x.rec)))].filter((d) => !have.has(d));
+  if (unloaded.length)
+    for (const x of (await ctx.q.query<BlockRow>(
+      "SELECT to_char(day, 'YYYY-MM-DD') AS day, recs FROM health_records WHERE type = $1 AND day = ANY($2::date[])", [type, unloaded])).rows)
+      have.set(x.day, parse(x.recs));
   const where = new Map<string, string>();
   for (const [day, recs] of have) for (const id of Object.keys(recs)) where.set(id, day);
   const dirty = new Set<string>();
@@ -314,10 +322,12 @@ export function healthRecordRoutes(r: Router) {
   //   most HEALTH_DELETED_MAX a request (the phone sends no more at once) }
   r.post("/health/records", async (ctx, _p, b) => {
     const toS = secs(b.to, "end");
-    // at most MAX_SPAN_S, as a read: a wider window would claim (noteRead) and look again at (the day loop) any number of
-    // days. Cut to its newest part rather than refused: a list complete for the whole window is complete for that part
-    const fromS = Math.max(secs(b.from, "start"), toS - MAX_SPAN_S);
+    // at most MAX_SPAN_S, as a read (span): a wider window would claim (noteRead) and look again at (the day loop) any
+    // number of days. Refused, not cut short: records sent for the part cut off would still be saved, onto days the
+    // window no longer covers. The phone sends 2 days at a time at most (native/health.ts, syncRecords)
+    const fromS = secs(b.from, "start");
     if (toS < fromS) throw bad("Invalid time");
+    if (toS - fromS > MAX_SPAN_S) throw bad("Pick a shorter time");
     const zone = -tzOf({ tz: b.tz == null ? "" : String(b.tz) }) * 60;
     const source = text(b.source, 100);
     await lockRecords(ctx.q, ctx.userId);

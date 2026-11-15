@@ -194,4 +194,16 @@ describe("health connect records", () => {
     expect(await call("POST", "/health/records", { ...d, source: "A", types: { elevation: { complete: true, records: [o1] } } })).toEqual({ saved: 0, removed: 1 });
     expect((await call("GET", "/health/records", undefined, { type: "elevation", ...d })).records.map((x) => x.id)).toEqual(["o1"]);
   });
+
+  it("refuses a window over 40 days, and a record for a day outside the window never wipes that day's other records", async () => {
+    const r = await eng.handle({ method: "POST", path: "/health/records", userId: U, body: { from: "2026-08-01T00:00:00Z", to: "2026-10-01T00:00:00Z", source: "A", types: {} } });
+    expect(r.status).toBe(400);
+    const t = Date.parse("2026-11-02T00:00:00Z") / 1000;
+    // phone B's record of 2 November
+    await call("POST", "/health/records", { from: "2026-11-02T00:00:00Z", to: "2026-11-03T00:00:00Z", source: "B", types: { hydration: { records: [steps("hb", t + 3600, t + 3660, 250)] } } });
+    // phone A sends a record of that day with a window days later, whose blocks don't reach 2 November
+    await call("POST", "/health/records", { from: "2026-11-06T00:00:00Z", to: "2026-11-07T00:00:00Z", source: "A", types: { hydration: { records: [steps("ha", t + 7200, t + 7260, 300)] } } });
+    const got = await call("GET", "/health/records", undefined, { type: "hydration", from: "2026-11-02T00:00:00Z", to: "2026-11-03T00:00:00Z" });
+    expect(got.records.map((x) => x.id)).toEqual(["hb", "ha"]);
+  });
 });
