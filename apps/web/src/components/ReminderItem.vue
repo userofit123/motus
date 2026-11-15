@@ -9,16 +9,17 @@ import { TOPICS } from "@motus/shared";
 import { useChange } from "../api/queries";
 import { toast } from "../core/toast";
 import { useFmt } from "../core/format";
+import DotLine from "./DotLine.vue";
 import Icon from "./Icon.vue";
 import { reminderText, reminderWhen, reminderChange } from "../core/reminderText";
 import { reminderView } from "../core/ui";
 
-const props = defineProps<{ reminder: any; when?: boolean; where?: string | null; routineName?: string | null; live?: boolean; workoutId?: string | null }>();
+const props = defineProps<{ reminder: any; when?: boolean; where?: string | null; day?: string | null; routineName?: string | null; live?: boolean; workoutId?: string | null }>();
 // done, put off or dismissed (here or from its sheet): lets a workout drop it from its own copy of the reminders
 const emit = defineEmits<{ gone: [] }>();
 const fmt = useFmt();
 const r = computed(() => props.reminder);
-const meta = computed(() => [props.where, fmt.value.stamp(r.value.createdAt) || null, props.when ? reminderWhen(r.value, fmt.value) : null, reminderChange(r.value, fmt.value)].filter(Boolean) as string[]);
+const meta = computed(() => [props.where, r.value.createdAt ? `Set ${fmt.value.stamp(r.value.createdAt, props.day)}` : null, props.when ? reminderWhen(r.value, fmt.value) : null, reminderChange(r.value, fmt.value)].filter(Boolean) as string[]);
 // Done and Dismiss end it; Next time puts it off in this workout (`workoutId`), so it neither comes back here nor ends
 // on finish, and keeps it waiting for the next one
 const set = useChange(async (status: "done" | "pending" | "dismissed") => {
@@ -39,7 +40,7 @@ const open = () => (reminderView.value = { r: r.value, routineName: props.routin
     <Icon name="bell" :size="18" class="ic" />
     <div class="b">
       <div class="tx">{{ reminderText(r, fmt) }}</div>
-      <div v-if="meta.length" class="m"><template v-for="(x, i) in meta" :key="i"><span v-if="i" class="sep">·</span><span>{{ x }}</span></template></div>
+      <div v-if="meta.length" class="m"><DotLine :parts="meta" /></div>
       <div v-if="live" class="acts">
         <button v-for="a in actions" :key="a.label" type="button" class="qb" :class="{ acc: a.primary }" :disabled="set.busy.value" @click.stop="a.run()">{{ a.label }}</button>
       </div>

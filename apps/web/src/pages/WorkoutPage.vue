@@ -11,7 +11,7 @@ import { useWorkoutQuery, useSettings, loaded } from "../api/queries";
 import { api, mediaUrl } from "../api/client";
 import { invalidate } from "../api/live";
 import { joinRest } from "../core/plannedRest";
-import { useFmt, localYmd, setLabel, sideJoinCls } from "../core/format";
+import { useFmt, unitOf, localYmd, setLabel, sideJoinCls } from "../core/format";
 import { exerciseSheet, noteSheet } from "../core/ui";
 import { confirm, prompt } from "../core/ask";
 import { shareWorkoutImage } from "../core/shareImage";
@@ -38,6 +38,8 @@ const w = computed<any>(() => q.data.value);
 // the same ⋮ on its notes as in the running workout: edit, show again, delete
 const noteMenu = useNoteMenu();
 const rep = computed<any>(() => w.value?.report);
+// the volume as the value with its unit small beside it ("12.4k" kg), as the other tiles' units
+const volParts = computed(() => unitOf(fmt.value.vol(rep.value?.totals.volumeKg ?? 0)));
 // straight after Finish: the summary opens with a word of what you did, and the back link says Home and goes there
 // rather than to the calendar. No button of its own in that word: it only duplicated the back link and vanished on return.
 const justDone = computed(() => route.query.done === "1");
@@ -169,7 +171,7 @@ await loaded(q);
       <div class="grow" style="min-width:0"><div class="t">Well done - workout saved</div><DotLine class="tiny" :parts="doneLine" /></div></div>
     <div class="grid g4">
       <div class="card hero stat"><div class="lbl"><span class="bi"><Icon name="clock" :size="15" /></span>Duration</div><div class="val">{{ fmt.dur(rep.totals.durationS, true) }}</div><DotLine class="sub" :parts="[`${fmt.dur(rep.totals.activeS, true)} active`, `${fmt.dur(rep.totals.restS, true)} rest`]" /></div>
-      <div class="card stat"><div class="lbl"><span class="bi"><Icon name="layers" :size="15" /></span>Volume</div><div class="val">{{ fmt.vol(rep.totals.volumeKg) }}</div>
+      <div class="card stat"><div class="lbl"><span class="bi"><Icon name="layers" :size="15" /></span>Volume</div><div class="val">{{ volParts.value }}<small>{{ volParts.unit }}</small></div>
         <div class="sub">{{ rep.previous ? `${rep.totals.volumeKg >= rep.previous.volumeKg ? "+" : ""}${fmt.vol(rep.totals.volumeKg - rep.previous.volumeKg)} vs last time` : `${rep.totals.reps} reps` }}</div></div>
       <div class="card stat"><div class="lbl"><span class="bi"><Icon name="dumbbell" :size="15" /></span>Sets</div><div class="val">{{ rep.totals.workingSets }}</div><DotLine class="sub" :parts="[`${rep.totals.exercises} exercises`, rep.totals.skipped ? `${rep.totals.skipped} skipped` : ''].filter(Boolean)" /></div>
       <div class="card stat"><div class="lbl"><span class="bi"><Icon name="trophy" :size="15" /></span>Records</div><div class="val">{{ rep.totals.records }}<small>{{ rep.totals.records === 1 ? "exercise" : "exercises" }}</small></div><div class="sub">{{ rep.compared ? `Better than last time on ${rep.beat} of ${rep.compared} exercises` : "First time doing these exercises" }}</div></div>
@@ -177,7 +179,7 @@ await loaded(q);
 
     <div v-if="w.notes" class="banner note spt"><Icon name="note" :size="18" class="note-ic" /><div style="white-space:pre-wrap">{{ w.notes }}</div></div>
     <div v-if="w.routineNotes?.some((x: any) => x.workoutId === w.id)" class="aw-notes">
-      <NoteItem v-for="n in w.routineNotes.filter((x: any) => x.workoutId === w.id)" :key="n.id" :note="n" :menu="noteMenu(n, n.targetType === 'routine' ? w.name : 'This workout')" />
+      <NoteItem v-for="n in w.routineNotes.filter((x: any) => x.workoutId === w.id)" :key="n.id" :note="n" :day="w.startedAt" :menu="noteMenu(n, n.targetType === 'routine' ? w.name : 'This workout')" />
     </div>
 
     <div class="grid spt" style="grid-template-columns:minmax(0,1fr) 300px;align-items:start">
@@ -212,7 +214,7 @@ await loaded(q);
           </table>
           <DotLine v-if="verdict(e.id)?.last && e.status !== 'skipped'" class="tiny lastt" :parts="lastLine(e.id)" />
           <div v-if="e.notes?.some((x: any) => x.workoutId === w.id)" class="exnotes">
-            <NoteItem v-for="n in e.notes.filter((x: any) => x.workoutId === w.id)" :key="n.id" :note="n" :menu="noteMenu(n, e.exercise?.name ?? '')" />
+            <NoteItem v-for="n in e.notes.filter((x: any) => x.workoutId === w.id)" :key="n.id" :note="n" :day="w.startedAt" :menu="noteMenu(n, e.exercise?.name ?? '')" />
           </div>
         </div>
         <button v-if="editing" class="btn tonal block" @click="adding = true"><Icon name="plus" />Add exercise</button>
@@ -225,7 +227,7 @@ await loaded(q);
         <div v-if="rep.previous" class="card click" @click="router.push(`/workouts/${rep.previous.id}`)"><div class="lbl">Last time ({{ fmt.date(rep.previous.startedAt) }})</div>
           <div class="tiny" style="margin-top:6px">{{ fmt.dur(rep.previous.durationS, true) }} · {{ fmt.vol(rep.previous.volumeKg) }} volume</div>
           <div class="tiny" :class="rep.totals.durationS <= rep.previous.durationS ? 'pos' : ''">{{ rep.totals.durationS <= rep.previous.durationS ? `${fmt.dur(rep.previous.durationS - rep.totals.durationS, true)} faster` : `${fmt.dur(rep.totals.durationS - rep.previous.durationS, true)} longer` }}</div></div>
-        <div v-if="w.createdReminders?.length" class="card"><div class="lbl hgap">Reminders set</div><div class="nlist"><ReminderItem v-for="m in w.createdReminders" :key="m.id" :reminder="m" :where="m.targetType === 'exercise' ? m.targetName : null" :routine-name="null" when /></div></div>
+        <div v-if="w.createdReminders?.length" class="card"><div class="lbl hgap">Reminders set</div><div class="nlist"><ReminderItem v-for="m in w.createdReminders" :key="m.id" :reminder="m" :where="m.targetType === 'exercise' ? m.targetName : null" :routine-name="null" :day="w.startedAt" when /></div></div>
         <div v-if="rep.totals.avgRestS" class="card tight"><div class="lbl">Average rest</div><div style="font-weight:600;font-size:18px">{{ fmt.clock(rep.totals.avgRestS) }}</div></div>
       </div>
     </div>

@@ -8,10 +8,11 @@ export const DIFFICULTY = ["Very easy", "Easy", "Right", "Hard", "Very hard"];
 // how hard it felt and its tags. A box during workouts and previews; a plain row in a Notes list (`flat`).
 import { computed } from "vue";
 import { useFmt } from "../core/format";
+import DotLine from "./DotLine.vue";
 import Icon from "./Icon.vue";
 import Menu, { type MenuItem } from "./Menu.vue";
 
-const props = defineProps<{ note: any; flat?: boolean; where?: string | null; menu?: MenuItem[] }>();
+const props = defineProps<{ note: any; flat?: boolean; where?: string | null; day?: string | null; menu?: MenuItem[] }>();
 const fmt = useFmt();
 // "shows every time" only means something for notes on an exercise or routine; workout notes stay with their workout
 const repeats = computed(() => props.note.pinned && ["exercise", "routine_exercise", "routine"].includes(props.note.targetType));
@@ -19,7 +20,7 @@ const repeats = computed(() => props.note.pinned && ["exercise", "routine_exerci
 const text = computed(() => (props.note.body && props.note.body !== (props.note.tags ?? []).join(", ") ? props.note.body : ""));
 const meta = computed(() => [
   props.where,
-  fmt.value.stamp(props.note.createdAt) || null,
+  fmt.value.stamp(props.note.createdAt, props.day) || null,
   props.flat ? props.note.workoutName : null,
   props.note.difficulty ? DIFFICULTY[props.note.difficulty - 1] : null,
   props.flat && repeats.value ? "Shows in every workout" : null,
@@ -32,7 +33,7 @@ const meta = computed(() => [
     <div class="b">
       <div v-if="text" class="tx">{{ text }}</div>
       <div v-if="meta.length || note.tags?.length" class="m">
-        <template v-for="(x, i) in meta" :key="i"><span v-if="i" class="sep">·</span><span>{{ x }}</span></template>
+        <DotLine v-if="meta.length" :parts="meta" />
         <span v-for="t in note.tags" :key="t" class="mchip">{{ t }}</span>
       </div>
     </div>
