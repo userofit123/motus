@@ -86,7 +86,7 @@ const rows = computed(() => r.value.perExercise.map((p, i) => {
       <div class="card stat wsf-tile" :class="{ rec: r.records }"><div class="lbl"><span class="bi"><Icon name="trophy" :size="15" /></span>Records</div>
         <div class="val">{{ r.records }}<small>{{ r.records === 1 ? "exercise" : "exercises" }}</small></div><div class="sub">{{ recordsSub }}</div></div>
       <div v-if="r.targets" class="card stat wsf-tile" :class="{ hit: r.targetsHit >= r.targets }"><div class="lbl"><span class="bi"><Icon name="check" :size="15" /></span>Rep targets</div>
-        <div class="val">{{ r.targetsHit }}<small>/{{ r.targets }}</small></div>
+        <div class="val">{{ r.targetsHit }}<small class="glue">/{{ r.targets }}</small></div>
         <div class="sub">Sets on target</div>
         <div class="sub">Sets that reached their reps</div></div>
     </div>
@@ -145,7 +145,8 @@ const rows = computed(() => r.value.perExercise.map((p, i) => {
 .wsf-tile .lbl { font-size: var(--fs-sm); gap: 6px; }
 .wsf-tile .val { font-size: clamp(var(--fs-lg), 5.2cqi, var(--fs-val)); margin-top: var(--tdy); }
 .wsf-tile.rec { border-color: color-mix(in srgb, var(--acc) 45%, var(--ol)); background: color-mix(in srgb, var(--acc) 7%, var(--s1)); }
-.wsf-tile .val small { font-size: var(--fs-sm); font-weight: 500; color: var(--tx2); margin-inline-start: 0; } /* "19/19" like the exercise rows */
+.wsf-tile .val small { font-size: var(--fs-sm); font-weight: 500; color: var(--tx2); }
+.wsf-tile .val small.glue { margin-inline-start: 0; } /* "19/19" like the exercise rows */
 .wsf-tile.hit .val { color: var(--pos); }
 .wsf-tile.hit .bi { background: var(--pos); color: var(--on); }
 .wsf-tile.rec .bi { background: var(--acc); color: var(--on); }
