@@ -33,7 +33,8 @@ let cues: Cues = { sound: true, cueSound: REST_OVER_SOUND_DEFAULT, tickSound: CO
 // Whether `cues` holds a running workout's effective settings (account settings plus that workout's own overrides).
 // Only then do the background alarm and RestCues use it; otherwise the saved account settings apply.
 let workoutCues = false;
-export const setCues = (c: Cues, forWorkout = true) => { cues = c; workoutCues = forWorkout; };
+// a rest under way when the cues come (one restored after a reload) gets its sounds ready, as startRest does
+export const setCues = (c: Cues, forWorkout = true) => { cues = c; workoutCues = forWorkout; if (restActive()) prepare(c); };
 /** Sound and vibration as chosen in Settings → Workout, read from the settings the app has loaded, so they are right
  *  on any page (the cues above are only filled once a workout screen has been opened). */
 export function savedCues(): CueVoice & { sound: boolean; vibrate: boolean; warn10: boolean; countdown: boolean } {
@@ -65,7 +66,7 @@ setInterval(() => {
     // 3-2-1 in the last seconds (not on rests too short for it to mean anything); the end's own beep is the "now"
     const s = Math.ceil(left);
     if (s >= 1 && s <= 3 && s !== lastCount && rest.totalS > 5 && cues.sound && cues.countdown) { lastCount = s; if (!quiet) beep(); }
-    // over: the cues play either way; then straight on to the next set, or "Rest over" until you tap Next set
+    // over: the cues play either way; then straight on to the next set, or "Rest over" with a Next set button to tap
     if (left <= 0) { rest.done = true; save(); restEnded(); if (cues.next) finishRest(true, true); }
   }
 }, 250);
@@ -142,10 +143,12 @@ function restEnded() {
 let alarmOn = false;
 const hidden = () => typeof document !== "undefined" && document.hidden;
 // Back in the foreground: the Android app played the cues already due while hidden, so mark them played here or the
-// next tick would play them again.
-function catchUpCues() {
+// next tick would play them again. `covered`: the alarm was set; a rest that ran out meanwhile was announced by it (its
+// rest over sound and "Rest over"), so it ends here without the in-app cues, as the tick would have ended it.
+function catchUpCues(covered: boolean) {
   if (!rest.endAt || rest.done || rest.pausedLeftS != null) return;
   const left = (rest.endAt - Date.now()) / 1000;
+  if (covered && left <= 0) { rest.done = true; save(); if (cues.next) finishRest(true, true); return; }
   if (left <= 10) warned = true;
   const s = Math.ceil(left);
   if (s >= 1 && s <= 3) lastCount = s;
@@ -161,7 +164,7 @@ function planAlarm() {
   void scheduleRestAlarm(rest.endAt!, rest.next, c); alarmOn = true;
   // the same choices as the in-app cues above: the 10 seconds and the 3-2-1 each have their own switch, and all three
   // need the workout sounds on; the end plays the rest over sound, as on screen (the alarm itself is silent)
-  scheduleRestCues(rest.endAt!, { warn10: c.sound && c.warn10, countdown: c.sound && c.countdown && rest.totalS > 5, tickSound: cleanWorkoutSound(c.tickSound, COUNTDOWN_SOUND_DEFAULT), endSound: c.sound ? cleanWorkoutSound(c.cueSound) : null, cueVolume: c.cueVolume });
+  scheduleRestCues(rest.endAt!, { warn10: c.sound && c.warn10, countdown: c.sound && c.countdown && rest.totalS > 5, tickSound: cleanWorkoutSound(c.tickSound, COUNTDOWN_SOUND_DEFAULT), endSound: c.sound ? cleanWorkoutSound(c.cueSound) : null, cueVolume: c.cueVolume, body: rest.next, vibrate: c.vibrate });
 }
 function dropAlarm() {
   if (!alarmOn) return;
@@ -172,7 +175,7 @@ function restTimeSet() {
   showRestCountdown(rest.endAt!, rest.next);
   if (hidden()) planAlarm();
 }
-if (typeof document !== "undefined") document.addEventListener("visibilitychange", () => { if (hidden()) planAlarm(); else { dropAlarm(); catchUpCues(); } });
+if (typeof document !== "undefined") document.addEventListener("visibilitychange", () => { if (hidden()) planAlarm(); else { const covered = alarmOn; dropAlarm(); catchUpCues(covered); } });
 // one left from before the app was closed in the background would still sound with the app open again
 if (isNativeApp() && !hidden()) { void cancelRestAlarm(); cancelRestCues(); }
 
@@ -249,6 +252,9 @@ function prepare(v: CueVoice) {
     void bufferOf(ac, cleanWorkoutSound(v.tickSound, COUNTDOWN_SOUND_DEFAULT));
   } catch { /* no sound */ }
 }
+// a rest restored after a reload: its sounds made ready now, not first on its end (setCues does it again with the
+// workout's own choice once its screen opens)
+if (restActive()) prepare(cues);
 /** The volume setting (10-100 %) as a gain. Squared, because the ear hears loudness roughly by the square: 50 % is
  *  then about half as loud (-12 dB) rather than barely quieter (-6 dB). The Android app does the same (RestCues.java). */
 export const levelOf = (volume: number) => (cleanCueVolume(volume) / 100) ** 2;

@@ -13,6 +13,8 @@ import android.os.HandlerThread;
 import android.os.Looper;
 import android.os.PowerManager;
 import android.os.SystemClock;
+import androidx.core.app.NotificationCompat;
+import androidx.core.app.NotificationManagerCompat;
 import java.util.HashMap;
 import java.util.HashSet;
 
@@ -24,12 +26,17 @@ import java.util.HashSet;
  * level, so a cue sounds the same in the background as on screen. The end is played here and not by the "Rest over"
  * notification (which is silent): a notification's sound is the phone's notification sound, which a phone on vibrate
  * or silent doesn't play, while these are on the media stream like the sound on screen. A note whose moment passed
- * more than LATE_MS ago is dropped.
+ * more than LATE_MS ago is dropped. Android 5-7 have no notification channels, where the plugin that shows the web
+ * app's "Rest over" gives it the phone's sound and vibration whatever the settings: there the web app leaves it out and
+ * the end's alarm shows it itself (OWN_NOTICE), silent and vibrating only when that is on.
  */
 public class RestCues extends BroadcastReceiver {
     private static final String ACTION = "org.motus.app.REST_CUE";
     private static final int WARN = 200, COUNT = 201, END = 202; // the alarms' request codes
     private static final long LATE_MS = 1000;
+    private static final boolean OWN_NOTICE = Build.VERSION.SDK_INT < Build.VERSION_CODES.O;
+    // REST_ALARM in workout/native.ts, so the web app's taking the "Rest over" off takes this one off too
+    private static final int NOTICE_ID = 7001;
     // a countdown note is cut off after this long, so it is over before the next second's (COUNT_MAX_S in runtime.ts)
     private static final long CUT_MS = 800;
     // the longest a rest over sound plays (Level up, the longest in the library, is 0.73 s), with room to spare
@@ -48,24 +55,24 @@ public class RestCues extends BroadcastReceiver {
     }
 
     /** The cues for a rest ending at `endAt`, in place of any scheduled before. `countdown`: the 3-2-1 (only the
-     *  seconds still to come). `sound`: the countdown sound; `endSound`: the rest over sound (null: none at the end). */
-    static void schedule(Context ctx, long endAt, boolean warn10, boolean countdown, String sound, String endSound, int volume) {
+     *  seconds still to come). `sound`: the countdown sound; `endSound`: the rest over sound (null: none at the end). `body`, `vibrate`: the "Rest over" shown on Android 5-7. */
+    static void schedule(Context ctx, long endAt, boolean warn10, boolean countdown, String sound, String endSound, int volume, String body, boolean vibrate) {
         cancel(ctx);
         // loaded now, so each is ready when its first cue comes
         Context app = ctx.getApplicationContext();
         if (warn10 || countdown) audio.post(() -> load(app, sound));
         if (endSound != null) audio.post(() -> load(app, endSound));
         long now = System.currentTimeMillis();
-        if (warn10 && endAt - 10_000 > now) set(ctx, WARN, endAt - 10_000, endAt, sound, volume);
-        if (countdown && endAt - 1000 > now) set(ctx, COUNT, Math.max(endAt - 3000, now), endAt, sound, volume);
-        if (endSound != null && endAt > now) set(ctx, END, endAt, endAt, endSound, volume);
+        if (warn10 && endAt - 10_000 > now) set(ctx, WARN, endAt - 10_000, endAt, sound, volume, body, vibrate);
+        if (countdown && endAt - 1000 > now) set(ctx, COUNT, Math.max(endAt - 3000, now), endAt, sound, volume, body, vibrate);
+        if ((endSound != null || OWN_NOTICE) && endAt > now) set(ctx, END, endAt, endAt, endSound, volume, body, vibrate);
     }
 
-    private static void set(Context ctx, int code, long at, long endAt, String sound, int volume) {
+    private static void set(Context ctx, int code, long at, long endAt, String sound, int volume, String body, boolean vibrate) {
         AlarmManager am = (AlarmManager) ctx.getSystemService(Context.ALARM_SERVICE);
         if (am == null) return;
         Intent it = intent(ctx).putExtra("warn", code == WARN).putExtra("end", code == END).putExtra("from", at).putExtra("endAt", endAt)
-            .putExtra("sound", sound).putExtra("volume", volume);
+            .putExtra("sound", sound).putExtra("volume", volume).putExtra("body", body).putExtra("vibrate", vibrate);
         PendingIntent pi = PendingIntent.getBroadcast(ctx, code, it, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
         // without the exact-alarm permission (Android 12+ can take it away) the alarm may come late; its notes are then dropped
         boolean exact = Build.VERSION.SDK_INT < Build.VERSION_CODES.S || am.canScheduleExactAlarms();
@@ -88,17 +95,20 @@ public class RestCues extends BroadcastReceiver {
 
     @Override
     public void onReceive(Context ctx, Intent intent) {
-        // the app is gone (swiped away): no cues for a rest nothing shows any more
-        if (!MotusWorkoutPlugin.live) return;
         boolean warn = intent.getBooleanExtra("warn", false), end = intent.getBooleanExtra("end", false);
+        // the app is gone (swiped away): no lead-up for a rest nothing shows any more, but its end still sounds, since
+        // its "Rest over" still comes (the notifications plugin's alarm outlives the app) and that one is silent
+        if (!MotusWorkoutPlugin.live && !end) return;
         long endAt = intent.getLongExtra("endAt", 0), from = intent.getLongExtra("from", 0);
         String sound = intent.getStringExtra("sound");
+        Context app = ctx.getApplicationContext();
+        if (end && OWN_NOTICE) showRestOver(app, intent.getStringExtra("body"), intent.getBooleanExtra("vibrate", false), sound != null);
+        if (sound == null) return; // the workout sounds are off: the end has only its notification
         int volume = intent.getIntExtra("volume", 100);
         // as on screen: the 10 seconds and each of the 3-2-1 are one play of the countdown sound, all alike (beep()),
         // cut off; the end is the rest over sound, played whole (restOver())
         long[] due = end ? new long[] { endAt } : warn ? new long[] { endAt - 10_000 } : new long[] { endAt - 3000, endAt - 2000, endAt - 1000 };
         long now = System.currentTimeMillis(), last = now;
-        Context app = ctx.getApplicationContext();
         for (long d : due) {
             if (d < from - 50 || now - d > LATE_MS) continue; // played on screen before the app went away, or long gone
             long wait = Math.max(0, d - now);
@@ -115,6 +125,26 @@ public class RestCues extends BroadcastReceiver {
             if (wl != null && wl.isHeld()) wl.release();
             pending.finish();
         }, last - now + (end ? END_MS : CUT_MS) + 400);
+    }
+
+    /** "Rest over" on Android 5-7 (OWN_NOTICE), like the web app's elsewhere: silent (its sound is the rest over sound
+     *  played here), vibrating when that is on, heads-up only when it sounds or vibrates (the quiet "running" channel
+     *  when neither, workout/native.ts). A tap opens the app. */
+    private static void showRestOver(Context ctx, String body, boolean vibrate, boolean sound) {
+        Intent open = new Intent(ctx, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+        PendingIntent pi = PendingIntent.getActivity(ctx, NOTICE_ID, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+        NotificationCompat.Builder b = new NotificationCompat.Builder(ctx, "running")
+            .setSmallIcon(R.drawable.ic_stat_motus)
+            .setContentTitle("Rest over")
+            .setContentText(body == null || body.isEmpty() ? "Time for the next set" : body)
+            .setPriority(vibrate || sound ? NotificationCompat.PRIORITY_HIGH : NotificationCompat.PRIORITY_DEFAULT)
+            .setCategory(NotificationCompat.CATEGORY_ALARM)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setAutoCancel(true)
+            .setContentIntent(pi);
+        // no defaults: no sound; the vibration as in the app (vibrate([300, 150, 300]) in workout/runtime.ts)
+        if (vibrate) b.setVibrate(new long[] { 0, 300, 150, 300 });
+        try { NotificationManagerCompat.from(ctx).notify(NOTICE_ID, b.build()); } catch (SecurityException e) { /* notifications not allowed */ }
     }
 
     // The sounds, loaded once and kept: all of this is used only on the audio thread.
