@@ -44,6 +44,7 @@ export function useSessionSamples(from: () => number | null, to: () => number | 
     queryKey: computed(() => ["readings", "session", "heart_rate", from(), to()]),
     queryFn: () => hrSamples(new Date(from()!), new Date(to()!)),
     enabled: computed(() => from() != null && to() != null && to()! > from()!),
+    retry: false,
   });
   return computed<[number, number][]>(() => (q.data.value?.length ? q.data.value : kept() ?? []));
 }

@@ -3,14 +3,14 @@
 // domain: the time the x axis spans (a whole day) instead of the first to the last point; xt: where its time labels go
 // instead of first, middle and last; gap: a longer break between two points (ms) leaves the line open there, so time
 // without readings isn't drawn as a straight line; shade: spans of time set off behind the line (a day's workouts), in
-// their own colour with a strip along the top when they have one, each with an id opening it when the chart is tapped
+// their own colour with a strip along the top when they have one (none when soft: a quieter span, a workout's rests), each with an id opening it when the chart is tapped
 // anywhere over it, top to bottom (at least 8px wide, so a short one can be hit).
 import { computed, ref } from "vue";
 import { useWidth } from "./useWidth";
 import { useTip } from "./useTip";
 import { useFmt } from "../core/format";
 
-const props = defineProps<{ points: { x: number; y: number; label?: string; id?: string }[]; height?: number; fmt?: (v: number) => string; xfmt?: (t: number) => string; color?: string; zero?: boolean; domain?: [number, number]; xt?: number[]; gap?: number; shade?: { a: number; b: number; color?: string; id?: string; name?: string }[] }>();
+const props = defineProps<{ points: { x: number; y: number; label?: string; id?: string }[]; height?: number; fmt?: (v: number) => string; xfmt?: (t: number) => string; color?: string; zero?: boolean; domain?: [number, number]; xt?: number[]; gap?: number; shade?: { a: number; b: number; color?: string; soft?: boolean; id?: string; name?: string }[] }>();
 const emit = defineEmits<{ pick: [id: string] }>();
 const box = ref<HTMLElement | null>(null);
 const W = useWidth(box), H = computed(() => props.height ?? 200), P = { l: 44, r: 12, t: 10, b: 22 };
@@ -83,7 +83,7 @@ const xf = (t: number) => (props.xfmt ? props.xfmt(t) : df.value.date(t));
       <defs><linearGradient :id="'cg' + uid" x1="0" y1="0" x2="0" y2="1"><stop offset="0" :stop-color="color ?? 'var(--acc)'" stop-opacity=".35" /><stop offset="1" :stop-color="color ?? 'var(--acc)'" stop-opacity="0" /></linearGradient></defs>
       <g v-for="(z, i) in (shade ?? []).filter((s) => s.b > dom.x0 && s.a < dom.x1)" :key="'s' + i"><title v-if="z.name">{{ z.name }}</title>
         <rect class="shd" :x="shadeX(z).x" :y="P.t" :width="shadeX(z).w" :height="H - P.t - P.b" :rx="z.color ? 0 : 3" :style="z.color ? { fill: `color-mix(in srgb, ${z.color} 16%, transparent)` } : undefined" />
-        <rect v-if="z.color" :x="shadeX(z).x" :y="P.t" :width="shadeX(z).w" height="3" rx="1.5" :style="{ fill: z.color }" />
+        <rect v-if="z.color && !z.soft" :x="shadeX(z).x" :y="P.t" :width="shadeX(z).w" height="3" rx="1.5" :style="{ fill: z.color }" />
       </g>
       <g v-for="t in ticks" :key="t"><line class="gl" :x1="P.l" :x2="W - P.r" :y1="sy(t)" :y2="sy(t)" /><text class="ax" :x="P.l - 6" :y="sy(t) + 3" text-anchor="end">{{ f(t) }}</text></g>
       <text v-for="t in xticks" :key="'x' + t.x" class="ax" :x="sx(t.x)" :y="H - 4" :text-anchor="t.anchor">{{ t.text }}</text>

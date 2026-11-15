@@ -98,18 +98,29 @@ export function setSpans(sets: readonly TickedSet[], startS: number): SetSpan[] 
   return out;
 }
 
+/** A set as the heart rate per exercise reads it: its exercise in the workout and when it was ticked (unix seconds) */
+export interface HrTick { weId: string; doneS: number | null }
+
 /**
- * Each exercise's average and highest heart rate, from samples ([unix seconds, bpm]): every reading from the tick before
- * a set (the workout's start for the first; the rest before it) to its own tick, at most MAX_SET_S, as the engine's exerciseHr counts them.
+ * Each exercise's average and highest heart rate, from samples ([unix seconds, bpm]), the one count the server (the
+ * engine's exerciseHr) and the workout's page both use. A set's time runs from the set ticked before it (any exercise, so
+ * supersets split correctly; the workout's start for the first) to its own tick, at most MAX_SET_S: the rest before a set
+ * and the set itself. An exercise's heart rate is every reading in its sets' times. Exercises whose sets have no tick
+ * times fall back to the exercise's own start and end (`fallback`), if it has them. A workout typed in afterwards has every
+ * set ticked at the same moment, which says nothing about when each was done: its ticks are not used.
  */
-export function exercisePeaks(samples: readonly (readonly [number, number])[], spans: readonly SetSpan[], startS: number): Map<string, { avgHr: number; maxHr: number }> {
+export function exercisePeaks(samples: readonly (readonly [number, number])[], sets: readonly HrTick[], startS: number,
+  fallback: ReadonlyMap<string, readonly [number, number]> = new Map()): Map<string, { avgHr: number; maxHr: number }> {
   const win = new Map<string, [number, number][]>();
+  const add = (we: string, a: number, b: number) => (win.get(we) ?? win.set(we, []).get(we)!).push([a, b]);
+  const ticked = sets.filter((x): x is HrTick & { doneS: number } => x.doneS != null && Number.isFinite(x.doneS)).sort((a, b) => a.doneS - b.doneS);
+  const told = ticked.length < 2 || new Set(ticked.map((x) => x.doneS)).size > 1;
   let prev = startS;
-  for (const x of [...spans].sort((a, b) => a.b - b.b)) {
-    const a = Math.max(prev, x.b - MAX_SET_S);
-    (win.get(x.weId) ?? win.set(x.weId, []).get(x.weId)!).push([a, x.b]);
-    prev = x.b;
+  for (const x of told ? ticked : []) {
+    add(x.weId, Math.max(prev, x.doneS - MAX_SET_S), x.doneS);
+    prev = Math.max(prev, x.doneS);
   }
+  for (const [we, [a, b]] of fallback) if (!win.has(we) && b > a) add(we, a, b);
   const out = new Map<string, { avgHr: number; maxHr: number }>();
   for (const [we, ws] of win) {
     const mine = samples.filter((p) => ws.some(([a, b]) => p[0] > a && p[0] <= b));

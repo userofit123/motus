@@ -49,7 +49,7 @@ describe("heart rate over a workout's sets", () => {
   it("finds each exercise's peak and the fall in a minute of rest", () => {
     const sp = setSpans(sets, t0);
     const hr: [number, number][] = [[t0 + 90, 150], [t0 + 100, 155], [t0 + 160, 120], [t0 + 225, 160], [t0 + 290, 130], [t0 + 390, 140]];
-    expect(exercisePeaks(hr, sp, t0)).toEqual(new Map([["e1", { avgHr: 146, maxHr: 160 }], ["e2", { avgHr: 135, maxHr: 140 }]]));
+    expect(exercisePeaks(hr, sets, t0)).toEqual(new Map([["e1", { avgHr: 146, maxHr: 160 }], ["e2", { avgHr: 135, maxHr: 140 }]]));
     expect(restRecovery(hr, sp)).toEqual({ drop: 33, rests: 2 });
   });
 });

@@ -6,7 +6,7 @@ import { startWorkout } from "../workout/start";
 import { goBack } from "../core/leave";
 import { computed, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { usesWeight, usesReps, usesDuration, usesDistance, toM, fromM, muscleName, structureChanges, sideJoins, restDefaultsOf, setSpans, exercisePeaks, type StructureChange } from "@motus/shared";
+import { usesWeight, usesReps, usesDuration, usesDistance, toM, fromM, muscleName, structureChanges, sideJoins, restDefaultsOf, setSpans, exercisePeaks, type StructureChange, type WorkoutExercise, type TickedSet } from "@motus/shared";
 import { useWorkoutQuery, useSettings, loaded } from "../api/queries";
 import { api, mediaUrl } from "../api/client";
 import { invalidate } from "../api/live";
@@ -63,17 +63,15 @@ const joins = computed(() => { const d = restDefaultsOf({ ...s.value.workout, ..
 const fromMs = computed(() => (w.value?.startedAt ? Date.parse(w.value.startedAt) : null));
 const toMs = computed(() => (w.value?.endedAt ? Date.parse(w.value.endedAt) : null));
 const samples = useSessionSamples(() => fromMs.value, () => toMs.value, () => w.value?.hr);
-// each ticked set on the clock, named for the chart ("Bench press, set 2"); skipped exercises left out
-const spans = computed(() => {
-  const x = w.value; if (!x || fromMs.value == null) return [];
-  const names = new Map<string, string>(), sets = (x.exercises ?? []).filter((e: any) => e.status !== "skipped").flatMap((e: any) => e.sets.flatMap((t: any, j: number) => {
-    if (!t.done || !t.doneAt) return [];
-    names.set(t.id, `${e.exercise?.name ?? "Exercise"}, ${t.kind === "warmup" ? "warm-up" : `set ${setLabel(e.sets, j, !!s.value.features.unilateral)}`}`);
-    return [{ id: t.id as string, weId: e.id as string, doneS: Date.parse(t.doneAt) / 1000, restS: t.restActualS as number | null, durationS: t.durationS as number | null }];
-  }));
-  return setSpans(sets, fromMs.value / 1000).map((z) => ({ ...z, name: names.get(z.id)! }));
-});
-const peaks = computed(() => (samples.value.length && fromMs.value != null ? exercisePeaks(samples.value, spans.value, fromMs.value / 1000) : new Map<string, { avgHr: number; maxHr: number }>()));
+// each ticked set, with every done set as the server's exerciseHr reads them (a skipped exercise's done sets too), so the
+// numbers here match its; named for the chart ("Bench press, set 2")
+const exercises = computed<WorkoutExercise[]>(() => w.value?.exercises ?? []);
+const ticked = computed<TickedSet[]>(() => exercises.value.flatMap((e) => e.sets.flatMap((t) =>
+  t.done && t.doneAt ? [{ id: t.id, weId: e.id, doneS: Date.parse(t.doneAt) / 1000, restS: t.restActualS, durationS: t.durationS }] : [])));
+const setNames = computed(() => new Map(exercises.value.flatMap((e) => e.sets.map((t, j) =>
+  [t.id, `${e.exercise?.name ?? "Exercise"}, ${t.kind === "warmup" ? "warm-up" : `set ${setLabel(e.sets, j, !!s.value.features.unilateral)}`}`] as const))));
+const spans = computed(() => (fromMs.value == null ? [] : setSpans(ticked.value, fromMs.value / 1000).map((z) => ({ ...z, name: setNames.value.get(z.id) ?? "" }))));
+const peaks = computed(() => (samples.value.length && fromMs.value != null ? exercisePeaks(samples.value, ticked.value, fromMs.value / 1000) : new Map<string, { avgHr: number; maxHr: number }>()));
 // the band's heart rate during each exercise (from its first set to its last), after its verdict as Stats → Heart words a
 // session: "128 bpm · up to 141 bpm"; from the samples, else the engine's from the kept series (exercises without ticks)
 const exHr = (weId: string) => { const h = peaks.value.get(weId) ?? (w.value?.exerciseHr ?? []).find((x: any) => x.workoutExerciseId === weId);

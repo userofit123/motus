@@ -1,9 +1,9 @@
 <script setup lang="ts">
-// A finished workout's or activity's band data in one card ("From your band"), from the saved band records rather than a live read: the
+// A finished workout's or activity's band data in one card ("Heart rate", "From your band" under it), from the saved band records rather than a live read: the
 // heart rate's average and highest, then whatever else was saved for the time as a report's tiles (Stats → Heart's day):
 // a workout's active calories and heart rate recovery (how far it fell in a minute of rest), an activity's band speed or
 // pace (when the activity has none of its own) and cadence. Under them the heart rate over the session with each set
-// shaded on it in the workout's colour (the rests are the gaps between; a reading names its set or "Rest"), switchable
+// shaded on it in the workout's colour and each rest after one in a quieter grey (a reading names its set or "Rest"), switchable
 // to the speed or pace and the cadence when the watch saved those, and the time in each heart rate zone. Only what
 // there is: no records and no kept series leaves the tiles alone, nothing at all leaves no card.
 import { computed, ref } from "vue";
@@ -12,7 +12,7 @@ import { useQuery } from "@tanstack/vue-query";
 import { zoneMinutes, restRecovery, fromM, ymd, SAMPLE_MAX_S, type SetSpan } from "@motus/shared";
 import { useFmt } from "../core/format";
 import { ZONES, useMaxHr, bandRecords, bandTypesOn, type BandRecord } from "../core/heart";
-import { hrPoints, fromWhere, useDevice } from "../native/health";
+import { hrPoints, adviceWord, useDevice } from "../native/health";
 import Icon from "./Icon.vue";
 import LineChart from "./LineChart.vue";
 import StageBar from "./stats/StageBar.vue";
@@ -39,6 +39,7 @@ const kcalQ = useQuery({
   queryKey: computed(() => ["readings", "session", "active_kcal", props.from, props.to]),
   queryFn: () => bandRecords("active_kcal", range.value.a, range.value.b),
   enabled: computed(() => !!props.kcal && ok.value),
+  retry: false,
 });
 const kcal = computed(() => {
   let t = 0;
@@ -59,6 +60,7 @@ const motionQ = useQuery({
     return want.length ? bandRecords(want.join(","), range.value.a, range.value.b) : [];
   },
   enabled: computed(() => !!props.motion && ok.value),
+  retry: false,
 });
 // one type's values over the session, [unix seconds, value]: a record's samples, else its one value at its start
 const seriesOf = (type: string) => (motionQ.data.value ?? []).filter((r: BandRecord) => r.type === type)
@@ -70,28 +72,30 @@ const mean = (xs: [number, number][]) => xs.reduce((t, p) => t + p[1], 0) / xs.l
 const speed = computed(() => seriesOf("speed"));
 const asPace = (mps: number) => 1 / fromM(mps, fmt.value.du);
 const paced = computed(() => (props.motion === "pace" ? speed.value.filter((p) => p[1] >= 0.3) : speed.value));
-const cadence = computed(() => { const s = seriesOf("steps_cadence"); return s.length ? { pts: s, unit: "steps/min", icon: "steps" } : (() => { const c = seriesOf("cycling_cadence"); return c.length ? { pts: c, unit: "rpm", icon: "refresh" } : null; })(); });
+const cadence = computed(() => { const s = seriesOf("steps_cadence"); return s.length ? { pts: s, unit: "steps/min" } : (() => { const c = seriesOf("cycling_cadence"); return c.length ? { pts: c, unit: "rpm" } : null; })(); });
 
-// recovery over the rests, from the samples
+// recovery over the rests, from the samples: a fall of 20 bpm or more in the first minute is the commonly cited good one
+const GOOD_DROP = 20;
 const recovery = computed(() => (props.sets?.length ? restRecovery(props.samples, props.sets) : null));
 
-type Tile = { key: string; icon: string; label: string; value: string; unit: string; sub: string };
+type Tile = { key: string; icon: string; label: string; value: string; unit: string; sub: string; tone?: string };
 const tiles = computed(() => {
   const out: Tile[] = [], f = fmt.value;
   if (avg.value != null) out.push({ key: "hr", icon: "heart", label: "Heart rate", value: String(avg.value), unit: "bpm", sub: max.value != null ? `average · up to ${max.value}` : "average" });
   if (props.kcal && kcal.value > 0) out.push({ key: "kcal", icon: "flame", label: "Active calories", value: f.num(kcal.value, 0), unit: "kcal", sub: "during the workout" });
   const r = recovery.value;
-  if (r) out.push({ key: "rec", icon: "heartPulse", label: "Recovery", value: `${r.drop > 0 ? "-" : r.drop < 0 ? "+" : ""}${Math.abs(r.drop)}`, unit: "bpm", sub: "in 1 min of rest" });
+  if (r) out.push({ key: "rec", icon: "heartDown", label: "Recovery", value: String(Math.abs(r.drop)), unit: "bpm",
+    sub: r.drop > 0 ? "drop in 1 min of rest" : r.drop < 0 ? "rise in 1 min of rest" : "no drop in 1 min of rest", tone: r.drop >= GOOD_DROP ? "pos" : undefined });
   if (paced.value.length && !(props.motion === "pace" && props.ownPace))
     out.push(props.motion === "pace"
-      ? { key: "spd", icon: "timer", label: "Pace", value: f.clock(asPace(mean(paced.value))), unit: `/${f.du}`, sub: "average" }
-      : { key: "spd", icon: "gauge", label: "Speed", value: f.num(fromM(mean(paced.value) * 3600, f.du), 1), unit: `${f.du}/h`, sub: "average" });
+      ? { key: "spd", icon: "timer", label: "Average pace", value: f.clock(asPace(mean(paced.value))), unit: `/${f.du}`, sub: "while moving" }
+      : { key: "spd", icon: "speed", label: "Average speed", value: f.num(fromM(mean(paced.value) * 3600, f.du), 1), unit: `${f.du}/h`, sub: "during the activity" });
   const c = cadence.value;
-  if (c) out.push({ key: "cad", icon: c.icon, label: "Cadence", value: f.num(mean(c.pts), 0), unit: c.unit, sub: "average" });
+  if (c) out.push({ key: "cad", icon: "cadence", label: "Average cadence", value: f.num(mean(c.pts), 0), unit: c.unit, sub: "while moving" });
   return out;
 });
-// named for where it all came from, as the activity's tiles say it: "From your watch"
-const title = computed(() => `From ${fromWhere(true, dev.value)}`);
+// where it all came from, under the title, as the activity's tiles say it: "From your watch" (both kinds while not known)
+const source = computed(() => `From your ${adviceWord(dev.value)}`);
 const label = (x: Tile) => [x.label, x.value, x.unit, x.sub].filter(Boolean).join(" ");
 
 // the curves on offer: the heart rate, then the speed or pace and the cadence when there are two or more of each
@@ -114,7 +118,11 @@ const curves = computed(() => {
 const pick = ref("hr");
 const curve = computed(() => curves.value.find((c) => c.key === pick.value) ?? curves.value[0] ?? null);
 const unitOf = (k: string) => (k === "hr" ? "bpm" : k === "cad" ? cadence.value?.unit ?? "" : props.motion === "pace" ? `/${fmt.value.du}` : `${fmt.value.du}/h`);
-const shade = computed(() => (curve.value?.key === "hr" ? (props.sets ?? []).map((x) => ({ a: x.a * 1000, b: x.b * 1000, name: x.name, color: props.color })) : undefined));
+// each set in the workout's colour and each rest after one in a quiet grey with no strip, so the two tell apart
+const REST_COLOR = "var(--tx2)";
+const shade = computed(() => (curve.value?.key === "hr" ? (props.sets ?? []).flatMap((x) => [{ a: x.a * 1000, b: x.b * 1000, name: x.name, color: props.color },
+  ...(x.restB != null && x.restB > x.b ? [{ a: x.b * 1000, b: x.restB * 1000, name: "Rest", color: REST_COLOR, soft: true }] : [])]) : undefined));
+const rested = computed(() => !!shade.value?.some((z) => z.soft));
 
 // minutes in each zone, from the samples
 const zones = computed(() => {
@@ -127,19 +135,21 @@ const zoned = computed(() => zones.value.some((z) => z.min > 0));
 
 <template>
   <div v-if="tiles.length || curve" class="card wkc">
-    <div class="lbl hgap">{{ title }}</div>
+    <div class="lbl">Heart rate</div>
+    <div class="tiny hgap">{{ source }}</div>
     <div v-if="tiles.length" class="wstats rows2" :class="{ n4: tiles.length === 4 }">
       <div v-for="x in tiles" :key="x.key" class="ws" role="group" :aria-label="label(x)">
         <div class="wlb"><Icon :name="x.icon" :size="14" />{{ x.label }}</div>
-        <div class="wv">{{ x.value }} <small>{{ x.unit }}</small></div>
+        <div class="wv" :class="x.tone">{{ x.value }} <small>{{ x.unit }}</small></div>
         <div class="wd">{{ x.sub }}</div>
       </div>
     </div>
     <div v-if="curve" class="csec">
       <div v-if="curves.length > 1" class="seg block hgap"><button v-for="c in curves" :key="c.key" :class="{ on: curve.key === c.key }" @click="pick = c.key">{{ c.name }}</button></div>
-      <div class="lbl hgap">{{ curve.name }} ({{ unitOf(curve.key) }})</div>
+      <!-- the switch above names the curve, so only its unit here -->
+      <div class="lbl hgap">{{ curves.length > 1 ? unitOf(curve.key) : `${curve.name} (${unitOf(curve.key)})` }}</div>
       <LineChart :points="curve.points" :height="150" :fmt="curve.fmt" :xfmt="t" :domain="[from, to]" :gap="SAMPLE_MAX_S * 1000" :shade="shade" />
-      <div v-if="shade?.length" class="bmlegend sh-leg"><span><i class="sh-hr" />Heart rate</span><span><i :style="{ background: color }" />Sets</span><span><i class="sh-rest" />Rests</span></div>
+      <div v-if="shade?.length" class="bmlegend sh-leg"><span><i class="sh-hr" />Heart rate</span><span><i :style="{ background: color }" />Sets</span><span v-if="rested"><i class="sh-rest" />Rests</span></div>
     </div>
     <div v-if="zoned" class="csec"><div class="lbl hgap">Time in heart rate zones · max {{ maxHr!.bpm }} bpm{{ maxHr!.own ? "" : " from your age" }}</div><StageBar :parts="zones" /></div>
     <div v-else-if="!maxHr && samples.length > 1" class="tiny csec"><button class="lnk inl" @click="router.push('/body?tab=details')">Set your year of birth or max heart rate</button> to see the time in heart rate zones.</div>
@@ -149,6 +159,6 @@ const zoned = computed(() => zones.value.some((z) => z.min > 0));
 <style scoped>
 .sh-leg { margin-top: var(--hg); }
 .sh-leg .sh-hr { background: var(--acc); }
-/* a rest is the chart's own background between two sets */
-.sh-leg .sh-rest { background: var(--s2); }
+/* a rest is a quiet grey span behind the line (the chart draws it at 16%; a touch stronger here so the dot shows) */
+.sh-leg .sh-rest { background: color-mix(in srgb, var(--tx2) 35%, transparent); }
 </style>
