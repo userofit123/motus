@@ -106,26 +106,26 @@ export function clearRestCountdown() {
   plugin("MotusWorkout")?.clearRest?.().catch?.(() => {});
 }
 const REST_ALARM = 7001;
-// The rest-over nudge in the Android app: an alarm at the rest's end that shows "Rest over" heads-up, with the rest
-// channel's sound and vibration, also with the phone asleep and the app's own timers stopped. Scheduled only while
-// the app is in the background (workout/runtime.ts), so on screen the in-app cues are the only alert. Each call
-// replaces the one scheduled before. A channel's sound and vibration are fixed once made (and Capacitor can't make a
-// silent one), so each pair of the switches "Play sounds" and "Vibrate when the rest ends" has its own channel: both on
-// "rest" (made here); sound only "restSound"; vibration only "restBuzz", heads-up and vibrating but silent; neither the
-// quiet "running" channel of the workout's own notification: in the shade, no heads-up, no sound. The last three are
-// made by MotusWorkoutPlugin with the rest countdown shown first.
+// The rest-over nudge in the Android app: an alarm at the rest's end that shows "Rest over" heads-up, vibrating when
+// "Vibrate when the rest ends" is on, also with the phone asleep and the app's own timers stopped. Its sound is not the
+// notification's: the Android app plays the rest over sound itself at that moment (scheduleRestCues below), on the
+// same stream as the 3-2-1 and as the sound on screen, so it is the chosen sound, at the chosen level, and is heard
+// with the phone on vibrate, where a notification's sound is not. Scheduled only while the app is in the background
+// (workout/runtime.ts), so on screen the in-app cues are the only alert. Each call replaces the one scheduled before.
+// A channel's vibration is fixed once made, so: vibrating "restBuzz", or "restQuiet" without (both heads-up and
+// silent, made by MotusWorkoutPlugin with the rest countdown shown first).
 // Scheduling and taking off run one after the other, in the order asked (each waits on the bridge): back on screen
 // right after going to the background, the cancel then comes after the schedule, never before it, so no alarm is left
 // behind to ring after a skip or on top of the in-app beeps.
-export function scheduleRestAlarm(endAt: number, body: string, o: { sound: boolean; vibrate: boolean }) {
+export function scheduleRestAlarm(endAt: number, body: string, o: { vibrate: boolean }) {
   const ln = plugin("LocalNotifications");
   if (!ln) return Promise.resolve();
   return inOrder("rest-alarm", async () => {
     try {
-      // the channel is made when a workout starts (askNotificationsOnce), but not on this device when the workout was
-      // started on another one; without it Android drops the alarm. Made once per app run.
-      await restChannel();
-      await ln.schedule({ notifications: [{ id: REST_ALARM, title: "Rest over", body: body || "Time for the next set", schedule: { at: new Date(endAt), allowWhileIdle: true }, channelId: o.sound ? (o.vibrate ? "rest" : "restSound") : o.vibrate ? "restBuzz" : "running", smallIcon: "ic_stat_motus", actionTypeId: logFromNotification ? "rest" : undefined }] });
+      // a "Rest over" still shown (a rest ran out in the background and went straight on to the next set) goes first:
+      // the new one has the same id and is posted to "alert once", so as an update of the shown one it wouldn't vibrate
+      await ln.cancel({ notifications: [{ id: REST_ALARM }] }).catch(() => {});
+      await ln.schedule({ notifications: [{ id: REST_ALARM, title: "Rest over", body: body || "Time for the next set", schedule: { at: new Date(endAt), allowWhileIdle: true }, channelId: o.vibrate ? "restBuzz" : "restQuiet", smallIcon: "ic_stat_motus", actionTypeId: logFromNotification ? "rest" : undefined }] });
     } catch { /* the in-app timer still runs */ }
   });
 }
@@ -135,11 +135,12 @@ export function cancelRestAlarm() {
     try { await plugin("LocalNotifications")?.cancel({ notifications: [{ id: REST_ALARM }] }); } catch { /* nothing scheduled */ }
   });
 }
-// The cues leading up to the rest's end, played by the Android app while it is in the background (the WebView's timers
-// and sound are stopped there): the 10 seconds warning and the 3-2-1, at their times, in the chosen countdown sound and level
-// (MotusWorkoutPlugin.scheduleRestCues), also with the screen off. The end itself is the alarm above. Scheduled and
-// taken off together with it (workout/runtime.ts); each call replaces the ones scheduled before.
-export function scheduleRestCues(endAt: number, o: { warn10: boolean; countdown: boolean; tickSound: string; cueVolume: number }) {
+// The rest's sounds, played by the Android app while it is in the background (the WebView's timers and sound are
+// stopped there): the 10 seconds warning and the 3-2-1 in the chosen countdown sound, and the end in the rest over
+// sound (`endSound`, null: none), at their times and the chosen level (MotusWorkoutPlugin.scheduleRestCues), also with
+// the screen off. The "Rest over" notification is the alarm above. Scheduled and taken off together with it
+// (workout/runtime.ts); each call replaces the ones scheduled before.
+export function scheduleRestCues(endAt: number, o: { warn10: boolean; countdown: boolean; tickSound: string; endSound: string | null; cueVolume: number }) {
   plugin("MotusWorkout")?.scheduleRestCues?.({ endAt, ...o }).catch?.(() => {});
 }
 export function cancelRestCues() {
@@ -223,13 +224,14 @@ export async function notificationState(): Promise<NotificationState> {
 // can still turn them on).
 const ASKED = "motusNotifAsked";
 export async function askNotificationsOnce() {
-  await restChannel(); // the rest alarm's sound channel, also when nothing needs asking (allowed already, Android 12 and older)
+  await restChannel(); // the interval timer's sound channel, also when nothing needs asking (allowed already, Android 12 and older)
   if (readJson<boolean>(ASKED, false) || (await notificationState()) !== "prompt") return;
   writeJson(ASKED, true);
   const yes = await confirm("Show a notification while it runs?", { text: "The time, where you are and buttons to pause or skip, in the notification shade and on the lock screen. You can change this later in Settings → Notifications.", ok: "Turn on", no: "Not now" });
   if (yes) await askNotificationPermission();
 }
-// High importance, so the rest-over notification comes heads-up, with the phone's notification sound and a vibration
+// The interval timer's changes in the background (MotusWorkoutPlugin.TimerCue): high importance, so each comes heads-up,
+// with the phone's notification sound and a vibration
 let channelMade = false;
 async function restChannel() {
   const ln = plugin("LocalNotifications");

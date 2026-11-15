@@ -68,7 +68,9 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener2 {
     private static final String CHANNEL = "running";
     private static final String OLD_CHANNEL = "workout";
     private static final String BUZZ_CHANNEL = "restBuzz";
-    private static final String SOUND_CHANNEL = "restSound";
+    private static final String QUIET_CHANNEL = "restQuiet";
+    // the rest over alarm's channel with the phone's notification sound, before RestCues played the rest over sound
+    private static final String OLD_SOUND_CHANNEL = "restSound";
     private static final int ID = 7002;
     private static final int TIMER_ID = 7003;
     private static final int REC_ID = RecordingService.REC_ID;
@@ -98,21 +100,22 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener2 {
             NotificationManager nm = (NotificationManager) getContext().getSystemService(Context.NOTIFICATION_SERVICE);
             nm.createNotificationChannel(ch);
             nm.deleteNotificationChannel(OLD_CHANNEL);
-            // the rest over alarm with the workout sounds off but vibration on (workout/native.ts scheduleRestAlarm):
-            // heads-up and vibrating like the "rest" channel, without its sound
-            NotificationChannel buzz = new NotificationChannel(BUZZ_CHANNEL, "Rest timer without sound", NotificationManager.IMPORTANCE_HIGH);
-            buzz.setDescription("When a rest ends with the workout sounds off");
+            // the rest over alarm (workout/native.ts scheduleRestAlarm): heads-up and silent, since its sound is the
+            // rest over sound RestCues plays; vibrating, or without vibration when that is off
+            NotificationChannel buzz = new NotificationChannel(BUZZ_CHANNEL, "Rest over", NotificationManager.IMPORTANCE_HIGH);
+            buzz.setDescription("When a rest ends, with vibration");
             buzz.setSound(null, null);
             buzz.enableVibration(true);
             buzz.setLockscreenVisibility(android.app.Notification.VISIBILITY_PUBLIC);
             nm.createNotificationChannel(buzz);
-            // and with the sound on but vibration off: the phone's notification sound, no vibration
-            NotificationChannel quiet = new NotificationChannel(SOUND_CHANNEL, "Rest timer without vibration", NotificationManager.IMPORTANCE_HIGH);
-            quiet.setDescription("When a rest ends with vibration off");
+            NotificationChannel quiet = new NotificationChannel(QUIET_CHANNEL, "Rest over without vibration", NotificationManager.IMPORTANCE_HIGH);
+            quiet.setDescription("When a rest ends, with vibration off");
+            quiet.setSound(null, null);
             quiet.enableVibration(false);
             quiet.setVibrationPattern(null);
             quiet.setLockscreenVisibility(android.app.Notification.VISIBILITY_PUBLIC);
             nm.createNotificationChannel(quiet);
+            nm.deleteNotificationChannel(OLD_SOUND_CHANNEL);
         }
     }
 
@@ -322,13 +325,14 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener2 {
         call.resolve();
     }
 
-    /** The rest's 10 seconds warning and 3-2-1 while the app is in the background (`endAt`, `warn10`, `countdown`,
-     *  `tickSound`: the countdown sound, `cueVolume`), in place of any scheduled before: RestCues. */
+    /** The rest's 10 seconds warning, 3-2-1 and end while the app is in the background (`endAt`, `warn10`, `countdown`,
+     *  `tickSound`: the countdown sound, `endSound`: the rest over sound or null for none, `cueVolume`), in place of
+     *  any scheduled before: RestCues. */
     @PluginMethod
     public void scheduleRestCues(PluginCall call) {
         Long endAt = call.getLong("endAt");
         if (endAt == null) { call.reject("endAt missing"); return; }
-        RestCues.schedule(getContext(), endAt, call.getBoolean("warn10", false), call.getBoolean("countdown", false), call.getString("tickSound", "progressStep"), call.getInt("cueVolume", 100));
+        RestCues.schedule(getContext(), endAt, call.getBoolean("warn10", false), call.getBoolean("countdown", false), call.getString("tickSound", "progressStep"), call.getString("endSound", null), call.getInt("cueVolume", 100));
         call.resolve();
     }
 

@@ -17,19 +17,23 @@ import java.util.HashMap;
 import java.util.HashSet;
 
 /**
- * The rest timer's 10 seconds warning and 3-2-1 while the app is in the background, where the WebView's own timers and
- * sound are stopped (workout/runtime.ts plays them on screen). Each is an exact alarm, so it comes with the screen off,
- * and plays the chosen countdown sound from the same library as the web app (res/raw, the web app's src/sounds as
- * .ogg), at the same level and cut off at the same length, so a cue sounds the same in the background as on screen.
- * The rest's end is the web app's "Rest over" alarm, not this. A note whose moment passed more than LATE_MS ago is
- * dropped.
+ * The rest timer's sounds while the app is in the background, where the WebView's own timers and sound are stopped
+ * (workout/runtime.ts plays them on screen): the 10 seconds warning and 3-2-1 in the chosen countdown sound, cut off at
+ * the same length as on screen, and the end in the rest over sound, whole. Each is an exact alarm, so it comes with the
+ * screen off, and plays from the same library as the web app (res/raw, the web app's src/sounds as .ogg) at the same
+ * level, so a cue sounds the same in the background as on screen. The end is played here and not by the "Rest over"
+ * notification (which is silent): a notification's sound is the phone's notification sound, which a phone on vibrate
+ * or silent doesn't play, while these are on the media stream like the sound on screen. A note whose moment passed
+ * more than LATE_MS ago is dropped.
  */
 public class RestCues extends BroadcastReceiver {
     private static final String ACTION = "org.motus.app.REST_CUE";
-    private static final int WARN = 200, COUNT = 201; // the alarms' request codes
+    private static final int WARN = 200, COUNT = 201, END = 202; // the alarms' request codes
     private static final long LATE_MS = 1000;
     // a countdown note is cut off after this long, so it is over before the next second's (COUNT_MAX_S in runtime.ts)
     private static final long CUT_MS = 800;
+    // the longest a rest over sound plays (Level up, the longest in the library, is 0.73 s), with room to spare
+    private static final long END_MS = 2000;
     private static final int FADE_MS = 80, FADE_STEPS = 4;
     // the notes waiting to play, so taking the cues off (the app came back) also stops a 3-2-1 already under way
     private static final Object NOTES = new Object();
@@ -44,20 +48,23 @@ public class RestCues extends BroadcastReceiver {
     }
 
     /** The cues for a rest ending at `endAt`, in place of any scheduled before. `countdown`: the 3-2-1 (only the
-     *  seconds still to come). */
-    static void schedule(Context ctx, long endAt, boolean warn10, boolean countdown, String sound, int volume) {
+     *  seconds still to come). `sound`: the countdown sound; `endSound`: the rest over sound (null: none at the end). */
+    static void schedule(Context ctx, long endAt, boolean warn10, boolean countdown, String sound, String endSound, int volume) {
         cancel(ctx);
-        // loaded now, so it is ready when the first cue comes
-        if (warn10 || countdown) { Context app = ctx.getApplicationContext(); audio.post(() -> load(app, sound)); }
+        // loaded now, so each is ready when its first cue comes
+        Context app = ctx.getApplicationContext();
+        if (warn10 || countdown) audio.post(() -> load(app, sound));
+        if (endSound != null) audio.post(() -> load(app, endSound));
         long now = System.currentTimeMillis();
         if (warn10 && endAt - 10_000 > now) set(ctx, WARN, endAt - 10_000, endAt, sound, volume);
         if (countdown && endAt - 1000 > now) set(ctx, COUNT, Math.max(endAt - 3000, now), endAt, sound, volume);
+        if (endSound != null && endAt > now) set(ctx, END, endAt, endAt, endSound, volume);
     }
 
     private static void set(Context ctx, int code, long at, long endAt, String sound, int volume) {
         AlarmManager am = (AlarmManager) ctx.getSystemService(Context.ALARM_SERVICE);
         if (am == null) return;
-        Intent it = intent(ctx).putExtra("warn", code == WARN).putExtra("from", at).putExtra("endAt", endAt)
+        Intent it = intent(ctx).putExtra("warn", code == WARN).putExtra("end", code == END).putExtra("from", at).putExtra("endAt", endAt)
             .putExtra("sound", sound).putExtra("volume", volume);
         PendingIntent pi = PendingIntent.getBroadcast(ctx, code, it, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
         // without the exact-alarm permission (Android 12+ can take it away) the alarm may come late; its notes are then dropped
@@ -71,7 +78,7 @@ public class RestCues extends BroadcastReceiver {
         audio.removeCallbacksAndMessages(NOTES);
         audio.post(waiting::clear);
         AlarmManager am = (AlarmManager) ctx.getSystemService(Context.ALARM_SERVICE);
-        for (int code : new int[] { WARN, COUNT }) {
+        for (int code : new int[] { WARN, COUNT, END }) {
             PendingIntent pi = PendingIntent.getBroadcast(ctx, code, intent(ctx), PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_NO_CREATE);
             if (pi == null) continue;
             if (am != null) am.cancel(pi);
@@ -83,22 +90,23 @@ public class RestCues extends BroadcastReceiver {
     public void onReceive(Context ctx, Intent intent) {
         // the app is gone (swiped away): no cues for a rest nothing shows any more
         if (!MotusWorkoutPlugin.live) return;
-        boolean warn = intent.getBooleanExtra("warn", false);
+        boolean warn = intent.getBooleanExtra("warn", false), end = intent.getBooleanExtra("end", false);
         long endAt = intent.getLongExtra("endAt", 0), from = intent.getLongExtra("from", 0);
         String sound = intent.getStringExtra("sound");
         int volume = intent.getIntExtra("volume", 100);
-        // as on screen: the 10 seconds and each of the 3-2-1 are one play of the countdown sound, all alike (beep()):
-        // the rest over sound is the "now", so the "1" gets no different note of its own
-        long[] due = warn ? new long[] { endAt - 10_000 } : new long[] { endAt - 3000, endAt - 2000, endAt - 1000 };
+        // as on screen: the 10 seconds and each of the 3-2-1 are one play of the countdown sound, all alike (beep()),
+        // cut off; the end is the rest over sound, played whole (restOver())
+        long[] due = end ? new long[] { endAt } : warn ? new long[] { endAt - 10_000 } : new long[] { endAt - 3000, endAt - 2000, endAt - 1000 };
         long now = System.currentTimeMillis(), last = now;
         Context app = ctx.getApplicationContext();
         for (long d : due) {
             if (d < from - 50 || now - d > LATE_MS) continue; // played on screen before the app went away, or long gone
             long wait = Math.max(0, d - now);
-            audio.postAtTime(() -> play(app, sound, volume, d), NOTES, SystemClock.uptimeMillis() + wait);
+            audio.postAtTime(() -> play(app, sound, volume, d, !end), NOTES, SystemClock.uptimeMillis() + wait);
             last = Math.max(last, now + wait);
         }
-        // the 3-2-1 takes up to 3 seconds: kept awake (and the broadcast open) until its last note has played
+        // the 3-2-1 takes up to 3 seconds: kept awake (and the broadcast open) until its last note has played (the
+        // rest over sound, uncut, is shorter than END_MS)
         PendingResult pending = goAsync();
         PowerManager pm = (PowerManager) ctx.getSystemService(Context.POWER_SERVICE);
         PowerManager.WakeLock wl = pm == null ? null : pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "motus:restcue");
@@ -106,7 +114,7 @@ public class RestCues extends BroadcastReceiver {
         main.postDelayed(() -> {
             if (wl != null && wl.isHeld()) wl.release();
             pending.finish();
-        }, last - now + CUT_MS + 400);
+        }, last - now + (end ? END_MS : CUT_MS) + 400);
     }
 
     // The sounds, loaded once and kept: all of this is used only on the audio thread.
@@ -167,19 +175,19 @@ public class RestCues extends BroadcastReceiver {
         } catch (RuntimeException e) { return 0; } // no sound
     }
 
-    /** One countdown note, due at `due` (ms): the sound at the chosen level (10-100 %, squared as levelOf in
-     *  workout/runtime.ts), cut off after CUT_MS. */
-    private static void play(Context ctx, String sound, int volume, long due) {
+    /** One note, due at `due` (ms): the sound at the chosen level (10-100 %, squared as levelOf in workout/runtime.ts),
+     *  a countdown note (`cut`) cut off after CUT_MS. */
+    private static void play(Context ctx, String sound, int volume, long due, boolean cut) {
         int id = load(ctx, sound);
         if (id == 0) return;
         float level = (float) Math.pow(Math.max(10, Math.min(100, volume)) / 100.0, 2);
-        if (ready.contains(id)) start(id, level);
-        else waiting.put(id, () -> { if (System.currentTimeMillis() - due <= LATE_MS) start(id, level); });
+        if (ready.contains(id)) start(id, level, cut);
+        else waiting.put(id, () -> { if (System.currentTimeMillis() - due <= LATE_MS) start(id, level, cut); });
     }
 
-    private static void start(int id, float level) {
+    private static void start(int id, float level, boolean cut) {
         int stream = pool.play(id, level, level, 1, 0, 1f);
-        if (stream == 0) return;
+        if (stream == 0 || !cut) return;
         // fades out over the last FADE_MS in FADE_STEPS steps (like the web's 80 ms ramp), then stops; all on the audio thread
         for (int i = 1; i <= FADE_STEPS; i++) {
             final float v = level * (1f - (float) i / FADE_STEPS);

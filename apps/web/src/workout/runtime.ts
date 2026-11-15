@@ -80,6 +80,7 @@ export function startRest(seconds: number, o: { setId: string | null; label: str
   warned = false; lastCount = 0;
   save();
   restTimeSet();
+  prepare(cues);
 }
 export function adjustRest(deltaS: number) {
   if (!rest.endAt) return;
@@ -118,8 +119,8 @@ export function finishRest(record = true, ranOut = false) {
 }
 
 function restEnded() {
-  // in the background the Android app's alarm is the alert (it sounds with the phone asleep); the in-app cues too would
-  // only double it
+  // in the background the Android app's alarm and its own rest over sound are the alert (both come with the phone
+  // asleep); the in-app cues too would only double it
   if (alarmCovers()) return;
   // Found over only now, long after the end (the app's timers were stopped in the background): no late beeps on
   // return. The end was announced by the Android app's alarm or the notification below (shown even when late).
@@ -135,8 +136,8 @@ function restEnded() {
 
 // The rest-over alarm (Android app, native.ts): scheduled for the rest's end only while the app is in the background,
 // since a locked phone stops the app's own timers and beeps; back on screen it is taken off (with a "Rest over" it
-// already showed) and the in-app cues carry on, so the end is never announced twice. The 10 seconds and 3-2-1 leading
-// up to it go with it, played by the Android app itself (scheduleRestCues). Every change to the rest's end (+/- time,
+// already showed) and the in-app cues carry on, so the end is never announced twice. The sounds go with it, played by
+// the Android app itself (scheduleRestCues): the 10 seconds, the 3-2-1 and the rest over sound at the end. Every change to the rest's end (+/- time,
 // pause, skip, a new rest, the workout ending) while in the background schedules them again or takes them off.
 let alarmOn = false;
 const hidden = () => typeof document !== "undefined" && document.hidden;
@@ -158,9 +159,9 @@ function planAlarm() {
   // workout screen has been opened)
   const c = workoutCues ? cues : savedCues();
   void scheduleRestAlarm(rest.endAt!, rest.next, c); alarmOn = true;
-  // the same choices as the in-app cues above: the 10 seconds and the 3-2-1 each have their own switch, and both need
-  // the workout sounds on
-  scheduleRestCues(rest.endAt!, { warn10: c.sound && c.warn10, countdown: c.sound && c.countdown && rest.totalS > 5, tickSound: cleanWorkoutSound(c.tickSound, COUNTDOWN_SOUND_DEFAULT), cueVolume: c.cueVolume });
+  // the same choices as the in-app cues above: the 10 seconds and the 3-2-1 each have their own switch, and all three
+  // need the workout sounds on; the end plays the rest over sound, as on screen (the alarm itself is silent)
+  scheduleRestCues(rest.endAt!, { warn10: c.sound && c.warn10, countdown: c.sound && c.countdown && rest.totalS > 5, tickSound: cleanWorkoutSound(c.tickSound, COUNTDOWN_SOUND_DEFAULT), endSound: c.sound ? cleanWorkoutSound(c.cueSound) : null, cueVolume: c.cueVolume });
 }
 function dropAlarm() {
   if (!alarmOn) return;
@@ -189,6 +190,8 @@ function audio() {
 // later are heard.
 for (const ev of ["pointerdown", "keydown"]) addEventListener(ev, () => { if (!ctx || ctx.state !== "running") audio(); }, { capture: true, passive: true });
 const files = new Map<SoundId, Promise<ArrayBuffer | null>>(), buffers = new Map<SoundId, Promise<AudioBuffer | null>>();
+// the buffers decoded so far, so a sound already decoded starts at once, in the same moment it is asked for
+const decoded = new Map<SoundId, AudioBuffer>();
 function fileOf(id: SoundId) {
   let f = files.get(id);
   if (!f) { f = fetch(soundUrl(id)).then((r) => (r.ok ? r.arrayBuffer() : null), () => null); files.set(id, f); }
@@ -199,7 +202,7 @@ function bufferOf(ac: AudioContext, id: SoundId) {
   if (!b) {
     // decoding takes the bytes over, so it gets a copy; one that failed is tried again next time
     b = fileOf(id).then((d) => (d ? ac.decodeAudioData(d.slice(0)) : null)).catch(() => null);
-    b.then((x) => { if (!x) { buffers.delete(id); files.delete(id); } });
+    b.then((x) => { if (x) decoded.set(id, x); else { buffers.delete(id); files.delete(id); } });
     buffers.set(id, b);
   }
   return b;
@@ -215,21 +218,35 @@ const COUNT_MAX_S = 0.8, FADE_S = 0.08;
  *  first, and the sound dropped if that (or loading it) took longer than LATE_MS: a cue is only worth playing on time. */
 function playSound(id: SoundId, o: { level: number; delay?: number; maxS?: number }) {
   try {
-    const ac = audio(), asked = Date.now();
+    const ac = audio(), asked = Date.now(), ready = decoded.get(id);
+    // decoded and the context running: started now. Waiting on a promise here let the rest's end be dropped as late:
+    // its first decode came on the rest's end, behind the work the end itself sets off (the rest saved to the device's
+    // copy, the next set opened), which can hold the page up for more than LATE_MS.
+    if (ready && ac.state === "running") { startBuffer(ac, ready, o, 0); return; }
     void bufferOf(ac, id).then(async (buf) => {
       if (!buf) return;
       if (ac.state !== "running") await ac.resume().catch(() => {});
       const late = Date.now() - asked;
       if (ac.state !== "running" || late > LATE_MS) return;
-      const start = ac.currentTime + 0.01 + Math.max(0, (o.delay ?? 0) - late / 1000);
-      const t = start, src = ac.createBufferSource(), g = ac.createGain();
-      src.buffer = buf; g.gain.value = o.level;
-      if (o.maxS && buf.duration > o.maxS) {
-        g.gain.setValueAtTime(o.level, t + o.maxS - FADE_S); g.gain.linearRampToValueAtTime(0.0001, t + o.maxS);
-        src.stop(t + o.maxS + 0.01);
-      }
-      src.connect(g).connect(ac.destination); src.start(t);
+      startBuffer(ac, buf, o, late);
     }).catch(() => { /* a sound is optional: an error here must not become an unhandled rejection */ });
+  } catch { /* no sound */ }
+}
+function startBuffer(ac: AudioContext, buf: AudioBuffer, o: { level: number; delay?: number; maxS?: number }, lateMs: number) {
+  const t = ac.currentTime + 0.01 + Math.max(0, (o.delay ?? 0) - lateMs / 1000), src = ac.createBufferSource(), g = ac.createGain();
+  src.buffer = buf; g.gain.value = o.level;
+  if (o.maxS && buf.duration > o.maxS) {
+    g.gain.setValueAtTime(o.level, t + o.maxS - FADE_S); g.gain.linearRampToValueAtTime(0.0001, t + o.maxS);
+    src.stop(t + o.maxS + 0.01);
+  }
+  src.connect(g).connect(ac.destination); src.start(t);
+}
+/** Decodes a rest's sounds (rest over, countdown) as it starts, so each plays the moment it is due (playSound). */
+function prepare(v: CueVoice) {
+  try {
+    const ac = audio();
+    void bufferOf(ac, cleanWorkoutSound(v.cueSound));
+    void bufferOf(ac, cleanWorkoutSound(v.tickSound, COUNTDOWN_SOUND_DEFAULT));
   } catch { /* no sound */ }
 }
 /** The volume setting (10-100 %) as a gain. Squared, because the ear hears loudness roughly by the square: 50 % is
