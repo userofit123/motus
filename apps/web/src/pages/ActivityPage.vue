@@ -17,7 +17,8 @@ import Menu from "../components/Menu.vue";
 import RouteMap from "../components/RouteMap.vue";
 import DotLine from "../components/DotLine.vue";
 import BarChart from "../components/BarChart.vue";
-import HeartRate from "../components/HeartRate.vue";
+import SessionHeart from "../components/SessionHeart.vue";
+import { useSessionSamples } from "../core/heart";
 import Sheet from "../components/Sheet.vue";
 import StepSourceRows from "../components/StepSourceRows.vue";
 import { routeSplits, M_PER_MI, fromM, activityDistance, activityClimb, appSteps, stepsTyped, bandStepsVerdict, type ActivityType } from "@motus/shared";
@@ -55,6 +56,10 @@ const pace = computed(() => { const x = a.value, d = ownDist.value; if (!d || !(
 const distParts = (m: number) => ({ value: fmt.value.num(fmt.value.distNum(m), 2), unit: fmt.value.du });
 // a no-break space, so in a narrow tile's sub line the number never ends a line without its unit
 const distText = (m: number) => `${fmt.value.num(fmt.value.distNum(m), 2)}\u00a0${fmt.value.du}`;
+// the band's heart rate over the activity: the saved records for its time, else the series kept with it
+const fromMs = computed(() => (a.value?.startedAt ? Date.parse(a.value.startedAt) : null));
+const toMs = computed(() => (a.value?.endedAt ? Date.parse(a.value.endedAt) : null));
+const samples = useSessionSamples(() => fromMs.value, () => toMs.value, () => a.value?.hr);
 type Tile = { key: string; icon: string; label: string; value: string; unit?: string; sub?: string[]; hero?: boolean };
 // The stat tiles: only those with a value. A band's number for the activity's time (Health Connect, 037) fills a tile
 // the activity has nothing of its own for, said under it; beside the activity's own number (typed or GPS, which always
@@ -150,7 +155,7 @@ await loaded(q, types);
       <div class="lbl hgap">Pace per {{ fmt.du }}{{ fastest ? ` · fastest ${fmt.clock(fastest.s)} in ${fmt.du} ${fastest.n}` : "" }}</div>
       <BarChart :bars="splits.map((t) => ({ label: String(t.n), value: t.s, color: t === fastest ? 'var(--pos)' : undefined, tip: t.partial ? `last ${fmt.num(t.fraction ?? 0, 2)} ${fmt.du}` : `${fmt.du} ${t.n}` }))" :fmt="(v) => `${fmt.clock(v)} /${fmt.du}`" :height="140" />
     </div>
-    <HeartRate v-if="a.hr?.length || a.avgHr" class="spt" :avg="a.avgHr" :max="a.maxHr" :hr="a.hr" />
+    <SessionHeart v-if="fromMs != null && toMs != null" class="spt" :from="fromMs" :to="toMs" :samples="samples" :avg="a.avgHr" :max="a.maxHr" :motion="ownDist || pace ? 'pace' : 'speed'" :own-pace="!!pace" />
     <div v-if="a.notes" class="banner note spt"><Icon name="note" :size="18" class="note-ic" />{{ a.notes }}</div>
     <Sheet v-if="srcs" title="Where these steps came from" @close="srcs = null">
       <p class="muted hgap">Steps each app saved to Health Connect from {{ fmt.time(a.startedAt) }} to {{ fmt.time(a.endedAt) }}. When your {{ srcWord }} has data for the whole {{ (a.name || typeName(a.type)).toLowerCase() }}, Motus uses its count.</p>

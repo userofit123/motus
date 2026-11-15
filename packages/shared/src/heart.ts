@@ -61,3 +61,79 @@ export function highRestingDays(days: readonly { date: string; value: number }[]
   }
   return out;
 }
+
+/** A ticked set of a finished workout, for its heart rate: when it was ticked (unix seconds), the rest taken after it and its own time when timed */
+export interface TickedSet { id: string; weId: string; doneS: number; restS?: number | null; durationS?: number | null }
+/** A set's own time on the clock, [a, b] (unix seconds), and the rest after it, [b, restB], when one was taken */
+export interface SetSpan { id: string; weId: string; a: number; b: number; restB: number | null }
+
+/** The longest stretch before a tick taken as its set (with the rest before it); a longer break doesn't count */
+const MAX_SET_S = 10 * 60;
+/** A set's own time when nothing says how long it took (not timed, no rest before it): about a set of 8-12 reps */
+const GUESS_SET_S = 40;
+/** Rests shorter than this are a tap between sides or exercises, not a rest */
+const MIN_REST_S = 5;
+
+/**
+ * Where each set sits on the clock, from its tick: it ends at its tick and starts at the end of the rest before it (the
+ * previous tick plus the rest taken), else its own time when timed, else GUESS_SET_S before its tick; never before
+ * the previous tick or the workout's start, nor more than MAX_SET_S before its tick. The rest after it runs from its
+ * tick for the rest taken, up to the next set's start. A workout typed in afterwards has every set ticked at the same
+ * moment, which says nothing about when each was done: no spans then (as the engine's exerciseHr).
+ */
+export function setSpans(sets: readonly TickedSet[], startS: number): SetSpan[] {
+  const s = sets.filter((x) => Number.isFinite(x.doneS)).sort((a, b) => a.doneS - b.doneS);
+  if (s.length > 1 && new Set(s.map((x) => x.doneS)).size === 1) return [];
+  const out: SetSpan[] = [];
+  let prev = startS, prevRest: number | null = null;
+  for (const x of s) {
+    const own = x.durationS && x.durationS > 0 ? x.doneS - x.durationS : prevRest != null ? prev + prevRest : x.doneS - GUESS_SET_S;
+    const a = Math.min(x.doneS, Math.max(prev, x.doneS - MAX_SET_S, own));
+    const rest = x.restS != null && x.restS >= MIN_REST_S ? x.restS : null;
+    out.push({ id: x.id, weId: x.weId, a, b: x.doneS, restB: rest != null ? x.doneS + rest : null });
+    prev = Math.max(prev, x.doneS); prevRest = rest;
+  }
+  // a rest never runs into the next set
+  for (let i = 0; i + 1 < out.length; i++) if (out[i]!.restB != null) out[i]!.restB = Math.min(out[i]!.restB!, out[i + 1]!.a);
+  return out;
+}
+
+/**
+ * Each exercise's average and highest heart rate, from samples ([unix seconds, bpm]): every reading from the tick before
+ * a set (the workout's start for the first; the rest before it) to its own tick, at most MAX_SET_S, as the engine's exerciseHr counts them.
+ */
+export function exercisePeaks(samples: readonly (readonly [number, number])[], spans: readonly SetSpan[], startS: number): Map<string, { avgHr: number; maxHr: number }> {
+  const win = new Map<string, [number, number][]>();
+  let prev = startS;
+  for (const x of [...spans].sort((a, b) => a.b - b.b)) {
+    const a = Math.max(prev, x.b - MAX_SET_S);
+    (win.get(x.weId) ?? win.set(x.weId, []).get(x.weId)!).push([a, x.b]);
+    prev = x.b;
+  }
+  const out = new Map<string, { avgHr: number; maxHr: number }>();
+  for (const [we, ws] of win) {
+    const mine = samples.filter((p) => ws.some(([a, b]) => p[0] > a && p[0] <= b));
+    if (mine.length) out.set(we, { avgHr: Math.round(mine.reduce((t, p) => t + p[1], 0) / mine.length), maxHr: Math.max(...mine.map((p) => p[1])) });
+  }
+  return out;
+}
+
+/** How long into a rest the heart rate is read for recovery: the usual one minute */
+export const RECOVERY_S = 60;
+/**
+ * Heart rate recovery over the rests: how far the heart rate fell in the first minute of each rest of at least a minute,
+ * from the highest reading around the set's end (30 s before its tick to 15 s after) to the reading nearest a minute in
+ * (within 10 s), averaged. A quicker fall is a fitter heart. null when no rest has both readings.
+ */
+export function restRecovery(samples: readonly (readonly [number, number])[], spans: readonly SetSpan[]): { drop: number; rests: number } | null {
+  const drops: number[] = [];
+  for (const x of spans) {
+    if (x.restB == null || x.restB - x.b < RECOVERY_S) continue;
+    const near = samples.filter((p) => p[0] >= x.b - 30 && p[0] <= x.b + 15);
+    const at = x.b + RECOVERY_S;
+    const after = samples.filter((p) => Math.abs(p[0] - at) <= 10).sort((p, q) => Math.abs(p[0] - at) - Math.abs(q[0] - at))[0];
+    if (!near.length || !after) continue;
+    drops.push(Math.max(...near.map((p) => p[1])) - after[1]);
+  }
+  return drops.length ? { drop: Math.round(drops.reduce((t, d) => t + d, 0) / drops.length), rests: drops.length } : null;
+}

@@ -1,6 +1,8 @@
 // Stats → Heart's shared pieces: the zones' colours (light to hot, from the theme), the max heart rate in use, and a
-// stretch of heart rate samples from the saved band records (GET /health/records, at most 40 days per request).
+// stretch of heart rate samples from the saved band records (GET /health/records, at most 40 days per request), and a
+// workout's or activity's own stretch of them.
 import { computed } from "vue";
+import { useQuery } from "@tanstack/vue-query";
 import { HR_ZONES, maxHeartRate } from "@motus/shared";
 import { api } from "../api/client";
 import { useSettings } from "../api/queries";
@@ -22,4 +24,26 @@ export async function hrSamples(from: Date, to: Date): Promise<[number, number][
   for (let a = from.getTime(); a < to.getTime(); a += SPAN_MS)
     parts.push(api.get<{ records: HrRecord[] }>("/health/records", { type: "heart_rate", from: new Date(a).toISOString(), to: new Date(Math.min(to.getTime(), a + SPAN_MS)).toISOString() }));
   return (await Promise.all(parts)).flatMap((r) => r.records.flatMap((x) => x.samples ?? [])).sort((a, b) => a[0] - b[0]);
+}
+
+/** A saved band record as GET /health/records hands it out: its time, and an amount or reading, or samples ([unix seconds, value]) */
+export type BandRecord = { type: string; start: string; end?: string; value?: number; samples?: [number, number][] };
+/** The saved records of these types (comma separated) over [from, to), at most 40 days */
+export const bandRecords = (types: string, from: Date, to: Date) =>
+  api.get<{ records: BandRecord[] }>("/health/records", { type: types, from: from.toISOString(), to: to.toISOString() }).then((r) => r.records);
+/** Which record types were saved on the days [from, to) (YYYY-MM-DD, to not included), so a screen asks only for what there is */
+export const bandTypesOn = async (from: string, to: string) =>
+  new Set((await api.get<{ days: { date: string; types: Record<string, number> }[] }>("/health/records/days", { from, to })).days.flatMap((d) => Object.keys(d.types)));
+
+/**
+ * A workout's or activity's heart rate from the saved band records over its time (under a "readings" key, so a change
+ * to them reloads it), else the series kept with it when it was saved (older ones, before every record was kept).
+ */
+export function useSessionSamples(from: () => number | null, to: () => number | null, kept: () => [number, number][] | null | undefined) {
+  const q = useQuery({
+    queryKey: computed(() => ["readings", "session", "heart_rate", from(), to()]),
+    queryFn: () => hrSamples(new Date(from()!), new Date(to()!)),
+    enabled: computed(() => from() != null && to() != null && to()! > from()!),
+  });
+  return computed<[number, number][]>(() => (q.data.value?.length ? q.data.value : kept() ?? []));
 }

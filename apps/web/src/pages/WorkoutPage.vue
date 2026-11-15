@@ -6,7 +6,7 @@ import { startWorkout } from "../workout/start";
 import { goBack } from "../core/leave";
 import { computed, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { usesWeight, usesReps, usesDuration, usesDistance, toM, fromM, muscleName, structureChanges, sideJoins, restDefaultsOf, type StructureChange } from "@motus/shared";
+import { usesWeight, usesReps, usesDuration, usesDistance, toM, fromM, muscleName, structureChanges, sideJoins, restDefaultsOf, setSpans, exercisePeaks, type StructureChange } from "@motus/shared";
 import { useWorkoutQuery, useSettings, loaded } from "../api/queries";
 import { api, mediaUrl } from "../api/client";
 import { invalidate } from "../api/live";
@@ -24,7 +24,9 @@ import ReminderItem from "../components/ReminderItem.vue";
 import { useNoteMenu } from "../core/noteMenu";
 import Menu from "../components/Menu.vue";
 import BodyMap from "../components/BodyMap.vue";
-import HeartRate from "../components/HeartRate.vue";
+import SessionHeart from "../components/SessionHeart.vue";
+import { useSessionSamples } from "../core/heart";
+import { WORKOUT_COLOR } from "../components/stats/daySessions";
 import ExercisePicker from "../components/ExercisePicker.vue";
 import Sheet from "../components/Sheet.vue";
 import RoutineChanges from "../workout/RoutineChanges.vue";
@@ -57,9 +59,24 @@ const verdict = (weId: string) => rep.value?.perExercise.find((p: any) => p.work
 // two badges, as in the workout
 const joins = computed(() => { const d = restDefaultsOf({ ...s.value.workout, ...(w.value?.settings ?? {}) }), on = !!s.value.features.unilateral;
   return new Map<string, boolean[]>((w.value?.exercises ?? []).map((e: any) => [e.id, on ? sideJoins(e.sets, (j) => joinRest(e, j, d)) : []])); });
+// the band's heart rate over the workout: the saved records for its time, else the series kept with it
+const fromMs = computed(() => (w.value?.startedAt ? Date.parse(w.value.startedAt) : null));
+const toMs = computed(() => (w.value?.endedAt ? Date.parse(w.value.endedAt) : null));
+const samples = useSessionSamples(() => fromMs.value, () => toMs.value, () => w.value?.hr);
+// each ticked set on the clock, named for the chart ("Bench press, set 2"); skipped exercises left out
+const spans = computed(() => {
+  const x = w.value; if (!x || fromMs.value == null) return [];
+  const names = new Map<string, string>(), sets = (x.exercises ?? []).filter((e: any) => e.status !== "skipped").flatMap((e: any) => e.sets.flatMap((t: any, j: number) => {
+    if (!t.done || !t.doneAt) return [];
+    names.set(t.id, `${e.exercise?.name ?? "Exercise"}, ${t.kind === "warmup" ? "warm-up" : `set ${setLabel(e.sets, j, !!s.value.features.unilateral)}`}`);
+    return [{ id: t.id as string, weId: e.id as string, doneS: Date.parse(t.doneAt) / 1000, restS: t.restActualS as number | null, durationS: t.durationS as number | null }];
+  }));
+  return setSpans(sets, fromMs.value / 1000).map((z) => ({ ...z, name: names.get(z.id)! }));
+});
+const peaks = computed(() => (samples.value.length && fromMs.value != null ? exercisePeaks(samples.value, spans.value, fromMs.value / 1000) : new Map<string, { avgHr: number; maxHr: number }>()));
 // the band's heart rate during each exercise (from its first set to its last), after its verdict as Stats → Heart words a
-// session: "128 bpm · up to 141 bpm"
-const exHr = (weId: string) => { const h = (w.value?.exerciseHr ?? []).find((x: any) => x.workoutExerciseId === weId);
+// session: "128 bpm · up to 141 bpm"; from the samples, else the engine's from the kept series (exercises without ticks)
+const exHr = (weId: string) => { const h = peaks.value.get(weId) ?? (w.value?.exerciseHr ?? []).find((x: any) => x.workoutExerciseId === weId);
   return h?.avgHr ? ` · ${Math.round(h.avgHr)} bpm${h.maxHr ? ` · up to ${Math.round(h.maxHr)} bpm` : ""}` : ""; };
 // a set's records: one kind keeps its own word; two or more become one "3 PRs" badge, as the workout's exercise list
 // counts them, so the set's value never gets squeezed onto several lines on a phone (the kinds stay in the tooltip)
@@ -223,7 +240,7 @@ await loaded(q);
         <div class="card"><div class="lbl hgap">Muscles worked</div><BodyMap :values="rep.muscles" :height="200" legend />
           <div class="col" style="gap:3px;margin-top:8px"><div v-for="[m, n] in Object.entries(rep.muscles).sort((a: any, b: any) => b[1] - a[1])" :key="m" class="row tiny"><span class="grow" style="color:var(--tx)">{{ muscleName(m) }}</span>{{ n }} sets</div></div></div>
         <!-- from a band worn during it, through Health Connect -->
-        <HeartRate v-if="w.hr?.length || w.avgHr" :avg="w.avgHr" :max="w.maxHr" :hr="w.hr" />
+        <SessionHeart v-if="fromMs != null && toMs != null" :from="fromMs" :to="toMs" :samples="samples" :avg="w.avgHr" :max="w.maxHr" :sets="spans" :color="w.color ?? WORKOUT_COLOR" kcal />
         <div v-if="rep.previous" class="card click" @click="router.push(`/workouts/${rep.previous.id}`)"><div class="lbl">Last time ({{ fmt.date(rep.previous.startedAt) }})</div>
           <div class="tiny" style="margin-top:6px">{{ fmt.dur(rep.previous.durationS, true) }} · {{ fmt.vol(rep.previous.volumeKg) }} volume</div>
           <div class="tiny" :class="rep.totals.durationS <= rep.previous.durationS ? 'pos' : ''">{{ rep.totals.durationS <= rep.previous.durationS ? `${fmt.dur(rep.previous.durationS - rep.totals.durationS, true)} faster` : `${fmt.dur(rep.totals.durationS - rep.previous.durationS, true)} longer` }}</div></div>
