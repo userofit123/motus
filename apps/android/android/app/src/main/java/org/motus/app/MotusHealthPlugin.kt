@@ -253,11 +253,6 @@ class MotusHealthPlugin : Plugin() {
     }
 
     /**
-     * Heart rate written after `since` (an ISO time), for showing it live during a workout: called often, so one
-     * cheap read (at most 2 pages). { samples: [[unixSeconds, bpm], ...] } ascending, at most 600 (the newest);
-     * empty without Health Connect or the heart rate permission.
-     */
-    /**
      * Whether any app wrote, changed or removed something Motus may read since `token` (Health Connect's changes list):
      * one cheap call, so the page can look every minute and run the full read() only when there is something new.
      * { token?: string } → { changed: boolean, token: string } (no token, or one Health Connect let expire: changed is
@@ -291,6 +286,11 @@ class MotusHealthPlugin : Plugin() {
         }
     }
 
+    /**
+     * Heart rate measured after `since` (an ISO time), for showing it live during a workout: called every minute, so
+     * one read (records reaching back HR_RECORD_BACK, newest first, at most 2 pages). { samples: [[unixSeconds, bpm], ...] }
+     * ascending, at most 600 (the newest); empty without Health Connect or the heart rate permission.
+     */
     @PluginMethod
     fun latestHr(call: PluginCall) {
         val empty = { call.resolve(JSObject().put("samples", JSArray())) }
@@ -303,8 +303,8 @@ class MotusHealthPlugin : Plugin() {
                 val samples = mutableListOf<HeartRateRecord.Sample>()
                 var token: String? = null; var pages = 0
                 do {
-                    val res = c.readRecords(ReadRecordsRequest(HeartRateRecord::class, TimeRangeFilter.after(since),
-                        ascendingOrder = true, pageSize = 1000, pageToken = token))
+                    val res = c.readRecords(ReadRecordsRequest(HeartRateRecord::class, TimeRangeFilter.after(since.minus(HR_RECORD_BACK)),
+                        ascendingOrder = false, pageSize = 1000, pageToken = token))
                     for (r in res.records) for (s in r.samples) if (s.time.isAfter(since)) samples += s
                     token = res.pageToken; pages++
                 } while (token != null && pages < 2)
@@ -314,6 +314,16 @@ class MotusHealthPlugin : Plugin() {
             } catch (e: Exception) { call.reject(e.message ?: "Health Connect could not be read") }
         }
     }
+
+    // Health Connect picks interval records by their start time, and a band app's heart rate record can start long
+    // before the moment asked about: Gadgetbridge writes one record per unbroken run of readings since its last sync
+    // (up to 1000 readings, cut at midnight and at gaps over 15 minutes), so the record holding a workout's readings
+    // usually starts before the workout did, and a read from the workout's start left it out (no live heart rate, and
+    // a finished workout missing its start or all of it). Heart rate reads start this much earlier and keep only the
+    // samples inside: a record never spans more than a day.
+    private val HR_RECORD_BACK = java.time.Duration.ofHours(24)
+    private suspend fun hrBetween(c: HealthConnectClient, start: Instant, end: Instant) =
+        readBetween(c, HeartRateRecord::class, start.minus(HR_RECORD_BACK), end).filter { it.endTime.isAfter(start) }
 
     private suspend fun <T : Record> readBetween(c: HealthConnectClient, type: KClass<T>, start: Instant, end: Instant): List<T> {
         val all = mutableListOf<T>()
@@ -349,7 +359,7 @@ class MotusHealthPlugin : Plugin() {
     private suspend fun spanByApp(c: HealthConnectClient, start: Instant, end: Instant, hasSteps: Boolean, hasHr: Boolean): List<AppSpan> {
         val from = start.minusMillis(SYNC_SLACK_MS); val to = end.plusMillis(SYNC_SLACK_MS)
         val steps = if (hasSteps) readBetween(c, StepsRecord::class, from, to) else emptyList()
-        val hrRecs = if (hasHr) readBetween(c, HeartRateRecord::class, from, to).filter { isBand(it.metadata.dataOrigin.packageName, it.metadata.device?.type) } else emptyList()
+        val hrRecs = if (hasHr) hrBetween(c, from, to).filter { isBand(it.metadata.dataOrigin.packageName, it.metadata.device?.type) } else emptyList()
         fun crosses(s: StepsRecord) = if (s.startTime == s.endTime) !s.startTime.isBefore(start) && !s.startTime.isAfter(end) else s.endTime.isAfter(start) && s.startTime.isBefore(end)
         fun inside(s: StepsRecord): Double {
             val len = s.endTime.toEpochMilli() - s.startTime.toEpochMilli()
@@ -456,7 +466,7 @@ class MotusHealthPlugin : Plugin() {
     // (isBand, as for steps): an app on the phone may write a reading measured some other way. No coverage needed: any
     // reading inside the span is the person's heart rate then, and one is enough (a band may measure only every 10 minutes).
     private suspend fun rangeHr(c: HealthConnectClient, start: Instant, end: Instant): JSArray? {
-        val samples = readBetween(c, HeartRateRecord::class, start, end)
+        val samples = hrBetween(c, start, end)
             .filter { isBand(it.metadata.dataOrigin.packageName, it.metadata.device?.type) }.flatMap { it.samples }
             .filter { !it.time.isBefore(start) && !it.time.isAfter(end) }
             .sortedBy { it.time }
