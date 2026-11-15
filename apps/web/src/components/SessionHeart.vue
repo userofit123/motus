@@ -12,7 +12,7 @@ import { useQuery } from "@tanstack/vue-query";
 import { zoneMinutes, restRecovery, fromM, ymd, SAMPLE_MAX_S, type SetSpan } from "@motus/shared";
 import { useFmt } from "../core/format";
 import { ZONES, useMaxHr, bandRecords, bandTypesOn, type BandRecord } from "../core/heart";
-import { hrPoints, adviceWord, useDevice } from "../native/health";
+import { hrPoints, fromWhere, useDevice } from "../native/health";
 import Icon from "./Icon.vue";
 import LineChart from "./LineChart.vue";
 import StageBar from "./stats/StageBar.vue";
@@ -81,7 +81,7 @@ const recovery = computed(() => (props.sets?.length ? restRecovery(props.samples
 type Tile = { key: string; icon: string; label: string; value: string; unit: string; sub: string; tone?: string };
 const tiles = computed(() => {
   const out: Tile[] = [], f = fmt.value;
-  if (avg.value != null) out.push({ key: "hr", icon: "heart", label: "Heart rate", value: String(avg.value), unit: "bpm", sub: max.value != null ? `average · up to ${max.value}` : "average" });
+  if (avg.value != null) out.push({ key: "hr", icon: "heart", label: "Average", value: String(avg.value), unit: "bpm", sub: max.value != null ? `up to ${max.value}` : "during the session" });
   if (props.kcal && kcal.value > 0) out.push({ key: "kcal", icon: "flame", label: "Active calories", value: f.num(kcal.value, 0), unit: "kcal", sub: "during the workout" });
   const r = recovery.value;
   if (r) out.push({ key: "rec", icon: "heartDown", label: "Recovery", value: String(Math.abs(r.drop)), unit: "bpm",
@@ -89,13 +89,13 @@ const tiles = computed(() => {
   if (paced.value.length && !(props.motion === "pace" && props.ownPace))
     out.push(props.motion === "pace"
       ? { key: "spd", icon: "timer", label: "Average pace", value: f.clock(asPace(mean(paced.value))), unit: `/${f.du}`, sub: "while moving" }
-      : { key: "spd", icon: "speed", label: "Average speed", value: f.num(fromM(mean(paced.value) * 3600, f.du), 1), unit: `${f.du}/h`, sub: "during the activity" });
+      : { key: "spd", icon: "speed", label: "Average speed", value: f.num(fromM(mean(paced.value) * 3600, f.du), 1), unit: `${f.du}/h`, sub: "while moving" });
   const c = cadence.value;
   if (c) out.push({ key: "cad", icon: "cadence", label: "Average cadence", value: f.num(mean(c.pts), 0), unit: c.unit, sub: "while moving" });
   return out;
 });
-// where it all came from, under the title, as the activity's tiles say it: "From your watch" (both kinds while not known)
-const source = computed(() => `From your ${adviceWord(dev.value)}`);
+// where it all came from, under the title, in the same words as the activity's tiles ("From your watch")
+const source = computed(() => `From ${fromWhere(true, dev.value)}`);
 const label = (x: Tile) => [x.label, x.value, x.unit, x.sub].filter(Boolean).join(" ");
 
 // the curves on offer: the heart rate, then the speed or pace and the cadence when there are two or more of each
