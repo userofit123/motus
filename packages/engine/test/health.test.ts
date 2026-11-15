@@ -704,7 +704,9 @@ describe("readiness", () => {
     expect(readiness([P("sleep", 7, 7), P("hrv", 50, 50)], trend(720, 600))).toMatchObject({ score: 70 });
     // a week half again as heavy as usual: 0.2 beyond 1.3, -10
     const heavy = readiness([P("sleep", 7, 7), P("hrv", 50, 50)], trend(900, 600));
-    expect(heavy).toMatchObject({ score: 60, label: "Normal", why: "A heavy week of training: train as planned." });
+    expect(heavy).toMatchObject({ score: 60, label: "Normal", why: "A heavy week of training: keep it moderate." });
+    // a Normal day lowered by its body parts reads the same way, never "train as planned" after a reason against it
+    expect(readiness([P("sleep", 6.5, 7), P("hrv", 50, 50)]).why).toBe("Short sleep: keep it moderate.");
     expect(heavy.parts.at(-1)).toEqual({ key: "load", value: 900, baseline: 600, change: 50, effect: "down" });
     // opposite directions read with "but"
     expect(readiness([P("sleep", 8, 7), P("hrv", 50, 50)], trend(900, 600)).why).toBe("A long sleep but a heavy week of training: train as planned.");

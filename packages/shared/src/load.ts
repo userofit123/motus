@@ -53,5 +53,6 @@ export function loadTrend(days: readonly { date: string; load: number }[], today
   return { week, usual, ratio, state };
 }
 
-/** The formulas in one plain line, for the screens that show a load */
-export const LOAD_METHOD = "Minutes in each heart rate zone times its number (TRIMP), or 4 per set if more; 7 days against 4 weeks (acute:chronic 7:28).";
+/** How a load is worked out, in one plain sentence for the screens that show it (TRIMP-style zone minutes, or 4 per set
+ *  when that is more; acute:chronic 7:28) */
+export const LOAD_METHOD = "Minutes in each heart rate zone, weighted by how hard the zone is (sets count when that is more); your last 7 days against your usual week.";

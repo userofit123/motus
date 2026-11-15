@@ -235,9 +235,11 @@ export async function trainingLoad(ctx: Ctx, from: string, to: string, tz: numbe
     all.push({ kind: "activity", id: a.id, name: a.name ?? null, type: a.type, date: dayIn(a.started_at, tz), load, hr: !!(hr?.length && max) });
   }
   // the 4 weeks need 3 weeks since the first session ever (not just the first loaded) before they say what's usual
-  const first = (await ctx.q.query<{ d: string | null }>(
-    `SELECT to_char(min(d), 'YYYY-MM-DD') AS d FROM (SELECT min(started_at)::date AS d FROM workouts WHERE status = 'completed'
-     UNION ALL SELECT min(started_at)::date FROM activities) x`)).rows[0]?.d ?? null;
+  // (the first instant, then its day on the app's calendar like the sessions' days, not the UTC day)
+  const firstAt = (await ctx.q.query<{ at: string | Date | null }>(
+    `SELECT min(at) AS at FROM (SELECT min(started_at) AS at FROM workouts WHERE status = 'completed'
+     UNION ALL SELECT min(started_at) FROM activities) x`)).rows[0]?.at ?? null;
+  const first = firstAt ? dayIn(firstAt, tz) : null;
   const sessions = all.filter((x) => x.date >= shift(from, -CHRONIC_DAYS) && x.date <= to).sort((a, b) => a.date.localeCompare(b.date));
   return { sessions, trend: loadTrend(sessions, to, first), maxHr: max != null };
 }
@@ -258,6 +260,8 @@ const WHY: Record<ReadinessPart["key"], { up: string; down: string }> = {
   hrv: { up: "high HRV", down: "low HRV" }, load: { up: "a lighter week", down: "a heavy week of training" },
 };
 const ADVICE = { Ready: "a good day to train hard", Normal: "train as planned", "Take it easy": "take it easier" } as const;
+// Normal when everything named pulled the score down: "train as planned" would contradict the reasons before it
+const NORMAL_DOWN = "keep it moderate";
 export interface ReadinessBuilding { key: BodyKey; value: number; days: number }
 /**
  * How ready for training the body looks today, from last night's sleep, today's resting heart rate and HRV, each against
@@ -272,7 +276,7 @@ export interface ReadinessBuilding { key: BodyKey; value: number; days: number }
  *   clamped to 0-100. Ready from 75, Normal from 50, else Take it easy. No score with fewer than 2 body parts (sleep,
  *   resting heart rate, HRV): the load alone says nothing about how the body has recovered.
  * why: one line from the (at most two) parts that moved the score most, then what the label advises ("Short sleep and
- * high resting heart rate: take it easier"); M-247's Recovery score reuses this rather than working out its own.
+ * high resting heart rate: take it easier"; a Normal day whose named parts all lowered it: "keep it moderate"); M-247's Recovery score reuses this rather than working out its own.
  * change: sleep in minutes, resting heart rate and HRV in % (signed). effect: which way the part moves the score; flat
  * within a small margin (15 min of sleep, 3 % resting heart rate, 5 % HRV) that is everyday noise.
  * building: the parts with today's value but too few days for a usual yet (days of the `need`), so Home can show the
@@ -325,7 +329,8 @@ function whyLine(moved: Map<ReadinessPart["key"], number>, label: keyof typeof A
   if (!top.length) return `Everything as usual: ${ADVICE[label]}.`;
   const word = ([k, p]: [ReadinessPart["key"], number]) => WHY[k][p > 0 ? "up" : "down"];
   const two = top[1] ? `${word(top[0]!)} ${(top[0]![1] > 0) === (top[1][1] > 0) ? "and" : "but"} ${word(top[1])}` : word(top[0]!);
-  return `${two[0]!.toUpperCase()}${two.slice(1)}: ${ADVICE[label]}.`;
+  const advice = label === "Normal" && top.every(([, p]) => p < 0) ? NORMAL_DOWN : ADVICE[label];
+  return `${two[0]!.toUpperCase()}${two.slice(1)}: ${advice}.`;
 }
 
 // one rule with the activity's Step sources sheet (@motus/shared); re-exported for the tests

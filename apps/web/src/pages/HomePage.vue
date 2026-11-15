@@ -228,12 +228,13 @@ const PART: Record<ReadinessPart["key"], { icon: string; t: string; f: (v: numbe
   // sleep comes in hours, as the day's log keeps it
   sleep: { icon: "moon", t: "Sleep", f: (h) => mins(h * 60) }, restingHr: { icon: "heartPulse", t: "Resting heart rate", f: bpm }, hrv: { icon: "wave", t: "HRV", f: ms },
   // Training load (a feature): the last 7 days' load against the weekly average of 4 weeks, as Stats → Heart's card
+  // ("840 in 7 days · usual 360 a week": a load has no unit, so each number says what span it covers)
   load: { icon: "load", t: "Training load", f: (v) => `${fmt.value.num(v, 0)} in 7 days` },
 };
 const signedBy = (d: number, f: (v: number) => string) => `${Math.round(d) < 0 ? "-" : "+"}${f(Math.abs(d))}`;
 const readyParts = computed(() => (rd.value?.parts ?? []).filter((x) => x.value != null && PART[x.key]).map((x) => {
   const p = PART[x.key];
-  return { key: x.key, icon: p.icon, t: p.t, s: x.baseline != null ? `${p.f(x.value!)} · usual ${x.key === "load" ? fmt.value.num(x.baseline, 0) : p.f(x.baseline)}` : p.f(x.value!),
+  return { key: x.key, icon: p.icon, t: p.t, s: x.baseline != null ? `${p.f(x.value!)} · usual ${x.key === "load" ? `${fmt.value.num(x.baseline, 0)} a week` : p.f(x.baseline)}` : p.f(x.value!),
     // the load's points mean nothing alone: how far off is a share of the usual, as Stats → Heart's card says it
     r: x.effect === "flat" || x.baseline == null ? "As usual" : x.key === "load" ? `${x.change! < 0 ? "-" : "+"}${Math.abs(Math.round(x.change!))}%` : signedBy(x.value! - x.baseline, p.f), tone: x.effect === "up" ? "pos" : x.effect === "down" ? "neg" : undefined };
 }));

@@ -86,8 +86,9 @@ const ICONS: Record<string, string> = {
   // unknown type)
   heartPulse: "M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8l1 1.1L12 21l7.8-7.5 1-1.1a5.5 5.5 0 0 0 0-7.8zM3.2 12h6.3l.5-1 2 4.5 2-7 1.5 3.5h5.3",
   wave: "M2 12c1.5-4.5 3.5-4.5 5 0s3.5 4.5 5 0 3.5-4.5 5 0 3.5 4.5 5 0",
-  // rising bars: Training load, how much training the last days held (M-245)
-  load: "M3 20h18M6 16v4M10 12v8M14 8v12M18 4v16",
+  // a training weight with a rising arrow on it: Training load, how much training the last days held (M-245); not bars,
+  // which are Stats'
+  load: "M9 8V6a3 3 0 0 1 6 0v2M6 8h12l2 12H4zM9.5 16.5l2.5-2.5 2.5 2.5",
   // a dial: Readiness, how ready you are to train
   gauge: "M3.3 18a10 10 0 1 1 17.4 0M12 14l4-5",
   water: "M12 2.7S6 9.5 6 14a6 6 0 0 0 12 0c0-4.5-6-11.3-6-11.3z",
@@ -105,7 +106,7 @@ const ICONS: Record<string, string> = {
   // motion lines behind an arrow: speed
   speed: "M3 8h6M2 12h9M3 16h6M14 6l6 6-6 6",
   // a metronome: cadence, steps or pedal turns a minute
-  cadence: "M10 3h4l5 18H5zM7.2 14h9.6M12 14l4.5-8",
+  cadence: "M10 3h4l5 18H5zM7.2 14h9.6M12 14l2-7",
 };
 </script>
 

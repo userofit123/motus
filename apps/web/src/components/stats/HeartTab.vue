@@ -168,8 +168,10 @@ const loadRow = computed(() => {
   const t = lq.data.value?.trend;
   if (!t) return null;
   const pct = t.ratio == null ? null : Math.round((t.ratio - 1) * 100);
-  return { t: t.state ? LOAD_STATE[t.state] : "Learning your usual",
-    s: t.ratio == null ? `${fmt.value.num(t.week, 0)} in 7 days · usual after 3 weeks of training` : `${fmt.value.num(t.week, 0)} in 7 days · usual ${fmt.value.num(t.usual, 0)}`,
+  // the status as What stands out's rows show it: an icon for which way it went, in the same tone as the result
+  const icon = pct == null ? "clock" : t.state === "lighter" ? "arrowDown" : t.state === "steady" ? "check" : "arrowUp";
+  return { icon, t: t.state ? LOAD_STATE[t.state] : "Learning your usual",
+    s: t.ratio == null ? `${fmt.value.num(t.week, 0)} in 7 days · usual after 3 weeks of training` : `${fmt.value.num(t.week, 0)} in 7 days · usual ${fmt.value.num(t.usual, 0)} a week`,
     rv: pct == null ? "Learning" : t.state === "steady" ? "As usual" : `${pct < 0 ? "-" : "+"}${Math.abs(pct)}%`,
     tone: pct == null ? "muted" : t.state === "lighter" ? "pos" : t.state === "steady" ? undefined : "neg" };
 });
@@ -238,18 +240,17 @@ const tiles = computed(() => {
         <div class="tiny ht-line">{{ zPerWeek ? "Tap a week to open it." : "Tap a day to open it." }}</div>
       </div>
 
-      <!-- training load: the comparison as What stands out's row, each day's load, then how it is worked out -->
-      <div v-if="loadOn && loadHas && loadRow" class="card wkc" :class="{ spt: tiles.length || insights.length || vitals.length || zBars.length }">
-        <div class="ch"><span class="bi"><Icon name="load" :size="15" /></span><span class="t grow">Training load</span><span class="tiny">Vs your usual</span></div>
+      <!-- training load: a chart card as the zones', with the comparison as a What stands out row under its title -->
+      <div v-if="loadOn && loadHas && loadRow" class="card" :class="{ spt: tiles.length || insights.length || vitals.length || zBars.length }">
+        <div class="lbl hgap">Training load{{ loadPerWeek ? ", by week" : "" }}</div>
         <div class="list ht-ins">
           <div class="li">
-            <Icon name="load" :size="18" class="muted" />
+            <Icon :name="loadRow.icon" :size="18" :class="loadRow.tone" />
             <div class="grow"><div class="t">{{ loadRow.t }}</div><div class="s">{{ loadRow.s }}</div></div>
             <b class="r rv" :class="loadRow.tone">{{ loadRow.rv }}</b>
           </div>
         </div>
-        <div class="csec"><div class="lbl hgap">Load {{ loadPerWeek ? "by week" : "by day" }}</div>
-          <BarChart :bars="loadBars" :height="170" :fmt="(v) => fmt.num(v, 0)" @pick="openLoad" /></div>
+        <BarChart class="ht-chart" :bars="loadBars" :height="170" :fmt="(v) => fmt.num(v, 0)" @pick="openLoad" />
         <div class="tiny ht-line">{{ LOAD_METHOD }} {{ loadPerWeek ? "Tap a week to open it." : "Tap a day to open it." }}{{ lq.data.value && !lq.data.value.maxHr ? " Set your max heart rate or year of birth in Body for heart rate to count." : "" }}</div>
       </div>
 
@@ -273,6 +274,8 @@ const tiles = computed(() => {
 <style scoped>
 .ht-line { margin-top: var(--tdy); }
 .ht-leg { margin-top: var(--hg); }
+/* the load chart under its status row, as the legend under the zones chart */
+.ht-chart { margin-top: var(--hg); }
 /* the highlights as Stats → Sleep's: the last row without its line, the number in the row's tone */
 .ht-ins .li:last-child { border-bottom: 0; padding-bottom: 0; }
 .ht-ins .li:first-child { padding-top: 0; }
