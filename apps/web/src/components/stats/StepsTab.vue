@@ -237,8 +237,8 @@ const openDay = (d: string | null) => { if (d) { anchor.value = d; view.value = 
         <div class="ch"><span class="bi"><Icon name="stats" :size="15" /></span><span class="t grow">Best and worst days</span></div>
         <div class="wstats rows2">
           <div class="ws click" role="button" tabindex="0" :aria-label="`Best day ${n0(stepsOn(best!))} steps ${day(best!)}`" @click="openDay(best)" @keydown.enter="openDay(best)"><div class="wlb"><Icon name="trophy" :size="14" />Best day<Icon name="right" :size="14" class="wgo" /></div><div class="wv">{{ n0(stepsOn(best!)) }} <small>steps</small></div><div class="wd">{{ day(best!) }}</div></div>
-          <div class="ws click" role="button" tabindex="0" :aria-label="`Lowest day ${n0(stepsOn(worst!))} steps ${day(worst!)}`" @click="openDay(worst)" @keydown.enter="openDay(worst)"><div class="wlb"><Icon name="arrowDown" :size="14" />Lowest day<Icon name="right" :size="14" class="wgo" /></div><div class="wv">{{ n0(stepsOn(worst!)) }} <small>steps</small></div><div class="wd">{{ day(worst!) }}</div></div>
-          <div class="ws" role="group" :aria-label="`Total ${n0(sum)} steps`"><div class="wlb"><Icon name="steps" :size="14" />Total</div><div class="wv">{{ n0(sum) }} <small>steps</small></div><div class="wd">in {{ withSteps.length }} days</div></div>
+          <div class="ws click" role="button" tabindex="0" :aria-label="`Worst day ${n0(stepsOn(worst!))} steps ${day(worst!)}`" @click="openDay(worst)" @keydown.enter="openDay(worst)"><div class="wlb"><Icon name="steps" :size="14" />Worst day<Icon name="right" :size="14" class="wgo" /></div><div class="wv">{{ n0(stepsOn(worst!)) }} <small>steps</small></div><div class="wd">{{ day(worst!) }}</div></div>
+          <div class="ws" role="group" :aria-label="`Total ${n0(sum)} steps`"><div class="wlb"><Icon name="plus" :size="14" />Total</div><div class="wv">{{ n0(sum) }} <small>steps</small></div><div class="wd">in {{ withSteps.length }} days</div></div>
         </div>
       </div>
 

@@ -132,7 +132,7 @@ const zBars = computed(() => {
   const rows = new Map<string, number[]>();
   for (const [d, m] of zDays.value) { const k = zPerWeek.value ? weekStartOf(new Date(d + "T12:00"), settings.value.firstDay) : d; const r = rows.get(k) ?? rows.set(k, ZONES.map(() => 0)).get(k)!; m.forEach((v, i) => (r[i]! += v)); }
   return [...rows].map(([k, m]) => { const full = fmt.value.date(k, { day: "numeric", month: "short" });
-    return { label: full.split(" ")[0]!, full, group: month(k), tip: zPerWeek.value ? `week of ${full}` : fmt.value.date(k, { weekday: "short", day: "numeric", month: "short" }),
+    return { id: k, label: full.split(" ")[0]!, full, group: month(k), tip: zPerWeek.value ? `week of ${full}` : fmt.value.date(k, { weekday: "short", day: "numeric", month: "short" }),
       value: m.reduce((t, v) => t + v, 0), parts: m.map((v, i) => ({ value: v, color: ZONES[i]!.color })) }; });
 });
 // moderate or harder (zones 3 to 5): the minutes most activity advice counts
