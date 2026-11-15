@@ -115,8 +115,10 @@ const READ_KEY = "motusHealthRead";
 // detail, 0.1.25; heart rate: the day's heart rate, 0.1.26; steps, distance and active calories: one app's count a day,
 // not the band's plus the phone's in between, so days saved too high are read again and corrected; then whether a band
 // counted each day, so days no band counted stop saying "from your band"; then a band's day is the band's own total, not
-// with the phone's own step counting added in where the band had none, so days saved too high are read again and lowered)
-const READS: Partial<Record<Kind, number>> = { sleep: 2, heartRate: 2, steps: 4, distance: 4, activeKcal: 4 };
+// with the phone's own step counting added in where the band had none, so days saved too high are read again and lowered;
+// then the band's records added up by Motus itself, as Health Connect's per-app total dropped steps where the band's own
+// records overlap (a day read 4,821 where the band showed 5,036), so days saved too low are read again and raised)
+const READS: Partial<Record<Kind, number>> = { sleep: 2, heartRate: 2, steps: 5, distance: 5, activeKcal: 5 };
 const readsOf = (granted: readonly string[]) => HEALTH_KINDS.filter((k) => granted.includes(k)).map((k) => (READS[k] ? `${k}.${READS[k]}` : k));
 const readBefore = () => readJson<Record<string, string[]>>(READ_KEY, {})[key()] ?? [];
 const rememberRead = (reads: string[]) => { const all = readJson<Record<string, string[]>>(READ_KEY, {}); all[key()] = reads; writeJson(READ_KEY, all); };
