@@ -85,6 +85,18 @@ export function startRest(seconds: number, o: { setId: string | null; label: str
 }
 export function adjustRest(deltaS: number) {
   if (!rest.endAt) return;
+  // Over: time added counts from now, as the notification's +30s does (setRest), and the end cues play once more at the
+  // new end. The planned length stays, so adding time to a rest that ran out is not offered as a new rest to keep;
+  // nothing is left to take away.
+  if (rest.done) {
+    if (deltaS <= 0) return;
+    if (rest.pausedLeftS != null) rest.pausedLeftS = deltaS;
+    else { rest.endAt = Date.now() + deltaS * 1000; }
+    rest.done = false; warned = deltaS <= 10; lastCount = 0;
+    save();
+    if (rest.pausedLeftS == null) restTimeSet();
+    return;
+  }
   if (rest.pausedLeftS != null) rest.pausedLeftS = Math.max(0, rest.pausedLeftS + deltaS);
   else { rest.endAt = Math.max(Date.now(), rest.endAt + deltaS * 1000); restTimeSet(); }
   rest.totalS = Math.max(1, rest.totalS + deltaS);

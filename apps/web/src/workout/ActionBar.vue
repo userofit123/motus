@@ -64,7 +64,8 @@ const setLabel = computed(() => {
 
 const resting = computed(() => restActive() || (rest.done && !!rest.endAt));
 const left = computed(() => restLeft());
-const pct = computed(() => (rest.totalS ? Math.min(1, left.value / rest.totalS) : 0));
+// over, the ring is drawn full, as the time turns to the accent colour
+const pct = computed(() => (rest.done ? 1 : rest.totalS ? Math.min(1, left.value / rest.totalS) : 0));
 // switching the exercise being done also shows it
 const switchTo = (i: number) => { if (w.value && i >= 0 && i < w.value.exercises.length) { W.state.active = i; W.state.cur = i; } };
 const go = (d: number) => switchTo(W.state.active + d);
@@ -117,11 +118,11 @@ function goOn() {
         <div class="ab-rest">
           <div class="ab-side">
             <button class="ib ab-round" :class="{ on: paused }" :aria-label="pauseLabel" :title="pauseLabel" :aria-pressed="paused" @click="emit('pause')"><Icon :name="paused ? 'play' : 'pause'" /></button>
-            <button class="ib ab-round ab-adj" aria-label="15 seconds less rest" title="15 seconds less rest" @click="adjustRest(-15)">-15</button>
+            <button class="ib ab-round ab-adj" aria-label="15 seconds less rest" title="15 seconds less rest" :disabled="rest.done" @click="adjustRest(-15)">-15</button>
           </div>
           <div class="ring" role="timer">
             <svg viewBox="0 0 132 132" aria-hidden="true"><circle cx="66" cy="66" r="62" class="rb" /><circle cx="66" cy="66" r="62" class="rf" :style="{ strokeDasharray: RING, strokeDashoffset: RING * (1 - pct) }" /></svg>
-            <span class="ab-time" :class="{ long: left >= 3600 }">{{ clock(left) }}</span>
+            <span class="ab-time" :class="{ long: left >= 3600, over: rest.done }">{{ clock(left) }}</span>
           </div>
           <div class="ab-side">
             <!-- over, the labelled button below goes on; the empty slot keeps +15 level with -15 -->
@@ -196,6 +197,8 @@ function goOn() {
 .ab-rest { display: flex; align-items: center; justify-content: center; gap: var(--hg); }
 .ab-side { display: flex; flex-direction: column; gap: var(--hg); }
 .ab-adj { font: inherit; font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
+/* -15 once the rest is over: nothing left to take away, dimmed as a disabled button */
+.ab-adj:disabled { opacity: .55; cursor: not-allowed; }
 .ab-ringg { display: flex; flex-direction: column; gap: var(--hg); }
 .ab-slot { width: 48px; height: 48px; }
 .ab-on { justify-content: center; }
@@ -209,6 +212,7 @@ html.he .ring svg { transform: rotate(-90deg) scaleY(-1); }
 /* sized to fit the ring's opening: "10:00" at full size, a time with hours smaller */
 .ab-time { position: relative; font-size: 28px; font-weight: 600; font-variant-numeric: tabular-nums; }
 .ab-time.long { font-size: 20px; }
+.ab-time.over { color: var(--acc); }
 .ab-next { text-align: center; }
 .ab-rtitle { text-align: center; }
 /* the offer and its Saved confirmation share one two-line box (same padding, line height and min height) so nothing jumps */
