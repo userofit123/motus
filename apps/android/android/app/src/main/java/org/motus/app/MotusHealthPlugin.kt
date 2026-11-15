@@ -195,9 +195,10 @@ class MotusHealthPlugin : Plugin() {
      * Steps and heart rate inside given time spans (e.g. a workout, a day), each looked up on its own.
      * { ranges: [{kind, id, start, end}] } (at most 200) →
      * { results: [{kind, id, steps?: number, covered: boolean, hr?: [[unixSeconds, bpm], ...]}] }
-     * steps: the band's only (rangeSteps), absent when no band, watch or ring counted then; bandOnly: steps were read
-     * this way (an older build took the app with the most, often the phone's own counter). covered: the band's records
-     * reach across the whole span with no hole over 10 minutes (false when the band was off or has not synced yet).
+     * steps: the band's only (bestBand), absent when no band, watch or ring counted then; bandOnly: steps were read
+     * this way (an older build took the app with the most, often the phone's own counter). covered: the worn device's
+     * data stands for the whole span (spanByApp, coverage: synced past it, worn throughout; false when the band was off
+     * or has not synced yet).
      * hr: at most 600 points. For an activity the worn device covered, also what it measured meanwhile (rangeBand):
      * distanceM, activeKcal, elevationM, floors, each absent when it had none; bandFields: this build reads them.
      * device, deviceName?: the kind of worn device whose steps these are (as in read()), with steps.
@@ -221,24 +222,24 @@ class MotusHealthPlugin : Plugin() {
                     try {
                         val start = Instant.parse(r.getString("start")); val end = Instant.parse(r.getString("end"))
                         var covered = false
-                        if (hasSteps && end.isAfter(start)) {
-                            val (n, cov, w) = rangeSteps(c, start, end)
-                            if (n != null) o.put("steps", n)
-                            covered = cov
-                            w?.let { putWorn(o, it) }
-                            o.put("bandOnly", true)
-                        }
-                        o.put("covered", covered)
-                        if (hasHr && end.isAfter(start)) rangeHr(c, start, end)?.let { o.put("hr", it) }
-                        if (kind == "activity") {
-                            o.put("bandFields", true)
-                            if (covered) {
-                                if (has(DistanceRecord::class)) rangeBand(c, DistanceRecord::class, start, end, { it.startTime to it.endTime }) { it.distance.inMeters }?.let { o.put("distanceM", it) }
-                                if (has(ActiveCaloriesBurnedRecord::class)) rangeBand(c, ActiveCaloriesBurnedRecord::class, start, end, { it.startTime to it.endTime }) { it.energy.inKilocalories }?.let { o.put("activeKcal", it) }
-                                if (has(ElevationGainedRecord::class)) rangeBand(c, ElevationGainedRecord::class, start, end, { it.startTime to it.endTime }) { it.elevation.inMeters }?.let { o.put("elevationM", it) }
-                                if (has(FloorsClimbedRecord::class)) rangeBand(c, FloorsClimbedRecord::class, start, end, { it.startTime to it.endTime }) { it.floors }?.let { o.put("floors", it) }
+                        if ((hasSteps || hasHr) && end.isAfter(start)) {
+                            val best = bestBand(spanByApp(c, start, end, hasSteps, hasHr))
+                            covered = best?.coverage?.covered == true
+                            if (hasSteps) {
+                                best?.count?.let { n -> o.put("steps", n); putWorn(o, wornOf(best?.device)) }
+                                o.put("bandOnly", true)
+                            }
+                            if (kind == "activity" && covered && best != null) {
+                                val app = best.app
+                                if (has(DistanceRecord::class)) rangeBand(c, DistanceRecord::class, app, start, end, { it.startTime to it.endTime }) { it.distance.inMeters }?.let { o.put("distanceM", it) }
+                                if (has(ActiveCaloriesBurnedRecord::class)) rangeBand(c, ActiveCaloriesBurnedRecord::class, app, start, end, { it.startTime to it.endTime }) { it.energy.inKilocalories }?.let { o.put("activeKcal", it) }
+                                if (has(ElevationGainedRecord::class)) rangeBand(c, ElevationGainedRecord::class, app, start, end, { it.startTime to it.endTime }) { it.elevation.inMeters }?.let { o.put("elevationM", it) }
+                                if (has(FloorsClimbedRecord::class)) rangeBand(c, FloorsClimbedRecord::class, app, start, end, { it.startTime to it.endTime }) { it.floors }?.let { o.put("floors", it) }
                             }
                         }
+                        if (kind == "activity") o.put("bandFields", true)
+                        o.put("covered", covered)
+                        if (hasHr && end.isAfter(start)) rangeHr(c, start, end)?.let { o.put("hr", it) }
                     } catch (e: Exception) {
                         if (e is kotlinx.coroutines.CancellationException) throw e
                         o.remove("steps"); o.remove("hr"); o.remove("bandOnly"); o.put("covered", false); o.remove("device"); o.remove("deviceName")
@@ -325,47 +326,95 @@ class MotusHealthPlugin : Plugin() {
         return all
     }
 
-    // The band's steps in the span (records crossing the edges count by their share of time inside), and whether its
-    // records cover the span without a hole over 10 minutes. Only a band, watch or ring counts (isBand): the phone's own
-    // step counter is the same sensor Motus counted with, not the band. Two apps writing for the same band: the larger.
-    // Also which worn device it was (its first record's), so the app can name it.
-    private suspend fun rangeSteps(c: HealthConnectClient, start: Instant, end: Instant): Triple<Long?, Boolean, Worn?> {
-        val recs = once(readBetween(c, StepsRecord::class, start, end).filter {
-            it.endTime.isAfter(start) && it.startTime.isBefore(end) && isBand(it.metadata.dataOrigin.packageName, it.metadata.device?.type)
-        }) { it.startTime to it.endTime }
-        if (recs.isEmpty()) return Triple(null, false, null)
-        val byOrigin = recs.groupBy { it.metadata.dataOrigin.packageName }
+    // Whether a worn device's numbers stand for a whole span (an activity recorded in Motus): one rule for its steps
+    // (readRanges), what else it measured then (rangeBand) and the activity's Step sources sheet (activitySources).
+    // A band app writes step records only for minutes with steps (Gadgetbridge), so a hole in them inside a walk is
+    // standing still, 0 steps, not missing data. What says the data is all there: the device's app has something (steps
+    // or heart rate) at or before the start and at or after the end, each within 30 minutes (it synced past the walk),
+    // and, where it measures heart rate, its heart rate has no hole over 15 minutes inside (it was worn). A device with
+    // no heart rate at all: its step records start within 10 minutes of the start and reach within 10 of the end.
+    private val SYNC_SLACK_MS = 30L * 60 * 1000
+    private val WORN_GAP_MS = 15L * 60 * 1000
+    private val EDGE_SLACK_MS = 10L * 60 * 1000
+    // why: null when covered, else "after" (nothing at or after the end: not synced yet), "before" (nothing at or before
+    // the start), "worn" (a heart rate hole over 15 minutes: gap), "edges" (no heart rate, and its steps don't reach
+    // within 10 minutes of the start or end: gap)
+    private class Coverage(val covered: Boolean, val why: String?, val gap: Pair<Instant, Instant>?)
+    // One app's numbers around a span: its step records (from 30 minutes before to 30 after), the steps inside (records
+    // crossing the edges count by their share of time inside; count null when it has no step record inside), its heart
+    // rate sample times and the device its records name. band: a band's, watch's or ring's (isBand, per record: an app
+    // may write both the phone's and a watch's). coverage: for a band only (the phone's own counting is never the device's).
+    private class AppSpan(val app: String, val band: Boolean, val steps: List<StepsRecord>, val raw: Double, val inside: Boolean,
+                          val hr: List<Instant>, val device: Device?) {
+        var coverage = Coverage(false, null, null)
+        val count: Long? get() = if (inside) Math.round(raw) else null
+    }
+    private fun named(devices: List<Device?>): Device? = devices.firstOrNull { d -> d?.type.let { it != null && it != Device.TYPE_UNKNOWN } } ?: devices.firstOrNull()
+    private suspend fun spanByApp(c: HealthConnectClient, start: Instant, end: Instant, hasSteps: Boolean, hasHr: Boolean): List<AppSpan> {
+        val from = start.minusMillis(SYNC_SLACK_MS); val to = end.plusMillis(SYNC_SLACK_MS)
+        val steps = if (hasSteps) readBetween(c, StepsRecord::class, from, to) else emptyList()
+        val hrRecs = if (hasHr) readBetween(c, HeartRateRecord::class, from, to).filter { isBand(it.metadata.dataOrigin.packageName, it.metadata.device?.type) } else emptyList()
+        fun crosses(s: StepsRecord) = if (s.startTime == s.endTime) !s.startTime.isBefore(start) && !s.startTime.isAfter(end) else s.endTime.isAfter(start) && s.startTime.isBefore(end)
         fun inside(s: StepsRecord): Double {
             val len = s.endTime.toEpochMilli() - s.startTime.toEpochMilli()
             if (len <= 0) return s.count.toDouble()
             val a = maxOf(s.startTime, start).toEpochMilli(); val b = minOf(s.endTime, end).toEpochMilli()
             return s.count.toDouble() * (b - a).coerceAtLeast(0) / len
         }
-        val best = byOrigin.values.maxBy { rs -> rs.sumOf { inside(it) } }
-        val total = Math.round(best.sumOf { inside(it) })
-        val slack = 10L * 60 * 1000
-        val spanMs = end.toEpochMilli() - start.toEpochMilli()
-        val covered = if (spanMs < slack) true else {
-            val sorted = best.sortedBy { it.startTime }
-            var ok = sorted.first().startTime.toEpochMilli() <= start.toEpochMilli() + slack
-            var reach = sorted.first().endTime.toEpochMilli()
-            for (s in sorted.drop(1)) {
-                if (s.startTime.toEpochMilli() - reach > slack) { ok = false; break }
-                reach = maxOf(reach, s.endTime.toEpochMilli())
-            }
-            ok && reach >= end.toEpochMilli() - slack
-        }
-        return Triple(total, covered, wornOf(best.first().metadata.device))
+        val stepGroups = steps.groupBy { it.metadata.dataOrigin.packageName to isBand(it.metadata.dataOrigin.packageName, it.metadata.device?.type) }
+            .mapValues { (_, g) -> once(g) { it.startTime to it.endTime } }
+        val hrGroups = hrRecs.groupBy { it.metadata.dataOrigin.packageName }
+        val keys = stepGroups.keys + hrGroups.keys.map { it to true }
+        return keys.map { key ->
+            val recs = stepGroups[key].orEmpty()
+            val hr = if (key.second) hrGroups[key.first].orEmpty() else emptyList()
+            val inSpan = recs.filter { crosses(it) }
+            val span = AppSpan(key.first, key.second, recs, inSpan.sumOf { inside(it) }, inSpan.isNotEmpty(),
+                hr.flatMap { r -> r.samples.map { it.time } }.filter { !it.isBefore(from) && !it.isAfter(to) }.sorted(),
+                named(inSpan.map { it.metadata.device } + hr.map { it.metadata.device } + recs.map { it.metadata.device }))
+            if (span.band) span.coverage = coverage(span, start, end)
+            span
+        }.filter { it.inside || it.hr.isNotEmpty() }
     }
+    private fun coverage(a: AppSpan, start: Instant, end: Instant): Coverage {
+        if (a.hr.isNotEmpty()) {
+            val after = a.steps.any { !it.endTime.isBefore(end) } || a.hr.any { !it.isBefore(end) }
+            val before = a.steps.any { !it.startTime.isAfter(start) } || a.hr.any { !it.isAfter(start) }
+            if (!after) return Coverage(false, "after", null)
+            if (!before) return Coverage(false, "before", null)
+            // the largest hole in its heart rate inside the span, the edges included
+            var prev = start; var most = 0L; var gap: Pair<Instant, Instant>? = null
+            for (t in a.hr.filter { !it.isBefore(start) && !it.isAfter(end) } + end) {
+                val g = t.toEpochMilli() - prev.toEpochMilli()
+                if (g > most) { most = g; gap = prev to t }
+                prev = t
+            }
+            return if (most > WORN_GAP_MS) Coverage(false, "worn", gap) else Coverage(true, null, null)
+        }
+        val inSpan = a.steps.filter { it.endTime.isAfter(start) && it.startTime.isBefore(end) }
+        if (inSpan.isEmpty()) return Coverage(false, "edges", start to end)
+        if (end.toEpochMilli() - start.toEpochMilli() < EDGE_SLACK_MS) return Coverage(true, null, null)
+        val head = inSpan.minOf { it.startTime }; val tail = inSpan.maxOf { it.endTime }
+        val lead = head.toEpochMilli() - start.toEpochMilli(); val trail = end.toEpochMilli() - tail.toEpochMilli()
+        return when {
+            lead <= EDGE_SLACK_MS && trail <= EDGE_SLACK_MS -> Coverage(true, null, null)
+            lead >= trail -> Coverage(false, "edges", start to head)
+            else -> Coverage(false, "edges", tail to end)
+        }
+    }
+    // The worn device whose numbers stand for the span: the band app with the most steps inside it (two apps writing for
+    // the same band: the larger), else one with heart rate then (a type without steps). Only a band, watch or ring
+    // (isBand): the phone's own step counter is the same sensor Motus counted with, not the band.
+    private fun bestBand(spans: List<AppSpan>): AppSpan? = spans.filter { it.band }.maxWithOrNull(compareBy<AppSpan>({ it.inside }, { it.raw }, { it.hr.size }))
 
-    // What a band, watch or ring measured in the span (distance, active calories, climb): records crossing the edges
-    // count by their share of time inside, as for steps; only a worn device (isBand), never the phone's own counting;
-    // two apps writing for the same device: the larger. null when none measured anything then.
+    // What the band, watch or ring measured in the span (distance, active calories, climb): records crossing the edges
+    // count by their share of time inside, as for steps; only the worn device's app whose coverage was checked (bestBand),
+    // never the phone's own counting. null when it measured nothing then.
     // (span: a record's start and end time, given per type: Health Connect's IntervalRecord isn't public)
-    private suspend fun <T : Record> rangeBand(c: HealthConnectClient, type: KClass<T>, start: Instant, end: Instant, span: (T) -> Pair<Instant, Instant>, amount: (T) -> Double): Double? {
+    private suspend fun <T : Record> rangeBand(c: HealthConnectClient, type: KClass<T>, app: String, start: Instant, end: Instant, span: (T) -> Pair<Instant, Instant>, amount: (T) -> Double): Double? {
         val recs = once(readBetween(c, type, start, end).filter {
             val (s, e) = span(it)
-            e.isAfter(start) && s.isBefore(end) && isBand(it.metadata.dataOrigin.packageName, it.metadata.device?.type)
+            e.isAfter(start) && s.isBefore(end) && it.metadata.dataOrigin.packageName == app && isBand(app, it.metadata.device?.type)
         }, span)
         if (recs.isEmpty()) return null
         fun inside(r: T): Double {
@@ -375,7 +424,7 @@ class MotusHealthPlugin : Plugin() {
             val a = maxOf(s, start).toEpochMilli(); val b = minOf(e, end).toEpochMilli()
             return amount(r) * (b - a).coerceAtLeast(0) / len
         }
-        val total = recs.groupBy { it.metadata.dataOrigin.packageName }.values.maxOf { rs -> rs.sumOf { inside(it) } }
+        val total = recs.sumOf { inside(it) }
         return if (total > 0) Math.round(total * 10) / 10.0 else null
     }
 
@@ -625,6 +674,42 @@ class MotusHealthPlugin : Plugin() {
                 val out = JSObject().put("date", date.toString()).put("total", all[StepsRecord.COUNT_TOTAL] ?: 0L).put("sources", sources)
                     .put("phoneName", phoneName())
                 out.put("used", used ?: JSONObject.NULL)
+                call.resolve(out)
+            } catch (e: Exception) { call.reject(e.message ?: "Health Connect could not be read") }
+        }
+    }
+
+    /**
+     * Where an activity's steps came from (the activity's ⋮ → Step sources): each app's steps in Health Connect for
+     * { start, end } (ISO times), read as readRanges reads them (spanByApp, bestBand), so the sheet shows what Motus went by.
+     * { phoneName, used: the worn device's app readRanges takes, or null, sources: [{ app, label?, steps, band, phone,
+     *   device: "band" | "watch" | "phone" | "unknown" | ..., deviceName?, covered, heartRate: it measured heart rate then,
+     *   why?: why it isn't covered (coverage), gapStart?, gapEnd? (ISO: the heart rate hole, or the steps' missing edge) }] }
+     */
+    @PluginMethod
+    fun activitySources(call: PluginCall) {
+        if (sdk() != HealthConnectClient.SDK_AVAILABLE) { call.reject("Health Connect is not available"); return }
+        val (start, end) = try { Instant.parse(call.getString("start")) to Instant.parse(call.getString("end")) } catch (e: Exception) { call.reject("Pick a time"); return }
+        scope.launch {
+            try {
+                val c = client()
+                if (perm(StepsRecord::class) !in c.permissionController.getGrantedPermissions()) { call.reject("Motus may not read steps"); return@launch }
+                val hasHr = perm(HeartRateRecord::class) in c.permissionController.getGrantedPermissions()
+                val spans = if (end.isAfter(start)) spanByApp(c, start, end, true, hasHr) else emptyList()
+                val best = bestBand(spans)
+                val sources = JSArray()
+                for (sp in spans.sortedBy { it.app }) {
+                    val d = sp.device
+                    val o = JSObject().put("app", sp.app).put("steps", sp.count ?: 0L).put("band", sp.band).put("device", deviceName(d?.type))
+                        .put("phone", !sp.band && (phoneApp(sp.app) || d?.type == Device.TYPE_PHONE)).put("covered", sp.coverage.covered)
+                        .put("heartRate", sp.hr.isNotEmpty())
+                    if (sp.band) { wornOf(d).name?.let { o.put("deviceName", it) }; sp.coverage.why?.let { o.put("why", it) } }
+                    sp.coverage.gap?.let { o.put("gapStart", it.first.toString()).put("gapEnd", it.second.toString()) }
+                    appLabel(sp.app)?.let { o.put("label", it) }
+                    sources.put(o)
+                }
+                val out = JSObject().put("phoneName", phoneName()).put("sources", sources)
+                out.put("used", best?.app ?: JSONObject.NULL)
                 call.resolve(out)
             } catch (e: Exception) { call.reject(e.message ?: "Health Connect could not be read") }
         }

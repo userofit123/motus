@@ -63,6 +63,16 @@ export interface StepSource { app: string; label?: string; steps: number; band: 
 export interface StepSources { date: string; total: number; used: string | null; phoneName?: string; sources: StepSource[] }
 export const canStepSources = () => healthSupported() && typeof plugin()?.stepSources === "function"; // an app build from before has none
 export const stepSources = (date: string): Promise<StepSources> => plugin().stepSources({ date });
+/** An activity's steps per Health Connect app for its time, read as the sync reads them (the activity's ⋮ → Step
+ *  sources). used: the worn device's app the sync takes, null when none counted. covered: its data stands for the whole
+ *  time (synced past it, worn throughout). */
+// why: why a worn device's data doesn't stand for the whole time: "after" (nothing after it yet: not synced), "before"
+// (nothing from before it), "worn" (no heart rate gapStart-gapEnd), "edges" (no heart rate at all, and its steps start or
+// end over 10 minutes inside: gapStart-gapEnd)
+export interface SpanSource extends StepSource { deviceName?: string; covered: boolean; heartRate?: boolean; why?: "after" | "before" | "worn" | "edges"; gapStart?: string; gapEnd?: string }
+export interface ActivitySources { used: string | null; phoneName?: string; sources: SpanSource[] }
+export const canActivitySources = () => healthSupported() && typeof plugin()?.activitySources === "function"; // an app build from before has none
+export const activitySources = (start: string, end: string): Promise<ActivitySources> => plugin().activitySources({ start, end });
 // the names Health Connect's own screen shows for the apps that write steps most often (the phone's name is used where
 // it is the phone's own counting)
 const APP_NAMES: [string, string][] = [
@@ -201,8 +211,11 @@ async function read(past?: Date): Promise<HealthResult | null> {
 const RANGES_DAYS = 30, SETTLE_MS = 3 * DAY_MS, CHECKED_KEY = "motusHealthChecked", CHECKED_MAX = 400;
 // bumped when the app reads the band's side differently, so the last 30 days are asked about once more, also activities
 // that already have the band's steps (recheck) and ones remembered as checked: 2, steps only from a band, watch or ring
-// (an older build took the app with the most steps, often the phone's own counter, and called it the band's)
-const RANGES_VERSION = 2, RANGES_KEY = "motusHealthRanges";
+// (an older build took the app with the most steps, often the phone's own counter, and called it the band's); 3, an app
+// build that takes a worn device's data as whole when it synced past the activity and was worn (heart rate) throughout,
+// a hole in its step records being standing still (told by activitySources, which came in the same build)
+const RANGES_KEY = "motusHealthRanges";
+const rangesVersion = () => (typeof plugin()?.activitySources === "function" ? 3 : 2);
 const rangesFrom = () => new Date(Date.now() - RANGES_DAYS * DAY_MS);
 // Sessions the band had nothing for, once they ended more than 3 days ago (it has synced by then, or never will), so a
 // session without band data isn't read from Health Connect on every sync. Kept per account on this phone.
@@ -217,14 +230,14 @@ const rememberChecked = (ids: string[]) => {
 async function readRanges(from: Date): Promise<RangesAdded | undefined> {
   if (typeof plugin()?.readRanges !== "function") return undefined; // an app build from before
   const versions = readJson<Record<string, number>>(RANGES_KEY, {});
-  const recheck = (versions[key()] ?? 0) < RANGES_VERSION;
+  const version = rangesVersion(), recheck = (versions[key()] ?? 0) < version;
   // band: this phone's app build reads what the band measured during an activity, so every activity without those
   // numbers yet is asked about (also ones that already have heart rate); an older build would be asked about them on
   // every sync for nothing. Told by the build: the changes list came in the same one.
   const band = canChanges();
   const got = await api.get<{ ranges: Range[] }>("/health/ranges", { from: from.toISOString(), ...(recheck ? { recheck: 1 } : {}), ...(band ? { band: 1 } : {}) });
   const checked = recheck ? new Set<string>() : checkedIds();
-  const done = () => { if (recheck) writeJson(RANGES_KEY, { ...readJson<Record<string, number>>(RANGES_KEY, {}), [key()]: RANGES_VERSION }); };
+  const done = () => { if (recheck) writeJson(RANGES_KEY, { ...readJson<Record<string, number>>(RANGES_KEY, {}), [key()]: version }); };
   const ranges = (got.ranges ?? []).filter((x) => !checked.has(x.id));
   if (!ranges.length) { done(); return undefined; }
   const { results } = await plugin().readRanges({ ranges }) as { results: RangeResult[] };

@@ -19,7 +19,8 @@ import Icon from "../Icon.vue";
 import Menu, { type MenuItem } from "../Menu.vue";
 import SessionStats from "../SessionStats.vue";
 import Sheet from "../Sheet.vue";
-import { canStepSources, stepSources, sourceName, adviceWord, useDevice, type StepSources, type StepSource } from "../../native/health";
+import StepSourceRows from "../StepSourceRows.vue";
+import { canStepSources, stepSources, adviceWord, useDevice, type StepSources } from "../../native/health";
 
 interface Item {
   key: string; kind: "steps" | "sleep" | "weight" | "resting_hr" | "spo2" | "hrv" | "distance" | "active_kcal" | "body_fat" | "water" | "vo2max" | "activity"; date: string; at: string | null; value: number | null;
@@ -105,13 +106,7 @@ async function loadOrigin(day: string, kept: number | null) {
   try { const data = await stepSources(day); if (origin.value?.day === day) origin.value.data = data; }
   catch (e) { if (origin.value?.day === day) origin.value.error = (e as Error)?.message || "Health Connect could not be read"; }
 }
-// the kind the source's records name ("chest strap" from an older build); a band app that names none (Gadgetbridge often)
-const WORN_NAMES: Record<string, string> = { watch: "the watch", band: "the band", ring: "the ring", "chest strap": "the chest strap", chestStrap: "the chest strap" };
-const srcSub = (s: StepSource) => s.band ? `Counted by ${WORN_NAMES[s.device] ?? "the device you wear"}` : s.phone ? "Counted by the phone" : "Another app";
 const originDay = (d: string) => { const n = dayName(d); return n === "Today" || n === "Yesterday" ? n.toLowerCase() : n; };
-// the band first, then the rest by count
-const srcList = (d: StepSources) => [...d.sources].sort((a, b) => Number(b.band) - Number(a.band) || b.steps - a.steps);
-const srcIcon = (s: StepSource) => (s.band ? "activity" : s.phone ? "device" : "link");
 const menu = (x: Item): MenuItem[] => [
   x.kind === "activity" ? { label: "Open", icon: "right", run: () => edit(x) } : { label: "Edit", icon: "edit", run: () => edit(x) },
   { label: "Step sources", icon: "info", hidden: x.kind !== "steps" || !canStepSources(), run: () => showOrigin(x) },
@@ -145,19 +140,9 @@ const menu = (x: Item): MenuItem[] => [
     <div v-else-if="!origin.data.sources.length && origin.kept" class="empty sm"><b>No longer in Health Connect</b>Motus can't read this day from Health Connect any more. It kept the {{ fmt.num(origin.kept, 0) }} steps it read before.</div>
     <div v-else-if="!origin.data.sources.length" class="empty sm"><b>No steps that day</b>No app wrote steps to Health Connect for this day.</div>
     <template v-else>
-      <div class="list">
-        <div v-for="src in srcList(origin.data)" :key="src.app" class="li">
-          <span class="bi sg"><Icon :name="srcIcon(src)" :size="16" /></span>
-          <div class="grow"><div class="t">{{ sourceName(src, origin.data.phoneName) }}<span v-if="origin.data.used === src.app" class="mchip hi-chip">Used</span></div><div class="s">{{ srcSub(src) }}</div></div>
-          <b class="num">{{ fmt.num(src.steps, 0) }}</b>
-        </div>
-      </div>
-      <!-- the sum under the apps, set apart by a line; less than the rows added up when two apps counted the same steps -->
-      <div class="li hc-tot">
-        <span class="bi sg"><Icon name="layers" :size="16" /></span>
-        <div class="grow"><div class="t">Health Connect's total<span v-if="!origin.data.used" class="mchip hi-chip">Used</span></div><div class="s">{{ origin.data.sources.length > 1 ? "Steps two apps both counted are only counted once" : origin.data.used ? "All apps together" : `No ${adviceWord(dev)} counted this day` }}</div></div>
-        <b class="num">{{ fmt.num(origin.data.total, 0) }}</b>
-      </div>
+      <StepSourceRows :sources="origin.data.sources" :phone-name="origin.data.phoneName" :used="origin.data.used"
+        :total="{ icon: 'layers', label: `Health Connect's total`, value: origin.data.total, used: !origin.data.used,
+                  sub: origin.data.sources.length > 1 ? 'Steps two apps both counted are only counted once' : origin.data.used ? 'All apps together' : `No ${adviceWord(dev)} counted this day` }" />
     </template>
   </Sheet>
   <div v-if="q.hasNextPage.value" class="center"><button class="qb" :disabled="q.isFetchingNextPage.value" @click="q.fetchNextPage()">{{ q.isFetchingNextPage.value ? "Loading…" : "Show older" }}</button></div>
@@ -165,5 +150,4 @@ const menu = (x: Item): MenuItem[] => [
 
 <style scoped>
 .hi-chip { margin-inline-start: 6px; }
-.hc-tot { margin-top: var(--tdy); border-top: 1px solid var(--ol); border-bottom: 0; }
 </style>

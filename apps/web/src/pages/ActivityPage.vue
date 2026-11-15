@@ -2,7 +2,7 @@
 // One activity: the map, time, distance, pace, steps, climb, calories, pace per km/mile, heart rate (from a band), notes;
 // edit or delete. Only what there is: a time only type (climbing, yoga) shows its time, plus whatever a band measured then.
 import { goBack } from "../core/leave";
-import { computed } from "vue";
+import { computed, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useActivity, useActivityTypes, useTypeName, loaded } from "../api/queries";
 import { api } from "../api/client";
@@ -18,8 +18,10 @@ import RouteMap from "../components/RouteMap.vue";
 import DotLine from "../components/DotLine.vue";
 import BarChart from "../components/BarChart.vue";
 import HeartRate from "../components/HeartRate.vue";
-import { routeSplits, M_PER_MI, fromM, activityDistance, activityClimb, type ActivityType } from "@motus/shared";
-import { fromWhere, useDevice } from "../native/health";
+import Sheet from "../components/Sheet.vue";
+import StepSourceRows from "../components/StepSourceRows.vue";
+import { routeSplits, M_PER_MI, fromM, activityDistance, activityClimb, appSteps, stepsTyped, bandStepsVerdict, type ActivityType } from "@motus/shared";
+import { fromWhere, useDevice, adviceWord, canActivitySources, activitySources, type ActivitySources } from "../native/health";
 
 const route = useRoute(), router = useRouter();
 const id = computed(() => String(route.params.id));
@@ -83,6 +85,54 @@ function gpx() {
   const x = `<?xml version="1.0" encoding="UTF-8"?><gpx version="1.1" creator="Motus" xmlns="http://www.topografix.com/GPX/1/1"><trk><name>${a.value.name || a.value.type}</name><type>${a.value.type}</type><trkseg>${pts}</trkseg></trk></gpx>`;
   saveFile(new Blob([x], { type: "application/gpx+xml" }), `${a.value.type}-${a.value.startedAt.slice(0, 10)}.gpx`).catch(toastError);
 }
+// Step sources (the Android app with Health Connect, an activity recorded or logged in Motus whose type counts steps):
+// each app's steps in Health Connect for the activity's time, read as a sync reads them, the count Motus kept, which
+// one is used and, when the worn device's isn't, why: the engine's own rule (bandStepsVerdict) on what Health Connect
+// has now, so the reason is the one the next sync goes by
+const srcs = ref<{ data: ActivitySources | null; error: string | null } | null>(null);
+const canSources = computed(() => canActivitySources() && !!a.value?.endedAt && a.value.source !== "health_connect" && counts.value);
+let srcRead = 0;
+async function showSources() {
+  const x = a.value, n = ++srcRead;
+  srcs.value = { data: null, error: null };
+  try { const data = await activitySources(new Date(x.startedAt).toISOString(), new Date(x.endedAt).toISOString()); if (n === srcRead && srcs.value) srcs.value = { data, error: null }; }
+  catch (e) { if (n === srcRead && srcs.value) srcs.value = { data: null, error: (e as Error)?.message || "Health Connect could not be read" }; }
+}
+// the type counts steps, as the engine decides it (a type deleted since: walks, runs and hikes do)
+const counts = computed(() => (type.value ? type.value.hasSteps !== false : ["walk", "run", "hike"].includes(a.value?.type)));
+// the device in words, the same in the sheet's intro and its reason: the kind the worn device's records name, else the
+// person's (both kinds while not known)
+const srcWord = computed(() => {
+  const d = srcs.value?.data, best = d?.sources.find((s) => s.band && s.app === d.used);
+  return best && ["watch", "band", "ring", "chest strap"].includes(best.device) ? best.device : adviceWord(dev.value);
+});
+const bandUsed = computed(() => a.value?.stepsSource === "band");
+// why the worn device's count isn't the activity's ("" when it is)
+const srcReason = computed(() => {
+  const x = a.value, d = srcs.value?.data, f = fmt.value;
+  if (!x || !d || bandUsed.value) return "";
+  const best = d.sources.find((s) => s.band && s.app === d.used) ?? null;
+  // the device by the kind its records name, else the person's (useDevice)
+  const app = appSteps(x), word = srcWord.value;
+  const v = bandStepsVerdict({ steps: best?.steps ?? null, covered: !!best?.covered, app, counts: counts.value, typed: stepsTyped(x) });
+  const what = (x.name || typeName(x.type)).toLowerCase();
+  switch (v) {
+    case "typed": return "You typed this count";
+    case "notCounted": return `Motus doesn't count steps for this type`;
+    case "none": return `Your ${word} has no steps for this time`;
+    case "partial": {
+      // the plugin's coverage rule says which part is missing
+      const gap = best?.gapStart && best.gapEnd ? `${f.time(best.gapStart)}-${f.time(best.gapEnd)}` : "";
+      if (best?.why === "after") return `Your ${word} has no data after this ${what} yet - it hasn't synced`;
+      if (best?.why === "before") return `Your ${word} has no data from before this ${what}`;
+      if (best?.why === "worn") return `Your ${word} wasn't worn during part of this ${what}${gap ? ` (no heart rate ${gap})` : ""}`;
+      return `Your ${word}'s steps don't cover the whole ${what}${gap ? ` (gap ${gap})` : ""}`;
+    }
+    case "phone": return `Your ${word}'s count is the same as Motus's, so it's the phone's own count`;
+    case "far": return `Your ${word}'s count is far from Motus's (${f.num(best!.steps, 0)} vs ${f.num(app ?? 0, 0)}), so it may be from another time`;
+    default: return "Not checked yet - pull down to refresh";
+  }
+});
 // show the page once its data is in, all at once
 await loaded(q, types);
 </script>
@@ -91,7 +141,7 @@ await loaded(q, types);
   <div v-if="a" class="page">
     <button class="back" @click="goBack(router, '/history')"><Icon name="left" :size="16" /><span>Back</span></button>
     <div class="ph"><div><h1>{{ a.name || typeName(a.type) }}</h1><DotLine class="sub" :parts="[fmt.dateLong(a.startedAt), `${fmt.time(a.startedAt)}-${fmt.time(a.endedAt)}`, source].filter(Boolean)" /></div>
-      <div class="acts"><Menu :items="[{ label: 'Rename', icon: 'edit', run: () => edit('name') }, { label: 'Notes', icon: 'note', run: () => edit('notes') }, { label: 'Export GPX', icon: 'download', sep: true, run: gpx, hidden: !a.route?.length }, { label: 'Delete', icon: 'trash', danger: true, sep: true, run: del }]" /></div></div>
+      <div class="acts"><Menu :items="[{ label: 'Rename', icon: 'edit', run: () => edit('name') }, { label: 'Notes', icon: 'note', run: () => edit('notes') }, { label: 'Step sources', icon: 'info', hidden: !canSources, run: showSources }, { label: 'Export GPX', icon: 'download', sep: true, run: gpx, hidden: !a.route?.length }, { label: 'Delete', icon: 'trash', danger: true, sep: true, run: del }]" /></div></div>
     <RouteMap v-if="a.route?.length" :route="a.route" />
     <div class="grid g4 spt" :class="`n${tiles.length}`">
       <div v-for="t in tiles" :key="t.key" class="card stat" :class="{ hero: t.hero }"><div class="lbl"><span class="bi"><Icon :name="t.icon" :size="15" /></span>{{ t.label }}</div><div class="val">{{ t.value }}<small v-if="t.unit">{{ t.unit }}</small></div><DotLine v-if="t.sub?.length" class="sub" :parts="t.sub" /></div>
@@ -102,6 +152,16 @@ await loaded(q, types);
     </div>
     <HeartRate v-if="a.hr?.length || a.avgHr" class="spt" :avg="a.avgHr" :max="a.maxHr" :hr="a.hr" />
     <div v-if="a.notes" class="banner note spt"><Icon name="note" :size="18" class="note-ic" />{{ a.notes }}</div>
+    <Sheet v-if="srcs" title="Where these steps came from" @close="srcs = null">
+      <p class="muted hgap">Steps each app saved to Health Connect from {{ fmt.time(a.startedAt) }} to {{ fmt.time(a.endedAt) }}. When your {{ srcWord }} has data for the whole {{ (a.name || typeName(a.type)).toLowerCase() }}, Motus uses its count.</p>
+      <div v-if="srcs.error" class="empty sm"><b>Couldn't read Health Connect</b>{{ srcs.error }}<br /><button class="btn tonal" @click="showSources">Try again</button></div>
+      <div v-else-if="!srcs.data" class="empty sm">Reading Health Connect…</div>
+      <template v-else>
+        <StepSourceRows :sources="srcs.data.sources" :phone-name="srcs.data.phoneName" :used="bandUsed ? srcs.data.used : null"
+          :total="{ icon: 'steps', label: 'Counted by Motus', value: appSteps(a), used: !bandUsed, sub: stepsTyped(a) ? 'Typed by you' : a.source === 'import' ? 'From the file' : 'While recording' }" />
+        <div v-if="srcReason" class="banner note spt" style="margin-bottom:0"><Icon name="info" :size="18" />{{ srcReason }}</div>
+      </template>
+    </Sheet>
   </div>
   <div v-else class="page"><div class="empty">Loading…</div></div>
 </template>

@@ -25,7 +25,7 @@ import { uuidv7, isUuid } from "../ids";
 import { bad, notFound } from "../errors";
 import { ensureTypes, saveActivity, stepsByDay } from "./activities";
 import { dayIn } from "./achievements";
-import { isNight, cleanWornDevice, type WornDevice } from "@motus/shared";
+import { isNight, cleanWornDevice, plausibleSteps, stepsTyped, appSteps, bandStepsVerdict, type WornDevice } from "@motus/shared";
 
 export const HEALTH_SOURCE = "health_connect";
 // a band's number for an activity's time: a measure that can't be (below 0, absurdly large, not a number) is left out
@@ -270,16 +270,8 @@ export function readiness(parts: { key: ReadinessPart["key"]; value: number; his
   return { score: s, label: s >= 75 ? "Ready" : s >= 50 ? "Normal" : "Take it easy", parts: out, building, need: MIN_BASELINE };
 }
 
-/** Whether the band's count for an activity is believable next to the app's own (null or 0: the app counted none). */
-export function plausibleSteps(band: number, app: number | null) {
-  // A band whose clock is off (after a reset, before Gadgetbridge sets its time again) files its steps under the wrong
-  // minutes, so its count for this activity's time belongs to some other time. Where the app counted a fair number
-  // itself, a band count far from it (under 0.4 or over 2.5 times) is taken as that, and the app's count stays.
-  // With few or no steps of the app's own there is nothing to check against, and the band's count is the better one.
-  if (app == null || app <= 200) return true;
-  const r = band / app;
-  return r >= 0.4 && r <= 2.5;
-}
+// one rule with the activity's Step sources sheet (@motus/shared); re-exported for the tests
+export { plausibleSteps };
 
 export function healthRoutes(r: Router) {
   r.post("/health/import", async (ctx, _p, b) => {
@@ -479,9 +471,10 @@ export function healthRoutes(r: Router) {
          FROM activities a LEFT JOIN activity_types t ON t.slug = a.type WHERE a.id = $1`, [e.id])).rows[0];
       if (!a?.ended_at) continue;
       // never over a count the person typed: changed by hand later ('manual'), or typed when the walk was logged by hand
-      const typed = a.steps_source === "manual" || (a.steps_source == null && a.source === "manual" && a.steps != null);
+      const fig = { steps: a.steps, stepsSource: a.steps_source, stepsApp: a.steps_app, source: a.source };
+      const typed = stepsTyped(fig);
       // the app's own count: kept aside once the band's replaced it
-      const app: number | null = a.steps_source === "band" ? a.steps_app : (a.steps_app ?? a.steps);
+      const app = appSteps(fig);
       // a count equal to the app's own is the phone's step counter (the sensor Motus counted with), not the band: an
       // older app build took it for the band's
       const phone = steps != null && app != null && steps === app;
@@ -491,7 +484,7 @@ export function healthRoutes(r: Router) {
         // later sync a partial count may just be band data since deleted, so a saved band count stays): back to the app's own count
         await ctx.q.query("UPDATE activities SET steps = $2, steps_app = NULL, steps_source = NULL WHERE id = $1", [e.id, app]);
         out.steps++; acts = true;
-      } else if (e.covered === true && steps != null && steps > 0 && !phone && a.counts && !typed && !(a.steps_source === "band" && a.steps === steps) && plausibleSteps(steps, app)) {
+      } else if (bandStepsVerdict({ steps, covered: e.covered === true, app, counts: a.counts, typed }) === "use" && !(a.steps_source === "band" && a.steps === steps)) {
         await ctx.q.query("UPDATE activities SET steps_app = $2, steps = $3, steps_source = 'band' WHERE id = $1", [e.id, app, steps]);
         out.steps++; acts = true;
       }

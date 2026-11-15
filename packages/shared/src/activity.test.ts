@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { activityClimb, activityDistance, tracksDistance } from "./activity";
+import { activityClimb, activityDistance, tracksDistance, bandStepsVerdict, stepsTyped, appSteps } from "./activity";
 
 const walk = { hasDistance: true, hasGps: true }, yoga = { hasDistance: false, hasGps: false }, swim = { hasDistance: true, hasGps: false };
 
@@ -31,5 +31,25 @@ describe("activityClimb", () => {
     expect(activityClimb({ elevationM: 40 }, swim)).toBeNull();
     expect(activityClimb({ elevationM: 40, hasRoute: true }, swim)).toBe(40);
     expect(activityClimb({ elevationM: null }, walk)).toBeNull();
+  });
+});
+
+describe("bandStepsVerdict", () => {
+  const base = { steps: 1500, covered: true, app: 1387, counts: true, typed: false };
+  it("says why the device's count isn't used, in the engine's order", () => {
+    expect(bandStepsVerdict(base)).toBe("use");
+    expect(bandStepsVerdict({ ...base, typed: true })).toBe("typed");
+    expect(bandStepsVerdict({ ...base, counts: false })).toBe("notCounted");
+    expect(bandStepsVerdict({ ...base, steps: null })).toBe("none");
+    expect(bandStepsVerdict({ ...base, covered: false })).toBe("partial");
+    expect(bandStepsVerdict({ ...base, steps: 1387 })).toBe("phone");
+    expect(bandStepsVerdict({ ...base, steps: 310 })).toBe("far");
+    expect(bandStepsVerdict({ ...base, steps: 310, app: 150 })).toBe("use");
+  });
+  it("reads the typed and the app's own count from the row", () => {
+    expect(stepsTyped({ source: "manual", steps: 900, stepsSource: null })).toBe(true);
+    expect(stepsTyped({ source: "gps", steps: 900, stepsSource: null })).toBe(false);
+    expect(appSteps({ steps: 1500, stepsSource: "band", stepsApp: 1387 })).toBe(1387);
+    expect(appSteps({ steps: 1387, stepsSource: null })).toBe(1387);
   });
 });

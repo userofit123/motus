@@ -22,3 +22,38 @@ export function activityClimb(a: ActivityFigures, t: TypeLike): number | null {
   const m = Number(a.elevationM);
   return Number.isFinite(m) && (!t || t.hasGps || routed(a)) ? m : null;
 }
+
+// When the worn device's step count for an activity recorded in Motus replaces the phone's own (the engine's
+// POST /health/ranges) and, when it doesn't, why (the activity's Step sources sheet): one rule, so the sheet never
+// gives a reason the engine doesn't go by.
+/** The bounds plausibleSteps checks by: the app's own count must be over minApp for a check, and the device's within low-high times it */
+export const STEPS_CHECK = { minApp: 200, low: 0.4, high: 2.5 } as const;
+/** Whether the device's count for an activity is believable next to the app's own (null or 0: the app counted none). */
+export function plausibleSteps(band: number, app: number | null) {
+  // A band whose clock is off (after a reset, before Gadgetbridge sets its time again) files its steps under the wrong
+  // minutes, so its count for this activity's time belongs to some other time. Where the app counted a fair number
+  // itself, a band count far from it (under 0.4 or over 2.5 times) is taken as that, and the app's count stays.
+  // With few or no steps of the app's own there is nothing to check against, and the band's count is the better one.
+  if (app == null || app <= STEPS_CHECK.minApp) return true;
+  const r = band / app;
+  return r >= STEPS_CHECK.low && r <= STEPS_CHECK.high;
+}
+/** What the step rules read of an activity (the full row, camelCase) */
+export interface StepsFigures { steps?: number | null; stepsSource?: string | null; stepsApp?: number | null; source?: string | null }
+/** The count was typed: changed by hand later ("manual"), or typed when the activity was logged by hand */
+export const stepsTyped = (a: StepsFigures) => a.stepsSource === "manual" || (a.stepsSource == null && a.source === "manual" && a.steps != null);
+/** The app's own count: kept aside (stepsApp) once the device's replaced it */
+export const appSteps = (a: StepsFigures): number | null => (a.stepsSource === "band" ? a.stepsApp ?? null : a.stepsApp ?? a.steps ?? null);
+/** use: the device's count is taken; else why not: typed (the person's own), notCounted (the type counts no steps),
+ *  none (no worn device counted then), partial (its records don't reach across the whole time), phone (the same as the
+ *  app's own count: the phone's counter, not the device), far (not plausibleSteps) */
+export type BandStepsVerdict = "use" | "typed" | "notCounted" | "none" | "partial" | "phone" | "far";
+export function bandStepsVerdict(x: { steps: number | null; covered: boolean; app: number | null; counts: boolean; typed: boolean }): BandStepsVerdict {
+  if (x.typed) return "typed";
+  if (!x.counts) return "notCounted";
+  if (x.steps == null || x.steps <= 0) return "none";
+  if (!x.covered) return "partial";
+  if (x.app != null && x.steps === x.app) return "phone";
+  if (!plausibleSteps(x.steps, x.app)) return "far";
+  return "use";
+}
