@@ -19,7 +19,9 @@ const props = defineProps<{ reminder: any; when?: boolean; where?: string | null
 const emit = defineEmits<{ gone: [] }>();
 const fmt = useFmt();
 const r = computed(() => props.reminder);
-const meta = computed(() => [props.where, r.value.createdAt ? `Set ${fmt.value.stamp(r.value.createdAt, props.day)}` : null, props.when ? reminderWhen(r.value, fmt.value) : null, reminderChange(r.value, fmt.value)].filter(Boolean) as string[]);
+// "Set Fri 13 Nov" + "14:05" as two parts, like History's date and time
+const setStamp = (f: any, iso: string | null, day?: string | null) => { const [a, ...b] = f.stampParts(iso, day); return a ? [`Set ${a}`, ...b] : []; };
+const meta = computed(() => [props.where, ...setStamp(fmt.value, r.value.createdAt, props.day), props.when ? reminderWhen(r.value, fmt.value) : null, reminderChange(r.value, fmt.value)].filter(Boolean) as string[]);
 // Done and Dismiss end it; Next time puts it off in this workout (`workoutId`), so it neither comes back here nor ends
 // on finish, and keeps it waiting for the next one
 const set = useChange(async (status: "done" | "pending" | "dismissed") => {

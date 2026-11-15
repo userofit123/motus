@@ -226,7 +226,7 @@ const nowId = computed(() => (W.state.active === props.index ? nextSet(visibleSe
     </div>
     <!-- notes for this exercise: under it, where you look after a set -->
     <div v-if="isCur && shownNotes.length" ref="notesEl" class="exnotes">
-      <NoteItem v-for="n in shownNotes" :key="n.id" :data-note="n.id" :note="n" :menu="noteMenu(n, e.exercise?.name ?? '')" />
+      <NoteItem v-for="n in shownNotes" :key="n.id" :data-note="n.id" :note="n" :day="W.state.w?.startedAt" :menu="noteMenu(n, e.exercise?.name ?? '')" />
     </div>
     <ExercisePicker v-if="picking" title="Replace with" :suggest="alts" @close="picking = null" @pick="replace" />
     <RestPicker v-if="restEdit" :title="restEdit === 'between' ? 'Rest between sets' : 'Rest after this exercise'" :value="restEdit === 'between' ? e.restS : e.restAfterS" :default-label="'Default'" @close="restEdit = null"

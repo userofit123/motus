@@ -603,7 +603,7 @@ await loaded(home, ach, avail, hDay, ready, nightsQ, dailyQ);
 
         <div v-else-if="id === 'reminders'" class="card hb sz-m" :data-solo="solo.has(id) || undefined">
           <div class="ch"><span class="bi"><Icon name="bell" :size="15" /></span><span class="t grow">Reminders</span></div>
-          <div class="list"><div v-for="r in h.reminders" :key="r.id" class="li click" v-bind="link(() => (reminderView = { r }))"><div class="grow"><div class="t">{{ reminderText(r, fmt) }}</div><DotLine class="s" :parts="[r.targetName, r.createdAt ? `Set ${fmt.stamp(r.createdAt)}` : null].filter((p): p is string => !!p)" /></div><Icon name="right" :size="16" class="muted" /></div></div>
+          <div class="list"><div v-for="r in h.reminders" :key="r.id" class="li click" v-bind="link(() => (reminderView = { r }))"><div class="grow"><div class="t">{{ reminderText(r, fmt) }}</div><DotLine class="s" :parts="[r.targetName, ...((s) => (s[0] ? [`Set ${s[0]}`, ...s.slice(1)] : []))(fmt.stampParts(r.createdAt))].filter((p): p is string => !!p)" /></div><Icon name="right" :size="16" class="muted" /></div></div>
         </div>
 
         <div v-else-if="id === 'records'" class="card hb sz-m" :data-solo="solo.has(id) || undefined">

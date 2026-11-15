@@ -23,6 +23,15 @@ export function makeFmt(s: Settings) {
   const toDate = (d: string | number | Date) => (d instanceof Date ? d : typeof d === "number" ? new Date(d) : new Date(d.length === 10 ? d + "T12:00:00" : d));
   const dist = (m: number | null | undefined, dp = 2) => (m == null ? "" : `${num(fromM(m, du), dp)} ${du}`);
   const vol = (kg: number) => { const v = fromKg(kg, wu); return v >= 10000 ? `${num(v / 1000, 1)}k ${wu}` : `${num(v, 0)} ${wu}`; };
+  /** when something was written, as the parts of a dot line: ["Fri 13 Nov", "14:05"], the year only when it isn't this year.
+   *  Only when a caller passes `day` (a workout's day) and the moment falls on it is it just ["14:05"], the date being known. */
+  const stampParts = (iso: string | null | undefined, day?: string | null): string[] => {
+    if (!iso) return [];
+    const d = new Date(iso);
+    const t = d.toLocaleTimeString(locale, { hour: "numeric", minute: "2-digit", hour12 });
+    if (day && ymd(d) === ymd(toDate(day))) return [t];
+    return [loc(d, { weekday: "short", day: "numeric", month: "short", ...(d.getFullYear() !== new Date().getFullYear() ? { year: "numeric" } : {}) }), t];
+  };
   return {
     s,
     wu, du, lu,
@@ -57,16 +66,9 @@ export function makeFmt(s: Settings) {
     day: (d: string) => { const t = new Date(); if (d === ymd(t)) return "today"; t.setDate(t.getDate() + 1); if (d === ymd(t)) return "tomorrow"; const x = new Date(d + "T12:00:00"); return loc(x, { weekday: "short", day: "numeric", month: "short", ...(x.getFullYear() !== new Date().getFullYear() ? { year: "numeric" } : {}) }); },
     dateLong: (iso: string | null | undefined) => (iso ? loc(toDate(iso), { weekday: "long", day: "numeric", month: "long", year: "numeric" }) : ""),
     time: (iso: string | null | undefined) => (iso ? new Date(iso).toLocaleTimeString(locale, { hour: "numeric", minute: "2-digit", hour12 }) : ""),
-    /** when something was written: "Fri 13 Nov · 14:05", the year only when it isn't this year. A moment on the same day as
-     *  `day` (a workout's day; default today) shows just the time, since the date is already known. Empty without a time. */
-    stamp: (iso: string | null | undefined, day?: string | null) => {
-      if (!iso) return "";
-      const d = new Date(iso);
-      const t = d.toLocaleTimeString(locale, { hour: "numeric", minute: "2-digit", hour12 });
-      const ref = day ? toDate(day) : new Date();
-      if (ymd(d) === ymd(ref)) return t;
-      return `${loc(d, { weekday: "short", day: "numeric", month: "short", ...(d.getFullYear() !== new Date().getFullYear() ? { year: "numeric" } : {}) })} · ${t}`;
-    },
+    stampParts,
+    /** the same as one string for plain text: "Fri 13 Nov · 14:05" */
+    stamp: (iso: string | null | undefined, day?: string | null) => stampParts(iso, day).join(" · "),
     ago: (iso: string | null | undefined) => ago(iso),
     /** an achievement's amount in its unit, the same on Home and in Stats: "12.3k kg", "48.5 km", "3h 28m", "4 weeks" */
     ach: (unit: string, v: number) => unit === "kg" ? vol(v) : unit === "m" ? dist(v, v < 10000 ? 1 : 0) : unit === "s" ? dur(v, true) : unit === "weeks" ? `${num(v, 0)} ${v === 1 ? "week" : "weeks"}` : num(v, 0),

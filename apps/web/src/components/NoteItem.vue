@@ -20,7 +20,7 @@ const repeats = computed(() => props.note.pinned && ["exercise", "routine_exerci
 const text = computed(() => (props.note.body && props.note.body !== (props.note.tags ?? []).join(", ") ? props.note.body : ""));
 const meta = computed(() => [
   props.where,
-  fmt.value.stamp(props.note.createdAt, props.day) || null,
+  ...fmt.value.stampParts(props.note.createdAt, props.day),
   props.flat ? props.note.workoutName : null,
   props.note.difficulty ? DIFFICULTY[props.note.difficulty - 1] : null,
   props.flat && repeats.value ? "Shows in every workout" : null,
