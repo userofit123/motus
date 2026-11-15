@@ -3,6 +3,11 @@
 import { ref } from "vue";
 
 export class ApiError extends Error { constructor(public status: number, message: string) { super(message); } }
+/** No connection for something only the server can do (a backup, a restore, an export or import of a Motus file). Its
+ *  message is Backup's; another screen words it for what it was doing with neededFor. */
+export class NeedsServerError extends ApiError { constructor(message: string) { super(0, message); } }
+/** A NeedsServerError worded for what the screen was doing ("Exporting needs a connection to your server. ..."). */
+export const neededFor = (e: unknown, doing: string) => (e instanceof NeedsServerError ? new NeedsServerError(`${doing} needs a connection to your server. Check your connection.`) : e);
 
 /** wait: how long to wait for an answer before counting it as no connection, in ms (0 = as long as it takes). */
 export interface RequestOptions { wait?: number }

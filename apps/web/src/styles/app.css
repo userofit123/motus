@@ -763,6 +763,8 @@ html.phone .exchg { width: 36px; }
 html.phone .li:has(> .exspark) { gap: 8px; }
 /* big numbers in two-across stat cards shrink a little on narrow phones instead of wrapping */
 html.phone .grid.g4 .stat .val { font-size: clamp(24px, 7.4vw, var(--fs-val)); white-space: nowrap; }
+/* and so do their labels, so a long one ("Active calories") stays on one line and the values of a row stay level */
+html.phone .grid.g4 .stat .lbl { font-size: clamp(11.5px, 3.3vw, 13px); white-space: nowrap; }
 /* in a row of tiles a sub line can run under where the sparkline sits ("average of 46 nights"), so there the sparkline
    is a strip along the tile's foot, in room of its own below the text: the line never crosses the words */
 .grid.g4 .stat:has(> .spark) { padding-bottom: calc(var(--cpy) + 22px); }

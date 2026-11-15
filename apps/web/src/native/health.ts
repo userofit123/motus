@@ -241,9 +241,10 @@ async function readRanges(from: Date): Promise<RangesAdded | undefined> {
 // only on pull to refresh and Sync now. 10 minutes by default: close to the 15 it always was, and a look in between
 // costs one call when nothing is new.
 export type ReadEvery = "1" | "10" | "30" | "60" | "pull";
-// "min": a field next to a row's text gets at most 56% of a phone's width, and "Every 10 minutes" is cut off there
+// spelled out as "Every minute", "Every hour" and the schedule editor; they fit the 56% of a phone's width a field next
+// to a row's text gets
 export const READ_EVERY: { value: ReadEvery; label: string; hint?: string }[] = [
-  { value: "1", label: "Every minute" }, { value: "10", label: "Every 10 min" }, { value: "30", label: "Every 30 min" },
+  { value: "1", label: "Every minute" }, { value: "10", label: "Every 10 minutes" }, { value: "30", label: "Every 30 minutes" },
   { value: "60", label: "Every hour" }, { value: "pull", label: "Only on refresh", hint: "When you pull down to refresh or tap Sync now" },
 ];
 const EVERY_KEY = "motusHealthEvery";

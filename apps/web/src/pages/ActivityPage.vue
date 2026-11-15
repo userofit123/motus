@@ -35,11 +35,12 @@ const splits = computed(() => (a.value?.route?.length ? routeSplits(a.value.rout
 const fastest = computed(() => splits.value.filter((t) => !t.partial).reduce<(typeof splits.value)[number] | null>((b, t) => (!b || t.s < b.s ? t : b), null));
 // Under a tile, one pattern for the worn device's numbers: "From your watch" when the value is the device's, and the
 // other source's number beside a value as "<source> · <number>" ("Your watch · 1.21 km"). Steps the device counted
-// replace the phone's (a phone in a pocket or bag misses many), so they say both: "From your watch · Phone · 1,100".
-// As parts for DotLine: the tile is half the width on a phone, so the line wraps between parts, never at a dot
+// replace the phone's (a phone in a pocket or bag misses many), so they say both: "From your watch · phone counted 1,100"
+// (the phone's count one part, so it never wraps away from its words). As parts for DotLine: the tile is half the width
+// on a phone, so the line wraps between parts, never at a dot
 const dev = useDevice();
 const fromBand = computed(() => `From ${fromWhere(true, dev.value)}`);
-const stepsSub = computed(() => a.value?.stepsSource !== "band" ? [] : a.value.stepsApp ? [fromBand.value, "Phone", fmt.value.num(a.value.stepsApp, 0)] : [fromBand.value]);
+const stepsSub = computed(() => a.value?.stepsSource !== "band" ? [] : a.value.stepsApp ? [fromBand.value, `phone counted ${fmt.value.num(a.value.stepsApp, 0)}`] : [fromBand.value]);
 const types = useActivityTypes();
 const type = computed(() => (types.data.value as ActivityType[] | undefined)?.find((t) => t.slug === a.value?.type));
 // the activity's own distance and climb count where its type tracks them (@motus/shared, as every list and sum)
@@ -71,8 +72,8 @@ const tiles = computed<Tile[]>(() => {
   if (!(x.steps > 0) && ownClimb.value != null) out.push({ key: "climb", icon: "arrowUp", label: "Climb", value: String(Math.round(ownClimb.value)), unit: "m", sub: bClimb ? said(`${Math.round(bClimb)} m`) : [] });
   else if (!(x.steps > 0) && bClimb) out.push({ key: "climb", icon: "arrowUp", label: "Climb", value: String(Math.round(bClimb)), unit: "m", sub: bandSub });
   else if (!(x.steps > 0) && bFloors) out.push({ key: "floors", icon: "arrowUp", label: "Floors", value: f.num(bFloors, bFloors % 1 ? 1 : 0), sub: bandSub });
-  if (x.calories > 0) out.push({ key: "kcal", icon: "flame", label: "Calories", value: f.num(x.calories, 0), unit: "kcal", sub: bKcal ? said(`${f.num(bKcal, 0)} kcal`) : [] });
-  else if (bKcal) out.push({ key: "kcal", icon: "flame", label: "Calories", value: f.num(bKcal, 0), unit: "kcal", sub: bandSub });
+  if (x.calories > 0) out.push({ key: "kcal", icon: "flame", label: "Active calories", value: f.num(x.calories, 0), unit: "kcal", sub: bKcal ? said(`${f.num(bKcal, 0)} kcal`) : [] });
+  else if (bKcal) out.push({ key: "kcal", icon: "flame", label: "Active calories", value: f.num(bKcal, 0), unit: "kcal", sub: bandSub });
   return out;
 });
 async function del() { if (await confirm("Delete this activity?", { ok: "Delete", danger: true })) { await api.del(`/activities/${id.value}`); invalidate(["*"]); toast("Activity deleted"); router.replace("/history"); } }

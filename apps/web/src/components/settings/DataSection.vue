@@ -4,7 +4,7 @@
 // import a Motus file, Strong / Hevy / FitNotes CSV (with exercise matching), and GPX/TCX activities.
 import { ref } from "vue";
 import { useFmt } from "../../core/format";
-import { api } from "../../api/client";
+import { api, neededFor } from "../../api/client";
 import { invalidate } from "../../api/live";
 import { saveFile } from "../../core/saveFile";
 import { fileHead, leftOutText } from "../../core/backup";
@@ -32,7 +32,8 @@ async function exportJson() {
     const what = list.length === PART_LABELS.length ? "export" : list.join("-");
     // the choice stays open when the desktop app's save dialog is cancelled
     if (await saveFile(new Blob([JSON.stringify(d, null, 2)], { type: "application/json" }), `motus-${what}-${new Date().toISOString().slice(0, 10)}.json`, leftOutText(d))) parts.value = null;
-  } catch (e) { toastError(e); }
+    // a missing connection is worded for this screen, not as Backup's "A backup needs a connection"
+  } catch (e) { toastError(neededFor(e, "Exporting")); }
 }
 const plural = (n: number, one: string, many = one + "s") => `${n} ${n === 1 ? one : many}`;
 // what a Motus file holds (or what an import added), from its row counts per table
@@ -62,7 +63,7 @@ async function importJson(ev: Event) {
     const r = await api.post("/import", { data, mode }); invalidate(["*"]);
     const added = summary(r);
     toast(added ? `Imported ${added}` : "Imported");
-  } catch (e) { toastError(e); }
+  } catch (e) { toastError(neededFor(e, "Importing")); }
 }
 // a routine shared from another account: its folder isn't here, and exercises are matched by id, then by name
 async function importRoutine(data: any) {

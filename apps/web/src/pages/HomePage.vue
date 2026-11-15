@@ -304,7 +304,7 @@ const actStats = computed<WStat[]>(() => {
   if (d.steps != null) out.push({ key: "steps", icon: "steps", label: "Steps", value: fmt.value.num(d.steps, 0), unit: "",
     ...(g ? { delta: `of ${fmt.value.num(g.target, 0)}`, tone: d.steps >= g.target ? "pos" : undefined } : {}) });
   if (d.distanceM) out.push({ key: "dist", icon: "walk", label: "Distance", ...unitOf(fmt.value.dist(d.distanceM, 1)) });
-  if (d.activeKcal) out.push({ key: "kcal", icon: "flame", label: "Calories", value: fmt.value.num(d.activeKcal, 0), unit: "kcal" });
+  if (d.activeKcal) out.push({ key: "kcal", icon: "flame", label: "Active calories", value: fmt.value.num(d.activeKcal, 0), unit: "kcal" });
   return out;
 });
 // the last 7 days' steps as This week's bars, each under its weekday's letter, today in full colour; with a goal its

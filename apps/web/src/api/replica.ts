@@ -3,7 +3,7 @@
 // Every change is saved here first and sent to the server when it can be reached; changes made on your other
 // devices come back the same way. The newest change to a row wins (packages/engine/src/sync).
 import { reactive } from "vue";
-import { ApiError, httpTransport, server, setTransport, type RequestOptions, type Transport } from "./client";
+import { ApiError, NeedsServerError, httpTransport, server, setTransport, type RequestOptions, type Transport } from "./client";
 import { invalidate, setRemoteHandler } from "./live";
 import { readStr, writeStr } from "../core/prefs";
 
@@ -91,7 +91,7 @@ const transport: Transport = {
 async function onServer(method: string, path: string, body?: unknown, opts?: RequestOptions) {
   const restore = method === "POST" && path === "/import";
   const preview = path.startsWith("/import/preview");
-  const offline = () => new ApiError(0, `${restore || preview ? "Restoring" : "A backup"} needs a connection to your server. Check your connection.`);
+  const offline = () => new NeedsServerError(`${restore || preview ? "Restoring" : "A backup"} needs a connection to your server. Check your connection.`);
   if (!preview) {
     const err = await syncNow();
     if (err) throw err instanceof ApiError && err.status === 0 ? offline() : err;
