@@ -2,6 +2,12 @@
 
 The top entry's version is the one the release workflow publishes. Add a new `## [x.y.z]` section to release.
 
+## [0.1.29] - 2026-11-15
+
+- Daily steps match Gadgetbridge: Motus adds up your watch or band's own step records, as Gadgetbridge and Health Connect show them (Health Connect's own per-app total dropped some minutes). Past days are read again and corrected.
+- Walks and other activities take your watch's steps whenever its step records reach past the activity on both sides; a stretch with no steps counts as 0, not as missing. The activity's ⋮ → Step sources shows each count and why the watch's was or wasn't used.
+- Heart rate on every activity: Motus reads Health Connect right after you finish an activity or workout and keeps checking for half an hour, takes any heart rate your watch recorded in that time, and keeps filling it in for a few days as more arrives. The average shows in History, the Calendar, Home and Today.
+
 ## [0.1.28] - 2026-11-15
 
 - Steps match your watch or band: Motus no longer mixes in your phone's own step counting from Health Connect. On a day a watch, band or ring counted, the day is that device's total (the number Gadgetbridge and Health Connect show), and a walk only takes steps the device counted. Past days and the last 30 days of walks are read again and corrected; values you typed stay. Imported data → ⋮ on a steps day → Step sources shows where a day's steps came from.
