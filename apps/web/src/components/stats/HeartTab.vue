@@ -2,11 +2,18 @@
 // Stats → Heart, there only once a band has handed over heart data: the day's resting heart rate, blood oxygen and HRV
 // (each a tile with its trend, then its chart), and the heart rate during workouts and activities: how hard each one was
 // over the period (the average of each, its chart, the sessions themselves), and how many of the period's have one.
-// The vitals only with data in the period.
+// The vitals only with data in the period. Above it all the day (HeartDay: the heart rate by hour, stepped with ‹ ›),
+// then what stands out (a resting heart rate unusually high) and the time in heart rate zones over the period.
 import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
-import { ymd } from "@motus/shared";
-import { useWorkouts, useActivities, useTypeName } from "../../api/queries";
+import { useQuery } from "@tanstack/vue-query";
+import { ymd, weekStartOf, zoneMinutes, highRestingDays } from "@motus/shared";
+import { api } from "../../api/client";
+import { useWorkouts, useActivities, useTypeName, useSettings } from "../../api/queries";
+import { mins } from "../../core/sleep";
+import { ZONES, useMaxHr, hrSamples } from "../../core/heart";
+import HeartDay from "./HeartDay.vue";
+import BarChart from "../BarChart.vue";
 import { useFmt, activityIcon } from "../../core/format";
 import Icon from "../Icon.vue";
 import { adviceWord, useDevice } from "../../native/health";
@@ -57,26 +64,104 @@ const top = computed(() => sessions.value.filter((x) => x.max != null).reduce<(t
 const showAll = ref(false);
 const newest = computed(() => { const all = [...sessions.value].reverse(); return showAll.value ? all : all.slice(0, 10); });
 // the sessions' heart rates come in after Stats' own data: nothing until they're in, so the tiles don't jump
-const loading = computed(() => ws.isLoading.value || as.isLoading.value);
+const loading = computed(() => ws.isLoading.value || as.isLoading.value || hist.isLoading.value || recDays.isLoading.value);
 const open = (key: string) => { const x = sessions.value.find((s) => s.key === key); if (x) router.push(x.path); };
 // as many tiles as there is data for, as Overview's (four across on a computer, two on the phone)
 const tiles = computed(() => vitals.value.length + (sessions.value.length ? 1 : 0));
+
+const settings = useSettings();
+const maxHr = useMaxHr();
+// the vitals from 28 days before the period on, so a day early in it still has its usual resting heart rate
+const histFrom = computed(() => (props.from ? ymd(new Date(props.from.getTime() - 28 * 86400000)) : "2000-01-01"));
+// as useDaily (Home's Today's log), with the day it starts from following the period
+const hist = useQuery({ queryKey: computed(() => ["activities", "daily", histFrom.value]), queryFn: () => api.get<{ date: string; kind: string; value: number | string }[]>("/daily", { from: histFrom.value, tz: new Date().getTimezoneOffset() }) });
+const resting = computed(() => ((hist.data.value ?? []) as { date: string; kind: string; value: number | string }[])
+  .filter((x) => x.kind === "resting_hr").map((x) => ({ date: String(x.date).slice(0, 10), value: Number(x.value) })));
+// the days that have saved heart rate records (every day, not only the period's)
+const recDays = useQuery({ queryKey: ["health", "records", "days"], queryFn: () => api.get<{ days: { date: string; types: Record<string, number> }[] }>("/health/records/days") });
+const today = ymd(new Date());
+// the days the day card steps through: with saved heart rate, a resting heart rate, HRV or blood oxygen, or a session with a heart rate
+const heartDays = computed(() => [...new Set([
+  ...(recDays.data.value?.days ?? []).filter((d) => d.types.heart_rate).map((d) => d.date),
+  ...((hist.data.value ?? []) as { date: string; kind: string }[]).filter((x) => ["resting_hr", "hrv", "spo2"].includes(x.kind)).map((x) => String(x.date).slice(0, 10)),
+  ...sessions.value.map((x) => ymd(new Date(x.at))),
+])].filter((d) => d <= today).sort());
+// it opens on the period's latest day with heart data; none in the period, no day card (as Sleep's last night)
+const startDay = computed(() => {
+  const lo = props.from ? ymd(props.from) : "", hi = props.to ? ymd(props.to) : "9999";
+  const inP = heartDays.value.filter((d) => d >= lo && d < hi);
+  return inP.at(-1) ?? "";
+});
+
+// what stands out: days in the period whose resting heart rate was well above your usual (a sign of fatigue or a cold coming on)
+const highs = computed(() => { const lo = props.from ? ymd(props.from) : "", hi = props.to ? ymd(props.to) : "9999"; return highRestingDays(resting.value).filter((d) => d.date >= lo && d.date < hi); });
+const insights = computed(() => {
+  const h = highs.value, last = h.at(-1);
+  if (!last) return [];
+  const on = fmt.value.date(last.date, { weekday: "short", day: "numeric", month: "short" });
+  return [{ icon: "heart", t: h.length === 1 ? `Resting heart rate unusually high on ${on}` : `Resting heart rate unusually high on ${h.length} days`,
+    s: `${h.length === 1 ? "" : `latest ${on}: `}${fmt.value.num(last.value, 0)} bpm against your usual ${last.usual} · can follow a hard day, a short night or a cold coming on`,
+    rv: `+${Math.round(last.value - last.usual)} bpm` }];
+});
+
+// the time in heart rate zones over the period, from the saved samples: a bar a day, or a week over two months; a longer
+// period than three months covers only its last three (more samples than a screen should load at once)
+const ZONE_SPAN = 92 * 86400000;
+const zSpan = computed(() => {
+  const end = props.to ?? new Date(), first = heartDays.value[0] ? new Date(heartDays.value[0] + "T00:00") : end;
+  const start = new Date(Math.max(props.from?.getTime() ?? first.getTime(), first.getTime(), end.getTime() - ZONE_SPAN));
+  return { start, end, cut: (props.from?.getTime() ?? 0) < end.getTime() - ZONE_SPAN && first.getTime() < end.getTime() - ZONE_SPAN };
+});
+const zq = useQuery({ queryKey: computed(() => ["health", "records", "heart_rate", "span", zSpan.value.start.toISOString(), zSpan.value.end.toISOString()]),
+  queryFn: () => hrSamples(zSpan.value.start, zSpan.value.end), enabled: computed(() => !!maxHr.value && zSpan.value.end > zSpan.value.start && !!recDays.data.value?.days.some((d) => d.types.heart_rate)) });
+const zDays = computed(() => maxHr.value && zq.data.value?.length ? [...zoneMinutes(zq.data.value, maxHr.value.bpm, (t) => ymd(new Date(t * 1000)))].sort((a, b) => a[0].localeCompare(b[0])) : []);
+const zPerWeek = computed(() => zSpan.value.end.getTime() - zSpan.value.start.getTime() > 62 * 86400000);
+const zBars = computed(() => {
+  const month = (d: string) => fmt.value.date(d, { month: "short" });
+  const rows = new Map<string, number[]>();
+  for (const [d, m] of zDays.value) { const k = zPerWeek.value ? weekStartOf(new Date(d + "T12:00"), settings.value.firstDay) : d; const r = rows.get(k) ?? rows.set(k, ZONES.map(() => 0)).get(k)!; m.forEach((v, i) => (r[i]! += v)); }
+  return [...rows].map(([k, m]) => { const full = fmt.value.date(k, { day: "numeric", month: "short" });
+    return { label: full.split(" ")[0]!, full, group: month(k), tip: zPerWeek.value ? `week of ${full}` : fmt.value.date(k, { weekday: "short", day: "numeric", month: "short" }),
+      value: m.reduce((t, v) => t + v, 0), parts: m.map((v, i) => ({ value: v, color: ZONES[i]!.color })) }; });
+});
+// moderate or harder (zones 3 to 5): the minutes most activity advice counts
+const zHard = computed(() => zDays.value.reduce((t, [, m]) => t + m[2]! + m[3]! + m[4]!, 0));
 </script>
 
 <template>
   <div v-if="loading" class="empty">Loading…</div>
-  <div v-else-if="!vitals.length && !sessions.length" class="card empty"><Icon name="heart" :size="34" /><b>No heart data in this period</b>Pick a longer period, or wear your {{ adviceWord(dev) }} through the day and during workouts.</div>
+  <div v-else-if="!vitals.length && !sessions.length && !startDay" class="card empty"><Icon name="heart" :size="34" /><b>No heart data in this period</b>Pick a longer period, or wear your {{ adviceWord(dev) }} through the day and during workouts.</div>
   <template v-else>
-    <div class="grid g4" :class="tiles < 4 ? `n${tiles}` : ''">
+    <HeartDay v-if="startDay" :days="heartDays" :start="startDay" :resting="resting" />
+    <div v-if="tiles" class="grid g4" :class="tiles < 4 ? `n${tiles}` : ''">
       <div v-for="(v, i) in vitals" :key="v.id" class="card stat" :class="{ hero: i === 0 }"><div class="lbl"><span class="bi"><Icon :name="v.icon" :size="15" /></span>{{ v.short }}</div>
         <div class="val">{{ v.f(v.latest) }}<small>{{ v.unit }}</small></div><div class="sub">latest · average {{ v.avg }}</div><Sparkline v-if="v.pts.length > 1" :values="v.pts.map((p) => p.y)" :color="i === 0 ? 'var(--onc)' : undefined" /></div>
       <div v-if="sessions.length" class="card stat" :class="{ hero: !vitals.length }"><div class="lbl"><span class="bi"><Icon name="dumbbell" :size="15" /></span>Heart rate in workouts</div>
         <div class="val">{{ sAvg }}<small>bpm</small></div><div class="sub">{{ sessions.length }} {{ sessions.length === 1 ? "session" : "sessions" }}</div><Sparkline v-if="sessions.length > 2" :values="sessions.map((x) => x.avg)" :color="!vitals.length ? 'var(--onc)' : undefined" /></div>
     </div>
 
+    <!-- as Stats → Sleep's -->
+    <div v-if="insights.length" class="card wkc spt">
+      <div class="ch"><span class="bi"><Icon name="sparkle" :size="15" /></span><span class="t grow">What stands out</span></div>
+      <div class="list ht-ins">
+        <div v-for="(x, i) in insights" :key="i" class="li">
+          <Icon :name="x.icon" :size="18" class="neg" />
+          <div class="grow"><div class="t">{{ x.t }}</div><div class="s">{{ x.s }}</div></div>
+          <b class="r rv neg">{{ x.rv }}</b>
+        </div>
+      </div>
+    </div>
+
     <!-- each a card as the body measurements' -->
     <div v-if="vitals.length" class="grid g2 spt"><div v-for="v in vitals" :key="v.id" class="card"><div class="lbl hgap">{{ v.name }} ({{ v.unit }})</div>
       <LineChart :points="v.pts" :height="140" :fmt="v.f" /><div class="tiny ht-line">{{ v.line }}</div></div></div>
+
+    <div v-if="zBars.length" class="card spt">
+      <div class="lbl hgap">Time in heart rate zones{{ zPerWeek ? ", by week" : "" }} · max {{ maxHr!.bpm }} bpm{{ maxHr!.own ? "" : " from your age" }}</div>
+      <BarChart :bars="zBars" :height="170" :fmt="(v) => mins(v)" />
+      <div class="bmlegend ht-leg"><span v-for="z in ZONES" :key="z.key"><i :style="{ background: z.color }" />{{ z.name }}</span></div>
+      <div class="tiny ht-line">{{ mins(zHard) }} moderate or harder{{ zSpan.cut ? " in the last 3 months" : "" }}.</div>
+    </div>
 
     <!-- how hard each workout and activity was, over the period: its average heart rate -->
     <div class="sh"><h2>Heart rate in workouts</h2><span v-if="sessions.length" class="tiny">{{ sessions.length }}</span></div>
@@ -102,4 +187,10 @@ const tiles = computed(() => vitals.value.length + (sessions.value.length ? 1 : 
 
 <style scoped>
 .ht-line { margin-top: 6px; }
+.ht-leg { margin-top: var(--hg); }
+/* the highlights as Stats → Sleep's: the last row without its line, the number in the row's tone */
+.ht-ins .li:last-child { border-bottom: 0; padding-bottom: 0; }
+.ht-ins .li:first-child { padding-top: 0; }
+.ht-ins .grow { min-width: 0; }
+.rv { font-variant-numeric: tabular-nums; white-space: nowrap; }
 </style>

@@ -144,6 +144,17 @@ hr.sep { border: 0; border-top: 1px solid var(--ol); margin: 14px 0; }
   .wstats .wlb { align-self: center; }
   .wstats .wv, .wstats.n4 .wv { font-size: var(--fs-lg); text-align: end; }
   .wstats .wd { text-align: end; }
+  /* rows2 (a night's tiles, a day's steps): a longer label ("Heart rate while asleep") and unit ("breaths/min") no
+     longer fit beside a three-column row, so the line goes under the label and the value stands on the right, as a
+     list row's subtitle and value */
+  .wstats.rows2, .wstats.rows2.n4 { grid-template-columns: minmax(0, 1fr) auto; }
+  .wstats.rows2 .ws .wlb { grid-column: 1; }
+  .wstats.rows2 .ws .wv { grid-column: 2; grid-row: span 2; align-self: center; }
+  .wstats.rows2 .ws .wd { grid-column: 1; text-align: start; margin-bottom: var(--tdy); }
+  .wstats.rows2 .ws:last-child .wd { margin-bottom: 0; }
+  /* a tile without a line (a day's distance) is one row, not a label over a blank line */
+  .wstats.rows2 .ws .wd:empty { display: none; }
+  .wstats.rows2 .ws:has(> .wd:empty) .wv { grid-row: auto; }
 }
 .click { cursor: pointer; }
 
@@ -615,6 +626,8 @@ html.phone .cal .dots i.plan { background: none; border: 1px solid var(--ec, var
 /* ---------- charts ---------- */
 .chart { width: 100%; display: block; overflow: visible; }
 .chart .gl { stroke: var(--ol); stroke-width: 1; }
+/* a span of time set off behind a line (a workout on the day's heart rate) */
+.chart .shd { fill: color-mix(in srgb, var(--acc) 12%, transparent); }
 .chart .ax { fill: var(--tx2); font-size: 10.5px; }
 .chart .ln { fill: none; stroke: var(--acc); stroke-width: 2.2; vector-effect: non-scaling-stroke; stroke-linejoin: round; stroke-linecap: round; }
 .chart .ar { fill: url(#cg-acc); opacity: .5; }

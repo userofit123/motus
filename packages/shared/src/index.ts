@@ -19,3 +19,4 @@ export * from "./nextTime";
 export * from "./schedule";
 export * from "./sleep";
 export * from "./activity";
+export * from "./heart";

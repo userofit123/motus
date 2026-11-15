@@ -1,8 +1,10 @@
 <script setup lang="ts">
-// Body → About you: year of birth, sex and height, edited in place. All three are optional. Only sex is used (with your latest weight) for the strength standards;
-// height and year of birth are kept for you. Height is stored in cm and shown in feet and inches when imperial.
+// Body → About you: year of birth, sex and height, edited in place. All three are optional. Sex is used (with your latest weight) for the strength standards;
+// height is kept for you. Height is stored in cm and shown in feet and inches when imperial. Max heart rate (the heart
+// rate zones in Stats → Heart) only once a band has handed over heart data: from the year of birth unless set here.
 import { computed } from "vue";
-import { useSettings, saveSettings } from "../api/queries";
+import { maxHeartRate } from "@motus/shared";
+import { useSettings, saveSettings, useHealthAvailable } from "../api/queries";
 import AppSelect from "./AppSelect.vue";
 import NumStep from "./NumStep.vue";
 import Icon from "./Icon.vue";
@@ -19,6 +21,11 @@ const totIn = computed(() => (p.value.heightCm ? Math.round(p.value.heightCm / 2
 const ft = computed(() => (totIn.value ? Math.floor(totIn.value / 12) : null));
 const inch = computed(() => (totIn.value ? totIn.value % 12 : null));
 const DEFAULT_CM = 170; // a sensible start for the stepper; clearing it puts height back to not set
+const avail = useHealthAvailable();
+const heart = computed(() => !!avail.data.value?.heart);
+// the estimate from age, shown beside the label while no max of your own is set; the stepper starts from it
+const ageMax = computed(() => maxHeartRate({ birthYear: p.value.birthYear }));
+const DEFAULT_MAX = 190;
 const setProfile = (patch: Record<string, unknown>) => saveSettings({ profile: patch });
 const setHeightImperial = (f: number | null, i: number | null) => setProfile({ heightCm: f || i ? Math.round(((f ?? 0) * 12 + (i ?? 0)) * 2.54) : null });
 </script>
@@ -39,6 +46,12 @@ const setHeightImperial = (f: number | null, i: number | null) => setProfile({ h
         </template>
         <button class="ib sm plain" aria-label="Clear height" @click="setProfile({ heightCm: null })"><Icon name="close" :size="16" /></button>
       </div></div>
-    <p class="tiny">All optional. Sex and your latest weight set the strength standards; height and age are kept for you.</p>
+    <div v-if="heart" class="fld"><label>Max heart rate{{ !p.maxHr && ageMax ? ` · ${ageMax.bpm} bpm` : "" }}</label>
+      <div v-if="!p.maxHr" class="seg block"><button class="on" disabled>{{ ageMax ? "From your age" : "Not set" }}</button><button @click="setProfile({ maxHr: ageMax?.bpm ?? DEFAULT_MAX })">Set max heart rate</button></div>
+      <div v-else class="hrow">
+        <NumStep :value="p.maxHr" :min="100" :max="230" unit="bpm" label="max heart rate" @set="(v) => setProfile({ maxHr: v || null })" />
+        <button class="ib sm plain" aria-label="Clear max heart rate" @click="setProfile({ maxHr: null })"><Icon name="close" :size="16" /></button>
+      </div></div>
+    <p class="tiny">All optional. Sex and your latest weight set the strength standards{{ heart ? "; your max heart rate (or your age) sets the heart rate zones" : "" }}; height{{ heart ? " is" : " and age are" }} kept for you.</p>
   </div>
 </template>

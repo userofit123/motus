@@ -1,12 +1,13 @@
 <script setup lang="ts">
 // A night's stages as one bar (deep, light, REM, awake side by side, each as long as its share of the night) with the
-// minutes under it, each with its colour dot. Only the stages the band told apart.
+// minutes under it, each with its colour dot. Only the stages the band told apart. parts: other minutes shown the same
+// way instead of a night's (a day's time in heart rate zones, Stats → Heart).
 import { computed } from "vue";
 import type { SleepNight } from "../../api/queries";
 import { STAGES, mins } from "../../core/sleep";
 
-const props = defineProps<{ night: SleepNight }>();
-const parts = computed(() => STAGES.map((s) => ({ ...s, min: props.night[s.key] ?? 0 })).filter((p) => p.min > 0));
+const props = defineProps<{ night?: SleepNight; parts?: { key: string; name: string; color: string; min: number }[] }>();
+const parts = computed(() => (props.parts ?? STAGES.map((s) => ({ key: s.key as string, name: s.name, color: s.color as string, min: props.night?.[s.key] ?? 0 }))).filter((p) => p.min > 0));
 const total = computed(() => parts.value.reduce((t, p) => t + p.min, 0));
 </script>
 

@@ -84,7 +84,8 @@ export interface Settings {
   backup: { on: boolean; every: "workout" | "daily" | "weekly"; at: string; keep: number; encrypt: boolean; media: boolean };
   updates: { autoCheck: boolean; autoDownload: boolean; wifiOnly: boolean };
   layout: "auto" | "desktop" | "phone";
-  profile: { heightCm: number | null; birthYear: number | null; sex: "" | "male" | "female" };
+  /** maxHr: the max heart rate set by the person (bpm), else null: worked out from birthYear for the heart rate zones */
+  profile: { heightCm: number | null; birthYear: number | null; sex: "" | "male" | "female"; maxHr: number | null };
   gyms: { id: string; name: string; equipment: string[] }[];
   activeGym: string | null;
   /** the quick tags offered when writing a note; difficulty has its own row, so none of these say how hard it was */
@@ -169,7 +170,7 @@ export const DEFAULT_SETTINGS: Settings = {
   backup: { on: true, every: "daily", at: "03:00", keep: 14, encrypt: false, media: true },
   updates: { autoCheck: true, autoDownload: true, wifiOnly: false },
   layout: "auto",
-  profile: { heightCm: null, birthYear: null, sex: "" },
+  profile: { heightCm: null, birthYear: null, sex: "", maxHr: null },
   gyms: [],
   activeGym: null,
   noteTags: NOTE_TAGS_DEFAULT,
