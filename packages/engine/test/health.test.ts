@@ -887,7 +887,10 @@ describe("an activity's band steps that were the phone's", () => {
     // back to the app's own count, not left saying "from your band"
     const part = await walk("2026-11-14T12:30:00Z", { steps: 1300 });
     await asBand(part, 1450, 1300);
-    expect((await call("POST", "/health/ranges", { results: [{ kind: "activity", id: part, steps: 600, covered: false, bandOnly: true }] })).steps).toBe(1);
+    expect((await call("POST", "/health/ranges", { results: [{ kind: "activity", id: part, steps: 600, covered: false, bandOnly: true }] })).steps).toBe(0);
+    expect(await act(part)).toMatchObject({ steps: 1450, stepsSource: "band" });
+    // a routine sync leaves it (the band's data may since be partly deleted); the one-time recheck puts it back
+    expect((await call("POST", "/health/ranges", { recheck: true, results: [{ kind: "activity", id: part, steps: 600, covered: false, bandOnly: true }] })).steps).toBe(1);
     expect(await act(part)).toMatchObject({ steps: 1300, stepsSource: null, stepsApp: null });
 
     // an older build that read nothing (no bandOnly): may be a read that failed, so the band's stays

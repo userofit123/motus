@@ -463,9 +463,10 @@ export function healthRoutes(r: Router) {
       // a count equal to the app's own is the phone's step counter (the sensor Motus counted with), not the band: an
       // older app build took it for the band's
       const phone = steps != null && app != null && steps === app;
-      if (a.steps_source === "band" && !typed && (phone || (e.bandOnly === true && (steps == null || steps === 0 || (e.covered !== true && a.steps !== steps))))) {
-        // the band's count was wrong (the phone's, or no band counted then, or the band didn't cover the activity and its
-        // count isn't the one saved, which was then some other app's): back to the app's own count
+      if (a.steps_source === "band" && !typed && (phone || (e.bandOnly === true && (steps == null || steps === 0 || (b.recheck === true && e.covered !== true && a.steps !== steps))))) {
+        // the band's count was wrong (the phone's, or no band counted then, or, on the one-time recheck only, the band didn't
+        // cover the activity and its count isn't the one saved, which an older build took from some other app: on any
+        // later sync a partial count may just be band data since deleted, so a saved band count stays): back to the app's own count
         await ctx.q.query("UPDATE activities SET steps = $2, steps_app = NULL, steps_source = NULL WHERE id = $1", [e.id, app]);
         out.steps++; acts = true;
       } else if (e.covered === true && steps != null && steps > 0 && !phone && a.counts && !typed && !(a.steps_source === "band" && a.steps === steps) && plausibleSteps(steps, app)) {
