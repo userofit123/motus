@@ -24,7 +24,6 @@ import DotLine from "../components/DotLine.vue";
 import SearchField from "../components/SearchField.vue";
 import ScheduleEditor from "../components/ScheduleEditor.vue";
 import SessionStats from "../components/SessionStats.vue";
-import NightSheet from "../components/stats/NightSheet.vue";
 
 const route = useRoute(), router = useRouter();
 const s = useSettings();
@@ -134,7 +133,6 @@ const planDay = ref<string | null>(null);
 const avail = useHealthAvailable();
 const banded = computed(() => !!avail.data.value && Object.values(avail.data.value).some(Boolean));
 const hDay = useHealthDay(computed(() => (sel.value && sel.value <= today ? sel.value : null)), banded);
-const nightOpen = ref<string | null>(null);
 // each day's steps as a thin bar along the bottom of its cell (M-200), so a day with only band data no longer looks empty:
 // filled to the steps goal (green once reached), or without one against the shown weeks' busiest day as Home's week bars.
 // Sleep gets no mark: a night spans two days, so it stays in the chosen day's tiles. Only with band data at all.
@@ -158,13 +156,15 @@ const dayTiles = computed(() => {
   const d = hDay.data.value;
   if (!d || d.date !== sel.value) return [];
   const out: { key: string; icon: string; label: string; value: string; unit: string; sub: string; open?: () => void }[] = [];
-  // a night's detail opens it; a day with only its sleep hours (synced before nights came in, or typed) shows those
-  if (d.sleep) { const n = d.sleep; out.push({ key: "sleep", icon: "moon", label: "Sleep", value: mins(asleepMin(n)), unit: "", sub: `${fmt.value.time(n.startAt)}-${fmt.value.time(n.endAt)}`, open: () => (nightOpen.value = n.date) }); }
-  else if (d.sleepH) out.push({ key: "sleep", icon: "moon", label: "Sleep", value: mins(d.sleepH * 60), unit: "", sub: "Daily log" });
-  if (d.restingHr != null) out.push({ key: "rhr", icon: "heart", label: "Resting heart rate", value: String(Math.round(d.restingHr)), unit: "bpm", sub: d.hrv != null ? `HRV ${Math.round(d.hrv)} ms` : "" });
+  // Sleep, resting heart rate and Steps each open their Stats tab on this day; a day with only its sleep hours (synced
+  // before nights came in, or typed) shows those
+  const stats = (tab: string) => () => router.push(`/stats?tab=${tab}&day=${d.date}`);
+  if (d.sleep) { const n = d.sleep; out.push({ key: "sleep", icon: "moon", label: "Sleep", value: mins(asleepMin(n)), unit: "", sub: `${fmt.value.time(n.startAt)}-${fmt.value.time(n.endAt)}`, open: stats("sleep") }); }
+  else if (d.sleepH) out.push({ key: "sleep", icon: "moon", label: "Sleep", value: mins(d.sleepH * 60), unit: "", sub: "Daily log", open: stats("sleep") });
+  if (d.restingHr != null) out.push({ key: "rhr", icon: "heartPulse", label: "Resting heart rate", value: String(Math.round(d.restingHr)), unit: "bpm", sub: d.hrv != null ? `HRV ${Math.round(d.hrv)} ms` : "" , open: stats("heart") });
   const dist = d.distanceM ? fmt.value.dist(d.distanceM, 1) : "";
   // the day's steps open it on Stats → Steps (its hours, against your usual day)
-  if (d.steps) out.push({ key: "steps", icon: "steps", label: "Steps", value: fmt.value.num(d.steps, 0), unit: "", sub: dist, open: () => router.push(`/stats?tab=steps&day=${d.date}`) });
+  if (d.steps) out.push({ key: "steps", icon: "steps", label: "Steps", value: fmt.value.num(d.steps, 0), unit: "", sub: dist, open: stats("steps") });
   else if (dist) { const i = dist.lastIndexOf(" "); out.push({ key: "dist", icon: "walk", label: "Distance", value: dist.slice(0, i), unit: dist.slice(i + 1), sub: "" }); }
   return out;
 });
@@ -237,7 +237,7 @@ await loaded(cal, listWorkouts, listActs);
         <div class="card" :class="{ wkc: dayTiles.length }">
           <div v-if="dayTiles.length" class="wstats dtiles">
             <div v-for="x in dayTiles" :key="x.key" class="ws" :class="{ click: x.open }" :role="x.open ? 'button' : 'group'" :tabindex="x.open ? 0 : undefined" :aria-label="[x.label, x.value, x.unit, x.sub].filter(Boolean).join(' ')" @click="x.open?.()" @keydown.enter="x.open?.()">
-              <div class="wlb"><Icon :name="x.icon" :size="14" />{{ x.label }}</div>
+              <div class="wlb"><Icon :name="x.icon" :size="14" />{{ x.label }}<Icon v-if="x.open" name="right" :size="14" class="wgo" /></div>
               <div class="wv">{{ x.value }} <small v-if="x.unit">{{ x.unit }}</small></div>
               <div class="wd">{{ x.sub }}</div>
             </div>
@@ -274,7 +274,6 @@ await loaded(cal, listWorkouts, listActs);
     </div>
     </Transition>
 
-    <NightSheet v-if="nightOpen" :date="nightOpen" @close="nightOpen = null" />
     <ScheduleEditor v-if="planDay" :schedule="{ rule: 'once', startDate: planDay }" @close="planDay = null" />
   </div>
 </template>
@@ -288,6 +287,9 @@ await loaded(cal, listWorkouts, listActs);
 .dtiles { column-gap: var(--hg); }
 .dtiles .wlb { white-space: normal; }
 .dtiles .ws.click { border-radius: var(--r-sm); cursor: pointer; }
+/* a tile that opens its Stats tab: a chevron at the end of its label, and the rows' hover tint */
+.dtiles .ws.click:hover { background: color-mix(in srgb, var(--tx) 3%, transparent); }
+.dtiles .wlb .wgo { margin-inline-start: auto; color: var(--tx2); }
 /* a workout's heart rate in its row's line: the small heart in the line's colour, beside its number */
 /* a day's steps: a thin bar on the cell's bottom edge, out of the way of its entries and dots; the track (the cell's width
    inside its padding) has no colour of its own, so a short bar reads as few steps and none as no steps */

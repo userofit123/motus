@@ -1,6 +1,6 @@
 // Every screen's data, filed under a topic (the first part of the key) so live updates know what to reload.
 import { computed, type Ref, unref, watch, type MaybeRef } from "vue";
-import { useQuery, useMutation, useInfiniteQuery, type QueryClient } from "@tanstack/vue-query";
+import { useQuery, useMutation, useInfiniteQuery, keepPreviousData, type QueryClient } from "@tanstack/vue-query";
 import { withDefaults, type Settings, type Exercise, type RoutineSummary, type Goal, type Me, type Program, type GoalMetric, type HomeData, type ActivityType, type ActivityFigures, activityDistance, activityClimb } from "@motus/shared";
 import { api, httpTransport } from "./client";
 import { sync } from "./replica";
@@ -33,16 +33,26 @@ export const usePreview = (id: MaybeRef<string>, settings?: MaybeRef<Record<stri
 // client: for watchers that outlive any one screen (they have no component to find the query client through)
 export const useActive = (client?: QueryClient) => useQuery({ queryKey: ["workouts", "active"], queryFn: () => api.get<any>("/workouts/active").then((w) => (w && endedHere(w.id) ? null : w)), staleTime: 5_000 }, client);
 export const useWorkoutQuery = (id: MaybeRef<string>) => useQuery({ queryKey: computed(() => ["workouts", unref(id)]), queryFn: () => api.get(`/workouts/${unref(id)}`), enabled: computed(() => !!unref(id)) });
-export const useWorkouts = (params: MaybeRef<Record<string, unknown>> = {}) => useQuery({ queryKey: computed(() => ["workouts", "list", unref(params)]), queryFn: () => api.get("/workouts", unref(params)) });
+/** keep: while new parameters load, keep showing the last answer (a screen stepped a day at a time doesn't flash empty) */
+export type QueryOpts = { keep?: boolean };
+const keepOpt = (o?: QueryOpts) => (o?.keep ? { placeholderData: keepPreviousData } : {});
+export const useWorkouts = (params: MaybeRef<Record<string, unknown>> = {}, opts?: QueryOpts) => useQuery({ queryKey: computed(() => ["workouts", "list", unref(params)]), queryFn: () => api.get("/workouts", unref(params)), ...keepOpt(opts) });
 export const useHome = () => useQuery({ queryKey: ["home"], queryFn: () => api.get<HomeData>("/home", { tz: new Date().getTimezoneOffset() }) });
 export const useGoals = (all = false) => useQuery({ queryKey: ["goals", all], queryFn: () => api.get<Goal[]>("/goals", { all: all ? 1 : undefined, tz: new Date().getTimezoneOffset() }) });
 export const useGoalDetail = (id: MaybeRef<string>) => useQuery({ queryKey: computed(() => ["goals", "detail", unref(id)]), queryFn: () => api.get<any>(`/goals/${unref(id)}/detail`, { tz: new Date().getTimezoneOffset() }), enabled: computed(() => !!unref(id)) });
 export const useGoalMetrics = () => useQuery({ queryKey: ["static", "metrics"], queryFn: () => api.get<GoalMetric[]>("/goal-metrics"), staleTime: Infinity });
 export const useStats = (range: MaybeRef<{ from?: string; to?: string; records?: 1 }>) => useQuery({ queryKey: computed(() => ["stats", unref(range)]), queryFn: () => api.get("/stats", { ...unref(range), tz: new Date().getTimezoneOffset() }) });
-export const useCalendar = (range: MaybeRef<{ from: string; to: string }>, enabled: MaybeRef<boolean> = true) => useQuery({ queryKey: computed(() => ["calendar", unref(range)]), queryFn: () => api.get("/calendar", { ...unref(range), tz: new Date().getTimezoneOffset() }), enabled });
+/** What /calendar sends: the done workouts (with their routine's colour) and activities from a day before to two days
+ *  after the range (the app buckets them into its own days), and the planned days not done yet */
+export interface CalendarWorkout { id: string; name: string | null; routineId: string | null; startedAt: string; status: string; avgHr: number | string | null; maxHr: number | string | null; color: string | null; durationS: number | string; sets: number; volumeKg: number }
+export interface CalendarActivity { id: string; type: string; name: string | null; startedAt: string; durationS: number | string | null; distanceM: number | string | null; steps: number | string | null; source: string | null; avgHr: number | string | null; maxHr: number | string | null; hasRoute: boolean }
+export interface CalendarPlanned { date: string; scheduleId: string; name: string; [k: string]: unknown }
+export interface CalendarData { workouts: CalendarWorkout[]; activities: CalendarActivity[]; planned: CalendarPlanned[] }
+export const useCalendar = (range: MaybeRef<{ from: string; to: string }>, enabled: MaybeRef<boolean> = true, opts?: QueryOpts) => useQuery({ queryKey: computed(() => ["calendar", unref(range)]),
+  queryFn: () => api.get<CalendarData>("/calendar", { ...unref(range), tz: new Date().getTimezoneOffset() }), enabled, ...keepOpt(opts) });
 export const useNotes = (type: MaybeRef<string>, id: MaybeRef<string>) => useQuery({ queryKey: computed(() => ["notes", unref(type), unref(id)]), queryFn: () => api.get("/notes", { targetType: unref(type), targetId: unref(id) }), enabled: computed(() => !!unref(id)) });
 export const useReminders = (params: MaybeRef<Record<string, unknown>> = {}) => useQuery({ queryKey: computed(() => ["reminders", unref(params)]), queryFn: () => api.get("/reminders", unref(params)) });
-export const useActivities = (params: MaybeRef<Record<string, unknown>> = {}) => useQuery({ queryKey: computed(() => ["activities", unref(params)]), queryFn: () => api.get("/activities", unref(params)) });
+export const useActivities = (params: MaybeRef<Record<string, unknown>> = {}, opts?: QueryOpts) => useQuery({ queryKey: computed(() => ["activities", unref(params)]), queryFn: () => api.get("/activities", unref(params)), ...keepOpt(opts) });
 export const useActivity = (id: MaybeRef<string>) => useQuery({ queryKey: computed(() => ["activities", "one", unref(id)]), queryFn: () => api.get(`/activities/${unref(id)}`), enabled: computed(() => !!unref(id)) });
 export const useActivityTypes = () => useQuery({ queryKey: ["activities", "types"], queryFn: () => api.get("/activity-types"), staleTime: 5 * 60_000 });
 /** An activity type's own name ("Walk") from its id, for an activity without a name of its own, so every list says it alike. */
@@ -86,8 +96,8 @@ export interface HealthDay {
   /** false when any of the day's steps, distance and active calories from Health Connect came without a band (absent from an older server) */
   worn?: boolean;
 }
-export const useHealthDay = (date: MaybeRef<string | null>, enabled: MaybeRef<boolean> = true) => useQuery({ queryKey: computed(() => ["health", "day", unref(date)]),
-  queryFn: () => api.get<HealthDay>(`/health/day/${unref(date)}`), enabled: computed(() => !!unref(date) && unref(enabled)) });
+export const useHealthDay = (date: MaybeRef<string | null>, enabled: MaybeRef<boolean> = true, opts?: QueryOpts) => useQuery({ queryKey: computed(() => ["health", "day", unref(date)]),
+  queryFn: () => api.get<HealthDay>(`/health/day/${unref(date)}`), enabled: computed(() => !!unref(date) && unref(enabled)), ...keepOpt(opts) });
 /** How ready for training today, from last night's sleep, resting heart rate and HRV against your usual (baseline) */
 export interface ReadinessPart { key: "sleep" | "restingHr" | "hrv"; value: number | null; baseline: number | null; change: number | null; effect: "up" | "down" | "flat" }
 // building: parts with today's value but fewer than `need` days for a usual yet

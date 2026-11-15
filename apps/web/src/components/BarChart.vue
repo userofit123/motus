@@ -5,11 +5,14 @@
 // where it changes, so a run of months says which year each is in; `values` prints each bar's value above it. A bar's
 // `parts` stack inside it from the bottom (a night's sleep stages), each in its own colour (`hatch`: as thin stripes of it,
 // for a quieter part that still reads apart from the solid ones); a bar with an `id` can be
-// clicked (pick), as a LineChart's points.
+// clicked (pick), as a LineChart's points. shade: stretches set off behind the bars in their own colour (a day's
+// workouts over its hours), from and to in bars (2.5 = halfway through the third), each opening its own id when the
+// chart is tapped anywhere over it, top to bottom; xt: fixed axis labels at such positions in place of the bars' own.
 import { computed, ref, useId } from "vue";
 import { useWidth } from "./useWidth";
 import { useTip } from "./useTip";
-const props = defineProps<{ bars: { label: string; value: number; dim?: boolean; color?: string; tip?: string; group?: string; short?: string; full?: string; parts?: { value: number; color: string; hatch?: boolean }[]; id?: string }[]; height?: number; fmt?: (v: number) => string; band?: [number, number]; horizontal?: boolean; goal?: number; values?: boolean }>();
+const props = defineProps<{ bars: { label: string; value: number; dim?: boolean; color?: string; tip?: string; group?: string; short?: string; full?: string; parts?: { value: number; color: string; hatch?: boolean }[]; id?: string }[]; height?: number; fmt?: (v: number) => string; band?: [number, number]; horizontal?: boolean; goal?: number; values?: boolean;
+  shade?: { a: number; b: number; color: string; id: string; name: string }[]; xt?: { at: number; text: string }[] }>();
 const emit = defineEmits<{ pick: [id: string] }>();
 const uid = useId();
 // a stacked bar's parts, bottom up: where each starts and ends
@@ -55,6 +58,17 @@ const gx = (i: number) => (i * slot.value + (slot.value - bw.value) / 2 + GW > W
 // a tip over a bar near either edge slides inwards, so a long one isn't cut off
 const { el: tipEl, style: tipStyle } = useTip(W);
 const f = (v: number) => (props.fmt ? props.fmt(v) : String(Math.round(v * 10) / 10));
+// a shaded stretch at least 8px wide to tap, so a 5-minute walk still opens
+const SHADE_MIN = 8;
+const shadeX = (z: { a: number; b: number }) => ({ x: z.a * slot.value, w: Math.max(SHADE_MIN, (z.b - z.a) * slot.value) });
+const shadeAt = (e: MouseEvent) => {
+  if (!props.shade?.length || !box.value) return null;
+  const r = box.value.getBoundingClientRect(), x = ((e.clientX - r.left) / r.width) * W.value;
+  return props.shade.find((z) => { const s = shadeX(z); return x >= s.x && x <= s.x + s.w; }) ?? null;
+};
+const shadeName = (i: number) => props.shade?.filter((z) => z.a < i + 1 && z.b > i).map((z) => z.name).join(", ") ?? "";
+function click(e: MouseEvent, b: (typeof props.bars)[number]) { const z = shadeAt(e); if (z) emit("pick", z.id); else if (b.id) emit("pick", b.id); }
+const xtAnchor = (at: number) => (at <= 0 ? "start" : at >= props.bars.length ? "end" : "middle");
 </script>
 
 <template>
@@ -73,7 +87,11 @@ const f = (v: number) => (props.fmt ? props.fmt(v) : String(Math.round(v * 10) /
       <rect v-if="band" x="0" :width="W" :y="y(band[1])" :height="y(band[0]) - y(band[1])" fill="var(--pos)" opacity=".08" />
       <line class="gl" x1="0" :x2="W" :y1="H - bottom" :y2="H - bottom" />
       <line v-if="goal" class="goal" x1="0" :x2="W" :y1="y(goal)" :y2="y(goal)" />
-      <g v-for="(b, i) in bars" :key="i" :style="b.id ? { cursor: 'pointer' } : undefined" @mouseenter="hover = i" @mouseleave="hover = null" @click="b.id && emit('pick', b.id)">
+      <g v-for="(z, i) in shade" :key="'s' + i" class="shz"><title>{{ z.name }}</title>
+        <rect :x="shadeX(z).x" :width="shadeX(z).w" y="0" :height="H - bottom" :style="{ fill: `color-mix(in srgb, ${z.color} 16%, transparent)` }" />
+        <rect :x="shadeX(z).x" :width="shadeX(z).w" y="0" height="3" rx="1.5" :style="{ fill: z.color }" />
+      </g>
+      <g v-for="(b, i) in bars" :key="i" :style="b.id || shadeName(i) ? { cursor: 'pointer' } : undefined" @mouseenter="hover = i" @mouseleave="hover = null" @click="click($event, b)">
         <rect :x="i * slot" :width="slot" y="0" :height="H" fill="transparent" />
         <template v-if="b.parts && b.value > 0">
           <clipPath :id="`${uid}-${i}`"><rect :x="i * slot + (slot - bw) / 2" :width="bw" :y="y(b.value)" :height="Math.max(2, H - bottom - y(b.value))" :rx="Math.min(5, bw / 3)" /></clipPath>
@@ -84,11 +102,12 @@ const f = (v: number) => (props.fmt ? props.fmt(v) : String(Math.round(v * 10) /
         </template>
         <rect v-else-if="b.value > 0" class="cbar" :data-dim="b.dim ? 1 : undefined" :x="i * slot + (slot - bw) / 2" :width="bw" :y="y(b.value)" :height="Math.max(2, H - bottom - y(b.value))" :rx="Math.min(5, bw / 3)" :style="b.color ? { fill: b.color } : undefined" />
         <text v-if="values && b.value > 0" class="ax bv" :x="i * slot + slot / 2" :y="y(b.value) - 5" text-anchor="middle">{{ f(b.value) }}</text>
-        <text v-if="named(i)" class="ax" :x="i * slot + slot / 2" :y="H - bottom + 14" text-anchor="middle">{{ text(b) }}</text>
+        <text v-if="!xt && named(i)" class="ax" :x="i * slot + slot / 2" :y="H - bottom + 14" text-anchor="middle">{{ text(b) }}</text>
         <text v-if="starts(i)" class="ax grp" :x="gx(i).x" :y="H - 4" :text-anchor="gx(i).a">{{ b.group }}</text>
       </g>
+      <text v-for="t in xt" :key="'x' + t.at" class="ax" :x="t.at * slot" :y="H - bottom + 14" :text-anchor="xtAnchor(t.at)">{{ t.text }}</text>
     </svg>
-    <div v-if="hover != null" class="ctip" ref="tipEl" :style="tipStyle((hover + 0.5) * slot, y(bars[hover]!.value) + 'px')"><b>{{ f(bars[hover]!.value) }}</b> · {{ bars[hover]!.tip ?? bars[hover]!.full ?? bars[hover]!.label }}</div>
+    <div v-if="hover != null" class="ctip" ref="tipEl" :style="tipStyle((hover + 0.5) * slot, y(bars[hover]!.value) + 'px')"><b>{{ f(bars[hover]!.value) }}</b> · {{ bars[hover]!.tip ?? bars[hover]!.full ?? bars[hover]!.label }}{{ shadeName(hover) ? ` · ${shadeName(hover)}` : "" }}</div>
   </div>
 </template>
 

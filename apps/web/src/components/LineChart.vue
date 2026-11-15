@@ -2,13 +2,15 @@
 // A line chart over time with a soft area, gridlines and a tooltip; points can be clicked (e.g. to open that workout).
 // domain: the time the x axis spans (a whole day) instead of the first to the last point; xt: where its time labels go
 // instead of first, middle and last; gap: a longer break between two points (ms) leaves the line open there, so time
-// without readings isn't drawn as a straight line; shade: spans of time set off behind the line (a day's workouts).
+// without readings isn't drawn as a straight line; shade: spans of time set off behind the line (a day's workouts), in
+// their own colour with a strip along the top when they have one, each with an id opening it when the chart is tapped
+// anywhere over it, top to bottom (at least 8px wide, so a short one can be hit).
 import { computed, ref } from "vue";
 import { useWidth } from "./useWidth";
 import { useTip } from "./useTip";
 import { useFmt } from "../core/format";
 
-const props = defineProps<{ points: { x: number; y: number; label?: string; id?: string }[]; height?: number; fmt?: (v: number) => string; xfmt?: (t: number) => string; color?: string; zero?: boolean; domain?: [number, number]; xt?: number[]; gap?: number; shade?: { a: number; b: number }[] }>();
+const props = defineProps<{ points: { x: number; y: number; label?: string; id?: string }[]; height?: number; fmt?: (v: number) => string; xfmt?: (t: number) => string; color?: string; zero?: boolean; domain?: [number, number]; xt?: number[]; gap?: number; shade?: { a: number; b: number; color?: string; id?: string; name?: string }[] }>();
 const emit = defineEmits<{ pick: [id: string] }>();
 const box = ref<HTMLElement | null>(null);
 const W = useWidth(box), H = computed(() => props.height ?? 200), P = { l: 44, r: 12, t: 10, b: 22 };
@@ -46,7 +48,7 @@ const xticks = computed(() => {
     if (out.some((t) => t.text === text || (lo < t.hi + LABEL_GAP && hi > t.lo - LABEL_GAP))) return;
     out.push({ x, anchor, lo, hi, text });
   };
-  if (props.xt?.length) { props.xt.forEach((x, i) => tryAdd(x, i === 0 ? "start" : i === props.xt!.length - 1 ? "end" : "middle")); return out.sort((a, b) => a.x - b.x); }
+  if (props.xt?.length) { props.xt.forEach((x) => tryAdd(x, x <= d.x0 ? "start" : x >= d.x1 ? "end" : "middle")); return out.sort((a, b) => a.x - b.x); }
   if (s.length < 2 || d.x0 === d.x1) { tryAdd(s[0]!.x, "middle"); return out; }
   tryAdd(d.x0, "start"); tryAdd(d.x1, "end"); tryAdd(mid, "middle");
   return out.sort((a, b) => a.x - b.x);
@@ -54,9 +56,16 @@ const xticks = computed(() => {
 const hover = ref<number | null>(null);
 // near either edge the tip slides inwards, so it isn't cut off
 const { el: tipEl, style: tipStyle } = useTip(W);
+const SHADE_MIN = 8;
+const shadeX = (z: { a: number; b: number }) => { const x = sx(Math.max(z.a, dom.value.x0)); return { x, w: Math.max(SHADE_MIN, sx(Math.min(z.b, dom.value.x1)) - x) }; };
+const svgX = (e: MouseEvent) => { const r = (e.currentTarget as SVGElement).getBoundingClientRect(); return ((e.clientX - r.left) / r.width) * W.value; };
+function click(e: MouseEvent) {
+  const x = svgX(e), z = props.shade?.find((s) => s.id && s.b > dom.value.x0 && s.a < dom.value.x1 && x >= shadeX(s).x && x <= shadeX(s).x + shadeX(s).w);
+  if (z?.id) emit("pick", z.id);
+  else if (hover.value != null && sorted.value[hover.value]?.id) emit("pick", sorted.value[hover.value]!.id!);
+}
 function move(e: MouseEvent) {
-  const r = (e.currentTarget as SVGElement).getBoundingClientRect();
-  const x = ((e.clientX - r.left) / r.width) * W.value;
+  const x = svgX(e);
   let best = 0, bd = Infinity;
   sorted.value.forEach((p, i) => { const d = Math.abs(sx(p.x) - x); if (d < bd) { bd = d; best = i; } });
   hover.value = best;
@@ -70,10 +79,12 @@ const xf = (t: number) => (props.xfmt ? props.xfmt(t) : df.value.date(t));
 <template>
   <div ref="box" style="position:relative">
     <div v-if="!points.length" class="empty" style="padding:calc(var(--cpy) * 2) 0">No data yet</div>
-    <svg v-else class="chart" :viewBox="`0 0 ${W} ${H}`" :style="{ height: H + 'px' }" @mousemove="move" @mouseleave="hover = null"
-      @click="hover != null && sorted[hover]?.id && emit('pick', sorted[hover]!.id!)">
+    <svg v-else class="chart" :viewBox="`0 0 ${W} ${H}`" :style="{ height: H + 'px', ...(shade?.some((z) => z.id) ? { cursor: 'pointer' } : {}) }" @mousemove="move" @mouseleave="hover = null" @click="click">
       <defs><linearGradient :id="'cg' + uid" x1="0" y1="0" x2="0" y2="1"><stop offset="0" :stop-color="color ?? 'var(--acc)'" stop-opacity=".35" /><stop offset="1" :stop-color="color ?? 'var(--acc)'" stop-opacity="0" /></linearGradient></defs>
-      <rect v-for="(z, i) in shade" :key="'s' + i" class="shd" :x="sx(Math.max(z.a, dom.x0))" :y="P.t" :width="Math.max(2, sx(Math.min(z.b, dom.x1)) - sx(Math.max(z.a, dom.x0)))" :height="H - P.t - P.b" rx="3" />
+      <g v-for="(z, i) in (shade ?? []).filter((s) => s.b > dom.x0 && s.a < dom.x1)" :key="'s' + i"><title v-if="z.name">{{ z.name }}</title>
+        <rect class="shd" :x="shadeX(z).x" :y="P.t" :width="shadeX(z).w" :height="H - P.t - P.b" :rx="z.color ? 0 : 3" :style="z.color ? { fill: `color-mix(in srgb, ${z.color} 16%, transparent)` } : undefined" />
+        <rect v-if="z.color" :x="shadeX(z).x" :y="P.t" :width="shadeX(z).w" height="3" rx="1.5" :style="{ fill: z.color }" />
+      </g>
       <g v-for="t in ticks" :key="t"><line class="gl" :x1="P.l" :x2="W - P.r" :y1="sy(t)" :y2="sy(t)" /><text class="ax" :x="P.l - 6" :y="sy(t) + 3" text-anchor="end">{{ f(t) }}</text></g>
       <text v-for="t in xticks" :key="'x' + t.x" class="ax" :x="sx(t.x)" :y="H - 4" :text-anchor="t.anchor">{{ t.text }}</text>
       <path :d="area" :fill="`url(#cg${uid})`" />

@@ -1,50 +1,113 @@
 <script setup lang="ts">
-// Stats → Sleep, there only once a band has handed over sleep: last night, the averages over the chosen period, what
-// stands out (only what the nights say), time asleep each night (by stage when the band told them apart), when nights
-// began and ended, and the heart rate, blood oxygen and breathing while asleep. A night opens in a sheet.
+// Stats → Sleep, there only once a band has handed over sleep. Night: one night in full (NightView), stepped through
+// with ‹ › a night at a time. Week, month, year: the averages, what stands out (only what the nights say), the longest
+// and shortest night and the sleep debt, how you sleep after workout days against rest days, time asleep each night (by
+// stage when the band told them apart), when nights began and ended, and the heart rate, blood oxygen and breathing
+// while asleep; a night tapped opens it in the Night view.
 // Nights come from /health/sleep; a day with only its hours of sleep (an older import, a typed number) still counts in
-// the time-asleep chart and average, from Stats' daily log. A record under MIN_NIGHT_H hours is a nap or partial record,
+// the time-asleep chart and average, from the daily log. A record under MIN_NIGHT_H hours is a nap or partial record,
 // not a night: it keeps its bar (in grey) and its row, but every average, count and usual time leaves it out.
-import { computed, ref } from "vue";
-import { ymd, weekStartOf, isNightMin, MIN_NIGHT_H } from "@motus/shared";
-import { useSleep, useSettings, type SleepNight } from "../../api/queries";
+import { computed, ref, watch } from "vue";
+import { useQuery, keepPreviousData } from "@tanstack/vue-query";
+import { ymd, weekStartOf, weekStartDate, isNightMin, MIN_NIGHT_H } from "@motus/shared";
+import { api } from "../../api/client";
+import { useSettings, useWorkouts, type SleepNight } from "../../api/queries";
 import { useFmt, localYmd } from "../../core/format";
-import { STAGES, NO_STAGES_COLOR, NO_STAGES_SWATCH, SHORT_COLOR, SHORT_WHY, hasStages, isFull, asleepMin, inBedMin, efficiency, nightMin, nightIso, mins, typical } from "../../core/sleep";
+import { STAGES, NO_STAGES_COLOR, NO_STAGES_SWATCH, SHORT_COLOR, hasStages, isFull, asleepMin, inBedMin, efficiency, nightMin, nightIso, mins, typical } from "../../core/sleep";
 import Icon from "../Icon.vue";
 import { adviceWord, useDevice } from "../../native/health";
 import BarChart from "../BarChart.vue";
 import LineChart from "../LineChart.vue";
 import Sparkline from "../Sparkline.vue";
-import StageBar from "./StageBar.vue";
-import NightStats from "./NightStats.vue";
 import SleepSchedule from "./SleepSchedule.vue";
-import NightSheet from "./NightSheet.vue";
+import NightView from "./NightView.vue";
+import DayNav from "./DayNav.vue";
 
-const props = defineProps<{ from: Date | null; to: Date | null; daily: { date: string; kind: string; value: number | string }[] }>();
+export type SleepView = "night" | "week" | "month" | "year";
+const view = defineModel<SleepView>("view", { required: true });
+const props = defineProps<{ day?: string }>();
 const fmt = useFmt();
 const s = useSettings();
 const dev = useDevice();
-// the API's days: from the period's first, up to (not including) the day after it
-const range = computed(() => ({ ...(props.from ? { from: ymd(props.from) } : {}), ...(props.to ? { to: ymd(props.to) } : {}) }));
-const q = useSleep(range);
-// the last 30 days whatever the period, for last night and how it compares
-const today = new Date();
-const recentRange = { from: ymd(new Date(today.getFullYear(), today.getMonth(), today.getDate() - 30)), to: ymd(new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1)) };
-const recentQ = useSleep(recentRange);
-// both in before anything shows, so last night's card doesn't push the rest down when it arrives
-const loading = computed(() => q.isLoading.value || recentQ.isLoading.value);
+
+// days as "YYYY-MM-DD" in the app's calendar; a Date at noon, so a clock change never tips it into the next day
+const today = ymd(new Date());
+const at = (d: string) => new Date(d + "T12:00");
+const plus = (d: string, n: number) => { const x = at(d); x.setDate(x.getDate() + n); return ymd(x); };
+const anchor = ref(props.day && props.day <= today ? props.day : today);
+// opened again from elsewhere with a day while this tab is still around
+watch(() => props.day, (d) => { if (d && d <= today) { anchor.value = d; view.value = "night"; } });
+
+// every night there is (the newest 400), newest first: the Night view steps through them, and the last 30 days say
+// how last night compares
+const allQ = useQuery({ queryKey: ["health", "sleep", { from: "1970-01-01" }], queryFn: () => api.get<{ nights: SleepNight[] }>("/health/sleep", { from: "1970-01-01" }) });
+const all = computed<SleepNight[]>(() => allQ.data.value?.nights ?? []);
+// the night shown: the newest one on or before the chosen day, else the oldest after it
+const night = computed(() => all.value.find((n) => n.date <= anchor.value) ?? all.value.at(-1) ?? null);
+const isNight = computed(() => view.value === "night");
+
+// the shown stretch [from, to): the night's day, its week (from the first day of the week in Settings), month or year
+const range = computed(() => {
+  const a = at(anchor.value);
+  if (view.value === "night") { const d = night.value?.date ?? anchor.value; return { from: d, to: plus(d, 1) }; }
+  if (view.value === "week") { const w = ymd(weekStartDate(a, s.value.firstDay)); return { from: w, to: plus(w, 7) }; }
+  if (view.value === "month") return { from: ymd(new Date(a.getFullYear(), a.getMonth(), 1)), to: ymd(new Date(a.getFullYear(), a.getMonth() + 1, 1)) };
+  return { from: ymd(new Date(a.getFullYear(), 0, 1)), to: ymd(new Date(a.getFullYear() + 1, 0, 1)) };
+});
+const hasToday = computed(() => isNight.value ? !night.value || night.value.date === all.value[0]?.date : range.value.from <= today && today < range.value.to);
+const shift = (n: number) => {
+  if (isNight.value) {
+    // a night at a time: older (‹) or newer (›) among the nights there are
+    const i = all.value.findIndex((x) => x.date === night.value?.date), to = all.value[i - n];
+    if (to) anchor.value = to.date;
+    return;
+  }
+  const a = at(anchor.value);
+  if (view.value === "week") a.setDate(a.getDate() + 7 * n);
+  else if (view.value === "month") a.setMonth(a.getMonth() + n, 1);
+  else a.setFullYear(a.getFullYear() + n, 0, 1);
+  // never past today: a later week, month or year lands on today
+  anchor.value = ymd(a) > today ? today : ymd(a);
+};
+const title = computed(() => {
+  const r = range.value, thisYear = r.from.slice(0, 4) === today.slice(0, 4);
+  if (isNight.value) return !night.value ? "Night" : night.value.date === today ? "Last night"
+    : fmt.value.date(night.value.date, thisYear ? { weekday: "short", day: "numeric", month: "short" } : { weekday: "short", day: "numeric", month: "short", year: "numeric" });
+  // a week of another year in short numeric dates, so its year still fits between the arrows on a phone
+  if (view.value === "week") { const last = plus(r.to, -1); return thisYear ? `${fmt.value.date(r.from, { day: "numeric", month: "short" })}-${fmt.value.date(last, { day: "numeric", month: "short" })}`
+    : `${fmt.value.date(r.from, { day: "numeric", month: "numeric" })}-${fmt.value.date(last, { day: "numeric", month: "numeric", year: "2-digit" })}`; }
+  if (view.value === "month") return fmt.value.date(r.from, { month: "long", year: "numeric" });
+  return r.from.slice(0, 4);
+});
+// a night picked anywhere in a period (a bar, a point, a row, a tile) opens in the Night view
+const openNight = (d: string | null | undefined) => { if (d) { anchor.value = d; view.value = "night"; } };
+
+// the stretch's nights, keeping the last stretch's while the next loads so stepping doesn't flash
+const q = useQuery({ queryKey: computed(() => ["health", "sleep", range.value]), enabled: computed(() => !isNight.value), placeholderData: keepPreviousData,
+  queryFn: () => api.get<{ nights: SleepNight[] }>("/health/sleep", range.value) });
+// the daily log from the first of the stretch's month, under the key Home's daily log uses, so live updates reload it
+const dailyFrom = computed(() => { const x = at(range.value.from); return ymd(new Date(x.getFullYear(), x.getMonth(), 1)); });
+type Daily = { date: string; kind: string; value: number | string };
+const dailyQ = useQuery({ queryKey: computed(() => ["activities", "daily", dailyFrom.value]), enabled: computed(() => !isNight.value), placeholderData: keepPreviousData,
+  queryFn: () => api.get<Daily[]>("/daily", { from: dailyFrom.value, tz: new Date().getTimezoneOffset() }) });
+// the workouts from the day before the stretch on, so its first night knows whether the day before had one
+const wkRange = computed(() => ({ from: new Date(plus(range.value.from, -1) + "T00:00").toISOString(), to: new Date(range.value.to + "T00:00").toISOString(), limit: 1000 }));
+const wq = useWorkouts(wkRange);
+const loading = computed(() => allQ.isLoading.value || (!isNight.value && (q.isLoading.value || dailyQ.isLoading.value)));
+const failed = computed(() => allQ.isError.value || (!isNight.value && (q.isError.value || dailyQ.isError.value)));
+const retry = () => { allQ.refetch(); q.refetch(); dailyQ.refetch(); };
 
 const nights = computed<SleepNight[]>(() => q.data.value?.nights ?? []);
-const recent = computed<SleepNight[]>(() => recentQ.data.value?.nights ?? []);
+const recent = computed<SleepNight[]>(() => all.value.filter((n) => n.date > plus(today, -31)));
 // the nights that count as nights (not naps or partial records), for every average and usual time
 const full = computed(() => nights.value.filter(isFull));
 const staged = computed(() => nights.value.some(hasStages));
 // every day in the period with hours of sleep: a night when there is one, else the day's hours
 const days = computed(() => {
   const byDay = new Map(nights.value.map((n) => [n.date, n] as const));
-  const lo = range.value.from ?? "", hi = range.value.to ?? "9999";
+  const lo = range.value.from, hi = range.value.to;
   const out = new Map<string, { date: string; min: number; night: SleepNight | null; full?: boolean }>();
-  for (const x of props.daily) {
+  for (const x of dailyQ.data.value ?? []) {
     const d = String(x.date).slice(0, 10);
     if (x.kind !== "sleep_h" || d < lo || d >= hi) continue;
     out.set(d, { date: d, min: Math.round(Number(x.value) * 60), night: byDay.get(d) ?? null });
@@ -58,7 +121,7 @@ const shortCount = computed(() => days.value.length - nightDays.value.length);
 
 // last night: the newest of the last 30 days, when the chosen period takes it in (an older period shows only its own);
 // named "Last night" when it ended today
-const last = computed(() => { const n = recent.value[0]; return n && (!range.value.from || n.date >= range.value.from) && (!range.value.to || n.date < range.value.to) ? n : null; });
+const last = computed(() => { const n = recent.value[0]; return n && n.date >= range.value.from && n.date < range.value.to ? n : null; });
 const lastName = computed(() => !last.value ? "" : last.value.date === localYmd(new Date()) ? "Last night" : fmt.value.date(last.value.date, { weekday: "long", day: "numeric", month: "short" }));
 // in running text a percent sits right after its number, to a tenth only when the band gave one
 const pc = (v: number) => `${fmt.value.num(v, Number.isInteger(v) ? 0 : 1)}%`;
@@ -179,33 +242,72 @@ const insights = computed(() => {
   return out;
 });
 
-// the nights in the period, newest first: a week of them, then all on request
+// the longest and shortest night of the stretch (nights only), and the sleep debt: the time each night fell short of 7
+// hours (the least most adults need), added up
+const longest = computed(() => nightDays.value.reduce<(typeof nightDays.value)[number] | null>((m, x) => (!m || x.min > m.min ? x : m), null));
+const shortest = computed(() => nightDays.value.reduce<(typeof nightDays.value)[number] | null>((m, x) => (!m || x.min < m.min ? x : m), null));
+const debtNights = computed(() => nightDays.value.filter((x) => x.min < BAND[0] * 60));
+const debt = computed(() => debtNights.value.reduce((t, x) => t + BAND[0] * 60 - x.min, 0));
+const day = (d: string) => fmt.value.date(d, { weekday: "short", day: "numeric", month: "short" });
+
+// how you sleep after a workout day against after a rest day: a night follows a workout day when a workout started on the
+// day you went to bed (bedtime less 12 hours, so going to bed after midnight still counts as the evening before). Only
+// once each side has 3 nights, so one night doesn't speak for a habit
+const workoutDays = computed(() => new Set(((wq.data.value ?? []) as { startedAt: string; status?: string }[]).filter((w) => w.status !== "in_progress" && w.status !== "discarded").map((w) => localYmd(new Date(w.startedAt)))));
+const bedDay = (n: SleepNight) => localYmd(new Date(Date.parse(n.startAt) - 12 * 3600_000));
+const afterTraining = computed(() => {
+  if (!workoutDays.value.size) return null;
+  const sides = [true, false].map((trained) => {
+    const ns = full.value.filter((n) => workoutDays.value.has(bedDay(n)) === trained);
+    const deep = ns.filter((n) => n.deepMin != null && n.asleepMin), hr = ns.map((n) => n.avgHr).filter((x): x is number => x != null);
+    return { trained, n: ns.length, asleep: avg(ns.map(asleepMin)) ?? 0,
+      deep: deep.length ? Math.round((deep.reduce((t, n) => t + n.deepMin!, 0) / deep.reduce((t, n) => t + n.asleepMin, 0)) * 100) : null,
+      hr: hr.length ? Math.round(avg(hr)!) : null };
+  });
+  if (sides.some((x) => x.n < 3)) return null;
+  const d = sides[0]!.asleep - sides[1]!.asleep;
+  return { sides, line: Math.abs(d) < 10 ? "About as long after workout days as after rest days." : `${mins(Math.abs(d))} ${d > 0 ? "longer" : "shorter"} after workout days than after rest days.` };
+});
+
+// the nights in the stretch, newest first: a week of them, then all on request
 const showAll = ref(false);
 const list = computed(() => showAll.value ? nights.value : nights.value.slice(0, 7));
-const open = ref<string | null>(null);
 </script>
 
 <template>
-  <div v-if="q.isError.value" class="card empty"><Icon name="info" :size="34" /><b>Couldn't load your sleep</b>{{ (q.error.value as Error | null)?.message }}<br /><button class="btn tonal" @click="q.refetch()">Try again</button></div>
-  <div v-else-if="loading" class="empty">Loading…</div>
-  <template v-else>
-    <!-- last night: its numbers as a report's tiles, then its stages; opens the night -->
-    <div v-if="last" class="card wkc click sl-last" role="button" tabindex="0" @click="open = last.date" @keydown.enter="open = last.date">
-      <div class="ch"><span class="bi"><Icon name="moon" :size="15" /></span><span class="t grow">{{ lastName }}</span><span class="tiny">{{ fmt.time(last.startAt) }}-{{ fmt.time(last.endAt) }}</span></div>
-      <NightStats :night="last" />
-      <div v-if="hasStages(last) || last.awakeMin" class="sl-stages"><StageBar :night="last" /></div>
-      <div v-if="!isFull(last)" class="tiny sl-line">{{ SHORT_WHY }}</div>
-    </div>
+  <DayNav :title="title" :unit="isNight ? 'night' : view" :at-end="hasToday" :away="!hasToday" @step="shift" @today="anchor = today" />
 
-    <div v-if="!days.length" class="card empty"><Icon name="moon" :size="34" /><b>No sleep in this period</b>Pick a longer period, or wear your {{ adviceWord(dev) }} to bed.</div>
+  <div v-if="failed" class="card empty"><Icon name="info" :size="34" /><b>Couldn't load your sleep</b>{{ ((allQ.error.value ?? q.error.value ?? dailyQ.error.value) as Error | null)?.message }}<br /><button class="btn tonal" @click="retry">Try again</button></div>
+  <div v-else-if="loading" class="empty">Loading…</div>
+
+  <template v-else-if="isNight">
+    <div v-if="!night" class="card empty"><Icon name="moon" :size="34" /><b>No nights from your {{ adviceWord(dev) }} yet</b>Wear it to bed to see each night's stages and times. Pick Week, Month or Year for the hours of sleep you logged.</div>
+    <!-- the night in full: its time asleep, tiles, stages and curves, each part under a faint line -->
+    <div v-else class="card wkc">
+      <div class="ch"><span class="bi"><Icon name="moon" :size="15" /></span><span class="t grow">Sleep</span><span class="tiny">{{ fmt.time(night.startAt) }}-{{ fmt.time(night.endAt) }}</span></div>
+      <NightView :date="night.date" no-times />
+    </div>
+  </template>
+
+  <template v-else>
+    <div v-if="!days.length" class="card empty"><Icon name="moon" :size="34" /><b>No sleep in this {{ view }}</b>Pick another {{ view }} with the arrows.</div>
     <template v-else>
-      <!-- the period's averages, as Overview's tiles -->
+      <!-- the stretch's averages, as Overview's and Steps' tiles -->
       <div class="grid g4" :class="tiles < 4 ? `n${tiles}` : ''">
         <div class="card hero stat"><div class="lbl"><span class="bi"><Icon name="moon" :size="15" /></span>Time asleep</div><div class="val">{{ avgAsleep != null ? mins(avgAsleep) : "-" }}</div><div class="sub">{{ nightDays.length ? `average of ${nightDays.length} ${nightDays.length === 1 ? "night" : "nights"}` : "only short records" }}</div><Sparkline v-if="nightDays.length > 1" :values="nightDays.map((x) => x.min)" color="var(--onc)" /></div>
         <div v-if="bed" class="card stat"><div class="lbl"><span class="bi"><Icon name="clock" :size="15" /></span>Bedtime</div><div class="val">{{ clock(bed.at) }}</div><div class="sub">{{ spread(bed)[0] }} <span class="nw">{{ spread(bed)[1] }}</span></div></div>
         <div v-if="wake" class="card stat"><div class="lbl"><span class="bi"><Icon name="bell" :size="15" /></span>Wake time</div><div class="val">{{ clock(wake.at) }}</div><div class="sub">{{ spread(wake)[0] }} <span class="nw">{{ spread(wake)[1] }}</span></div></div>
         <div v-if="deepPct != null" class="card stat"><div class="lbl"><span class="bi"><Icon name="layers" :size="15" /></span>Deep sleep</div><div class="val">{{ deepPct }}<small>%</small></div><div class="sub">of time asleep</div></div>
         <div v-else-if="avgBed != null" class="card stat"><div class="lbl"><span class="bi"><Icon name="timer" :size="15" /></span>In bed</div><div class="val">{{ mins(avgBed) }}</div><div class="sub">{{ Math.round(avgEff! * 100) }}% of it asleep</div></div>
+      </div>
+      <!-- the best and worst night and the sleep debt, once there are nights to compare -->
+      <div v-if="nightDays.length > 1" class="card wkc spt">
+        <div class="ch"><span class="bi"><Icon name="stats" :size="15" /></span><span class="t grow">Best and worst nights</span></div>
+        <div class="wstats rows2">
+          <div class="ws" :class="{ click: longest!.night }" :role="longest!.night ? 'button' : 'group'" :tabindex="longest!.night ? 0 : undefined" @keydown.enter="openNight(longest!.night?.date)" :aria-label="`Longest night ${mins(longest!.min)} ${day(longest!.date)}`" @click="openNight(longest!.night?.date)"><div class="wlb"><Icon name="trophy" :size="14" />Longest night</div><div class="wv">{{ mins(longest!.min) }}</div><div class="wd">{{ day(longest!.date) }}</div></div>
+          <div class="ws" :class="{ click: shortest!.night }" :role="shortest!.night ? 'button' : 'group'" :tabindex="shortest!.night ? 0 : undefined" @keydown.enter="openNight(shortest!.night?.date)" :aria-label="`Shortest night ${mins(shortest!.min)} ${day(shortest!.date)}`" @click="openNight(shortest!.night?.date)"><div class="wlb"><Icon name="moon" :size="14" />Shortest night</div><div class="wv">{{ mins(shortest!.min) }}</div><div class="wd">{{ day(shortest!.date) }}</div></div>
+          <div class="ws" role="group" :aria-label="`Sleep debt ${debt ? mins(debt) : 'none'}`"><div class="wlb"><Icon name="timer" :size="14" />Sleep debt</div><div class="wv" :class="{ pos: !debt }">{{ debt ? mins(debt) : "None" }}</div><div class="wd">{{ debt ? `short of ${BAND[0]}h on ${debtNights.length} of ${nightDays.length}` : `${BAND[0]}h or more each night` }}</div></div>
+        </div>
       </div>
 
       <div v-if="insights.length" class="card wkc spt">
@@ -219,42 +321,50 @@ const open = ref<string | null>(null);
         </div>
       </div>
 
+      <div v-if="afterTraining" class="card wkc spt">
+        <div class="ch"><span class="bi"><Icon name="dumbbell" :size="15" /></span><span class="t grow">Sleep after workouts</span></div>
+        <div class="list sl-ins">
+          <div v-for="x in afterTraining.sides" :key="String(x.trained)" class="li">
+            <Icon :name="x.trained ? 'dumbbell' : 'moon'" :size="18" class="muted" />
+            <div class="grow"><div class="t">{{ x.trained ? "After a workout day" : "After a rest day" }}</div><div class="s">{{ [`${x.n} nights`, x.deep != null ? `deep ${x.deep}%` : "", x.hr != null ? `heart rate ${x.hr} bpm` : ""].filter(Boolean).join(" · ") }}</div></div>
+            <b class="r rv">{{ mins(x.asleep) }}</b>
+          </div>
+        </div>
+        <div class="tiny sl-line">{{ afterTraining.line }} A workout day: a workout on the day you went to bed.</div>
+      </div>
+
       <div class="card spt">
         <div class="lbl hgap">{{ perWeek ? "Average time asleep per night, by week" : "Time asleep per night" }} (h) · target {{ BAND[0] }}-{{ BAND[1] }}</div>
-        <BarChart :bars="bars" :band="BAND" :height="170" :fmt="hours" @pick="(d) => (open = d)" />
+        <BarChart :bars="bars" :band="BAND" :height="170" :fmt="hours" @pick="openNight" />
         <div v-if="legend.length && !perWeek" class="bmlegend sl-leg"><span v-for="k in legend" :key="k.name"><i :style="{ background: k.color }" />{{ k.name }}</span></div>
-        <div v-if="nights.length || shortCount" class="tiny sl-line">{{ [nights.length ? "Time asleep leaves out the time awake in bed." : "", shortCount ? `${shortCount} short ${shortCount === 1 ? "record" : "records"} (under ${MIN_NIGHT_H} hours) left out of the averages.` : ""].filter(Boolean).join(" ") }}</div>
+        <div v-if="nights.length || shortCount" class="tiny sl-line">{{ [nights.length ? "Time asleep leaves out the time awake in bed." : "", shortCount ? `${shortCount} short ${shortCount === 1 ? "record" : "records"} (under ${MIN_NIGHT_H} hours) left out of the averages.` : "", !perWeek && nights.length ? "Tap a night to open it." : ""].filter(Boolean).join(" ") }}</div>
       </div>
 
       <div v-if="full.length > 1" class="card spt">
         <div class="lbl hgap">Bedtime and wake time</div>
-        <SleepSchedule :nights="full" :bed="bed" :wake="wake" @pick="(d) => (open = d)" />
+        <SleepSchedule :nights="full" :bed="bed" :wake="wake" @pick="openNight" />
         <div v-if="schedule" class="tiny sl-line">{{ schedule }}</div>
       </div>
 
       <div v-if="trends.length" class="grid g2 spt"><div v-for="t in trends" :key="t.id" class="card"><div class="lbl hgap">{{ t.name }} ({{ t.unit }})</div>
-        <LineChart :points="t.pts" :height="140" :fmt="t.f" @pick="(d) => (open = d)" /><div class="tiny sl-line">{{ t.line }}</div></div></div>
+        <LineChart :points="t.pts" :height="140" :fmt="t.f" @pick="openNight" /><div class="tiny sl-line">{{ t.line }}</div></div></div>
 
       <template v-if="nights.length">
         <div class="sh"><h2>Nights</h2><span class="tiny">{{ nights.length }}</span></div>
         <div class="card"><div class="list">
-          <div v-for="n in list" :key="n.date" class="li click" role="button" tabindex="0" @click="open = n.date" @keydown.enter="open = n.date">
+          <div v-for="n in list" :key="n.date" class="li click" role="button" tabindex="0" @click="openNight(n.date)" @keydown.enter="openNight(n.date)">
             <span class="bi sg"><Icon name="moon" :size="16" /></span>
-            <div class="grow"><div class="t">{{ fmt.date(n.date, { weekday: "short", day: "numeric", month: "short" }) }}</div><div class="s">{{ fmt.time(n.startAt) }}-{{ fmt.time(n.endAt) }} · {{ isFull(n) ? `${mins(inBedMin(n))} in bed` : "short record" }}</div></div>
+            <div class="grow"><div class="t">{{ day(n.date) }}</div><div class="s">{{ fmt.time(n.startAt) }}-{{ fmt.time(n.endAt) }} · {{ isFull(n) ? `${mins(inBedMin(n))} in bed` : "short record" }}</div></div>
             <b class="num" :class="{ muted: !isFull(n) }">{{ mins(asleepMin(n)) }}</b>
           </div>
         </div></div>
         <div v-if="nights.length > 7 && !showAll" class="center spt"><button class="qb" @click="showAll = true">Show all {{ nights.length }} nights</button></div>
       </template>
     </template>
-    <NightSheet v-if="open" :date="open" @close="open = null" />
   </template>
 </template>
 
 <style scoped>
-/* last night's stages a block-padding below its tiles, under a faint line, as a report's highlights */
-.sl-last { margin-bottom: var(--spg); }
-.sl-stages { margin-top: var(--cpy); padding-top: var(--cpy); border-top: 1px solid var(--ol); }
 /* the highlights as a report's: the last row without its line, the number in the row's tone */
 .sl-ins .li:last-child { border-bottom: 0; padding-bottom: 0; }
 .sl-ins .li:first-child { padding-top: 0; }

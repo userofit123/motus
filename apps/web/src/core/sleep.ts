@@ -50,3 +50,49 @@ export function typical(ms: number[]): { at: number; lo: number; hi: number; n: 
   const down = (m: number) => Math.floor(Math.round(m) / 5) * 5, up = (m: number) => Math.ceil(Math.round(m) / 5) * 5;
   return n >= 5 ? { at: at(0.5), lo: down(at(0.25)), hi: up(at(0.75)), n } : { at: at(0.5), lo: down(xs[0]!), hi: up(xs[n - 1]!), n };
 }
+
+/** A stretch of a night in one stage, from the band's saved sleep record (ms). asleep: the band only told asleep from
+ *  awake there. */
+export type Seg = { a: number; b: number; k: "awake" | "rem" | "light" | "deep" | "asleep" };
+/** Health Connect's stage numbers: awake, out of bed and awake in bed are all time awake; 0 (unknown) is left out */
+const HC_STAGE: Record<number, Seg["k"]> = { 1: "awake", 3: "awake", 7: "awake", 2: "asleep", 4: "light", 5: "deep", 6: "rem" };
+/** The lanes of a hypnogram, top to bottom, each with its colour (a stretch only "asleep" sits in Light's lane, striped
+ *  as a night without stages is in the time-asleep chart) */
+export const LANES = [
+  { k: "awake", name: "Awake", color: STAGES[3].color },
+  { k: "rem", name: "REM", color: STAGES[2].color },
+  { k: "light", name: "Light", color: STAGES[1].color },
+  { k: "deep", name: "Deep", color: STAGES[0].color },
+] as const;
+export const laneOf = (k: Seg["k"]) => (k === "asleep" ? 2 : LANES.findIndex((l) => l.k === k));
+export const segColor = (k: Seg["k"]) => (k === "asleep" ? NO_STAGES_COLOR : LANES[laneOf(k)]!.color);
+export const SEG_NAME: Record<Seg["k"], string> = { awake: "Awake", rem: "REM", light: "Light", deep: "Deep", asleep: "Asleep" };
+
+export type SleepRecord = { start: string; end?: string; origin: string; stages?: [number, number, number][] };
+/**
+ * A night's stretches from the saved sleep records around it: the records of the app that covered most of the night
+ * (two apps writing the same night would otherwise draw it twice), their stages in order. A record without stages
+ * counts as asleep from start to end. Empty when no saved record covers the night (it was imported before records were
+ * kept): the night then shows its totals only.
+ */
+export function nightSegments(recs: SleepRecord[], startAt: string, endAt: string): Seg[] {
+  const n0 = Date.parse(startAt), n1 = Date.parse(endAt);
+  const by = new Map<string, { cover: number; recs: SleepRecord[] }>();
+  for (const r of recs) {
+    const a = Date.parse(r.start), b = Date.parse(r.end ?? r.start), cover = Math.min(b, n1) - Math.max(a, n0);
+    // most of it inside the night, or most of the night inside it
+    if (cover <= 0 || (cover < (b - a) / 2 && cover < (n1 - n0) / 2)) continue;
+    const g = by.get(r.origin) ?? by.set(r.origin, { cover: 0, recs: [] }).get(r.origin)!;
+    g.cover += cover; g.recs.push(r);
+  }
+  const best = [...by.values()].sort((x, y) => y.cover - x.cover)[0];
+  if (!best) return [];
+  const out: Seg[] = [];
+  for (const r of best.recs) {
+    if (r.stages?.length) { for (const [s, e, k] of r.stages) if (HC_STAGE[k] && e > s) out.push({ a: s * 1000, b: e * 1000, k: HC_STAGE[k]! }); }
+    else if (r.end) out.push({ a: Date.parse(r.start), b: Date.parse(r.end), k: "asleep" });
+  }
+  out.sort((x, y) => x.a - y.a);
+  // two stretches in a row of the same stage drawn as one
+  return out.reduce<Seg[]>((m, x) => { const l = m.at(-1); if (l && l.k === x.k && x.a <= l.b + 1000) l.b = Math.max(l.b, x.b); else m.push({ ...x }); return m; }, []);
+}

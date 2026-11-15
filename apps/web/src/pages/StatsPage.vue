@@ -21,7 +21,7 @@ import Reports from "../components/Reports.vue";
 import FilterPanel from "../components/FilterPanel.vue";
 import FilterRow from "../components/FilterRow.vue";
 import LearnButton from "../components/learn/LearnButton.vue";
-import SleepTab from "../components/stats/SleepTab.vue";
+import SleepTab, { type SleepView } from "../components/stats/SleepTab.vue";
 import HeartTab from "../components/stats/HeartTab.vue";
 import StepsTab, { type StepsView } from "../components/stats/StepsTab.vue";
 
@@ -30,7 +30,7 @@ const s = useSettings();
 const dev = useDevice();
 const fmt = useFmt();
 const tab = ref(String(route.query.tab ?? "overview"));
-watch(tab, (t) => router.replace({ query: t === "overview" ? {} : { tab: t, ...(t === "steps" && stepsDay.value ? { day: stepsDay.value } : {}) } }));
+watch(tab, (t) => router.replace({ query: t === "overview" ? {} : { tab: t, ...((t === "steps" || t === "sleep" || t === "heart") && stepsDay.value ? { day: stepsDay.value } : {}) } }));
 // opened again from elsewhere (Home's muscles card) while this page is still around
 watch(() => route.query.tab, (t) => { if (route.name === "stats") tab.value = String(t ?? "overview"); });
 // calendar periods (today, this week, last month…) and rolling ones (the last 3 months…); weeks start on the day chosen in Settings
@@ -39,7 +39,12 @@ const PERIODS = [...STATS_PERIODS];
 // (Home's Activity today, the calendar) opens that day
 const STEP_VIEWS = [{ value: "day", label: "Day" }, { value: "week", label: "Week" }, { value: "month", label: "Month" }, { value: "year", label: "Year" }];
 const stepsView = ref<StepsView>("day");
+// Sleep the same, a night at a time in its Day's place
+const SLEEP_VIEWS = [{ value: "night", label: "Night" }, ...STEP_VIEWS.slice(1)];
+const sleepView = ref<SleepView>("night");
 const stepsDay = computed(() => (typeof route.query.day === "string" && /^\d{4}-\d\d-\d\d$/.test(route.query.day) ? route.query.day : undefined));
+// Steps' and Heart's day pickers write the shown day into the link, so a refresh or Back keeps it
+const setDay = (day: string) => { if (day !== stepsDay.value) router.replace({ query: { ...route.query, day } }); };
 const rk = ref<StatsPeriod>("3m");
 const per = computed(() => statsPeriod(rk.value, new Date(), s.value.firstDay));
 const range = computed(() => { const p = per.value; return p.from ? { from: p.from.toISOString(), ...(p.to ? { to: p.to.toISOString() } : {}) } : {}; });
@@ -149,6 +154,7 @@ watch(() => avail.data.value, () => { if (!TABS.value.some(([k]) => k === tab.va
   <div class="page">
     <div class="ph"><div><h1>Stats</h1></div>
       <div v-if="tab === 'steps'" class="acts"><AppSelect v-model="stepsView" :options="STEP_VIEWS" title="View" style="width:auto" /></div>
+      <div v-else-if="tab === 'sleep'" class="acts"><AppSelect v-model="sleepView" :options="SLEEP_VIEWS" title="View" style="width:auto" /></div>
       <div v-else-if="tab !== 'reports'" class="acts"><AppSelect v-model="rk" :options="PERIODS" title="Period" style="width:auto" /></div></div>
     <div class="tabs"><button v-for="[k, l] in TABS" :key="k" :class="{ on: tab === k }" @click="tab = k!">{{ l }}</button></div>
 <Transition name="sw" mode="out-in"><div :key="tab">
@@ -236,9 +242,9 @@ watch(() => avail.data.value, () => { if (!TABS.value.some(([k]) => k === tab.va
       </div>
     </template>
 
-    <StepsTab v-else-if="tab === 'steps'" v-model:view="stepsView" :day="stepsDay" />
-    <SleepTab v-else-if="tab === 'sleep'" :from="per.from" :to="per.to" :daily="d.daily" />
-    <HeartTab v-else-if="tab === 'heart'" :from="per.from" :to="per.to" :daily="d.daily" />
+    <StepsTab v-else-if="tab === 'steps'" v-model:view="stepsView" :day="stepsDay" @update:day="setDay" />
+    <SleepTab v-else-if="tab === 'sleep'" v-model:view="sleepView" :day="stepsDay" />
+    <HeartTab v-else-if="tab === 'heart'" :from="per.from" :to="per.to" :daily="d.daily" :day="stepsDay" @update:day="setDay" />
 
     <Reports v-else-if="tab === 'reports'" />
 

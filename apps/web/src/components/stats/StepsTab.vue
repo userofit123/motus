@@ -5,12 +5,15 @@
 // the average day of each week), the average, the best day, the days the goal was reached and the longest run of them.
 // A day's total is the daily log's (stepsByDay: the value the day shows everywhere, recorded walks counted in); the
 // hours come from the band's saved records (/health/records/hourly), only for days they were saved: a day with a total
-// and no hours shows its total and tiles without the chart.
+// and no hours shows its total and tiles and says so. The day's workouts and activities are shaded on the hours over
+// their exact times and listed under the chart, as on Stats → Heart's day. Moved with the Calendar's bar; a day's
+// link (?day=) follows it, so a refresh or Back keeps the day.
 import { computed, ref, watch } from "vue";
-import { useQuery } from "@tanstack/vue-query";
+import { useRouter } from "vue-router";
+import { useQuery, keepPreviousData } from "@tanstack/vue-query";
 import { ymd, weekStartDate } from "@motus/shared";
 import { api } from "../../api/client";
-import { useCalendar, useSettings, useTypeName } from "../../api/queries";
+import { useSettings } from "../../api/queries";
 import { useFmt, unitOf } from "../../core/format";
 import { useStepGoal } from "../../core/goals";
 import { fromWhere, useDevice } from "../../native/health";
@@ -18,14 +21,18 @@ import Icon from "../Icon.vue";
 import Ring from "../Ring.vue";
 import BarChart from "../BarChart.vue";
 import Sparkline from "../Sparkline.vue";
+import DayNav from "./DayNav.vue";
+import DaySessionList from "./DaySessionList.vue";
+import { useDaySessions, legendOf, dayHours, dayTitle, DAY_DATA_COLOR } from "./daySessions";
 
 export type StepsView = "day" | "week" | "month" | "year";
 const view = defineModel<StepsView>("view", { required: true });
 const props = defineProps<{ day?: string }>();
+const emit = defineEmits<{ "update:day": [day: string] }>();
+const router = useRouter();
 const fmt = useFmt();
 const s = useSettings();
 const dev = useDevice();
-const typeName = useTypeName();
 const stepGoal = useStepGoal();
 const goal = computed(() => stepGoal.value?.target ?? null);
 
@@ -35,7 +42,9 @@ const at = (d: string) => new Date(d + "T12:00");
 const plus = (d: string, n: number) => { const x = at(d); x.setDate(x.getDate() + n); return ymd(x); };
 const anchor = ref(props.day && props.day <= today ? props.day : today);
 // opened again from elsewhere (Home, the calendar) with a day while this tab is still around
-watch(() => props.day, (d) => { if (d && d <= today) { anchor.value = d; view.value = "day"; } });
+watch(() => props.day, (d) => { if (d && d <= today && d !== anchor.value) { anchor.value = d; view.value = "day"; } });
+// the shown day into the link, so a refresh or Back opens it again
+watch([anchor, view], ([d, v]) => { if (v === "day" && d !== props.day) emit("update:day", d); });
 
 // the shown stretch [from, to): the day, its week (from the first day of the week in Settings), month or year
 const range = computed(() => {
@@ -57,8 +66,7 @@ const shift = (n: number) => {
 };
 const title = computed(() => {
   const r = range.value, thisYear = r.from.slice(0, 4) === today.slice(0, 4);
-  // a day of another year without its weekday, so the title still fits between the arrows on a phone
-  if (view.value === "day") return fmt.value.date(r.from, thisYear ? { weekday: "short", day: "numeric", month: "short" } : { day: "numeric", month: "short", year: "numeric" });
+    if (view.value === "day") return dayTitle(r.from, today, fmt.value);
   // a week of another year in short numeric dates, so its year still fits between the arrows on a phone
   if (view.value === "week") { const last = plus(r.to, -1); return thisYear ? `${fmt.value.date(r.from, { day: "numeric", month: "short" })}-${fmt.value.date(last, { day: "numeric", month: "short" })}`
     : `${fmt.value.date(r.from, { day: "numeric", month: "numeric" })}-${fmt.value.date(last, { day: "numeric", month: "numeric", year: "2-digit" })}`; }
@@ -67,11 +75,12 @@ const title = computed(() => {
 });
 
 // the daily log from the first of the month 4 weeks before the stretch (your usual day looks back 4 weeks), under the
-// key Home's daily log uses, so live updates reload it and moving a day at a time doesn't load it again
+// key Home's daily log uses, so live updates reload it and moving a day at a time doesn't load it again; crossing into
+// another month keeps the last answer on screen while the next one loads, so the tab never flashes "Loading…"
 const from = computed(() => { const x = at(plus(range.value.from, -28)); return ymd(new Date(x.getFullYear(), x.getMonth(), 1)); });
 type Daily = { date: string; kind: string; value: number | string; source?: string | null; worn?: boolean };
 const dailyQ = useQuery({ queryKey: computed(() => ["activities", "daily", from.value]),
-  queryFn: () => api.get<Daily[]>("/daily", { from: from.value, tz: new Date().getTimezoneOffset() }) });
+  queryFn: () => api.get<Daily[]>("/daily", { from: from.value, tz: new Date().getTimezoneOffset() }), placeholderData: keepPreviousData });
 const byKind = (kind: string) => { const m = new Map<string, Daily>(); for (const x of dailyQ.data.value ?? []) if (x.kind === kind && Number(x.value) > 0) m.set(String(x.date).slice(0, 10), x); return m; };
 const steps = computed(() => byKind("steps"));
 const dist = computed(() => byKind("distance_m"));
@@ -86,45 +95,37 @@ const isDay = computed(() => view.value === "day");
 const dayFrom = computed(() => { const x = steps.value.get(anchor.value); return x && x.source && x.source !== "manual" && x.source !== "activities" ? fromWhere(x.worn !== false, dev.value) : ""; });
 const midnight = (d: string) => { const x = at(d); x.setHours(0, 0, 0, 0); return x; };
 const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-const hourQ = useQuery({ queryKey: computed(() => ["readings", "hourly", "steps", anchor.value]), enabled: computed(() => isDay.value && dayN.value > 0), retry: false,
+const hourQ = useQuery({ queryKey: computed(() => ["readings", "hourly", "steps", anchor.value]), enabled: computed(() => isDay.value && dayN.value > 0), retry: false, placeholderData: keepPreviousData,
   queryFn: () => api.get<{ hours: { at: string; sum?: number }[] }>("/health/records/hourly", { type: "steps", from: midnight(anchor.value).toISOString(), to: midnight(plus(anchor.value, 1)).toISOString(), zone }) });
-const calQ = useCalendar(computed(() => ({ from: anchor.value, to: anchor.value })), computed(() => isDay.value && dayN.value > 0));
-// the day's sessions as [start, end) in ms: recorded activities (walks…) and workouts
-const sessions = computed(() => {
-  const c: any = calQ.data.value;
-  if (!c) return [];
-  const span = (x: any) => { const a = new Date(x.startedAt).getTime(); return { a, b: a + Math.max(60, Number(x.durationS) || 0) * 1000 }; };
-  return [...(c.activities ?? []).map((x: any) => ({ ...span(x), kind: "activity" as const, type: x.type as string, name: (x.name as string) || typeName(x.type) })),
-    ...(c.workouts ?? []).map((x: any) => ({ ...span(x), kind: "workout" as const, type: "", name: (x.name as string) || "Workout" }))];
-});
-const ACT_COLOR = "var(--c3)", WK_COLOR = "var(--c2)";
-// 24 bars (23 or 25 on a clock change day), each the steps in that hour of the app's calendar; an hour a session took
-// at least a quarter of is in its colour and named in its tip
+// the day's recorded activities (walks…) and workouts, shaded over the hours they took and listed under the chart
+const { sessions } = useDaySessions(anchor, computed(() => isDay.value && dayN.value > 0));
+// 24 bars (23 or 25 on a clock change day), each the steps in that hour of the app's calendar, in the day charts' own
+// colour so the sessions' colours read apart from them
+const dayStart = computed(() => midnight(anchor.value).getTime());
+type Hour = { label: string; value: number; tip: string; color: string; a: number };
+// the day before's bars while this one's load (as the query keeps them), so stepping a day doesn't empty the card
+let lastHours: Hour[] = [];
 const hours = computed(() => {
   const list = hourQ.data.value?.hours ?? [];
-  if (!list.some((h) => (h.sum ?? 0) > 0)) return [];
+  if (hourQ.isPlaceholderData.value) return lastHours;
+  if (!list.some((h) => (h.sum ?? 0) > 0)) return (lastHours = []);
   const sums = new Map<number, number>();
   for (const h of list) { const t = new Date(h.at).getTime(); sums.set(t, (sums.get(t) ?? 0) + (h.sum ?? 0)); }
-  const out: { label: string; value: number; tip: string; color?: string; kind?: "activity" | "workout"; type?: string; a: number }[] = [];
+  const out: Hour[] = [];
   const end = midnight(plus(anchor.value, 1)).getTime();
-  for (let a = midnight(anchor.value).getTime(); a < end; a += 3600_000) {
-    const b = a + 3600_000;
-    let best: (typeof sessions.value)[number] | null = null, most = 0;
-    for (const x of sessions.value) { const m = Math.min(b, x.b) - Math.max(a, x.a); if (m > most) { most = m; best = x; } }
-    const mark = best && most >= 15 * 60_000 ? best : null;
+  for (let a = dayStart.value; a < end; a += 3600_000) {
     const iso = new Date(a).toISOString();
-    out.push({ a, label: fmt.value.time(iso).replace(/:00(?=\D|$)/, ""), value: Math.round(sums.get(a) ?? 0),
-      tip: `${fmt.value.time(iso)}-${fmt.value.time(new Date(b).toISOString())}${mark ? ` · ${mark.name}` : ""}`,
-      ...(mark ? { color: mark.kind === "workout" ? WK_COLOR : ACT_COLOR, kind: mark.kind, type: mark.type } : {}) });
+    out.push({ a, label: fmt.value.time(iso), value: Math.round(sums.get(a) ?? 0), tip: `${fmt.value.time(iso)}-${fmt.value.time(new Date(a + 3600_000).toISOString())}`, color: DAY_DATA_COLOR });
   }
-  return out;
+  return (lastHours = out);
 });
-// the legend names the bars' colours only once a session marks any; recorded walks as "Walk", other activities as "Activity"
-const legend = computed(() => {
-  const acts = hours.value.filter((h) => h.kind === "activity"), wks = hours.value.some((h) => h.kind === "workout");
-  if (!acts.length && !wks) return [];
-  return [{ name: "Steps", color: "var(--acc)" }, ...(acts.length ? [{ name: acts.every((h) => h.type === "walk") ? "Walk" : "Activity", color: ACT_COLOR }] : []), ...(wks ? [{ name: "Workout", color: WK_COLOR }] : [])];
-});
+// in bars: hours since midnight (a clock change day's bars are its real hours, so this holds then too)
+const inBars = (t: number) => (t - dayStart.value) / 3600_000;
+const shade = computed(() => sessions.value.filter((x) => x.b > x.a).map((x) => ({ a: inBars(x.a), b: inBars(x.b), color: x.color, id: x.key, name: x.name })));
+const xt = computed(() => dayHours(anchor.value, fmt.value).map((h) => ({ at: inBars(h.at), text: h.text })));
+const legend = computed(() => legendOf(sessions.value));
+// the steps of recorded activities a band didn't count by the hour are in the total but not in the bars: said under them
+const offHours = computed(() => { const inH = hours.value.reduce((t, h) => t + h.value, 0); return hours.value.length && sessions.value.some((x) => x.steps) ? Math.max(0, dayN.value - inH) : 0; });
 const busiest = computed(() => hours.value.reduce<(typeof hours.value)[number] | null>((m, h) => (!m || h.value > m.value ? h : m), null));
 // active hours: hours with at least 250 steps, as trackers count them
 const ACTIVE = 250;
@@ -148,7 +149,7 @@ const dayTiles = computed(() => {
   if (hours.value.length) out.push({ key: "active", icon: "clock", label: "Active hours", value: String(activeH.value), unit: "h", sub: `${ACTIVE}+ steps an hour` });
   if (usual.value) {
     const pc = Math.round((dayN.value / usual.value - 1) * 100);
-    out.push({ key: "usual", icon: "stats", label: "Vs your usual day", value: pc === 0 ? "0%" : `${pc > 0 ? "+" : "-"}${Math.abs(pc)}%`, unit: "", sub: `usual ${n0(usual.value)}`, tone: Math.abs(pc) < 5 ? undefined : pc > 0 ? "pos" : "neg" });
+    out.push({ key: "usual", icon: "stats", label: "Usual day", value: pc === 0 ? "0%" : `${pc > 0 ? "+" : "-"}${Math.abs(pc)}%`, unit: "", sub: `usual ${n0(usual.value)}`, tone: Math.abs(pc) < 5 ? undefined : pc > 0 ? "pos" : "neg" });
   }
   return out;
 });
@@ -195,14 +196,7 @@ const openDay = (d: string | null) => { if (d) { anchor.value = d; view.value = 
 </script>
 
 <template>
-  <div class="calnav">
-    <div class="calm">
-      <button class="ib sm plain" :aria-label="`Previous ${view}`" @click="shift(-1)"><Icon name="left" :size="18" /></button>
-      <b>{{ title }}</b>
-      <button class="ib sm plain" :aria-label="`Next ${view}`" :disabled="hasToday" @click="shift(1)"><Icon name="right" :size="18" /></button>
-    </div>
-    <div class="calx"><button v-if="!hasToday" class="fchip acc" @click="anchor = today">Today</button></div>
-  </div>
+  <DayNav :title="title" :unit="view" :at-end="hasToday" :away="!hasToday" @step="shift" @today="anchor = today" />
 
   <div v-if="dailyQ.isError.value" class="card empty"><Icon name="info" :size="34" /><b>Couldn't load your steps</b>{{ (dailyQ.error.value as Error | null)?.message }}<br /><button class="btn tonal" @click="dailyQ.refetch()">Try again</button></div>
   <div v-else-if="dailyQ.isLoading.value" class="empty">Loading…</div>
@@ -226,11 +220,18 @@ const openDay = (d: string | null) => { if (d) { anchor.value = d; view.value = 
         </div>
       </div>
 
-      <div v-if="hours.length" class="card spt">
+      <!-- the hours with the day's sessions shaded on them, then the sessions under a faint line, as Stats → Heart's day -->
+      <div class="card spt">
         <div class="lbl hgap">Steps by hour</div>
-        <BarChart :bars="hours" :height="170" :fmt="n0" />
-        <div v-if="legend.length" class="bmlegend st-leg"><span v-for="k in legend" :key="k.name"><i :style="{ background: k.color }" />{{ k.name }}</span></div>
-        <div v-if="busiest" class="tiny st-line">Busiest hour {{ busiest.tip.split(" · ")[0] }} · {{ n0(busiest.value) }} steps</div>
+        <template v-if="hours.length">
+          <BarChart :bars="hours" :height="170" :fmt="n0" :shade="shade" :xt="xt" @pick="(id) => router.push(id)" />
+          <div v-if="legend.length" class="bmlegend st-leg"><span><i :style="{ background: DAY_DATA_COLOR }" />Steps</span><span v-for="k in legend" :key="k.color"><i :style="{ background: k.color }" />{{ k.name }}</span></div>
+          <div v-if="busiest" class="tiny st-line">Busiest hour {{ busiest.tip }} · {{ n0(busiest.value) }} steps</div>
+          <div v-if="offHours >= 50" class="tiny st-line">{{ n0(offHours) }} steps of the total come from recorded activities and aren't in the hours.</div>
+        </template>
+        <div v-else-if="!hourQ.isFetching.value" class="tiny">No hour-by-hour steps saved for this day.</div>
+        <div v-if="sessions.length" class="st-sec"><div class="lbl hgap">Workouts and activities</div>
+          <DaySessionList :sessions="sessions" :value="(x) => (x.steps != null ? `${n0(x.steps)} steps` : '-')" /></div>
       </div>
     </template>
   </template>
@@ -259,6 +260,8 @@ const openDay = (d: string | null) => { if (d) { anchor.value = d; view.value = 
 <style scoped>
 /* the day's tiles a block-padding below the total, under a faint line, as last night's stages on Sleep */
 .st-tiles { margin-top: var(--cpy); padding-top: var(--cpy); border-top: 1px solid var(--ol); }
-.st-line { margin-top: 6px; }
+.st-line { margin-top: var(--tdy); }
+/* the sessions a block-padding below the chart, under a faint line, as Stats → Heart's day */
+.st-sec { margin-top: var(--cpy); padding-top: var(--cpy); border-top: 1px solid var(--ol); }
 .st-leg { margin-top: var(--hg); }
 </style>
