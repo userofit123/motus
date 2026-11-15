@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // Stats → Steps (M-241), there once there are steps at all (typed, from a band or from recorded walks). Day: the day's
-// steps against the steps goal, how they spread over its hours (walks and workouts marked), and the band's distance,
-// active calories, active hours and how the day compares with your usual one. Week, month, year: a bar a day (a year:
+// steps against the steps goal and your usual day as one card's hero, the band's distance, active calories and active
+// hours as its tiles, how the steps spread over its hours (walks and workouts marked) and the day's sessions. Week, month, year: a bar a day (a year:
 // the average day of each week), the average, the best day, the days the goal was reached and the longest run of them.
 // A day's total is the daily log's (stepsByDay: the value the day shows everywhere, recorded walks counted in); the
 // hours come from the band's saved records (/health/records/hourly), only for days they were saved: a day with a total
@@ -23,9 +23,9 @@ import BarChart from "../BarChart.vue";
 import Sparkline from "../Sparkline.vue";
 import DayNav from "./DayNav.vue";
 import DaySessionList from "./DaySessionList.vue";
-import { useDaySessions, legendOf, dayHours, dayTitle, DAY_DATA_COLOR } from "./daySessions";
+import { useDaySessions, useToday, legendOf, dayHours, noRecords, stretchOf, stepDay, stretchTitle, DAY_DATA_COLOR, type StretchView } from "./daySessions";
 
-export type StepsView = "day" | "week" | "month" | "year";
+export type StepsView = StretchView;
 const view = defineModel<StepsView>("view", { required: true });
 const props = defineProps<{ day?: string }>();
 const emit = defineEmits<{ "update:day": [day: string] }>();
@@ -37,42 +37,20 @@ const stepGoal = useStepGoal();
 const goal = computed(() => stepGoal.value?.target ?? null);
 
 // days as "YYYY-MM-DD" in the app's calendar; a Date at noon, so a clock change never tips it into the next day
-const today = ymd(new Date());
+const today = useToday();
 const at = (d: string) => new Date(d + "T12:00");
 const plus = (d: string, n: number) => { const x = at(d); x.setDate(x.getDate() + n); return ymd(x); };
-const anchor = ref(props.day && props.day <= today ? props.day : today);
+const anchor = ref(props.day && props.day <= today.value ? props.day : today.value);
 // opened again from elsewhere (Home, the calendar) with a day while this tab is still around
-watch(() => props.day, (d) => { if (d && d <= today && d !== anchor.value) { anchor.value = d; view.value = "day"; } });
+watch(() => props.day, (d) => { if (d && d <= today.value && d !== anchor.value) { anchor.value = d; view.value = "day"; } });
 // the shown day into the link, so a refresh or Back opens it again
 watch([anchor, view], ([d, v]) => { if (v === "day" && d !== props.day) emit("update:day", d); });
 
 // the shown stretch [from, to): the day, its week (from the first day of the week in Settings), month or year
-const range = computed(() => {
-  const a = at(anchor.value);
-  if (view.value === "day") return { from: anchor.value, to: plus(anchor.value, 1) };
-  if (view.value === "week") { const w = ymd(weekStartDate(a, s.value.firstDay)); return { from: w, to: plus(w, 7) }; }
-  if (view.value === "month") return { from: ymd(new Date(a.getFullYear(), a.getMonth(), 1)), to: ymd(new Date(a.getFullYear(), a.getMonth() + 1, 1)) };
-  return { from: ymd(new Date(a.getFullYear(), 0, 1)), to: ymd(new Date(a.getFullYear() + 1, 0, 1)) };
-});
-const hasToday = computed(() => range.value.from <= today && today < range.value.to);
-const shift = (n: number) => {
-  const a = at(anchor.value);
-  if (view.value === "day") a.setDate(a.getDate() + n);
-  else if (view.value === "week") a.setDate(a.getDate() + 7 * n);
-  else if (view.value === "month") a.setMonth(a.getMonth() + n, 1);
-  else a.setFullYear(a.getFullYear() + n, 0, 1);
-  // never past today: a later week, month or year lands on today
-  anchor.value = ymd(a) > today ? today : ymd(a);
-};
-const title = computed(() => {
-  const r = range.value, thisYear = r.from.slice(0, 4) === today.slice(0, 4);
-    if (view.value === "day") return dayTitle(r.from, today, fmt.value);
-  // a week of another year in short numeric dates, so its year still fits between the arrows on a phone
-  if (view.value === "week") { const last = plus(r.to, -1); return thisYear ? `${fmt.value.date(r.from, { day: "numeric", month: "short" })}-${fmt.value.date(last, { day: "numeric", month: "short" })}`
-    : `${fmt.value.date(r.from, { day: "numeric", month: "numeric" })}-${fmt.value.date(last, { day: "numeric", month: "numeric", year: "2-digit" })}`; }
-  if (view.value === "month") return fmt.value.date(r.from, { month: "long", year: "numeric" });
-  return r.from.slice(0, 4);
-});
+const range = computed(() => stretchOf(view.value, anchor.value, s.value.firstDay));
+const hasToday = computed(() => range.value.from <= today.value && today.value < range.value.to);
+const shift = (n: number) => { anchor.value = stepDay(view.value, anchor.value, n, today.value); };
+const title = computed(() => stretchTitle(view.value, range.value, today.value, fmt.value));
 
 // the daily log from the first of the month 4 weeks before the stretch (your usual day looks back 4 weeks), under the
 // key Home's daily log uses, so live updates reload it and moving a day at a time doesn't load it again; crossing into
@@ -139,19 +117,22 @@ const usual = computed(() => {
   const m = xs.length >> 1;
   return xs.length % 2 ? xs[m]! : (xs[m - 1]! + xs[m]!) / 2;
 });
-type Tile = { key: string; icon: string; label: string; value: string; unit: string; sub: string; tone?: string };
+type Tile = { key: string; icon: string; label: string; value: string; unit: string; sub: string };
 const dayTiles = computed(() => {
   const out: Tile[] = [], d = anchor.value;
   const m = Number(dist.value.get(d)?.value ?? 0);
-  if (m) { const u = unitOf(fmt.value.dist(m, 1)); out.push({ key: "dist", icon: "walk", label: "Distance", value: u.value, unit: u.unit, sub: "" }); }
+  if (m) { const u = unitOf(fmt.value.dist(m, 1)); out.push({ key: "dist", icon: "map", label: "Distance", value: u.value, unit: u.unit, sub: "" }); }
   const k = Number(kcal.value.get(d)?.value ?? 0);
   if (k) out.push({ key: "kcal", icon: "flame", label: "Active calories", value: n0(k), unit: "kcal", sub: "" });
-  if (hours.value.length) out.push({ key: "active", icon: "clock", label: "Active hours", value: String(activeH.value), unit: "h", sub: `${ACTIVE}+ steps an hour` });
-  if (usual.value) {
-    const pc = Math.round((dayN.value / usual.value - 1) * 100);
-    out.push({ key: "usual", icon: "stats", label: "Usual day", value: pc === 0 ? "0%" : `${pc > 0 ? "+" : "-"}${Math.abs(pc)}%`, unit: "", sub: `usual ${n0(usual.value)}`, tone: Math.abs(pc) < 5 ? undefined : pc > 0 ? "pos" : "neg" });
-  }
+  if (hours.value.length) out.push({ key: "active", icon: "bolt", label: "Active hours", value: String(activeH.value), unit: "h", sub: `${ACTIVE}+ steps an hour` });
   return out;
+});
+// the day against your usual day, in the hero's line as Heart's day says its resting heart rate against your usual: the
+// difference in the good colour when more and the warning one when fewer (5% either way), then "vs usual" and the usual
+const vsUsual = computed(() => {
+  if (!usual.value) return null;
+  const pc = Math.round((dayN.value / usual.value - 1) * 100);
+  return { text: pc === 0 ? "0%" : `${pc > 0 ? "+" : "-"}${Math.abs(pc)}%`, tone: Math.abs(pc) < 5 ? undefined : pc > 0 ? "pos" : "neg", usual: n0(usual.value) };
 });
 const pct = computed(() => (goal.value ? dayN.value / goal.value : 0));
 const goalLine = computed(() => {
@@ -204,34 +185,36 @@ const openDay = (d: string | null) => { if (d) { anchor.value = d; view.value = 
   <template v-else-if="isDay">
     <div v-if="!dayN" class="card empty"><Icon name="steps" :size="34" /><b>No steps on this day</b>Pick another day with the arrows.</div>
     <template v-else>
-      <!-- the day's total against the goal, then the day's other numbers as a report's tiles under a faint line -->
+      <!-- one card, as Heart's day and Sleep's night: the day's total against the goal and your usual day, its other
+           numbers as a report's tiles, the hours with the day's sessions shaded on them, then the sessions, each part
+           under a faint line -->
       <div class="card wkc">
         <div class="ch"><span class="bi"><Icon name="steps" :size="15" /></span><span class="t grow">Steps</span><span v-if="dayFrom" class="tiny">{{ dayFrom }}</span></div>
         <div class="gs-top">
           <Ring v-if="goal" :pct="pct" :size="64" :stroke="7" :done="pct >= 1" />
-          <div class="grow"><div class="gs-val">{{ n0(dayN) }}<small>steps</small></div><div v-if="goalLine" class="tiny">{{ goalLine }}</div></div>
+          <span v-else class="gs-ico"><Icon name="steps" :size="28" /></span>
+          <div class="grow"><div class="gs-val">{{ n0(dayN) }}<small>steps</small></div><div v-if="goalLine" class="tiny">{{ goalLine }}</div>
+            <div v-if="vsUsual" class="tiny"><span :class="vsUsual.tone">{{ vsUsual.text }}</span> vs usual {{ vsUsual.usual }}</div></div>
         </div>
-        <div v-if="dayTiles.length" class="wstats rows2 st-tiles" :class="{ n4: dayTiles.length === 4 }">
+        <div v-if="dayTiles.length" class="wstats rows2 st-sec">
           <div v-for="x in dayTiles" :key="x.key" class="ws" role="group" :aria-label="[x.label, x.value, x.unit, x.sub].filter(Boolean).join(' ')">
             <div class="wlb"><Icon :name="x.icon" :size="14" />{{ x.label }}</div>
-            <div class="wv" :class="x.tone">{{ x.value }} <small v-if="x.unit">{{ x.unit }}</small></div>
+            <div class="wv">{{ x.value }} <small v-if="x.unit">{{ x.unit }}</small></div>
             <div class="wd">{{ x.sub }}</div>
           </div>
         </div>
-      </div>
-
-      <!-- the hours with the day's sessions shaded on them, then the sessions under a faint line, as Stats → Heart's day -->
-      <div class="card spt">
-        <div class="lbl hgap">Steps by hour</div>
-        <template v-if="hours.length">
-          <BarChart :bars="hours" :height="170" :fmt="n0" :shade="shade" :xt="xt" @pick="(id) => router.push(id)" />
-          <div v-if="legend.length" class="bmlegend st-leg"><span><i :style="{ background: DAY_DATA_COLOR }" />Steps</span><span v-for="k in legend" :key="k.color"><i :style="{ background: k.color }" />{{ k.name }}</span></div>
-          <div v-if="busiest" class="tiny st-line">Busiest hour {{ busiest.tip }} · {{ n0(busiest.value) }} steps</div>
-          <div v-if="offHours >= 50" class="tiny st-line">{{ n0(offHours) }} steps of the total come from recorded activities and aren't in the hours.</div>
-        </template>
-        <div v-else-if="!hourQ.isFetching.value" class="tiny">No hour-by-hour steps saved for this day.</div>
+        <div class="st-sec"><div class="lbl hgap">Steps by hour</div>
+          <template v-if="hours.length">
+            <BarChart :bars="hours" :height="170" :fmt="n0" :shade="shade" :xt="xt" @pick="(id) => router.push(id)" />
+            <div v-if="legend.length" class="bmlegend st-leg"><span><i :style="{ background: DAY_DATA_COLOR }" />Steps</span><span v-for="k in legend" :key="k.color"><i :style="{ background: k.color }" />{{ k.name }}</span></div>
+            <div v-if="busiest" class="tiny st-line">Busiest hour {{ busiest.tip }} · {{ n0(busiest.value) }} steps</div>
+            <div v-if="offHours >= 50" class="tiny st-line">{{ n0(offHours) }} steps of the total come from recorded activities and aren't in the hours.</div>
+          </template>
+          <div v-else-if="!hourQ.isFetching.value" class="tiny">{{ noRecords("day") }}</div>
+          <div v-else class="tiny">Loading…</div>
+        </div>
         <div v-if="sessions.length" class="st-sec"><div class="lbl hgap">Workouts and activities</div>
-          <DaySessionList :sessions="sessions" :value="(x) => (x.steps != null ? `${n0(x.steps)} steps` : '-')" /></div>
+          <DaySessionList :sessions="sessions" :value="(x) => (x.steps != null ? `${n0(x.steps)} steps` : x.durationS ? fmt.dur(x.durationS, true) : '-')" /></div>
       </div>
     </template>
   </template>
@@ -244,7 +227,7 @@ const openDay = (d: string | null) => { if (d) { anchor.value = d; view.value = 
         <div class="card hero stat"><div class="lbl"><span class="bi"><Icon name="steps" :size="15" /></span>Average</div><div class="val">{{ n0(avg) }}</div><div class="sub">steps a day · {{ withSteps.length }} {{ withSteps.length === 1 ? "day" : "days" }}</div><Sparkline v-if="withSteps.length > 1" :values="withSteps.map(stepsOn)" color="var(--onc)" /></div>
         <div class="card stat click" role="button" tabindex="0" @click="openDay(best)" @keydown.enter="openDay(best)"><div class="lbl"><span class="bi"><Icon name="trophy" :size="15" /></span>Best day</div><div class="val">{{ n0(stepsOn(best!)) }}</div><div class="sub">{{ fmt.date(best!, { weekday: "short", day: "numeric", month: "short" }) }}</div></div>
         <div v-if="goal" class="card stat"><div class="lbl"><span class="bi"><Icon name="target" :size="15" /></span>Goal reached</div><div class="val">{{ reached }}<small>{{ reached === 1 ? "day" : "days" }}</small></div><div class="sub">of {{ withSteps.length }} · goal {{ n0(goal) }}</div></div>
-        <div v-if="goal && streak" class="card stat"><div class="lbl"><span class="bi"><Icon name="flame" :size="15" /></span>Longest streak</div><div class="val">{{ streak }}<small>{{ streak === 1 ? "day" : "days" }}</small></div><div class="sub">goal reached in a row</div></div>
+        <div v-if="goal && streak" class="card stat"><div class="lbl"><span class="bi"><Icon name="link" :size="15" /></span>Longest streak</div><div class="val">{{ streak }}<small>{{ streak === 1 ? "day" : "days" }}</small></div><div class="sub">goal reached in a row</div></div>
       </div>
 
       <div class="card spt">
@@ -258,10 +241,8 @@ const openDay = (d: string | null) => { if (d) { anchor.value = d; view.value = 
 </template>
 
 <style scoped>
-/* the day's tiles a block-padding below the total, under a faint line, as last night's stages on Sleep */
-.st-tiles { margin-top: var(--cpy); padding-top: var(--cpy); border-top: 1px solid var(--ol); }
 .st-line { margin-top: var(--tdy); }
-/* the sessions a block-padding below the chart, under a faint line, as Stats → Heart's day */
+/* each part a block-padding below the one before, under a faint line, as Heart's day and Sleep's night */
 .st-sec { margin-top: var(--cpy); padding-top: var(--cpy); border-top: 1px solid var(--ol); }
 .st-leg { margin-top: var(--hg); }
 </style>

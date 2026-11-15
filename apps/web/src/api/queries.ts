@@ -84,8 +84,8 @@ export interface SleepNight {
   avgHr: number | null; minHr: number | null; avgSpo2: number | null; minSpo2: number | null; respRate: number | null;
   edited: boolean; sleepH: number;
 }
-export const useSleep = (range: MaybeRef<{ from?: string; to?: string }>, enabled: MaybeRef<boolean> = true) => useQuery({ queryKey: computed(() => ["health", "sleep", unref(range)]), queryFn: () => api.get<{ nights: SleepNight[] }>("/health/sleep", unref(range)), enabled });
-export const useSleepNight = (date: MaybeRef<string>) => useQuery({ queryKey: computed(() => ["health", "sleep", "night", unref(date)]), queryFn: () => api.get<SleepNight & { hr: [number, number][] | null }>(`/health/sleep/${unref(date)}`), enabled: computed(() => !!unref(date)) });
+export const useSleep = (range: MaybeRef<{ from?: string; to?: string }>, enabled: MaybeRef<boolean> = true, opts?: QueryOpts) => useQuery({ queryKey: computed(() => ["health", "sleep", unref(range)]), queryFn: () => api.get<{ nights: SleepNight[] }>("/health/sleep", unref(range)), enabled, ...keepOpt(opts) });
+export const useSleepNight = (date: MaybeRef<string>, opts?: QueryOpts) => useQuery({ queryKey: computed(() => ["health", "sleep", "night", unref(date)]), queryFn: () => api.get<SleepNight & { hr: [number, number][] | null }>(`/health/sleep/${unref(date)}`), enabled: computed(() => !!unref(date)), ...keepOpt(opts) });
 /** One day from a band: its night (the one that ended that morning), the heart rate through the day (series: [unix
  *  seconds, bpm]), the day's vitals and totals; each null when the band handed nothing over for it */
 export interface HealthDay {

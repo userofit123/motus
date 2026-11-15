@@ -123,6 +123,11 @@ hr.sep { border: 0; border-top: 1px solid var(--ol); margin: 14px 0; }
 .wstats .ws + .ws { border-inline-start: 1px solid var(--ol); padding-inline-start: var(--hg); }
 .wstats .wlb { display: flex; align-items: center; gap: 4px; font-size: var(--fs-sm); color: var(--tx2); white-space: nowrap; }
 .wstats .wlb svg { color: var(--acc); flex: none; }
+/* a tile that opens something (the Calendar's day tiles, Stats → Sleep's nights): the rows' hover tint and a chevron at
+   the end of its label */
+.wstats .ws.click { border-radius: var(--r-sm); cursor: pointer; }
+.wstats .ws.click:hover { background: color-mix(in srgb, var(--tx) 3%, transparent); }
+.wstats .wlb .wgo { margin-inline-start: auto; color: var(--tx2); }
 /* a tile is (block - gaps and lines) / tiles; the value may take a tile / 5.6, room for about 5.6 characters' widths */
 .wstats .wv { font-size: clamp(var(--fs-lg), calc((100cqi - 4 * var(--hg)) / 16.8), calc(var(--fs-lg) * 1.25)); font-weight: 650; line-height: 1.2; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .wstats.n4 .wv { font-size: clamp(var(--fs-lg), calc((100cqi - 6 * var(--hg)) / 22.4), calc(var(--fs-lg) * 1.25)); }
@@ -931,3 +936,6 @@ html.phone #pop .aph::before { content: ""; position: absolute; left: 50%; top: 
 .gs-top { display: flex; align-items: center; gap: var(--spg); }
 .gs-val { font-size: 26px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.2; }
 .gs-val small { font-size: 15px; font-weight: 500; margin-inline-start: 6px; color: var(--tx2); }
+/* a day card's hero without a ring (Stats → Heart's day, Steps' day without a goal): its icon in a tinted circle the
+   ring's size, so the number sits where it does beside a ring */
+.gs-ico { width: 64px; height: 64px; flex: none; border-radius: 50%; display: grid; place-items: center; color: var(--acc); background: color-mix(in srgb, var(--acc) 12%, transparent); }

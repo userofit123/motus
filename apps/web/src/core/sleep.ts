@@ -1,4 +1,4 @@
-// Nights of sleep from a band (Stats → Sleep and a night's sheet): the stages, their colours, and times of night.
+// Nights of sleep from a band (Stats → Sleep and Home's night): the stages, their colours, and times of night.
 import { duration, isNightMin, MIN_NIGHT_H } from "@motus/shared";
 import type { SleepNight } from "../api/queries";
 
@@ -70,22 +70,24 @@ export const SEG_NAME: Record<Seg["k"], string> = { awake: "Awake", rem: "REM", 
 
 export type SleepRecord = { start: string; end?: string; origin: string; stages?: [number, number, number][] };
 /**
- * A night's stretches from the saved sleep records around it: the records of the app that covered most of the night
- * (two apps writing the same night would otherwise draw it twice), their stages in order. A record without stages
+ * A night's stretches from the saved sleep records around it: the records of one app (two apps writing the same night
+ * would otherwise draw it twice), their stages in order: an app that told the stages apart before one that only told
+ * asleep from awake, then the one that covered most of the night. A record without stages
  * counts as asleep from start to end. Empty when no saved record covers the night (it was imported before records were
  * kept): the night then shows its totals only.
  */
 export function nightSegments(recs: SleepRecord[], startAt: string, endAt: string): Seg[] {
   const n0 = Date.parse(startAt), n1 = Date.parse(endAt);
-  const by = new Map<string, { cover: number; recs: SleepRecord[] }>();
+  const by = new Map<string, { cover: number; staged: boolean; recs: SleepRecord[] }>();
   for (const r of recs) {
     const a = Date.parse(r.start), b = Date.parse(r.end ?? r.start), cover = Math.min(b, n1) - Math.max(a, n0);
     // most of it inside the night, or most of the night inside it
     if (cover <= 0 || (cover < (b - a) / 2 && cover < (n1 - n0) / 2)) continue;
-    const g = by.get(r.origin) ?? by.set(r.origin, { cover: 0, recs: [] }).get(r.origin)!;
+    const g = by.get(r.origin) ?? by.set(r.origin, { cover: 0, staged: false, recs: [] }).get(r.origin)!;
     g.cover += cover; g.recs.push(r);
+    if (r.stages?.some(([, , k]) => k >= 4)) g.staged = true;
   }
-  const best = [...by.values()].sort((x, y) => y.cover - x.cover)[0];
+  const best = [...by.values()].sort((x, y) => Number(y.staged) - Number(x.staged) || y.cover - x.cover)[0];
   if (!best) return [];
   const out: Seg[] = [];
   for (const r of best.recs) {

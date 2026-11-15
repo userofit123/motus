@@ -9,82 +9,84 @@
 // not a night: it keeps its bar (in grey) and its row, but every average, count and usual time leaves it out.
 import { computed, ref, watch } from "vue";
 import { useQuery, keepPreviousData } from "@tanstack/vue-query";
-import { ymd, weekStartOf, weekStartDate, isNightMin, MIN_NIGHT_H } from "@motus/shared";
+import { ymd, weekStartOf, isNightMin, MIN_NIGHT_H } from "@motus/shared";
 import { api } from "../../api/client";
-import { useSettings, useWorkouts, type SleepNight } from "../../api/queries";
+import { useSettings, useWorkouts, useSleep, useHealthDay, type SleepNight } from "../../api/queries";
 import { useFmt, localYmd } from "../../core/format";
 import { STAGES, NO_STAGES_COLOR, NO_STAGES_SWATCH, SHORT_COLOR, hasStages, isFull, asleepMin, inBedMin, efficiency, nightMin, nightIso, mins, typical } from "../../core/sleep";
 import Icon from "../Icon.vue";
-import { adviceWord, useDevice } from "../../native/health";
+import { adviceWord, deviceWord, useDevice } from "../../native/health";
 import BarChart from "../BarChart.vue";
 import LineChart from "../LineChart.vue";
 import Sparkline from "../Sparkline.vue";
 import SleepSchedule from "./SleepSchedule.vue";
 import NightView from "./NightView.vue";
 import DayNav from "./DayNav.vue";
+import { useToday, nightTitle, stretchOf, stepDay, stretchTitle } from "./daySessions";
 
 export type SleepView = "night" | "week" | "month" | "year";
 const view = defineModel<SleepView>("view", { required: true });
 const props = defineProps<{ day?: string }>();
+const emit = defineEmits<{ "update:day": [day: string] }>();
 const fmt = useFmt();
 const s = useSettings();
 const dev = useDevice();
 
-// days as "YYYY-MM-DD" in the app's calendar; a Date at noon, so a clock change never tips it into the next day
-const today = ymd(new Date());
+// days as "YYYY-MM-DD" in the app's calendar; a Date at noon, so a clock change never tips it into the next day. A night
+// goes by the day it ended (its date), so the night of today is "Last night", as the chip that brings it back says
+const today = useToday();
 const at = (d: string) => new Date(d + "T12:00");
 const plus = (d: string, n: number) => { const x = at(d); x.setDate(x.getDate() + n); return ymd(x); };
-const anchor = ref(props.day && props.day <= today ? props.day : today);
-// opened again from elsewhere with a day while this tab is still around
-watch(() => props.day, (d) => { if (d && d <= today) { anchor.value = d; view.value = "night"; } });
-
-// every night there is (the newest 400), newest first: the Night view steps through them, and the last 30 days say
-// how last night compares
-const allQ = useQuery({ queryKey: ["health", "sleep", { from: "1970-01-01" }], queryFn: () => api.get<{ nights: SleepNight[] }>("/health/sleep", { from: "1970-01-01" }) });
-const all = computed<SleepNight[]>(() => allQ.data.value?.nights ?? []);
-// the night shown: the newest one on or before the chosen day, else the oldest after it
-const night = computed(() => all.value.find((n) => n.date <= anchor.value) ?? all.value.at(-1) ?? null);
+const anchor = ref(props.day && props.day <= today.value ? props.day : today.value);
+// opened without a day, it moves to the newest night once the nights are in (until then nothing goes into the link)
+const picked = ref(!!props.day);
+// opened again from elsewhere (Home, the calendar) with a day while this tab is still around
+watch(() => props.day, (d) => { if (d && d <= today.value && d !== anchor.value) { anchor.value = d; picked.value = true; view.value = "night"; } });
+// the shown night into the link, as Steps' and Heart's day, so a refresh or Back opens it again
+watch([anchor, view, picked], ([d, v, p]) => { if (v === "night" && p && d !== props.day) emit("update:day", d); });
 const isNight = computed(() => view.value === "night");
 
-// the shown stretch [from, to): the night's day, its week (from the first day of the week in Settings), month or year
-const range = computed(() => {
-  const a = at(anchor.value);
-  if (view.value === "night") { const d = night.value?.date ?? anchor.value; return { from: d, to: plus(d, 1) }; }
-  if (view.value === "week") { const w = ymd(weekStartDate(a, s.value.firstDay)); return { from: w, to: plus(w, 7) }; }
-  if (view.value === "month") return { from: ymd(new Date(a.getFullYear(), a.getMonth(), 1)), to: ymd(new Date(a.getFullYear(), a.getMonth() + 1, 1)) };
-  return { from: ymd(new Date(a.getFullYear(), 0, 1)), to: ymd(new Date(a.getFullYear() + 1, 0, 1)) };
-});
-const hasToday = computed(() => isNight.value ? !night.value || night.value.date === all.value[0]?.date : range.value.from <= today && today < range.value.to);
+// the nights to step through, around the chosen day: its month, the nights before it (the newest first, so the one just
+// before is always there) and the 400 days after it (at most one night a day, so the one just after is always there).
+// Each key moves only with the month, keeping the last answer while the next loads
+const mStart = computed(() => { const a = at(anchor.value); return ymd(new Date(a.getFullYear(), a.getMonth(), 1)); });
+const mEnd = computed(() => { const a = at(anchor.value); return ymd(new Date(a.getFullYear(), a.getMonth() + 1, 1)); });
+const monthQ = useSleep(computed(() => ({ from: mStart.value, to: mEnd.value })), isNight, { keep: true });
+const olderQ = useSleep(computed(() => ({ from: "1970-01-01", to: mStart.value })), isNight, { keep: true });
+const newerQ = useSleep(computed(() => ({ from: mEnd.value, to: plus(mEnd.value, 400) })), isNight, { keep: true });
+// newest first
+const stepList = computed(() => [...new Set([...(newerQ.data.value?.nights ?? []), ...(monthQ.data.value?.nights ?? []), ...(olderQ.data.value?.nights ?? [])].map((n) => n.date))].sort().reverse());
+// the chosen day's own night, never another one: a day without one says so (with its logged hours, when it has them)
+const night = computed(() => (monthQ.data.value?.nights ?? []).find((n) => n.date === anchor.value) ?? null);
+const prevNight = computed(() => stepList.value.find((d) => d < anchor.value) ?? null);
+// the next night, else today ("Last night") so the newest night is always one step from the latest
+const nextNight = computed(() => [...stepList.value].reverse().find((d) => d > anchor.value && d <= today.value) ?? (anchor.value < today.value ? today.value : null));
+watch(() => stepList.value[0], (d) => { if (!picked.value && d && !monthQ.isPlaceholderData.value) { anchor.value = d <= today.value ? d : today.value; picked.value = true; } }, { immediate: true });
+// a day with only its hours of sleep (an older import, a typed number): shown as those hours, said plainly
+const dayQ = useHealthDay(computed(() => (isNight.value && !night.value ? anchor.value : null)), computed(() => isNight.value && !night.value), { keep: true });
+const dayHours = computed(() => { const d = dayQ.data.value; return d && d.date === anchor.value && !night.value && d.sleepH ? d.sleepH : null; });
+
+// the shown stretch [from, to): the night's day, or its week, month or year as Steps' and Heart's
+const range = computed(() => stretchOf(view.value === "night" ? "day" : view.value, anchor.value, s.value.firstDay));
+const hasToday = computed(() => isNight.value ? !nextNight.value : range.value.from <= today.value && today.value < range.value.to);
+const away = computed(() => isNight.value ? anchor.value !== today.value : !hasToday.value);
 const shift = (n: number) => {
   if (isNight.value) {
     // a night at a time: older (‹) or newer (›) among the nights there are
-    const i = all.value.findIndex((x) => x.date === night.value?.date), to = all.value[i - n];
-    if (to) anchor.value = to.date;
+    const to = n < 0 ? prevNight.value : nextNight.value;
+    if (to) anchor.value = to;
     return;
   }
-  const a = at(anchor.value);
-  if (view.value === "week") a.setDate(a.getDate() + 7 * n);
-  else if (view.value === "month") a.setMonth(a.getMonth() + n, 1);
-  else a.setFullYear(a.getFullYear() + n, 0, 1);
-  // never past today: a later week, month or year lands on today
-  anchor.value = ymd(a) > today ? today : ymd(a);
+  anchor.value = stepDay(view.value === "night" ? "day" : view.value, anchor.value, n, today.value);
 };
-const title = computed(() => {
-  const r = range.value, thisYear = r.from.slice(0, 4) === today.slice(0, 4);
-  if (isNight.value) return !night.value ? "Night" : night.value.date === today ? "Last night"
-    : fmt.value.date(night.value.date, thisYear ? { weekday: "short", day: "numeric", month: "short" } : { weekday: "short", day: "numeric", month: "short", year: "numeric" });
-  // a week of another year in short numeric dates, so its year still fits between the arrows on a phone
-  if (view.value === "week") { const last = plus(r.to, -1); return thisYear ? `${fmt.value.date(r.from, { day: "numeric", month: "short" })}-${fmt.value.date(last, { day: "numeric", month: "short" })}`
-    : `${fmt.value.date(r.from, { day: "numeric", month: "numeric" })}-${fmt.value.date(last, { day: "numeric", month: "numeric", year: "2-digit" })}`; }
-  if (view.value === "month") return fmt.value.date(r.from, { month: "long", year: "numeric" });
-  return r.from.slice(0, 4);
-});
+const title = computed(() => (view.value === "night" ? nightTitle(anchor.value, today.value, fmt.value) : stretchTitle(view.value, range.value, today.value, fmt.value)));
 // a night picked anywhere in a period (a bar, a point, a row, a tile) opens in the Night view
-const openNight = (d: string | null | undefined) => { if (d) { anchor.value = d; view.value = "night"; } };
+const openNight = (d: string | null | undefined) => { if (d) { anchor.value = d; picked.value = true; view.value = "night"; } };
 
 // the stretch's nights, keeping the last stretch's while the next loads so stepping doesn't flash
-const q = useQuery({ queryKey: computed(() => ["health", "sleep", range.value]), enabled: computed(() => !isNight.value), placeholderData: keepPreviousData,
-  queryFn: () => api.get<{ nights: SleepNight[] }>("/health/sleep", range.value) });
+const q = useSleep(range, computed(() => !isNight.value), { keep: true });
+// the last 30 days' nights, for how last night compares
+const recentQ = useSleep(computed(() => ({ from: plus(today.value, -31) })), computed(() => !isNight.value), { keep: true });
 // the daily log from the first of the stretch's month, under the key Home's daily log uses, so live updates reload it
 const dailyFrom = computed(() => { const x = at(range.value.from); return ymd(new Date(x.getFullYear(), x.getMonth(), 1)); });
 type Daily = { date: string; kind: string; value: number | string };
@@ -93,12 +95,15 @@ const dailyQ = useQuery({ queryKey: computed(() => ["activities", "daily", daily
 // the workouts from the day before the stretch on, so its first night knows whether the day before had one
 const wkRange = computed(() => ({ from: new Date(plus(range.value.from, -1) + "T00:00").toISOString(), to: new Date(range.value.to + "T00:00").toISOString(), limit: 1000 }));
 const wq = useWorkouts(wkRange);
-const loading = computed(() => allQ.isLoading.value || (!isNight.value && (q.isLoading.value || dailyQ.isLoading.value)));
-const failed = computed(() => allQ.isError.value || (!isNight.value && (q.isError.value || dailyQ.isError.value)));
-const retry = () => { allQ.refetch(); q.refetch(); dailyQ.refetch(); };
+const nightQs = [monthQ, olderQ, newerQ];
+const periodQs = [q, recentQ, dailyQ];
+const loading = computed(() => (isNight.value ? nightQs : periodQs).some((x) => x.isLoading.value));
+const failed = computed(() => (isNight.value ? nightQs : periodQs).some((x) => x.isError.value));
+const failure = computed(() => (isNight.value ? nightQs : periodQs).map((x) => x.error.value).find(Boolean) as Error | undefined);
+const retry = () => { for (const x of isNight.value ? nightQs : periodQs) x.refetch(); };
 
 const nights = computed<SleepNight[]>(() => q.data.value?.nights ?? []);
-const recent = computed<SleepNight[]>(() => all.value.filter((n) => n.date > plus(today, -31)));
+const recent = computed<SleepNight[]>(() => recentQ.data.value?.nights ?? []);
 // the nights that count as nights (not naps or partial records), for every average and usual time
 const full = computed(() => nights.value.filter(isFull));
 const staged = computed(() => nights.value.some(hasStages));
@@ -122,7 +127,7 @@ const shortCount = computed(() => days.value.length - nightDays.value.length);
 // last night: the newest of the last 30 days, when the chosen period takes it in (an older period shows only its own);
 // named "Last night" when it ended today
 const last = computed(() => { const n = recent.value[0]; return n && n.date >= range.value.from && n.date < range.value.to ? n : null; });
-const lastName = computed(() => !last.value ? "" : last.value.date === localYmd(new Date()) ? "Last night" : fmt.value.date(last.value.date, { weekday: "long", day: "numeric", month: "short" }));
+const lastName = computed(() => !last.value ? "" : last.value.date === today.value ? "Last night" : fmt.value.date(last.value.date, { weekday: "long", day: "numeric", month: "short" }));
 // in running text a percent sits right after its number, to a tenth only when the band gave one
 const pc = (v: number) => `${fmt.value.num(v, Number.isInteger(v) ? 0 : 1)}%`;
 
@@ -202,8 +207,8 @@ const signed = (m: number) => `${m < 0 ? "-" : "+"}${mins(Math.abs(m))}`;
 const insights = computed(() => {
   const out: Insight[] = [];
   const l = last.value, r = recent.value;
-  // said of last night only: an older night (the newest in a while) has its own card and sheet; a short record isn't a
-  // night to compare (its card says so), and the 30-day usual is of nights only
+  // said of last night only: an older night is seen in full in the Night view; a short record isn't a night to compare
+  // (the Night view says so), and the 30-day usual is of nights only
   const rf = r.filter(isFull);
   if (l && lastName.value === "Last night" && isFull(l)) {
     const before = rf.filter((n) => n.date !== l.date);
@@ -218,7 +223,7 @@ const insights = computed(() => {
       }
     }
     if (l.deepMin != null && l.asleepMin) out.push({ icon: "layers", t: "Deep sleep last night", s: deepPct.value != null && full.value.length > 3 ? `${deepPct.value}% on average` : undefined, rv: `${Math.round((l.deepMin / l.asleepMin) * 100)}%` });
-    if ((l.awakeMin ?? 0) >= 30) out.push({ icon: "timer", t: "Awake during the night", rv: mins(l.awakeMin!) });
+    if ((l.awakeMin ?? 0) >= 30) out.push({ icon: "eye", t: "Awake during the night", rv: mins(l.awakeMin!) });
     if (l.minSpo2 != null && l.minSpo2 < 90) out.push({ icon: "water", t: "Blood oxygen dipped during the night", s: "its lowest reading", rv: pc(l.minSpo2) });
   }
   // the last 7 nights' bedtimes, earliest to latest
@@ -232,7 +237,7 @@ const insights = computed(() => {
   const nd = nightDays.value;
   if (nd.length >= 5) {
     const under = nd.filter((x) => x.min < 420).length;
-    if (under) out.push({ icon: "stats", t: "Nights under 7 hours", s: "most adults need 7-9", rv: `${under} of ${nd.length}`, tone: under > nd.length / 2 ? "neg" : undefined });
+    if (under) out.push({ icon: "target", t: "Nights under 7 hours", s: "most adults need 7-9", rv: `${under} of ${nd.length}`, tone: under > nd.length / 2 ? "neg" : undefined });
   }
   const wkend = full.value.filter((n) => [5, 6].includes(new Date(n.startAt).getDay())), wkday = full.value.filter((n) => ![5, 6].includes(new Date(n.startAt).getDay()));
   if (wkend.length >= 2 && wkday.length >= 4) {
@@ -275,18 +280,26 @@ const list = computed(() => showAll.value ? nights.value : nights.value.slice(0,
 </script>
 
 <template>
-  <DayNav :title="title" :unit="isNight ? 'night' : view" :at-end="hasToday" :away="!hasToday" @step="shift" @today="anchor = today" />
+  <DayNav :title="title" :unit="isNight ? 'night' : view" :at-end="hasToday" :away="away" :home="isNight ? 'Last night' : 'Today'" @step="shift" @today="anchor = today" />
 
-  <div v-if="failed" class="card empty"><Icon name="info" :size="34" /><b>Couldn't load your sleep</b>{{ ((allQ.error.value ?? q.error.value ?? dailyQ.error.value) as Error | null)?.message }}<br /><button class="btn tonal" @click="retry">Try again</button></div>
+  <div v-if="failed" class="card empty"><Icon name="info" :size="34" /><b>Couldn't load your sleep</b>{{ failure?.message }}<br /><button class="btn tonal" @click="retry">Try again</button></div>
   <div v-else-if="loading" class="empty">Loading…</div>
 
   <template v-else-if="isNight">
-    <div v-if="!night" class="card empty"><Icon name="moon" :size="34" /><b>No nights from your {{ adviceWord(dev) }} yet</b>Wear it to bed to see each night's stages and times. Pick Week, Month or Year for the hours of sleep you logged.</div>
     <!-- the night in full: its time asleep, tiles, stages and curves, each part under a faint line -->
-    <div v-else class="card wkc">
+    <div v-if="night" class="card wkc">
       <div class="ch"><span class="bi"><Icon name="moon" :size="15" /></span><span class="t grow">Sleep</span><span class="tiny">{{ fmt.time(night.startAt) }}-{{ fmt.time(night.endAt) }}</span></div>
       <NightView :date="night.date" no-times />
     </div>
+    <!-- a day with only its hours of sleep: those hours, and why there is no more -->
+    <div v-else-if="dayHours" class="card wkc">
+      <div class="ch"><span class="bi"><Icon name="moon" :size="15" /></span><span class="t grow">Sleep</span><span class="tiny">Daily log</span></div>
+      <div class="gs-top"><span class="gs-ico"><Icon name="moon" :size="28" /></span><div class="grow"><div class="gs-val">{{ mins(dayHours * 60) }}<small>asleep</small></div>
+        <div class="tiny">Only the hours of sleep were logged for this day, no night from your {{ deviceWord(dev) }}: its stages and times show for nights it hands over.</div></div></div>
+    </div>
+    <div v-else-if="dayQ.isFetching.value" class="empty">Loading…</div>
+    <div v-else-if="!stepList.length" class="card empty"><Icon name="moon" :size="34" /><b>No nights from your {{ adviceWord(dev) }} yet</b>Wear it to bed to see each night's stages and times. Pick Week, Month or Year for the hours of sleep you logged.</div>
+    <div v-else class="card empty"><Icon name="moon" :size="34" /><b>{{ anchor === today ? "Last night isn't here yet" : "No night on this day" }}</b>{{ anchor === today ? `It shows once your ${deviceWord(dev)} has synced. ` : "" }}Pick another night with the arrows.</div>
   </template>
 
   <template v-else>
@@ -298,15 +311,15 @@ const list = computed(() => showAll.value ? nights.value : nights.value.slice(0,
         <div v-if="bed" class="card stat"><div class="lbl"><span class="bi"><Icon name="clock" :size="15" /></span>Bedtime</div><div class="val">{{ clock(bed.at) }}</div><div class="sub">{{ spread(bed)[0] }} <span class="nw">{{ spread(bed)[1] }}</span></div></div>
         <div v-if="wake" class="card stat"><div class="lbl"><span class="bi"><Icon name="bell" :size="15" /></span>Wake time</div><div class="val">{{ clock(wake.at) }}</div><div class="sub">{{ spread(wake)[0] }} <span class="nw">{{ spread(wake)[1] }}</span></div></div>
         <div v-if="deepPct != null" class="card stat"><div class="lbl"><span class="bi"><Icon name="layers" :size="15" /></span>Deep sleep</div><div class="val">{{ deepPct }}<small>%</small></div><div class="sub">of time asleep</div></div>
-        <div v-else-if="avgBed != null" class="card stat"><div class="lbl"><span class="bi"><Icon name="timer" :size="15" /></span>In bed</div><div class="val">{{ mins(avgBed) }}</div><div class="sub">{{ Math.round(avgEff! * 100) }}% of it asleep</div></div>
+        <div v-else-if="avgBed != null" class="card stat"><div class="lbl"><span class="bi"><Icon name="bed" :size="15" /></span>In bed</div><div class="val">{{ mins(avgBed) }}</div><div class="sub">{{ Math.round(avgEff! * 100) }}% of it asleep</div></div>
       </div>
       <!-- the best and worst night and the sleep debt, once there are nights to compare -->
       <div v-if="nightDays.length > 1" class="card wkc spt">
         <div class="ch"><span class="bi"><Icon name="stats" :size="15" /></span><span class="t grow">Best and worst nights</span></div>
         <div class="wstats rows2">
-          <div class="ws" :class="{ click: longest!.night }" :role="longest!.night ? 'button' : 'group'" :tabindex="longest!.night ? 0 : undefined" @keydown.enter="openNight(longest!.night?.date)" :aria-label="`Longest night ${mins(longest!.min)} ${day(longest!.date)}`" @click="openNight(longest!.night?.date)"><div class="wlb"><Icon name="trophy" :size="14" />Longest night</div><div class="wv">{{ mins(longest!.min) }}</div><div class="wd">{{ day(longest!.date) }}</div></div>
-          <div class="ws" :class="{ click: shortest!.night }" :role="shortest!.night ? 'button' : 'group'" :tabindex="shortest!.night ? 0 : undefined" @keydown.enter="openNight(shortest!.night?.date)" :aria-label="`Shortest night ${mins(shortest!.min)} ${day(shortest!.date)}`" @click="openNight(shortest!.night?.date)"><div class="wlb"><Icon name="moon" :size="14" />Shortest night</div><div class="wv">{{ mins(shortest!.min) }}</div><div class="wd">{{ day(shortest!.date) }}</div></div>
-          <div class="ws" role="group" :aria-label="`Sleep debt ${debt ? mins(debt) : 'none'}`"><div class="wlb"><Icon name="timer" :size="14" />Sleep debt</div><div class="wv" :class="{ pos: !debt }">{{ debt ? mins(debt) : "None" }}</div><div class="wd">{{ debt ? `short of ${BAND[0]}h on ${debtNights.length} of ${nightDays.length}` : `${BAND[0]}h or more each night` }}</div></div>
+          <div class="ws" :class="{ click: longest!.night }" :role="longest!.night ? 'button' : 'group'" :tabindex="longest!.night ? 0 : undefined" @keydown.enter="openNight(longest!.night?.date)" :aria-label="`Longest night ${mins(longest!.min)} ${day(longest!.date)}`" @click="openNight(longest!.night?.date)"><div class="wlb"><Icon name="trophy" :size="14" />Longest night<Icon v-if="longest!.night" name="right" :size="14" class="wgo" /></div><div class="wv">{{ mins(longest!.min) }}</div><div class="wd">{{ day(longest!.date) }}</div></div>
+          <div class="ws" :class="{ click: shortest!.night }" :role="shortest!.night ? 'button' : 'group'" :tabindex="shortest!.night ? 0 : undefined" @keydown.enter="openNight(shortest!.night?.date)" :aria-label="`Shortest night ${mins(shortest!.min)} ${day(shortest!.date)}`" @click="openNight(shortest!.night?.date)"><div class="wlb"><Icon name="moon" :size="14" />Shortest night<Icon v-if="shortest!.night" name="right" :size="14" class="wgo" /></div><div class="wv">{{ mins(shortest!.min) }}</div><div class="wd">{{ day(shortest!.date) }}</div></div>
+          <div class="ws" role="group" :aria-label="`Sleep debt ${debt ? mins(debt) : 'none'}`"><div class="wlb"><Icon name="arrowDown" :size="14" />Sleep debt</div><div class="wv" :class="{ pos: !debt }">{{ debt ? mins(debt) : "None" }}</div><div class="wd">{{ debt ? `short of ${BAND[0]}h on ${debtNights.length} of ${nightDays.length}` : `${BAND[0]}h or more each night` }}</div></div>
         </div>
       </div>
 
@@ -370,7 +383,7 @@ const list = computed(() => showAll.value ? nights.value : nights.value.slice(0,
 .sl-ins .li:first-child { padding-top: 0; }
 .sl-ins .grow { min-width: 0; }
 .rv { font-variant-numeric: tabular-nums; white-space: nowrap; }
-.sl-line { margin-top: 6px; }
+.sl-line { margin-top: var(--tdy); }
 .nw { white-space: nowrap; }
 .sl-leg { margin-top: var(--hg); }
 </style>

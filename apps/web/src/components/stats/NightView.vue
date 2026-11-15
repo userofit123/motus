@@ -1,16 +1,16 @@
 <script setup lang="ts">
-// One night in full, for Stats → Sleep's Night view and a night's sheet (Home, History): time asleep against the time in
-// bed as a ring; when you fell asleep and woke up, the time awake and the lowest heart rate as a report's tiles; the
-// stages across the night (a hypnogram, from the band's saved sleep record) with the time and share of each; a plain
-// check of the night against common guidelines (not a score); the heart rate, blood oxygen and breathing through the
-// night; and the workouts and activities since the day before began. A night imported before band records were kept
-// has no record: it shows its totals (the stage bar, the night's own heart rate series), never empty charts.
+// One night in full, for Stats → Sleep's Night view: time asleep against the time in bed as a ring; when you fell asleep
+// and woke up, the time awake and the lowest heart rate as a report's tiles; the stages across the night (a hypnogram,
+// from the band's saved sleep record) with the time of each, adding up to the ring's time asleep and the tile's time
+// awake; the heart rate, blood oxygen and breathing through the night; and the workouts and activities since the day
+// before began. A night imported before band records were kept has no record: it shows its totals (the stage bar, the
+// night's own heart rate series), never empty charts.
 // Each part after the first a block-padding below the one before, under a faint line, as Stats → Heart's day.
 import { computed } from "vue";
 import { useQuery, keepPreviousData } from "@tanstack/vue-query";
 import { ymd } from "@motus/shared";
 import { api } from "../../api/client";
-import type { SleepNight } from "../../api/queries";
+import { useSleepNight } from "../../api/queries";
 import { useFmt } from "../../core/format";
 import { asleepMin, inBedMin, efficiency, hasStages, isFull, mins, nightSegments, SEG_NAME, segColor, SHORT_WHY, type Seg, type SleepRecord } from "../../core/sleep";
 import { hrSamples } from "../../core/heart";
@@ -21,29 +21,29 @@ import LineChart from "../LineChart.vue";
 import StageBar from "./StageBar.vue";
 import Hypnogram from "./Hypnogram.vue";
 import DaySessionList from "./DaySessionList.vue";
-import { useDaySessions, type DaySession } from "./daySessions";
+import { useDaySessions, noRecords, type DaySession } from "./daySessions";
 
 // noTimes: the night's times are in the card's header (Stats → Sleep), so not in the line under the ring
 const props = defineProps<{ date: string; noTimes?: boolean }>();
 const fmt = useFmt();
 const dev = useDevice();
-// the same key as useSleepNight, keeping the night before while the next loads, so stepping a night doesn't flash
-const nq = useQuery({ queryKey: computed(() => ["health", "sleep", "night", props.date]), placeholderData: keepPreviousData,
-  queryFn: () => api.get<SleepNight & { hr: [number, number][] | null }>(`/health/sleep/${props.date}`) });
+// keeping the night before while the next loads, so stepping a night doesn't flash
+const nq = useSleepNight(computed(() => props.date), { keep: true });
 const n = computed(() => nq.data.value ?? null);
 const t0 = computed(() => (n.value ? Date.parse(n.value.startAt) : 0)), t1 = computed(() => (n.value ? Date.parse(n.value.endAt) : 0));
 const iso = (ms: number) => new Date(ms).toISOString();
 const clock = (ms: number) => fmt.value.time(iso(ms));
 
 // the saved records around the night: its sleep record (an hour either side, a record can start before the night's
-// summary does), its blood oxygen and breathing readings, and its heart rate samples
+// summary does), its blood oxygen and breathing readings, and its heart rate samples; under the "readings" keys, so a
+// change to the saved records (a sync, a deletion) reloads them
 type Reading = { start: string; value?: number };
 const on = computed(() => !!n.value);
-const sleepQ = useQuery({ queryKey: computed(() => ["health", "records", "sleep", props.date, t0.value]), enabled: on, placeholderData: keepPreviousData, retry: false,
+const sleepQ = useQuery({ queryKey: computed(() => ["readings", "night", "sleep", props.date, t0.value]), enabled: on, placeholderData: keepPreviousData, retry: false,
   queryFn: () => api.get<{ records: SleepRecord[] }>("/health/records", { type: "sleep", from: iso(t0.value - 3600_000), to: iso(t1.value + 3600_000) }) });
-const readQ = useQuery({ queryKey: computed(() => ["health", "records", "spo2,resp_rate", props.date, t0.value]), enabled: on, placeholderData: keepPreviousData, retry: false,
+const readQ = useQuery({ queryKey: computed(() => ["readings", "night", "spo2,resp_rate", props.date, t0.value]), enabled: on, placeholderData: keepPreviousData, retry: false,
   queryFn: () => api.get<{ records: (Reading & { type: string })[] }>("/health/records", { type: "spo2,resp_rate", from: iso(t0.value), to: iso(t1.value) }) });
-const hrQ = useQuery({ queryKey: computed(() => ["health", "records", "heart_rate", "night", props.date, t0.value]), enabled: on, placeholderData: keepPreviousData, retry: false,
+const hrQ = useQuery({ queryKey: computed(() => ["readings", "night", "heart_rate", props.date, t0.value]), enabled: on, placeholderData: keepPreviousData, retry: false,
   queryFn: () => hrSamples(new Date(t0.value), new Date(t1.value)) });
 
 const segs = computed<Seg[]>(() => (n.value && sleepQ.data.value ? nightSegments(sleepQ.data.value.records, n.value.startAt, n.value.endAt) : []));
@@ -67,7 +67,6 @@ const awakeMin = computed(() => (segs.value.length ? wakes.value.reduce((t, s) =
 const samples = computed<[number, number][]>(() => (hrQ.data.value?.length ? hrQ.data.value : n.value?.hr ?? []));
 const low = computed(() => samples.value.reduce<[number, number] | null>((m, p) => (!m || p[1] < m[1] ? p : m), null));
 const lowHr = computed(() => low.value?.[1] ?? n.value?.minHr ?? null);
-const avgHr = computed(() => (samples.value.length ? Math.round(samples.value.reduce((t, p) => t + p[1], 0) / samples.value.length) : n.value?.avgHr ?? null));
 
 type Tile = { key: string; icon: string; label: string; value: string; unit: string; sub: string };
 const tiles = computed<Tile[]>(() => {
@@ -76,42 +75,22 @@ const tiles = computed<Tile[]>(() => {
   const apart = (a: number, b: number) => Math.abs(a - b) >= 5 * 60_000;
   out.push({ key: "fell", icon: "clock", label: "Fell asleep", value: clock(fell.value), unit: "", sub: apart(fell.value, t0.value) ? `in bed ${clock(t0.value)}` : "" });
   out.push({ key: "woke", icon: "bell", label: "Woke up", value: clock(woke.value), unit: "", sub: apart(woke.value, t1.value) ? `up ${clock(t1.value)}` : "" });
-  if (awakeMin.value) out.push({ key: "awake", icon: "timer", label: "Awake", value: mins(awakeMin.value), unit: "", sub: wakes.value.length ? (wakes.value.length === 1 ? "once" : `${wakes.value.length} times`) : "during the night" });
-  if (lowHr.value != null) out.push({ key: "hr", icon: "heart", label: "Lowest heart rate", value: fmt.value.num(lowHr.value, 0), unit: "bpm", sub: low.value ? `at ${clock(low.value[0] * 1000)}` : avgHr.value != null ? `average ${avgHr.value}` : "" });
+  if (awakeMin.value) out.push({ key: "awake", icon: "eye", label: "Awake", value: mins(awakeMin.value), unit: "", sub: wakes.value.length ? (wakes.value.length === 1 ? "once" : `${wakes.value.length} times`) : "during the night" });
+  if (lowHr.value != null) out.push({ key: "hr", icon: "heart", label: "Lowest heart rate", value: fmt.value.num(lowHr.value, 0), unit: "bpm", sub: low.value ? `at ${clock(low.value[0] * 1000)}` : "" });
   return out;
 });
 
-// the time in each stage: from the record's stretches between falling asleep and waking up, else the night's totals
+// the time in each stage, from the record's stretches over the whole hypnogram, so the bar shows what the chart draws:
+// the stages asleep scaled to add up to the night's time asleep (the ring's), the time awake the Awake tile's
 const parts = computed(() => {
-  if (!asleepSegs.value.length) return null;
+  if (!n.value || !asleepSegs.value.length) return null;
   const m = new Map<Seg["k"], number>();
-  for (const s of segs.value) if (s.b > fell.value && s.a < woke.value) m.set(s.k, (m.get(s.k) ?? 0) + (Math.min(s.b, woke.value) - Math.max(s.a, fell.value)) / 60000);
-  return (["deep", "light", "rem", "asleep", "awake"] as const).map((k) => ({ key: k, name: SEG_NAME[k], color: segColor(k), min: Math.round(m.get(k) ?? 0) }));
+  for (const s of asleepSegs.value) m.set(s.k, (m.get(s.k) ?? 0) + (s.b - s.a) / 60000);
+  const drawnAsleep = [...m.values()].reduce((t, v) => t + v, 0), k = drawnAsleep ? asleepMin(n.value) / drawnAsleep : 1;
+  return (["deep", "light", "rem", "asleep", "awake"] as const).map((key) => ({ key, name: SEG_NAME[key], color: segColor(key), min: Math.round(key === "awake" ? awakeMin.value ?? 0 : (m.get(key) ?? 0) * k) }));
 });
 // a hypnogram once the record tells more than one stretch apart
 const drawn = computed(() => segs.value.length > 1);
-
-// the night against common guidelines, each said plainly with its number; a summary of how many were met, not a score
-type Check = { icon: string; t: string; s: string; rv: string; ok: boolean | null };
-const pc = (v: number) => `${Math.round(v * 100)}%`;
-const checks = computed<Check[]>(() => {
-  const x = n.value;
-  if (!x || !isFull(x)) return [];
-  const a = asleepMin(x), e = efficiency(x), out: Check[] = [];
-  out.push(a < 420 ? { icon: "moon", t: "Under 7 hours", s: "most adults need 7-9 hours", rv: mins(a), ok: false }
-    : a > 540 ? { icon: "moon", t: "Over 9 hours", s: "most adults need 7-9 hours", rv: mins(a), ok: null }
-    : { icon: "moon", t: "Long enough", s: "most adults need 7-9 hours", rv: mins(a), ok: true });
-  if (x.awakeMin != null || segs.value.length) out.push(e >= 0.85 ? { icon: "timer", t: "Little time awake in bed", s: "85% or more of it asleep is good", rv: pc(e), ok: true }
-    : { icon: "timer", t: "A lot of time awake in bed", s: "85% or more of it asleep is good", rv: pc(e), ok: false });
-  const deep = parts.value ? parts.value.find((p) => p.key === "deep")!.min : x.deepMin;
-  const slept = parts.value ? parts.value.filter((p) => p.key !== "awake").reduce((t, p) => t + p.min, 0) : x.asleepMin;
-  if (hasStages(x) && deep != null && slept) {
-    const d = deep / slept;
-    out.push(d >= 0.13 ? { icon: "layers", t: "Enough deep sleep", s: "adults usually get 13-23%", rv: pc(d), ok: true } : { icon: "layers", t: "Little deep sleep", s: "adults usually get 13-23%", rv: pc(d), ok: false });
-  }
-  return out;
-});
-const good = computed(() => checks.value.filter((c) => c.ok).length);
 
 // blood oxygen and breathing through the night, each a line once it has two readings, else the night's own averages
 const series = (type: string) => (readQ.data.value?.records ?? []).filter((r) => r.type === type && r.value != null).map((r) => ({ x: Date.parse(r.start), y: r.value!, label: fmt.value.time(r.start) }));
@@ -125,7 +104,8 @@ const curves = computed(() => {
   const pct = (v: number) => `${p1(Math.round(v * 10) / 10)}%`, bpm = (v: number) => `${fmt.value.num(v, 0)} bpm`, br1 = (v: number) => `${fmt.value.num(v, 0)} breaths/min`;
   return [
     { id: "hr", name: "Heart rate (bpm)", pts: hr, f: (v: number) => fmt.value.num(v, 0),
-      line: hr.length ? `${line(hr.map((p) => p.y), bpm, true)}${low.value ? ` at ${clock(low.value[0] * 1000)}` : ""}` : [x.avgHr != null ? `average ${bpm(x.avgHr)}` : "", x.minHr != null ? `lowest ${bpm(x.minHr)}` : ""].filter(Boolean).join(" · ") },
+      // the average only: the lowest is in its tile above
+      line: hr.length ? line(hr.map((p) => p.y), bpm, false) : x.avgHr != null ? `average ${bpm(x.avgHr)}` : "" },
     { id: "spo2", name: "Blood oxygen (%)", pts: sp, f: p1,
       line: sp.length ? line(sp.map((p) => p.y), pct, true) : [x.avgSpo2 != null ? `average ${pct(x.avgSpo2)}` : "", x.minSpo2 != null ? `lowest ${pct(x.minSpo2)}` : ""].filter(Boolean).join(" · ") },
     { id: "resp", name: "Breathing rate (breaths/min)", pts: br, f: (v: number) => fmt.value.num(v, 0),
@@ -171,18 +151,7 @@ const beforeBed = (x: DaySession) => mins(Math.max(0, t0.value - x.b) / 60000);
       <Hypnogram v-if="drawn" class="hgap" :segs="segs" :from="from" :to="to" :xt="xt" />
       <StageBar v-if="parts" :parts="parts" />
       <StageBar v-else :night="n" />
-      <div v-if="!drawn" class="tiny nv-line">The stages across the night show for nights your {{ deviceWord(dev) }} has synced since Motus began saving every record.</div>
-    </div>
-
-    <div v-if="checks.length" class="nv-sec">
-      <div class="lbl hgap">How the night went · {{ good }} of {{ checks.length }} as recommended</div>
-      <div class="list nv-list">
-        <div v-for="c in checks" :key="c.icon" class="li">
-          <Icon :name="c.icon" :size="18" :class="c.ok === true ? 'pos' : c.ok === false ? 'neg' : 'muted'" />
-          <div class="grow"><div class="t">{{ c.t }}</div><div class="s">{{ c.s }}</div></div>
-          <b class="r rv" :class="c.ok === true ? 'pos' : c.ok === false ? 'neg' : ''">{{ c.rv }}</b>
-        </div>
-      </div>
+      <div v-if="!drawn" class="tiny nv-line">{{ noRecords("night") }}</div>
     </div>
 
     <div v-for="c in curves" :key="c.id" class="nv-sec">
@@ -202,9 +171,5 @@ const beforeBed = (x: DaySession) => mins(Math.max(0, t0.value - x.b) / 60000);
 .nv-note { margin-top: var(--hg); }
 /* each part a block-padding below the one before, under a faint line, as Stats → Heart's day */
 .nv-sec { margin-top: var(--cpy); padding-top: var(--cpy); border-top: 1px solid var(--ol); }
-.nv-line { margin-top: 6px; }
-.nv-list .li:first-child { padding-top: 0; }
-.nv-list .li:last-child { border-bottom: 0; padding-bottom: 0; }
-.nv-list .grow { min-width: 0; }
-.rv { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.nv-line { margin-top: var(--tdy); }
 </style>

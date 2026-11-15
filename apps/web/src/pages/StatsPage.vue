@@ -22,7 +22,7 @@ import FilterPanel from "../components/FilterPanel.vue";
 import FilterRow from "../components/FilterRow.vue";
 import LearnButton from "../components/learn/LearnButton.vue";
 import SleepTab, { type SleepView } from "../components/stats/SleepTab.vue";
-import HeartTab from "../components/stats/HeartTab.vue";
+import HeartTab, { type HeartView } from "../components/stats/HeartTab.vue";
 import StepsTab, { type StepsView } from "../components/stats/StepsTab.vue";
 
 const route = useRoute(), router = useRouter();
@@ -42,8 +42,10 @@ const stepsView = ref<StepsView>("day");
 // Sleep the same, a night at a time in its Day's place
 const SLEEP_VIEWS = [{ value: "night", label: "Night" }, ...STEP_VIEWS.slice(1)];
 const sleepView = ref<SleepView>("night");
+// Heart the same as Steps: a day, or the week, month or year around it
+const heartView = ref<HeartView>("day");
 const stepsDay = computed(() => (typeof route.query.day === "string" && /^\d{4}-\d\d-\d\d$/.test(route.query.day) ? route.query.day : undefined));
-// Steps' and Heart's day pickers write the shown day into the link, so a refresh or Back keeps it
+// Steps', Sleep's and Heart's day pickers write the shown day into the link, so a refresh or Back keeps it
 const setDay = (day: string) => { if (day !== stepsDay.value) router.replace({ query: { ...route.query, day } }); };
 const rk = ref<StatsPeriod>("3m");
 const per = computed(() => statsPeriod(rk.value, new Date(), s.value.firstDay));
@@ -155,6 +157,7 @@ watch(() => avail.data.value, () => { if (!TABS.value.some(([k]) => k === tab.va
     <div class="ph"><div><h1>Stats</h1></div>
       <div v-if="tab === 'steps'" class="acts"><AppSelect v-model="stepsView" :options="STEP_VIEWS" title="View" style="width:auto" /></div>
       <div v-else-if="tab === 'sleep'" class="acts"><AppSelect v-model="sleepView" :options="SLEEP_VIEWS" title="View" style="width:auto" /></div>
+      <div v-else-if="tab === 'heart'" class="acts"><AppSelect v-model="heartView" :options="STEP_VIEWS" title="View" style="width:auto" /></div>
       <div v-else-if="tab !== 'reports'" class="acts"><AppSelect v-model="rk" :options="PERIODS" title="Period" style="width:auto" /></div></div>
     <div class="tabs"><button v-for="[k, l] in TABS" :key="k" :class="{ on: tab === k }" @click="tab = k!">{{ l }}</button></div>
 <Transition name="sw" mode="out-in"><div :key="tab">
@@ -243,8 +246,8 @@ watch(() => avail.data.value, () => { if (!TABS.value.some(([k]) => k === tab.va
     </template>
 
     <StepsTab v-else-if="tab === 'steps'" v-model:view="stepsView" :day="stepsDay" @update:day="setDay" />
-    <SleepTab v-else-if="tab === 'sleep'" v-model:view="sleepView" :day="stepsDay" />
-    <HeartTab v-else-if="tab === 'heart'" :from="per.from" :to="per.to" :daily="d.daily" :day="stepsDay" @update:day="setDay" />
+    <SleepTab v-else-if="tab === 'sleep'" v-model:view="sleepView" :day="stepsDay" @update:day="setDay" />
+    <HeartTab v-else-if="tab === 'heart'" v-model:view="heartView" :day="stepsDay" @update:day="setDay" />
 
     <Reports v-else-if="tab === 'reports'" />
 

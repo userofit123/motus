@@ -161,7 +161,7 @@ const dayTiles = computed(() => {
   const stats = (tab: string) => () => router.push(`/stats?tab=${tab}&day=${d.date}`);
   if (d.sleep) { const n = d.sleep; out.push({ key: "sleep", icon: "moon", label: "Sleep", value: mins(asleepMin(n)), unit: "", sub: `${fmt.value.time(n.startAt)}-${fmt.value.time(n.endAt)}`, open: stats("sleep") }); }
   else if (d.sleepH) out.push({ key: "sleep", icon: "moon", label: "Sleep", value: mins(d.sleepH * 60), unit: "", sub: "Daily log", open: stats("sleep") });
-  if (d.restingHr != null) out.push({ key: "rhr", icon: "heartPulse", label: "Resting heart rate", value: String(Math.round(d.restingHr)), unit: "bpm", sub: d.hrv != null ? `HRV ${Math.round(d.hrv)} ms` : "" , open: stats("heart") });
+  if (d.restingHr != null) out.push({ key: "rhr", icon: "heartPulse", label: "Resting heart rate", value: String(Math.round(d.restingHr)), unit: "bpm", sub: d.hrv != null ? `HRV ${Math.round(d.hrv)} ms` : "", open: stats("heart") });
   const dist = d.distanceM ? fmt.value.dist(d.distanceM, 1) : "";
   // the day's steps open it on Stats → Steps (its hours, against your usual day)
   if (d.steps) out.push({ key: "steps", icon: "steps", label: "Steps", value: fmt.value.num(d.steps, 0), unit: "", sub: dist, open: stats("steps") });
@@ -245,7 +245,7 @@ await loaded(cal, listWorkouts, listActs);
           <div :class="{ dsess: dayTiles.length }">
           <div v-if="!(byDay.get(sel) ?? []).length" class="tiny">{{ sel >= today ? "Nothing planned. Use Plan to put a routine on this day." : "Nothing on this day." }}</div>
           <div class="list"><div v-for="x in byDay.get(sel) ?? []" :key="x.id ?? x.scheduleId" class="li click" @click="open(x)">
-            <Icon :name="icon(x)" :size="18" :style="{ color: x.color ?? 'var(--acc)' }" /><div class="grow"><div class="t" :style="x.missed ? { opacity: .5 } : undefined">{{ label(x) }}</div><div class="s"><template v-if="x.kind === 'planned'">{{ x.missed ? "Missed" : "Planned workout" }}</template><DotLine v-else :parts="[fmt.time(x.startedAt), hrPart(x)].filter((p) => p != null)" /></div></div><SessionStats v-if="x.kind !== 'planned'" :x="x" /><span v-if="x.kind === 'planned'" @click.stop><Menu :items="unplanItems(x)" :label="`Options for ${x.name}`" /></span><Icon v-else name="right" class="muted" /></div></div>
+            <Icon :name="icon(x)" :size="18" :style="{ color: x.color ?? (x.kind === 'activity' ? 'var(--c3)' : 'var(--acc)') }" /><div class="grow"><div class="t" :style="x.missed ? { opacity: .5 } : undefined">{{ label(x) }}</div><div class="s"><template v-if="x.kind === 'planned'">{{ x.missed ? "Missed" : "Planned workout" }}</template><DotLine v-else :parts="[fmt.time(x.startedAt), hrPart(x)].filter((p) => p != null)" /></div></div><SessionStats v-if="x.kind !== 'planned'" :x="x" /><span v-if="x.kind === 'planned'" @click.stop><Menu :items="unplanItems(x)" :label="`Options for ${x.name}`" /></span><Icon v-else name="right" class="muted" /></div></div>
           </div>
         </div>
       </div>
@@ -266,7 +266,7 @@ await loaded(cal, listWorkouts, listActs);
       <div v-if="!list.length" class="card empty"><Icon name="calendar" :size="34" /><b>Nothing yet</b>Finished workouts and activities show here.</div>
       <section v-for="[m, xs] in listGroups" :key="m"><div class="sh"><h2>{{ m }}</h2><span class="tiny">{{ xs.length }}</span></div>
         <div class="card"><div class="list"><div v-for="x in xs" :key="x.id" class="li click" @click="open(x)">
-          <Icon :name="icon(x)" :size="18" :style="{ color: x.color ?? 'var(--acc)' }" />
+          <Icon :name="icon(x)" :size="18" :style="{ color: x.color ?? (x.kind === 'activity' ? 'var(--c3)' : 'var(--acc)') }" />
           <div class="grow"><div class="t">{{ label(x) }}</div><DotLine class="s" :parts="[fmt.date(x.startedAt, { weekday: 'short', day: 'numeric', month: 'short' }), fmt.time(x.startedAt), hrPart(x)].filter((p) => p != null)" /></div>
           <SessionStats :x="x" />
         </div></div></div>
@@ -286,10 +286,6 @@ await loaded(cal, listWorkouts, listActs);
 /* the phone shows these as rows whose label column is what the subtitles leave over: with the tighter gap "Resting heart rate" still fits beside a night's times; a longer label wraps instead of running under its value */
 .dtiles { column-gap: var(--hg); }
 .dtiles .wlb { white-space: normal; }
-.dtiles .ws.click { border-radius: var(--r-sm); cursor: pointer; }
-/* a tile that opens its Stats tab: a chevron at the end of its label, and the rows' hover tint */
-.dtiles .ws.click:hover { background: color-mix(in srgb, var(--tx) 3%, transparent); }
-.dtiles .wlb .wgo { margin-inline-start: auto; color: var(--tx2); }
 /* a workout's heart rate in its row's line: the small heart in the line's colour, beside its number */
 /* a day's steps: a thin bar on the cell's bottom edge, out of the way of its entries and dots; the track (the cell's width
    inside its padding) has no colour of its own, so a short bar reads as few steps and none as no steps */

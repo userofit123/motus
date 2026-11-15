@@ -31,7 +31,6 @@ import SessionStats from "../components/SessionStats.vue";
 import DotLine from "../components/DotLine.vue";
 import TodayHero from "../components/home/TodayHero.vue";
 import StageBar from "../components/stats/StageBar.vue";
-import NightSheet from "../components/stats/NightSheet.vue";
 import { adviceWord, useDevice } from "../native/health";
 
 const router = useRouter();
@@ -219,7 +218,6 @@ const yesterday = localYmd(new Date(Date.now() - 86400000));
 const nightsQ = useSleep({ from: yesterday, to: tomorrowYmd() });
 const night = computed(() => nightsQ.data.value?.nights?.[0] ?? null);
 const nightName = computed(() => (night.value?.date === today ? "Last night" : night.value ? fmt.value.date(night.value.date, { weekday: "long" }) : ""));
-const nightOpen = ref<string | null>(null);
 // a short record (a nap, or a band that slipped off) isn't the night: the block says so plainly, and readiness leaves it out
 const nightShort = computed(() => !!night.value && !isFull(night.value));
 const READY_TEXT: Record<string, string> = { Ready: "Rested and recovered. A good day to train hard.", Normal: "About your usual. Train as planned.", "Take it easy": "Still recovering. Keep today light." };
@@ -645,8 +643,8 @@ await loaded(home, ach, avail, hDay, ready, nightsQ, dailyQ);
           </div>
         </div>
 
-        <!-- the newest night: time asleep with the share of the time in bed as its ring (as the night's sheet), then its stages -->
-        <div v-else-if="id === 'sleep' && night" class="card hb sz-m click" :data-solo="solo.has(id) || undefined" v-bind="link(() => (nightOpen = night!.date))">
+        <!-- the newest night: time asleep with the share of the time in bed as its ring (as Stats → Sleep's night), then its stages; it opens that night there -->
+        <div v-else-if="id === 'sleep' && night" class="card hb sz-m click" :data-solo="solo.has(id) || undefined" v-bind="link(`/stats?tab=sleep&day=${night.date}`)">
           <div class="ch"><span class="bi"><Icon name="moon" :size="15" /></span><span class="t grow">{{ nightName }}</span><span class="tiny">{{ fmt.time(night.startAt) }}-{{ fmt.time(night.endAt) }}</span></div>
           <div class="row"><div class="big grow">{{ mins(asleepMin(night)) }}<small>{{ nightShort ? "short record" : "asleep" }}</small></div><Ring :pct="efficiency(night)" :size="40" /></div>
           <div v-if="nightShort" class="tiny">{{ SHORT_WHY }}</div>
@@ -656,7 +654,7 @@ await loaded(home, ach, avail, hDay, ready, nightsQ, dailyQ);
 
         <!-- heart: resting heart rate and HRV against your usual, blood oxygen and today's range with its average as This
              week's tiles, each only when there, then today's line filling the rest of the block -->
-        <div v-else-if="id === 'heart'" class="card hb wkc sz-m click" :data-solo="solo.has(id) || undefined" v-bind="link('/stats?tab=heart')">
+        <div v-else-if="id === 'heart'" class="card hb wkc sz-m click" :data-solo="solo.has(id) || undefined" v-bind="link(`/stats?tab=heart&day=${today}`)">
           <div class="ch"><span class="bi"><Icon name="heart" :size="15" /></span><span class="t grow">Heart</span><span v-if="heartDelta" class="tiny">Vs your usual</span></div>
           <div class="wstats hrows" :class="{ n4: heartStats.length === 4 }">
             <div v-for="x in heartStats" :key="x.key" class="ws" role="group" :aria-label="[x.label, x.value, x.unit, x.delta].filter(Boolean).join(' ')">
@@ -703,7 +701,6 @@ await loaded(home, ach, avail, hDay, ready, nightsQ, dailyQ);
     <div v-else class="card empty"><Icon name="info" :size="34" /><b>Couldn't load Home</b>{{ (home.error.value as Error | null)?.message }}<br /><button class="btn tonal" @click="home.refetch()">Try again</button></div>
 
     <ScheduleEditor v-if="planOpen" :schedule="planOpen" @close="planOpen = null" />
-    <NightSheet v-if="nightOpen" :date="nightOpen" @close="nightOpen = null" />
     <GoalSheet v-if="goalOpen" :id="goalOpen" @close="goalOpen = null" @edit="(g) => router.push(`/goals?edit=${g.id}`)" @status="goalStatus" @delete="goalDelete" />
     <Sheet v-if="pinOpen" title="Pinned goals" @close="pinOpen = false">
       <p class="tiny hgap">Each pinned goal gets its own block on Home, in this order. Weekly and monthly goals can bring their streak along.</p>

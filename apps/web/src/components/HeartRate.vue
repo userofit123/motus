@@ -2,7 +2,7 @@
 // Heart rate during one activity or workout, from a band through Health Connect: average and highest as small tiles
 // (laid out as Stats → Routines' cards, the value as a workout's Average rest), then the beats per minute over the
 // session's time. Only the tiles when the band handed over an average and no readings. chart: the line alone, for a
-// night's sheet (Stats → Sleep), whose numbers are already in its tiles above. sessions: a routine's (its page's History
+// day card (Stats → Heart), whose numbers are already in its tiles above. sessions: a routine's (its page's History
 // tab) average per session over the days instead of one session's readings; a point opens that workout (pick).
 // day: a whole day's readings (Stats → Heart), drawn midnight to midnight with the hours under it, left open where the
 // band read nothing, the day's workouts and activities shaded behind it in their colours (spans) and the hours given in
