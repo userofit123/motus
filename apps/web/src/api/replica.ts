@@ -147,9 +147,8 @@ export async function startReplica(user: { id: string }): Promise<boolean> {
         if (!meta.ready) throw e;
       }
       if (fresh) {
-        if (remake) await R.clearCopy(db);
-        await R.loadCatalog(db, fresh.cat.stamp, fresh.cat.rows);
-        await R.loadSnapshot(db, fresh.snap);
+        if (remake) await R.remakeCopy(db, fresh.cat, fresh.snap);
+        else { await R.loadCatalog(db, fresh.cat.stamp, fresh.cat.rows); await R.loadSnapshot(db, fresh.snap); }
       }
     }
     // nothing is saved on its own (pglite.ts): the tables and the first copy go to disk now, not with the first change
@@ -219,6 +218,18 @@ async function run(): Promise<Error | null> {
     for (;;) {
       const m = await R.replicaMeta(db);
       const p = await call("GET", `/sync/pull?since=${m.cursor}&device=${encodeURIComponent(m.device)}&user=${encodeURIComponent(userId)}`);
+      // everything was replaced on the server (a restore): the copy is made again from it, as the changes would leave
+      // rows only this copy had beside the restored ones (M-257). What was waiting here went first (above); a change
+      // made since then goes on the next run, which then makes the copy again.
+      if (p.reset) {
+        if (await R.waitingCount(db)) { again = true; break; }
+        const cat = await call("GET", "/sync/catalog");
+        const snap = await httpTransport.request("GET", `/sync/snapshot?user=${encodeURIComponent(userId)}`, undefined, { wait: 120_000 });
+        wrote = true; changed = true;
+        await R.remakeCopy(db, cat, snap);
+        retry.length = 0;
+        break;
+      }
       if (p.catalog !== m.catalog) { const cat = await call("GET", "/sync/catalog"); wrote = true; await R.loadCatalog(db, cat.stamp, cat.rows); changed = true; }
       // an empty page only moves the cursor, which is no reason to save
       if (p.changes.length) { wrote = true; changed = true; }

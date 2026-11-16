@@ -49,7 +49,11 @@ export function syncRoutes(r: Router) {
       const row = e.op === "upsert" ? rows.get(keyOf(e.tbl, e.pk)) ?? null : null;
       return { tbl: e.tbl, pk: e.pk, op: row ? "upsert" : "delete", at: e.at, row };
     });
-    return { cursor, more: page.length === PAGE, catalog: await catalogStamp(q), changes };
+    // everything was replaced since this copy was made or last caught up (a restore, 049): the app makes its copy again
+    // from a snapshot (sync/replica.ts remakeCopy), as the changes would leave a row only the device had (M-257). The
+    // changes still come, for an app from before this that applies them as before.
+    const reset = since > 0 && since < Number((await q.query("SELECT seq FROM sync_resets")).rows[0]?.seq ?? 0);
+    return { cursor, more: page.length === PAGE, catalog: await catalogStamp(q), changes, ...(reset ? { reset } : {}) };
   });
 
   r.post("/sync/push", async (ctx, _p, b) => {

@@ -8,10 +8,12 @@ import { uuidv7 } from "../ids";
 
 /**
  * v: how the copy was made. Copies older than COPY_VERSION are made again from the server (once nothing here is
- * waiting to be sent): one made before M-184 may hold rows another account's sign-in pulled into it.
+ * waiting to be sent): one made before M-184 may hold rows another account's sign-in pulled into it (1); one from
+ * before M-257 may hold rows the server refused, such as a restore done in the copy before restores went to the
+ * server, which a later restore there gave new ids, so the copy showed them twice (2).
  */
 export interface ReplicaMeta { cursor: number; pushed: number; device: string; catalog: string; ready: boolean; v: number }
-export const COPY_VERSION = 1;
+export const COPY_VERSION = 2;
 
 export const replicaMeta = (db: Db) => metaOf(db.admin);
 async function metaOf(q: Sql): Promise<ReplicaMeta> {
@@ -36,19 +38,24 @@ export async function loadCatalog(db: Db, stamp: string, rows: Record<string, un
   await saveMeta(db, { catalog: stamp });
 }
 
+type Snapshot = { cursor: number; user: any; tables: Record<string, Record<string, unknown>[]> };
 /** The first full copy: the person, then every table, parents first. Nothing of this is sent back. */
-export async function loadSnapshot(db: Db, snap: { cursor: number; user: any; tables: Record<string, Record<string, unknown>[]> }) {
-  await db.tx(async (q) => {
-    await q.query("SELECT set_config('motus.sync_apply', '1', true)");
-    const u = snap.user;
-    await q.query(`INSERT INTO users (id, username, display_name, email, role) VALUES ($1, $2, $3, $4, $5)
-      ON CONFLICT (id) DO UPDATE SET username = $2, display_name = $3, email = $4, role = $5`, [u.id, u.username, u.display_name ?? "", u.email ?? null, u.role ?? "user"]);
-    for (const t of SYNCED) {
-      const rows = snap.tables[t.name] ?? [];
-      for (let i = 0; i < rows.length; i += 200)
-        await q.query(`INSERT INTO ${t.name} SELECT * FROM jsonb_populate_recordset(NULL::${t.name}, $1::jsonb) ON CONFLICT DO NOTHING`, [JSON.stringify(rows.slice(i, i + 200))]);
-    }
-  });
+export async function loadSnapshot(db: Db, snap: Snapshot) {
+  await db.tx((q) => writeSnapshot(q, snap));
+  return snapshotLoaded(db, snap);
+}
+async function writeSnapshot(q: Sql, snap: Snapshot) {
+  await q.query("SELECT set_config('motus.sync_apply', '1', true)");
+  const u = snap.user;
+  await q.query(`INSERT INTO users (id, username, display_name, email, role) VALUES ($1, $2, $3, $4, $5)
+    ON CONFLICT (id) DO UPDATE SET username = $2, display_name = $3, email = $4, role = $5`, [u.id, u.username, u.display_name ?? "", u.email ?? null, u.role ?? "user"]);
+  for (const t of SYNCED) {
+    const rows = snap.tables[t.name] ?? [];
+    for (let i = 0; i < rows.length; i += 200)
+      await q.query(`INSERT INTO ${t.name} SELECT * FROM jsonb_populate_recordset(NULL::${t.name}, $1::jsonb) ON CONFLICT DO NOTHING`, [JSON.stringify(rows.slice(i, i + 200))]);
+  }
+}
+async function snapshotLoaded(db: Db, snap: Snapshot) {
   const pushed = Number((await db.admin.query("SELECT coalesce(max(seq), 0) AS s FROM sync_log")).rows[0].s);
   return saveMeta(db, { cursor: snap.cursor, pushed, device: (await replicaMeta(db)).device || uuidv7(), ready: true, v: COPY_VERSION });
 }
@@ -61,12 +68,25 @@ export const outdated = (m: ReplicaMeta) => m.ready && m.v < COPY_VERSION;
  * would be lost). The shared catalog stays; the device keeps its name.
  */
 export async function clearCopy(db: Db) {
-  await db.tx(async (q) => {
-    await q.query("SELECT set_config('motus.sync_apply', '1', true)");
-    for (const t of [...SYNCED].reverse()) await q.query(`DELETE FROM ${t.name}${t.name === "exercises" ? " WHERE owner_id IS NOT NULL" : ""}`);
-    await q.query("DELETE FROM sync_log");
-  });
+  await db.tx(clearRows);
   await saveMeta(db, { ready: false, cursor: 0 });
+}
+async function clearRows(q: Sql) {
+  await q.query("SELECT set_config('motus.sync_apply', '1', true)");
+  for (const t of [...SYNCED].reverse()) await q.query(`DELETE FROM ${t.name}${t.name === "exercises" ? " WHERE owner_id IS NOT NULL" : ""}`);
+  await q.query("DELETE FROM sync_log");
+}
+
+/**
+ * The copy made again from the server's catalog and snapshot (fetched first, so a failed fetch leaves the copy as it
+ * was): after a restore with Replace on the server (the pull says reset), or for an outdated copy. Only with nothing
+ * waiting to be sent: what is waiting is lost.
+ */
+export async function remakeCopy(db: Db, cat: { stamp: string; rows: Record<string, unknown>[] }, snap: Snapshot) {
+  await loadCatalog(db, cat.stamp, cat.rows);
+  // emptied and filled in one go, so a screen reading meanwhile sees the old rows or the new ones, never none
+  await db.tx(async (q) => { await clearRows(q); await writeSnapshot(q, snap); });
+  return snapshotLoaded(db, snap);
 }
 
 /** What changed here since the last send (the latest change per row), and up to where in the log that goes. */
