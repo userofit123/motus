@@ -2,6 +2,18 @@
 
 The top entry's version is the one the release workflow publishes. Add a new `## [x.y.z]` section to release.
 
+## [0.1.36] - 2026-11-16
+
+- 
+
+## [0.1.36] - 2026-11-16
+
+- Every chart over time can be zoomed: pinch it on a phone, or use Ctrl + scroll wheel or a trackpad pinch on a computer, and scroll left and right through it. Day by hour has zoom in and zoom out buttons instead of full screen, and the Sleep night's charts zoom together so they stay lined up.
+- Tapping a chart shows its tooltip and never leaves the page. When the item can open (a workout, day, week, night or session), the tooltip ends with › and tapping the tooltip opens it.
+- Home's Today at a glance block lets you choose its rings in Edit home, and Readiness opens Stats → Scores, where it is shown in full, even with Health scores switched off.
+- Home's "Today's calendar" block is now called "Your day".
+- Scores with an aim to reach show your number with the aim beside it, e.g. "5 days · aim for 2 days or more", instead of "5 of 2".
+
 ## [0.1.35] - 2026-11-16
 
 - Voice cues work everywhere: when a rest ends you hear the rest over sound, then the next set spoken, e.g. "Rest over. Bench press, set 3, 8 reps at 80 kilos". If your browser, the desktop app or the phone has no English voice, Motus speaks in its own built-in voice, so nothing needs installing. Turning Voice cues on in Features switches everything it needs on and plays an example; if the phone can't speak, a message says why and where to fix it.
