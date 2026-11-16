@@ -255,8 +255,8 @@ await loaded(cal, listWorkouts, listActs);
           </div>
           <div v-if="tlHas" :class="{ csec: dayTiles.length }"><div class="lbl hgap">Day by hour</div>
             <DayTimeline :tl="tl" :day="tlDay" :sessions="tlSessions" @open="(tab) => router.push(`/stats?tab=${tab}&day=${tlDay}`)" @pick="(id) => router.push(id)" /></div>
-          <div :class="{ 'csec dsess': dayTop }"><div v-if="dayTop" class="lbl hgap">Workouts and activities</div>
-          <div v-if="!(byDay.get(sel) ?? []).length" class="tiny">{{ sel >= today ? "Nothing planned. Use Plan to put a routine on this day." : "Nothing on this day." }}</div>
+          <div :class="{ 'csec dsess': dayTop }"><div v-if="dayTop && (byDay.get(sel) ?? []).length" class="lbl hgap">Workouts and activities</div>
+          <div v-if="!(byDay.get(sel) ?? []).length" class="tiny">{{ sel >= today ? "Nothing planned. Use Plan to put a routine on this day." : "No workouts or activities on this day." }}</div>
           <div class="list"><div v-for="x in byDay.get(sel) ?? []" :key="x.id ?? x.scheduleId" class="li click" @click="open(x)">
             <Icon :name="icon(x)" :size="18" :style="{ color: x.color ?? (x.kind === 'activity' ? ACTIVITY_COLOR : WORKOUT_COLOR) }" /><div class="grow"><div class="t" :style="x.missed ? { opacity: .5 } : undefined">{{ label(x) }}</div><div class="s"><template v-if="x.kind === 'planned'">{{ x.missed ? "Missed" : "Planned workout" }}</template><DotLine v-else :parts="[fmt.time(x.startedAt), hrPart(x)].filter((p) => p != null)" /></div></div><SessionStats v-if="x.kind !== 'planned'" :x="x" /><span v-if="x.kind === 'planned'" @click.stop><Menu :items="unplanItems(x)" :label="`Options for ${x.name}`" /></span><Icon v-else name="right" class="muted" /></div></div>
           </div>
