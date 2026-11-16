@@ -2,6 +2,10 @@
 
 The top entry's version is the one the release workflow publishes. Add a new `## [x.y.z]` section to release.
 
+## [0.1.34] - 2026-11-16
+
+- Home suggestions name specific muscles your routines miss, even inside a group you train, e.g. "Add an exercise for your lower back (along your lower spine)", with one plain reason. Dismissing one hides only that muscle for a week.
+
 ## [0.1.33] - 2026-11-16
 
 - Voice cues work: when a rest ends Motus says the next set (e.g. "Bench press, set 3, 8 reps at 80 kilos") and "10 seconds" before it, also with the screen locked; music gets quieter while it speaks. Needs Play sounds on.
