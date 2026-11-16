@@ -275,15 +275,17 @@ type BodyKey = Exclude<ReadinessPart["key"], "load">;
 // resting heart rate and HRV are the day's, which their rows below give ("today", or "yesterday").
 const WHY: Record<ReadinessPart["key"], { up: string; down: string }> = {
   sleep: { up: "you slept more last night", down: "you slept less last night" },
-  restingHr: { up: "your resting heart rate is down", down: "your resting heart rate is up" },
-  hrv: { up: "your HRV is up", down: "your HRV is down" },
+  // the heart's parts by what they mean, not which way the number went: a lower resting heart rate is the good one and
+  // a higher HRV is, which a non-expert can't tell from "down"/"up"; the same two words for both so "but" reads plainly
+  restingHr: { up: "your resting heart rate looks rested", down: "your resting heart rate looks tired" },
+  hrv: { up: "your HRV looks rested", down: "your HRV looks tired" },
   load: { up: "you trained less in the last 7 days", down: "you trained more in the last 7 days" },
 };
 // the parts a calm day names, so the line never claims a part the score left out (e.g. a night too short to count)
 const NAME: Record<ReadinessPart["key"], string> = { sleep: "sleep", restingHr: "resting heart rate", hrv: "HRV", load: "training" };
-const ADVICE = { Ready: "a good day to train hard", Normal: "train as planned", "Take it easy": "keep today light" } as const;
+const ADVICE = { Ready: "a good day to train hard", Normal: "train as planned", "Take it easy": "train lightly today" } as const;
 // Normal when everything named pulled the score down: "train as planned" would contradict the reasons before it
-const NORMAL_DOWN = "keep today moderate";
+const NORMAL_DOWN = "train moderately today";
 export interface ReadinessBuilding { key: BodyKey; value: number; days: number; ago?: 1 }
 /**
  * How ready for training the body looks today, from last night's sleep, today's resting heart rate and HRV, each against
@@ -298,8 +300,9 @@ export interface ReadinessBuilding { key: BodyKey; value: number; days: number; 
  *   clamped to 0-100. Ready from 75, Normal from 50, else Take it easy. No score with fewer than 2 body parts (sleep,
  *   resting heart rate, HRV): the load alone says nothing about how the body has recovered.
  * why: one line from the (at most two) parts that moved the score most, then what the label advises ("You slept less
- * last night and your resting heart rate is up: keep today light"; a Normal day whose named parts all lowered it: "keep
- * today moderate"); sleep names its night, the load its 7 days, so the line says which time each cause covers.
+ * last night and your resting heart rate looks tired: train lightly today"; a Normal day whose named
+ * parts all lowered it: "train moderately today"); sleep names its night, the load its 7 days, so the line says
+ * which time each cause covers.
  * M-247's Recovery score reuses this rather than working out its own. ago: a part's value is yesterday's (absent: today's).
  * change: sleep in minutes, resting heart rate and HRV in % (signed). effect: which way the part moves the score; flat
  * within a small margin (15 min of sleep, 3 % resting heart rate, 5 % HRV) that is everyday noise.
@@ -347,12 +350,16 @@ export function readiness(parts: { key: BodyKey; value: number; history: number[
   const label = s >= 75 ? "Ready" : s >= 50 ? "Normal" : "Take it easy";
   return { score: s, label, why: whyLine(moved, out.map((p) => p.key), label, out.some((p) => p.key === "sleep" && p.ago)), parts: out, building, need: MIN_BASELINE };
 }
-/** The readiness line: the one or two parts that moved the score most ("and" when they agree, "but" when not), then the
- *  advice: "You slept less last night and your resting heart rate is up: keep today light." With none moved, the parts
- *  the score used: "Your resting heart rate and HRV are close to your usual: train as planned." sleepAgo: the night the
- *  score used is the one before last (last night's has not synced yet). */
+/** The readiness line: the one or two parts that moved the score most ("and" when they agree, "but" when not, the one
+ *  that agrees with the advice last), then the advice: "You slept less last night and your resting heart rate shows
+ *  you're tired: train lightly today." With none moved, the parts the score used: "Your resting heart rate and
+ *  HRV are close to your usual: train as planned." sleepAgo: the night the score used is the one before last (last
+ *  night's has not synced yet). */
 function whyLine(moved: Map<ReadinessPart["key"], number>, used: ReadinessPart["key"][], label: keyof typeof ADVICE, sleepAgo = false): string {
   const top = [...moved].sort((a, b) => Math.abs(b[1]) - Math.abs(a[1])).slice(0, 2);
+  // in "A but B" B reads as the point, so it is the cause that agrees with the advice (Ready: the one that raised the
+  // score, Take it easy: the one that lowered it); Normal keeps the bigger cause first
+  if (top.length === 2 && (top[0]![1] > 0) !== (top[1]![1] > 0) && label !== "Normal" && (top[1]![1] > 0) !== (label === "Ready")) top.reverse();
   if (!top.length) {
     const names = used.map((k) => NAME[k]).join(", ").replace(/, ([^,]*)$/, " and $1");
     return `Your ${names} are close to your usual: ${ADVICE[label]}.`;

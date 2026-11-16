@@ -227,7 +227,7 @@ const night = computed(() => nightsQ.data.value?.nights?.[0] ?? null);
 const nightName = computed(() => (night.value?.date === today ? "Last night" : night.value ? fmt.value.date(night.value.date, { weekday: "long" }) : ""));
 // a short record (a nap, or a band that slipped off) isn't the night: the block says so plainly, and readiness leaves it out
 const nightShort = computed(() => !!night.value && !isFull(night.value));
-const READY_TEXT: Record<string, string> = { Ready: "Rested and recovered. A good day to train hard.", Normal: "About your usual. Train as planned.", "Take it easy": "Still recovering. Keep today light." };
+const READY_TEXT: Record<string, string> = { Ready: "Rested and recovered. A good day to train hard.", Normal: "About your usual. Train as planned.", "Take it easy": "Still recovering. Train lightly today." };
 // each part as a report's highlight (rows from core/readiness.ts, as Stats → Scores shows them)
 const PART = READY_PART;
 // every part in one list, in the order of the score's parts (sleep, resting heart rate, HRV, then the training load);
