@@ -112,38 +112,8 @@ export const REFS: Record<string, Ref[]> = {
   goals: [{ col: "scope_id", table: (r) => (r.scope === "routine" ? "routines" : r.scope === "exercise" ? "exercises" : null), required: true }],
 };
 
-/** The code of a failure for a required reference to someone else's row (ownRefs). */
-export const FOREIGN_REF = "FOREIGN_REF";
-export interface Failure { change: Change; error: string; code?: string; detail?: string }
-
-/**
- * Tables whose rows the server may give a new id when their own is another account's (modules/sync.ts push): every
- * reference to them is in REFS (or a program's days), so a row pointing at one can be pointed at the new id. Not
- * exercises or schedules, whose ids are part of other rows' keys (exercise_prefs, schedule_exceptions).
- */
-export const REKEYABLE = new Set(["folders", "programs", "routines", "routine_exercises", "routine_sets", "routine_versions", "workouts",
-  "workout_exercises", "workout_sets", "notes", "reminders", "goals", "activity_types", "activities", "body_metrics"]);
-
-/**
- * A row with its references to moved rows pointed at their new ids. moves: "table:old id" → new id. Returns the row
- * (a copy) and whether anything changed. A program's days point into routines.
- */
-export function remapRefs(tbl: string, row: Record<string, unknown>, moves: Map<string, string>): { row: Record<string, unknown>; changed: boolean } {
-  const out = { ...row };
-  let changed = false;
-  for (const ref of REFS[tbl] ?? []) {
-    const v = out[ref.col];
-    const table = v == null ? null : typeof ref.table === "string" ? ref.table : ref.table(out);
-    const to = table ? moves.get(table + ":" + v) : undefined;
-    if (to) { out[ref.col] = to; changed = true; }
-  }
-  if (tbl === "programs" && Array.isArray(out.weeks))
-    out.weeks = (out.weeks as unknown[]).map((w) => {
-      if (!isWeek(w)) return w;
-      return { ...w, days: w.days.map((d) => { const to = moves.get("routines:" + d); if (to) changed = true; return to ?? d; }) };
-    });
-  return { row: out, changed };
-}
+/** A row that couldn't be written, and why: code is the database's SQLSTATE (modules/sync.ts push sorts failures by it). */
+export interface Failure { change: Change; error: string; code?: string }
 
 /** A program's week as a device sends it (untrusted JSON): only its days are looked at, the rest is kept as sent. */
 type Week = Record<string, unknown> & { days: unknown[] };
@@ -173,7 +143,7 @@ async function ownRefs(q: Sql, tbl: string, row: Record<string, unknown>, foreig
     if (v == null) continue;
     const table = typeof ref.table === "string" ? ref.table : ref.table(row);
     if (!table || (await canSee(table, v))) continue;
-    if (ref.required) throw Object.assign(new Error(`${ref.col} points at a row this person can't see`), { code: FOREIGN_REF });
+    if (ref.required) throw new Error(`${ref.col} points at a row this person can't see`);
     row[ref.col] = null;
     cleared = true;
   }
@@ -225,8 +195,7 @@ export async function applyChanges(q: Sql, userId: string, changes: Change[], op
   // a row of these deleted or written marks or writes the import log, whose deletion takes the records lock (034, 041),
   // and afterRecords writes them under it: taken first, before any row (modules/healthDerive.ts lockRecords)
   if (changes.some((c) => HEALTH_TABLES.has(c.tbl))) await lockRecords(q, userId);
-  // code: the SQLSTATE (or FOREIGN_REF, ownRefs), detail: the database's detail; what the server makes of a failure
-  // depends on them (modules/sync.ts push)
+  // code: the SQLSTATE, if any: what the server makes of a failure depends on it (modules/sync.ts push)
   const failed: Failure[] = [];
   // upserts that were not written: the row here is a finished workout and the change would reopen it, or a trigger
   // skipped it (the device then gets the row as it is here, or its deletion)
@@ -284,8 +253,8 @@ export async function applyChanges(q: Sql, userId: string, changes: Change[], op
       await q.query("RELEASE SAVEPOINT motus_row");
     } catch (e) {
       await q.query("ROLLBACK TO SAVEPOINT motus_row");
-      const err = e as Error & { code?: unknown; detail?: unknown };
-      failed.push({ change: c, error: err.message, code: typeof err.code === "string" ? err.code : undefined, detail: typeof err.detail === "string" ? err.detail : undefined });
+      const err = e as Error & { code?: unknown };
+      failed.push({ change: c, error: err.message, code: typeof err.code === "string" ? err.code : undefined });
     }
   }
   if (opts.apply) await q.query("SELECT set_config('motus.sync_apply', '', true)");
