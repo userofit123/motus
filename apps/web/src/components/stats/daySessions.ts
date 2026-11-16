@@ -78,8 +78,8 @@ export function legendOf(sessions: DaySession[]) {
 }
 
 /** The hour labels both day charts use: midnight, 6, 12 and 18 o'clock of the day, as [ms, text] */
-export function dayHours(day: string, fmt: ReturnType<typeof useFmt>["value"]) {
-  return [0, 6, 12, 18].map((h) => { const d = new Date(day + "T00:00"); d.setHours(h, 0, 0, 0); return { at: d.getTime(), text: fmt.time(d.toISOString()) }; });
+export function dayHours(day: string, fmt: ReturnType<typeof useFmt>["value"], every = 6) {
+  return Array.from({ length: Math.ceil(24 / every) }, (_, i) => i * every).map((h) => { const d = new Date(day + "T00:00"); d.setHours(h, 0, 0, 0); return { at: d.getTime(), text: fmt.time(d.toISOString()) }; });
 }
 
 /** What a day or night says when only its totals were saved (it synced before Motus kept every band record): the same

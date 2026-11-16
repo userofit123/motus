@@ -24,7 +24,7 @@ import DotLine from "../components/DotLine.vue";
 import SearchField from "../components/SearchField.vue";
 import ScheduleEditor from "../components/ScheduleEditor.vue";
 import SessionStats from "../components/SessionStats.vue";
-import DayTimeline from "../components/stats/DayTimeline.vue";
+import DayByHour from "../components/stats/DayByHour.vue";
 import { WORKOUT_COLOR, ACTIVITY_COLOR, useDaySessions } from "../components/stats/daySessions";
 import { useDayTimeline } from "../components/stats/dayTimeline";
 
@@ -253,8 +253,8 @@ await loaded(cal, listWorkouts, listActs);
               <div class="wd">{{ x.sub }}</div>
             </div>
           </div>
-          <div v-if="tlHas" :class="{ csec: dayTiles.length }"><div class="lbl hgap">Day by hour</div>
-            <DayTimeline :tl="tl" :day="tlDay" :sessions="tlSessions" @open="(tab) => router.push(`/stats?tab=${tab}&day=${tlDay}`)" @pick="(id) => router.push(id)" /></div>
+          <div v-if="tlHas" :class="{ csec: dayTiles.length }">
+            <DayByHour :tl="tl" :day="tlDay" :sessions="tlSessions" @open="(tab) => router.push(`/stats?tab=${tab}&day=${tlDay}`)" @pick="(id) => router.push(id)" /></div>
           <div :class="{ 'csec dsess': dayTop }"><div v-if="dayTop && (byDay.get(sel) ?? []).length" class="lbl hgap">Workouts and activities</div>
           <div v-if="!(byDay.get(sel) ?? []).length" class="tiny">{{ sel >= today ? "Nothing planned. Use Plan to put a routine on this day." : "No workouts or activities on this day." }}</div>
           <div class="list"><div v-for="x in byDay.get(sel) ?? []" :key="x.id ?? x.scheduleId" class="li click" @click="open(x)">

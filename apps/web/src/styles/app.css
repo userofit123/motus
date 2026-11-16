@@ -323,6 +323,18 @@ html.phone .sht .sh_h::before { content: ""; position: absolute; left: 50%; top:
 html.phone .sht .sh_h { position: relative; padding-top: 22px; }
 html.phone .sht { --shx: var(--cpx); }
 html.phone .sht .sh_b { padding: 4px var(--shx) calc(var(--cpy) + 3px); }
+/* the Calendar's Day by hour full screen (M-253): a large window on a computer, as tall as the chart; on a phone the whole
+   screen, no handle (it isn't pulled down), and turned on its side while the phone is held upright, so it is landscape */
+.sht.full.dbh-full { height: auto; }
+/* its chart's tip rises over the header, as it rises over the card's */
+.sht.dbh-full .sh_b { overflow: visible; }
+html.phone .scr.dbh-scr { padding: 0; align-items: stretch; background: var(--bg); }
+html.phone .sht.full.dbh-full { height: 100%; max-height: none; border: 0; border-radius: 0; box-shadow: none; animation: fo .15s; padding: var(--st) var(--sr) 0 var(--sl); }
+html.phone .sht.dbh-full .sh_h::before { content: none; }
+html.phone .sht.dbh-full .sh_h { padding-top: 16px; }
+/* turned a quarter clockwise, its sides lie along the screen's right, bottom, left and top edges, so take those insets */
+html.phone .sht.full.dbh-full.rot { position: fixed; top: 0; left: 100vw; width: 100vh; height: 100vw; left: 100dvw; width: 100dvh; height: 100dvw; transform-origin: top left; transform: rotate(90deg); padding: var(--sr) var(--sb) var(--sl) var(--st); }
+html.phone .sht.dbh-full.rot .sh_b:last-child { padding-bottom: calc(var(--cpy) + 3px); }
 html.phone .sht .sh_f { padding: 12px var(--cpx) calc(12px + var(--sb)); }
 /* the sheet runs to the screen's bottom edge, its background under the navigation bar; when it has no footer to lift,
    its body ends that far up instead, so its last row stays clear of the bar (--sb: env() or the Android app's bar size) */
