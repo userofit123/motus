@@ -22,3 +22,4 @@ export * from "./activity";
 export * from "./heart";
 export * from "./load";
 export * from "./scores";
+export * from "./suggest";

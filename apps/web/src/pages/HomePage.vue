@@ -4,7 +4,7 @@
 // (no reminder waiting, no goal due soon, no program running) stays away until it has; feature blocks need their feature.
 import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
-import { muscleName, num, fromM, percentChange, orderGoals, HOME_BLOCKS, type Goal, type HomePlan, type HomeRecord, type HomeGroup, type HomeWeek, type ScoreKey } from "@motus/shared";
+import { num, fromM, percentChange, orderGoals, HOME_BLOCKS, type Goal, type HomeData, type HomeSuggestion, type HomePlan, type HomeRecord, type HomeGroup, type HomeWeek, type ScoreKey } from "@motus/shared";
 import { useHome, useSettings, saveSettings, useAchievements, useGoals, useHealthAvailable, useHealthDay, useReadiness, useHealthScores, useSleep, useDaily, useTypeName, loaded, type HealthAvailable, type ReadinessPart, type ReadinessBuilding } from "../api/queries";
 import { api } from "../api/client";
 import { invalidate, queryClient } from "../api/live";
@@ -13,6 +13,7 @@ import { toast } from "../core/toast";
 import { onHome, streakOnHome, toggleHomeGoal, setHomeStreak, periodWord, goalSub } from "../core/goals";
 import { asleepMin, inBedMin, efficiency, hasStages, isFull, mins, SHORT_WHY } from "../core/sleep";
 import { SCORE_META, scoreRow, scoreWhy } from "../core/scores";
+import { READY_PART, readinessRows } from "../core/readiness";
 import { useFmt, unitOf, ago, goalLabel, localYmd, tomorrowYmd, hrPart } from "../core/format";
 import { reminderText } from "../core/reminderText";
 import { startPlan, unplanItems } from "../components/home/planActions";
@@ -31,6 +32,7 @@ import GoalSheet from "../components/GoalSheet.vue";
 import SessionStats from "../components/SessionStats.vue";
 import DotLine from "../components/DotLine.vue";
 import TodayHero from "../components/home/TodayHero.vue";
+import SuggestionRow from "../components/home/SuggestionRow.vue";
 import StageBar from "../components/stats/StageBar.vue";
 import { adviceWord, useDevice } from "../native/health";
 
@@ -70,7 +72,7 @@ const META: Record<string, { name: string; desc: string; icon: string; size: Siz
   activityToday: { name: "Activity today", desc: "Steps, distance and active calories today, and your last 7 days", icon: "steps", size: "m" },
   // Health scores: each only when its data is there (the server leaves a score out without it)
   scoreSleep: { name: "Sleep score", desc: "Your last 7 nights against the sleep guidelines", icon: "moon", size: "m" },
-  scoreActivity: { name: "Activity score", desc: "Your last 7 days of active minutes and steps against the guidelines", icon: "run", size: "m" },
+  scoreActivity: { name: "Activity score", desc: "Your last 7 days of active minutes and steps against the guidelines", icon: "steps", size: "m" },
   scoreStrength: { name: "Strength score", desc: "Your last 7 days of strength training against the guidelines", icon: "dumbbell", size: "m" },
 };
 // a block whose feature is off is absent everywhere, Edit home included
@@ -226,37 +228,16 @@ const nightName = computed(() => (night.value?.date === today ? "Last night" : n
 // a short record (a nap, or a band that slipped off) isn't the night: the block says so plainly, and readiness leaves it out
 const nightShort = computed(() => !!night.value && !isFull(night.value));
 const READY_TEXT: Record<string, string> = { Ready: "Rested and recovered. A good day to train hard.", Normal: "About your usual. Train as planned.", "Take it easy": "Still recovering. Keep today light." };
-// each part as a report's highlight: what and its value against your usual, then how far off it is, in the tone of what
-// it does to the score (raises it: positive, lowers it: negative)
-const bpm = (v: number) => `${Math.round(v)} bpm`, ms = (v: number) => `${Math.round(v)} ms`;
-const PART: Record<ReadinessPart["key"], { icon: string; t: string; f: (v: number) => string }> = {
-  // sleep comes in hours, as the day's log keeps it
-  sleep: { icon: "moon", t: "Sleep", f: (h) => mins(h * 60) }, restingHr: { icon: "heartPulse", t: "Resting heart rate", f: bpm }, hrv: { icon: "wave", t: "HRV", f: ms },
-  // Training load (a feature): the last 7 days' load against the weekly average of 4 weeks, as Stats → Heart's card
-  // ("840 in 7 days · usual 360 a week": a load has no unit, so each number says what span it covers)
-  load: { icon: "load", t: "Training load", f: (v) => `${fmt.value.num(v, 0)} in 7 days` },
-};
-const signedBy = (d: number, f: (v: number) => string) => `${Math.round(d) < 0 ? "-" : "+"}${f(Math.abs(d))}`;
-const readyParts = computed(() => (rd.value?.parts ?? []).filter((x) => x.value != null && PART[x.key]).map((x) => {
-  const p = PART[x.key];
-  return { key: x.key, icon: p.icon, t: p.t, s: x.baseline != null ? `${p.f(x.value!)} · usual ${x.key === "load" ? `${fmt.value.num(x.baseline, 0)} a week` : p.f(x.baseline)}` : p.f(x.value!),
-    // the load's points mean nothing alone: how far off is a share of the usual, as Stats → Heart's card says it
-    r: x.effect === "flat" || x.baseline == null ? "As usual" : x.key === "load" ? `${x.change! < 0 ? "-" : "+"}${Math.abs(Math.round(x.change!))}%` : signedBy(x.value! - x.baseline, p.f), tone: x.effect === "up" ? "pos" : x.effect === "down" ? "neg" : undefined };
-}));
-// a part still learning its usual: today's value and when its usual comes, as a ready part's row has its usual, and on
-// the right a muted word where a result goes (the days themselves are the block's big value)
-const buildingParts = computed(() => (rd.value?.building ?? []).filter((x) => PART[x.key]).map((x) => {
-  const p = PART[x.key];
-  return { key: x.key, icon: p.icon, t: p.t, s: `${p.f(x.value)} · usual in ${(rd.value!.need ?? 7) - x.days} ${(rd.value!.need ?? 7) - x.days === 1 ? "day" : "days"}`, r: "Learning", tone: "muted" };
-}));
+// each part as a report's highlight (rows from core/readiness.ts, as Stats → Scores shows them)
+const PART = READY_PART;
 // every part in one list, in the order of the score's parts (sleep, resting heart rate, HRV, then the training load);
 // the body's parts alone decide when a score comes (the load never waits on a usual of its own)
-const ORDER: ReadinessPart["key"][] = ["sleep", "restingHr", "hrv", "load"];
 const BODY: ReadinessBuilding["key"][] = ["sleep", "restingHr", "hrv"];
 // readiness leaves out a short record (under MIN_NIGHT_H) as no night; its row says why sleep isn't in the score
 const shortPart = computed(() => nightShort.value && !rd.value?.parts.some((x) => x.key === "sleep") && !rd.value?.building?.some((x) => x.key === "sleep")
-  ? [{ key: "sleep" as const, icon: PART.sleep.icon, t: PART.sleep.t, s: `${mins(asleepMin(night.value!))} · too short to count`, r: "Left out", tone: "muted" }] : []);
-const allParts = computed(() => [...readyParts.value, ...buildingParts.value, ...shortPart.value].sort((a, b) => ORDER.indexOf(a.key) - ORDER.indexOf(b.key)));
+  ? [{ key: "sleep" as const, icon: PART.sleep.icon, t: PART.sleep.t, s: `${mins(asleepMin(night.value!))} · too short to count`, r: "Left out", tone: "muted" as const }] : []);
+const allParts = computed(() => (rd.value ? readinessRows(rd.value, numOf, shortPart.value) : []));
+const hasReadyParts = computed(() => !!rd.value?.parts.some((x) => x.value != null));
 // without a score: the score needs two parts with a usual, so it waits on the second most advanced part (a part with a
 // usual counts as all its days, one with no readings as none); the ring fills as its days come in
 const readyWait = computed(() => {
@@ -338,11 +319,18 @@ const stepDays = computed(() => Array.from({ length: 7 }, (_, i) => {
 // the scale reaches the target too, so its line is always inside the bars' height
 const stepMax = computed(() => Math.max(1, stepGoal.value?.target ?? 0, ...stepDays.value.map((x) => x.n)));
 
-// a dismissed suggestion stays away until your next workout; the list redraws without waiting for the server
-const hideSuggestion = (key: string) => {
-  queryClient.setQueriesData({ queryKey: ["home"] }, (d: any) => d && { ...d, suggest: d.suggest.filter((x: any) => x.key !== key) });
-  saveSettings({ home: { hidden: { [key]: new Date().toISOString() } } }, { quiet: true });
+// a dismissed suggestion keeps its routine and muscle group away for a week, so a near-duplicate doesn't take its place;
+// the list redraws without waiting for the server
+const hideSuggestion = (x: HomeSuggestion) => {
+  const gone = (y: HomeSuggestion) => y.hide.some((k) => x.hide.includes(k));
+  queryClient.setQueriesData<HomeData>({ queryKey: ["home"] }, (d) => d && { ...d, suggest: d.suggest.filter((y) => !gone(y)) });
+  const at = new Date().toISOString();
+  saveSettings({ home: { hidden: Object.fromEntries(x.hide.map((k) => [k, at])) } }, { quiet: true });
 };
+// the block shows the first few; "All" opens the rest in a sheet
+const SUGGEST_SHOWN = 3;
+const suggestAll = ref(false);
+const planSuggestion = (routineId: string) => { suggestAll.value = false; planOpen.value = { rule: "once", routineId }; };
 
 // whether a switched-on block has something to show now
 const shows = (id: string): boolean => {
@@ -599,20 +587,11 @@ await loaded(home, ach, avail, hDay, ready, nightsQ, dailyQ);
           </div>
         </div>
 
-        <!-- suggestions: worked out from your order of routines, the muscles you've worked and what your routines leave out.
-             A routine opens its page; a muscle (or a gap in your routines) opens the exercises for it, and its + starts a
-             new routine -->
+        <!-- suggestions (rules in shared suggest.ts): the first few, and "All" for the rest in a sheet -->
         <div v-else-if="id === 'suggest'" class="card hb sz-m" :data-solo="solo.has(id) || undefined">
-          <div class="ch"><span class="bi"><Icon name="sparkle" :size="15" /></span><span class="t grow">Suggested</span></div>
+          <div class="ch"><span class="bi"><Icon name="sparkle" :size="15" /></span><span class="t grow">Suggested</span><button v-if="h.suggest.length > SUGGEST_SHOWN" class="lnk" @click="suggestAll = true">All</button></div>
           <TransitionGroup name="mv" tag="div" class="list">
-            <div v-for="x in h.suggest" :key="x.kind + (x.routineId ?? x.muscle)" class="li click">
-              <button class="cover" :aria-label="x.routineId ? `Open ${x.title}` : `Exercises for ${muscleName(x.muscle ?? '').toLowerCase()}`" @click="go(x.routineId ? `/routines/${x.routineId}` : `/exercises?muscle=${encodeURIComponent(x.muscle ?? '')}`)" />
-              <MuscleFig sm :routine="x.routineId ?? undefined" :muscles="x.routineId ? undefined : x.muscles ?? (x.muscle ? [x.muscle] : undefined)" />
-              <div class="grow"><div class="t">{{ x.title }}</div><div class="s">{{ x.reason }}</div></div>
-              <button v-if="x.routineId" class="ib sm over" aria-label="Plan" title="Plan" @click="planOpen = { rule: 'once', routineId: x.routineId }"><Icon name="calendar" :size="18" /></button>
-              <button v-else-if="x.muscle" class="ib sm over" aria-label="New routine" title="New routine" @click="go('/routines/new/edit')"><Icon name="plus" :size="18" /></button>
-              <button class="ib sm plain over" aria-label="Not now" title="Not now: hide until your next workout" @click="hideSuggestion(x.key)"><Icon name="close" :size="16" /></button>
-            </div>
+            <SuggestionRow v-for="x in h.suggest.slice(0, SUGGEST_SHOWN)" :key="x.key" :x="x" @plan="planSuggestion" @hide="hideSuggestion" />
           </TransitionGroup>
         </div>
 
@@ -646,7 +625,7 @@ await loaded(home, ach, avail, hDay, ready, nightsQ, dailyQ);
         <!-- readiness: the score as a pinned goal's value and ring, what it means, then what made it as a report's highlights;
              while the usual is being learnt, the days the score waits for in their place, and each part's days so far -->
         <div v-else-if="id === 'readiness' && rd" class="card hb sz-m click" :data-solo="solo.has(id) || undefined" v-bind="link('/stats?tab=heart')">
-          <div class="ch"><span class="bi"><Icon name="gauge" :size="15" /></span><span class="t grow">Readiness</span><span v-if="readyParts.length && !readyWait" class="tiny">Vs your usual</span></div>
+          <div class="ch"><span class="bi"><Icon name="gauge" :size="15" /></span><span class="t grow">Readiness</span><span v-if="hasReadyParts && !readyWait" class="tiny">Vs your usual</span></div>
           <div v-if="readyWait" class="row"><div class="big grow">{{ readyWait.left }}<small>{{ readyWait.left === 1 ? "day" : "days" }} until your score</small></div><Ring :pct="readyWait.days / readyWait.need" :size="40" /></div>
           <div v-else class="row"><div class="big grow">{{ rd.score }}<small v-if="rd.label">{{ rd.label }}</small></div><Ring :pct="rd.score! / 100" :size="40" :color="rd.label === 'Take it easy' ? 'var(--warn)' : undefined" /></div>
           <div v-if="readyWait" class="tiny">{{ readyWait.text }}</div>
@@ -733,6 +712,11 @@ await loaded(home, ach, avail, hDay, ready, nightsQ, dailyQ);
     <div v-else-if="home.isLoading.value" class="hgrid"><div class="card today-ph sz-l" /><div v-for="i in 2" :key="i" class="card sz-m today-ph" /></div>
     <div v-else class="card empty"><Icon name="info" :size="34" /><b>Couldn't load Home</b>{{ (home.error.value as Error | null)?.message }}<br /><button class="btn tonal" @click="home.refetch()">Try again</button></div>
 
+    <Sheet v-if="suggestAll && h?.suggest.length" title="Suggested" @close="suggestAll = false">
+      <TransitionGroup name="mv" tag="div" class="list">
+        <SuggestionRow v-for="x in h.suggest" :key="x.key" :x="x" @plan="planSuggestion" @hide="hideSuggestion" @go="suggestAll = false" />
+      </TransitionGroup>
+    </Sheet>
     <ScheduleEditor v-if="planOpen" :schedule="planOpen" @close="planOpen = null" />
     <GoalSheet v-if="goalOpen" :id="goalOpen" @close="goalOpen = null" @edit="(g) => router.push(`/goals?edit=${g.id}`)" @status="goalStatus" @delete="goalDelete" />
     <Sheet v-if="pinOpen" title="Pinned goals" @close="pinOpen = false">
@@ -837,13 +821,6 @@ html.phone .gtile { grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); }
 /* muscles: under the header the figure fills the rest of the block's height on the left, the groups beside it */
 .mfig { flex: 1; display: flex; align-items: stretch; gap: var(--cpx); min-width: 0; }
 .mside { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-/* a card that opens somewhere and also holds its own button: the card's link is a transparent button over the whole
-   card, and the inner button sits above it, so the two are siblings rather than one inside the other */
-.has-cover { position: relative; }
-.cover { position: absolute; inset: 0; z-index: 0; margin: 0; padding: 0; border: 0; background: none; border-radius: inherit; cursor: pointer; }
-.cover:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
-/* a row with a cover button too (Up next): its own controls stay above the cover, so they act instead of the row */
-:is(.has-cover, .li) .over { position: relative; z-index: 1; }
 /* the groups: name on the left, when on the right; two columns once the side is wide enough, one on the phone.
    Worked this week shows as an accent dot and a full-strength day, not yet as a faint dot (the streak dots' off look)
    and a muted day. 160px fits the longest name with the longest day ("Shoulders", "3 weeks ago") without cutting it */
@@ -869,7 +846,7 @@ html.phone .gtile { grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); }
 .hhl { margin-top: var(--cpy); border-top: 1px solid var(--ol); }
 .hhl .li:last-child { border-bottom: 0; padding-bottom: 0; }
 .hhl .grow { min-width: 0; }
-.hhl .s { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* a part's line wraps rather than cut off, as the same rows on Stats → Scores */
 /* a score's source under its parts, as the Stats cards' foot lines */
 .hsrc { margin-top: var(--tdy); }
 /* last night's stages under a faint line, as on Stats → Sleep's last-night card */

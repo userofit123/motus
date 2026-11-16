@@ -181,8 +181,11 @@ export function statsRoutes(r: Router) {
     const end = dayIn(new Date(now.getTime() + 7 * 86400000), tzMin);
     // the same rule as the calendar: a plan done (by its routine, its activity type, or started from it) drops out.
     // The whole week, uncut: Today lists every plan for today and marks the week's planned days; Up next shortens itself
-    const marked = await plannedMarked(ctx.q, today, end, tzMin);
+    // read two weeks ahead: a routine planned in that time is taken care of, so it is no longer suggested
+    const ahead = await plannedMarked(ctx.q, today, dayIn(new Date(now.getTime() + 14 * 86400000), tzMin), tzMin);
+    const marked = ahead.filter((p) => p.date <= end);
     const upNext = marked.filter((p) => !p.done).map(({ done: _, ...p }) => p);
+    const plannedRoutines = [...new Set(ahead.flatMap((p) => (!p.done && p.routineId ? [p.routineId] : [])))];
     // today's plans done or not, so Today says "Nothing else planned" once you've done them all, "Nothing planned" otherwise
     const plannedToday = marked.filter((p) => p.date === today).length;
     // the programs you're following get their own card on Home, so their next workout isn't also a suggestion
@@ -197,7 +200,7 @@ export function statsRoutes(r: Router) {
       programs.push({ id: p.id, name: p.name, weeks: (p.weeks ?? []).length, deloadPct: p.deload_pct, startDate: start, calendarWeek, ...st });
     }
     const routines = await routineSummaries(ctx.q, ctx.userId);
-    const suggest = (await suggestions(ctx.q, routines, now, s.home.hidden, tzMin)).filter((x) => x.kind !== "program" || (programsOn && !programs.length));
+    const suggest = (await suggestions(ctx.q, routines, now, s.home.hidden, tzMin, plannedRoutines)).filter((x) => x.kind !== "program" || (programsOn && !programs.length));
     const allGoals = await goalsWithProgress(ctx, tzMin);
     const goals = allGoals.filter((g) => g.status === "active").slice(0, 3);
     // the goals picked for the top of Home, in the order picked, each saying whether its streak shows beside it

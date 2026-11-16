@@ -31,7 +31,7 @@ describe("suggestions", () => {
     const home = await call("GET", "/home");
     expect(home.suggest[0].kind).toBe("order");
     expect(home.suggest[0].routineId).toBe(pull);
-    expect(home.suggest[0].reason).toContain("after Push");
+    expect(home.suggest[0].reason).toBe("Usually follows Push, your last workout");
   }, 60000);
 
   // a fresh person with one routine of their own exercises, so the gaps are known exactly
@@ -54,7 +54,7 @@ describe("suggestions", () => {
     // groups in their usual order: back and shoulders are the first ones nothing works
     expect(gaps.map((x) => x.muscle)).toEqual(["back", "shoulders"]);
     expect(gaps[0].routineId).toBeNull();
-    expect(gaps[0].title).toBe("Work your back");
+    expect(gaps[0].title).toBe("Add exercises for your back");
     expect(gaps[0].reason).toBe("None of your routines train your back");
     expect(gaps[0].muscles).toContain("lats");
   }, 60000);
@@ -62,8 +62,8 @@ describe("suggestions", () => {
   it("says a group is only worked as a helper", async () => {
     await personWith(["chest", "lats", "shoulders"], { chest: ["triceps"] });
     const arms = (await suggest()).find((x) => x.muscle === "arms");
-    expect(arms?.title).toBe("Work your arms");
-    expect(arms?.reason).toBe("Your routines only train your arms as a helper");
+    expect(arms?.title).toBe("Add exercises for your arms");
+    expect(arms?.reason).toBe("Your routines only use your arms as a helper");
   }, 60000);
 
   it("leaves out a gap you trained outside your routines lately", async () => {
@@ -83,8 +83,8 @@ describe("suggestions", () => {
     expect(sug.some((x) => x.kind === "gap")).toBe(false);
     const fa = sug.find((x) => x.kind === "target");
     expect(fa?.muscle).toBe("forearms");
-    expect(fa?.title).toBe("Work your forearms");
-    expect(fa?.reason).toBe("Your routines only train your forearms as a helper");
+    expect(fa?.title).toBe("Add exercises for your forearms");
+    expect(fa?.reason).toBe("Your routines only use your forearms as a helper");
   }, 60000);
 
   // a workout of a routine that is then archived, moved back by `daysAgo`: trained outside the routines you keep
@@ -100,19 +100,37 @@ describe("suggestions", () => {
     await personWith(["chest"]);
     await trainedOutside("lats", 12);
     const lats = (await suggest()).find((x) => x.muscle === "lats");
-    expect(lats?.kind).toBe("rested");
+    expect(lats?.kind).toBe("missed");
     expect(lats?.routineId).toBeNull();
-    expect(lats?.title).toBe("Work your lats");
+    expect(lats?.title).toBe("Train your lats");
+    expect(lats?.reason).toBe("Your lats were last trained 1 week ago");
   }, 60000);
 
-  it("keeps a muscle's tip when its group's gap tip was cut by the two-gaps limit", async () => {
+  it("gives a muscle trained a month ago its own tip, and its group no second one", async () => {
     await personWith(["chest"]);
     await trainedOutside("quadriceps", 30); // a month ago: legs is still a gap, but the fifth one
     const sug = await suggest();
     expect(sug.filter((x) => x.kind === "gap").map((x) => x.muscle)).toEqual(["back", "shoulders"]);
     const quads = sug.find((x) => x.muscle === "quadriceps");
-    expect(quads?.kind).toBe("rested");
+    expect(quads?.kind).toBe("missed");
     expect(quads?.routineId).toBeNull();
+    expect(sug.filter((x) => x.hide.includes("m:legs"))).toHaveLength(1);
+  }, 60000);
+
+  it("drops a suggestion once its routine is planned or going", async () => {
+    const a = await personWith(["chest", "lats", "shoulders", "biceps"]);
+    const tri = await call("POST", "/exercises", { name: "Only triceps", primaryMuscles: ["triceps"], secondaryMuscles: [], equipment: "dumbbell", category: "strength" });
+    const b = (await call("POST", "/routines", { name: "Arms", exercises: [{ exerciseId: tri.id, sets: [{ reps: 8 }] }] })).id;
+    await doWorkout(b);
+    await eng.db.admin.query("UPDATE workouts SET started_at = started_at - interval '8 days' WHERE routine_id = $1", [b]);
+    await doWorkout(a);
+    expect((await suggest()).some((x) => x.routineId === b)).toBe(true);
+    const day = new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10);
+    const plan = await call("POST", "/schedules", { rule: "once", routineId: b, startDate: day });
+    expect((await suggest()).some((x) => x.routineId === b || x.muscle === "triceps")).toBe(false);
+    await call("DELETE", `/schedules/${plan.id}`);
+    await call("POST", "/workouts/start", { routineId: b });
+    expect((await suggest()).some((x) => x.routineId === b || x.muscle === "triceps")).toBe(false);
   }, 60000);
 
   it("says a muscle left out was not worked in the last 7 days", async () => {
@@ -125,7 +143,7 @@ describe("suggestions", () => {
     const t = (await suggest()).find((x) => x.muscle === "triceps");
     expect(t?.kind).toBe("missed");
     expect(t?.routineId).toBe(b);
-    expect(t?.reason).toBe("Triceps: the only one not worked in the last 7 days · works your triceps");
+    expect(t?.reason).toBe("Your triceps were last trained 1 week ago");
   }, 60000);
 });
 

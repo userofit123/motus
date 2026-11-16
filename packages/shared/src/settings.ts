@@ -74,7 +74,7 @@ export interface Settings {
   /** the work week (Sunday = 0); null: from the first day of the week, Sunday to Thursday or Monday to Friday */
   workdays: number[] | null;
   /** blocks: Home's blocks in the order shown, each shown or hidden (Edit home).
-   *  hidden: Home suggestions you dismissed (key → when), hidden until your next workout.
+   *  hidden: Home suggestions you dismissed ("r:<routine id>" / "m:<muscle group>" → when), kept away for a week.
    *  goals: the goals pinned to Home as their own blocks, in order, each with or without its streak */
   home: { blocks: HomeBlock[]; hidden: Record<string, string>; goals: { id: string; streak: boolean }[] };
   /** the order of your goals on the Goals page (Reorder goals); goals not in it follow, newest first */
