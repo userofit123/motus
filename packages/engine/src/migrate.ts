@@ -45,6 +45,7 @@ import m042 from "./migrations/042_health_record_reads";
 import m043 from "./migrations/043_health_record_reads_zone";
 import m044 from "./migrations/044_health_records_apps";
 import m045 from "./migrations/045_health_records_more";
+import m046 from "./migrations/046_health_imports_linked";
 
 const MIGRATIONS: [string, string][] = [
   ["001_init", m001],
@@ -92,6 +93,7 @@ const MIGRATIONS: [string, string][] = [
   ["043_health_record_reads_zone", m043],
   ["044_health_records_apps", m044],
   ["045_health_records_more", m045],
+  ["046_health_imports_linked", m046],
 ];
 
 /**

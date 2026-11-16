@@ -38,7 +38,8 @@ let cues: Cues = { sound: true, cueSound: REST_OVER_SOUND_DEFAULT, tickSound: CO
 // Only then do the background alarm and RestCues use it; otherwise the saved account settings apply.
 let workoutCues = false;
 // a rest under way when the cues come (one restored after a reload) gets its sounds ready, as startRest does
-export const setCues = (c: Cues, forWorkout = true) => { cues = c; workoutCues = forWorkout; if (restActive()) prepare(c); };
+// a rest running: a changed "Rest timer on the lock screen" (and the alarm's cues) take effect now, not at the next rest
+export const setCues = (c: Cues, forWorkout = true) => { cues = c; workoutCues = forWorkout; if (restActive()) { prepare(c); if (rest.endAt && rest.pausedLeftS == null) restTimeSet(); } };
 /** Sound and vibration as chosen in Settings → Workout, read from the settings the app has loaded, so they are right
  *  on any page (the cues above are only filled once a workout screen has been opened). */
 export function savedCues(): CueVoice & { sound: boolean; vibrate: boolean; warn10: boolean; countdown: boolean; voice: boolean; lockScreen: boolean } {
@@ -164,10 +165,13 @@ const hidden = () => typeof document !== "undefined" && document.hidden;
 // rest over sound and "Rest over"), so it ends here without the in-app cues, as the tick would have ended it. Only when it
 // ended at least LATE_MS ago: a few hundred ms after the end the alarm may not have fired yet, and taking it off now
 // (dropAlarm) would leave nothing to sound, so then the tick's in-app cue plays instead (the one sound that is left).
-function catchUpCues(covered: boolean) {
+// `kept`: with Voice cues, a rest that ran out under the alarm keeps the Android app's cues (dropAlarm): its sound has
+// played and its words come SAY_AFTER_MS after it, or are being said, so the in-app cues stay quiet right from the end
+// rather than speaking them a second time.
+function catchUpCues(covered: boolean, kept = false) {
   if (!rest.endAt || rest.done || rest.pausedLeftS != null) return;
   const left = (rest.endAt - Date.now()) / 1000;
-  if (covered && left <= -LATE_MS / 1000) { rest.done = true; save(); if (cues.next) finishRest(true, true); return; }
+  if (covered && (kept || left <= -LATE_MS / 1000)) { rest.done = true; save(); if (cues.next) finishRest(true, true); return; }
   if (left <= 10) warned = true;
   const s = Math.ceil(left);
   if (s >= 1 && s <= 3) lastCount = s;
@@ -188,16 +192,22 @@ function planAlarm() {
   scheduleRestCues(rest.endAt!, { warn10: c.sound && c.warn10, countdown: c.sound && c.countdown && rest.totalS > 5, tickSound: cleanWorkoutSound(c.tickSound, COUNTDOWN_SOUND_DEFAULT), endSound: c.sound ? cleanWorkoutSound(c.cueSound) : null, cueVolume: c.cueVolume, body: rest.next, vibrate: c.vibrate,
     say10: voice && c.warn10 ? TEN_SECONDS : null, sayEnd: voice ? restOverWords() : null });
 }
-function dropAlarm() {
+/** keepCues: the Android app's sounds and words already due are left to play (catchUpCues `kept`). */
+function dropAlarm(keepCues = false) {
   if (!alarmOn) return;
-  void cancelRestAlarm(); cancelRestCues(); alarmOn = false;
+  void cancelRestAlarm(); if (!keepCues) cancelRestCues(); alarmOn = false;
 }
 // a new end time: the countdown in the shade shows it, and in the background the alarm moves with it
 function restTimeSet() {
   showRestCountdown(rest.endAt!, rest.next, (workoutCues ? cues : savedCues()).lockScreen !== false);
   if (hidden()) planAlarm();
 }
-if (typeof document !== "undefined") document.addEventListener("visibilitychange", () => { if (hidden()) planAlarm(); else { const covered = alarmOn; dropAlarm(); catchUpCues(covered); } });
+if (typeof document !== "undefined") document.addEventListener("visibilitychange", () => {
+  if (hidden()) { planAlarm(); return; }
+  const covered = alarmOn, c = workoutCues ? cues : savedCues();
+  const kept = covered && c.sound && c.voice && !!rest.endAt && !rest.done && rest.pausedLeftS == null && rest.endAt <= Date.now();
+  dropAlarm(kept); catchUpCues(covered, kept);
+});
 // one left from before the app was closed in the background would still sound with the app open again
 if (isNativeApp() && !hidden()) { void cancelRestAlarm(); cancelRestCues(); }
 
@@ -308,7 +318,7 @@ function speak(text: string, v: CueVoice = cues) {
     try {
       const u = new SpeechSynthesisUtterance(text); u.rate = 1.05; u.volume = level;
       // "interrupted" and "canceled" are a newer cue taking over, not a missing voice
-      u.onerror = (e) => { if (e.error !== "interrupted" && e.error !== "canceled") noVoice(); };
+      u.onerror = (e) => { if (e.error !== "interrupted" && e.error !== "canceled") noVoice(e.error); };
       speechSynthesis.cancel(); speechSynthesis.speak(u);
       // a computer with no voice installed (common on Linux) speaks nothing and often says nothing either; the list
       // can fill a moment late, so it is looked at again after a second
@@ -323,11 +333,17 @@ function warmVoice() {
   try { speechSynthesis.getVoices(); } catch { /* no speech here: noVoice says so at the first cue */ }
 }
 // Said once a session: Voice cues are on but this device can't speak them, so their silence isn't taken for a fault
-let toldNoVoice = false;
-function noVoice() {
-  if (toldNoVoice) return;
-  toldNoVoice = true;
-  toast("No voice found on this device, so Voice cues can't be spoken", { kind: "err" });
+const toldNoVoice = new Set<string>();
+/** Says once why a voice cue wasn't spoken, by the speech engine's reason (none: no voice installed). */
+function noVoice(why?: SpeechSynthesisErrorCode) {
+  const text = why === "not-allowed" ? "The browser blocked Voice cues until you tap or click in Motus once"
+    : why === "audio-busy" || why === "audio-hardware" ? "Voice cues couldn't be spoken: the sound is in use or unavailable"
+    : why === "network" ? "Voice cues couldn't be spoken: this voice needs an internet connection"
+    : !why || why === "synthesis-unavailable" || why === "voice-unavailable" || why === "language-unavailable" ? "No voice found on this device, so Voice cues can't be spoken"
+    : "Voice cues couldn't be spoken";
+  if (toldNoVoice.has(text)) return;
+  toldNoVoice.add(text);
+  toast(text, { kind: "err" });
 }
 /** Elapsed seconds of a workout, without its paused time */
 export function elapsed(w: { startedAt: string; pausedS: number; pauseStartedAt: string | null; endedAt?: string | null }) {

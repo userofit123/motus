@@ -27,6 +27,8 @@ import { canStepSources, stepSources, adviceWord, useDevice, healthSupported, sy
 interface Item {
   key: string; kind: "steps" | "sleep" | "weight" | "resting_hr" | "spo2" | "hrv" | "distance" | "active_kcal" | "body_fat" | "water" | "vo2max" | "activity"; date: string; at: string | null; value: number | null;
   activity: { id: string; type: string; name: string | null; startedAt: string; durationS: number; distanceM: number | null; steps: number | null; avgHr: number | null } | null;
+  // a band session that is a workout or activity recorded in Motus: linked to it instead of a second activity
+  linked: "activity" | "workout" | null; workout: { id: string; name: string; startedAt: string; durationS: number } | null;
   // typed: the day's typed value when the day uses it instead of this one (else null); walks: the walks' steps when
   // they count instead of this synced count (daySteps), so using this one would change nothing
   ref: string | null; edited: boolean; importedAt: string; typed?: number | null; walks?: number | null; worn?: boolean | null;
@@ -63,8 +65,8 @@ type Vital = keyof typeof UNIT;
 const isVital = (k: Item["kind"]): k is Vital => k in UNIT;
 const vitalNum = (k: Vital, v: number) => fmt.value.num(v, (k === "spo2" || k === "vo2max") && !Number.isInteger(v) ? 1 : 0);
 const typeName = (slug: string) => (types.data.value ?? []).find((t: any) => t.slug === slug)?.name ?? slug[0]!.toUpperCase() + slug.slice(1);
-const icon = (x: Item) => (x.kind === "activity" ? activityIcon(x.activity?.type) : ICON[x.kind]);
-const title = (x: Item) => (x.kind === "activity" ? x.activity?.name || typeName(x.activity?.type ?? "activity") : NAME[x.kind]);
+const icon = (x: Item) => (x.workout ? "dumbbell" : x.kind === "activity" ? activityIcon(x.activity?.type) : ICON[x.kind]);
+const title = (x: Item) => (x.workout ? x.workout.name || "Workout" : x.kind === "activity" ? x.activity?.name || typeName(x.activity?.type ?? "activity") : NAME[x.kind]);
 // the value in the person's units: "8,432", "7h 30m", "72.4 kg", "58 bpm", "97%", "6.42 km", "412 kcal"
 const valueOf = (k: Item["kind"], v: number | null) => v == null || k === "activity" ? "-" : k === "distance" ? fmt.value.dist(v) : k === "active_kcal" ? `${fmt.value.num(v, 0)} kcal` : k === "water" ? `${fmt.value.num(v, 0)} ml` : k === "body_fat" ? `${fmt.value.num(v, 1)}%` : isVital(k) ? `${vitalNum(k, v)}${k === "spo2" ? "" : " "}${UNIT[k]}` : k === "steps" ? fmt.value.num(v, 0) : k === "sleep" ? mins(v * 60) : `${fmt.value.w(v)} ${fmt.value.wu}`;
 const value = (x: Item) => valueOf(x.kind, x.value);
@@ -75,6 +77,7 @@ const nights = useSleep(computed(() => ({ from: sleepDays.value[0], to: sleepDay
 const nightOf = (x: Item) => (nights.data.value?.nights ?? []).find((n) => n.date.slice(0, 10) === x.date.slice(0, 10));
 // when it was: an activity's start (and its type, when it has a name of its own), a weighing's time, a night's times in bed
 const sub = (x: Item) => {
+  if (x.workout) return fmt.value.time(x.workout.startedAt);
   if (x.kind === "activity" && x.activity) return [fmt.value.time(x.activity.startedAt), x.activity.name ? typeName(x.activity.type) : ""].filter(Boolean).join(" · ");
   if (x.kind === "sleep") { const n = nightOf(x); return n ? `${fmt.value.time(n.startAt)}-${fmt.value.time(n.endAt)}` : ""; }
   return x.kind === "weight" || x.kind === "body_fat" ? (x.at ? fmt.value.time(x.at) : "") : "";
@@ -84,7 +87,7 @@ const path = (x: Item) => `/health/imports/${encodeURIComponent(x.key)}`;
 const changed = () => invalidate([...TOPICS.health]);
 // typed in the person's units and kept in kg, whole steps, hours of sleep, bpm, % and ms, metres and whole kcal
 async function edit(x: Item) {
-  if (x.kind === "activity") { if (x.activity) router.push(`/activities/${x.activity.id}`); return; }
+  if (x.kind === "activity") { if (x.workout) router.push(`/workouts/${x.workout.id}`); else if (x.activity) router.push(`/activities/${x.activity.id}`); return; }
   const shown = x.value == null ? "" : x.kind === "weight" ? fmt.value.w(x.value) : x.kind === "distance" ? String(Math.round(fmt.value.distNum(x.value) * 100) / 100)
     : String(x.kind === "steps" || x.kind === "active_kcal" || x.kind === "water" ? Math.round(x.value) : Math.round(x.value * 10) / 10);
   const v = await prompt(x.kind === "weight" ? `Body weight (${fmt.value.wu})` : x.kind === "distance" ? `Distance (${fmt.value.du})` : x.kind === "active_kcal" ? "Active calories (kcal)" : x.kind === "water" ? "Water (ml)" : x.kind === "body_fat" ? "Body fat (%)"
@@ -96,6 +99,11 @@ async function edit(x: Item) {
     await api.put(path(x), { value: x.kind === "weight" ? fmt.value.toKg(n) : x.kind === "distance" ? Math.round(toM(n, fmt.value.du)) : x.kind === "steps" || x.kind === "active_kcal" || x.kind === "water" ? Math.round(n) : n });
     changed(); toast(`${NAME[x.kind]} saved`);
   } catch (e) { toastError(e); }
+}
+// the session becomes its own activity again: it comes in as one with the phone's next read
+async function unlink(x: Item) {
+  if (!(await confirm("Unlink this session?", { text: `It comes in as its own activity on the next sync, beside your ${x.linked === "workout" ? "workout" : "activity"}.`, ok: "Unlink" }))) return;
+  try { await api.post(`${path(x)}/unlink`); changed(); toast("Session unlinked"); } catch (e) { toastError(e); }
 }
 async function del(x: Item) {
   const act = x.kind === "activity";
@@ -149,11 +157,15 @@ async function use(x: Item) {
 // what the day uses instead of this value, in the daily log's word for it ("Used"): a typed value (the default when there
 // is one), or for steps the walks in Motus when they are more. Short, so it stays one line beside the value at 360px.
 const notUsed = (x: Item) => x.typed != null ? `Typed ${valueOf(x.kind, x.typed)} used` : x.walks != null ? `Walks ${valueOf(x.kind, x.walks)} used` : "";
+// a band session linked to a workout or activity recorded in Motus, so it counts once
+const matched = (x: Item) => (x.linked === "workout" ? "Matched to your workout" : x.linked === "activity" ? "Matched to your activity" : "");
 const menu = (x: Item): MenuItem[] => [
   x.kind === "activity" ? { label: "Open", icon: "right", run: () => edit(x) } : { label: "Edit", icon: "edit", run: () => edit(x) },
   { label: "Use this value", icon: "check", hidden: x.typed == null || x.walks != null, run: () => use(x) },
   { label: "Step sources", icon: "info", hidden: x.kind !== "steps" || !canStepSources(), run: () => showOrigin(x) },
-  { label: "Delete", icon: "trash", danger: true, sep: true, run: () => del(x) },
+  { label: "Unlink", icon: "split", hidden: !x.linked, run: () => unlink(x) },
+  // a linked session's record is the person's own workout or activity: Unlink is the way to undo, not deleting it
+  { label: "Delete", icon: "trash", danger: true, sep: true, hidden: !!x.linked, run: () => del(x) },
 ];
 </script>
 
@@ -170,8 +182,9 @@ const menu = (x: Item): MenuItem[] => [
       <div v-for="x in d.items" :key="x.key" class="li click" role="button" tabindex="0" @click="edit(x)" @keydown.enter.self="edit(x)">
         <span class="bi sg"><Icon :name="icon(x)" :size="16" /></span>
         <div class="grow"><div class="t">{{ title(x) }}<span v-if="x.edited" class="mchip hi-chip">Edited</span></div><div v-if="sub(x)" class="s">{{ sub(x) }}</div>
-          <div v-if="notUsed(x)" class="s">{{ notUsed(x) }}</div></div>
-        <SessionStats v-if="x.kind === 'activity' && x.activity" :x="{ kind: 'activity', durationS: x.activity.durationS, distanceM: x.activity.distanceM, steps: x.activity.steps, type: x.activity.type, source: 'health_connect' }" />
+          <div v-if="notUsed(x)" class="s">{{ notUsed(x) }}</div><div v-if="matched(x)" class="s">{{ matched(x) }}</div></div>
+        <SessionStats v-if="x.workout" :x="{ kind: 'workout', durationS: x.workout.durationS }" />
+        <SessionStats v-else-if="x.kind === 'activity' && x.activity" :x="{ kind: 'activity', durationS: x.activity.durationS, distanceM: x.activity.distanceM, steps: x.activity.steps, type: x.activity.type, source: 'health_connect' }" />
         <b v-else class="num">{{ value(x) }}</b>
         <span @click.stop><Menu :items="menu(x)" :label="`Options for ${title(x)}`" /></span>
       </div>

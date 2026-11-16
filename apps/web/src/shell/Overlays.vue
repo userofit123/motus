@@ -18,7 +18,7 @@ import DailySheet from "./DailySheet.vue";
 import AppearancePanel from "./AppearancePanel.vue";
 import { useExercise } from "../api/queries";
 import { computed, onMounted, onBeforeUnmount, watch } from "vue";
-import { useSettings } from "../api/queries";
+import { useMe, useSettings } from "../api/queries";
 import { maybeAutoBackup } from "../core/backup";
 import { toast } from "../core/toast";
 import { usePlannedReminders } from "../native/plannedNotifications";
@@ -30,9 +30,10 @@ const ex = useExercise(computed(() => exerciseSheet.value ?? ""));
 const key = (e: KeyboardEvent) => { if (e.key === "n" && !e.metaKey && !e.ctrlKey && !(e.target as HTMLElement).closest("input,textarea,select,[contenteditable]")) startOpen.value = true; };
 onMounted(() => addEventListener("keydown", key));
 // an automatic backup when one is due (Settings → Backup)
-const settings = useSettings();
-// planned workout notifications (Android app), following the switch and the planned days
-usePlannedReminders(() => settings.value.notifications.scheduled);
+const me = useMe(), settings = useSettings();
+// planned workout notifications (Android app), following the switch and the planned days; only once the account's
+// settings are in (null before: the defaults would have the switch on)
+usePlannedReminders(() => (me.data.value ? settings.value.notifications.scheduled : null));
 let checked = false;
 watch(settings, (s) => {
   if (checked || !s) return; checked = true;

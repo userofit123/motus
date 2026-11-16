@@ -36,9 +36,11 @@ function schedulePlanned(enabled: boolean, planned: CalendarPlanned[] | undefine
 
 /** Keeps the phone's planned workout notifications in step with `on` and the planned days (the calendar topic). Call
  *  once, from a component that stays mounted. */
-export function usePlannedReminders(on: () => boolean) {
+/** on: the switch, or null while the account's settings haven't loaded (nothing is scheduled or taken off until they
+ *  have: the defaults have it on, which would briefly schedule reminders for someone who switched them off). */
+export function usePlannedReminders(on: () => boolean | null) {
   const supported = plannedSupported();
   const range = { from: localYmd(new Date()), to: localYmd(new Date(Date.now() + 14 * 86400000)) };
-  const cal = useCalendar(range, computed(() => supported && on()));
-  watch([on, () => cal.data.value], ([yes, d]) => schedulePlanned(yes, d?.planned), { immediate: true });
+  const cal = useCalendar(range, computed(() => supported && on() === true));
+  watch([on, () => cal.data.value], ([yes, d]) => { if (yes != null) schedulePlanned(yes, d?.planned); }, { immediate: true });
 }

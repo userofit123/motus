@@ -165,3 +165,71 @@ describe("a session brought in by two apps", () => {
     expect((await call("POST", "/health/import", { sessions: both })).activities).toBe(0);
   });
 });
+
+// A band session of a workout or activity recorded in Motus is linked to that record (M-250 fix round, bandMatch):
+// never a second activity, so training load, a day's walked steps and the scores' activity minutes count it once.
+describe("a band session of a workout or activity done in Motus", () => {
+  const W = "2026-10-20";
+  const at = (h: number, m = 0) => `${W}T${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:00.000Z`;
+  const session = (id: string, s: string, e: string, extra: object = {}) => ({ id, type: "walk", start: s, end: e, ...extra });
+  const acts = async () => (await eng.db.admin.query<{ id: string; source: string; steps: number | null; calories: number | null }>(
+    "SELECT id::text AS id, source, steps, calories FROM activities WHERE user_id = $1 AND started_at >= $2::date AND started_at < $2::date + 1 ORDER BY started_at", [U, W])).rows;
+  const imports = async () => ((await call("GET", "/health/imports", undefined, { tz: "0", limit: "200" })).items as any[]).filter((x) => x.kind === "activity" && x.date === W);
+  const workout = async (s: string, e: string) => {
+    const id = uuidv7();
+    await eng.db.admin.query("INSERT INTO workouts (id, user_id, name, status, started_at) VALUES ($1,$2,'Push','in_progress',$3)", [id, U, s]);
+    await call("POST", `/workouts/${id}/finish`, { endedAt: e });
+    return id;
+  };
+  let w1 = "", w2 = "";
+
+  it("is linked to a finished workout, whichever arrives first, and training load counts the workout once", async () => {
+    await call("PUT", "/settings", { features: { trainingLoad: true } });
+    // the workout first, then its band session (inside it, starting later and ending earlier)
+    w1 = await workout(at(10), at(11));
+    expect((await call("POST", "/health/import", { sessions: [session("w1", at(10, 5), at(10, 55), { type: "strength" })] })).activities).toBe(0);
+    // the session first (brought in as an activity), then the workout is finished: taken into it
+    expect((await call("POST", "/health/import", { sessions: [session("w2", at(14), at(14, 40))] })).activities).toBe(1);
+    w2 = await workout(at(13, 55), at(14, 50));
+    expect(await acts()).toEqual([]);
+    expect((await imports()).map((x) => [x.key, x.linked, x.workout?.id])).toEqual([["activity:w2", "workout", w2], ["activity:w1", "workout", w1]]);
+    // the same session again, and from a second app: still linked, still no activity
+    expect((await call("POST", "/health/import", { sessions: [session("w1", at(10, 5), at(10, 55)), session("w1b", at(10, 6), at(10, 55))] })).activities).toBe(0);
+    expect(await acts()).toEqual([]);
+    const load = (await call("GET", "/health/load", undefined, { from: W, to: W, tz: "0" })).load;
+    expect(load.sessions.filter((s: any) => s.date === W).map((s: any) => s.kind).sort()).toEqual(["workout", "workout"]);
+  });
+
+  it("is linked to an activity recorded in Motus, which gets the band's steps and calories; the day's walked steps count once", async () => {
+    const mine = (await call("POST", "/activities", { type: "walk", startedAt: at(16), endedAt: at(17) })).id as string;
+    expect((await call("POST", "/health/import", { sessions: [session("a1", at(16, 2), at(16, 58), { steps: 5000, calories: 300 })] })).activities).toBe(0);
+    expect(await acts()).toEqual([{ id: mine, source: "manual", steps: 5000, calories: 300 }]);
+    const steps = (await call("GET", "/daily", undefined, { from: W, tz: "0" })).find((x: any) => x.kind === "steps" && String(x.date).slice(0, 10) === W);
+    expect(steps).toMatchObject({ value: 5000, walked: 5000 });
+    // the scores' activity minutes read the activities: one walk of 60 minutes, not two
+    expect((await imports()).find((x) => x.key === "activity:a1")).toMatchObject({ linked: "activity", activity: { id: mine } });
+  });
+
+  it("unlinked, comes in as its own activity and is never matched again", async () => {
+    await call("POST", "/health/imports/activity%3Aa1/unlink");
+    expect(((await call("GET", "/health/imports/deleted")).items as any[]).find((x) => x.key === "activity:a1")).toMatchObject({ restored: true });
+    expect((await call("POST", "/health/import", { sessions: [session("a1", at(16, 2), at(16, 58), { steps: 5000 })] })).activities).toBe(1);
+    expect((await acts()).map((x) => x.source)).toEqual(["manual", "health_connect"]);
+    // a later import or save doesn't take it back in
+    await call("POST", "/health/import", { sessions: [] });
+    expect((await acts()).length).toBe(2);
+  });
+
+  it("a session of no length matches nothing", async () => {
+    expect((await call("POST", "/health/import", { sessions: [session("z", at(10, 30), at(10, 30))] })).activities).toBe(1);
+    expect((await imports()).find((x) => x.key === "activity:z")).toMatchObject({ linked: null });
+  });
+
+  it("deleted, the same session from a second app arriving later stays out too", async () => {
+    expect((await call("POST", "/health/import", { sessions: [session("d1", at(19), at(19, 30))] })).activities).toBe(1);
+    await call("DELETE", "/health/imports/activity%3Ad1");
+    expect((await call("POST", "/health/import", { sessions: [session("d2", at(19, 1), at(19, 30))] })).activities).toBe(0);
+    const del = ((await call("GET", "/health/imports/deleted")).items as any[]).map((x) => x.key);
+    expect(del).toEqual(expect.arrayContaining(["activity:d1", "activity:d2"]));
+  });
+});

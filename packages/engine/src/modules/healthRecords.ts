@@ -269,25 +269,34 @@ const ONE_APP = new Set<RecordType>(["steps", "distance", "active_kcal", "floors
  * sessions as minutes, each moment once where sessions overlap (two apps writing the same night); meals' energy in the
  * hour they began. Hours without data are left out.
  */
-export function hourly(type: RecordType, recs: Rec[], fromS: number, toS: number, zone: string | number, kinds?: AppKinds): Hour[] {
+export function hourly(type: RecordType, recs: Rec[], fromS: number, toS: number, zone: string | number, kinds?: AppKinds, dayNums?: Map<string, number>): Hour[] {
   if (SHAPE[type] !== "sum") return rollup(type, recs, fromS, toS, zone);
   const byApp = new Map<string, Rec[]>();
   for (const r of recs) (byApp.get(r.o) ?? byApp.set(r.o, []).get(r.o)!).push(r);
   if (!ONE_APP.has(type)) return rollup(type, [...byApp.values()].flatMap(once), fromS, toS, zone);
   const offAt = offsetFn(zone);
   const dayOf = (h: Hour) => { const t = Date.parse(h.at) / 1000; return new Date((t + offAt(t)) * 1000).toISOString().slice(0, 10); };
+  // the app is picked by its whole day's total, not only the asked part of it: the hours of a morning shown alone come
+  // from the same app as the whole day's, and so as the day's number (bandDays: a band, watch or ring first, then the
+  // larger total; the first of equals). On a day no band counted, the day's number is Health Connect's own total (its
+  // app priority, which Motus can't read): dayNums (the day's synced number) picks the app whose total is nearest it,
+  // so the hours still add up to the day's number when one app's does; without it, the larger.
+  const dayStart = (t: number) => { const local = t + offAt(t), d = Math.floor(local / 86400) * 86400; return d - offAt(d - offAt(t)); };
+  const wholeFrom = dayStart(fromS), wholeTo = dayStart(toS - 1) + 86400 + 3600; // an hour more for a day with a clock change
   const apps = [...byApp].map(([app, list]) => {
-    const hours = rollup(type, once(list), fromS, toS, zone), totals = new Map<string, number>();
-    for (const h of hours) totals.set(dayOf(h), (totals.get(dayOf(h)) ?? 0) + (h.sum ?? 0));
+    const recs = once(list), hours = rollup(type, recs, fromS, toS, zone), totals = new Map<string, number>();
+    for (const h of rollup(type, recs, wholeFrom, wholeTo, zone)) totals.set(dayOf(h), (totals.get(dayOf(h)) ?? 0) + (h.sum ?? 0));
     return { band: isBand(app, appType(app, list, kinds)), hours, totals };
   });
   const out: Hour[] = [];
   for (const d of new Set(apps.flatMap((a) => [...a.totals.keys()]))) {
     let best: { band: boolean; v: number; hours: Hour[] } | null = null;
+    const target = apps.some((a) => a.band && (a.totals.get(d) ?? 0) > 0) ? undefined : dayNums?.get(d);
     for (const a of apps) {
       const v = a.totals.get(d) ?? 0;
       // the first of equals stays, as bandDays
-      if (v > 0 && (!best || (a.band && !best.band) || (a.band === best.band && v > best.v))) best = { band: a.band, v, hours: a.hours };
+      const better = target != null ? !best || Math.abs(v - target) < Math.abs(best.v - target) : !best || (a.band && !best.band) || (a.band === best.band && v > best.v);
+      if (v > 0 && better) best = { band: a.band, v, hours: a.hours };
     }
     if (best) out.push(...best.hours.filter((h) => dayOf(h) === d));
   }
@@ -515,10 +524,18 @@ export function healthRecordRoutes(r: Router) {
   r.get("/health/records/hourly", async (ctx, _p, _b, qs) => {
     const { fromS, toS } = span(qs);
     const [type] = typesOf(qs.type);
-    const recs = [...(await blocks(ctx, type!, fromS, toS)).values()].flatMap((x) => Object.values(x)).filter((x) => overlaps(x, fromS, toS));
+    // a day either side: an amount's app is picked by its whole day's total (hourly), also when only part of a day is asked
+    const wFrom = fromS - 86400, wTo = toS + 86400;
+    const recs = [...(await blocks(ctx, type!, wFrom, wTo)).values()].flatMap((x) => Object.values(x)).filter((x) => overlaps(x, wFrom, wTo));
     // an app is a band or not as for the day's total (appKinds), so the hours add up to the day's number
     const sum = type === "steps" || type === "distance" || type === "active_kcal" ? (await appKinds(ctx.q, [type as SumType])).get(type as SumType) : undefined;
-    return { type, hours: hourly(type!, recs, fromS, toS, isZone(qs.zone) ? qs.zone : tzOf(qs), sum) };
+    const zone = isZone(qs.zone) ? qs.zone : tzOf(qs);
+    // the days' synced numbers, for a day no band counted (hourly picks the app nearest it)
+    const dayKind = type === "steps" ? "steps" : type === "distance" ? "distance_m" : type === "active_kcal" ? "active_kcal" : null;
+    const dayNums = dayKind ? new Map((await ctx.q.query<{ d: string; v: string | number }>(
+      `SELECT to_char(date, 'YYYY-MM-DD') AS d, coalesce(synced, value) AS v FROM daily_logs WHERE kind = $1 AND date >= $2::date - 1 AND date <= $3::date + 1`,
+      [dayKind, new Date(fromS * 1000).toISOString().slice(0, 10), new Date(toS * 1000).toISOString().slice(0, 10)])).rows.map((x) => [x.d, Number(x.v)] as [string, number])) : undefined;
+    return { type, hours: hourly(type!, recs, fromS, toS, zone, sum, dayNums) };
   });
 
   // Which days have records of which types, and how many (from, to: days, to not included), so screens offer only what

@@ -710,6 +710,9 @@ class MotusHealthPlugin : Plugin() {
         val samples = hrBetween(c, start, end)
             .filter { isBand(it.metadata.dataOrigin.packageName, it.metadata.device?.type) }.flatMap { it.samples }
             .filter { !it.time.isBefore(start) && !it.time.isAfter(end) }
+            // each second once, as the server's onePerSecond: the same readings from two apps count once, so the
+            // phone's answer and the server's agree
+            .distinctBy { it.time.epochSecond }
             .sortedBy { it.time }
         if (samples.isEmpty()) return null
         val out = JSArray()
@@ -979,7 +982,11 @@ class MotusHealthPlugin : Plugin() {
     private class NightHr(val s: Long, val e: Long) {
         var sum = 0.0; var n = 0; var min = Long.MAX_VALUE
         val bt = DoubleArray(300); val bb = DoubleArray(300); val bn = IntArray(300)
+        // each second once, as the server's onePerSecond: two apps writing the same reading (the band's app beside
+        // Gadgetbridge) would otherwise weigh it twice in the night's average
+        private val seen = HashSet<Long>()
         fun add(ms: Long, bpm: Long) {
+            if (!seen.add(Math.floorDiv(ms, 1000L))) return
             sum += bpm; n++; if (bpm < min) min = bpm
             val b = ((ms - s) * 300 / (e - s).coerceAtLeast(1)).toInt().coerceIn(0, 299)
             bt[b] += ms.toDouble(); bb[b] += bpm.toDouble(); bn[b]++
@@ -1110,7 +1117,10 @@ class MotusHealthPlugin : Plugin() {
     private class DayHr(val start: Long) {
         var sum = 0.0; var n = 0; var min = Long.MAX_VALUE; var max = Long.MIN_VALUE
         val bt = DoubleArray(288); val bb = DoubleArray(288); val bn = IntArray(288)
+        // each second once, as the server's onePerSecond (two apps writing the same readings)
+        private val seen = HashSet<Long>()
         fun add(ms: Long, bpm: Long) {
+            if (!seen.add(Math.floorDiv(ms, 1000L))) return
             sum += bpm; n++; if (bpm < min) min = bpm; if (bpm > max) max = bpm
             val b = ((ms - start) / 300_000).toInt().coerceIn(0, 287) // a 25-hour day (clock change) folds its last hour in
             bt[b] += ms.toDouble(); bb[b] += bpm.toDouble(); bn[b]++

@@ -10,6 +10,7 @@ import { getSettings, saveSettings } from "./settings";
 import { buildPlan, loadRoutine, pendingReminders, withWorkoutOverrides } from "./plan";
 import { getExercises, exerciseSessions, savePrefs } from "./library";
 import { exerciseHrOf } from "./health";
+import { linkBandSessions } from "./bandMatch";
 
 const KINDS = ["warmup", "normal", "drop", "failure"] as const;
 const EX_STATUS = ["pending", "done", "skipped", "partial"] as const;
@@ -821,6 +822,8 @@ export function workoutRoutes(r: Router) {
       `UPDATE workouts SET status = 'completed', ended_at = $2, paused_s = $3, pause_started_at = NULL, notes = coalesce($4, notes), rating = coalesce($5, rating),
          bodyweight_kg = coalesce($6, bodyweight_kg), updated_at = now() WHERE id = $1`,
       [wid, end, paused, b?.notes != null ? str(b.notes, 10000) : null, intOrNull(b?.rating, 1, 5), numOrNull(b?.bodyweightKg, 0, 700)]);
+    // the band's session of this workout, already brought in as an activity: linked to the workout instead (bandMatch)
+    await linkBandSessions(ctx);
     if (b?.bodyweightKg) {
       await ctx.q.query("INSERT INTO body_metrics (id, user_id, kind, value, measured_at) VALUES ($1,$2,'weight',$3,$4)", [uuidv7(), ctx.userId, numOrNull(b.bodyweightKg, 0, 700), end]);
       ctx.changed("body");

@@ -32,6 +32,7 @@ import { isNight, cleanWornDevice, plausibleSteps, stepsTyped, appSteps, bandSte
 import { maxHeartRate, sessionLoad, loadTrend, CHRONIC_DAYS, exercisePeaks, type LoadTrend, type HrTick } from "@motus/shared";
 import { SCORE_DAYS, ageOf, scoresFor, effortMinutes, sleepScore, activityScore, strengthScore, muscleSets } from "@motus/shared";
 import { getSettings } from "./settings";
+import { motusRecordFor, copyFigures, linkBandSessions } from "./bandMatch";
 
 export const HEALTH_SOURCE = "health_connect";
 // a band's number for an activity's time: a measure that can't be (below 0, absurdly large, not a number) is left out
@@ -78,22 +79,30 @@ const lenient = (k: Daily, v: unknown) => { try { return dailyValue(k, v); } cat
 const lenientBody = (k: Body, v: unknown) => { try { return bodyValue(k, v); } catch { return null; } };
 /** The daily log's kind for an import log row's kind, in SQL (h: health_imports). */
 const DAILY_CASE = `CASE h.kind ${Object.entries(DAILY_KIND).map(([i, d]) => `WHEN '${i}' THEN '${d}'`).join(" ")} END`;
-interface Imp { kind: Kind; date: string | null; ref: string | null; deleted: boolean }
+interface Imp { kind: Kind; date: string | null; ref: string | null; deleted: boolean; apart?: boolean }
 
-const remember = (ctx: Ctx, key: string, kind: Kind, date: string | null, ref: string | null) => ctx.q.query(
-  `INSERT INTO health_imports (user_id, key, kind, date, ref) VALUES ($1,$2,$3,$4,$5)
-   ON CONFLICT (user_id, key) DO UPDATE SET imported_at = now(), ref = EXCLUDED.ref WHERE health_imports.deleted_at IS NULL`,
-  [ctx.userId, key, kind, date, ref]);
+/**
+ * Notes a key in the import log. A session's entry also keeps its time (span, 046: kept after a deletion, so the same
+ * session from a second app stays out too) and, when it is a workout or activity recorded in Motus, which (linked, bandMatch).
+ * deleted: noted as deleted at once (the same session as one the person deleted).
+ */
+const remember = (ctx: Ctx, key: string, kind: Kind, date: string | null, ref: string | null,
+  o: { linked?: "activity" | "workout" | null; span?: [string, string]; deleted?: boolean } = {}) => ctx.q.query(
+  `INSERT INTO health_imports (user_id, key, kind, date, ref, linked, span_start, span_end, deleted_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,CASE WHEN $9::boolean THEN now() END)
+   ON CONFLICT (user_id, key) DO UPDATE SET imported_at = now(), ref = EXCLUDED.ref, linked = EXCLUDED.linked,
+     span_start = coalesce(EXCLUDED.span_start, health_imports.span_start), span_end = coalesce(EXCLUDED.span_end, health_imports.span_end)
+   WHERE health_imports.deleted_at IS NULL`,
+  [ctx.userId, key, kind, date, ref, o.linked ?? null, o.span?.[0] ?? null, o.span?.[1] ?? null, !!o.deleted]);
 const forget = (ctx: Ctx, key: string) => ctx.q.query("UPDATE health_imports SET deleted_at = now() WHERE key = $1 AND deleted_at IS NULL", [key]);
 
 /** One entry of the log with what it is now: null when it is deleted, or its data was deleted elsewhere. */
 async function entry(ctx: Ctx, key: string) {
-  const h = (await ctx.q.query("SELECT kind, to_char(date, 'YYYY-MM-DD') AS date, ref FROM health_imports WHERE key = $1 AND deleted_at IS NULL", [key])).rows[0] as
-    { kind: Kind; date: string | null; ref: string | null } | undefined;
+  const h = (await ctx.q.query("SELECT kind, to_char(date, 'YYYY-MM-DD') AS date, ref, linked FROM health_imports WHERE key = $1 AND deleted_at IS NULL", [key])).rows[0] as
+    { kind: Kind; date: string | null; ref: string | null; linked: "activity" | "workout" | null } | undefined;
   if (!h) return null;
   const there = isDaily(h.kind)
     ? (await ctx.q.query("SELECT 1 FROM daily_logs WHERE date = $1 AND kind = $2", [h.date, DAILY_KIND[h.kind]])).rows.length > 0
-    : (await ctx.q.query(`SELECT 1 FROM ${isBody(h.kind) ? "body_metrics" : "activities"} WHERE id::text = $1`, [h.ref])).rows.length > 0;
+    : (await ctx.q.query(`SELECT 1 FROM ${isBody(h.kind) ? "body_metrics" : h.linked === "workout" ? "workouts" : "activities"} WHERE id::text = $1`, [h.ref])).rows.length > 0;
   return { ...h, there };
 }
 
@@ -568,8 +577,8 @@ export function healthRoutes(r: Router) {
     const out = { steps: 0, sleep: 0, sleepNights: 0, restingHr: 0, spo2: 0, hrv: 0, distance: 0, activeKcal: 0, hydration: 0, vo2max: 0, weight: 0, bodyFat: 0, activities: 0, hrDays: 0 };
     let touched = false; // the log changed (a row noted), even when no number did
 
-    const imps = new Map<string, Imp>((await ctx.q.query("SELECT key, kind, to_char(date, 'YYYY-MM-DD') AS date, ref, deleted_at IS NOT NULL AS deleted FROM health_imports")).rows
-      .map((x: any) => [x.key, { kind: x.kind, date: x.date, ref: x.ref, deleted: x.deleted }]));
+    const imps = new Map<string, Imp>((await ctx.q.query("SELECT key, kind, to_char(date, 'YYYY-MM-DD') AS date, ref, deleted_at IS NOT NULL AS deleted, apart FROM health_imports")).rows
+      .map((x: any) => [x.key, { kind: x.kind, date: x.date, ref: x.ref, deleted: x.deleted, apart: x.apart }]));
     /**
      * Whether to bring this key in: not when deleted, from the log or by deleting its data elsewhere in the app (034
      * marks it then). Data missing here is not taken as deleted: a copy may have the log entry before the day's number
@@ -685,6 +694,34 @@ export function healthRoutes(r: Router) {
       // an entry without its activity (ref null): a deletion taken back (restore), so the session comes in again
       const h = imps.get(key);
       if (!open(key) || h?.ref) continue;
+      const start = isoTime(s.start), end = isoTime(s.end), span: [string, string] = [start, end];
+      // the same session as one the person deleted (its time kept, 046), from a second app arriving after the deletion:
+      // noted as deleted too, so deleting keeps both out whichever order they come in
+      // (only for a key not in the log yet: one the person restored comes in)
+      const gone = !h && (await ctx.q.query(
+        `SELECT 1 FROM health_imports WHERE kind = 'activity' AND deleted_at IS NOT NULL AND key <> $3 AND $2::timestamptz > $1::timestamptz
+           AND span_end > span_start AND span_start < $2::timestamptz AND span_end > $1::timestamptz
+           AND extract(epoch FROM least(span_end, $2::timestamptz) - greatest(span_start, $1::timestamptz))
+             >= 0.8 * greatest(extract(epoch FROM span_end - span_start), extract(epoch FROM $2::timestamptz - $1::timestamptz)) LIMIT 1`,
+        [start, end, key])).rows.length > 0;
+      if (gone) {
+        // marking a key deleted takes the records lock (041's trigger): taken here first, as every path does
+        await lockRecords(ctx.q, ctx.userId);
+        await remember(ctx, key, "activity", null, null, { span, deleted: true });
+        imps.set(key, { kind: "activity", date: null, ref: null, deleted: true });
+        touched = true;
+        continue;
+      }
+      // a workout or activity recorded in Motus over the same time (the band saw it too): linked to it, not a second
+      // activity, and it gets the band's numbers it lacks (bandMatch). Not one the person unlinked (apart).
+      const motus = h?.apart ? null : await motusRecordFor(ctx, start, end);
+      if (motus) {
+        await copyFigures(ctx, motus.kind, motus.id, { steps: bandNum(s.steps, 1e6), distanceM: bandNum(s.distanceM, 1e7), calories: bandNum(s.calories, 20000), avgHr: bandNum(s.avgHr, 250) });
+        await remember(ctx, key, "activity", null, motus.id, { linked: motus.kind, span });
+        imps.set(key, { kind: "activity", date: null, ref: motus.id, deleted: false });
+        touched = true;
+        continue;
+      }
       // brought in before the log existed: noted, not added again
       let ref: string | null = (await ctx.q.query("SELECT id::text AS id FROM activities WHERE client_id = $1", [clientId])).rows[0]?.id ?? null;
       // the same session under another Health Connect id: written by a second app (the band's own app and Gadgetbridge,
@@ -693,10 +730,11 @@ export function healthRoutes(r: Router) {
       // count once (Stats, scores, a day's steps with the walks). Only sessions brought in from Health Connect: one
       // recorded in Motus is the person's own and stays apart from the import log. Deleting it marks both keys (034).
       if (!ref) ref = (await ctx.q.query(
-        `SELECT id::text AS id FROM activities WHERE source = $3 AND started_at < $2::timestamptz AND ended_at > $1::timestamptz
+        `SELECT id::text AS id FROM activities WHERE source = $3 AND $2::timestamptz > $1::timestamptz AND ended_at > started_at
+           AND started_at < $2::timestamptz AND ended_at > $1::timestamptz
            AND extract(epoch FROM least(ended_at, $2::timestamptz) - greatest(started_at, $1::timestamptz))
              >= 0.8 * greatest(extract(epoch FROM ended_at - started_at), extract(epoch FROM $2::timestamptz - $1::timestamptz))
-         ORDER BY abs(extract(epoch FROM started_at - $1::timestamptz)) LIMIT 1`, [isoTime(s.start), isoTime(s.end), HEALTH_SOURCE])).rows[0]?.id ?? null;
+         ORDER BY abs(extract(epoch FROM started_at - $1::timestamptz)) LIMIT 1`, [start, end, HEALTH_SOURCE])).rows[0]?.id ?? null;
       if (!ref) {
         const type = str(s.type, 40) || "other";
         const known = (await ctx.q.query("SELECT 1 FROM activity_types WHERE slug = $1", [type])).rows.length > 0;
@@ -706,10 +744,13 @@ export function healthRoutes(r: Router) {
         });
         out.activities++;
       }
-      await remember(ctx, key, "activity", null, ref);
+      await remember(ctx, key, "activity", null, ref, { span });
       imps.set(key, { kind: "activity", date: null, ref, deleted: false });
       touched = true;
     }
+    // sessions brought in before their workout or activity was in Motus (finished later, or synced from another copy),
+    // and duplicates from before linking: taken into the Motus record now
+    if (await linkBandSessions(ctx)) touched = true;
 
     // a day's heart rate: written again each time (not in the import log), counted when it changed
     for (const e of list(b.hrDays, 400)) {
@@ -993,15 +1034,18 @@ export function healthRoutes(r: Router) {
       SELECT *, sort_at::text AS sort_text FROM (
         SELECT h.key, h.kind, h.ref, h.imported_at,
           d.value AS d_value, d.source AS d_source, d.typed AS d_typed, d.synced AS d_synced, d.worn AS d_worn, bm.value AS w_value, bm.measured_at,
-          a.id AS a_id, a.type AS a_type, a.name AS a_name, a.started_at, a.duration_s, a.distance_m, a.steps AS a_steps, a.avg_hr,
-          to_char(coalesce(h.date, (coalesce(bm.measured_at, a.started_at) AT TIME ZONE 'UTC' - $1::float8 * interval '1 minute')::date), 'YYYY-MM-DD') AS day,
-          coalesce(bm.measured_at, a.started_at, ((h.date + 1)::timestamp AT TIME ZONE 'UTC') + $1::float8 * interval '1 minute' - interval '1 millisecond') AS sort_at
+          a.id AS a_id, a.type AS a_type, a.name AS a_name, coalesce(a.started_at, w.started_at) AS started_at, a.duration_s, a.distance_m, a.steps AS a_steps, a.avg_hr,
+          h.linked, w.id AS w_id, w.name AS w_name, w.ended_at AS w_ended_at, w.paused_s AS w_paused_s,
+          to_char(coalesce(h.date, (coalesce(bm.measured_at, a.started_at, w.started_at) AT TIME ZONE 'UTC' - $1::float8 * interval '1 minute')::date), 'YYYY-MM-DD') AS day,
+          coalesce(bm.measured_at, a.started_at, w.started_at, ((h.date + 1)::timestamp AT TIME ZONE 'UTC') + $1::float8 * interval '1 minute' - interval '1 millisecond') AS sort_at
         FROM health_imports h
         LEFT JOIN daily_logs d ON h.kind NOT IN ('weight', 'body_fat', 'activity') AND d.user_id = h.user_id AND d.date = h.date
           AND d.kind = ${DAILY_CASE}
         LEFT JOIN body_metrics bm ON h.kind IN ('weight', 'body_fat') AND bm.id::text = h.ref
-        LEFT JOIN activities a ON h.kind = 'activity' AND a.id::text = h.ref
-        WHERE h.deleted_at IS NULL AND (d.date IS NOT NULL OR bm.id IS NOT NULL OR a.id IS NOT NULL)
+        LEFT JOIN activities a ON h.kind = 'activity' AND h.linked IS DISTINCT FROM 'workout' AND a.id::text = h.ref
+        -- a session linked to a workout done in Motus (bandMatch): listed as matched to it
+        LEFT JOIN workouts w ON h.kind = 'activity' AND h.linked = 'workout' AND w.id::text = h.ref
+        WHERE h.deleted_at IS NULL AND (d.date IS NOT NULL OR bm.id IS NOT NULL OR a.id IS NOT NULL OR w.id IS NOT NULL)
           -- one session brought in by two apps is one activity, listed once (the first key)
           AND NOT (h.kind = 'activity' AND EXISTS (SELECT 1 FROM health_imports o
             WHERE o.kind = 'activity' AND o.ref = h.ref AND o.deleted_at IS NULL AND o.key < h.key))
@@ -1027,6 +1071,10 @@ export function healthRoutes(r: Router) {
       // steps whose synced count is less than the day's walks in Motus: the walks' total, which counts instead (daySteps);
       // using the synced count then changes nothing, so it isn't offered
       walks: x.kind === "steps" && x.d_synced != null && daySteps(num(x.d_synced), false, walked.get(x.day) ?? 0).from === "walks" ? walked.get(x.day)! : null,
+      // a session linked to a workout or activity recorded in Motus ("Matched to your workout"): opens that record, Unlink undoes it
+      linked: (x.linked ?? null) as "activity" | "workout" | null,
+      workout: x.w_id ? { id: x.w_id as string, name: (x.w_name ?? "") as string, startedAt: iso(x.started_at),
+        durationS: x.w_ended_at ? Math.max(0, Math.round((Date.parse(iso(x.w_ended_at)!) - Date.parse(iso(x.started_at)!)) / 1000) - Number(x.w_paused_s ?? 0)) : 0 } : null,
       activity: x.a_id ? { id: x.a_id, type: x.a_type, name: x.a_name ?? "", startedAt: iso(x.started_at), durationS: num(x.duration_s), distanceM: num(x.distance_m), steps: num(x.a_steps), avgHr: num(x.avg_hr) } : null,
       ref: x.ref as string | null,
       // a day's number typed over before 039 kept both (its synced value isn't known); a reading or session can't tell
@@ -1066,8 +1114,21 @@ export function healthRoutes(r: Router) {
     await lockRecords(ctx.q, ctx.userId);
     const h = await entry(ctx, p.key!);
     if (!h) throw notFound("This import is gone");
-    if (!isDaily(h.kind)) await ctx.q.query(`DELETE FROM ${isBody(h.kind) ? "body_metrics" : "activities"} WHERE id::text = $1`, [h.ref]);
+    // a session linked to a workout or activity recorded in Motus: only the band's entry goes, never the person's record
+    if (!isDaily(h.kind) && !h.linked) await ctx.q.query(`DELETE FROM ${isBody(h.kind) ? "body_metrics" : "activities"} WHERE id::text = $1`, [h.ref]);
     await forget(ctx, p.key!);
+    ctx.changed("health");
+    return { ok: true };
+  });
+
+  // a session linked to a workout or activity recorded in Motus becomes its own activity again (Imported data → Unlink):
+  // every key linked to that record lets go of it and stays apart from matching, and the phone's next read brings the
+  // session in as an activity (as a restore: restored_at, so it is listed as coming with the next sync until then)
+  r.post("/health/imports/:key/unlink", async (ctx, p) => {
+    const h = await entry(ctx, p.key!);
+    if (!h || !h.linked) throw notFound("This import is gone");
+    await ctx.q.query(
+      "UPDATE health_imports SET ref = NULL, linked = NULL, apart = true, restored_at = now() WHERE ref = $1 AND linked IS NOT NULL AND deleted_at IS NULL", [h.ref]);
     ctx.changed("health");
     return { ok: true };
   });
@@ -1101,7 +1162,7 @@ export function healthRoutes(r: Router) {
   // a new one, instead of taking the entry as already in.
   r.post("/health/imports/:key/restore", async (ctx, p) => {
     const { rows } = await ctx.q.query(
-      "UPDATE health_imports SET deleted_at = NULL, restored_at = now(), ref = NULL WHERE key = $1 AND deleted_at IS NOT NULL RETURNING 1", [p.key]);
+      "UPDATE health_imports SET deleted_at = NULL, restored_at = now(), ref = NULL, linked = NULL WHERE key = $1 AND deleted_at IS NOT NULL RETURNING 1", [p.key]);
     if (!rows.length) throw notFound("Nothing to restore");
     ctx.changed("health");
     return { ok: true };

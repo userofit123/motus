@@ -41,7 +41,12 @@ final class Voice {
     private static String current;
     private static boolean started;
     private static AudioFocusRequest focus;
-    private static final AudioManager.OnAudioFocusChangeListener IGNORE = change -> {};
+    // a call coming in (or another app taking the sound for a while, or for good): the cue stops rather than talking over
+    // it; a short duck (a notification sound) lets it carry on
+    private static final AudioManager.OnAudioFocusChangeListener ON_FOCUS = change -> {
+        if (change == AudioManager.AUDIOFOCUS_LOSS || change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT)
+            main.post(() -> { pendingText = null; if (tts != null && ready && current != null) { tts.stop(); release(); } });
+    };
 
     private Voice() {}
 
@@ -80,7 +85,6 @@ final class Voice {
             made[0] = new TextToSpeech(app, status -> main.post(() -> {
                 if (made[0] != tts) return; // given up meanwhile (drop shut it down)
                 if (status != TextToSpeech.SUCCESS) { failed(); return; }
-                failures = 0;
                 ready = true;
                 // the cues are English, as the app is: the phone's own English, else British, American, any English
                 Locale own = Locale.getDefault();
@@ -91,7 +95,9 @@ final class Voice {
                 tts.setAudioAttributes(ATTRS);
                 tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
                     @Override public void onStart(String id) { main.post(() -> { if (id.equals(current)) started = true; }); }
-                    @Override public void onDone(String id) { main.post(() -> ended(id)); }
+                    // a cue said to its end: the engine works, so the wait after failures starts over (not when it
+                    // merely started: one that starts and then can't speak would otherwise retry at once every time)
+                    @Override public void onDone(String id) { main.post(() -> { failures = 0; ended(id); }); }
                     @Override @SuppressWarnings("deprecation") public void onError(String id) { main.post(() -> ended(id)); }
                     @Override public void onError(String id, int code) { main.post(() -> ended(id)); }
                     @Override public void onStop(String id, boolean interrupted) { main.post(() -> ended(id)); }
@@ -127,7 +133,8 @@ final class Voice {
         String id = "motus-cue-" + (++utterances);
         current = id;
         started = false;
-        hold();
+        // refused (a phone call going on): not said, rather than over the call
+        if (!hold()) { release(); return; }
         if (tts.speak(text, TextToSpeech.QUEUE_FLUSH, p, id) == TextToSpeech.SUCCESS) return;
         // the engine died under us (updated or killed by Android): a fresh one says it, once
         if (again) { failed(); return; }
@@ -140,14 +147,16 @@ final class Voice {
         if (id.equals(current)) release();
     }
 
-    private static void hold() {
+    /** Asks for the sound (music ducks under the cue); false only when refused outright, as during a call. */
+    private static boolean hold() {
         AudioManager am = (AudioManager) app.getSystemService(Context.AUDIO_SERVICE);
-        if (am == null) return;
+        if (am == null) return true;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             if (focus == null) focus = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK)
-                .setAudioAttributes(ATTRS).setOnAudioFocusChangeListener(IGNORE).build();
-            am.requestAudioFocus(focus);
-        } else requestLegacy(am);
+                .setAudioAttributes(ATTRS).setOnAudioFocusChangeListener(ON_FOCUS).build();
+            return am.requestAudioFocus(focus) != AudioManager.AUDIOFOCUS_REQUEST_FAILED;
+        }
+        return requestLegacy(am);
     }
 
     private static void release() {
@@ -161,12 +170,12 @@ final class Voice {
     }
 
     @SuppressWarnings("deprecation")
-    private static void requestLegacy(AudioManager am) {
-        am.requestAudioFocus(IGNORE, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK);
+    private static boolean requestLegacy(AudioManager am) {
+        return am.requestAudioFocus(ON_FOCUS, AudioManager.STREAM_MUSIC, AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK) != AudioManager.AUDIOFOCUS_REQUEST_FAILED;
     }
 
     @SuppressWarnings("deprecation")
     private static void abandonLegacy(AudioManager am) {
-        am.abandonAudioFocus(IGNORE);
+        am.abandonAudioFocus(ON_FOCUS);
     }
 }

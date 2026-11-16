@@ -6,6 +6,7 @@ import { camel, id, str, intOrNull, numOrNull, bool, isoTime, dateStr, startOfDa
 import { uuidv7 } from "../ids";
 import { notFound, bad } from "../errors";
 import { lockRecords } from "./healthDerive";
+import { linkBandSessions } from "./bandMatch";
 
 const DEFAULT_TYPES: ActivityType[] = [
   { slug: "walk", name: "Walk", icon: "walk", hasDistance: true, hasGps: true, hasSteps: true },
@@ -183,11 +184,15 @@ export function activityRoutes(r: Router) {
   });
   r.post("/activities", async (ctx, _p, b) => {
     const aid = await saveActivity(ctx, b);
+    // the band's session of this activity, already brought in from Health Connect: taken into it (bandMatch)
+    await linkBandSessions(ctx);
     ctx.changed("activity");
     return { id: aid };
   });
   r.put("/activities/:id", async (ctx, p, b) => {
     await saveActivity(ctx, b, id(p.id), false);
+    // its new time may now hold a band session brought in as its own activity
+    await linkBandSessions(ctx);
     ctx.changed("activity");
     return { ok: true };
   });
