@@ -118,7 +118,8 @@ describe("a copy made before M-184", () => {
     const again = (await replica.remakeCopy(dev.db, await ok(as(A)("GET", "/sync/catalog")), await ok(as(A)("GET", "/sync/snapshot", undefined, { user: A }))))!;
     expect(again).not.toBeNull();
     expect(replica.outdated(again)).toBe(false);
-    expect(again.device).toBe(m.device);
+    // made again under a new name (replica.ts remakeCopy says why)
+    expect(again.device).not.toBe(m.device);
     const names = (await dev.db.admin.query("SELECT name FROM routines")).rows.map((r: any) => r.name);
     expect(names).not.toContain("Foreign");
     expect(names.length).toBe((await server.db.admin.query("SELECT 1 FROM routines WHERE user_id = $1", [A])).rows.length);

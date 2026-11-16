@@ -3,7 +3,7 @@
 import { cleanProgression, TRACKINGS } from "@motus/shared";
 import type { Router, Ctx } from "../router";
 import type { Sql } from "../db";
-import { uuidv7, isUuid } from "../ids";
+import { uuidv7, isUuid, ownCopyId } from "../ids";
 import { bad } from "../errors";
 import { oneOf, visible } from "../util";
 import { historyNow } from "../migrations/016_history_now";
@@ -16,7 +16,7 @@ const EXPORT_FORMAT = 1;
 // The schema a file was written with: the number of migrations (migrate.ts) when it was made, so a restore knows which
 // of their changes to existing rows the file's rows still need. A test keeps it equal to the number of migrations, so a
 // new one is checked against backups (does the file carry it, does an older file need converting).
-const BACKUP_SCHEMA = 49; // 40: health_records (an older file has none: nothing to convert); 41: its trigger only; 42, 43: health_record_reads, not in backups; 44: health_records.apps, worked out again by its trigger on restore; 45: more record types (nothing to convert; an older version refuses the file, its rows would break the type check); 46: health_imports.linked, apart and span (an older file has none: its sessions stay as they were, unlinked; their span filled in as 046 did, SINCE.sessionSpans); 47: health_imports.copied and activities.edited_at (an older file has none: nothing to take back, nothing marked edited); 48: band_link_pass, not in backups (a restore runs the linking pass again); 49: sync_resets, not in backups (a restore sets it)
+const BACKUP_SCHEMA = 50; // 40: health_records (an older file has none: nothing to convert); 41: its trigger only; 42, 43: health_record_reads, not in backups; 44: health_records.apps, worked out again by its trigger on restore; 45: more record types (nothing to convert; an older version refuses the file, its rows would break the type check); 46: health_imports.linked, apart and span (an older file has none: its sessions stay as they were, unlinked; their span filled in as 046 did, SINCE.sessionSpans); 47: health_imports.copied and activities.edited_at (an older file has none: nothing to take back, nothing marked edited); 48: band_link_pass, not in backups (a restore runs the linking pass again); 49: sync_resets, not in backups (a restore sets it); 50: a function only
 const NEWER = "This backup is from a newer version of Motus. Update the app first.";
 const DAMAGED = "This backup is damaged and can't be restored.";
 /** The schema a file says it has (refused when newer than this version, or not a whole number from 0 up), or
@@ -261,9 +261,9 @@ export async function importAll(ctx: Ctx, data: any, mode: "replace" | "merge") 
       if (!ok && oldId && isUuid(oldId)) {
         // another account on this server has this id (a copy into a second account): a new id, the same one each time,
         // so importing the file again finds it and adds nothing twice
-        const nid = (await q.query<IdRow>("SELECT md5($1 || ':' || $2)::uuid AS id", [ctx.userId, oldId])).rows[0]!;
-        map.set(oldId, nid.id); row.id = nid.id;
-        if (await canSee(t, nid.id)) continue;
+        const nid = await ownCopyId(q, ctx.userId, oldId);
+        map.set(oldId, nid); row.id = nid;
+        if (await canSee(t, nid)) continue;
         ok = await insert(row);
       }
       if (ok && typeof row.id === "string") { seen.add(row.id); (added[t] ??= []).push(row.id); }

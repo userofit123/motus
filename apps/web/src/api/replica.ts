@@ -204,31 +204,33 @@ async function run(): Promise<Error | null> {
   // set before each local write (so a write that fails midway counts too): a run that wrote nothing needs no save
   let wrote = false, ok = false, err: Error | null = null;
   try {
-    const meta = await R.replicaMeta(db);
-    for (;;) {
-      const out = await R.localChanges(db);
-      if (!out.changes.length) break;
-      const res = await call("POST", "/sync/push", { device: meta.device, user: userId, changes: out.changes });
-      wrote = true;
-      await R.markSent(db, out.upTo);
-      if (res.rejected.length) { await R.applyRemote(db, userId, res.rejected); changed = true; }
-      // the server couldn't take some (they no longer fit its data): say so rather than lose them without a word
-      if (res.failed?.length) { failed = res.failed.length; console.warn("Sync: the server refused", res.failed); }
-    }
+    // what changed here goes first; what the server sends back is taken in, and what it couldn't write this time is
+    // sent again later (R.pushAll)
+    const push = async () => {
+      for (const res of await R.pushAll(db, userId, (body: unknown) => { wrote = true; return call("POST", "/sync/push", body); })) {
+        if (res.rejected?.length || res.moved?.length) changed = true;
+        // the server couldn't take some: say so rather than lose them without a word (they stay here)
+        if (res.failed?.length) { failed = res.failed.length; console.warn("Sync: the server refused", res.failed); }
+      }
+    };
+    await push();
     const retry: any[] = [];
     for (;;) {
       const m = await R.replicaMeta(db);
       const p = await call("GET", `/sync/pull?since=${m.cursor}&device=${encodeURIComponent(m.device)}&user=${encodeURIComponent(userId)}`);
       // everything was replaced on the server (a restore): the copy is made again from it, as the changes would leave
       // rows only this copy had beside the restored ones (M-257). What was waiting here went first (above); a change
-      // made since then (also while the snapshot downloads: remakeCopy checks again as it empties the copy) goes on
-      // the next run, which then makes the copy again.
+      // made since then (also while the snapshot downloads: remakeCopy checks again as it empties the copy) is sent,
+      // and the copy made from the same snapshot (remakeCopy says why that is safe): a workout under way, writing
+      // every few seconds, never puts it off for good, nor fetches the snapshot again each time
       if (p.reset) {
         if (await R.waitingCount(db)) { again = true; break; }
         const cat = await call("GET", "/sync/catalog");
         const snap = await httpTransport.request("GET", `/sync/snapshot?user=${encodeURIComponent(userId)}`, undefined, { wait: 120_000 });
         wrote = true;
-        if (!(await R.remakeCopy(db, cat, snap))) { again = true; break; }
+        let made = await R.remakeCopy(db, cat, snap);
+        for (let i = 0; !made && i < 5; i++) { await push(); made = await R.remakeCopy(db, cat, snap); }
+        if (!made) { again = true; break; }
         changed = true;
         retry.length = 0;
         break;

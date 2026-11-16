@@ -15,3 +15,12 @@ export function uuidv7(): string {
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-${h.slice(12, 16)}-${h.slice(16, 20)}-${h.slice(20)}`;
 }
 export const isUuid = (s: unknown): s is string => typeof s === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s);
+
+/**
+ * The id a row gets in this account when its own id is another account's (a backup restored into a second account,
+ * modules/data.ts importAll; a device's row the server refused for that, modules/sync.ts push): the same one each time,
+ * so the row is found again rather than added twice.
+ */
+export async function ownCopyId(q: { query: (t: string, p?: unknown[]) => Promise<{ rows: any[] }> }, userId: string, oldId: string): Promise<string> {
+  return String((await q.query("SELECT md5($1 || ':' || $2)::uuid::text AS id", [userId, oldId])).rows[0].id);
+}
