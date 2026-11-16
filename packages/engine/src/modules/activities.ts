@@ -121,9 +121,13 @@ export async function saveActivity(ctx: Ctx, b: any, aid = uuidv7(), isNew = tru
     const { rows } = await ctx.q.query(
       `UPDATE activities SET type=$3, name=$4, started_at=$5, ended_at=$6, duration_s=$7, moving_s=$8, distance_m=$9, steps=$10, elevation_m=$11, avg_hr=$12, calories=$13,
          route=coalesce($14, route), notes=$15, steps_source = CASE WHEN steps IS DISTINCT FROM $10 THEN 'manual' ELSE steps_source END,
-         -- the person changed what it is: an imported one is theirs from then on, never taken into a Motus record (bandMatch)
+         -- the person changed it (what it is, its time, its numbers): an imported one is theirs from then on, never taken
+         -- into a Motus record (bandMatch), also when moved onto a workout's time. Only this path (the person's save) sets
+         -- it, never the import; the form saved untouched leaves it as it was
          edited_at = CASE WHEN type IS DISTINCT FROM $3 OR coalesce(name, '') IS DISTINCT FROM coalesce($4, '') OR coalesce(notes, '') IS DISTINCT FROM coalesce($15, '')
-           OR ($14::jsonb IS NOT NULL AND route IS DISTINCT FROM $14::jsonb) THEN now() ELSE edited_at END
+           OR ($14::jsonb IS NOT NULL AND route IS DISTINCT FROM $14::jsonb) OR started_at IS DISTINCT FROM $5::timestamptz OR ended_at IS DISTINCT FROM $6::timestamptz
+           OR duration_s IS DISTINCT FROM $7::int OR moving_s IS DISTINCT FROM $8::int OR distance_m IS DISTINCT FROM $9::numeric OR steps IS DISTINCT FROM $10::int
+           OR elevation_m IS DISTINCT FROM $11::numeric OR avg_hr IS DISTINCT FROM $12::int OR calories IS DISTINCT FROM $13::int THEN now() ELSE edited_at END
        WHERE id=$1 AND user_id=$2 RETURNING id`, vals.slice(0, 15));
     if (!rows.length) throw notFound("Activity not found");
   }

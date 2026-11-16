@@ -26,7 +26,7 @@ import { canStepSources, stepSources, adviceWord, useDevice, healthSupported, sy
 
 interface Item {
   key: string; kind: "steps" | "sleep" | "weight" | "resting_hr" | "spo2" | "hrv" | "distance" | "active_kcal" | "body_fat" | "water" | "vo2max" | "activity"; date: string; at: string | null; value: number | null;
-  activity: { id: string; type: string; name: string | null; startedAt: string; durationS: number; distanceM: number | null; steps: number | null; avgHr: number | null; source: string | null } | null;
+  activity: { id: string; type: string; name: string | null; startedAt: string; durationS: number; distanceM: number | null; steps: number | null; avgHr: number | null; source: string | null; hasRoute: boolean } | null;
   // a band session that is a workout or activity recorded in Motus: linked to it instead of a second activity
   linked: "activity" | "workout" | null; workout: { id: string; name: string; startedAt: string; durationS: number; setCount: number; volumeKg: number } | null;
   // typed: the day's typed value when the day uses it instead of this one (else null); walks: the walks' steps when
@@ -100,15 +100,20 @@ async function edit(x: Item) {
     changed(); toast(`${NAME[x.kind]} saved`);
   } catch (e) { toastError(e); }
 }
-const yours = (x: Item) => (x.linked === "workout" ? "workout" : "activity");
 // the session becomes its own activity again: it comes in as one with the phone's next read
 async function unlink(x: Item) {
-  if (!(await confirm("Unlink this session?", { text: `The band's session becomes its own activity on the next sync, beside your ${yours(x)}.`, ok: "Unlink" }))) return;
+  const text = x.linked === "activity"
+    ? "The band's session becomes its own activity on the next sync, beside your activity. The band's numbers go with it."
+    : "The band's session becomes its own activity on the next sync, beside your workout.";
+  if (!(await confirm("Unlink this session?", { text, ok: "Unlink" }))) return;
   try { await api.post(`${path(x)}/unlink`); changed(); toast("Session unlinked"); } catch (e) { toastError(e); }
 }
 // only the band's entry goes (and the numbers it filled in); the person's workout or activity stays
 async function removeBand(x: Item) {
-  if (!(await confirm("Remove the band entry?", { text: `Your ${yours(x)} stays. The band's session won't come back on the next sync.`, ok: "Remove", danger: true }))) return;
+  const text = x.linked === "activity"
+    ? "Your activity stays, without the band's numbers. The band's session won't come back on the next sync."
+    : "Your workout stays. The band's session won't come back on the next sync.";
+  if (!(await confirm("Remove this band entry?", { text, ok: "Remove", danger: true }))) return;
   try { await api.del(path(x)); changed(); toast("Band entry removed"); } catch (e) { toastError(e); }
 }
 async function del(x: Item) {
@@ -191,7 +196,7 @@ const menu = (x: Item): MenuItem[] => [
         <div class="grow"><div class="t">{{ title(x) }}<span v-if="x.edited" class="mchip hi-chip">Edited</span></div><div v-if="sub(x)" class="s">{{ sub(x) }}</div>
           <div v-if="notUsed(x)" class="s">{{ notUsed(x) }}</div><div v-if="matched(x)" class="s">{{ matched(x) }}</div></div>
         <SessionStats v-if="x.workout" :x="{ kind: 'workout', durationS: x.workout.durationS, setCount: x.workout.setCount, volumeKg: x.workout.volumeKg }" />
-        <SessionStats v-else-if="x.kind === 'activity' && x.activity" :x="{ kind: 'activity', durationS: x.activity.durationS, distanceM: x.activity.distanceM, steps: x.activity.steps, type: x.activity.type, source: x.activity.source }" />
+        <SessionStats v-else-if="x.kind === 'activity' && x.activity" :x="{ kind: 'activity', durationS: x.activity.durationS, distanceM: x.activity.distanceM, steps: x.activity.steps, type: x.activity.type, source: x.activity.source, hasRoute: x.activity.hasRoute }" />
         <b v-else class="num">{{ value(x) }}</b>
         <span @click.stop><Menu :items="menu(x)" :label="`Options for ${title(x)}`" /></span>
       </div>

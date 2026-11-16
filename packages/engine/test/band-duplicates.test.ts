@@ -10,6 +10,7 @@ import { pgliteDb } from "../src/adapters/pglite";
 import { uuidv7 } from "../src/ids";
 import { rangeHr, sleepDays, spanBand } from "../src/modules/healthDerive";
 import { hourly, type Rec, type Hour } from "../src/modules/healthRecords";
+import { HISTORY_BATCH } from "../src/modules/bandMatch";
 
 const GB = "nodomain.freeyourgadget.gadgetbridge", MI = "com.xiaomi.wearable";
 const D = "2026-10-12", T = Date.parse(D + "T00:00:00Z") / 1000, H = 3600, M = 60;
@@ -336,5 +337,144 @@ describe("a band session linked to a Motus record, let go", () => {
     const [gid] = (await call("POST", "/activities/import", { text: gpx, type: "run" })).ids as string[];
     expect(await entryOf("activity:g1")).toMatchObject({ ref: gid, linked: "activity" });
     expect((await stepsOf(gid!)).steps).toBe(6000);
+  });
+});
+
+// Fix round 4: two apps' copies of one session linked to the same Motus record share its figures (released one at a
+// time, the figures go back only with the last), and the duplicates from before linking are cleaned up once over the
+// whole history (linkHistory, 048), not only where a read or save looks.
+describe("band links, fix round 4", () => {
+  const W = "2026-10-27";
+  const at = (h: number, m = 0) => `${W}T${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:00.000Z`;
+  const session = (id: string, s: string, e: string, extra: object = {}) => ({ id, type: "walk", start: s, end: e, ...extra });
+  const imp = async (...sessions: object[]) => (await call("POST", "/health/import", { sessions })).activities as number;
+  const entryOf = async (key: string) => (await eng.db.admin.query<{ ref: string | null; linked: string | null; copied: unknown }>(
+    "SELECT ref, linked, copied FROM health_imports WHERE user_id = $1 AND key = $2", [U, key])).rows[0]!;
+  const stepsOf = async (aid: string) => (await eng.db.admin.query<{ steps: number | null }>("SELECT steps FROM activities WHERE id = $1", [aid])).rows[0]!.steps;
+  const pass = async () => (await eng.db.admin.query<{ done: boolean }>("SELECT done_at IS NOT NULL AS done FROM band_link_pass WHERE user_id = $1", [U])).rows[0];
+
+  it("the band's steps stay on the Motus walk while a second app's copy is still linked, and go back with the last", async () => {
+    const mine = (await call("POST", "/activities", { type: "walk", startedAt: at(7), endedAt: at(8) })).id as string;
+    expect(await imp(session("c1", at(7, 2), at(7, 58), { steps: 3200 }), session("c2", at(7, 3), at(7, 58), { steps: 3150 }))).toBe(0);
+    expect(await entryOf("activity:c2")).toMatchObject({ ref: mine, linked: "activity" });
+    expect(await stepsOf(mine)).toBe(3200);
+    await call("POST", "/health/imports/activity%3Ac1/unlink");
+    expect(await stepsOf(mine)).toBe(3200);
+    expect((await entryOf("activity:c2")).copied).toEqual({ steps: "3200" });
+    await call("POST", "/health/imports/activity%3Ac2/unlink");
+    expect(await stepsOf(mine)).toBe(null);
+  });
+
+  it("a duplicate from before linking, far from any read, is taken in once by the full-history pass", async () => {
+    const old = (d: string, h: number, m = 0) => `${d}T${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:00.000Z`;
+    // brought in as an activity, its workout added without linking (as before linking existed)
+    expect(await imp(session("old1", old("2025-03-02", 9, 5), old("2025-03-02", 9, 55)))).toBe(1);
+    const w = uuidv7();
+    await eng.db.admin.query("INSERT INTO workouts (id, user_id, name, status, started_at, ended_at) VALUES ($1,$2,'Old','completed',$3,$4)",
+      [w, U, old("2025-03-02", 9), old("2025-03-02", 10)]);
+    expect(await entryOf("activity:old1")).toMatchObject({ linked: null });
+    // the pass ran already in the tests before: as on a copy updated to this version, it hasn't
+    await eng.db.admin.query("DELETE FROM band_link_pass WHERE user_id = $1", [U]);
+    expect(await imp()).toBe(0);
+    expect(await entryOf("activity:old1")).toMatchObject({ ref: w, linked: "workout" });
+    expect(await pass()).toEqual({ done: true });
+    // once through, not again: a later one far from any read stays (only the scoped passes run)
+    expect(await imp(session("old2", old("2025-04-02", 9, 5), old("2025-04-02", 9, 55)))).toBe(1);
+    await eng.db.admin.query("INSERT INTO workouts (id, user_id, name, status, started_at, ended_at) VALUES ($1,$2,'Old','completed',$3,$4)",
+      [uuidv7(), U, old("2025-04-02", 9), old("2025-04-02", 10)]);
+    expect(await imp()).toBe(0);
+    expect(await entryOf("activity:old2")).toMatchObject({ linked: null });
+  });
+
+  const workout = async (s: string, e: string) => {
+    const id = uuidv7();
+    await eng.db.admin.query("INSERT INTO workouts (id, user_id, name, status, started_at) VALUES ($1,$2,'Arms','in_progress',$3)", [id, U, s]);
+    await call("POST", `/workouts/${id}/finish`, { endedAt: e });
+    return id;
+  };
+  const hcIdOf = async (key: string) => (await entryOf(key)).ref!;
+
+  it("an imported activity moved by the person onto a workout's time stays theirs", async () => {
+    expect(await imp(session("m1", at(9, 5), at(9, 35), { steps: 800 }))).toBe(1);
+    const own = await hcIdOf("activity:m1");
+    const w = await workout(at(10), at(11));
+    // only its time changed, onto the workout
+    await call("PUT", `/activities/${own}`, { type: "walk", startedAt: at(10, 5), endedAt: at(10, 35), steps: 800 });
+    expect(await stepsOf(own)).toBe(800);
+    expect(await entryOf("activity:m1")).toMatchObject({ ref: own, linked: null });
+    // and a second app's copy of it is noted against it, not linked to the workout
+    expect(await imp(session("m2", at(10, 6), at(10, 35), { steps: 790 }))).toBe(0);
+    expect(await entryOf("activity:m2")).toMatchObject({ ref: own, linked: null });
+    expect((await eng.db.admin.query("SELECT count(*)::int AS n FROM health_imports WHERE user_id = $1 AND ref = $2", [U, w])).rows[0]).toEqual({ n: 0 });
+  });
+
+  it("a second app's copy of a session the person unlinked is noted against that activity, not linked again", async () => {
+    const mine = (await call("POST", "/activities", { type: "walk", startedAt: at(12), endedAt: at(13) })).id as string;
+    expect(await imp(session("p1", at(12, 2), at(12, 58), { steps: 2500 }))).toBe(0);
+    await call("POST", "/health/imports/activity%3Ap1/unlink");
+    expect(await imp(session("p1", at(12, 2), at(12, 58), { steps: 2500 }))).toBe(1);
+    const own = await hcIdOf("activity:p1");
+    expect(await imp(session("p2", at(12, 3), at(12, 58), { steps: 2450 }))).toBe(0);
+    expect(await entryOf("activity:p2")).toMatchObject({ ref: own, linked: null });
+    expect(await stepsOf(mine)).toBe(null);
+  });
+
+  it("a link left pointing at a record deleted on another copy lets go, on the next read and in the full pass", async () => {
+    const gone = async (w: string) => {
+      // as a sync applies it: 047's trigger is skipped
+      await eng.db.admin.query("SELECT set_config('motus.sync_apply', '1', false)");
+      await eng.db.admin.query("DELETE FROM workouts WHERE id = $1", [w]);
+      await eng.db.admin.query("SELECT set_config('motus.sync_apply', '', false)");
+    };
+    const w1 = await workout(at(14), at(15));
+    expect(await imp(session("dg1", at(14, 5), at(14, 55)))).toBe(0);
+    await gone(w1);
+    expect(await entryOf("activity:dg1")).toMatchObject({ ref: w1, linked: "workout" });
+    expect(await imp(session("dg1", at(14, 5), at(14, 55)))).toBe(1);
+    expect(await entryOf("activity:dg1")).toMatchObject({ linked: null });
+    const w2 = await workout(at(16), at(17));
+    expect(await imp(session("dg2", at(16, 5), at(16, 55)))).toBe(0);
+    await gone(w2);
+    await eng.db.admin.query("DELETE FROM band_link_pass WHERE user_id = $1", [U]);
+    await imp();
+    expect(await entryOf("activity:dg2")).toMatchObject({ ref: null, linked: null });
+  });
+
+  it("a duplicated workout takes in the band session already brought in over its time", async () => {
+    expect(await imp(session("dup1", at(18, 5), at(18, 55)))).toBe(1);
+    const src = await workout(at(20), at(21));
+    const copy = (await call("POST", `/workouts/${src}/duplicate`, { startedAt: at(18) })).id as string;
+    expect(await entryOf("activity:dup1")).toMatchObject({ ref: copy, linked: "workout" });
+  });
+
+  it("the band's distance goes back on unlink, compared as a number", async () => {
+    const mine = (await call("POST", "/activities", { type: "walk", startedAt: at(22), endedAt: at(23) })).id as string;
+    expect(await imp(session("nd1", at(22, 2), at(22, 58), { distanceM: 2100.5 }))).toBe(0);
+    const dist = async () => (await eng.db.admin.query<{ d: string | null }>("SELECT distance_m::text AS d FROM activities WHERE id = $1", [mine])).rows[0]!.d;
+    expect(Number(await dist())).toBe(2100.5);
+    // the same number written another way (as a sync or a restore may): still the band's, still taken back
+    await eng.db.admin.query("UPDATE health_imports SET copied = '{\"distance_m\": \"2100.50\"}' WHERE user_id = $1 AND key = 'activity:nd1'", [U]);
+    await call("POST", "/health/imports/activity%3And1/unlink");
+    expect(await dist()).toBe(null);
+  });
+
+  it("goes a batch per import, so a long history doesn't hold one up", async () => {
+    await eng.db.admin.query("DELETE FROM band_link_pass WHERE user_id = $1", [U]);
+    // HISTORY_BATCH imported activities first in time, then one inside a workout
+    await eng.db.admin.query(
+      `INSERT INTO activities (id, user_id, type, source, started_at, ended_at)
+       SELECT gen_random_uuid(), $1, 'walk', 'health_connect', t, t + interval '20 minutes'
+       FROM generate_series('2024-01-01T00:00:00Z'::timestamptz, '2024-01-01T00:00:00Z'::timestamptz + ($2::int - 1) * interval '1 hour', interval '1 hour') t`,
+      [U, HISTORY_BATCH]);
+    const late = uuidv7();
+    await eng.db.admin.query("INSERT INTO activities (id, user_id, type, source, started_at, ended_at) VALUES ($1,$2,'walk','health_connect','2024-06-01T09:05:00Z','2024-06-01T09:55:00Z')", [late, U]);
+    await eng.db.admin.query("INSERT INTO workouts (id, user_id, name, status, started_at, ended_at) VALUES ($1,$2,'Old','completed','2024-06-01T09:00:00Z','2024-06-01T10:00:00Z')", [uuidv7(), U]);
+    const exists = async () => (await eng.db.admin.query("SELECT 1 FROM activities WHERE id = $1", [late])).rows.length > 0;
+    await imp();
+    expect(await pass()).toEqual({ done: false });
+    expect(await exists()).toBe(true);
+    await imp();
+    expect(await exists()).toBe(false);
+    expect(await pass()).toEqual({ done: true });
   });
 });

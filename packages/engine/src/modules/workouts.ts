@@ -915,6 +915,8 @@ export function workoutRoutes(r: Router) {
       const weId = await addExercise(ctx, wid, { ...e, sets: e.sets.map((s) => ({ ...s, id: undefined, doneAt: s.done ? startedAt : null })) });
       await ctx.q.query("UPDATE workout_exercises SET status = $2, skip_reason = $3 WHERE id = $1", [weId, e.status, e.skipReason]);
     }
+    // the band's session of its time, already brought in as an activity: linked to the copy instead, as for /log (bandMatch)
+    await linkFor(ctx, "workout", wid);
     ctx.changed("workout");
     return { id: wid };
   });

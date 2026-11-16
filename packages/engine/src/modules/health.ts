@@ -32,7 +32,7 @@ import { isNight, cleanWornDevice, plausibleSteps, stepsTyped, appSteps, bandSte
 import { maxHeartRate, sessionLoad, loadTrend, CHRONIC_DAYS, exercisePeaks, type LoadTrend, type HrTick } from "@motus/shared";
 import { SCORE_DAYS, ageOf, scoresFor, effortMinutes, sleepScore, activityScore, strengthScore, muscleSets } from "@motus/shared";
 import { getSettings } from "./settings";
-import { motusRecordFor, copyFigures, linkBandSessions, release, type Copied } from "./bandMatch";
+import { motusRecordFor, copyFigures, linkBandSessions, linkHistory, release, releaseDangling, type Copied } from "./bandMatch";
 import { SET_COUNT_SQL, VOLUME_SQL } from "./workouts";
 
 export const HEALTH_SOURCE = "health_connect";
@@ -80,7 +80,7 @@ const lenient = (k: Daily, v: unknown) => { try { return dailyValue(k, v); } cat
 const lenientBody = (k: Body, v: unknown) => { try { return bodyValue(k, v); } catch { return null; } };
 /** The daily log's kind for an import log row's kind, in SQL (h: health_imports). */
 const DAILY_CASE = `CASE h.kind ${Object.entries(DAILY_KIND).map(([i, d]) => `WHEN '${i}' THEN '${d}'`).join(" ")} END`;
-interface Imp { kind: Kind; date: string | null; ref: string | null; deleted: boolean; apart?: boolean }
+interface Imp { kind: Kind; date: string | null; ref: string | null; deleted: boolean; apart?: boolean; linked?: string | null }
 
 /**
  * Notes a key in the import log. A session's entry also keeps its time (span, 046: kept after a deletion, so the same
@@ -582,8 +582,8 @@ export function healthRoutes(r: Router) {
     let touched = false; // the log changed (a row noted), even when no number did
 
     const imps = new Map<string, Imp>((await ctx.q.query<Imp & { key: string }>(
-      "SELECT key, kind, to_char(date, 'YYYY-MM-DD') AS date, ref, deleted_at IS NOT NULL AS deleted, apart FROM health_imports")).rows
-      .map((x) => [x.key, { kind: x.kind, date: x.date, ref: x.ref, deleted: x.deleted, apart: x.apart }]));
+      "SELECT key, kind, to_char(date, 'YYYY-MM-DD') AS date, ref, deleted_at IS NOT NULL AS deleted, apart, linked FROM health_imports")).rows
+      .map((x) => [x.key, { kind: x.kind, date: x.date, ref: x.ref, deleted: x.deleted, apart: x.apart, linked: x.linked }]));
     /**
      * Whether to bring this key in: not when deleted, from the log or by deleting its data elsewhere in the app (034
      * marks it then). Data missing here is not taken as deleted: a copy may have the log entry before the day's number
@@ -697,7 +697,14 @@ export function healthRoutes(r: Router) {
     for (const s of sessions) {
       const hcId = str(String(s.id), 70), key = `activity:${hcId}`, clientId = `hc:${hcId}`;
       // an entry without its activity (ref null): a deletion taken back (restore), so the session comes in again
-      const h = imps.get(key);
+      let h = imps.get(key);
+      // linked to a Motus record that is gone (deleted on another copy, where 047's trigger is skipped): let go, as the
+      // trigger would have, so the session comes in as its own activity
+      if (h?.ref && h.linked && open(key) && await releaseDangling(ctx, key)) {
+        h = { ...h, ref: null, linked: null };
+        imps.set(key, h);
+        touched = true;
+      }
       if (!open(key) || h?.ref) continue;
       const start = isoTime(s.start), end = isoTime(s.end), span: [string, string] = [start, end];
       // the same session as one the person deleted (its time kept, 046), from a second app arriving after the deletion:
@@ -719,6 +726,22 @@ export function healthRoutes(r: Router) {
       }
       // a workout or activity recorded in Motus over the same time (the band saw it too): linked to it, not a second
       // activity, and it gets the band's numbers it lacks (bandMatch). Not one the person unlinked (apart).
+      // the same session already brought in as an activity the person made their own (edited, or unlinked: apart on
+      // its key), from a second app: this key is a copy of that activity, never linked to a Motus record beside it
+      // (its numbers would count twice)
+      const own = (await ctx.q.query<{ id: string }>(
+        `SELECT a.id::text AS id FROM activities a WHERE a.source = $3 AND $2::timestamptz > $1::timestamptz AND a.ended_at > a.started_at
+           AND (a.edited_at IS NOT NULL OR EXISTS (SELECT 1 FROM health_imports o WHERE o.ref = a.id::text AND o.apart AND o.linked IS NULL))
+           AND a.started_at < $2::timestamptz AND a.ended_at > $1::timestamptz
+           AND extract(epoch FROM least(a.ended_at, $2::timestamptz) - greatest(a.started_at, $1::timestamptz))
+             >= 0.8 * greatest(extract(epoch FROM a.ended_at - a.started_at), extract(epoch FROM $2::timestamptz - $1::timestamptz))
+         ORDER BY abs(extract(epoch FROM a.started_at - $1::timestamptz)) LIMIT 1`, [start, end, HEALTH_SOURCE])).rows[0]?.id ?? null;
+      if (own) {
+        await remember(ctx, key, "activity", null, own, { span });
+        imps.set(key, { kind: "activity", date: null, ref: own, deleted: false });
+        touched = true;
+        continue;
+      }
       const motus = h?.apart ? null : await motusRecordFor(ctx, start, end);
       if (motus) {
         const copied = await copyFigures(ctx, motus.kind, motus.id, { steps: bandNum(s.steps, 1e6), distanceM: bandNum(s.distanceM, 1e7), calories: bandNum(s.calories, 20000), avgHr: bandNum(s.avgHr, 250) });
@@ -756,7 +779,9 @@ export function healthRoutes(r: Router) {
     // sessions brought in before their workout or activity was in Motus (finished later, or synced from another copy),
     // and duplicates from before linking: taken into the Motus record now (over this read's sessions' time only)
     const times = sessions.flatMap((s) => { try { return [Date.parse(isoTime(s.start)), Date.parse(isoTime(s.end))]; } catch { return []; } });
-    if (times.length && await linkBandSessions(ctx, new Date(Math.min(...times)).toISOString(), new Date(Math.max(...times)).toISOString())) touched = true;
+    // (with no sessions in this read, only the next batch of the one full-history pass, linkHistory)
+    if (times.length ? await linkBandSessions(ctx, new Date(Math.min(...times)).toISOString(), new Date(Math.max(...times)).toISOString())
+      : await linkHistory(ctx)) touched = true;
 
     // a day's heart rate: written again each time (not in the import log), counted when it changed
     for (const e of list(b.hrDays, 400)) {
@@ -1040,7 +1065,7 @@ export function healthRoutes(r: Router) {
       SELECT *, sort_at::text AS sort_text FROM (
         SELECT h.key, h.kind, h.ref, h.imported_at,
           d.value AS d_value, d.source AS d_source, d.typed AS d_typed, d.synced AS d_synced, d.worn AS d_worn, bm.value AS w_value, bm.measured_at,
-          a.id AS a_id, a.type AS a_type, a.name AS a_name, coalesce(a.started_at, w.started_at) AS started_at, a.duration_s, a.distance_m, a.steps AS a_steps, a.avg_hr,
+          a.id AS a_id, a.type AS a_type, a.name AS a_name, coalesce(a.started_at, w.started_at) AS started_at, a.duration_s, a.distance_m, a.steps AS a_steps, a.avg_hr, a.route IS NOT NULL AS a_has_route,
           h.linked, w.id AS w_id, w.name AS w_name, w.ended_at AS w_ended_at, w.paused_s AS w_paused_s, a.source AS a_source,
           -- a linked workout's sets and volume, as History shows them
           CASE WHEN w.id IS NOT NULL THEN ${SET_COUNT_SQL} END AS w_sets, CASE WHEN w.id IS NOT NULL THEN ${VOLUME_SQL} END AS w_volume,
@@ -1084,7 +1109,7 @@ export function healthRoutes(r: Router) {
       linked: (x.linked ?? null) as "activity" | "workout" | null,
       workout: x.w_id ? { id: x.w_id as string, name: (x.w_name ?? "") as string, startedAt: iso(x.started_at), setCount: Number(x.w_sets ?? 0), volumeKg: Number(x.w_volume ?? 0),
         durationS: x.w_ended_at ? Math.max(0, Math.round((Date.parse(iso(x.w_ended_at)!) - Date.parse(iso(x.started_at)!)) / 1000) - Number(x.w_paused_s ?? 0)) : 0 } : null,
-      activity: x.a_id ? { id: x.a_id, type: x.a_type, name: x.a_name ?? "", startedAt: iso(x.started_at), durationS: num(x.duration_s), distanceM: num(x.distance_m), steps: num(x.a_steps), avgHr: num(x.avg_hr), source: (x.a_source ?? null) as string | null } : null,
+      activity: x.a_id ? { id: x.a_id, type: x.a_type, name: x.a_name ?? "", startedAt: iso(x.started_at), durationS: num(x.duration_s), distanceM: num(x.distance_m), steps: num(x.a_steps), avgHr: num(x.avg_hr), source: (x.a_source ?? null) as string | null, hasRoute: !!x.a_has_route } : null,
       ref: x.ref as string | null,
       // a day's number typed over before 039 kept both (its synced value isn't known); a reading or session can't tell
       edited: isDaily(x.kind) ? x.d_source !== HEALTH_SOURCE && x.d_synced == null : false,

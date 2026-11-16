@@ -7,8 +7,10 @@
 // session of no length matches nothing (it has no time to fall inside anything).
 // Both arrival orders: the import links a new session at once (health.ts), and this pass takes in sessions already
 // brought in as activities when the Motus record came later (a workout finished, an activity saved or synced from
-// another copy), deleting that imported activity. It also cleans up the duplicates from before (run on every import).
+// another copy), deleting that imported activity.
 // The person can unlink one (Imported data → Unlink, apart): it then comes in as its own activity and stays apart.
+// The duplicates from before linking are cleaned up once over the whole history (linkHistory, 048), a batch per import
+// or save, then each import or save links over its own time as before.
 // Letting go (fix round 3): Unlink, deleting the Motus record (047's trigger) or changing its time so it no longer holds
 // 80% of the session (releaseOutside) make the session its own activity again with the next read (restored_at), and
 // the figures copied from it (copied) are taken back, so its steps don't count twice.
@@ -65,9 +67,10 @@ export async function copyFigures(ctx: Ctx, kind: "activity" | "workout", id: st
 /** Takes back the figures an entry filled in on a Motus activity (copied), each only while it is still the same number. */
 async function takeBack(ctx: Ctx, activityId: string, c: Copied) {
   await ctx.q.query(
-    `UPDATE activities SET steps_source = CASE WHEN steps::text = $2 AND steps_source = 'band' THEN NULL ELSE steps_source END,
-       steps = CASE WHEN steps::text = $2 THEN NULL ELSE steps END, distance_m = CASE WHEN distance_m::text = $3 THEN NULL ELSE distance_m END,
-       calories = CASE WHEN calories::text = $4 THEN NULL ELSE calories END, avg_hr = CASE WHEN avg_hr::text = $5 THEN NULL ELSE avg_hr END
+    // as numbers, not text: "5000.0" and 5000 are the same distance
+    `UPDATE activities SET steps_source = CASE WHEN steps = $2::int AND steps_source = 'band' THEN NULL ELSE steps_source END,
+       steps = CASE WHEN steps = $2::int THEN NULL ELSE steps END, distance_m = CASE WHEN distance_m = $3::numeric THEN NULL ELSE distance_m END,
+       calories = CASE WHEN calories = $4::int THEN NULL ELSE calories END, avg_hr = CASE WHEN avg_hr = $5::int THEN NULL ELSE avg_hr END
      WHERE id::text = $1`, [activityId, c.steps ?? null, c.distance_m ?? null, c.calories ?? null, c.avg_hr ?? null]);
 }
 
@@ -80,10 +83,33 @@ export async function release(ctx: Ctx, key: string, o: { apart?: boolean; remov
   const h = (await ctx.q.query<{ ref: string; linked: string; copied: Copied | null }>(
     "SELECT ref, linked, copied FROM health_imports WHERE key = $1 AND linked IS NOT NULL AND deleted_at IS NULL", [key])).rows[0];
   if (!h) return false;
-  if (h.linked === "activity" && h.copied) await takeBack(ctx, h.ref, h.copied);
+  if (h.linked === "activity" && h.copied) {
+    // a second app's copy of the same session still linked to the record: the figures stay while one is, and go with
+    // it (its copied), so they are taken back only when the last linked copy lets go (fix round 4)
+    const heir = (await ctx.q.query<{ key: string; copied: Copied | null }>(
+      "SELECT key, copied FROM health_imports WHERE ref = $1 AND linked = $2 AND key <> $3 AND deleted_at IS NULL ORDER BY key LIMIT 1",
+      [h.ref, h.linked, key])).rows[0];
+    if (heir) await ctx.q.query("UPDATE health_imports SET copied = $2::jsonb WHERE key = $1", [heir.key, JSON.stringify({ ...h.copied, ...heir.copied })]);
+    else await takeBack(ctx, h.ref, h.copied);
+  }
   if (o.remove) await ctx.q.query("UPDATE health_imports SET copied = NULL, deleted_at = now() WHERE key = $1", [key]);
   else await ctx.q.query("UPDATE health_imports SET ref = NULL, linked = NULL, copied = NULL, restored_at = now(), apart = apart OR $2 WHERE key = $1", [key, !!o.apart]);
   return true;
+}
+
+/**
+ * Lets go of linked entries whose Motus record is gone: deleted on another copy, where 047's trigger is skipped (sync),
+ * so nothing let go of them there. key: only that entry; none: every one (the full-history pass). Returns how many.
+ */
+export async function releaseDangling(ctx: Ctx, key?: string): Promise<number> {
+  const { rows } = await ctx.q.query<{ key: string }>(
+    `SELECT h.key FROM health_imports h WHERE h.linked IS NOT NULL AND h.deleted_at IS NULL AND ($1::text IS NULL OR h.key = $1)
+       AND NOT EXISTS (SELECT 1 FROM activities a WHERE h.linked = 'activity' AND a.id::text = h.ref)
+       AND NOT EXISTS (SELECT 1 FROM workouts w WHERE h.linked = 'workout' AND w.id::text = h.ref)
+     ORDER BY h.key`, [key ?? null]);
+  for (const x of rows) await release(ctx, x.key);
+  if (rows.length) ctx.changed("health");
+  return rows.length;
 }
 
 /**
@@ -112,6 +138,46 @@ export async function releaseOutside(ctx: Ctx, kind: "activity" | "workout", id:
  * person edited (edited_at, 047) or unlinked (apart) stays their own. Returns how many.
  */
 export async function linkBandSessions(ctx: Ctx, from: string, to: string): Promise<number> {
+  const before = await linkHistory(ctx);
+  return before + await linkRange(ctx, from, to);
+}
+
+/** Imported activities the full-history pass looks at per call: a few hundred, so one import or save stays quick. */
+export const HISTORY_BATCH = 300;
+
+/**
+ * The one pass over the whole history (048): the duplicates from before linking, wherever they are, not only in the
+ * time a read or save looks at. Each call (from linkBandSessions, so on every import and every save of a record) takes
+ * the next HISTORY_BATCH imported activities by start time and links what falls inside a Motus record, until through
+ * (done_at). Returns how many it linked.
+ */
+export async function linkHistory(ctx: Ctx): Promise<number> {
+  // the place it got to as text, so the cursor keeps the microseconds a Date would drop
+  const p = (await ctx.q.query<{ after_at: string | null; after_id: string | null; done: boolean }>(
+    "SELECT after_at::text AS after_at, after_id, done_at IS NOT NULL AS done FROM band_link_pass")).rows[0];
+  if (p?.done) return 0;
+  const afterAt = p?.after_at ?? null;
+  // at its start, the links left pointing at a record deleted on another copy (releaseDangling) let go too
+  let n = afterAt == null ? await releaseDangling(ctx) : 0;
+  const { rows } = await ctx.q.query<{ id: string; at: string; s: Date | string; e: Date | string }>(
+    `SELECT id::text AS id, started_at::text AS at, started_at AS s, ended_at AS e FROM activities
+     WHERE source = $1 AND ended_at > started_at AND ($2::timestamptz IS NULL OR (started_at, id::text) > ($2::timestamptz, $3::text))
+     ORDER BY started_at, id::text LIMIT ${HISTORY_BATCH}`, [HC, afterAt, p?.after_id ?? ""]);
+  if (rows.length) {
+    const ends = rows.map((r) => Date.parse(new Date(r.e).toISOString()));
+    n += await linkRange(ctx, new Date(rows[0]!.s).toISOString(), new Date(Math.max(...ends)).toISOString());
+  }
+  const last = rows[rows.length - 1];
+  await ctx.q.query(
+    `INSERT INTO band_link_pass (user_id, after_at, after_id, done_at) VALUES ($1, $2::timestamptz, $3, $4::timestamptz)
+     ON CONFLICT (user_id) DO UPDATE SET after_at = coalesce($2::timestamptz, band_link_pass.after_at),
+       after_id = coalesce($3, band_link_pass.after_id), done_at = $4::timestamptz`,
+    [ctx.userId, last?.at ?? null, last?.id ?? null, rows.length < HISTORY_BATCH ? new Date().toISOString() : null]);
+  return n;
+}
+
+/** linkBandSessions over from..to only (no history batch). */
+async function linkRange(ctx: Ctx, from: string, to: string): Promise<number> {
   if (!(Date.parse(to) >= Date.parse(from))) return 0;
   const { rows } = await ctx.q.query<{ id: string; kind: "activity" | "workout"; mid: string; s: string; e: string; steps: number | null; distance_m: string | null; calories: number | null; avg_hr: number | null }>(
     `SELECT DISTINCT ON (a.id) a.id::text AS id, m.kind, m.id::text AS mid, a.started_at AS s, a.ended_at AS e, a.steps, a.distance_m, a.calories, a.avg_hr

@@ -16,7 +16,7 @@ const EXPORT_FORMAT = 1;
 // The schema a file was written with: the number of migrations (migrate.ts) when it was made, so a restore knows which
 // of their changes to existing rows the file's rows still need. A test keeps it equal to the number of migrations, so a
 // new one is checked against backups (does the file carry it, does an older file need converting).
-const BACKUP_SCHEMA = 47; // 40: health_records (an older file has none: nothing to convert); 41: its trigger only; 42, 43: health_record_reads, not in backups; 44: health_records.apps, worked out again by its trigger on restore; 45: more record types (nothing to convert; an older version refuses the file, its rows would break the type check); 46: health_imports.linked, apart and span (an older file has none: its sessions stay as they were, unlinked; their span filled in as 046 did, SINCE.sessionSpans); 47: health_imports.copied and activities.edited_at (an older file has none: nothing to take back, nothing marked edited)
+const BACKUP_SCHEMA = 48; // 40: health_records (an older file has none: nothing to convert); 41: its trigger only; 42, 43: health_record_reads, not in backups; 44: health_records.apps, worked out again by its trigger on restore; 45: more record types (nothing to convert; an older version refuses the file, its rows would break the type check); 46: health_imports.linked, apart and span (an older file has none: its sessions stay as they were, unlinked; their span filled in as 046 did, SINCE.sessionSpans); 47: health_imports.copied and activities.edited_at (an older file has none: nothing to take back, nothing marked edited); 48: band_link_pass, not in backups (a restore runs the linking pass again)
 const NEWER = "This backup is from a newer version of Motus. Update the app first.";
 const DAMAGED = "This backup is damaged and can't be restored.";
 /** The schema a file says it has (refused when newer than this version, or not a whole number from 0 up), or
@@ -177,6 +177,8 @@ export async function importAll(ctx: Ctx, data: any, mode: "replace" | "merge") 
   // save running meanwhile would write back blocks a replace deletes, and the lock taken only later (mergeBlock, the
   // import log's trigger) after daily_logs/activities/sleep rows locked here would wait on a save that waits on them
   await lockRecords(q, ctx.userId);
+  // the restored rows may hold duplicates from before linking: the one full linking pass runs again (048, bandMatch)
+  await q.query("DELETE FROM band_link_pass");
   if (mode === "replace") {
     for (const t of [...TABLES].reverse()) {
       if (t === "exercises") await q.query("DELETE FROM exercises WHERE owner_id = $1 AND id NOT IN (SELECT exercise_id FROM workout_exercises UNION SELECT exercise_id FROM routine_exercises)", [ctx.userId]);
