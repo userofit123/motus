@@ -151,9 +151,9 @@ describe("a session brought in by two apps", () => {
     expect((await call("POST", "/health/import", { sessions: both })).activities).toBe(1);
     expect((await call("POST", "/health/import", { sessions: both })).activities).toBe(0);
     expect(await count()).toBe(before + 1);
-    const items = (await call("GET", "/health/imports", undefined, { tz: "0" })).items.filter((x: any) => x.kind === "activity");
-    expect(items.map((x: any) => x.key)).toEqual(["activity:hc-gb"]);
-    const day = (await call("GET", "/daily", undefined, { from: "2026-11-03", tz: "0" })).find((x: any) => x.kind === "steps" && String(x.date).slice(0, 10) === "2026-11-03");
+    const items = ((await call("GET", "/health/imports", undefined, { tz: "0" })).items as ImportItem[]).filter((x) => x.kind === "activity");
+    expect(items.map((x) => x.key)).toEqual(["activity:hc-gb"]);
+    const day = ((await call("GET", "/daily", undefined, { from: "2026-11-03", tz: "0" })) as DayRow[]).find((x) => x.kind === "steps" && String(x.date).slice(0, 10) === "2026-11-03");
     expect(day).toMatchObject({ value: 4000, walked: 4000 });
     // a different walk that only partly overlaps it is its own
     expect((await call("POST", "/health/import", { sessions: [walk("hc-other", "2026-11-03T10:30:00Z", "2026-11-03T11:30:00Z", 5000)] })).activities).toBe(1);
@@ -166,6 +166,12 @@ describe("a session brought in by two apps", () => {
   });
 });
 
+/** An entry of Imported data (/health/imports), as the tests read it. */
+interface ImportItem { key: string; kind: string; date: string; linked: "activity" | "workout" | null; ref: string | null;
+  workout: { id: string; setCount: number; volumeKg: number } | null; activity: { id: string; source: string | null } | null }
+interface DeletedItem { key: string; restored: boolean }
+interface DayRow { kind: string; date: string; value: number; walked: number }
+
 // A band session of a workout or activity recorded in Motus is linked to that record (M-250 fix round, bandMatch):
 // never a second activity, so training load, a day's walked steps and the scores' activity minutes count it once.
 describe("a band session of a workout or activity done in Motus", () => {
@@ -174,7 +180,7 @@ describe("a band session of a workout or activity done in Motus", () => {
   const session = (id: string, s: string, e: string, extra: object = {}) => ({ id, type: "walk", start: s, end: e, ...extra });
   const acts = async () => (await eng.db.admin.query<{ id: string; source: string; steps: number | null; calories: number | null }>(
     "SELECT id::text AS id, source, steps, calories FROM activities WHERE user_id = $1 AND started_at >= $2::date AND started_at < $2::date + 1 ORDER BY started_at", [U, W])).rows;
-  const imports = async () => ((await call("GET", "/health/imports", undefined, { tz: "0", limit: "200" })).items as any[]).filter((x) => x.kind === "activity" && x.date === W);
+  const imports = async () => ((await call("GET", "/health/imports", undefined, { tz: "0", limit: "200" })).items as ImportItem[]).filter((x) => x.kind === "activity" && x.date === W);
   const workout = async (s: string, e: string) => {
     const id = uuidv7();
     await eng.db.admin.query("INSERT INTO workouts (id, user_id, name, status, started_at) VALUES ($1,$2,'Push','in_progress',$3)", [id, U, s]);
@@ -197,14 +203,14 @@ describe("a band session of a workout or activity done in Motus", () => {
     expect((await call("POST", "/health/import", { sessions: [session("w1", at(10, 5), at(10, 55)), session("w1b", at(10, 6), at(10, 55))] })).activities).toBe(0);
     expect(await acts()).toEqual([]);
     const load = (await call("GET", "/health/load", undefined, { from: W, to: W, tz: "0" })).load;
-    expect(load.sessions.filter((s: any) => s.date === W).map((s: any) => s.kind).sort()).toEqual(["workout", "workout"]);
+    expect(load.sessions.filter((s: { date: string }) => s.date === W).map((s: { kind: string }) => s.kind).sort()).toEqual(["workout", "workout"]);
   });
 
   it("is linked to an activity recorded in Motus, which gets the band's steps and calories; the day's walked steps count once", async () => {
     const mine = (await call("POST", "/activities", { type: "walk", startedAt: at(16), endedAt: at(17) })).id as string;
     expect((await call("POST", "/health/import", { sessions: [session("a1", at(16, 2), at(16, 58), { steps: 5000, calories: 300 })] })).activities).toBe(0);
     expect(await acts()).toEqual([{ id: mine, source: "manual", steps: 5000, calories: 300 }]);
-    const steps = (await call("GET", "/daily", undefined, { from: W, tz: "0" })).find((x: any) => x.kind === "steps" && String(x.date).slice(0, 10) === W);
+    const steps = (await call("GET", "/daily", undefined, { from: W, tz: "0" })).find((x: DayRow) => x.kind === "steps" && String(x.date).slice(0, 10) === W);
     expect(steps).toMatchObject({ value: 5000, walked: 5000 });
     // the scores' activity minutes read the activities: one walk of 60 minutes, not two
     expect((await imports()).find((x) => x.key === "activity:a1")).toMatchObject({ linked: "activity", activity: { id: mine } });
@@ -212,7 +218,7 @@ describe("a band session of a workout or activity done in Motus", () => {
 
   it("unlinked, comes in as its own activity and is never matched again", async () => {
     await call("POST", "/health/imports/activity%3Aa1/unlink");
-    expect(((await call("GET", "/health/imports/deleted")).items as any[]).find((x) => x.key === "activity:a1")).toMatchObject({ restored: true });
+    expect(((await call("GET", "/health/imports/deleted")).items as DeletedItem[]).find((x) => x.key === "activity:a1")).toMatchObject({ restored: true });
     expect((await call("POST", "/health/import", { sessions: [session("a1", at(16, 2), at(16, 58), { steps: 5000 })] })).activities).toBe(1);
     expect((await acts()).map((x) => x.source)).toEqual(["manual", "health_connect"]);
     // a later import or save doesn't take it back in
@@ -229,7 +235,106 @@ describe("a band session of a workout or activity done in Motus", () => {
     expect((await call("POST", "/health/import", { sessions: [session("d1", at(19), at(19, 30))] })).activities).toBe(1);
     await call("DELETE", "/health/imports/activity%3Ad1");
     expect((await call("POST", "/health/import", { sessions: [session("d2", at(19, 1), at(19, 30))] })).activities).toBe(0);
-    const del = ((await call("GET", "/health/imports/deleted")).items as any[]).map((x) => x.key);
+    const del = ((await call("GET", "/health/imports/deleted")).items as DeletedItem[]).map((x) => x.key);
     expect(del).toEqual(expect.arrayContaining(["activity:d1", "activity:d2"]));
+  });
+});
+
+// Letting go of a link (M-250 fix round 3, bandMatch release): Unlink, deleting the Motus record, or changing its time so
+// it no longer holds the session make the session its own activity again, and the band's figures copied into the Motus
+// activity go back, so nothing counts twice; an imported activity the person edited stays theirs.
+describe("a band session linked to a Motus record, let go", () => {
+  const W = "2026-10-25";
+  const at = (h: number, m = 0) => `${W}T${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:00.000Z`;
+  const session = (id: string, s: string, e: string, extra: object = {}) => ({ id, type: "walk", start: s, end: e, ...extra });
+  const imp = async (...sessions: object[]) => (await call("POST", "/health/import", { sessions })).activities as number;
+  const entryOf = async (key: string) => (await eng.db.admin.query<{ ref: string | null; linked: string | null; deleted: boolean; restored: boolean; copied: unknown }>(
+    "SELECT ref, linked, deleted_at IS NOT NULL AS deleted, restored_at IS NOT NULL AS restored, copied FROM health_imports WHERE user_id = $1 AND key = $2", [U, key])).rows[0]!;
+  const hcActs = async () => (await eng.db.admin.query<{ id: string; steps: number | null }>(
+    "SELECT id::text AS id, steps FROM activities WHERE user_id = $1 AND source = 'health_connect' AND started_at >= $2::date AND started_at < $2::date + 1 ORDER BY started_at", [U, W])).rows;
+  const stepsOf = async (aid: string) => (await eng.db.admin.query<{ steps: number | null; steps_source: string | null }>(
+    "SELECT steps, steps_source FROM activities WHERE id = $1", [aid])).rows[0]!;
+  const workout = async (s: string, e: string) => {
+    const id = uuidv7();
+    await eng.db.admin.query("INSERT INTO workouts (id, user_id, name, status, started_at) VALUES ($1,$2,'Legs','in_progress',$3)", [id, U, s]);
+    await call("POST", `/workouts/${id}/finish`, { endedAt: e });
+    return id;
+  };
+  const day = async () => ((await call("GET", "/daily", undefined, { from: W, tz: "0" })) as DayRow[]).find((x) => x.kind === "steps" && String(x.date).slice(0, 10) === W);
+
+  it("unlinked: the steps copied into the Motus walk go back, so the day counts them once", async () => {
+    const mine = (await call("POST", "/activities", { type: "walk", startedAt: at(7), endedAt: at(8) })).id as string;
+    expect(await imp(session("u1", at(7, 2), at(7, 58), { steps: 3000 }))).toBe(0);
+    expect(await stepsOf(mine)).toEqual({ steps: 3000, steps_source: "band" });
+    expect((await entryOf("activity:u1")).copied).toEqual({ steps: "3000" });
+    await call("POST", "/health/imports/activity%3Au1/unlink");
+    expect(await stepsOf(mine)).toEqual({ steps: null, steps_source: null });
+    expect(await imp(session("u1", at(7, 2), at(7, 58), { steps: 3000 }))).toBe(1);
+    expect(await day()).toMatchObject({ walked: 3000 });
+  });
+
+  it("only the key unlinked lets go; each linked key is its own row in Imported data", async () => {
+    const w = await workout(at(9), at(10));
+    expect(await imp(session("k1", at(9, 5), at(9, 55)), session("k2", at(9, 6), at(9, 55)))).toBe(0);
+    const rows = ((await call("GET", "/health/imports", undefined, { tz: "0", limit: "200" })).items as ImportItem[]).filter((x) => x.workout?.id === w);
+    expect(rows.map((x) => x.key).sort()).toEqual(["activity:k1", "activity:k2"]);
+    expect(rows[0]!.workout).toMatchObject({ setCount: 0, volumeKg: 0 });
+    await call("POST", "/health/imports/activity%3Ak1/unlink");
+    expect(await entryOf("activity:k1")).toMatchObject({ ref: null, linked: null });
+    expect(await entryOf("activity:k2")).toMatchObject({ ref: w, linked: "workout" });
+  });
+
+  it("deleting the workout makes its band session its own activity again, not deleted", async () => {
+    const w = await workout(at(11), at(12));
+    expect(await imp(session("x1", at(11, 5), at(11, 55)))).toBe(0);
+    await call("DELETE", `/workouts/${w}`);
+    expect(await entryOf("activity:x1")).toMatchObject({ ref: null, linked: null, deleted: false, restored: true });
+    expect(((await call("GET", "/health/imports/deleted")).items as DeletedItem[]).find((x) => x.key === "activity:x1")).toMatchObject({ restored: true });
+    expect(await imp(session("x1", at(11, 5), at(11, 55)))).toBe(1);
+  });
+
+  it("deleting the Motus activity makes its band session its own activity again, not deleted", async () => {
+    const mine = (await call("POST", "/activities", { type: "walk", startedAt: at(13), endedAt: at(14) })).id as string;
+    expect(await imp(session("x2", at(13, 5), at(13, 55), { steps: 2000 }))).toBe(0);
+    await call("DELETE", `/activities/${mine}`);
+    expect(await entryOf("activity:x2")).toMatchObject({ ref: null, linked: null, deleted: false });
+    expect(await imp(session("x2", at(13, 5), at(13, 55), { steps: 2000 }))).toBe(1);
+  });
+
+  it("a workout or activity moved off its band session lets it go (and the steps it got from it)", async () => {
+    const w = await workout(at(15), at(16));
+    expect(await imp(session("e1", at(15, 5), at(15, 55)))).toBe(0);
+    await call("PUT", `/workouts/${w}`, { startedAt: at(17), endedAt: at(18) });
+    expect(await entryOf("activity:e1")).toMatchObject({ ref: null, linked: null, deleted: false });
+    expect(await imp(session("e1", at(15, 5), at(15, 55)))).toBe(1);
+    const mine = (await call("POST", "/activities", { type: "walk", startedAt: at(19), endedAt: at(20) })).id as string;
+    expect(await imp(session("e2", at(19, 5), at(19, 55), { steps: 1500 }))).toBe(0);
+    // a few minutes later still holds it
+    await call("PUT", `/activities/${mine}`, { type: "walk", startedAt: at(19, 5), endedAt: at(20, 5), steps: 1500 });
+    expect(await entryOf("activity:e2")).toMatchObject({ linked: "activity" });
+    await call("PUT", `/activities/${mine}`, { type: "walk", startedAt: at(21), endedAt: at(22), steps: 1500 });
+    expect(await entryOf("activity:e2")).toMatchObject({ ref: null, linked: null });
+  });
+
+  it("an imported activity the person edited is never taken into a Motus record", async () => {
+    expect(await imp(session("n1", at(22, 10), at(22, 40), { steps: 900 }))).toBe(1);
+    const own = (await hcActs()).find((x) => x.steps === 900)!.id;
+    await call("PUT", `/activities/${own}`, { type: "walk", name: "Dog walk", startedAt: at(22, 10), endedAt: at(22, 40), steps: 900 });
+    await workout(at(22), at(23));
+    expect((await hcActs()).some((x) => x.id === own)).toBe(true);
+    expect(await entryOf("activity:n1")).toMatchObject({ ref: own, linked: null });
+  });
+
+  it("a workout typed in afterwards and a GPX file take in the band session already brought in", async () => {
+    const D2 = "2026-10-26";
+    expect(await imp(session("l1", `${D2}T08:05:00.000Z`, `${D2}T08:55:00.000Z`))).toBe(1);
+    const wid = (await call("POST", "/workouts/log", { startedAt: `${D2}T08:00:00.000Z`, endedAt: `${D2}T09:00:00.000Z`, name: "Typed in" })).id as string;
+    expect(await entryOf("activity:l1")).toMatchObject({ ref: wid, linked: "workout" });
+    expect(await imp(session("g1", `${D2}T12:05:00.000Z`, `${D2}T12:55:00.000Z`, { steps: 6000 }))).toBe(1);
+    const pt = (min: number) => `<trkpt lat="52.${min}" lon="13.${min}"><time>${D2}T12:${String(min).padStart(2, "0")}:00Z</time></trkpt>`;
+    const gpx = `<gpx><trk><name>Run</name><trkseg>${[0, 20, 40, 59].map(pt).join("")}</trkseg></trk></gpx>`;
+    const [gid] = (await call("POST", "/activities/import", { text: gpx, type: "run" })).ids as string[];
+    expect(await entryOf("activity:g1")).toMatchObject({ ref: gid, linked: "activity" });
+    expect((await stepsOf(gid!)).steps).toBe(6000);
   });
 });

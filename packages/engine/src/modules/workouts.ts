@@ -10,7 +10,7 @@ import { getSettings, saveSettings } from "./settings";
 import { buildPlan, loadRoutine, pendingReminders, withWorkoutOverrides } from "./plan";
 import { getExercises, exerciseSessions, savePrefs } from "./library";
 import { exerciseHrOf } from "./health";
-import { linkBandSessions } from "./bandMatch";
+import { linkFor, releaseOutside } from "./bandMatch";
 
 const KINDS = ["warmup", "normal", "drop", "failure"] as const;
 const EX_STATUS = ["pending", "done", "skipped", "partial"] as const;
@@ -550,6 +550,11 @@ export function workoutRoutes(r: Router) {
     }
     put("updated_at", ctx.now().toISOString());
     await ctx.q.query(`UPDATE workouts SET ${sets.join(", ")} WHERE id = $1`, vals);
+    if ("startedAt" in b || "endedAt" in b || "pausedS" in b) {
+      // its new time may no longer hold a band session linked to it (let go: its own activity again), or may now hold one
+      await releaseOutside(ctx, "workout", wid);
+      if (w.status === "completed") await linkFor(ctx, "workout", wid);
+    }
     ctx.changed("workout");
     return { ok: true };
   });
@@ -823,7 +828,7 @@ export function workoutRoutes(r: Router) {
          bodyweight_kg = coalesce($6, bodyweight_kg), updated_at = now() WHERE id = $1`,
       [wid, end, paused, b?.notes != null ? str(b.notes, 10000) : null, intOrNull(b?.rating, 1, 5), numOrNull(b?.bodyweightKg, 0, 700)]);
     // the band's session of this workout, already brought in as an activity: linked to the workout instead (bandMatch)
-    await linkBandSessions(ctx);
+    await linkFor(ctx, "workout", wid);
     if (b?.bodyweightKg) {
       await ctx.q.query("INSERT INTO body_metrics (id, user_id, kind, value, measured_at) VALUES ($1,$2,'weight',$3,$4)", [uuidv7(), ctx.userId, numOrNull(b.bodyweightKg, 0, 700), end]);
       ctx.changed("body");
@@ -868,6 +873,7 @@ export function workoutRoutes(r: Router) {
     return { ok: true };
   });
   r.del("/workouts/:id", async (ctx, p) => {
+    // a band session linked to it becomes its own activity again with the next read (047's trigger)
     await ctx.q.query("DELETE FROM workouts WHERE id = $1", [id(p.id)]);
     ctx.changed("workout");
     return { ok: true };
@@ -890,6 +896,8 @@ export function workoutRoutes(r: Router) {
       const weId = await addExercise(ctx, wid, { exerciseId: id(e.exerciseId, "exercise"), position: i, sets });
       await ctx.q.query("UPDATE workout_exercises SET status = $2 WHERE id = $1", [weId, sets.length ? "done" : "skipped"]);
     }
+    // the band's session of it, already brought in as an activity: linked to the workout instead (bandMatch)
+    await linkFor(ctx, "workout", wid);
     ctx.changed("workout");
     return { id: wid };
   });

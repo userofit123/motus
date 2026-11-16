@@ -69,6 +69,8 @@ const ICONS: Record<string, string> = {
   refresh: "M21 12a9 9 0 0 1-15.3 6.4L3 16M3 12a9 9 0 0 1 15.3-6.4L21 8M21 3v5h-5M3 21v-5h5",
   map: "M9 4 3 6v14l6-2 6 2 6-2V4l-6 2zM9 4v14M15 6v14",
   link: "M10 14a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1M14 10a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1",
+  // the link icon's two halves pulled apart, with the break marked at both ends
+  unlink: "M18.5 12.5l1.5-1.5a5 5 0 0 0-7-7l-1.5 1.5M5.5 11.5 4 13a5 5 0 0 0 7 7l1.5-1.5M8 2v3M2 8h3M16 19v3M19 16h3",
   lock: "M6 11h12v10H6zM8 11V7a4 4 0 0 1 8 0v4",
   image: "M4 5h16v14H4zM4 16l5-5 4 4 3-3 4 4M15 9h.01",
   target: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z",

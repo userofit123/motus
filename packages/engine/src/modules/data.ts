@@ -16,7 +16,7 @@ const EXPORT_FORMAT = 1;
 // The schema a file was written with: the number of migrations (migrate.ts) when it was made, so a restore knows which
 // of their changes to existing rows the file's rows still need. A test keeps it equal to the number of migrations, so a
 // new one is checked against backups (does the file carry it, does an older file need converting).
-const BACKUP_SCHEMA = 46; // 40: health_records (an older file has none: nothing to convert); 41: its trigger only; 42, 43: health_record_reads, not in backups; 44: health_records.apps, worked out again by its trigger on restore; 45: more record types (nothing to convert; an older version refuses the file, its rows would break the type check); 46: health_imports.linked, apart and span (an older file has none: its sessions stay as they were, unlinked)
+const BACKUP_SCHEMA = 47; // 40: health_records (an older file has none: nothing to convert); 41: its trigger only; 42, 43: health_record_reads, not in backups; 44: health_records.apps, worked out again by its trigger on restore; 45: more record types (nothing to convert; an older version refuses the file, its rows would break the type check); 46: health_imports.linked, apart and span (an older file has none: its sessions stay as they were, unlinked; their span filled in as 046 did, SINCE.sessionSpans); 47: health_imports.copied and activities.edited_at (an older file has none: nothing to take back, nothing marked edited)
 const NEWER = "This backup is from a newer version of Motus. Update the app first.";
 const DAMAGED = "This backup is damaged and can't be restored.";
 /** The schema a file says it has (refused when newer than this version, or not a whole number from 0 up), or
@@ -35,7 +35,7 @@ function fileSchema(data: any): number | undefined {
 // without a schema still show it. 015 and 024 are converted row by row below.
 const SINCE = {
   reminderBody: [14, "2026-11-08T23:55:39Z"], history: [16, "2026-11-08T23:55:39Z"], repRange: [22, "2026-11-10T23:52:11Z"],
-  homePins: [26, "2026-11-13T23:53:22Z"], goalTitles: [33, "2026-11-14T22:32:54Z"],
+  homePins: [26, "2026-11-13T23:53:22Z"], goalTitles: [33, "2026-11-14T22:32:54Z"], sessionSpans: [46, "2026-11-16T00:37:36Z"],
 } as const;
 const madeBefore = (data: any, [n, at]: readonly [number, string]) =>
   data.schema !== undefined ? Number(data.schema) < n : String(data.exportedAt ?? "") < at;
@@ -301,6 +301,11 @@ export async function importAll(ctx: Ctx, data: any, mode: "replace" | "merge") 
     if (unpin) await q.exec(unpinSeededGoals(fileIds));
     if (titles) await q.exec(clearAutoTitles(added.goals!, { weekly: here(fileIds.weekly), steps: here(fileIds.steps) }));
   }
+  // a session's time in the import log (046), kept after a deletion so the same session from a second app stays out:
+  // filled in from its activity as 046 did, for the entries of a file from before it (only entries still without one)
+  if (Array.isArray(data.tables.health_imports) && data.tables.health_imports.length && madeBefore(data, SINCE.sessionSpans))
+    await q.exec(`UPDATE health_imports h SET span_start = a.started_at, span_end = a.ended_at FROM activities a
+      WHERE h.kind = 'activity' AND h.span_start IS NULL AND a.id::text = h.ref`);
   ctx.changed("everything");
   return counts;
 }

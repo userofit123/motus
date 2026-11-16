@@ -6,7 +6,7 @@ import { camel, id, str, intOrNull, numOrNull, bool, isoTime, dateStr, startOfDa
 import { uuidv7 } from "../ids";
 import { notFound, bad } from "../errors";
 import { lockRecords } from "./healthDerive";
-import { linkBandSessions } from "./bandMatch";
+import { linkBandSessions, linkFor, releaseOutside } from "./bandMatch";
 
 const DEFAULT_TYPES: ActivityType[] = [
   { slug: "walk", name: "Walk", icon: "walk", hasDistance: true, hasGps: true, hasSteps: true },
@@ -120,7 +120,10 @@ export async function saveActivity(ctx: Ctx, b: any, aid = uuidv7(), isNew = tru
     // The same count sent back (the form saved with steps untouched) leaves where it came from as it was
     const { rows } = await ctx.q.query(
       `UPDATE activities SET type=$3, name=$4, started_at=$5, ended_at=$6, duration_s=$7, moving_s=$8, distance_m=$9, steps=$10, elevation_m=$11, avg_hr=$12, calories=$13,
-         route=coalesce($14, route), notes=$15, steps_source = CASE WHEN steps IS DISTINCT FROM $10 THEN 'manual' ELSE steps_source END
+         route=coalesce($14, route), notes=$15, steps_source = CASE WHEN steps IS DISTINCT FROM $10 THEN 'manual' ELSE steps_source END,
+         -- the person changed what it is: an imported one is theirs from then on, never taken into a Motus record (bandMatch)
+         edited_at = CASE WHEN type IS DISTINCT FROM $3 OR coalesce(name, '') IS DISTINCT FROM coalesce($4, '') OR coalesce(notes, '') IS DISTINCT FROM coalesce($15, '')
+           OR ($14::jsonb IS NOT NULL AND route IS DISTINCT FROM $14::jsonb) THEN now() ELSE edited_at END
        WHERE id=$1 AND user_id=$2 RETURNING id`, vals.slice(0, 15));
     if (!rows.length) throw notFound("Activity not found");
   }
@@ -185,14 +188,16 @@ export function activityRoutes(r: Router) {
   r.post("/activities", async (ctx, _p, b) => {
     const aid = await saveActivity(ctx, b);
     // the band's session of this activity, already brought in from Health Connect: taken into it (bandMatch)
-    await linkBandSessions(ctx);
+    await linkFor(ctx, "activity", aid);
     ctx.changed("activity");
     return { id: aid };
   });
   r.put("/activities/:id", async (ctx, p, b) => {
     await saveActivity(ctx, b, id(p.id), false);
-    // its new time may now hold a band session brought in as its own activity
-    await linkBandSessions(ctx);
+    // its new time may no longer hold a band session linked to it (let go: its own activity again), or may now hold one
+    // brought in as its own activity
+    await releaseOutside(ctx, "activity", id(p.id));
+    await linkFor(ctx, "activity", id(p.id));
     ctx.changed("activity");
     return { ok: true };
   });
@@ -215,6 +220,8 @@ export function activityRoutes(r: Router) {
       const start = t.route[0]![2] ? new Date(t.route[0]![2]! * 1000).toISOString() : ctx.now().toISOString();
       const end = t.route.at(-1)![2] ? new Date(t.route.at(-1)![2]! * 1000).toISOString() : start;
       ids.push(await saveActivity(ctx, { type: b.type || t.type, name: t.name || f.name?.replace(/\.(gpx|tcx)$/i, "") || "", startedAt: start, endedAt: end, route: t.route, source: "import", clientId: `import:${start}` }));
+      // the band's session of the same walk or run, already brought in from Health Connect: taken into it (bandMatch)
+      if (end > start) await linkBandSessions(ctx, start, end);
     }
     ctx.changed("activity");
     return { ids, count: ids.length };
