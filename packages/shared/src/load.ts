@@ -36,7 +36,8 @@ export interface LoadTrend {
   /** week / usual: the acute:chronic ratio, null while the 4 weeks are still filling (or had no load) */
   ratio: number | null;
   state: LoadState | null;
-  /** days until the usual is known (counted from the first session), null when there is no session or it is known */
+  /** days until the usual is known (counted from the first session), null when there is no session, the usual is known, or
+   *  the first session is over 21 days back but the last 4 weeks had no load */
   left?: number | null;
 }
 

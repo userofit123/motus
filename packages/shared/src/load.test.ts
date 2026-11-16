@@ -30,5 +30,9 @@ describe("training load", () => {
     expect(loadTrend(even.filter((_, i) => i >= 7), today, day(27))).toMatchObject({ week: 0, ratio: 0, state: "lighter" });
     // under three weeks since the first session: no comparison yet
     expect(loadTrend(even.slice(0, 14), today, day(13))).toMatchObject({ ratio: null, state: null, left: 8 });
+    // the last day of the wait
+    expect(loadTrend(even.slice(0, 21), today, day(20))).toMatchObject({ ratio: null, left: 1 });
+    // three weeks or more since the first session but nothing in the last 4 weeks: no usual, and nothing to wait for
+    expect(loadTrend([], today, day(40))).toMatchObject({ ratio: null, state: null, left: null });
   });
 });

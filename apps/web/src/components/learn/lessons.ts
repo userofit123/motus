@@ -110,7 +110,7 @@ export const LESSONS = {
       ] },
       { heading: "Against your usual", rows: [
         { icon: "calendar", t: "Last 7 days", s: "Today and the 6 days before it" },
-        { icon: "stats", t: "Your usual week", s: `The average week of the last 4, from ${MIN_LOAD_DAYS / 7} weeks after your first workout` },
+        { icon: "stats", t: "Your usual week", s: `The average week of the last 4, from ${MIN_LOAD_DAYS / 7} weeks after your first workout or activity` },
         { icon: "arrowDown", t: "Less than usual", s: "More than 20% below your usual week: raises your readiness" },
         { icon: "check", t: "About your usual", s: "From 20% below to 30% above your usual week" },
         { icon: "arrowUp", t: "More than usual", s: "30-50% above your usual week: lowers your readiness" },
