@@ -1,6 +1,6 @@
 // The day pages' shared pieces (Stats → Steps, Heart and Sleep, and their helpers): the day's workouts and activities with
 // their exact time spans, each in the colour the Calendar gives it (a workout its routine's, else the palette's purple; an
-// activity green), the legend naming each kind on the chart, the hours the axis labels sit at, the line said when a day or
+// activity teal), the legend naming each kind on the chart, the hours the axis labels sit at, the line said when a day or
 // night has no saved records, the title of a day or night in the day picker, and the week, month and year stretches the
 // arrows step through.
 import { computed, onScopeDispose, ref, type Ref } from "vue";
@@ -18,9 +18,12 @@ export interface DaySession {
 }
 /** The colours the Calendar marks sessions in (it imports these, so the Calendar and Stats always match): a workout
  *  without a routine colour in the palette's purple, not the accent, which the day charts' own data already uses (two
- *  alike swatches in one legend); an activity in the palette's green, a colour no sleep stage uses (REM is teal, deep the
- *  accent, awake the warning colour), so on a chart with the night a session's swatch never seems to name a stage */
-export const WORKOUT_COLOR = "var(--c5)", ACTIVITY_COLOR = "var(--c4)";
+ *  alike swatches in one legend); an activity in the palette's teal. Not green: in the Calendar's month an activity's dot
+ *  sits over the steps bar that turns green on a goal reached, and green is the accent in the green themes. No palette
+ *  colour is apart from every theme's accent (each one is some theme's), so where a session's colour could be read as
+ *  something else the chart draws it another way: the Calendar day's timeline, whose REM row is also teal, hatches its
+ *  spans (DayTimeline.vue) */
+export const WORKOUT_COLOR = "var(--c5)", ACTIVITY_COLOR = "var(--c3)";
 /** The day charts' own data (steps, heart rate) in the accent as every other chart's; the sessions read apart from it by
  *  their tinted span, the strip along its foot, the legend and the list under the chart */
 export const DAY_DATA_COLOR = "var(--acc)";
