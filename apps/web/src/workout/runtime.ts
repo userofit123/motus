@@ -344,18 +344,18 @@ function noVoice(why?: SpeechSynthesisErrorCode | NativeVoiceProblem, always = f
     : why === "engine" ? "The phone's speech engine isn't working, so Voice cues can't be spoken. Check the phone's Text-to-speech settings, or install Speech Services by Google"
     : why === "timeout" ? "The phone's speech engine didn't answer, so Voice cues weren't spoken. Try again, or check the phone's Text-to-speech settings"
     : why === "app" ? "Motus couldn't reach the phone's speech engine, so Voice cues weren't spoken. Close Motus and open it again"
-    // "voice" is also an engine's "no voice for this language": either way the fix is downloading it, not waiting
     : why === "language" ? "The phone has no English voice, so Voice cues can't be spoken. Download one in the phone's Text-to-speech settings"
+    // "voice" is also an engine's "no voice for this language": either way the fix is downloading it, not waiting
     : why === "voice" ? "The phone's English voice isn't downloaded yet, so Voice cues can't be spoken. Download it in the phone's Text-to-speech settings"
     : why === "not-allowed" ? "The browser blocks Voice cues until you use the page, so they weren't spoken. Tap or click anywhere in Motus once"
     : why === "audio-busy" || why === "busy" ? "A call or another app was using the sound, so Voice cues weren't spoken. Try again once the sound is free"
-    : why === "audio-hardware" ? "This device's sound isn't working, so Voice cues can't be spoken. Check its speaker or headphones"
+    : why === "audio-hardware" || why === "output" ? "This device's sound isn't working, so Voice cues can't be spoken. Check its speaker or headphones"
     : why === "network" ? "This voice needs the internet, so Voice cues weren't spoken. Connect to the internet, or download the voice in the Text-to-speech settings"
     : !why || why === "synthesis-unavailable" || why === "voice-unavailable" || why === "language-unavailable" ? "This device has no voice installed, so Voice cues can't be spoken. Install a text-to-speech voice in its settings"
     : "The speech engine gave an error, so Voice cues weren't spoken. Try again";
   if (toldNoVoice.has(text) && !always) return;
   toldNoVoice.add(text);
-  toast(text, { kind: "err", ms: 6000 });
+  toast(text, { kind: "err", ms: 10000 });
 }
 /** Elapsed seconds of a workout, without its paused time */
 export function elapsed(w: { startedAt: string; pausedS: number; pauseStartedAt: string | null; endedAt?: string | null }) {
@@ -367,8 +367,8 @@ export function elapsed(w: { startedAt: string; pausedS: number; pauseStartedAt:
 export const previewCue = (v: CueVoice) => restOver({ ...v, sound: true });
 export const previewTick = (v: CueVoice) => note({ ...v, sound: true }, 0);
 /** Voice cues as a rest's end gives them, heard where they are turned on: the rest over sound, then the words after it
- *  (the example in the setting's hint, workoutPrefs.ts VOICE_EXAMPLE), at the volume chosen there. During a running
- *  rest only the words: a rest over sound then would sound like the rest ending. Says why when the voice can't be heard. */
+ *  (workoutPrefs.ts VOICE_EXAMPLE), at the volume chosen there. During a running rest only the words: a rest over
+ *  sound then would sound like the rest ending. Says why when the voice can't be heard. */
 export function previewVoice(v: CueVoice) {
   const sound = !restActive();
   restOver({ ...v, sound });

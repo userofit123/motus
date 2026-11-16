@@ -28,7 +28,8 @@ final class Voice {
     private static final AudioAttributes ATTRS = new AudioAttributes.Builder()
         .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE).setContentType(AudioAttributes.CONTENT_TYPE_SPEECH).build();
     // a failed start waits this long before the next try, doubled each time up to MAX_WAIT_MS, so a phone without a
-    // working engine isn't bound to it again on every cue
+    // working engine isn't bound to it again on every cue. Timed by elapsedRealtime, as the watchdog below, so the wait
+    // also runs out while the phone sleeps
     private static final long FIRST_WAIT_MS = 2_000, MAX_WAIT_MS = 5 * 60_000;
     // an engine not started within START_MS, or a cue not begun within BEGIN_MS or not finished within SAY_MAX_MS, is
     // stuck (bound but never answering): it is let go so the next cue gets a fresh one rather than waiting on it for
@@ -64,7 +65,8 @@ final class Voice {
     /** What became of a cue, once it was said to its end: `problem` null when it was (or a newer cue took its place),
      *  else why not: "none" (no speech engine on the phone), "engine" (there is one, but it won't start or work),
      *  "timeout" (it didn't answer), "language" (it has no English voice), "voice" (its voice isn't downloaded yet),
-     *  "network" (the voice needs the internet), "busy" (the sound was taken, as by a call), "error" (anything else).
+     *  "network" (the voice needs the internet), "busy" (the sound was taken, as by a call), "output" (the phone's
+     *  sound output failed), "error" (anything else).
      *  Answered once. */
     interface Heard { void done(String problem); }
     private static final Heard NOBODY = problem -> {};
@@ -114,7 +116,7 @@ final class Voice {
         if (tts != null) return tts;
         if (app == null) { down = "engine"; return null; }
         if (!installed()) { down = "none"; return null; }
-        if (SystemClock.uptimeMillis() < retryAt) { down = "engine"; return null; }
+        if (SystemClock.elapsedRealtime() < retryAt) { down = "engine"; return null; }
         final TextToSpeech[] made = new TextToSpeech[1];
         try {
             made[0] = new TextToSpeech(app, status -> main.post(() -> {
@@ -142,7 +144,9 @@ final class Voice {
             english = false;
             main.postDelayed(Voice::unstick, START_MS + 50);
         } catch (RuntimeException e) {
-            tts = made[0]; // shut down by failed() if it got as far as binding
+            // thrown by the constructor: made[0] is still null, nothing was bound, failed() only counts it; thrown
+            // after it: made[0] is bound and failed() shuts it down
+            tts = made[0];
             failed();
         }
         return tts;
@@ -175,7 +179,7 @@ final class Voice {
         drop();
         down = "engine";
         failures++;
-        retryAt = SystemClock.uptimeMillis() + Math.min(MAX_WAIT_MS, FIRST_WAIT_MS << Math.min(failures - 1, 16));
+        retryAt = SystemClock.elapsedRealtime() + Math.min(MAX_WAIT_MS, FIRST_WAIT_MS << Math.min(failures - 1, 16));
     }
 
     /** Lets go of a stuck engine (START_MS, BEGIN_MS, SAY_MAX_MS): whoever waits on it hears "timeout", and the next cue
@@ -236,7 +240,7 @@ final class Voice {
         // also "no voice installed for this language" on some engines: the app's message covers both
         if (code == TextToSpeech.ERROR_NOT_INSTALLED_YET) return "voice";
         if (code == TextToSpeech.ERROR_NETWORK || code == TextToSpeech.ERROR_NETWORK_TIMEOUT) return "network";
-        if (code == TextToSpeech.ERROR_OUTPUT) return "busy";
+        if (code == TextToSpeech.ERROR_OUTPUT) return "output";
         if (code == TextToSpeech.ERROR_SERVICE || code == TextToSpeech.ERROR_SYNTHESIS) return "engine";
         return "error";
     }

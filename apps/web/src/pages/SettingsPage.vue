@@ -67,11 +67,15 @@ const parentName = computed(() => (sub.value ? SECTIONS.value.find((x) => x[0] =
 const go = (k: string) => router.push(`/settings/${k}`);
 const DAY_OPTS = computed(() => weekdayOrder(s.value.firstDay).map((d) => ({ value: d, label: WEEKDAYS[d]!.slice(0, 3) })));
 const set = (patch: Record<string, unknown>) => saveSettings(patch);
-// Voice cues switched on here are ready to hear at once (featurePatch turns on their setting and Play sounds), and an
-// example is spoken now, as by their own switch, so you know straight away whether this device can speak them
+// Voice cues switched on here are ready to hear at once (featurePatch turns on their setting and Play sounds; Play sounds
+// switched on unasked is said), and an example is spoken now, as by their own switch, so you know straight away whether
+// this device can speak them
 function setFeature(id: string, on: boolean) {
+  const soundWasOff = !s.value.workout.sound;
   void set(featurePatch(id, on));
-  if (id === "voice" && on) previewVoice(s.value.workout);
+  if (id !== "voice" || !on) return;
+  if (soundWasOff) toast("Voice cues and Play sounds are on: the voice comes after the rest over sound", { ms: 6000 });
+  previewVoice(s.value.workout);
 }
 // Progression's steps are kept in kg and shown in your weight unit
 const wIn = (kg: number) => Math.round(fromKg(kg, s.value.units.weight) * 100) / 100;

@@ -1,6 +1,11 @@
 // Optional features (PLAN.md §10.0): switched on or off in Settings → Features, and absent from every screen while off.
 // `on` is the default for a new account; the everyday ones start on.
-export interface FeatureDef { id: string; name: string; group: string; desc: string; on: boolean; ready?: false }
+import type { WorkoutPrefs } from "./settings";
+
+export interface FeatureDef { id: string; name: string; group: string; desc: string; on: boolean; ready?: false;
+  /** workout settings switched on with the feature, so it works at once without finding them (left as they are when it
+   *  is switched off: the feature hides them) */
+  turnsOn?: (keyof WorkoutPrefs)[] }
 
 export const FEATURES: FeatureDef[] = [
   // Logging
@@ -12,7 +17,9 @@ export const FEATURES: FeatureDef[] = [
   { id: "unilateral", group: "Logging", name: "Left / right sides", desc: "Left and right sets for exercises done one side at a time, with the weight one side moves. Switch it for any exercise from its menu.", on: true },
   { id: "timedSets", group: "Logging", name: "Set tracking", desc: "What each exercise is counted by (reps, time or distance) and its weight, such as a weighted plank or a ruck. Choose it for any exercise from its menu.", on: true },
   { id: "quickEntry", group: "Logging", name: "Quick entry", desc: 'Type "3x8 80" to fill sets.', on: false },
-  { id: "voice", group: "Logging", name: "Voice cues", desc: "When a rest ends, hear the next set spoken after the rest over sound.", on: false },
+  { id: "voice", group: "Logging", name: "Voice cues", desc: "When a rest ends, hear the next set spoken after the rest over sound.", on: false,
+    // the voice comes after the rest over sound, so it needs Play sounds too
+    turnsOn: ["voice", "sound"] },
   { id: "adaptiveRest", group: "Logging", name: "Longer rest after a missed set", desc: "Adds 30s to the rest when a set falls short of its target.", on: true },
   { id: "notifLogging", group: "Logging", name: "Log from the notification", desc: "Tick the next set from the lock-screen timer (Android).", on: true },
   // Training

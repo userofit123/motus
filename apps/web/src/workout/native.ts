@@ -281,7 +281,7 @@ export function clearIntervalNotice() {
  *  start or work ("engine"), one that didn't answer ("timeout"), no English voice ("language"), its voice not downloaded
  *  ("voice"), a voice that needs the internet, the sound taken (a call), anything else, or the app's own call to the
  *  phone failing ("app"). */
-export type NativeVoiceProblem = "none" | "engine" | "timeout" | "language" | "voice" | "network" | "busy" | "error" | "app";
+export type NativeVoiceProblem = "none" | "engine" | "timeout" | "language" | "voice" | "network" | "busy" | "output" | "error" | "app";
 /** Speaks a voice cue through the phone's own speech in the Android app (MotusWorkoutPlugin.speak), at `level` (0-1,
  *  workout/runtime.ts levelOf). Answers with why it wasn't said (null: it was), once the phone knows; false outside the
  *  app, where the caller uses the browser's. `test`: asked for by hand, so a speech engine that failed a moment ago is
