@@ -64,7 +64,7 @@ const fmt = useFmt();
         <div class="li"><div class="grow"><div class="t">Where</div><div class="s">{{ folder ? `Folder: ${folder}` : canPickFolder() ? "Pick a folder and backups are written there automatically" : "This browser can't write to a folder. Your data is kept on the server; use Back up now for a copy of your own" }}</div></div>
           <button v-if="canPickFolder() || N?.chooseBackupFolder" class="qb acc" @click="choose_folder">{{ folder ? "Change" : "Pick folder" }}</button>
           <button v-if="N?.openBackupFolder" class="qb" @click="N.openBackupFolder()">Open</button></div>
-        <label class="tgl"><div class="grow"><div class="t">Encrypt with a password</div><div class="s">Asked each time, so automatic backups stop: use Back up now</div></div><span class="tg"><input type="checkbox" :checked="s.backup.encrypt" @change="set({ encrypt: ($event.target as HTMLInputElement).checked })" /></span></label>
+        <label class="tgl"><div class="grow"><div class="t">Encrypt with a password</div><div class="s">The password is asked each time, so backups aren't made automatically; use Back up now</div></div><span class="tg"><input type="checkbox" :checked="s.backup.encrypt" @change="set({ encrypt: ($event.target as HTMLInputElement).checked })" /></span></label>
       </template>
       <div class="li"><div class="grow"><div class="t">Last backup</div><div class="s">{{ log.lastAt ? `${`${fmt.date(log.lastAt)} ${fmt.time(log.lastAt)}`} · ${log.lastName}` : "None yet" }}<span v-if="log.error" class="neg"> · {{ log.error }}</span></div></div><button class="btn s" :disabled="busy" @click="now">Back up now</button></div>
     </div>

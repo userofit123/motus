@@ -106,7 +106,7 @@ async function save() {
     <div class="card">
       <div class="fld"><label>Time (optional)</label><TimePicker v-model="f.timeOfDay" clearable placeholder="No time" /></div>
       <!-- a reminder counts back from the time, so it's offered only once there is one -->
-      <label v-if="f.timeOfDay" class="tgl"><div class="grow"><div class="t">Remind me</div><div class="s">A notification before it starts</div></div><span class="tg"><input v-model="f.remind" type="checkbox" /></span></label>
+      <label v-if="f.timeOfDay" class="tgl"><div class="grow"><div class="t">Remind me</div><div class="s">A notification before it starts, in the Android app</div></div><span class="tg"><input v-model="f.remind" type="checkbox" /></span></label>
       <div v-if="f.timeOfDay && f.remind" class="fld"><label>How long before</label><AppSelect v-model="f.remindMin" :options="REMIND" title="How long before" /></div>
     </div>
     <div class="banner spt sum" aria-live="polite"><Icon name="calendar" :size="18" /><span v-if="chosen"><strong>{{ chosen }}</strong> · {{ sentence }}</span><template v-else>{{ summary }}</template></div>

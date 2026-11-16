@@ -176,8 +176,9 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener2 {
         channel();
         long endAt = call.getLong("endAt", System.currentTimeMillis());
         String body = call.getString("body", "");
-        // "Rest timer on the lock screen" off: still in the shade, left off the lock screen (Android ignores an app's
-        // public lock screen setting on its channel, so the notification's own visibility decides)
+        // "Rest timer on the lock screen" off: still in the shade, left off a secure lock screen (PIN, pattern or
+        // fingerprint; a swipe-only lock screen shows notifications anyway). Android ignores an app's public lock screen
+        // setting on its channel, so the notification's own visibility decides
         boolean lockScreen = call.getBoolean("lockScreen", true);
         Intent open = new Intent(getContext(), MainActivity.class);
         open.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);

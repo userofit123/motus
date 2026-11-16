@@ -2,12 +2,12 @@
 import type { SetKind, Tracking, RestByKind } from "./types";
 import { duration, fromKg, toKg } from "./units";
 
-/** Estimated one-rep max (Epley by default; Brzycki is better for low reps). Only for 1-15 reps. */
-export function e1rm(weightKg: number | null | undefined, reps: number | null | undefined, formula: "epley" | "brzycki" = "epley"): number | null {
+/** Estimated one-rep max (Epley, the one estimate used everywhere). Only for 1-15 reps. */
+export function e1rm(weightKg: number | null | undefined, reps: number | null | undefined): number | null {
   if (!weightKg || !reps || reps < 1 || weightKg <= 0) return null;
   if (reps === 1) return weightKg;
   if (reps > 15) return null;
-  return formula === "brzycki" ? weightKg * (36 / (37 - reps)) : weightKg * (1 + reps / 30);
+  return weightKg * (1 + reps / 30);
 }
 
 /** Weight for a rep count at a given 1RM (the inverse of Epley), for the %1RM table */
