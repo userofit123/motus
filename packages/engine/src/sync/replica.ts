@@ -31,7 +31,7 @@ async function saveMetaIn(q: Sql, patch: Partial<ReplicaMeta>) {
  * A row the server didn't take when it was sent (modules/sync.ts push), kept in app_meta 'sync_hold' (not a synced
  * table: it is this copy's own business). The row itself stays here as it is. refused: for good (another account's
  * id, a check it breaks...): not sent again unless it changes here again, and left out when the copy is made again
- * after a restore with Replace (remakeCopy). Otherwise it failed for a passing reason (a deadlock, a timeout): it still
+ * after a restore with Replace (remakeCopy) unless it changed here since. Otherwise it failed for a passing reason (a deadlock, a timeout): it still
  * waits to be sent, and is sent again from `next` on (ms), waiting longer after each try (retryWait). at: when it
  * changed here; op: what was sent.
  */
@@ -114,51 +114,67 @@ async function clearRows(q: Sql) {
  * Rows the server refused for good are left out (refused, Hold): after a restore with Replace the server's rows are
  * the person's data, and such a row is what showed twice (M-257). A row written back that points at a row in neither
  * the snapshot nor what waits has that reference cleared where the app can do without it; one that can't (a routine's
- * set whose routine is gone) is dropped, as the server would refuse it too. Returns the copy's new state and the
- * rows dropped.
+ * set whose routine is gone) is dropped, as the server would refuse it too. Returns the copy's new state, the rows
+ * dropped and the refused rows left out (the app tells the person: they are gone from this device).
  */
-export async function remakeCopy(db: Db, cat: { stamp: string; rows: Record<string, unknown>[] }, snap: Snapshot): Promise<ReplicaMeta & { dropped: Change[] }> {
+export async function remakeCopy(db: Db, cat: { stamp: string; rows: Record<string, unknown>[] }, snap: Snapshot): Promise<ReplicaMeta & { dropped: Change[]; leftOut: Change[] }> {
   // the shared catalog first (the person's rows point at it); taking it in loses nothing, whatever happens next
   await loadCatalog(db, cat.stamp, cat.rows);
   // emptied and filled in one go, so a screen reading meanwhile sees the old rows or the new ones, never none
   return db.tx(async (q) => {
     const userId = String(snap.user.id);
-    // a row refused for good stays out even if changed here since: its id is still not one the server takes
+    // a row refused for good stays out: its id is still not one the server takes. Unless it changed here after it was
+    // refused (it is in the log again): that change was never sent, and waits like any other
     const held = await holdsIn(q);
-    const unsent = [...(await unsentIn(q)).entries()].filter(([k]) => !held[k]?.refused).map(([, e]) => e);
-    const rows = await readRows(q, unsent);
-    const kept: Change[] = unsent.map((e) => {
+    const changed = new Set(((await q.query("SELECT DISTINCT tbl, pk FROM sync_log WHERE seq > $1", [(await metaOf(q)).pushed])).rows as any[]).map((e) => keyOf(e.tbl, e.pk)));
+    const out = (k: string) => !!held[k]?.refused && !changed.has(k);
+    const unsent = [...(await unsentIn(q)).values()].filter((e) => !out(keyOf(e.tbl, e.pk)));
+    const refused = Object.entries(held).filter(([k]) => out(k)).map(([, h]) => h);
+    const rows = await readRows(q, [...unsent, ...refused]);
+    const asChange = (e: { tbl: string; pk: Record<string, unknown>; at: string }): Change => {
       const row = rows.get(keyOf(e.tbl, e.pk)) ?? null;
       return { tbl: e.tbl, pk: e.pk, op: row ? "upsert" : "delete", at: e.at, row };
-    });
+    };
+    const kept = unsent.map(asChange);
+    // only rows that are still here go: a refused deletion's row is already gone
+    const leftOut = refused.map(asChange).filter((c) => c.row);
     await clearRows(q);
     await writeSnapshot(q, snap);
     // nothing is in the log now: everything noted below waits to be sent
     const meta = await snapshotLoaded(q, snap);
     await saveHolds(q, {});
-    let failed = (await applyChanges(q, userId, kept, { apply: true })).failed.map((f) => f.change);
-    // a reference the app can do without (a workout's routine) to a row that is gone: cleared, and the row tried again
-    if (failed.length) {
-      const again: Change[] = [];
-      for (const c of failed) {
-        if (c.op !== "upsert" || !c.row) continue;
-        const row = { ...c.row };
+    const write = async (cs: Change[]) => (await applyChanges(q, userId, cs, { apply: true })).failed.map((f) => f.change);
+    // a deletion that failed here has nothing to delete
+    let left = (await write(kept)).filter((c) => c.op === "upsert" && c.row);
+    // a row that didn't get in: written again as long as that gets more in (its parent got in meanwhile). Then a
+    // reference the app can do without (a workout's routine, a routine's folder) is cleared when the row it points at
+    // is neither here nor still waiting to get in (a workout under a routine that only gets in once its folder is
+    // cleared keeps its routine); and only when that clears nothing more, also when it points at a row still waiting
+    // (which can't get in). Each round clears something or ends, so this comes to an end.
+    for (let loose = false; left.length;) {
+      let n;
+      do { n = left.length; left = await write(left); } while (left.length && left.length < n);
+      if (!left.length) break;
+      const waiting = new Set(loose ? [] : left.map((c) => keyOf(c.tbl, c.pk)));
+      let cleared = false;
+      for (const c of left) {
+        const row = c.row!;
         for (const ref of REFS[c.tbl] ?? []) {
           const v = row[ref.col], t = v == null || ref.required ? null : typeof ref.table === "string" ? ref.table : ref.table(row);
-          if (t && !(await readRows(q, [{ tbl: t, pk: { id: v } }])).get(keyOf(t, { id: v }))) row[ref.col] = null;
+          if (!t || waiting.has(keyOf(t, { id: v })) || (await readRows(q, [{ tbl: t, pk: { id: v } }])).get(keyOf(t, { id: v }))) continue;
+          c.row = { ...c.row, [ref.col]: null };
+          cleared = true;
         }
-        again.push({ ...c, row });
       }
-      const still = new Set((await applyChanges(q, userId, again, { apply: true })).failed.map((f) => keyOf(f.change.tbl, f.change.pk)));
-      failed = failed.filter((c) => c.op === "delete" || still.has(keyOf(c.tbl, c.pk)));
+      if (!cleared) { if (loose) break; loose = true; }
     }
-    // a deletion that failed here has nothing to delete; a row that failed isn't here: noting it would send its deletion
-    const lost = new Set(failed.filter((c) => c.op === "upsert").map((c) => keyOf(c.tbl, c.pk)));
+    // a row that failed isn't here: noting it would send its deletion
+    const lost = new Set(left.map((c) => keyOf(c.tbl, c.pk)));
     for (const c of kept) {
       if (lost.has(keyOf(c.tbl, c.pk))) continue;
       await q.query("INSERT INTO sync_log (user_id, tbl, pk, op, at) VALUES ($1, $2, $3::jsonb, $4, $5)", [userId, c.tbl, JSON.stringify(c.pk), c.op, c.at]);
     }
-    return { ...meta, dropped: kept.filter((c) => lost.has(keyOf(c.tbl, c.pk))) };
+    return { ...meta, dropped: kept.filter((c) => lost.has(keyOf(c.tbl, c.pk))), leftOut };
   });
 }
 
@@ -172,15 +188,42 @@ async function sendTaken(db: Db, userId: string, out: { changes: Change[]; upTo:
   await db.tx(async (q) => {
     await q.query("DELETE FROM sync_log WHERE seq <= $1", [out.upTo]);
     await saveMetaIn(q, { pushed: out.upTo });
-    const fails = new Map<string, { retry?: boolean }>((Array.isArray(res.failed) ? res.failed : []).map((f: any) => [keyOf(f.tbl, f.pk), f]));
+    const fails = new Map<string, { retry?: boolean; code?: string }>((Array.isArray(res.failed) ? res.failed : []).map((f: any) => [keyOf(f.tbl, f.pk), f]));
     const held = await holdsIn(q);
+    const retry = (c: Change) => {
+      const h = held[keyOf(c.tbl, c.pk)], tries = (h && !h.refused ? h.tries ?? 0 : 0) + 1;
+      return { tbl: c.tbl, pk: c.pk, at: c.at, op: c.op, tries, next: now + retryWait(tries) };
+    };
+    const orphans: Change[] = [];
     for (const c of out.changes) {
-      const k = keyOf(c.tbl, c.pk), f = fails.get(k), h = held[k];
+      const k = keyOf(c.tbl, c.pk), f = fails.get(k);
       if (!f) delete held[k];
-      else if (f.retry === true) {
-        const tries = (h && !h.refused ? h.tries ?? 0 : 0) + 1;
-        held[k] = { tbl: c.tbl, pk: c.pk, at: c.at, op: c.op, tries, next: now + retryWait(tries) };
-      } else held[k] = { tbl: c.tbl, pk: c.pk, at: c.at, op: c.op, refused: true };
+      else if (f.retry === true) held[k] = retry(c);
+      else if (f.code === "23503" && c.op === "upsert" && c.row) orphans.push(c);
+      else held[k] = { tbl: c.tbl, pk: c.pk, at: c.at, op: c.op, refused: true };
+    }
+    // refused because a row it points at isn't on the server (23503): not for good while that row still waits here to
+    // be sent (held after a passing failure, in this send or an earlier one, or changed since and not sent yet). It is
+    // then tried again later like a passing failure, so it gets there after its parent; otherwise it is refused. Rows
+    // are matched by id; a row that waits only because the row it points at waits counts as waiting itself (a set under
+    // a routine's exercise under a held routine), but never because of itself or a refused row, so this always ends.
+    if (orphans.length) {
+      const waiting = new Set<unknown>();
+      const orphan = new Set(orphans.map((c) => keyOf(c.tbl, c.pk)));
+      for (const [k, h] of Object.entries(held)) if (!h.refused && !orphan.has(k) && h.pk.id != null) waiting.add(h.pk.id);
+      for (const e of (await q.query("SELECT pk FROM sync_log WHERE seq > $1", [out.upTo])).rows as any[]) if (e.pk?.id != null) waiting.add(e.pk.id);
+      let left = orphans, n;
+      do {
+        n = left.length;
+        left = left.filter((c) => {
+          if (!Object.entries(c.row!).some(([col, v]) => col !== "id" && waiting.has(v))) return true;
+          fails.get(keyOf(c.tbl, c.pk))!.retry = true; // the answer says so too (syncRound's refused leaves it out)
+          held[keyOf(c.tbl, c.pk)] = retry(c);
+          if (c.pk.id != null) waiting.add(c.pk.id);
+          return false;
+        });
+      } while (left.length && left.length < n);
+      for (const c of left) held[keyOf(c.tbl, c.pk)] = { tbl: c.tbl, pk: c.pk, at: c.at, op: c.op, refused: true };
     }
     await saveHolds(q, held);
     if (Array.isArray(res.rejected) && res.rejected.length) await applyRemoteIn(q, userId, res.rejected);
@@ -307,13 +350,15 @@ export interface SyncServer {
  * nothing here asks for another sync at once: a row the server keeps failing on waits for its time (retryWait) and a
  * later sync, and stops nothing else being sent or fetched. wrote: called before each write here (the app saves the
  * copy to disk only after a sync that wrote). Returns whether anything here changed, the answers to the sends, whether
- * the copy was made again, and the rows the server refused for good this time.
+ * the copy was made again, the rows the server refused for good this time, and the rows gone from this copy when it
+ * was made again (removed: refused ones left out, and ones that could no longer be written back; remakeCopy).
  */
 export async function syncRound(db: Db, userId: string, s: SyncServer, opts: { now?: number; wrote?: () => void } = {}) {
   const wrote = opts.wrote ?? (() => {});
   const send = (body: unknown) => { wrote(); return s.push(body); };
   const answers = await pushAll(db, userId, send, opts.now);
   let changed = answers.some((a) => a.rejected?.length), remade = false;
+  const removed: Change[] = [];
   const retry: Change[] = [];
   for (;;) {
     const m = await replicaMeta(db);
@@ -323,7 +368,8 @@ export async function syncRound(db: Db, userId: string, s: SyncServer, opts: { n
     if (p.reset) {
       const cat = await s.catalog(), snap = await s.snapshot();
       wrote();
-      await remakeCopy(db, cat, snap);
+      const made = await remakeCopy(db, cat, snap);
+      removed.push(...made.leftOut, ...made.dropped);
       remade = changed = true;
       retry.length = 0;
       answers.push(...(await pushAll(db, userId, send, opts.now)));
@@ -339,5 +385,5 @@ export async function syncRound(db: Db, userId: string, s: SyncServer, opts: { n
   // a row that arrived before the row it belongs to (they came in different pages)
   if (retry.length) { wrote(); await applyRemote(db, userId, retry); }
   const refused = answers.flatMap((a) => (Array.isArray(a.failed) ? a.failed : []).filter((f: any) => f.retry !== true));
-  return { changed, answers, remade, refused };
+  return { changed, answers, remade, refused, removed };
 }

@@ -163,6 +163,51 @@ describe("a row the server can't take as sent", () => {
     expect(await replica.waitingCount(phone.e.db)).toBe(0);
   }, 120000);
 
+  it("whose parent waits on the device after a passing failure is sent again, not refused, and gets there after it", async () => {
+    const w = await world();
+    const phone = await w.device();
+    const off = await w.flaky("routines", "40001");
+    const cat = (await phone.e.db.admin.query("SELECT id FROM exercises WHERE owner_id IS NULL ORDER BY id LIMIT 1")).rows[0].id;
+    await on(phone.e, w.U)("POST", "/routines", { name: "Legs", exercises: [{ exerciseId: cat, sets: [{ reps: 5 }] }] });
+    const t0 = Date.now();
+    expect(failedOf(await w.sync(phone, { now: t0 })).every((f: any) => f.retry)).toBe(true);
+    // the set edited here while its routine waits for its time: sent alone, where its routine's exercise isn't yet
+    await phone.e.db.admin.query("UPDATE routine_sets SET reps = 9");
+    const r = await w.sync(phone, { now: t0 + 1000 });
+    expect(sentKeys(r).map((k) => k.split(":")[0])).toEqual(["routine_sets"]);
+    expect(failedOf(r)).toMatchObject([{ tbl: "routine_sets", code: "23503", retry: true }]);
+    expect(r.refused).toEqual([]);
+    expect(Object.values(await replica.holds(phone.e.db)).some((h) => h.refused)).toBe(false);
+    await off();
+    await w.sync(phone, { now: LATER() });
+    for (const t of ["routines", "routine_exercises", "routine_sets"]) expect(await w.rows(w.server, t)).toEqual(await w.rows(phone.e, t));
+    expect((await w.rows(w.server, "routine_sets", "reps")).map((x) => x.reps)).toEqual([9]);
+    expect(await replica.holds(phone.e.db)).toEqual({});
+    expect(await replica.waitingCount(phone.e.db)).toBe(0);
+  }, 120000);
+
+  it("whose parent failed for a passing reason in an earlier page of the same send is sent again, not refused", async () => {
+    const w = await world();
+    const phone = await w.device();
+    const off = await w.flaky("routines", "40001");
+    const cat = (await phone.e.db.admin.query("SELECT id FROM exercises WHERE owner_id IS NULL ORDER BY id LIMIT 1")).rows[0].id;
+    await on(phone.e, w.U)("POST", "/routines", { name: "Legs", exercises: [{ exerciseId: cat, sets: [{ reps: 5 }] }] });
+    // the first page full (500 changes), the set's edit alone in the second
+    const n = Number((await phone.e.db.admin.query("SELECT count(*) AS n FROM sync_log")).rows[0].n);
+    await phone.e.db.admin.query(`INSERT INTO goals (id, user_id, title, scope, metric, target, period)
+      SELECT gen_random_uuid(), $1, 'G', 'activity', 'steps_avg', g, 'day' FROM generate_series(1, $2::int) g`, [w.U, 500 - n]);
+    await phone.e.db.admin.query("UPDATE routine_sets SET reps = 9");
+    const r = await w.sync(phone);
+    expect(r.posts.length).toBe(2);
+    expect(r.posts[1].changes.map((c: any) => c.tbl)).toEqual(["routine_sets"]);
+    expect(r.pushed[1].failed).toMatchObject([{ tbl: "routine_sets", code: "23503", retry: true }]);
+    expect(r.refused).toEqual([]);
+    await off();
+    await w.sync(phone, { now: LATER() });
+    expect((await w.rows(w.server, "routine_sets", "reps")).map((x) => x.reps)).toEqual([9]);
+    expect(await replica.waitingCount(phone.e.db)).toBe(0);
+  }, 180000);
+
   it("older than the server's comes back as the person's own row", async () => {
     const w = await world();
     const phone = await w.device();
@@ -319,6 +364,8 @@ describe("a restore with Replace and the devices' copies", () => {
     await w.S("POST", "/import", { data: file, mode: "replace" });
     const r2 = await w.sync(phone);
     expect(r2.remade).toBe(true);
+    // each refused row is said to be gone from the device
+    expect(r2.removed.length).toBe(failedOf(r).length);
     expect((await w.goals(phone.e)).length).toBe(2);
     expect(await w.goals(phone.e)).toEqual(await w.goals(w.server));
     for (const t of ["routines", "routine_exercises", "routine_sets"]) {
@@ -390,6 +437,66 @@ describe("a restore with Replace and the devices' copies", () => {
     await w.sync(phone, { now: LATER() });
     expect((await w.rows(w.server, "routines", "name")).map((x) => x.name).sort()).toEqual(["Kept", "Push"]);
     expect(await replica.waitingCount(phone.e.db)).toBe(0);
+  }, 180000);
+
+  it("keeps a workout's routine that gets in only once its removed folder is cleared", async () => {
+    const w = await world();
+    const phone = await w.device();
+    const { id: folder } = await on(phone.e, w.U)("POST", "/folders", { name: "Old" });
+    await w.sync(phone);
+    await w.S("POST", "/import", { data: await w.backup(), mode: "replace" }); // the folder goes on the server
+    // made here while the snapshot downloads: a routine in that folder and a workout of it
+    let routine = "";
+    const workout = uuidv7();
+    const r = await w.sync(phone, {
+      snapshot: async () => {
+        routine = (await on(phone.e, w.U)("POST", "/routines", { name: "Mine", folderId: folder, exercises: [] })).id;
+        await phone.e.db.admin.query("INSERT INTO workouts (id, user_id, routine_id, name, status, started_at, ended_at) VALUES ($1, $2, $3, 'Mine', 'completed', now(), now())", [workout, w.U, routine]);
+      },
+    });
+    expect(r.remade).toBe(true);
+    expect(r.removed).toEqual([]);
+    expect((await phone.e.db.admin.query("SELECT folder_id FROM routines WHERE id = $1", [routine])).rows).toEqual([{ folder_id: null }]);
+    for (const e of [phone.e, w.server]) expect((await e.db.admin.query("SELECT routine_id FROM workouts WHERE id = $1", [workout])).rows).toEqual([{ routine_id: routine }]);
+    expect(await replica.waitingCount(phone.e.db)).toBe(0);
+  }, 180000);
+
+  it("says what it removed from the copy: a row refused for good, and a change that no longer fits", async () => {
+    const w = await world();
+    const phone = await w.device();
+    const cat = (await phone.e.db.admin.query("SELECT id FROM exercises WHERE owner_id IS NULL ORDER BY id LIMIT 1")).rows[0].id;
+    await on(phone.e, w.U)("POST", "/routines", { name: "Arms", exercises: [{ exerciseId: cat, sets: [{ reps: 5 }] }] });
+    await w.sync(phone);
+    const set = (await w.rows(phone.e, "routine_sets"))[0].id;
+    const off = await w.flaky("goals", "23514");
+    const { id: g } = await on(phone.e, w.U)("POST", "/goals", goal(20));
+    expect((await w.sync(phone)).refused.length).toBe(1);
+    await off();
+    await w.S("POST", "/import", { data: await w.backup(), mode: "replace" }); // the routine goes on the server
+    // the set changed here while the snapshot downloads: its routine's exercise is in neither the snapshot nor what waits
+    const r = await w.sync(phone, { snapshot: async () => { await phone.e.db.admin.query("UPDATE routine_sets SET reps = 9 WHERE id = $1", [set]); } });
+    expect(r.remade).toBe(true);
+    expect(r.removed).toMatchObject([{ tbl: "goals", pk: { id: g }, op: "upsert" }, { tbl: "routine_sets", pk: { id: set }, op: "upsert" }]);
+    expect(await w.goals(phone.e)).toEqual(await w.goals(w.server));
+    expect(await w.rows(phone.e, "routine_sets")).toEqual(await w.rows(w.server, "routine_sets"));
+    expect(await replica.waitingCount(phone.e.db)).toBe(0);
+  }, 180000);
+
+  it("keeps a row refused for good that changed here since, and sends it", async () => {
+    const w = await world();
+    const phone = await w.device();
+    const off = await w.flaky("goals", "23514");
+    const { id } = await on(phone.e, w.U)("POST", "/goals", goal(20));
+    expect((await w.sync(phone)).refused.length).toBe(1);
+    await off();
+    await w.S("POST", "/import", { data: await w.backup(), mode: "replace" });
+    // changed after its refusal, before the copy is made again
+    const r = await w.sync(phone, { snapshot: async () => { await on(phone.e, w.U)("PUT", `/goals/${id}`, goal(21)); } });
+    expect(r.remade).toBe(true);
+    expect(r.removed).toEqual([]);
+    expect(Number((await w.goals(w.server)).find((x) => x.id === id)?.target)).toBe(21);
+    expect(await w.goals(phone.e)).toEqual(await w.goals(w.server));
+    expect(await replica.holds(phone.e.db)).toEqual({});
   }, 180000);
 
   it("never marks sent a change made just as the copy is made again", async () => {

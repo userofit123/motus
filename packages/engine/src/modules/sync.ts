@@ -103,13 +103,15 @@ export function syncRoutes(r: Router) {
     // a row that failed because a row it points at isn't here (23503) may belong to one that failed for a passing reason
     // in this same send (a routine's exercises under a routine hit by a deadlock): tried again too, never kept back
     const anyPassing = fails.some((f) => passing(f.code));
-    const failed: { tbl: string; pk: Record<string, unknown>; error: string; retry: boolean }[] = [];
+    // code: the SQLSTATE, so the device can tell a row whose parent still waits there to be sent (23503) from one
+    // refused for good (sync/replica.ts sendTaken)
+    const failed: { tbl: string; pk: Record<string, unknown>; error: string; retry: boolean; code?: string }[] = [];
     for (const f of fails) {
       // a deletion refused because something here still points at the row (a custom exercise another device used in a
       // workout): the device gets the row back as it is here, rather than keeping a deletion the server never takes
       if (f.change.op === "delete" && f.code === "23503") { rejected.push(f.change); continue; }
       const retry = passing(f.code) || (anyPassing && f.code === "23503" && f.change.op === "upsert");
-      failed.push({ tbl: f.change.tbl, pk: f.change.pk, error: f.error.slice(0, 200), retry });
+      failed.push({ tbl: f.change.tbl, pk: f.change.pk, error: f.error.slice(0, 200), retry, ...(f.code ? { code: f.code } : {}) });
     }
     // the device gets back the server's version of what wasn't written as sent: a change older than the server's, a
     // finished workout it would have reopened, a row with a reference to someone else's row cleared, a refused deletion

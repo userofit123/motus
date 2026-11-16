@@ -26,6 +26,8 @@ let eng: any = null, R: any = null, db: any = null, userId = "", name = "";
 let running = false, again = false, timer: ReturnType<typeof setTimeout> | null = null;
 // when the current run of failures began (0 = the last sync worked), and when the app was last brought back
 let failingSince = 0, shownAt = 0;
+// rows gone from this device when an outdated copy was made again at the start: told at the next sync (run)
+let removedAtStart: unknown[] = [];
 // what signing out has to undo, so the next person signing in on this tab starts clean
 let releaseLock = () => {}, stopEvents: AbortController | null = null, tick: ReturnType<typeof setInterval> | null = null;
 
@@ -148,7 +150,10 @@ export async function startReplica(user: { id: string }): Promise<boolean> {
       }
       if (fresh) {
         // anything changed here since the check above is kept and sent (R.remakeCopy)
-        if (remake) await R.remakeCopy(db, fresh.cat, fresh.snap);
+        if (remake) {
+          const made = await R.remakeCopy(db, fresh.cat, fresh.snap);
+          removedAtStart = [...made.leftOut, ...made.dropped];
+        }
         else { await R.loadCatalog(db, fresh.cat.stamp, fresh.cat.rows); await R.loadSnapshot(db, fresh.snap); }
       }
     }
@@ -221,9 +226,19 @@ async function run(): Promise<Error | null> {
     // stay here, and aren't sent again unless changed)
     failed = r.refused.length;
     if (failed) console.warn("Sync: the server refused", r.refused);
+    // and rows gone from this device when its copy was made again (after a restore with Replace, or at the start for
+    // an outdated copy): refused ones, and ones that no longer fit the restored data (R.remakeCopy)
+    const removed = [...removedAtStart, ...r.removed];
+    removedAtStart = [];
+    if (removed.length) console.warn("Sync: removed from this device when its copy was made again", removed);
+    const n = removed.length;
+    const error = [
+      failed ? `${failed} change${failed === 1 ? "" : "s"} from this device didn't fit the server's data` : "",
+      n ? `${n} change${n === 1 ? "" : "s"} that didn't fit the server's data ${n === 1 ? "was" : "were"} removed from this device` : "",
+    ].filter(Boolean).join(" · ");
     ok = true;
     failingSince = 0;
-    Object.assign(sync, { online: true, error: failed ? `${failed} change${failed === 1 ? "" : "s"} from this device didn't fit the server's data` : "", lastAt: Date.now() });
+    Object.assign(sync, { online: true, error, lastAt: Date.now() });
   } catch (e) {
     err = e as Error;
     // someone else signed in (in another tab): this copy is not theirs, so it stops here and the app opens again as
@@ -272,7 +287,7 @@ export async function eraseReplica() {
   if (tick) clearInterval(tick); tick = null;
   if (timer) clearTimeout(timer); timer = null;
   await db?.close().catch(() => {});
-  db = null; eng = null; userId = ""; failingSince = 0; Object.assign(sync, { waiting: 0, error: "", syncing: false });
+  db = null; eng = null; userId = ""; failingSince = 0; removedAtStart = []; Object.assign(sync, { waiting: 0, error: "", syncing: false });
   releaseLock(); releaseLock = () => {};
   await dropDatabase(`/pglite/${name}`);
   writeStr(UNSENT(), "0");
