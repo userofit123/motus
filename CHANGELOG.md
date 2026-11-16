@@ -2,6 +2,15 @@
 
 The top entry's version is the one the release workflow publishes. Add a new `## [x.y.z]` section to release.
 
+## [0.1.37] - 2026-11-16
+
+- 
+
+## [0.1.37] - 2026-11-16
+
+- Voice cues keep using your phone's speech: one failed cue no longer switches it off for the rest of the workout. Motus tries again soon, then your phone's other speech engines, before its own voice speaks instead.
+- Settings → Workout defaults shows, under Voice cues, which voice speaks on this device and whether it works. A problem stays shown until it's fixed, with what to do. Speaks with picks the speech engine or Motus's own voice, and English voice picks the voice, each with a play button. On the phone, the ⋮ menu opens the phone's speech settings.
+
 ## [0.1.36] - 2026-11-16
 
 - 
