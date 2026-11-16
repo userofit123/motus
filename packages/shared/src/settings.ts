@@ -101,7 +101,8 @@ export type WornDevice = (typeof WORN_DEVICES)[number];
 export const cleanWornDevice = (v: unknown): WornDevice | null => (WORN_DEVICES as readonly unknown[]).includes(v) ? (v as WornDevice) : null;
 
 export interface HomeBlock { id: string; on: boolean }
-/** Every Home block, in the default order; `on` is whether a new account sees it. Blocks tied to a feature, or that only
+/** Every Home block, in the default order; `on` is whether a new account sees it. Each one, Today too, can be moved and
+ *  switched off in Edit home. Blocks tied to a feature, or that only
  *  have something to say now and then (a workout in progress is part of Today; reminders, goals due soon, a program), stay
  *  in this list and simply don't draw while there's nothing to show. Ids added later are appended to a saved order. */
 // the score blocks (Health scores, off by default) are on, so switching the feature on brings them in.
@@ -114,6 +115,8 @@ export const HOME_BLOCKS: HomeBlock[] = [
   { id: "suggest", on: true }, { id: "reminders", on: true }, { id: "activityToday", on: true },
   { id: "scoreSleep", on: true }, { id: "scoreActivity", on: true }, { id: "scoreStrength", on: true },
   { id: "records", on: false }, { id: "feed", on: false }, { id: "daily", on: false }, { id: "achievements", on: false },
+  // At a glance (today's numbers as rings) and Today's calendar (the Calendar's card for today): off until picked in Edit home
+  { id: "quickStats", on: false }, { id: "calendarDay", on: false },
 ];
 /** Home's blocks made safe (they sync from any device): unknown ids and repeats dropped, missing ones appended with their default. */
 export function cleanHomeBlocks(saved: unknown): HomeBlock[] {
@@ -126,8 +129,8 @@ export function cleanHomeBlocks(saved: unknown): HomeBlock[] {
       const id = item.id;
       if (typeof id !== "string" || !known.has(id) || seen.has(id)) continue;
       seen.add(id);
-      // Today is always shown: it has no switch in Edit home
-      out.push({ id, on: id === "today" || (typeof item.on === "boolean" ? item.on : known.get(id)!) });
+      // Today had no switch before M-262, so every saved layout has it on and keeps it where it was
+      out.push({ id, on: typeof item.on === "boolean" ? item.on : known.get(id)! });
     }
   }
   for (const d of HOME_BLOCKS) if (!seen.has(d.id)) out.push({ ...d });

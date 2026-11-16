@@ -11,11 +11,9 @@ import { daysIntoWeek, weekdayOrder } from "@motus/shared";
 import { useRoute, useRouter } from "vue-router";
 import { useQuery } from "@tanstack/vue-query";
 import { api } from "../api/client";
-import { useCalendar, useSettings, useWorkouts, useActivities, useHealthAvailable, useHealthDay, useTypeName, loaded } from "../api/queries";
+import { useCalendar, useSettings, useWorkouts, useActivities, useHealthAvailable, useTypeName, loaded } from "../api/queries";
 import { useStepGoal } from "../core/goals";
-import { asleepMin, mins } from "../core/sleep";
 import Menu from "../components/Menu.vue";
-import { unplanItems } from "../components/home/planActions";
 import { useFmt, localYmd, activityIcon, hrPart } from "../core/format";
 import { isPhone } from "../core/device";
 import { logSheet, activitySheet } from "../core/ui";
@@ -24,9 +22,8 @@ import DotLine from "../components/DotLine.vue";
 import SearchField from "../components/SearchField.vue";
 import ScheduleEditor from "../components/ScheduleEditor.vue";
 import SessionStats from "../components/SessionStats.vue";
-import DayByHour from "../components/stats/DayByHour.vue";
-import { WORKOUT_COLOR, ACTIVITY_COLOR, useDaySessions } from "../components/stats/daySessions";
-import { useDayTimeline } from "../components/stats/dayTimeline";
+import CalendarDay, { calendarDays } from "../components/CalendarDay.vue";
+import { WORKOUT_COLOR, ACTIVITY_COLOR } from "../components/stats/daySessions";
 
 const route = useRoute(), router = useRouter();
 const s = useSettings();
@@ -59,20 +56,7 @@ const grid = computed(() => {
 const range = computed(() => ({ from: localYmd(grid.value[0]!), to: localYmd(grid.value.at(-1)!) }));
 const cal = useCalendar(range);
 const today = localYmd(new Date());
-const byDay = computed(() => {
-  const m = new Map<string, any[]>();
-  const add = (d: string, x: any) => m.set(d, [...(m.get(d) ?? []), x]);
-  const c = cal.data.value;
-  if (!c) return m;
-  for (const w of c.workouts) add(localYmd(new Date(w.startedAt)), { kind: "workout", ...w });
-  for (const a of c.activities) add(localYmd(new Date(a.startedAt)), { kind: "activity", ...a });
-  // the engine leaves out plans already done (by their routine, activity type, or started from the plan)
-  for (const p of c.planned) add(p.date, { kind: "planned", missed: p.date < today, ...p });
-  // the engine sends workouts and activities as separate lists, so a day would show all its workouts before its activities;
-  // order each day like Home's list for a day (oldest first, in order of when they happened), plans (no time of their own) after what was done
-  for (const xs of m.values()) xs.sort((a, b) => (a.kind === "planned" ? 1 : 0) - (b.kind === "planned" ? 1 : 0) || (a.startedAt && b.startedAt ? a.startedAt.localeCompare(b.startedAt) : 0));
-  return m;
-});
+const byDay = computed(() => calendarDays(cal.data.value, today));
 const DOW = computed(() => weekdayOrder(first.value).map((i) => ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][i]));
 const calDir = ref("nx");
 const shift = (n: number) => { calDir.value = n > 0 ? "nx" : "pv"; month.value = new Date(month.value.getFullYear(), month.value.getMonth() + n, 1); };
@@ -131,11 +115,10 @@ const monthStats = computed(() => {
   return { workouts: w.length, activities: a.length, timeS: [...w, ...a].reduce((t, x) => t + (x.durationS ?? 0), 0), days: inMonth.filter(([, v]) => v.some(done)).length };
 });
 const planDay = ref<string | null>(null);
-// what a band handed over for the chosen day (its night, resting heart rate, steps and distance), as tiles at the top of
-// the day's card; asked only for a day up to today, once a band has handed something over at all
+// the chosen day's card (the band's tiles, its hours and its sessions) is CalendarDay, shared with Home; the month asks
+// for the band's data only once a band has handed something over at all
 const avail = useHealthAvailable();
 const banded = computed(() => !!avail.data.value && Object.values(avail.data.value).some(Boolean));
-const hDay = useHealthDay(computed(() => (sel.value && sel.value <= today ? sel.value : null)), banded);
 // each day's steps as a thin bar along the bottom of its cell (M-200), so a day with only band data no longer looks empty:
 // filled to the steps goal (green once reached), or without one against the shown weeks' busiest day as Home's week bars.
 // Sleep gets no mark: a night spans two days, so it stays in the chosen day's tiles. Only with band data at all.
@@ -155,30 +138,6 @@ const stepBars = computed(() => new Map([...stepsOf.value].map(([d, n]) => {
   return [d, { pct: Math.min(100, (n / stepTop.value) * 100), ok,
     label: ok ? `${fmt.value.num(n, 0)} steps, goal reached` : g ? `${fmt.value.num(n, 0)} of ${fmt.value.num(g, 0)} steps` : `${fmt.value.num(n, 0)} steps` }];
 })));
-const dayTiles = computed(() => {
-  const d = hDay.data.value;
-  if (!d || d.date !== sel.value) return [];
-  const out: { key: string; icon: string; label: string; value: string; unit: string; sub: string; open?: () => void }[] = [];
-  // Sleep, resting heart rate and Steps each open their Stats tab on this day; a day with only its sleep hours (synced
-  // before nights came in, or typed) shows those
-  const stats = (tab: string) => () => router.push(`/stats?tab=${tab}&day=${d.date}`);
-  if (d.sleep) { const n = d.sleep; out.push({ key: "sleep", icon: "moon", label: "Sleep", value: mins(asleepMin(n)), unit: "", sub: `${fmt.value.time(n.startAt)}-${fmt.value.time(n.endAt)}`, open: stats("sleep") }); }
-  else if (d.sleepH) out.push({ key: "sleep", icon: "moon", label: "Sleep", value: mins(d.sleepH * 60), unit: "", sub: "Daily log", open: stats("sleep") });
-  if (d.restingHr != null) out.push({ key: "rhr", icon: "heartPulse", label: "Resting heart rate", value: String(Math.round(d.restingHr)), unit: "bpm", sub: d.hrv != null ? `HRV ${Math.round(d.hrv)} ms` : "", open: stats("heart") });
-  const dist = d.distanceM ? fmt.value.dist(d.distanceM, 1) : "";
-  // the day's steps open it on Stats → Steps (its hours, against your usual day)
-  if (d.steps) out.push({ key: "steps", icon: "steps", label: "Steps", value: fmt.value.num(d.steps, 0), unit: "", sub: dist, open: stats("steps") });
-  else if (dist) { const i = dist.lastIndexOf(" "); out.push({ key: "dist", icon: "walk", label: "Distance", value: dist.slice(0, i), unit: dist.slice(i + 1), sub: "" }); }
-  return out;
-});
-// the day at a glance under its tiles (M-244): the night, the steps by hour and the heart rate on one timeline with the
-// day's sessions shaded on it, only from what the band saved; each part opens its Stats tab on this day, as the tiles do
-const tlDay = computed(() => sel.value ?? today);
-const tlOn = computed(() => banded.value && !!sel.value && sel.value <= today);
-const { sessions: tlSessions } = useDaySessions(tlDay, tlOn);
-const { tl, has: tlHas } = useDayTimeline(tlDay, computed(() => hDay.data.value), tlOn);
-const dayTop = computed(() => dayTiles.value.length > 0 || tlHas.value);
-// a workout's average heart rate from a band, after its time in the row's line
 // the shown month's totals, as stat tiles at the end of the calendar (they follow the month you are looking at); the
 // tiles of Home's This week and Stats' month reports, in their order (Activities in Volume's place), without a change column: the calendar loads only this month
 const monthTiles = computed(() => {
@@ -243,24 +202,7 @@ await loaded(cal, listWorkouts, listActs);
       </Transition>
       <div v-if="sel" :key="sel" class="spt dayfade">
         <div class="sh first"><h2>{{ fmt.date(sel, { weekday: "long", day: "numeric", month: "long" }) }}</h2><div class="grow" /><span v-if="sel <= today" @click.stop><Menu label="Log on this day" align="start" :items="[{ label: 'Log a workout', icon: 'dumbbell', run: () => (logSheet = { date: sel ?? undefined }) }, { label: 'Log an activity', icon: 'activity', run: () => (activitySheet = {}) }]" /></span><button v-if="sel >= today" class="lnk" @click="planDay = sel"><Icon name="plus" :size="14" />Plan</button></div>
-        <!-- the band's numbers for the day as a report's tiles, then its hours and its sessions, each under a faint line and
-             named as Stats' day cards name theirs (M-253: one card, so the day still reads as one) -->
-        <div class="card" :class="{ wkc: dayTop }">
-          <div v-if="dayTiles.length" class="wstats dtiles">
-            <div v-for="x in dayTiles" :key="x.key" class="ws" :class="{ click: x.open }" :role="x.open ? 'button' : 'group'" :tabindex="x.open ? 0 : undefined" :aria-label="[x.label, x.value, x.unit, x.sub].filter(Boolean).join(' ')" @click="x.open?.()" @keydown.enter="x.open?.()">
-              <div class="wlb"><Icon :name="x.icon" :size="14" />{{ x.label }}<Icon v-if="x.open" name="right" :size="14" class="wgo" /></div>
-              <div class="wv">{{ x.value }} <small v-if="x.unit">{{ x.unit }}</small></div>
-              <div class="wd">{{ x.sub }}</div>
-            </div>
-          </div>
-          <div v-if="tlHas" :class="{ csec: dayTiles.length }">
-            <DayByHour :tl="tl" :day="tlDay" :sessions="tlSessions" @open="(tab) => router.push(`/stats?tab=${tab}&day=${tlDay}`)" @pick="(id) => router.push(id)" /></div>
-          <div :class="{ 'csec dsess': dayTop }"><div v-if="dayTop && (byDay.get(sel) ?? []).length" class="lbl hgap">Workouts and activities</div>
-          <div v-if="!(byDay.get(sel) ?? []).length" class="tiny">{{ sel >= today ? "Nothing planned. Use Plan to put a routine on this day." : "No workouts or activities on this day." }}</div>
-          <div class="list"><div v-for="x in byDay.get(sel) ?? []" :key="x.id ?? x.scheduleId" class="li click" @click="open(x)">
-            <Icon :name="icon(x)" :size="18" :style="{ color: x.color ?? (x.kind === 'activity' ? ACTIVITY_COLOR : WORKOUT_COLOR) }" /><div class="grow"><div class="t" :style="x.missed ? { opacity: .5 } : undefined">{{ label(x) }}</div><div class="s"><template v-if="x.kind === 'planned'">{{ x.missed ? "Missed" : "Planned workout" }}</template><DotLine v-else :parts="[fmt.time(x.startedAt), hrPart(x)].filter((p) => p != null)" /></div></div><SessionStats v-if="x.kind !== 'planned'" :x="x" /><span v-if="x.kind === 'planned'" @click.stop><Menu :items="unplanItems(x)" :label="`Options for ${x.name}`" /></span><Icon v-else name="right" class="muted" /></div></div>
-          </div>
-        </div>
+        <CalendarDay :day="sel" :today="today" :items="byDay.get(sel) ?? []" />
       </div>
       <!-- the month's totals, after everything else; List needs none, each of its months has its count beside its name -->
       <div class="card wkc spt">
@@ -292,14 +234,6 @@ await loaded(cal, listWorkouts, listActs);
 </template>
 
 <style scoped>
-/* the day's sessions under the band's tiles in the shared section (.csec), as Stats' day cards: no line above the first row
-   or under the last, as their session list's */
-.dsess .li:first-child { padding-top: 0; }
-.dsess .li:last-child { border-bottom: 0; padding-bottom: 0; }
-/* the phone shows these as rows whose label column is what the subtitles leave over: with the tighter gap "Resting heart rate" still fits beside a night's times; a longer label wraps instead of running under its value */
-.dtiles { column-gap: var(--hg); }
-.dtiles .wlb { white-space: normal; }
-/* a workout's heart rate in its row's line: the small heart in the line's colour, beside its number */
 /* a day's steps: a thin bar on the cell's bottom edge, out of the way of its entries and dots; the track (the cell's width
    inside its padding) has no colour of its own, so a short bar reads as few steps and none as no steps */
 /* the month's cells keep room for it under their entries, all alike, so a full day's last entry never sits on it */

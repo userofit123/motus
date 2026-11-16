@@ -4,8 +4,8 @@
 // (no reminder waiting, no goal due soon, no program running) stays away until it has; feature blocks need their feature.
 import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
-import { num, fromM, percentChange, orderGoals, dismissalPatch, HOME_BLOCKS, type Goal, type HomeData, type HomeSuggestion, type HomePlan, type HomeRecord, type HomeGroup, type HomeWeek, type ScoreKey } from "@motus/shared";
-import { useHome, useSettings, saveSettings, useAchievements, useGoals, useHealthAvailable, useHealthDay, useReadiness, useHealthScores, useSleep, useDaily, useTypeName, loaded, type HealthAvailable, type ReadinessPart, type ReadinessBuilding } from "../api/queries";
+import { num, fromM, percentChange, orderGoals, dismissalPatch, HOME_BLOCKS, ageOf, stepsTarget, sleepRange, type Goal, type HomeData, type HomeSuggestion, type HomePlan, type HomeRecord, type HomeGroup, type HomeWeek, type ScoreKey } from "@motus/shared";
+import { useCalendar, useHome, useSettings, saveSettings, useAchievements, useGoals, useHealthAvailable, useHealthDay, useReadiness, useHealthScores, useSleep, useDaily, useTypeName, loaded, type HealthAvailable, type ReadinessPart, type ReadinessBuilding } from "../api/queries";
 import { api } from "../api/client";
 import { invalidate, queryClient } from "../api/live";
 import { confirm } from "../core/ask";
@@ -33,6 +33,7 @@ import GoalSheet from "../components/GoalSheet.vue";
 import SessionStats from "../components/SessionStats.vue";
 import DotLine from "../components/DotLine.vue";
 import TodayHero from "../components/home/TodayHero.vue";
+import CalendarDay, { calendarDays, hasDayTiles } from "../components/CalendarDay.vue";
 import SuggestionRow from "../components/home/SuggestionRow.vue";
 import StageBar from "../components/stats/StageBar.vue";
 import { adviceWord, useDevice } from "../native/health";
@@ -75,18 +76,20 @@ const META: Record<string, { name: string; desc: string; icon: string; size: Siz
   scoreSleep: { name: "Sleep score", desc: "Your last 7 nights against the sleep guidelines", icon: "moon", size: "m" },
   scoreActivity: { name: "Activity score", desc: "Your last 7 days of active minutes and steps against the guidelines", icon: "moveRing", size: "m" },
   scoreStrength: { name: "Strength score", desc: "Your last 7 days of strength training against the guidelines", icon: "dumbbell", size: "m" },
+  // off until picked in Edit home (M-260, M-261)
+  quickStats: { name: "Today at a glance", desc: "Rings for today's steps, resting heart rate and active calories, last night's sleep and your readiness", icon: "moveRing", size: "m" },
+  calendarDay: { name: "Today's calendar", get desc() { return `Today as the Calendar shows it: your ${adviceWord(dev.value)}'s numbers, the day by hour, and your workouts and activities`; }, icon: "calendar", size: "l" },
 };
 // a block whose feature is off is absent everywhere, Edit home included
 const FEATURE: Record<string, string> = { program: "programs", daily: "dailyLog", achievements: "achievements", scoreSleep: "scores", scoreActivity: "scores", scoreStrength: "scores" };
 // the band's blocks are absent everywhere, Edit home included, until that kind of data has come in (as Stats' Sleep and
 // Heart tabs): the Health Connect switch is the Android app's, while the data can reach any device through the server
-const HEALTH: Record<string, (a: HealthAvailable) => boolean> = { readiness: (a) => a.sleep || a.heart, sleep: (a) => a.sleep, heart: (a) => a.heart, activityToday: (a) => a.distance || a.calories };
+const HEALTH: Record<string, (a: HealthAvailable) => boolean> = { readiness: (a) => a.sleep || a.heart, sleep: (a) => a.sleep, heart: (a) => a.heart, activityToday: (a) => a.distance || a.calories,
+  quickStats: (a) => a.sleep || a.heart || a.distance || a.calories || !!a.steps };
 const avail = useHealthAvailable();
 const available = (id: string) => !!META[id] && (!FEATURE[id] || !!s.value.features[FEATURE[id]!]) && (!HEALTH[id] || (!!avail.data.value && HEALTH[id]!(avail.data.value)));
 const listed = computed(() => s.value.home.blocks.filter((x) => available(x.id)));
 const isOn = (id: string) => listed.value.some((x) => x.id === id && x.on);
-// Today is always shown, so Edit home gives it no switch
-const FIXED = new Set(["today"]);
 
 // ---- data the blocks read (all from /home, except goals and achievements, which have their own queries)
 const tw = computed(() => h.value?.thisWeek ?? { workouts: 0, timeS: 0, volumeKg: 0, walkM: 0 });
@@ -320,6 +323,35 @@ const stepDays = computed(() => Array.from({ length: 7 }, (_, i) => {
 // the scale reaches the target too, so its line is always inside the bars' height
 const stepMax = computed(() => Math.max(1, stepGoal.value?.target ?? 0, ...stepDays.value.map((x) => x.n)));
 
+// Today at a glance (M-260): today's numbers as rings, each only when there, each opening its Stats tab on today. A ring
+// fills toward the number it is measured by (your steps goal, else the guideline's steps a day; the guideline's least
+// hours asleep for your age; readiness out of 100); resting heart rate and active calories have none, so theirs is the
+// bare track. Each value stands alone (its unit in its name, "Active kcal"), so five fit side by side at 360px
+const age = computed(() => ageOf(s.value.profile.birthYear));
+interface Glance { key: string; icon: string; label: string; value: string; pct: number; done?: boolean; color?: string; aria: string; to: string }
+const glance = computed<Glance[]>(() => {
+  const d = day.value, out: Glance[] = [], on = (tab: string) => `/stats?tab=${tab}&day=${today}`;
+  if (d?.steps != null) {
+    const t = stepGoal.value?.target || stepsTarget(age.value);
+    out.push({ key: "steps", icon: "steps", label: "Steps", value: fmt.value.num(d.steps, 0), pct: d.steps / t, done: d.steps >= t,
+      aria: `Steps today ${fmt.value.num(d.steps, 0)} of ${fmt.value.num(t, 0)}`, to: on("steps") });
+  }
+  const rhr = d?.restingHr ?? partOf("restingHr")?.value ?? null;
+  if (rhr != null) out.push({ key: "heart", icon: "heartPulse", label: "Resting HR", value: String(Math.round(rhr)), pct: 0, aria: `Resting heart rate ${Math.round(rhr)} bpm`, to: on("heart") });
+  if (night.value?.date === today) {
+    const m = asleepMin(night.value), least = sleepRange(age.value)[0] * 60;
+    out.push({ key: "sleep", icon: "moon", label: "Last night", value: mins(m), pct: m / least, done: m >= least, aria: `Asleep last night ${mins(m)}`, to: on("sleep") });
+  }
+  const r = rd.value;
+  if (r?.score != null) out.push({ key: "ready", icon: "gauge", label: "Readiness", value: String(r.score), pct: r.score / 100, color: r.label === "Take it easy" ? "var(--warn)" : undefined,
+    aria: `Readiness ${r.score}${r.label ? `, ${r.label}` : ""}`, to: on("heart") });
+  if (d?.activeKcal) out.push({ key: "kcal", icon: "flame", label: "Active kcal", value: fmt.value.num(d.activeKcal, 0), pct: 0, aria: `Active calories today ${fmt.value.num(d.activeKcal, 0)} kcal`, to: on("steps") });
+  return out;
+});
+// Today's calendar (M-261): the Calendar's card for today, read only while the block is on
+const todayCal = useCalendar({ from: today, to: today }, computed(() => isOn("calendarDay")));
+const todayItems = computed(() => calendarDays(todayCal.data.value as any, today).get(today) ?? []);
+
 // a dismissed suggestion keeps its routine and its muscles away for a week, so a near-duplicate doesn't take its place;
 // the list redraws without waiting for the server
 const hideSuggestion = (x: HomeSuggestion) => {
@@ -351,10 +383,12 @@ const shows = (id: string): boolean => {
     case "heart": return heartStats.value.length > 0;
     case "activityToday": return actStats.value.length > 0;
     case "scoreSleep": case "scoreActivity": case "scoreStrength": return !!scoreOf(id);
+    case "quickStats": return glance.value.length > 0;
+    case "calendarDay": return todayItems.value.length > 0 || hasDayTiles(day.value) || !!day.value?.hr;
     default: return true;
   }
 };
-const blocks = computed(() => (h.value ? listed.value.filter((x) => (x.on || FIXED.has(x.id)) && shows(x.id)).map((x) => x.id) : []));
+const blocks = computed(() => (h.value ? listed.value.filter((x) => x.on && shows(x.id)).map((x) => x.id) : []));
 
 // every block opens where its numbers come from: a click, or Enter on a block reached with Tab
 const go = (to: string | (() => void)) => (typeof to === "string" ? router.push(to) : to());
@@ -413,7 +447,7 @@ function movePin(id: string, dir: -1 | 1) {
 
 const greeting = computed(() => { const hr = new Date().getHours(); return hr < 5 ? "Good night" : hr < 12 ? "Good morning" : hr < 18 ? "Good afternoon" : "Good evening"; });
 // show the page once its data is in, all at once
-await loaded(home, ach, avail, hDay, ready, nightsQ, dailyQ);
+await loaded(home, ach, avail, hDay, ready, nightsQ, dailyQ, todayCal);
 </script>
 
 <template>
@@ -432,14 +466,13 @@ await loaded(home, ach, avail, hDay, ready, nightsQ, dailyQ);
 
     <!-- Edit home: every block there is, in order, at its own size so the layout reads as it will -->
     <TransitionGroup v-if="editing" name="mv" tag="div" class="hgrid">
-      <div v-for="(x, i) in listed" :key="x.id" class="card etile" :class="[META[x.id]!.size === 'l' ? 'sz-l' : 'sz-m', { off: !x.on && !FIXED.has(x.id) }]" :data-solo="solo.has(x.id) || undefined">
+      <div v-for="(x, i) in listed" :key="x.id" class="card etile" :class="[META[x.id]!.size === 'l' ? 'sz-l' : 'sz-m', { off: !x.on }]" :data-solo="solo.has(x.id) || undefined">
         <!-- the name and its switch on one row (label left, control right); the arrows have their own row at the foot, so a
              half-width tile has room for the switch in a narrow window -->
         <div class="ch">
           <span class="bi"><Icon :name="META[x.id]!.icon" :size="15" /></span>
-          <span v-if="FIXED.has(x.id)" class="t grow">{{ META[x.id]!.name }}</span>
-          <label v-else class="t grow" :for="`hb-${x.id}`">{{ META[x.id]!.name }}</label>
-          <span v-if="!FIXED.has(x.id)" class="tg"><input :id="`hb-${x.id}`" type="checkbox" :checked="x.on" @change="setOn(x.id, ($event.target as HTMLInputElement).checked)" /></span>
+          <label class="t grow" :for="`hb-${x.id}`">{{ META[x.id]!.name }}</label>
+          <span class="tg"><input :id="`hb-${x.id}`" type="checkbox" :checked="x.on" @change="setOn(x.id, ($event.target as HTMLInputElement).checked)" /></span>
         </div>
         <div class="tiny">{{ META[x.id]!.desc }}</div>
         <div class="emv">
@@ -701,6 +734,23 @@ await loaded(home, ach, avail, hDay, ready, nightsQ, dailyQ);
           </template>
         </div>
 
+        <!-- today at a glance: a ring per number, each opening its Stats tab on today; they wrap at a narrow width -->
+        <div v-else-if="id === 'quickStats'" class="card hb sz-m" :data-solo="solo.has(id) || undefined">
+          <div class="ch"><span class="bi"><Icon name="moveRing" :size="15" /></span><span class="t grow">Today at a glance</span></div>
+          <div class="glance">
+            <div v-for="x in glance" :key="x.key" class="gl click" :aria-label="x.aria" :title="x.aria" v-bind="link(x.to)">
+              <span class="glr"><Ring :pct="x.pct" :size="52" :color="x.color" /><Icon :name="x.icon" :size="18" class="gli" :class="{ done: x.done }" /></span>
+              <span class="glv">{{ x.value }}</span>
+              <span class="gll">{{ x.label }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- today's calendar: the Calendar's own card for today, its header opening the Calendar on today -->
+        <CalendarDay v-else-if="id === 'calendarDay'" class="hb sz-l" :day="today" :today="today" :items="todayItems">
+          <template #head><div class="ch"><span class="bi"><Icon name="calendar" :size="15" /></span><span class="t grow">Today's calendar</span><button class="lnk" @click="planOpen = { rule: 'once', startDate: today }"><Icon name="plus" :size="14" />Plan</button><button class="lnk" @click="router.push(`/history?date=${today}`)">Calendar</button></div></template>
+        </CalendarDay>
+
         <div v-else-if="id === 'achievements'" class="card hb sz-m click" :data-solo="solo.has(id) || undefined" v-bind="link('/stats?tab=achievements')">
           <div class="ch"><span class="bi"><Icon name="star" :size="15" /></span><span class="t grow">Achievements</span></div>
           <div v-if="!achRecent.length" class="tiny">Finish your first workout for your first one.</div>
@@ -709,6 +759,8 @@ await loaded(home, ach, avail, hDay, ready, nightsQ, dailyQ);
             <div class="pbar"><i :style="{ width: Math.min(100, (achNext.value / achNext.target) * 100) + '%' }" /></div></div>
         </div>
       </template>
+      <!-- every block switched off, or none with anything to show now -->
+      <div v-if="!blocks.length" class="card empty sz-l"><Icon name="info" :size="34" /><b>Nothing to show</b>Choose which blocks Home shows.<br /><button class="btn tonal" @click="editing = true">Edit home</button></div>
     </div>
     <div v-else-if="home.isLoading.value" class="hgrid"><div class="card today-ph sz-l" /><div v-for="i in 2" :key="i" class="card sz-m today-ph" /></div>
     <div v-else class="card empty"><Icon name="info" :size="34" /><b>Couldn't load Home</b>{{ (home.error.value as Error | null)?.message }}<br /><button class="btn tonal" @click="home.refetch()">Try again</button></div>
@@ -771,6 +823,19 @@ html.phone .gtile .big { font-size: clamp(20px, 6vw, var(--fs-val)); }
 html.phone .gtile { grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); }
 
 /* the stat tiles of this week and the last workout are the shared .wkc/.wstats ones (app.css) */
+/* today at a glance: equal columns of a ring with its icon inside, the value under it and its name under that; as many
+   to a row as fit (five at 360px), the rest wrapping onto the next */
+.glance { display: grid; grid-template-columns: repeat(auto-fit, minmax(52px, 1fr)); gap: var(--hg) var(--tdy); }
+.gl { position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; padding-block: var(--tdy); text-align: center; border-radius: var(--r-sm); }
+.gl.click:hover { background: color-mix(in srgb, var(--tx) 3%, transparent); }
+.glr { position: relative; display: grid; place-items: center; margin-bottom: 4px; }
+/* the icon in the ring turns the accent once its number is reached (the ring's own check would sit on it) */
+.gli { position: absolute; color: var(--tx2); }
+.gli.done { color: var(--acc); }
+.glv { max-width: 100%; overflow: hidden; text-overflow: ellipsis; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; line-height: 1.2; }
+.gll { font-size: var(--fs-xs); color: var(--tx2); line-height: 1.2; }
+/* Today's calendar: its sections a block's gap closer, so they sit as far apart as on the Calendar page */
+.hb > :deep(.csec) { margin-top: calc(var(--cpy) - 4px); }
 .wbars { display: flex; align-items: flex-end; gap: 6px; height: 34px; margin-top: auto; padding-top: var(--hg); box-sizing: content-box; }
 .wbars i { flex: 1; border-radius: 4px 4px 2px 2px; background: color-mix(in srgb, var(--acc) 28%, transparent); }
 .wbars i.cur { background: var(--acc); }

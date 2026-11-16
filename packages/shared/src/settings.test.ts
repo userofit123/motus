@@ -35,8 +35,14 @@ describe("Home blocks", () => {
   });
   it("keeps the default on/off when a saved one isn't a boolean", () => {
     expect(cleanHomeBlocks([{ id: "feed", on: "yes" }])[0]).toEqual({ id: "feed", on: false });
-    // Today can't be switched off, even from a saved order that says so
-    expect(cleanHomeBlocks([{ id: "today", on: false }])[0]).toEqual({ id: "today", on: true });
+    // Today can be switched off like any block, and a layout saved with it on keeps it on, in its place
+    expect(cleanHomeBlocks([{ id: "today", on: false }])[0]).toEqual({ id: "today", on: false });
+    expect(cleanHomeBlocks([{ id: "week", on: true }, { id: "today", on: true }]).slice(0, 2)).toEqual([{ id: "week", on: true }, { id: "today", on: true }]);
+  });
+  it("appends At a glance and Today's calendar, switched off, to a saved layout", () => {
+    const out = cleanHomeBlocks([{ id: "today", on: true }, { id: "week", on: true }]);
+    expect(ids(out).slice(-2)).toEqual(["quickStats", "calendarDay"]);
+    for (const id of ["quickStats", "calendarDay"]) expect(out.find((s) => s.id === id)?.on).toBe(false);
   });
   it("drops the older Home's sections and cards", () => {
     const s = withDefaults({ home: { cards: ["feed"], sections: [{ id: "volume", on: true }], goals: [{ id: "g", streak: true }] } });
