@@ -351,8 +351,8 @@ export function readiness(parts: { key: BodyKey; value: number; history: number[
   return { score: s, label, why: whyLine(moved, out.map((p) => p.key), label, out.some((p) => p.key === "sleep" && p.ago)), parts: out, building, need: MIN_BASELINE };
 }
 /** The readiness line: the one or two parts that moved the score most ("and" when they agree, "but" when not, the one
- *  that agrees with the advice last), then the advice: "You slept less last night and your resting heart rate shows
- *  you're tired: train lightly today." With none moved, the parts the score used: "Your resting heart rate and
+ *  that agrees with the advice last), then the advice: "You slept less last night and your resting heart rate looks
+ *  tired: train lightly today." With none moved, the parts the score used: "Your resting heart rate and
  *  HRV are close to your usual: train as planned." sleepAgo: the night the score used is the one before last (last
  *  night's has not synced yet). */
 function whyLine(moved: Map<ReadinessPart["key"], number>, used: ReadinessPart["key"][], label: keyof typeof ADVICE, sleepAgo = false): string {
@@ -371,7 +371,9 @@ function whyLine(moved: Map<ReadinessPart["key"], number>, used: ReadinessPart["
   // the second "you" goes when both start with it: "you trained ... and slept ..."
   const second = top[1] ? word(top[1]).replace(/^you (?=\S+ )/, word(top[0]!).startsWith("you ") ? "" : "you ") : "";
   const two = top[1] ? `${word(top[0]!)} ${(top[0]![1] > 0) === (top[1][1] > 0) ? "and" : "but"} ${second}` : word(top[0]!);
-  const advice = label === "Normal" && top.every(([, p]) => p < 0) ? NORMAL_DOWN : ADVICE[label];
+  // Ready can have only lowering causes named (unnamed flat parts added the points): "a good day to train hard" would contradict them
+  const down = top.every(([, p]) => p < 0);
+  const advice = down && label === "Normal" ? NORMAL_DOWN : down && label === "Ready" ? ADVICE.Normal : ADVICE[label];
   return `${two[0]!.toUpperCase()}${two.slice(1)}: ${advice}.`;
 }
 

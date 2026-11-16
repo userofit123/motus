@@ -711,6 +711,8 @@ describe("readiness", () => {
     expect(heavy).toMatchObject({ score: 60, label: "Normal", why: "You trained more in the last 7 days: train moderately today." });
     // a Normal day lowered by its body parts reads the same way, never "train as planned" after a reason against it
     expect(readiness([P("sleep", 6.5, 7), P("hrv", 50, 50)]).why).toBe("You slept less last night: train moderately today.");
+    // a Ready day (flat parts add points) whose only named cause lowered the score is not "a good day to train hard"
+    expect(readiness([P("sleep", 6.75, 7), P("restingHr", 53.4, 55), P("hrv", 52.4, 50)])).toMatchObject({ label: "Ready", why: "You slept less last night: train as planned." });
     expect(heavy.parts.at(-1)).toEqual({ key: "load", value: 900, baseline: 600, change: 50, effect: "down" });
     // opposite directions read with "but"
     expect(readiness([P("sleep", 8, 7), P("hrv", 50, 50)], trend(900, 600)).why).toBe("You slept more last night but trained more in the last 7 days: train as planned.");
