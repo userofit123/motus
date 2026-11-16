@@ -20,6 +20,7 @@ Self-hosted fitness tracker. Plan: PLAN.md (decisions in §16, anti-bloat rules 
 - Every user-owned table has `user_id` and a row-level-security policy (migration 002). References to other rows go through `visible()`.
 - Weights are stored in kg and distances in metres; convert only for display.
 - Plain wording in the UI. Comments say why.
+- **Writer skill for all text (developer's rule, 2026-11-16).** Every piece of text a person reads - UI labels, hints, score explanations, empty states, settings, voice cues, errors, task notes, commits - goes through the `writer` skill (`.claude/skills/writer/SKILL.md`) before it is done: clear, in context (which period, which thing), and makes sense next to the numbers it describes.
 - Only plain dashes "-" in the UI (ranges "8-12", empty values "-"), never "–" or "—".
 - Design quality: new screens and blocks match the app's existing visual language. Study a similar screen first and reuse its cards, stat tiles with icons, rings and bars, the muscle figure, badges and charts; give numbers a clear value/label hierarchy and show state visually (done, PR, trend). A block that is only lines of text is not finished. Clean and minimal, never bare.
 - Dot separators ("Legs · 5") always have equal space on both sides: in text " · " with single spaces; in a flex row the dot is its own element (`<span class="sep">·</span>`) so the row's gap spaces it, never "· 5" as one item next to a gap.
@@ -29,4 +30,5 @@ Self-hosted fitness tracker. Plan: PLAN.md (decisions in §16, anti-bloat rules 
 ## Develop
 - `docker compose -f docker-compose.dev.yml up -d` → https://motus.local (see docs/development.md).
 - Run pnpm through the container: `./scripts/pnpm.sh …` (e.g. `./scripts/pnpm.sh --filter @motus/engine test`).
+- Machine load: run typecheck, tests and builds once, when the change is done, not after every edit. One at a time, never in the background. While working, if you need a check, run it only for the package you changed.
 - Release: `node scripts/bump.mjs x.y.z`, fill in CHANGELOG.md, push to main.
