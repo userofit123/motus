@@ -10,6 +10,7 @@ import { api } from "../api/client";
 import { queryClient } from "../api/live";
 import { showRestCountdown, clearRestCountdown, scheduleRestAlarm, cancelRestAlarm, scheduleRestCues, cancelRestCues, notifyRestOverWeb, isNativeApp, backgroundTimers, nativeVibrate, nativeSpeak, nativeWarmVoice, type NativeVoiceProblem } from "./native";
 import { toast } from "../core/toast";
+import { native as app } from "../core/device";
 
 export interface RestState {
   endAt: number | null; // ms
@@ -276,6 +277,7 @@ function startBuffer(ac: AudioContext, buf: AudioBuffer, o: { level: number; del
     src.stop(t + o.maxS + 0.01);
   }
   src.connect(g).connect(ac.destination); src.start(t);
+  return src;
 }
 /** Decodes a rest's sounds (rest over, countdown) as it starts, so each plays the moment it is due (playSound). */
 function prepare(v: CueVoice) {
@@ -311,48 +313,111 @@ const TEN_SECONDS = "10 seconds";
 const SAY_AFTER_MS = 700;
 const restOverWords = () => (rest.say ? `Rest over. ${rest.say}` : "Rest over");
 /** Speaks `text` at the cue volume: in the Android app through the phone's own speech (its WebView has none), else
- *  through the browser's (the desktop app and browsers). When it can't be said, a message says why (once a session;
- *  every time for `test`, a cue asked for by hand), so a silent voice is never taken for a working one. */
+ *  through the browser's (the desktop app and browsers). A device without an English voice (a Linux browser or the
+ *  desktop app without speech-dispatcher, a phone without the voice downloaded) gets Motus's built-in voice
+ *  (voice/builtinVoice.ts) instead, so the cues work with nothing installed. When nothing can be said, a message says
+ *  why (once a session; every time for `test`, a cue asked for by hand), so a silent voice is never taken for a working one. */
 function speak(text: string, v: CueVoice = cues, test = false) {
   const level = levelOf(v.cueVolume);
   setTimeout(() => {
     const asked = nativeSpeak(text, level, test);
-    if (asked) { void asked.then((problem) => { if (problem) noVoice(problem, test); }); return; }
-    try {
-      const u = new SpeechSynthesisUtterance(text); u.rate = 1.05; u.volume = level;
-      // "interrupted" and "canceled" are a newer cue taking over, not a missing voice
-      u.onerror = (e) => { if (e.error !== "interrupted" && e.error !== "canceled") noVoice(e.error, test); };
-      speechSynthesis.cancel(); speechSynthesis.speak(u);
-      // a computer with no voice installed (common on Linux) speaks nothing and often says nothing either; the list
-      // can fill a moment late, so it is looked at again after a second
-      if (!speechSynthesis.getVoices().length) setTimeout(() => { if (!speechSynthesis.getVoices().length) noVoice(undefined, test); }, 1000);
-    } catch { noVoice(undefined, test); }
+    if (asked) {
+      void asked.then((problem) => {
+        if (!problem) return;
+        // the sound taken (a call) or broken, or an engine that may still speak late: the built-in voice would only
+        // talk over it or not be heard either
+        if (problem === "busy" || problem === "output" || problem === "timeout") { noVoice(problem, test); return; }
+        phoneVoiceMissing = true;
+        void sayBuiltin(text, level, test).then((ok) => { if (ok) noVoice(problem, test); });
+      });
+      return;
+    }
+    void systemVoice().then((has) => {
+      if (!has) { void sayBuiltin(text, level, test); return; }
+      try {
+        const u = new SpeechSynthesisUtterance(text); u.rate = 1.05; u.volume = level;
+        u.onerror = (e) => {
+          // "interrupted" and "canceled" are a newer cue taking over; a blocked page, a busy or broken sound would
+          // silence the built-in voice too; any other error is a voice that can't speak, so the built-in one does
+          if (e.error === "interrupted" || e.error === "canceled") return;
+          if (e.error === "not-allowed" || e.error === "audio-busy" || e.error === "audio-hardware") noVoice(e.error, test);
+          else void sayBuiltin(text, level, test);
+        };
+        speechSynthesis.cancel(); stopBuiltin(); speechSynthesis.speak(u);
+      } catch { void sayBuiltin(text, level, test); }
+    });
   }, v.sound === false ? 0 : SAY_AFTER_MS);
 }
-/** Gets the speech ready as a rest with Voice cues starts: the Android app's engine takes up to a second to start, and a
- *  browser loads its list of voices only when first asked. */
-function warmVoice() {
-  if (nativeWarmVoice()) return;
-  try { speechSynthesis.getVoices(); } catch { /* no speech here: noVoice says so at the first cue */ }
+// Set once the Android app's speech has failed for want of a voice: from then on the built-in voice is loaded ahead
+let phoneVoiceMissing = false;
+// Set once the browser was found to have no English voice: later cues then don't wait for its list again
+let noSystemVoice = false;
+/** Whether the browser (or the desktop app) has an English voice. Its list can fill a moment late, so an empty one is
+ *  waited on for up to a second. */
+function systemVoice(): Promise<boolean> {
+  const english = () => speechSynthesis.getVoices().some((x) => x.lang.toLowerCase().startsWith("en"));
+  try {
+    if (noSystemVoice || typeof speechSynthesis === "undefined") return Promise.resolve(false);
+    if (english()) return Promise.resolve(true);
+    if (speechSynthesis.getVoices().length) { noSystemVoice = true; return Promise.resolve(false); }
+  } catch { return Promise.resolve(false); }
+  return new Promise((done) => {
+    const check = () => { speechSynthesis.removeEventListener("voiceschanged", check); clearTimeout(t); const ok = english(); if (!ok) noSystemVoice = true; done(ok); };
+    const t = setTimeout(check, 1000);
+    speechSynthesis.addEventListener("voiceschanged", check);
+  });
 }
-// Said once a session: Voice cues are on but this device can't speak them, so their silence isn't taken for a fault
+// the built-in voice's cue being spoken, so a newer cue cuts it off as the browser's speech does
+let builtinSaying: AudioBufferSourceNode | null = null;
+function stopBuiltin() { try { builtinSaying?.stop(); } catch { /* already over */ } builtinSaying = null; }
+/** Speaks `text` in Motus's built-in voice through the page's sound, at `level`; false (and a message saying why)
+ *  when it can't. */
+async function sayBuiltin(text: string, level: number, test: boolean) {
+  try {
+    const ac = audio(), { builtinVoice } = await import("./voice/builtinVoice"), buf = await builtinVoice(ac, text);
+    if (!buf) throw new Error("no sound");
+    if (ac.state !== "running") await ac.resume().catch(() => {});
+    if (ac.state !== "running") { noVoice("not-allowed", test); return false; }
+    stopBuiltin(); try { speechSynthesis.cancel(); } catch { /* no browser speech */ }
+    builtinSaying = startBuffer(ac, buf, { level }, 0);
+    return true;
+  } catch { noVoice("builtin", test); return false; }
+}
+/** Gets the speech ready as a rest with Voice cues starts: the Android app's engine takes up to a second to start, a
+ *  browser loads its list of voices only when first asked, and the built-in voice loads its file. */
+function warmVoice() {
+  const builtin = () => void import("./voice/builtinVoice").then((m) => m.warmBuiltinVoice(), () => {});
+  if (nativeWarmVoice()) { if (phoneVoiceMissing) builtin(); return; }
+  void systemVoice().then((has) => { if (!has) builtin(); });
+}
+// Where the phone's voice is set up: the menu's place differs between makers, its name doesn't
+const PHONE_TTS = "open the phone's Settings, search for Text-to-speech output";
+const OWN_VOICE = "Motus speaks Voice cues in its own voice while it's open. To hear them with the screen locked,";
+// Said once a session: Voice cues are on but can't be heard as they should, so their silence (or the built-in voice
+// on the phone) isn't taken for a fault
 const toldNoVoice = new Set<string>();
-/** Says once why a voice cue wasn't spoken (`always`: every time), by the speech engine's reason: the browser's, or the
- *  Android app's (NativeVoiceProblem); none: no voice installed. Each says the cause, then what to do. */
-function noVoice(why?: SpeechSynthesisErrorCode | NativeVoiceProblem, always = false) {
-  const text = why === "none" ? "This phone has no speech engine, so Voice cues can't be spoken. Install Speech Services by Google from the Play Store"
-    : why === "engine" ? "The phone's speech engine isn't working, so Voice cues can't be spoken. Check the phone's Text-to-speech settings, or install Speech Services by Google"
-    : why === "timeout" ? "The phone's speech engine didn't answer, so Voice cues weren't spoken. Try again, or check the phone's Text-to-speech settings"
-    : why === "app" ? "Motus couldn't reach the phone's speech engine, so Voice cues weren't spoken. Close Motus and open it again"
-    : why === "language" ? "The phone has no English voice, so Voice cues can't be spoken. Download one in the phone's Text-to-speech settings"
+/** Says once why a voice cue wasn't spoken, or (the Android app) why Motus's own voice spoke it (`always`: every
+ *  time), by the reason: the browser's, the Android app's (NativeVoiceProblem), or "builtin": the built-in voice
+ *  couldn't load. Each says the cause, then what to do, where to do it on this device. */
+function noVoice(why: SpeechSynthesisErrorCode | NativeVoiceProblem | "builtin", always = false) {
+  const device = app.android ? "phone" : app.desktop ? "computer" : "device";
+  const text = why === "none" ? `The phone has no speech engine, so ${OWN_VOICE} install Speech Services by Google from the Play Store`
+    : why === "engine" ? `The phone's speech engine isn't working, so ${OWN_VOICE} ${PHONE_TTS} and choose Speech Services by Google`
+    : why === "language" ? `The phone has no English voice, so ${OWN_VOICE} ${PHONE_TTS} and download English`
     // "voice" is also an engine's "no voice for this language": either way the fix is downloading it, not waiting
-    : why === "voice" ? "The phone's English voice isn't downloaded yet, so Voice cues can't be spoken. Download it in the phone's Text-to-speech settings"
-    : why === "not-allowed" ? "The browser blocks Voice cues until you use the page, so they weren't spoken. Tap or click anywhere in Motus once"
-    : why === "audio-busy" || why === "busy" ? "A call or another app was using the sound, so Voice cues weren't spoken. Try again once the sound is free"
-    : why === "audio-hardware" || why === "output" ? "This device's sound isn't working, so Voice cues can't be spoken. Check its speaker or headphones"
-    : why === "network" ? "This voice needs the internet, so Voice cues weren't spoken. Connect to the internet, or download the voice in the Text-to-speech settings"
-    : !why || why === "synthesis-unavailable" || why === "voice-unavailable" || why === "language-unavailable" ? "This device has no voice installed, so Voice cues can't be spoken. Install a text-to-speech voice in its settings"
-    : "The speech engine gave an error, so Voice cues weren't spoken. Try again";
+    : why === "voice" ? `The phone's English voice isn't downloaded yet, so ${OWN_VOICE} ${PHONE_TTS} and download English`
+    : why === "network" ? `The phone's English voice needs the internet, so ${OWN_VOICE} ${PHONE_TTS} and download English`
+    : why === "app" ? `Motus couldn't reach the phone's speech engine, so ${OWN_VOICE} close Motus and open it again`
+    : why === "error" ? `The phone's speech engine gave an error, so ${OWN_VOICE} ${PHONE_TTS} and play its example to check it works`
+    : why === "timeout" ? `The phone's speech engine didn't answer, so Voice cues weren't spoken. Try again, or ${PHONE_TTS} and play its example to check it works`
+    : why === "busy" || why === "audio-busy" ? "A call or another app was using the sound, so Voice cues weren't spoken. Try again once the sound is free"
+    : why === "output" || why === "audio-hardware" ? `This ${device}'s sound isn't working, so Voice cues can't be spoken. Check its speaker or headphones`
+    : why === "not-allowed" ? (app.desktop || app.android
+      ? "Motus can't play sound until you use it, so Voice cues weren't spoken. Tap or click anywhere in Motus once"
+      : "The browser blocks Voice cues until you use Motus, so they weren't spoken. Tap or click anywhere in Motus once")
+    // the built-in voice comes with the desktop and Android apps; a browser loads it from the server when first needed
+    : app.desktop || app.android ? "Motus couldn't load its own voice, so Voice cues weren't spoken. Close Motus and open it again"
+    : "Motus couldn't load its own voice, so Voice cues weren't spoken. Check the connection to your Motus server and try again";
   if (toldNoVoice.has(text) && !always) return;
   toldNoVoice.add(text);
   toast(text, { kind: "err", ms: 10000 });

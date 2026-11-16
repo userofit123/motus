@@ -293,6 +293,7 @@ await loaded(me);
             <div class="li"><div class="grow"><div class="t">Motus</div><div class="s">Version {{ session.version }} · API level {{ session.apiLevel }}</div></div></div>
             <div class="li"><div class="grow"><div class="t">Exercise library</div><div class="s">free-exercise-db by yuhonas, released to the public domain (Unlicense)</div></div></div>
             <div class="li"><div class="grow"><div class="t">Look and feel</div><div class="s">From Money Manager. Fonts: Inter and Nunito (SIL Open Font License)</div></div></div>
+            <div class="li"><div class="grow"><div class="t">Voice cues</div><div class="s">Flite by Carnegie Mellon University, Motus's own voice for devices without one (BSD-style license)</div></div></div>
             <div class="li"><div class="grow"><div class="t">Source</div><div class="s">github.com/userofit123/motus</div></div></div>
           </div>
         </template>
