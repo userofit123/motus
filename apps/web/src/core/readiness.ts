@@ -32,7 +32,7 @@ export function readinessRows(r: Readiness, num: Num, extra: ReadyRow[] = []): R
     const p = READY_PART[x.key], d = x.baseline != null ? x.value! - x.baseline : 0;
     return { key: x.key, icon: p.icon, t: p.t, s: x.baseline != null ? `${f(x.key, x.value!)} · usual ${x.key === "load" ? `${num(x.baseline)} a week` : f(x.key, x.baseline)}` : f(x.key, x.value!),
       // the load's points mean nothing alone: how far off is a share of the usual, as Stats → Heart's card says it
-      r: x.effect === "flat" || x.baseline == null ? "As usual" : x.key === "load" ? `${x.change! < 0 ? "-" : "+"}${Math.abs(Math.round(x.change!))}%` : `${Math.round(d) < 0 ? "-" : "+"}${f(x.key, Math.abs(d))}`,
+      r: x.effect === "flat" || x.baseline == null ? "As usual" : x.key === "load" ? `${x.change! < 0 ? "-" : "+"}${Math.abs(Math.round(x.change!))}%` : `${d < 0 ? "-" : "+"}${f(x.key, Math.abs(d))}`,
       tone: x.effect === "up" ? "pos" : x.effect === "down" ? "neg" : undefined };
   });
   const building = (r.building ?? []).map((x): ReadyRow => {

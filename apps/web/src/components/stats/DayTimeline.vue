@@ -59,11 +59,14 @@ const shades = computed(() => props.sessions.filter((s) => s.b > s.a && s.b > pr
 // the day's own data first (steps and heart rate share the day charts' colour, so one swatch names what is drawn), as
 // Steps' and Heart's day legends start; then the stages the night's lane shows, in its order, and a colour per kind of session
 const dataName = computed(() => { const st = props.tl.steps.length > 0, hr = props.tl.hr.length > 0; return st && hr ? "Steps and heart rate" : st ? "Steps" : hr ? "Heart rate" : ""; });
-const legend = computed(() => [
-  ...(dataName.value ? [{ color: DAY_DATA_COLOR, name: dataName.value }] : []),
-  ...(["awake", "rem", "light", "deep", "asleep"] as const).filter((k) => props.tl.sleep.some((s) => s.k === k)).map((k) => ({ color: segColor(k), name: SEG_NAME[k] })),
-  ...legendOf(shades.value),
-]);
+// only when a stage or session swatch follows: alone, the lane names already say what is drawn (as the day charts hide theirs)
+const legend = computed(() => {
+  const rest = [
+    ...(["awake", "rem", "light", "deep", "asleep"] as const).filter((k) => props.tl.sleep.some((s) => s.k === k)).map((k) => ({ color: segColor(k), name: SEG_NAME[k] })),
+    ...legendOf(shades.value),
+  ];
+  return rest.length ? [...(dataName.value ? [{ color: DAY_DATA_COLOR, name: dataName.value }] : []), ...rest] : [];
+});
 const xt = computed(() => dayHours(props.day, fmt.value));
 
 // the tip: what the band read in the hour under the pointer (the night's stage, the steps, the heart rate), the first in
