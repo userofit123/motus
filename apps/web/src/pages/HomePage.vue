@@ -13,7 +13,7 @@ import { toast } from "../core/toast";
 import { onHome, streakOnHome, toggleHomeGoal, setHomeStreak, periodWord, goalSub } from "../core/goals";
 import { asleepMin, inBedMin, efficiency, hasStages, isFull, mins, SHORT_WHY } from "../core/sleep";
 import { SCORE_META, scoreRow, scoreWhy } from "../core/scores";
-import { READY_PART, readinessRows } from "../core/readiness";
+import { READY_PART, readinessRows, nightWhen } from "../core/readiness";
 import { useFmt, unitOf, ago, goalLabel, localYmd, tomorrowYmd, hrPart } from "../core/format";
 import { reminderText } from "../core/reminderText";
 import { startPlan, unplanItems } from "../components/home/planActions";
@@ -235,7 +235,7 @@ const PART = READY_PART;
 const BODY: ReadinessBuilding["key"][] = ["sleep", "restingHr", "hrv"];
 // readiness leaves out a short record (under MIN_NIGHT_H) as no night; its row says why sleep isn't in the score
 const shortPart = computed(() => nightShort.value && !rd.value?.parts.some((x) => x.key === "sleep") && !rd.value?.building?.some((x) => x.key === "sleep")
-  ? [{ key: "sleep" as const, icon: PART.sleep.icon, t: PART.sleep.t, s: `${mins(asleepMin(night.value!))} ${night.value!.date === today ? "last night" : "the night before last"} · too short to count`, r: "Left out", tone: "muted" as const }] : []);
+  ? [{ key: "sleep" as const, icon: PART.sleep.icon, t: PART.sleep.t, s: `${mins(asleepMin(night.value!))} ${nightWhen(night.value!.date, rd.value?.date ?? today, (d) => fmt.value.date(d, { weekday: "long" }))} · too short to count`, r: "Left out", tone: "muted" as const }] : []);
 const allParts = computed(() => (rd.value ? readinessRows(rd.value, numOf, shortPart.value) : []));
 const hasReadyParts = computed(() => !!rd.value?.parts.some((x) => x.value != null));
 // without a score: the score needs two parts with a usual, so it waits on the second most advanced part (a part with a
@@ -625,7 +625,7 @@ await loaded(home, ach, avail, hDay, ready, nightsQ, dailyQ);
         <!-- readiness: the score as a pinned goal's value and ring, what it means, then what made it as a report's highlights;
              while the usual is being learnt, the days the score waits for in their place, and each part's days so far -->
         <div v-else-if="id === 'readiness' && rd" class="card hb sz-m click" :data-solo="solo.has(id) || undefined" v-bind="link('/stats?tab=heart')">
-          <div class="ch"><span class="bi"><Icon name="gauge" :size="15" /></span><span class="t grow">Readiness</span><span v-if="hasReadyParts && !readyWait" class="tiny">Today</span></div>
+          <div class="ch"><span class="bi"><Icon name="gauge" :size="15" /></span><span class="t grow">Readiness</span><span v-if="hasReadyParts && !readyWait" class="tiny">Vs your usual</span></div>
           <div v-if="readyWait" class="row"><div class="big grow">{{ readyWait.left }}<small>{{ readyWait.left === 1 ? "day" : "days" }} until your score</small></div><Ring :pct="readyWait.days / readyWait.need" :size="40" /></div>
           <div v-else class="row"><div class="big grow">{{ rd.score }}<small v-if="rd.label">{{ rd.label }}</small></div><Ring :pct="rd.score! / 100" :size="40" :color="rd.label === 'Take it easy' ? 'var(--warn)' : undefined" /></div>
           <div v-if="readyWait" class="tiny">{{ readyWait.text }}</div>

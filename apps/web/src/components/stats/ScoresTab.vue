@@ -54,7 +54,7 @@ const minor = computed(() => !!sq.data.value?.minor);
     </div>
 
     <div v-if="ready" class="card wkc spt">
-      <div class="ch"><span class="bi"><Icon name="gauge" :size="15" /></span><span class="t grow">Readiness</span><span class="tiny">Today</span></div>
+      <div class="ch"><span class="bi"><Icon name="gauge" :size="15" /></span><span class="t grow">Readiness</span><span class="tiny">Vs your usual</span></div>
       <div v-if="ready.why" class="tiny sc-why">{{ ready.why }}</div>
       <div v-if="readyRows.length" class="list sc-rows">
         <div v-for="x in readyRows" :key="x.key" class="li">

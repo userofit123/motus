@@ -29,6 +29,14 @@ export function readyWhen(k: ReadyKey, ago?: 1): string {
   if (k === "sleep") return ago ? "the night before last" : "last night";
   return ago ? "yesterday" : "today";
 }
+/** Which night a sleep record is, by the readiness's own day (the server's calendar, which can differ from this device's
+ *  by a day): that day or later is last night, the day before the night before last, older its weekday ("on Saturday") */
+export function nightWhen(date: string, today: string, weekday: (d: string) => string): string {
+  if (date >= today) return "last night";
+  const d = new Date(`${today}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() - 1);
+  return date === d.toISOString().slice(0, 10) ? "the night before last" : `on ${weekday(date)}`;
+}
 /** The parts in the score's order: sleep, resting heart rate, HRV, then the training load */
 export const READY_ORDER: ReadyKey[] = ["sleep", "restingHr", "hrv", "load"];
 
@@ -45,7 +53,7 @@ export function readinessRows(r: Readiness, num: Num, extra: ReadyRow[] = []): R
   });
   const building = (r.building ?? []).map((x): ReadyRow => {
     const left = (r.need ?? 7) - x.days;
-    return { key: x.key, icon: READY_PART[x.key].icon, t: READY_PART[x.key].t, s: `${now(x.key, x.value, x.ago)} · usual known in ${left} ${left === 1 ? "day" : "days"}`, r: "Learning", tone: "muted" };
+    return { key: x.key, icon: READY_PART[x.key].icon, t: READY_PART[x.key].t, s: `${now(x.key, x.value, x.ago)} · your usual in ${left} ${left === 1 ? "day" : "days"}`, r: "Learning", tone: "muted" };
   });
   return [...ready, ...building, ...extra].sort((a, b) => READY_ORDER.indexOf(a.key) - READY_ORDER.indexOf(b.key));
 }

@@ -163,7 +163,8 @@ const loadBars = computed(() => {
 });
 const loadHas = computed(() => loadBars.value.some((b) => b.value > 0) || (lq.data.value?.trend.week ?? 0) > 0);
 // the same ranges as Readiness's load part: steady reads "As usual" there, lighter raises the score, higher lowers it
-const LOAD_STATE = { lighter: "Lighter than usual", steady: "About your usual", higher: "Higher than usual", "much higher": "Much higher than usual" } as const;
+// in Readiness's words for the same week ("you trained more than usual in the last 7 days")
+const LOAD_STATE = { lighter: "Less than usual", steady: "About your usual", higher: "More than usual", "much higher": "Much more than usual" } as const;
 const loadRow = computed(() => {
   const t = lq.data.value?.trend;
   if (!t) return null;
@@ -171,7 +172,7 @@ const loadRow = computed(() => {
   // the status as What stands out's rows show it: an icon for which way it went, in the same tone as the result
   const icon = pct == null ? "clock" : t.state === "lighter" ? "arrowDown" : t.state === "steady" ? "check" : "arrowUp";
   return { icon, t: t.state ? LOAD_STATE[t.state] : "Learning your usual",
-    s: t.ratio == null ? `${fmt.value.num(t.week, 0)} in the last 7 days · usual known after 3 weeks of training` : `${fmt.value.num(t.week, 0)} in the last 7 days · usual ${fmt.value.num(t.usual, 0)} a week`,
+    s: t.ratio == null ? `${fmt.value.num(t.week, 0)} in the last 7 days · your usual after 3 weeks of training` : `${fmt.value.num(t.week, 0)} in the last 7 days · usual ${fmt.value.num(t.usual, 0)} a week`,
     rv: pct == null ? "Learning" : t.state === "steady" ? "As usual" : `${pct < 0 ? "-" : "+"}${Math.abs(pct)}%`,
     tone: pct == null ? "muted" : t.state === "lighter" ? "pos" : t.state === "steady" ? undefined : "neg" };
 });

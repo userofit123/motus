@@ -698,22 +698,34 @@ describe("readiness", () => {
   it("takes the training load as a part, and says in one line why", () => {
     const trend = (week: number, usual: number) => ({ week, usual, ratio: Math.round((week / usual) * 100) / 100, state: null });
     const tired = readiness([P("sleep", 5, 7), P("restingHr", 60.5, 55), P("hrv", 50, 50)]);
-    expect(tired.why).toBe("You slept less than usual last night and your resting heart rate was higher than usual today: keep today's training light.");
-    expect(readiness([P("sleep", 7, 7), P("hrv", 50, 50)]).why).toBe("Your sleep and heart are close to your usual: train as planned.");
+    expect(tired.why).toBe("You slept less than usual and your resting heart rate is up: keep today's training light.");
+    // a calm day names only the parts in the score: no sleep when the night was left out, the load when it counted
+    expect(readiness([P("sleep", 7, 7), P("hrv", 50, 50)]).why).toBe("Your sleep and HRV are close to your usual: train as planned.");
+    expect(readiness([P("restingHr", 55, 55), P("hrv", 50, 50)]).why).toBe("Your resting heart rate and HRV are close to your usual: train as planned.");
+    expect(readiness([P("sleep", 7, 7), P("restingHr", 55, 55), P("hrv", 50, 50)], trend(720, 600)).why)
+      .toBe("Your sleep, resting heart rate, HRV and training are close to your usual: train as planned.");
     // a week within the steady range (0.8-1.3 times the usual) moves nothing
     expect(readiness([P("sleep", 7, 7), P("hrv", 50, 50)], trend(720, 600))).toMatchObject({ score: 70 });
     // a week half again as heavy as usual: 0.2 beyond 1.3, -10
     const heavy = readiness([P("sleep", 7, 7), P("hrv", 50, 50)], trend(900, 600));
-    expect(heavy).toMatchObject({ score: 60, label: "Normal", why: "You trained a lot more than usual in the last 7 days: keep today's training moderate." });
+    expect(heavy).toMatchObject({ score: 60, label: "Normal", why: "You trained more than usual in the last 7 days: keep today's training moderate." });
     // a Normal day lowered by its body parts reads the same way, never "train as planned" after a reason against it
-    expect(readiness([P("sleep", 6.5, 7), P("hrv", 50, 50)]).why).toBe("You slept less than usual last night: keep today's training moderate.");
+    expect(readiness([P("sleep", 6.5, 7), P("hrv", 50, 50)]).why).toBe("You slept less than usual: keep today's training moderate.");
     expect(heavy.parts.at(-1)).toEqual({ key: "load", value: 900, baseline: 600, change: 50, effect: "down" });
     // opposite directions read with "but"
-    expect(readiness([P("sleep", 8, 7), P("hrv", 50, 50)], trend(900, 600)).why).toBe("You slept longer than usual last night but trained a lot more than usual in the last 7 days: train as planned.");
-    // a part from yesterday (the band hasn't synced today) says so, in the line and on the part
+    expect(readiness([P("sleep", 8, 7), P("hrv", 50, 50)], trend(900, 600)).why).toBe("You slept more than usual but trained more than usual in the last 7 days: train as planned.");
+    // a lighter week, in Stats → Heart's words, and a second "you" dropped when both causes start with it
+    expect(readiness([P("sleep", 8, 7), P("hrv", 50, 50)], trend(300, 600)).why).toBe("You slept more than usual and trained less than usual in the last 7 days: a good day to train hard.");
+    // a part from yesterday (the band hasn't synced today) says so on the part; the line leaves days to the rows
     const old = readiness([{ ...P("sleep", 5, 7), ago: 1 }, P("hrv", 50, 50)]);
-    expect(old.why).toBe("You slept less than usual the night before last: keep today's training moderate.");
+    expect(old.why).toBe("You slept less than usual: keep today's training moderate.");
     expect(old.parts[0]).toMatchObject({ key: "sleep", ago: 1 });
+    // two causes from different days, the first one "your ...": the second keeps its "you"
+    const mixed = readiness([P("sleep", 6.5, 7), { ...P("restingHr", 60.5, 55), ago: 1 }, P("hrv", 50, 50)]);
+    expect(mixed).toMatchObject({ score: 45, label: "Take it easy", why: "Your resting heart rate is up and you slept less than usual: keep today's training light." });
+    expect(mixed.parts.map((p) => p.ago)).toEqual([undefined, 1, undefined]);
+    // a part still learning its usual from yesterday's reading keeps its day too
+    expect(readiness([P("sleep", 8, 7), P("hrv", 60, 50), { ...P("restingHr", 55, 55, 2), ago: 1 }]).building).toEqual([{ key: "restingHr", value: 55, days: 2, ago: 1 }]);
     // the load alone doesn't make a score
     expect(readiness([P("sleep", 7, 7)], trend(900, 600))).toMatchObject({ score: null, why: null });
   });
