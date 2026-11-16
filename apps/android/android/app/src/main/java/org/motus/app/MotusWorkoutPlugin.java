@@ -51,6 +51,7 @@ import java.text.NumberFormat;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * The rest timer in the notification shade and on the lock screen: a live countdown while a rest runs.
@@ -342,13 +343,24 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener2 {
         call.resolve();
     }
 
-    /** A Voice cue spoken now while the app is on screen (`text`, `level` 0-1): the WebView has no speech of its own. */
+    /** A Voice cue spoken now while the app is on screen (`text`, `level` 0-1): the WebView has no speech of its own.
+     *  Answers once the phone has begun saying it (`problem` left out) or why it couldn't (Voice.Heard), so the app can
+     *  say so rather than stay silent; one with no answer within SPEAK_ANSWER_MS counts as an engine that won't start.
+     *  `test`: asked for by hand (Voice cues just turned on), so an engine that failed a moment ago is tried again. */
     @PluginMethod
     public void speak(PluginCall call) {
         Double level = call.getDouble("level", 1.0);
-        Voice.say(getContext(), call.getString("text", ""), level == null ? 1f : level.floatValue());
-        call.resolve();
+        AtomicBoolean answered = new AtomicBoolean(false);
+        Voice.Heard heard = problem -> {
+            if (!answered.compareAndSet(false, true)) return;
+            JSObject r = new JSObject();
+            if (problem != null) r.put("problem", problem);
+            call.resolve(r);
+        };
+        Voice.say(getContext(), call.getString("text", ""), level == null ? 1f : level.floatValue(), Boolean.TRUE.equals(call.getBoolean("test", false)), heard);
+        new Handler(Looper.getMainLooper()).postDelayed(() -> heard.done("engine"), SPEAK_ANSWER_MS);
     }
+    private static final long SPEAK_ANSWER_MS = 10_000;
 
     /** Starts the phone's speech engine as a rest with Voice cues begins, so its first cue isn't held up by the start. */
     @PluginMethod

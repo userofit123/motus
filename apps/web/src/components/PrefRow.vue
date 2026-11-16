@@ -4,7 +4,7 @@
 // hearing a sound at the volume chosen there.
 import type { WorkoutPrefs } from "@motus/shared";
 import type { PrefRow } from "../core/workoutPrefs";
-import { previewCue, previewTick } from "../workout/runtime";
+import { previewCue, previewTick, previewVoice } from "../workout/runtime";
 import AppSelect from "./AppSelect.vue";
 import NumStep from "./NumStep.vue";
 import Icon from "./Icon.vue";
@@ -15,6 +15,8 @@ const emit = defineEmits<{ set: [v: unknown] }>();
 const play = (id: unknown) => (props.row.key === "tickSound" ? previewTick : previewCue)({ ...props.prefs, [props.row.key]: id });
 // a new volume is played at once, so you hear what you chose
 function setNum(v: number) { emit("set", v); if (props.row.key === "cueVolume") previewCue({ ...props.prefs, cueVolume: v }); }
+// Voice cues turned on are heard at once too (the rest over sound, then the words), or told why they can't be
+function setOn(on: boolean) { emit("set", on); if (on && props.row.key === "voice") previewVoice(props.prefs); }
 const label = (v: unknown) => props.row.options?.find((o) => o.value === v)?.label ?? "";
 </script>
 
@@ -32,7 +34,7 @@ const label = (v: unknown) => props.row.options?.find((o) => o.value === v)?.lab
     </template>
   </div>
   <label v-else class="tgl"><div class="grow"><div class="t">{{ row.label }}<span v-if="local" class="mchip pr-chip">this workout</span></div><div v-if="row.hint" class="s">{{ row.hint }}</div></div>
-    <span class="tg"><input type="checkbox" :checked="!!value" @change="emit('set', ($event.target as HTMLInputElement).checked)" /></span></label>
+    <span class="tg"><input type="checkbox" :checked="!!value" @change="setOn(($event.target as HTMLInputElement).checked)" /></span></label>
 </template>
 
 <style scoped>

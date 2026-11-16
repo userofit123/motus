@@ -277,13 +277,20 @@ export function clearIntervalNotice() {
   plugin("MotusWorkout")?.clearTimer?.().catch?.(() => {});
   void closeWebNotice("motus-timer");
 }
+/** Why the phone didn't say a voice cue (Voice.java Heard): no working speech engine, its voice still downloading,
+ *  a voice that needs the internet, the sound taken (a call), or anything else. */
+export type NativeVoiceProblem = "engine" | "voice" | "network" | "busy" | "error";
 /** Speaks a voice cue through the phone's own speech in the Android app (MotusWorkoutPlugin.speak), at `level` (0-1,
- *  workout/runtime.ts levelOf); false outside it or in an older app without it, where the caller uses the browser's. */
-export function nativeSpeak(text: string, level: number) {
+ *  workout/runtime.ts levelOf). Answers with why it wasn't said (null: it was), once the phone knows; false outside the
+ *  app, where the caller uses the browser's. `test`: asked for by hand, so a speech engine that failed a moment ago is
+ *  tried again. */
+export function nativeSpeak(text: string, level: number, test = false): Promise<NativeVoiceProblem | null> | false {
   const p = plugin("MotusWorkout");
   if (!p || !isNativeApp() || typeof p.speak !== "function") return false;
-  Promise.resolve(p.speak({ text, level })).catch(() => {});
-  return true;
+  return Promise.resolve(p.speak({ text, level, test })).then(
+    (r: { problem?: NativeVoiceProblem } | undefined) => r?.problem ?? null,
+    // the call itself failed: the phone's speech can't be reached, as good as no engine
+    () => "engine" as const);
 }
 /** Starts the phone's speech engine in the Android app as a rest with Voice cues begins (MotusWorkoutPlugin.warmVoice),
  *  so the first cue isn't held up by its start; false outside it or in an older app without it. */

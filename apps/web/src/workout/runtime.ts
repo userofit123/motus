@@ -7,7 +7,7 @@ import { withDefaults, cleanWorkoutSound, cleanCueVolume, SOUND_IDS, REST_OVER_S
 import { soundUrl } from "../core/sounds";
 import { api } from "../api/client";
 import { queryClient } from "../api/live";
-import { showRestCountdown, clearRestCountdown, scheduleRestAlarm, cancelRestAlarm, scheduleRestCues, cancelRestCues, notifyRestOverWeb, isNativeApp, backgroundTimers, nativeVibrate, nativeSpeak, nativeWarmVoice } from "./native";
+import { showRestCountdown, clearRestCountdown, scheduleRestAlarm, cancelRestAlarm, scheduleRestCues, cancelRestCues, notifyRestOverWeb, isNativeApp, backgroundTimers, nativeVibrate, nativeSpeak, nativeWarmVoice, type NativeVoiceProblem } from "./native";
 import { toast } from "../core/toast";
 
 export interface RestState {
@@ -310,20 +310,22 @@ const TEN_SECONDS = "10 seconds";
 const SAY_AFTER_MS = 700;
 const restOverWords = () => (rest.say ? `Rest over. ${rest.say}` : "Rest over");
 /** Speaks `text` at the cue volume: in the Android app through the phone's own speech (its WebView has none), else
- *  through the browser's (the desktop app and browsers). */
-function speak(text: string, v: CueVoice = cues) {
+ *  through the browser's (the desktop app and browsers). When it can't be said, a message says why (once a session;
+ *  every time for `test`, a cue asked for by hand), so a silent voice is never taken for a working one. */
+function speak(text: string, v: CueVoice = cues, test = false) {
   const level = levelOf(v.cueVolume);
   setTimeout(() => {
-    if (nativeSpeak(text, level)) return;
+    const asked = nativeSpeak(text, level, test);
+    if (asked) { void asked.then((problem) => { if (problem) noVoice(problem, test); }); return; }
     try {
       const u = new SpeechSynthesisUtterance(text); u.rate = 1.05; u.volume = level;
       // "interrupted" and "canceled" are a newer cue taking over, not a missing voice
-      u.onerror = (e) => { if (e.error !== "interrupted" && e.error !== "canceled") noVoice(e.error); };
+      u.onerror = (e) => { if (e.error !== "interrupted" && e.error !== "canceled") noVoice(e.error, test); };
       speechSynthesis.cancel(); speechSynthesis.speak(u);
       // a computer with no voice installed (common on Linux) speaks nothing and often says nothing either; the list
       // can fill a moment late, so it is looked at again after a second
-      if (!speechSynthesis.getVoices().length) setTimeout(() => { if (!speechSynthesis.getVoices().length) noVoice(); }, 1000);
-    } catch { noVoice(); }
+      if (!speechSynthesis.getVoices().length) setTimeout(() => { if (!speechSynthesis.getVoices().length) noVoice(undefined, test); }, 1000);
+    } catch { noVoice(undefined, test); }
   }, v.sound === false ? 0 : SAY_AFTER_MS);
 }
 /** Gets the speech ready as a rest with Voice cues starts: the Android app's engine takes up to a second to start, and a
@@ -334,16 +336,19 @@ function warmVoice() {
 }
 // Said once a session: Voice cues are on but this device can't speak them, so their silence isn't taken for a fault
 const toldNoVoice = new Set<string>();
-/** Says once why a voice cue wasn't spoken, by the speech engine's reason (none: no voice installed). */
-function noVoice(why?: SpeechSynthesisErrorCode) {
-  const text = why === "not-allowed" ? "The browser blocked Voice cues until you tap or click in Motus once"
-    : why === "audio-busy" || why === "audio-hardware" ? "Voice cues couldn't be spoken: the sound is in use or unavailable"
+/** Says once why a voice cue wasn't spoken (`always`: every time), by the speech engine's reason: the browser's, or the
+ *  Android app's (NativeVoiceProblem); none: no voice installed. */
+function noVoice(why?: SpeechSynthesisErrorCode | NativeVoiceProblem, always = false) {
+  const text = why === "engine" ? "This phone has no speech engine, so Voice cues can't be spoken. Install Speech Services by Google from the Play Store"
+    : why === "voice" ? "The phone's voice is still downloading, so Voice cues can't be spoken yet. Try again in a few minutes"
+    : why === "not-allowed" ? "The browser blocked Voice cues until you tap or click in Motus once"
+    : why === "audio-busy" || why === "audio-hardware" || why === "busy" ? "Voice cues couldn't be spoken: the sound is in use or unavailable"
     : why === "network" ? "Voice cues couldn't be spoken: this voice needs an internet connection"
     : !why || why === "synthesis-unavailable" || why === "voice-unavailable" || why === "language-unavailable" ? "No voice found on this device, so Voice cues can't be spoken"
     : "Voice cues couldn't be spoken";
-  if (toldNoVoice.has(text)) return;
+  if (toldNoVoice.has(text) && !always) return;
   toldNoVoice.add(text);
-  toast(text, { kind: "err" });
+  toast(text, { kind: "err", ms: 6000 });
 }
 /** Elapsed seconds of a workout, without its paused time */
 export function elapsed(w: { startedAt: string; pausedS: number; pauseStartedAt: string | null; endedAt?: string | null }) {
@@ -354,3 +359,9 @@ export function elapsed(w: { startedAt: string; pausedS: number; pauseStartedAt:
  *  sound as one of the 3-2-1 beeps: each plays once. */
 export const previewCue = (v: CueVoice) => restOver({ ...v, sound: true });
 export const previewTick = (v: CueVoice) => note({ ...v, sound: true }, 0);
+/** Voice cues as a rest's end gives them, heard where they are turned on: the rest over sound, then the words after it
+ *  (an example set, as no workout is open), at the volume chosen there. Says why when the voice can't be heard. */
+export function previewVoice(v: CueVoice) {
+  restOver({ ...v, sound: true });
+  speak("Rest over. Bench press, set 3, 8 reps", { ...v, sound: true }, true);
+}

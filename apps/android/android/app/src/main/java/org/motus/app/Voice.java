@@ -19,7 +19,8 @@ import java.util.Locale;
  * RestCues speaks the scheduled ones with the screen off. One engine, kept once started (starting takes up to a second,
  * so a rest with voice on warms it first); a cue asked for while it is still starting is spoken once it has. Spoken as
  * navigation guidance (the media stream on phones, at the cue level), holding a "may duck" audio focus for each cue so
- * music plays on quieter under it rather than over it. All on the main thread.
+ * music plays on quieter under it rather than over it. All on the main thread. A cue asked for on screen hears back
+ * whether it was said (Heard), so the app can say why when it wasn't, instead of staying silent.
  */
 final class Voice {
     private static final Handler main = new Handler(Looper.getMainLooper());
@@ -45,10 +46,23 @@ final class Voice {
     // it; a short duck (a notification sound) lets it carry on
     private static final AudioManager.OnAudioFocusChangeListener ON_FOCUS = change -> {
         if (change == AudioManager.AUDIOFOCUS_LOSS || change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT)
-            main.post(() -> { pendingText = null; if (tts != null && ready && current != null) { tts.stop(); release(); } });
+            main.post(() -> { pendingText = null; answer(true, null); if (tts != null && ready && current != null) { tts.stop(); answer(false, null); release(); } });
     };
 
     private Voice() {}
+
+    /** What became of a cue: `problem` null when it was said (or a newer cue took its place), else why not: "engine" (no
+     *  speech engine, or it won't start), "voice" (its voice is still downloading), "network" (the voice needs the
+     *  internet), "busy" (the sound is taken, as by a call), "error" (anything else). Answered once. */
+    interface Heard { void done(String problem); }
+    private static final Heard NOBODY = problem -> {};
+    // who hears back about the cue waiting for the engine, and about the one being said
+    private static Heard pendingHeard = NOBODY, currentHeard = NOBODY;
+    private static void answer(boolean pending, String problem) {
+        Heard h = pending ? pendingHeard : currentHeard;
+        if (pending) pendingHeard = NOBODY; else currentHeard = NOBODY;
+        h.done(problem);
+    }
 
     /** Starts the engine ahead of a cue, so the cue isn't held up by it. */
     static void warm(Context ctx) {
@@ -57,14 +71,19 @@ final class Voice {
     }
 
     /** Says `text` at `level` (0-1), in place of anything still being said. */
-    static void say(Context ctx, String text, float level) {
-        if (text == null || text.isEmpty()) return;
+    static void say(Context ctx, String text, float level) { say(ctx, text, level, false, NOBODY); }
+
+    /** The same, telling `heard` what became of it. `retry`: try the engine now even if it failed a moment ago (a cue
+     *  asked for by hand, such as turning Voice cues on, so the answer is about now). */
+    static void say(Context ctx, String text, float level, boolean retry, Heard heard) {
+        if (text == null || text.isEmpty()) { heard.done(null); return; }
         Context a = ctx.getApplicationContext();
         main.post(() -> {
             app = a;
-            if (engine() == null) return;
-            if (ready) speak(text, level, false);
-            else { pendingText = text; pendingLevel = level; }
+            if (retry && tts == null) retryAt = 0;
+            if (engine() == null) { heard.done("engine"); return; }
+            if (ready) { answer(false, null); currentHeard = heard; speak(text, level, false); }
+            else { answer(true, null); pendingText = text; pendingLevel = level; pendingHeard = heard; }
         });
     }
 
@@ -73,7 +92,8 @@ final class Voice {
     static void stop() {
         main.post(() -> {
             pendingText = null;
-            if (tts != null && ready && current != null && !started) { tts.stop(); release(); }
+            answer(true, null);
+            if (tts != null && ready && current != null && !started) { tts.stop(); answer(false, null); release(); }
         });
     }
 
@@ -94,15 +114,15 @@ final class Voice {
                 tts.setSpeechRate(1.05f);
                 tts.setAudioAttributes(ATTRS);
                 tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
-                    @Override public void onStart(String id) { main.post(() -> { if (id.equals(current)) started = true; }); }
+                    @Override public void onStart(String id) { main.post(() -> { if (id.equals(current)) { started = true; answer(false, null); } }); }
                     // a cue said to its end: the engine works, so the wait after failures starts over (not when it
                     // merely started: one that starts and then can't speak would otherwise retry at once every time)
                     @Override public void onDone(String id) { main.post(() -> { failures = 0; ended(id); }); }
-                    @Override @SuppressWarnings("deprecation") public void onError(String id) { main.post(() -> ended(id)); }
-                    @Override public void onError(String id, int code) { main.post(() -> ended(id)); }
+                    @Override @SuppressWarnings("deprecation") public void onError(String id) { main.post(() -> { if (id.equals(current)) answer(false, "error"); ended(id); }); }
+                    @Override public void onError(String id, int code) { main.post(() -> { if (id.equals(current)) answer(false, problemOf(code)); ended(id); }); }
                     @Override public void onStop(String id, boolean interrupted) { main.post(() -> ended(id)); }
                 });
-                if (pendingText != null) { String t = pendingText; pendingText = null; speak(t, pendingLevel, true); }
+                if (pendingText != null) { String t = pendingText; pendingText = null; currentHeard = pendingHeard; pendingHeard = NOBODY; speak(t, pendingLevel, true); }
             }));
             tts = made[0];
         } catch (RuntimeException e) {
@@ -114,6 +134,9 @@ final class Voice {
 
     /** The engine didn't start or stopped working: let it go (unbinding it) and wait longer before the next try. */
     private static void failed() {
+        pendingText = null;
+        answer(true, "engine");
+        answer(false, "engine");
         drop();
         failures++;
         retryAt = SystemClock.uptimeMillis() + Math.min(MAX_WAIT_MS, FIRST_WAIT_MS << Math.min(failures - 1, 16));
@@ -134,17 +157,29 @@ final class Voice {
         current = id;
         started = false;
         // refused (a phone call going on): not said, rather than over the call
-        if (!hold()) { release(); return; }
+        if (!hold()) { release(); answer(false, "busy"); return; }
         if (tts.speak(text, TextToSpeech.QUEUE_FLUSH, p, id) == TextToSpeech.SUCCESS) return;
         // the engine died under us (updated or killed by Android): a fresh one says it, once
         if (again) { failed(); return; }
+        Heard h = currentHeard;
+        currentHeard = NOBODY;
         drop();
-        pendingText = text; pendingLevel = level;
-        engine();
+        pendingText = text; pendingLevel = level; pendingHeard = h;
+        if (engine() == null) { pendingText = null; answer(true, "engine"); }
     }
 
     private static void ended(String id) {
-        if (id.equals(current)) release();
+        if (!id.equals(current)) return;
+        answer(false, null); // stopped before it began (a newer cue took over): not a fault
+        release();
+    }
+
+    private static String problemOf(int code) {
+        if (code == TextToSpeech.ERROR_NOT_INSTALLED_YET) return "voice";
+        if (code == TextToSpeech.ERROR_NETWORK || code == TextToSpeech.ERROR_NETWORK_TIMEOUT) return "network";
+        if (code == TextToSpeech.ERROR_OUTPUT) return "busy";
+        if (code == TextToSpeech.ERROR_SERVICE || code == TextToSpeech.ERROR_SYNTHESIS) return "engine";
+        return "error";
     }
 
     /** Asks for the sound (music ducks under the cue); false only when refused outright, as during a call. */

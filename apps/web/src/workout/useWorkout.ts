@@ -79,7 +79,8 @@ export function useWorkout() {
     const appPrefs = computed<WorkoutPrefs>(() => ({ ...appSettings.value.workout, ...((state.w?.settings ?? {}) as Partial<WorkoutPrefs>) }));
     const appFmt = computed(() => makeFmt(appSettings.value));
     // not for a workout (none open): the account's settings, which the background alarm then reads itself
-    watch(appPrefs, (p) => setCues({ sound: p.sound, cueSound: p.cueSound, tickSound: p.tickSound, cueVolume: p.cueVolume, vibrate: p.vibrate, warn10: p.warn10, voice: p.voice && !!appSettings.value.features.voice, countdown: p.countdown, next: p.restEndNext, lockScreen: p.lockScreen }, !!state.w), { immediate: true });
+    // Voice cues need both their switch and the feature: either changing takes effect at once
+    watch([appPrefs, () => !!appSettings.value.features.voice], ([p, voiceOn]) => setCues({ sound: p.sound, cueSound: p.cueSound, tickSound: p.tickSound, cueVolume: p.cueVolume, vibrate: p.vibrate, warn10: p.warn10, voice: p.voice && voiceOn, countdown: p.countdown, next: p.restEndNext, lockScreen: p.lockScreen }, !!state.w), { immediate: true });
     // the workout as a notification: what you're on now; in the Android app the rest countdown replaces it while resting
     // (not while the rest is paused, which takes the countdown off). A browser can't run a clock in a notification, so
     // it says when the workout started instead
