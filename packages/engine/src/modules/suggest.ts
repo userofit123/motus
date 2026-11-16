@@ -9,8 +9,9 @@ const DAY = 86400000;
 
 /** hidden: suggestions you dismissed (subject → when). tzMin: the app's offset, so days are counted by its calendar, as the
  *  Routines page counts "last done". plannedRoutineIds: routines planned from today on and not done yet; a workout in
- *  progress counts as planned too. */
-export async function suggestions(q: Sql, routines: RoutineSummary[], now: Date, hidden: Record<string, string> = {}, tzMin = 0, plannedRoutineIds: string[] = []): Promise<HomeSuggestion[]> {
+ *  progress counts as planned too. withPrograms: Home shows the programs' next workouts as suggestions (false while they
+ *  have their own card or Programs is off); left out, they don't claim a routine or muscle another suggestion could use. */
+export async function suggestions(q: Sql, routines: RoutineSummary[], now: Date, hidden: Record<string, string> = {}, tzMin = 0, plannedRoutineIds: string[] = [], withPrograms = true): Promise<HomeSuggestion[]> {
   const usable = routines.filter((r) => !r.archived && r.exerciseCount > 0);
   const ids = new Set(usable.map((r) => r.id));
   // whole calendar days since, on the app's calendar: yesterday evening is 1 day ago at any hour today
@@ -18,7 +19,7 @@ export async function suggestions(q: Sql, routines: RoutineSummary[], now: Date,
   const calDays = (at: string | number | Date) => Math.round((today - Date.parse(dayIn(new Date(at), tzMin))) / DAY);
 
   const programs = [];
-  for (const p of (await q.query("SELECT * FROM programs WHERE active ORDER BY created_at DESC")).rows) {
+  for (const p of withPrograms ? (await q.query("SELECT * FROM programs WHERE active ORDER BY created_at DESC")).rows : []) {
     const next = (await programState(q, p)).next;
     if (next) programs.push({ program: String(p.name), routineId: next.routineId, name: next.name, color: next.color ?? null, week: next.week, day: next.day, deload: !!next.deload });
   }
@@ -36,12 +37,14 @@ export async function suggestions(q: Sql, routines: RoutineSummary[], now: Date,
      UNION ALL SELECT re.routine_id, unnest(e.secondary_muscles) AS m, count(*) AS n, false AS main FROM routine_exercises re JOIN exercises e ON e.id = re.exercise_id GROUP BY 1, 2`))
     .rows.filter((h) => ids.has(h.routine_id)).map((h) => ({ routineId: h.routine_id, muscle: h.m, n: Number(h.n), main: h.main }));
 
-  // taken care of: what's planned, and the workout in progress (its routine and the muscles of what's in it)
-  const going = (await q.query<{ routine_id: string | null; m: string | null }>(
-    `SELECT w.routine_id, unnest(e.primary_muscles) AS m FROM workouts w LEFT JOIN workout_exercises we ON we.workout_id = w.id LEFT JOIN exercises e ON e.id = we.exercise_id
-     WHERE w.status = 'in_progress'`)).rows;
-  const plannedIds = new Set([...plannedRoutineIds, ...going.flatMap((x) => (x.routine_id ? [x.routine_id] : []))]);
-  const plannedMuscles = new Set([...routineMuscles.filter((h) => h.main && plannedIds.has(h.routineId)).map((h) => h.muscle), ...going.flatMap((x) => (x.m ? [x.m] : []))]);
+  // taken care of: what's planned, and the workout in progress (its routine and the muscles of what's in it). The routine
+  // is read on its own: unnest() over a workout with no exercises yet gives no rows, which would leave its routine out
+  const goingRoutines = (await q.query<{ routine_id: string }>("SELECT routine_id FROM workouts WHERE status = 'in_progress' AND routine_id IS NOT NULL")).rows.map((x) => x.routine_id);
+  const goingMuscles = (await q.query<{ m: string }>(
+    `SELECT DISTINCT unnest(e.primary_muscles) AS m FROM workouts w JOIN workout_exercises we ON we.workout_id = w.id JOIN exercises e ON e.id = we.exercise_id
+     WHERE w.status = 'in_progress'`)).rows.map((x) => x.m);
+  const plannedIds = new Set([...plannedRoutineIds, ...goingRoutines]);
+  const plannedMuscles = new Set([...routineMuscles.filter((h) => h.main && plannedIds.has(h.routineId)).map((h) => h.muscle), ...goingMuscles]);
 
   return pickSuggestions({
     now: now.getTime(),

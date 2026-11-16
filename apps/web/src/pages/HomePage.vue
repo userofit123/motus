@@ -4,7 +4,7 @@
 // (no reminder waiting, no goal due soon, no program running) stays away until it has; feature blocks need their feature.
 import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
-import { num, fromM, percentChange, orderGoals, HOME_BLOCKS, type Goal, type HomeData, type HomeSuggestion, type HomePlan, type HomeRecord, type HomeGroup, type HomeWeek, type ScoreKey } from "@motus/shared";
+import { num, fromM, percentChange, orderGoals, dismissalPatch, HOME_BLOCKS, type Goal, type HomeData, type HomeSuggestion, type HomePlan, type HomeRecord, type HomeGroup, type HomeWeek, type ScoreKey } from "@motus/shared";
 import { useHome, useSettings, saveSettings, useAchievements, useGoals, useHealthAvailable, useHealthDay, useReadiness, useHealthScores, useSleep, useDaily, useTypeName, loaded, type HealthAvailable, type ReadinessPart, type ReadinessBuilding } from "../api/queries";
 import { api } from "../api/client";
 import { invalidate, queryClient } from "../api/live";
@@ -72,7 +72,7 @@ const META: Record<string, { name: string; desc: string; icon: string; size: Siz
   activityToday: { name: "Activity today", desc: "Steps, distance and active calories today, and your last 7 days", icon: "steps", size: "m" },
   // Health scores: each only when its data is there (the server leaves a score out without it)
   scoreSleep: { name: "Sleep score", desc: "Your last 7 nights against the sleep guidelines", icon: "moon", size: "m" },
-  scoreActivity: { name: "Activity score", desc: "Your last 7 days of active minutes and steps against the guidelines", icon: "steps", size: "m" },
+  scoreActivity: { name: "Activity score", desc: "Your last 7 days of active minutes and steps against the guidelines", icon: "moveRing", size: "m" },
   scoreStrength: { name: "Strength score", desc: "Your last 7 days of strength training against the guidelines", icon: "dumbbell", size: "m" },
 };
 // a block whose feature is off is absent everywhere, Edit home included
@@ -324,8 +324,8 @@ const stepMax = computed(() => Math.max(1, stepGoal.value?.target ?? 0, ...stepD
 const hideSuggestion = (x: HomeSuggestion) => {
   const gone = (y: HomeSuggestion) => y.hide.some((k) => x.hide.includes(k));
   queryClient.setQueriesData<HomeData>({ queryKey: ["home"] }, (d) => d && { ...d, suggest: d.suggest.filter((y) => !gone(y)) });
-  const at = new Date().toISOString();
-  saveSettings({ home: { hidden: Object.fromEntries(x.hide.map((k) => [k, at])) } }, { quiet: true });
+  // the ones past their week (and older kinds of key) are cleared in the same save
+  saveSettings({ home: { hidden: dismissalPatch(s.value.home.hidden ?? {}, x.hide, new Date()) } }, { quiet: true });
 };
 // the block shows the first few; "All" opens the rest in a sheet
 const SUGGEST_SHOWN = 3;

@@ -7,7 +7,8 @@ import { withDefaults, cleanWorkoutSound, cleanCueVolume, SOUND_IDS, REST_OVER_S
 import { soundUrl } from "../core/sounds";
 import { api } from "../api/client";
 import { queryClient } from "../api/live";
-import { showRestCountdown, clearRestCountdown, scheduleRestAlarm, cancelRestAlarm, scheduleRestCues, cancelRestCues, notifyRestOverWeb, isNativeApp, backgroundTimers, nativeVibrate, nativeSpeak } from "./native";
+import { showRestCountdown, clearRestCountdown, scheduleRestAlarm, cancelRestAlarm, scheduleRestCues, cancelRestCues, notifyRestOverWeb, isNativeApp, backgroundTimers, nativeVibrate, nativeSpeak, nativeWarmVoice } from "./native";
+import { toast } from "../core/toast";
 
 export interface RestState {
   endAt: number | null; // ms
@@ -83,6 +84,7 @@ export function startRest(seconds: number, o: { setId: string | null; label: str
   save();
   restTimeSet();
   prepare(cues);
+  if (cues.sound && cues.voice) warmVoice();
 }
 export function adjustRest(deltaS: number) {
   if (!rest.endAt) return;
@@ -301,8 +303,29 @@ function speak(text: string, v: CueVoice = cues) {
   const level = levelOf(v.cueVolume);
   setTimeout(() => {
     if (nativeSpeak(text, level)) return;
-    try { const u = new SpeechSynthesisUtterance(text); u.rate = 1.05; u.volume = level; speechSynthesis.cancel(); speechSynthesis.speak(u); } catch { /* no voice */ }
+    try {
+      const u = new SpeechSynthesisUtterance(text); u.rate = 1.05; u.volume = level;
+      // "interrupted" and "canceled" are a newer cue taking over, not a missing voice
+      u.onerror = (e) => { if (e.error !== "interrupted" && e.error !== "canceled") noVoice(); };
+      speechSynthesis.cancel(); speechSynthesis.speak(u);
+      // a computer with no voice installed (common on Linux) speaks nothing and often says nothing either; the list
+      // can fill a moment late, so it is looked at again after a second
+      if (!speechSynthesis.getVoices().length) setTimeout(() => { if (!speechSynthesis.getVoices().length) noVoice(); }, 1000);
+    } catch { noVoice(); }
   }, v.sound === false ? 0 : SAY_AFTER_MS);
+}
+/** Gets the speech ready as a rest with Voice cues starts: the Android app's engine takes up to a second to start, and a
+ *  browser loads its list of voices only when first asked. */
+function warmVoice() {
+  if (nativeWarmVoice()) return;
+  try { speechSynthesis.getVoices(); } catch { /* no speech here: noVoice says so at the first cue */ }
+}
+// Said once a session: Voice cues are on but this device can't speak them, so their silence isn't taken for a fault
+let toldNoVoice = false;
+function noVoice() {
+  if (toldNoVoice) return;
+  toldNoVoice = true;
+  toast("No voice found on this device, so Voice cues can't be spoken", { kind: "err" });
 }
 /** Elapsed seconds of a workout, without its paused time */
 export function elapsed(w: { startedAt: string; pausedS: number; pauseStartedAt: string | null; endedAt?: string | null }) {

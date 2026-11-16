@@ -89,6 +89,9 @@ const ICONS: Record<string, string> = {
   // a training weight with a rising arrow on it: Training load, how much training the last days held (M-245); not bars,
   // which are Stats'
   load: "M9 8V6a3 3 0 0 1 6 0v2M6 8h12l2 12H4zM9.5 16.5l2.5-2.5 2.5 2.5",
+  // a ring not yet closed with a pulse in it: the Activity score, a week's moving against the guidelines (apart from
+  // "steps", a day's count, "bolt", active minutes, and "activity", an imported workout)
+  moveRing: "M21 12a9 9 0 1 1-2.6-6.4M7 12h2.5l1.5-3 2 6 1.5-3H17",
   // a dial: Readiness, how ready you are to train
   gauge: "M3.3 18a10 10 0 1 1 17.4 0M12 14l4-5",
   water: "M12 2.7S6 9.5 6 14a6 6 0 0 0 12 0c0-4.5-6-11.3-6-11.3z",

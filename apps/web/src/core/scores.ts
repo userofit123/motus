@@ -6,7 +6,7 @@ import { mins } from "./sleep";
 
 export const SCORE_META: Record<ScoreKey, { name: string; icon: string; span: string; source: string; brief: string }> = {
   sleep: { name: "Sleep score", icon: "moon", span: "Last 7 nights", source: SCORE_SOURCES.sleep, brief: SCORE_SOURCES_SHORT.sleep },
-  activity: { name: "Activity score", icon: "steps", span: "Last 7 days", source: SCORE_SOURCES.activity, brief: SCORE_SOURCES_SHORT.activity },
+  activity: { name: "Activity score", icon: "moveRing", span: "Last 7 days", source: SCORE_SOURCES.activity, brief: SCORE_SOURCES_SHORT.activity },
   strength: { name: "Strength score", icon: "dumbbell", span: "Last 7 days", source: SCORE_SOURCES.strength, brief: SCORE_SOURCES_SHORT.strength },
 };
 export const SCORE_KEYS: ScoreKey[] = ["sleep", "activity", "strength"];

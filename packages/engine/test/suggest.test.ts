@@ -129,7 +129,10 @@ describe("suggestions", () => {
     const plan = await call("POST", "/schedules", { rule: "once", routineId: b, startDate: day });
     expect((await suggest()).some((x) => x.routineId === b || x.muscle === "triceps")).toBe(false);
     await call("DELETE", `/schedules/${plan.id}`);
-    await call("POST", "/workouts/start", { routineId: b });
+    const w = await call("POST", "/workouts/start", { routineId: b });
+    expect((await suggest()).some((x) => x.routineId === b || x.muscle === "triceps")).toBe(false);
+    // a workout in progress with nothing in it yet still counts for its routine
+    await eng.db.admin.query("DELETE FROM workout_exercises WHERE workout_id = $1", [w.id]);
     expect((await suggest()).some((x) => x.routineId === b || x.muscle === "triceps")).toBe(false);
   }, 60000);
 

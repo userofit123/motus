@@ -284,6 +284,14 @@ export function nativeSpeak(text: string, level: number) {
   Promise.resolve(p.speak({ text, level })).catch(() => {});
   return true;
 }
+/** Starts the phone's speech engine in the Android app as a rest with Voice cues begins (MotusWorkoutPlugin.warmVoice),
+ *  so the first cue isn't held up by its start; false outside it or in an older app without it. */
+export function nativeWarmVoice() {
+  const p = plugin("MotusWorkout");
+  if (!p || !isNativeApp() || typeof p.warmVoice !== "function") return false;
+  Promise.resolve(p.warmVoice()).catch(() => {});
+  return true;
+}
 /** A vibration through the phone in the Android app (workout/runtime.ts vibrate says why); false outside it. An older
  *  app without it falls back to the WebView's own. */
 export function nativeVibrate(pattern: number[]) {

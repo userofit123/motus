@@ -18,7 +18,8 @@ export interface SuggestInput {
   now: number;
   /** routines you can do (not archived, with exercises); daysAgo: whole calendar days since last done (null: never) */
   routines: { id: string; name: string; color: string | null; daysAgo: number | null }[];
-  /** the next workout of each program you follow */
+  /** the next workout of each program you follow; only the ones Home shows as suggestions (none while the programs
+   *  have their own card), so a hidden one doesn't keep its routine or muscles from another suggestion */
   programs: { program: string; routineId: string; name: string; color: string | null; week: number; day: number; deload: boolean }[];
   /** the routines of your last finished workouts, oldest first (null: a free workout) */
   recent: (string | null)[];
@@ -50,6 +51,19 @@ const SINGLE = new Set(["chest", "middle back", "lower back", "core", "back"]);
 /** "Your lats were" / "Your chest was" */
 const yours = (name: string) => `Your ${name} ${SINGLE.has(name) ? "was" : "were"}`;
 
+/** The dismissals worth keeping as `subjects` are dismissed at `at`: those still within DISMISS_DAYS, in the current
+ *  form ("r:" / "m:"). The others come back as null, which the settings drop on saving (withDefaults), so the list
+ *  doesn't grow with every dismissal or keep keys from the older suggestions ("missed:…", "oldest:…"). */
+export function dismissalPatch(hidden: Record<string, string>, subjects: string[], at: Date): Record<string, string | null> {
+  const out: Record<string, string | null> = {};
+  for (const [k, v] of Object.entries(hidden)) {
+    const t = Date.parse(v);
+    if (!/^[rm]:/.test(k) || !Number.isFinite(t) || at.getTime() - t >= DISMISS_DAYS * DAY) out[k] = null;
+  }
+  for (const k of subjects) out[k] = at.toISOString();
+  return out;
+}
+
 /** What a dismissal of this suggestion keeps away: its routine and the muscle groups it is about. */
 export function suggestionSubjects(x: Pick<HomeSuggestion, "routineId" | "muscles">): string[] {
   return [...(x.routineId ? [`r:${x.routineId}`] : []), ...new Set((x.muscles ?? []).map((m) => `m:${groupOf(m)}`))];
@@ -71,7 +85,7 @@ export function pickSuggestions(d: SuggestInput): HomeSuggestion[] {
 
   // a program you follow says what's next
   for (const p of d.programs) if (byId.has(p.routineId))
-    add({ kind: "program", title: p.name, reason: `Next in ${p.program}: week ${p.week}, workout ${p.day}${p.deload ? ", a lighter week" : ""}`, routineId: p.routineId, color: p.color });
+    add({ kind: "program", title: p.name, reason: `Next in ${p.program}: week ${p.week}, workout ${p.day}${p.deload ? " (deload)" : ""}`, routineId: p.routineId, color: p.color });
 
   // your usual order: the routine that most often came right after the one you did last
   const last = d.recent.at(-1), lastR = last ? byId.get(last) : undefined;
@@ -119,7 +133,7 @@ export function pickSuggestions(d: SuggestInput): HomeSuggestion[] {
   const typical = counts.length >= 4 ? counts[Math.floor(counts.length / 2)]! : 0;
   if (typical >= 8)
     for (const m of known.filter((x) => routineFor(x) && sets(x) > 0 && sets(x) < typical / 4).sort((a, b) => sets(a) - sets(b)))
-      muscleTip(m, "low", `Only ${sets(m)} ${sets(m) === 1 ? "set" : "sets"} for your ${lower(m)} in 4 weeks, most muscles got ${typical}`);
+      muscleTip(m, "low", `Only ${sets(m)} ${sets(m) === 1 ? "set" : "sets"} for your ${lower(m)} in 4 weeks, against ${typical} for most muscles`);
 
   // the routines done longest ago (3 days or more)
   for (const r of d.routines.filter((x) => (x.daysAgo ?? 99) >= 3).sort((a, b) => (b.daysAgo ?? 9999) - (a.daysAgo ?? 9999)))

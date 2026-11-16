@@ -63,12 +63,13 @@ export function makeFmt(s: Settings) {
     /** one set as a voice cue says it, in words a speech engine reads right: "8 reps at 80 kilos", "12 reps",
      *  "1 minute 30 seconds", "2.5 kilometres in 12 minutes" (the same figures as set above) */
     spoken: (x: SetFigures, t: Tracking | null | undefined) => {
-      const plural = (n: number, one: string, many = one + "s") => `${num(n, 2)} ${n === 1 ? one : many}`;
-      const kg = x.weightKg != null && !!t && usesWeight(t) ? plural(fromKg(x.weightKg, wu), wu === "lb" ? "pound" : "kilo") : "";
-      const r = x.reps != null && !!t && (usesReps(t) || (!!x.reps && !x.durationS)) ? plural(x.reps, "rep") : "";
-      const d = x.distanceM ? plural(fromM(x.distanceM, du), du === "mi" ? "mile" : "kilometre") : "";
+      // rounded as the screen shows it (weight 1 decimal, distance 2) before choosing "kilo" or "kilos": 0.99 is "1 kilo"
+      const plural = (n: number, dp: number, one: string, many = one + "s") => { const r = Math.round(n * 10 ** dp) / 10 ** dp; return `${num(r, dp)} ${r === 1 ? one : many}`; };
+      const kg = x.weightKg != null && !!t && usesWeight(t) ? plural(fromKg(x.weightKg, wu), 1, wu === "lb" ? "pound" : "kilo") : "";
+      const r = x.reps != null && !!t && (usesReps(t) || (!!x.reps && !x.durationS)) ? plural(x.reps, 0, "rep") : "";
+      const d = x.distanceM ? plural(fromM(x.distanceM, du), 2, du === "mi" ? "mile" : "kilometre") : "";
       const m = Math.floor((x.durationS ?? 0) / 60), sec = (x.durationS ?? 0) % 60;
-      const time = x.durationS ? [m ? plural(m, "minute") : "", sec ? plural(sec, "second") : ""].filter(Boolean).join(" ") : "";
+      const time = x.durationS ? [m ? plural(m, 0, "minute") : "", sec ? plural(sec, 0, "second") : ""].filter(Boolean).join(" ") : "";
       const amount = [r || d, r || d ? (time ? `in ${time}` : "") : time].filter(Boolean).join(" ");
       return kg && amount ? `${amount} at ${kg}` : kg || amount;
     },

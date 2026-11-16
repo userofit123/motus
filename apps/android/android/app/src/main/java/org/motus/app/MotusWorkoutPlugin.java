@@ -346,10 +346,18 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener2 {
         call.resolve();
     }
 
+    /** Starts the phone's speech engine as a rest with Voice cues begins, so its first cue isn't held up by the start. */
+    @PluginMethod
+    public void warmVoice(PluginCall call) {
+        Voice.warm(getContext());
+        call.resolve();
+    }
+
     @PluginMethod
     public void cancelRestCues(PluginCall call) {
         RestCues.cancel(getContext());
-        // back on screen (or the rest changed): a voice cue still being said from the background stops, the app speaks its own
+        // back on screen (or the rest changed): a voice cue not yet begun is dropped (the app speaks its own); one already
+        // being said finishes, as the app skips a cue the background already gave (runtime.ts catchUpCues)
         Voice.stop();
         call.resolve();
     }

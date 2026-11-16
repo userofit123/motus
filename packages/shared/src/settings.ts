@@ -74,7 +74,8 @@ export interface Settings {
   /** the work week (Sunday = 0); null: from the first day of the week, Sunday to Thursday or Monday to Friday */
   workdays: number[] | null;
   /** blocks: Home's blocks in the order shown, each shown or hidden (Edit home).
-   *  hidden: Home suggestions you dismissed ("r:<routine id>" / "m:<muscle group>" → when), kept away for a week.
+   *  hidden: Home suggestions you dismissed ("r:<routine id>" / "m:<muscle group>" → when), kept away for a week
+   *  (DISMISS_DAYS); each dismissal also clears the ones past that (dismissalPatch).
    *  goals: the goals pinned to Home as their own blocks, in order, each with or without its streak */
   home: { blocks: HomeBlock[]; hidden: Record<string, string>; goals: { id: string; streak: boolean }[] };
   /** the order of your goals on the Goals page (Reorder goals); goals not in it follow, newest first */
@@ -204,7 +205,9 @@ export function withDefaults(saved: unknown): Settings {
   // the older Home's section list (and its list of cards before that) belonged to a different set of blocks: dropped, so
   // everyone starts from the new layout
   const { cards: _c, sections: _s, ...home } = out.home as Settings["home"] & { cards?: unknown; sections?: unknown };
-  out.home = { ...home, blocks: cleanHomeBlocks(home.blocks) };
+  // a dismissal cleared by sending null (dismissalPatch) goes, as does anything else that isn't a time
+  const hidden = Object.fromEntries(Object.entries(home.hidden && typeof home.hidden === "object" ? home.hidden : {}).filter((e): e is [string, string] => typeof e[1] === "string"));
+  out.home = { ...home, hidden, blocks: cleanHomeBlocks(home.blocks) };
   // "After a workout, update its routine", "Start from what you did last time" and "Last time's numbers come from" are
   // gone: a routine always holds where you are now (its numbers follow each finished workout, then Progression), and
   // structure changes are only ever saved when ticked on the Finish screen, so the old choices mean nothing and are dropped

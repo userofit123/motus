@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { pickSuggestions, suggestionSubjects, type SuggestInput } from "./suggest";
+import { pickSuggestions, suggestionSubjects, dismissalPatch, type SuggestInput } from "./suggest";
+import { withDefaults } from "./settings";
 
 const NOW = Date.parse("2026-11-16T12:00:00Z");
 const daysAgo = (n: number) => new Date(NOW - n * 86400000).toISOString();
@@ -80,7 +81,7 @@ describe("pickSuggestions", () => {
 
   it("points out a muscle with far fewer sets than the rest", () => {
     const s = pickSuggestions(input({ sets28: { ...Object.fromEntries(ALL.map((m) => [m, 12])), calves: 2 } }));
-    expect(s.find((x) => x.kind === "low")).toMatchObject({ routineId: "legs", reason: "Only 2 sets for your calves in 4 weeks, most muscles got 12" });
+    expect(s.find((x) => x.kind === "low")).toMatchObject({ routineId: "legs", reason: "Only 2 sets for your calves in 4 weeks, against 12 for most muscles" });
   });
 
   it("suggests routines not done for 3 days or more, longest first", () => {
@@ -91,5 +92,17 @@ describe("pickSuggestions", () => {
   it("puts a program's next workout first", () => {
     const s = pickSuggestions(input({ programs: [{ program: "5x5", routineId: "legs", name: "Legs", color: null, week: 2, day: 3, deload: false }] }));
     expect(s[0]).toMatchObject({ kind: "program", reason: "Next in 5x5: week 2, workout 3" });
+    const d = pickSuggestions(input({ programs: [{ program: "5x5", routineId: "legs", name: "Legs", color: null, week: 4, day: 1, deload: true }] }));
+    expect(d[0]).toMatchObject({ kind: "program", reason: "Next in 5x5: week 4, workout 1 (deload)" });
+  });
+});
+
+describe("dismissalPatch", () => {
+  it("clears dismissals past their week and older kinds of key as it saves a new one", () => {
+    const at = new Date(NOW);
+    const p = dismissalPatch({ "r:a": daysAgo(2), "m:legs": daysAgo(8), "missed:calves": daysAgo(1), "oldest:b": daysAgo(1) }, ["r:c", "m:arms"], at);
+    expect(p).toEqual({ "m:legs": null, "missed:calves": null, "oldest:b": null, "r:c": at.toISOString(), "m:arms": at.toISOString() });
+    // the nulls are dropped once saved
+    expect(withDefaults({ home: { hidden: { "r:a": daysAgo(2), ...p } } }).home.hidden).toEqual({ "r:a": daysAgo(2), "r:c": at.toISOString(), "m:arms": at.toISOString() });
   });
 });
