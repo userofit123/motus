@@ -17,19 +17,15 @@ export const scoresFor = (age: number | null) => age == null || age >= SCORE_MIN
 /** How many days a score covers: the last 7 (today in them), as the guidelines count per week */
 export const SCORE_DAYS = 7;
 
-// ---- sources: shown on each score as its "Based on" line
+// ---- sources: each score's "Where the numbers come from" row names them in a few words and opens its lesson, which
+// says what each found and gives the full reference
 export const SCORE_SOURCES = {
-  sleep: "Based on the National Sleep Foundation's sleep duration (Hirshkowitz et al. 2015) and sleep quality (Ohayon et al. 2017) recommendations and its sleep regularity consensus (Sletten et al. 2023).",
-  activity: "Based on the WHO 2020 physical activity guidelines (Bull et al. 2020), ACSM heart rate intensities (Garber et al. 2011) and daily steps and mortality (Paluch et al. 2022).",
-  strength: "Based on the WHO 2020 physical activity guidelines (Bull et al. 2020) and weekly sets for muscle growth (Schoenfeld, Ogborn & Krieger 2017).",
-  recovery: "Based on your own usual of the last 28 days: resting heart rate and HRV have no healthy number that fits everyone.",
+  sleep: "National Sleep Foundation 2015, 2017 and 2023",
+  activity: "WHO 2020, ACSM 2011 and Paluch et al. 2022",
+  strength: "WHO 2020 and Schoenfeld et al. 2017",
 } as const;
-/** The same in a few words, for Home's blocks (Stats → Scores has the full line) */
-export const SCORE_SOURCES_SHORT = {
-  sleep: "Based on the National Sleep Foundation (2015, 2017, 2023).",
-  activity: "Based on WHO 2020, ACSM 2011 and Paluch et al. 2022.",
-  strength: "Based on WHO 2020 and Schoenfeld et al. 2017.",
-} as const;
+/** Readiness has no published source: it compares you with yourself */
+export const RECOVERY_BASIS = "Based on your own usual of the last 28 days: resting heart rate and HRV have no healthy number that fits everyone.";
 
 // ---- sleep
 /** Hours of sleep a night recommended by age (National Sleep Foundation, Hirshkowitz et al. 2015; the AASM/SRS adult

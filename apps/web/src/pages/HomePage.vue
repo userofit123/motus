@@ -13,6 +13,7 @@ import { toast } from "../core/toast";
 import { onHome, streakOnHome, toggleHomeGoal, setHomeStreak, periodWord, goalSub } from "../core/goals";
 import { asleepMin, inBedMin, efficiency, hasStages, isFull, mins, SHORT_WHY } from "../core/sleep";
 import { SCORE_META, scoreRow, scoreWhy } from "../core/scores";
+import SourceRow from "../components/learn/SourceRow.vue";
 import { READY_PART, readinessRows, nightWhen } from "../core/readiness";
 import { useFmt, unitOf, ago, goalLabel, localYmd, tomorrowYmd, hrPart } from "../core/format";
 import { reminderText } from "../core/reminderText";
@@ -651,8 +652,8 @@ await loaded(home, ach, avail, hDay, ready, nightsQ, dailyQ);
               <div class="grow"><div class="t">{{ x.t }}</div><div class="s">{{ x.s }}</div></div>
               <b class="r rv" :class="x.tone">{{ x.r }}</b>
             </div>
+            <SourceRow :topic="SCORE_META[SCORE_ID[id]!].lesson" :sources="SCORE_META[SCORE_ID[id]!].sources" />
           </div>
-          <div class="tiny hsrc">{{ SCORE_META[SCORE_ID[id]!].brief }}</div>
         </div>
 
         <!-- the newest night: time asleep with the share of the time in bed as its ring (as Stats → Sleep's night), then its stages; it opens that night there -->
@@ -845,10 +846,8 @@ html.phone .gtile { grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); }
    last row without its line, the number in the row's tone */
 .hhl { margin-top: var(--cpy); border-top: 1px solid var(--ol); }
 .hhl .li:last-child { border-bottom: 0; padding-bottom: 0; }
-.hhl .grow { min-width: 0; }
 /* a part's line wraps rather than cut off, as the same rows on Stats → Scores */
-/* a score's source under its parts, as the Stats cards' foot lines */
-.hsrc { margin-top: var(--tdy); }
+.hhl .grow { min-width: 0; }
 /* last night's stages under a faint line, as on Stats → Sleep's last-night card */
 .hstages { margin-top: var(--cpy); padding-top: var(--cpy); border-top: 1px solid var(--ol); }
 /* heart's line and the steps goal's bar sit at the foot of the block, as This week's bars */

@@ -1,13 +1,14 @@
 // The health scores (@motus/shared scores.ts) as Home's blocks and Stats → Scores show them, in one place so both read
 // the same: each score's name, icon and stretch, its parts as rows (what, the guideline, how much of it was met) and the
 // one line that says why it is what it is.
-import { GROUPS, WEEKLY_SET_RANGE, SCORE_DAYS, SCORE_SOURCES, SCORE_SOURCES_SHORT, type Score, type ScoreKey, type ScorePart } from "@motus/shared";
+import { GROUPS, WEEKLY_SET_RANGE, SCORE_DAYS, SCORE_SOURCES, type Score, type ScoreKey, type ScorePart } from "@motus/shared";
 import { mins } from "./sleep";
 
-export const SCORE_META: Record<ScoreKey, { name: string; icon: string; span: string; source: string; brief: string }> = {
-  sleep: { name: "Sleep score", icon: "moon", span: "Last 7 nights", source: SCORE_SOURCES.sleep, brief: SCORE_SOURCES_SHORT.sleep },
-  activity: { name: "Activity score", icon: "moveRing", span: "Last 7 days", source: SCORE_SOURCES.activity, brief: SCORE_SOURCES_SHORT.activity },
-  strength: { name: "Strength score", icon: "dumbbell", span: "Last 7 days", source: SCORE_SOURCES.strength, brief: SCORE_SOURCES_SHORT.strength },
+// `lesson`: the lesson its "Where the numbers come from" row opens (components/learn/lessons.ts)
+export const SCORE_META: Record<ScoreKey, { name: string; icon: string; span: string; sources: string; lesson: "sleepScore" | "activityScore" | "strengthScore" }> = {
+  sleep: { name: "Sleep score", icon: "moon", span: "Last 7 nights", sources: SCORE_SOURCES.sleep, lesson: "sleepScore" },
+  activity: { name: "Activity score", icon: "moveRing", span: "Last 7 days", sources: SCORE_SOURCES.activity, lesson: "activityScore" },
+  strength: { name: "Strength score", icon: "dumbbell", span: "Last 7 days", sources: SCORE_SOURCES.strength, lesson: "strengthScore" },
 };
 export const SCORE_KEYS: ScoreKey[] = ["sleep", "activity", "strength"];
 

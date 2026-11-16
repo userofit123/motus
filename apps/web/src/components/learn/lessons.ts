@@ -1,9 +1,10 @@
 // Lessons behind the learn button (graduation cap) in a block's header: what a number means and the research it comes
 // from. Research-based explanations live here, never as text under a chart, so the blocks show only the data.
 // A new lesson is one more entry; the sheet lays every lesson out the same way.
-import { WEEKLY_SET_RANGE } from "@motus/shared";
+import { WEEKLY_SET_RANGE, SLEEP_WEIGHTS, ACTIVITY_WEIGHTS, STRENGTH_WEIGHTS, WEEKLY_ACTIVE_MIN, STRENGTH_DAYS, GOOD_EFFICIENCY, MODERATE_FROM, VIGOROUS_FROM } from "@motus/shared";
 
-export type LessonRow = { icon: string; t: string; s?: string; r?: string; ok?: boolean };
+/** `ref`: a source's full reference, under what it found */
+export type LessonRow = { icon: string; t: string; s?: string; r?: string; ok?: boolean; ref?: string };
 export type Lesson = {
   title: string;
   intro: string;
@@ -13,6 +14,12 @@ export type Lesson = {
 };
 
 const [lo, hi] = WEEKLY_SET_RANGE;
+const pct = (x: number) => `${Math.round(x * 100)}%`;
+const points = (n: number) => `${n} points`;
+// the same source in two lessons reads the same in both
+const WHO = "Bull FC, et al. WHO 2020 guidelines on physical activity and sedentary behaviour. British Journal of Sports Medicine, 2020; 54(24): 1451-1462";
+const SCHOENFELD = { icon: "note", t: "Schoenfeld, Ogborn & Krieger, 2017", s: `Review of 15 studies: ${lo} or more sets a week per muscle built clearly more muscle than fewer than 5`,
+  ref: "Schoenfeld BJ, Ogborn D, Krieger JW. Dose-response relationship between weekly resistance training volume and increases in muscle mass: a systematic review and meta-analysis. Journal of Sports Sciences, 2017; 35(11): 1073-1082" };
 
 export const LESSONS = {
   weeklySets: {
@@ -26,8 +33,9 @@ export const LESSONS = {
         { icon: "moon", t: `Over ${hi} sets`, s: "Little extra growth for most people, and harder to recover from" },
       ] },
       { heading: "Where the numbers come from", rows: [
-        { icon: "note", t: "Schoenfeld, Ogborn & Krieger, 2017", s: `Review of 15 studies: ${lo} or more sets a week per muscle built clearly more muscle than fewer than 5` },
-        { icon: "note", t: "Baz-Valle et al., 2022", s: `Review of studies on trained lifters: 12-${hi} sets a week worked best for most muscles, more than ${hi} rarely added much` },
+        SCHOENFELD,
+        { icon: "note", t: "Baz-Valle et al., 2022", s: `Review of studies on trained lifters: 12-${hi} sets a week worked best for most muscles, more than ${hi} rarely added much`,
+          ref: "Baz-Valle E, Balsalobre-Fernández C, Alix-Fagoaga C, Schoenfeld BJ. A systematic review of the effects of different resistance training volumes on muscle hypertrophy. Journal of Human Kinetics, 2022; 81: 199-210" },
       ] },
       { heading: "How Motus counts", rows: [
         { icon: "target", t: "Main muscle", s: "The muscle the exercise is for", r: "1 set" },
@@ -35,6 +43,58 @@ export const LESSONS = {
         { icon: "flame", t: "Warm-up sets", r: "Not counted" },
         { icon: "calendar", t: "Last 7 days", s: "Today and the 6 days before it" },
         { icon: "stats", t: "Average per training week", s: "Weeks without a workout are left out" },
+      ] },
+    ],
+  },
+  // the health scores: what each guideline found, then how Motus turns it into points
+  sleepScore: {
+    title: "Sleep score",
+    intro: "How your last 7 nights compare with the National Sleep Foundation's advice for adults: enough hours, little time awake in bed and steady times. Each part gives its points for the share of nights that met it, so 100 means every night met all three.",
+    sections: [
+      { heading: "Where the numbers come from", rows: [
+        { icon: "note", t: "National Sleep Foundation, 2015", s: "An expert panel reviewed the research on sleep and health: adults should sleep 7-9 hours a night, and 7-8 hours from 65",
+          ref: "Hirshkowitz M, et al. National Sleep Foundation's sleep time duration recommendations: methodology and results summary. Sleep Health, 2015; 1(1): 40-43" },
+        { icon: "note", t: "National Sleep Foundation, 2017", s: `An expert panel on sleep quality: being asleep for ${pct(GOOD_EFFICIENCY)} or more of your time in bed is a sign of good sleep at every adult age`,
+          ref: "Ohayon M, et al. National Sleep Foundation's sleep quality recommendations: first report. Sleep Health, 2017; 3(1): 6-19" },
+        { icon: "note", t: "National Sleep Foundation, 2023", s: "An expert consensus: going to bed and waking up at regular times matters for health, not only how long you sleep. It sets no exact window, so Motus uses an hour",
+          ref: "Sletten TL, et al. The importance of sleep regularity: a consensus statement of the National Sleep Foundation sleep timing and variability panel. Sleep Health, 2023; 9(6): 801-820" },
+      ] },
+      { heading: "How Motus counts", rows: [
+        { icon: "moon", t: "Hours asleep", s: "Nights with 7-9 hours asleep (7-8 from 65)", r: points(SLEEP_WEIGHTS.duration) },
+        { icon: "bed", t: "Asleep in bed", s: `Nights asleep for ${pct(GOOD_EFFICIENCY)} or more of the time in bed`, r: points(SLEEP_WEIGHTS.efficiency) },
+        { icon: "clock", t: "Regular times", s: "Nights within an hour of your usual bed and wake times", r: points(SLEEP_WEIGHTS.regularity) },
+      ] },
+    ],
+  },
+  activityScore: {
+    title: "Activity score",
+    intro: `How active your last 7 days were, against the World Health Organization's ${WEEKLY_ACTIVE_MIN} minutes a week and the steps a day linked with a longer life. Each part gives its points for how much of its aim you reached, so 100 means you reached both.`,
+    sections: [
+      { heading: "Where the numbers come from", rows: [
+        { icon: "note", t: "World Health Organization, 2020", s: `Adults should get at least ${WEEKLY_ACTIVE_MIN} minutes of moderate activity a week, or 75 minutes of vigorous activity, or a mix of both. Any activity is better than none`, ref: WHO },
+        { icon: "note", t: "American College of Sports Medicine, 2011", s: `Effort counts as moderate at ${Math.round(MODERATE_FROM * 100)}-76% of your max heart rate and vigorous at ${Math.round(VIGOROUS_FROM * 100)}-95%`,
+          ref: "Garber CE, et al. Quantity and quality of exercise for developing and maintaining cardiorespiratory, musculoskeletal, and neuromotor fitness in apparently healthy adults. Medicine & Science in Sports & Exercise, 2011; 43(7): 1334-1359" },
+        { icon: "note", t: "Paluch et al., 2022", s: "15 studies of about 47,000 adults: the more steps a day, the lower the risk of dying early, until about 8,000-10,000 steps under 60 and 6,000-8,000 from 60, where the benefit levels off",
+          ref: "Paluch AE, et al. Daily steps and all-cause mortality: a meta-analysis of 15 international cohorts. The Lancet Public Health, 2022; 7(3): e219-e228" },
+      ] },
+      { heading: "How Motus counts", rows: [
+        { icon: "bolt", t: "Active minutes", s: `Minutes at ${pct(MODERATE_FROM)} or more of your max heart rate, against ${WEEKLY_ACTIVE_MIN} a week. Vigorous minutes count double`, r: points(ACTIVITY_WEIGHTS.minutes) },
+        { icon: "steps", t: "Daily steps", s: "Your average a day, against 8,000 (6,000 from 60): where the benefit starts to level off", r: points(ACTIVITY_WEIGHTS.steps) },
+        { icon: "heart", t: "Max heart rate", s: "The one you set in Body, or 220 minus your age" },
+      ] },
+    ],
+  },
+  strengthScore: {
+    title: "Strength score",
+    intro: "How your strength training over the last 7 days compares with the World Health Organization's advice and the weekly sets that build muscle. Each part gives its points for how much of its aim you reached, so 100 means you reached both.",
+    sections: [
+      { heading: "Where the numbers come from", rows: [
+        { icon: "note", t: "World Health Organization, 2020", s: `Adults should do muscle-strengthening activities that work all major muscle groups on ${STRENGTH_DAYS} or more days a week`, ref: WHO },
+        SCHOENFELD,
+      ] },
+      { heading: "How Motus counts", rows: [
+        { icon: "calendar", t: "Strength days", s: `Days with hard sets, against ${STRENGTH_DAYS} a week`, r: points(STRENGTH_WEIGHTS.days) },
+        { icon: "activity", t: `Muscle groups with ${lo}+ hard sets`, s: "Chest, back, shoulders, arms, core and legs", r: points(STRENGTH_WEIGHTS.groups) },
       ] },
     ],
   },

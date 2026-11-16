@@ -3,7 +3,8 @@
 // the guideline it is based on, as Home's score blocks show them. Recovery is Readiness (from your own usual), shown
 // beside them rather than worked out a second way. Only scores whose data is there; the tab is absent without any.
 import { computed } from "vue";
-import { SCORE_SOURCES } from "@motus/shared";
+import { RECOVERY_BASIS } from "@motus/shared";
+import SourceRow from "../learn/SourceRow.vue";
 import { useHealthScores, useReadiness } from "../../api/queries";
 import { useFmt } from "../../core/format";
 import { SCORE_META, SCORE_KEYS, scoreRow, scoreWhy } from "../../core/scores";
@@ -39,7 +40,7 @@ const minor = computed(() => !!sq.data.value?.minor);
         <div class="val">{{ x.value }}</div><div class="sub">{{ x.sub }}</div></div>
     </div>
 
-    <!-- each score's parts as Stats → Heart's What stands out rows, then why and what it is based on -->
+    <!-- each score's parts as Stats → Heart's What stands out rows, then the row that opens what it is based on -->
     <div v-for="s in scores" :key="s.key" class="card wkc spt">
       <div class="ch"><span class="bi"><Icon :name="s.meta.icon" :size="15" /></span><span class="t grow">{{ s.meta.name }}</span><span class="tiny">{{ s.meta.span }}</span></div>
       <div class="tiny sc-why">{{ scoreWhy(s, num) }}</div>
@@ -49,10 +50,11 @@ const minor = computed(() => !!sq.data.value?.minor);
           <div class="grow"><div class="t">{{ x.t }}</div><div class="s">{{ x.s }}</div></div>
           <b class="r rv" :class="x.tone">{{ x.r }}</b>
         </div>
+        <SourceRow :topic="s.meta.lesson" :sources="s.meta.sources" />
       </div>
-      <div class="tiny sc-line">{{ s.meta.source }}</div>
     </div>
 
+    <!-- Readiness compares you with yourself, so it has no sources to open: its basis stays a plain line -->
     <div v-if="ready" class="card wkc spt">
       <div class="ch"><span class="bi"><Icon name="gauge" :size="15" /></span><span class="t grow">Readiness</span><span class="tiny">Vs your usual</span></div>
       <div v-if="ready.why" class="tiny sc-why">{{ ready.why }}</div>
@@ -63,7 +65,7 @@ const minor = computed(() => !!sq.data.value?.minor);
           <b class="r rv" :class="x.tone">{{ x.r }}</b>
         </div>
       </div>
-      <div class="tiny sc-line">{{ SCORE_SOURCES.recovery }}</div>
+      <div class="tiny sc-line">{{ RECOVERY_BASIS }}</div>
       <div v-if="minor" class="tiny sc-line">Sleep, activity and strength scores follow the adult guidelines, so they start at 18.</div>
     </div>
   </template>
