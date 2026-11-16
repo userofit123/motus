@@ -243,7 +243,8 @@ await loaded(cal, listWorkouts, listActs);
       </Transition>
       <div v-if="sel" :key="sel" class="spt dayfade">
         <div class="sh first"><h2>{{ fmt.date(sel, { weekday: "long", day: "numeric", month: "long" }) }}</h2><div class="grow" /><span v-if="sel <= today" @click.stop><Menu label="Log on this day" align="start" :items="[{ label: 'Log a workout', icon: 'dumbbell', run: () => (logSheet = { date: sel ?? undefined }) }, { label: 'Log an activity', icon: 'activity', run: () => (activitySheet = {}) }]" /></span><button v-if="sel >= today" class="lnk" @click="planDay = sel"><Icon name="plus" :size="14" />Plan</button></div>
-        <!-- the band's numbers for the day as a report's tiles, then the day's sessions under a faint line -->
+        <!-- the band's numbers for the day as a report's tiles, then its hours and its sessions, each under a faint line and
+             named as Stats' day cards name theirs (M-253: one card, so the day still reads as one) -->
         <div class="card" :class="{ wkc: dayTop }">
           <div v-if="dayTiles.length" class="wstats dtiles">
             <div v-for="x in dayTiles" :key="x.key" class="ws" :class="{ click: x.open }" :role="x.open ? 'button' : 'group'" :tabindex="x.open ? 0 : undefined" :aria-label="[x.label, x.value, x.unit, x.sub].filter(Boolean).join(' ')" @click="x.open?.()" @keydown.enter="x.open?.()">
@@ -254,7 +255,7 @@ await loaded(cal, listWorkouts, listActs);
           </div>
           <div v-if="tlHas" :class="{ csec: dayTiles.length }"><div class="lbl hgap">Day by hour</div>
             <DayTimeline :tl="tl" :day="tlDay" :sessions="tlSessions" @open="(tab) => router.push(`/stats?tab=${tab}&day=${tlDay}`)" @pick="(id) => router.push(id)" /></div>
-          <div :class="{ 'csec dsess': dayTop }">
+          <div :class="{ 'csec dsess': dayTop }"><div v-if="dayTop" class="lbl hgap">Workouts and activities</div>
           <div v-if="!(byDay.get(sel) ?? []).length" class="tiny">{{ sel >= today ? "Nothing planned. Use Plan to put a routine on this day." : "Nothing on this day." }}</div>
           <div class="list"><div v-for="x in byDay.get(sel) ?? []" :key="x.id ?? x.scheduleId" class="li click" @click="open(x)">
             <Icon :name="icon(x)" :size="18" :style="{ color: x.color ?? (x.kind === 'activity' ? ACTIVITY_COLOR : WORKOUT_COLOR) }" /><div class="grow"><div class="t" :style="x.missed ? { opacity: .5 } : undefined">{{ label(x) }}</div><div class="s"><template v-if="x.kind === 'planned'">{{ x.missed ? "Missed" : "Planned workout" }}</template><DotLine v-else :parts="[fmt.time(x.startedAt), hrPart(x)].filter((p) => p != null)" /></div></div><SessionStats v-if="x.kind !== 'planned'" :x="x" /><span v-if="x.kind === 'planned'" @click.stop><Menu :items="unplanItems(x)" :label="`Options for ${x.name}`" /></span><Icon v-else name="right" class="muted" /></div></div>

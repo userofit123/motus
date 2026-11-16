@@ -5,12 +5,14 @@
 // day's workouts and activities shaded across every lane in their Calendar colours with the strip along the top, as on
 // the Stats day charts, and the same hour labels under it. A lane opens its Stats tab on this day (open), a shaded
 // session opens the session (pick); the tip says what the band saved at that hour. It shows only what Stats' days show
-// in full, so it stays small and points into them.
+// in full, so it stays small and points into them. The night is a small hypnogram, a row per stage named on the left as
+// Stats → Sleep's (M-253): its stretches are minutes long, a few pixels at a day's scale, so in one row they ran together
+// into a barcode; in their own rows each stage reads as where in the night it fell.
 import { computed, ref } from "vue";
 import { useWidth } from "../useWidth";
 import { useTip } from "../useTip";
 import { useFmt } from "../../core/format";
-import { segColor, SEG_NAME } from "../../core/sleep";
+import { segColor, laneOf, LANES, SEG_NAME } from "../../core/sleep";
 import { dayHours, legendOf, DAY_DATA_COLOR, type DaySession } from "./daySessions";
 import type { DayTimeline } from "./dayTimeline";
 import ChartShade from "../ChartShade.vue";
@@ -21,18 +23,25 @@ const emit = defineEmits<{ open: [tab: "sleep" | "steps" | "heart"]; pick: [id: 
 const fmt = useFmt();
 const box = ref<HTMLElement | null>(null);
 // margins as LineChart's and the night's lanes, so the hours line up with the Stats day charts
-const W = useWidth(box), P = { l: 44, r: 12, t: 8, b: 22 }, GAP = 6;
-// a lane's name as its lines: "Last night" is too wide for the margin on one, so it takes two, centred on the lane
+// the gap between lanes is wide enough that the steps' bars and the heart rate's line read as two charts
+const W = useWidth(box), P = { l: 44, r: 12, t: 8, b: 22 }, GAP = 10;
+// a lane's name as its lines: "Heart rate" is too wide for the margin on one, so it takes two, centred on the lane
 type Lane = { key: "sleep" | "steps" | "heart"; name: string[]; what: string; y: number; h: number };
 const LINE = 11;
+// the night's rows, all four top to bottom as the Sleep tab's hypnogram (awake on top, deep at the foot), so the card keeps
+// its height from day to day; a stretch only "asleep" sits in Light's row as there. A night without stages has none and
+// is one plain lane. No joins between rows as the hypnogram has: at a day's scale a night's dozens of changes would fill
+// the rows with grey lines, the barcode again.
+const ROW = 13, BH = 8;
+const rows = computed(() => (props.tl.sleep.some((s) => s.k !== "asleep") ? LANES : []));
 const lanes = computed<Lane[]>(() => {
   const out: Lane[] = [];
   let y = P.t;
   const add = (key: Lane["key"], name: string[], what: string, h: number) => { out.push({ key, name, what, y, h }); y += h + GAP; };
-  // the night that ended this morning (the day's sleep is the night before it, as everywhere), named so
-  if (props.tl.sleep.length) add("sleep", ["Last", "night"], "Last night's sleep", 20);
-  if (props.tl.steps.length) add("steps", ["Steps"], "Steps", 34);
-  if (props.tl.hr.length) add("heart", ["Heart"], "Heart rate", 34);
+  // the night that ended this morning (the day's sleep is the night before it, as everywhere); with stages its rows name themselves
+  if (props.tl.sleep.length) add("sleep", rows.value.length ? [] : ["Sleep"], "Last night's sleep", rows.value.length ? rows.value.length * ROW : BH + 4);
+  if (props.tl.steps.length) add("steps", ["Steps"], "Steps", 36);
+  if (props.tl.hr.length) add("heart", ["Heart", "rate"], "Heart rate", 40);
   return out;
 });
 const lane = (k: Lane["key"]) => lanes.value.find((l) => l.key === k);
@@ -41,7 +50,12 @@ const sx = (t: number) => P.l + ((t - props.tl.from) / Math.max(1, props.tl.to -
 const hourW = computed(() => sx(props.tl.from + 3600_000) - sx(props.tl.from));
 const t = (ms: number) => fmt.value.time(new Date(ms).toISOString());
 
-const sleepBlocks = computed(() => { const l = lane("sleep"); return l ? props.tl.sleep.map((s) => ({ ...s, x: sx(s.a), w: Math.max(1.5, sx(s.b) - sx(s.a)), y: l.y, h: l.h })) : []; });
+const sleepRows = computed(() => { const l = lane("sleep"); return l ? rows.value.map((r, i) => ({ ...r, y: l.y + i * ROW + ROW / 2 })) : []; });
+// a stretch at least 2px wide, so a few minutes awake still shows
+const sleepBlocks = computed(() => {
+  const l = lane("sleep"); if (!l) return [];
+  return props.tl.sleep.map((s) => ({ ...s, x: sx(s.a), w: Math.max(2, sx(s.b) - sx(s.a)), y: rows.value.length ? l.y + laneOf(s.k) * ROW + (ROW - BH) / 2 : l.y + 2, h: BH }));
+});
 const stepBars = computed(() => {
   const l = lane("steps"); if (!l) return [];
   const top = Math.max(1, ...props.tl.steps.map((s) => s.value)), bw = Math.max(2, Math.min(14, hourW.value * 0.6));
@@ -56,17 +70,8 @@ const hrPath = computed(() => {
 });
 // each session's span as on the day charts (chartShade.ts: at least 8px wide, so a 5-minute walk can still be tapped)
 const shades = computed(() => props.sessions.filter((s) => s.b > s.a && s.b > props.tl.from && s.a < props.tl.to).map((s) => ({ ...s, ...shadeSpan(sx(Math.max(s.a, props.tl.from)), sx(Math.min(s.b, props.tl.to))) })));
-// the day's own data first (steps and heart rate share the day charts' colour, so one swatch names what is drawn), as
-// Steps' and Heart's day legends start; then the stages the night's lane shows, in its order, and a colour per kind of session
-const dataName = computed(() => { const st = props.tl.steps.length > 0, hr = props.tl.hr.length > 0; return st && hr ? "Steps and heart rate" : st ? "Steps" : hr ? "Heart rate" : ""; });
-// only when a stage or session swatch follows: alone, the lane names already say what is drawn (as the day charts hide theirs)
-const legend = computed(() => {
-  const rest = [
-    ...(["awake", "rem", "light", "deep", "asleep"] as const).filter((k) => props.tl.sleep.some((s) => s.k === k)).map((k) => ({ color: segColor(k), name: SEG_NAME[k] })),
-    ...legendOf(shades.value),
-  ];
-  return rest.length ? [...(dataName.value ? [{ color: DAY_DATA_COLOR, name: dataName.value }] : []), ...rest] : [];
-});
+// the lanes and the night's rows are named on the left, so the legend names only the shaded sessions' colours
+const legend = computed(() => legendOf(shades.value));
 const xt = computed(() => dayHours(props.day, fmt.value));
 
 // the tip: what the band read in the hour under the pointer (the night's stage, the steps, the heart rate), the first in
@@ -81,7 +86,7 @@ const tip = computed(() => {
   const at = hover.value; if (at == null) return null;
   const h0 = new Date(at); h0.setMinutes(0, 0, 0);
   const a = h0.getTime(), parts: string[] = [];
-  const seg = props.tl.sleep.find((s) => at >= s.a && at < s.b); if (seg) parts.push(SEG_NAME[seg.k]);
+  const seg = props.tl.sleep.find((s) => at >= s.a && at < s.b); if (seg) parts.push(seg.k === "awake" || seg.k === "asleep" ? SEG_NAME[seg.k] : `${SEG_NAME[seg.k]} sleep`);
   const st = props.tl.steps.find((s) => s.a === a); if (st) parts.push(`${fmt.value.num(st.value, 0)} steps`);
   const near = props.tl.hr.reduce<[number, number] | null>((m, p) => (Math.abs(p[0] - at) <= 10 * 60000 && (!m || Math.abs(p[0] - at) < Math.abs(m[0] - at)) ? p : m), null); if (near) parts.push(`${fmt.value.num(near[1], 0)} bpm`);
   return parts.length ? { x: sx(at), head: parts[0]!, rest: [...parts.slice(1), `${t(a)}-${t(a + 3600_000)}`] } : null;
@@ -97,6 +102,8 @@ const tip = computed(() => {
         <text class="ax" :y="l.y + l.h / 2 + 3 - ((l.name.length - 1) * LINE) / 2" text-anchor="end"><tspan v-for="(w, i) in l.name" :key="w" :x="P.l - 6" :dy="i ? LINE : 0">{{ w }}</tspan></text>
         <line v-if="l.key !== 'sleep'" class="gl" :x1="P.l" :x2="W - P.r" :y1="l.y + l.h" :y2="l.y + l.h" />
       </g>
+      <!-- the night's rows: each stage's name and a faint line through its row, as the Sleep tab's hypnogram -->
+      <g v-for="r in sleepRows" :key="r.k" pointer-events="none"><line class="gl" :x1="P.l" :x2="W - P.r" :y1="r.y" :y2="r.y" /><text class="ax" :x="P.l - 6" :y="r.y + 3" text-anchor="end">{{ r.name }}</text></g>
       <g pointer-events="none">
         <rect v-for="(b, i) in sleepBlocks" :key="'z' + i" :x="b.x" :y="b.y" :width="b.w" :height="b.h" rx="2" :style="{ fill: segColor(b.k) }" />
         <rect v-for="(b, i) in stepBars" :key="'s' + i" :x="b.x" :y="b.y" :width="b.w" :height="b.h" :rx="b.rx" :style="{ fill: DAY_DATA_COLOR }" />

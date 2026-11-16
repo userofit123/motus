@@ -124,9 +124,11 @@ hr.sep { border: 0; border-top: 1px solid var(--ol); margin: 14px 0; }
 .wstats .wlb { display: flex; align-items: center; gap: 4px; font-size: var(--fs-sm); color: var(--tx2); white-space: nowrap; }
 .wstats .wlb svg { color: var(--acc); flex: none; }
 /* a tile that opens something (the Calendar's day tiles, Stats → Sleep's nights): the rows' hover tint and a chevron at
-   the end of its label */
-.wstats .ws.click { border-radius: var(--r-sm); cursor: pointer; }
-.wstats .ws.click:hover { background: color-mix(in srgb, var(--tx) 3%, transparent); }
+   the end of its label. The tint is rounded on a layer of its own inside the tile's line: rounding the tile itself bent
+   the line between tiles at its ends (M-252) */
+.wstats .ws.click { position: relative; isolation: isolate; cursor: pointer; }
+.wstats .ws.click::before { content: ""; position: absolute; inset: 0; z-index: -1; border-radius: var(--r-sm); pointer-events: none; }
+.wstats .ws.click:hover::before { background: color-mix(in srgb, var(--tx) 3%, transparent); }
 .wstats .wlb .wgo { margin-inline-start: auto; color: var(--tx2); }
 /* a tile is (block - gaps and lines) / tiles; the value may take a tile / 5.6, room for about 5.6 characters' widths */
 .wstats .wv { font-size: clamp(var(--fs-lg), calc((100cqi - 4 * var(--hg)) / 16.8), calc(var(--fs-lg) * 1.25)); font-weight: 650; line-height: 1.2; font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -146,6 +148,8 @@ hr.sep { border: 0; border-top: 1px solid var(--ol); margin: 14px 0; }
   .wstats, .wstats.n4 { grid-auto-flow: row; grid-template-columns: minmax(0, 1fr) auto auto; column-gap: var(--cpx); row-gap: var(--tdy); align-items: baseline; }
   .wstats.plain { grid-template-columns: minmax(0, 1fr) auto; }
   .wstats .ws { display: contents; }
+  /* a tile with no box of its own would make its tint a cell of the grid */
+  .wstats .ws.click::before { content: none; }
   .wstats .wlb { align-self: center; }
   .wstats .wv, .wstats.n4 .wv { font-size: var(--fs-lg); text-align: end; }
   .wstats .wd { text-align: end; }
