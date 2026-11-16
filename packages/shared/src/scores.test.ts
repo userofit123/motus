@@ -32,6 +32,11 @@ describe("health scores", () => {
     expect(s.weakest).toBe("duration");
   });
 
+  it("counts the nights under and over the hours, so the line can say which", () => {
+    const s = sleepScore([night(6, 6.5), night(6, 6.5), night(10, 10.5), night(8, 8.5)], 30)!;
+    expect(s.parts[0]).toMatchObject({ value: 1, target: 4, extra: { short: 2, long: 1 } });
+  });
+
   it("counts a night off its usual times as irregular", () => {
     const s = sleepScore([night(8, 8.5), night(8, 8.5), night(8, 8.5), night(8, 8.5, 840)], 30)!;
     expect(s.parts.find((p) => p.key === "regularity")!.value).toBe(3);

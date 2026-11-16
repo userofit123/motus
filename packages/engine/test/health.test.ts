@@ -698,18 +698,22 @@ describe("readiness", () => {
   it("takes the training load as a part, and says in one line why", () => {
     const trend = (week: number, usual: number) => ({ week, usual, ratio: Math.round((week / usual) * 100) / 100, state: null });
     const tired = readiness([P("sleep", 5, 7), P("restingHr", 60.5, 55), P("hrv", 50, 50)]);
-    expect(tired.why).toBe("Short sleep and high resting heart rate: take it easier.");
-    expect(readiness([P("sleep", 7, 7), P("hrv", 50, 50)]).why).toBe("Everything as usual: train as planned.");
+    expect(tired.why).toBe("You slept less than usual last night and your resting heart rate was higher than usual today: keep today's training light.");
+    expect(readiness([P("sleep", 7, 7), P("hrv", 50, 50)]).why).toBe("Your sleep and heart are close to your usual: train as planned.");
     // a week within the steady range (0.8-1.3 times the usual) moves nothing
     expect(readiness([P("sleep", 7, 7), P("hrv", 50, 50)], trend(720, 600))).toMatchObject({ score: 70 });
     // a week half again as heavy as usual: 0.2 beyond 1.3, -10
     const heavy = readiness([P("sleep", 7, 7), P("hrv", 50, 50)], trend(900, 600));
-    expect(heavy).toMatchObject({ score: 60, label: "Normal", why: "A heavy week of training: keep it moderate." });
+    expect(heavy).toMatchObject({ score: 60, label: "Normal", why: "You trained a lot more than usual in the last 7 days: keep today's training moderate." });
     // a Normal day lowered by its body parts reads the same way, never "train as planned" after a reason against it
-    expect(readiness([P("sleep", 6.5, 7), P("hrv", 50, 50)]).why).toBe("Short sleep: keep it moderate.");
+    expect(readiness([P("sleep", 6.5, 7), P("hrv", 50, 50)]).why).toBe("You slept less than usual last night: keep today's training moderate.");
     expect(heavy.parts.at(-1)).toEqual({ key: "load", value: 900, baseline: 600, change: 50, effect: "down" });
     // opposite directions read with "but"
-    expect(readiness([P("sleep", 8, 7), P("hrv", 50, 50)], trend(900, 600)).why).toBe("A long sleep but a heavy week of training: train as planned.");
+    expect(readiness([P("sleep", 8, 7), P("hrv", 50, 50)], trend(900, 600)).why).toBe("You slept longer than usual last night but trained a lot more than usual in the last 7 days: train as planned.");
+    // a part from yesterday (the band hasn't synced today) says so, in the line and on the part
+    const old = readiness([{ ...P("sleep", 5, 7), ago: 1 }, P("hrv", 50, 50)]);
+    expect(old.why).toBe("You slept less than usual the night before last: keep today's training moderate.");
+    expect(old.parts[0]).toMatchObject({ key: "sleep", ago: 1 });
     // the load alone doesn't make a score
     expect(readiness([P("sleep", 7, 7)], trend(900, 600))).toMatchObject({ score: null, why: null });
   });
@@ -774,7 +778,8 @@ describe("readiness", () => {
     expect(r).toMatchObject({ score: 80, label: "Ready", date: day(0) });
     expect(r.parts).toEqual([
       { key: "sleep", value: 8, baseline: 7, change: 60, effect: "up" },
-      { key: "restingHr", value: 55, baseline: 55, change: 0, effect: "flat" },
+      // yesterday's, since today's isn't in yet: the row and the line say "yesterday"
+      { key: "restingHr", value: 55, baseline: 55, change: 0, effect: "flat", ago: 1 },
     ]);
   });
 });

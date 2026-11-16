@@ -171,7 +171,7 @@ const loadRow = computed(() => {
   // the status as What stands out's rows show it: an icon for which way it went, in the same tone as the result
   const icon = pct == null ? "clock" : t.state === "lighter" ? "arrowDown" : t.state === "steady" ? "check" : "arrowUp";
   return { icon, t: t.state ? LOAD_STATE[t.state] : "Learning your usual",
-    s: t.ratio == null ? `${fmt.value.num(t.week, 0)} in 7 days · usual after 3 weeks of training` : `${fmt.value.num(t.week, 0)} in 7 days · usual ${fmt.value.num(t.usual, 0)} a week`,
+    s: t.ratio == null ? `${fmt.value.num(t.week, 0)} in the last 7 days · usual known after 3 weeks of training` : `${fmt.value.num(t.week, 0)} in the last 7 days · usual ${fmt.value.num(t.usual, 0)} a week`,
     rv: pct == null ? "Learning" : t.state === "steady" ? "As usual" : `${pct < 0 ? "-" : "+"}${Math.abs(pct)}%`,
     tone: pct == null ? "muted" : t.state === "lighter" ? "pos" : t.state === "steady" ? undefined : "neg" };
 });

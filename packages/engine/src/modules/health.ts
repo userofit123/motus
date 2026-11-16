@@ -266,17 +266,21 @@ const median = (a: number[]) => {
 };
 const BASELINE_DAYS = 28, MIN_BASELINE = 7;
 type Effect = "up" | "down" | "flat";
-export interface ReadinessPart { key: "sleep" | "restingHr" | "hrv" | "load"; value: number; baseline: number; change: number; effect: Effect }
+export interface ReadinessPart { key: "sleep" | "restingHr" | "hrv" | "load"; value: number; baseline: number; change: number; effect: Effect; ago?: 1 }
 type BodyKey = Exclude<ReadinessPart["key"], "load">;
-// the one line that says why: the words for a part that raised or lowered the score, and what the label advises
+// the one line that says why, cause then advice: what each part that raised or lowered the score did, with the time it
+// covers (ago 1: the band hasn't synced today, so the value is yesterday's), then what the label advises
+const WHEN: Record<BodyKey, [string, string]> = { sleep: ["last night", "the night before last"], restingHr: ["today", "yesterday"], hrv: ["today", "yesterday"] };
 const WHY: Record<ReadinessPart["key"], { up: string; down: string }> = {
-  sleep: { up: "a long sleep", down: "short sleep" }, restingHr: { up: "low resting heart rate", down: "high resting heart rate" },
-  hrv: { up: "high HRV", down: "low HRV" }, load: { up: "a lighter week", down: "a heavy week of training" },
+  sleep: { up: "you slept longer than usual", down: "you slept less than usual" },
+  restingHr: { up: "your resting heart rate was lower than usual", down: "your resting heart rate was higher than usual" },
+  hrv: { up: "your HRV was higher than usual", down: "your HRV was lower than usual" },
+  load: { up: "you trained less than usual in the last 7 days", down: "you trained a lot more than usual in the last 7 days" },
 };
-const ADVICE = { Ready: "a good day to train hard", Normal: "train as planned", "Take it easy": "take it easier" } as const;
+const ADVICE = { Ready: "a good day to train hard", Normal: "train as planned", "Take it easy": "keep today's training light" } as const;
 // Normal when everything named pulled the score down: "train as planned" would contradict the reasons before it
-const NORMAL_DOWN = "keep it moderate";
-export interface ReadinessBuilding { key: BodyKey; value: number; days: number }
+const NORMAL_DOWN = "keep today's training moderate";
+export interface ReadinessBuilding { key: BodyKey; value: number; days: number; ago?: 1 }
 /**
  * How ready for training the body looks today, from last night's sleep, today's resting heart rate and HRV, each against
  * the person's own usual (the median of the 28 days before, with at least 7 of them). Kept simple so it can be explained:
@@ -289,17 +293,20 @@ export interface ReadinessBuilding { key: BodyKey; value: number; days: number }
  *   points, as Stats → Heart's card calls it); above, -1 per 2 % beyond 1.3 (within -15); below, +1 per 4 % under 0.8 (within +5);
  *   clamped to 0-100. Ready from 75, Normal from 50, else Take it easy. No score with fewer than 2 body parts (sleep,
  *   resting heart rate, HRV): the load alone says nothing about how the body has recovered.
- * why: one line from the (at most two) parts that moved the score most, then what the label advises ("Short sleep and
- * high resting heart rate: take it easier"; a Normal day whose named parts all lowered it: "keep it moderate"); M-247's Recovery score reuses this rather than working out its own.
+ * why: one line from the (at most two) parts that moved the score most, each with the time it covers, then what the label
+ * advises ("You slept less than usual last night and your resting heart rate was higher than usual today: keep today's
+ * training light"; a Normal day whose named parts all lowered it: "keep today's training moderate"); M-247's Recovery
+ * score reuses this rather than working out its own. ago: a part's value is yesterday's (absent: today's).
  * change: sleep in minutes, resting heart rate and HRV in % (signed). effect: which way the part moves the score; flat
  * within a small margin (15 min of sleep, 3 % resting heart rate, 5 % HRV) that is everyday noise.
  * building: the parts with today's value but too few days for a usual yet (days of the `need`), so Home can show the
  * baseline filling up instead of nothing while a new band's first weeks come in.
  */
-export function readiness(parts: { key: BodyKey; value: number; history: number[] }[], load: LoadTrend | null = null): {
+export function readiness(parts: { key: BodyKey; value: number; history: number[]; ago?: 1 }[], load: LoadTrend | null = null): {
   score: number | null; label: "Ready" | "Normal" | "Take it easy" | null; why: string | null; parts: ReadinessPart[]; building: ReadinessBuilding[]; need: number;
 } {
   const moved = new Map<ReadinessPart["key"], number>();
+  const ago = new Map<ReadinessPart["key"], 1>();
   const clamp = (x: number, a: number, b: number) => Math.max(a, Math.min(b, x));
   const out: ReadinessPart[] = [], building: ReadinessBuilding[] = [];
   let score = 70;
@@ -308,7 +315,7 @@ export function readiness(parts: { key: BodyKey; value: number; history: number[
     const base = enough ? median(p.history)! : 0;
     // a full history with a zero usual is unusable, not still filling up: skip it rather than promise "usual in 1 day" forever
     if (!base && enough) continue;
-    if (!base) { building.push({ key: p.key, value: p.value, days: Math.min(p.history.length, MIN_BASELINE - 1) }); continue; }
+    if (!base) { building.push({ key: p.key, value: p.value, days: Math.min(p.history.length, MIN_BASELINE - 1), ...(p.ago ? { ago: p.ago } : {}) }); continue; }
     let change: number, pts: number, flat: boolean;
     if (p.key === "sleep") {
       change = Math.round((p.value - base) * 60);
@@ -321,7 +328,8 @@ export function readiness(parts: { key: BodyKey; value: number; history: number[
     }
     score += pts;
     if (!flat) moved.set(p.key, pts);
-    out.push({ key: p.key, value: p.value, baseline: Math.round(base * 10) / 10, change, effect: flat ? "flat" : pts > 0 ? "up" : "down" });
+    if (p.ago) ago.set(p.key, p.ago);
+    out.push({ key: p.key, value: p.value, baseline: Math.round(base * 10) / 10, change, effect: flat ? "flat" : pts > 0 ? "up" : "down", ...(p.ago ? { ago: p.ago } : {}) });
   }
   const body = out.length;
   if (load?.ratio != null) {
@@ -335,14 +343,18 @@ export function readiness(parts: { key: BodyKey; value: number; history: number[
   if (body < 2) return { score: null, label: null, why: null, parts: out, building, need: MIN_BASELINE };
   const s = Math.round(clamp(score, 0, 100));
   const label = s >= 75 ? "Ready" : s >= 50 ? "Normal" : "Take it easy";
-  return { score: s, label, why: whyLine(moved, label), parts: out, building, need: MIN_BASELINE };
+  return { score: s, label, why: whyLine(moved, ago, label), parts: out, building, need: MIN_BASELINE };
 }
-/** The readiness line: the one or two parts that moved the score most ("and" when they agree, "but" when not), then the advice */
-function whyLine(moved: Map<ReadinessPart["key"], number>, label: keyof typeof ADVICE): string {
+/** The readiness line: the one or two parts that moved the score most ("and" when they agree, "but" when not), each with
+ *  its time, then the advice: "You trained a lot more than usual in the last 7 days and slept less than usual last night:
+ *  keep today's training light." */
+function whyLine(moved: Map<ReadinessPart["key"], number>, ago: Map<ReadinessPart["key"], 1>, label: keyof typeof ADVICE): string {
   const top = [...moved].sort((a, b) => Math.abs(b[1]) - Math.abs(a[1])).slice(0, 2);
-  if (!top.length) return `Everything as usual: ${ADVICE[label]}.`;
-  const word = ([k, p]: [ReadinessPart["key"], number]) => WHY[k][p > 0 ? "up" : "down"];
-  const two = top[1] ? `${word(top[0]!)} ${(top[0]![1] > 0) === (top[1][1] > 0) ? "and" : "but"} ${word(top[1])}` : word(top[0]!);
+  if (!top.length) return `Your sleep and heart are close to your usual: ${ADVICE[label]}.`;
+  const word = ([k, p]: [ReadinessPart["key"], number]) => `${WHY[k][p > 0 ? "up" : "down"]}${k === "load" ? "" : ` ${WHEN[k][ago.has(k) ? 1 : 0]}`}`;
+  // the second "you" goes when both start with it: "you trained ... and slept ..."
+  const second = top[1] ? word(top[1]).replace(/^you (?=\S+ )/, word(top[0]!).startsWith("you ") ? "" : "you ") : "";
+  const two = top[1] ? `${word(top[0]!)} ${(top[0]![1] > 0) === (top[1][1] > 0) ? "and" : "but"} ${second}` : word(top[0]!);
   const advice = label === "Normal" && top.every(([, p]) => p < 0) ? NORMAL_DOWN : ADVICE[label];
   return `${two[0]!.toUpperCase()}${two.slice(1)}: ${advice}.`;
 }
@@ -967,7 +979,8 @@ export function healthRoutes(r: Router) {
       const counts = (v: number) => v > 0 && (key !== "sleep" || isNight(v));
       if (!counts(now.value)) return [];
       const from = shift(now.date, -BASELINE_DAYS);
-      return [{ key, value: now.value, history: mine.filter((x) => x.date >= from && x.date < now.date && counts(x.value)).map((x) => x.value) }];
+      return [{ key, value: now.value, history: mine.filter((x) => x.date >= from && x.date < now.date && counts(x.value)).map((x) => x.value),
+        ...(now.date === today ? {} : { ago: 1 as const }) }];
     });
     const load = await trainingLoad(ctx, today, today, tzOf(qs));
     return { ...readiness(parts, load?.trend ?? null), date: today };

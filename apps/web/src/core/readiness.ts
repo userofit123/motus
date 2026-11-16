@@ -13,14 +13,21 @@ export const READY_PART: Record<ReadyKey, { icon: string; t: string }> = {
   sleep: { icon: "moon", t: "Sleep" }, restingHr: { icon: "heartPulse", t: "Resting heart rate" }, hrv: { icon: "wave", t: "HRV" }, load: { icon: "load", t: "Training load" },
 };
 /** A part's value as its row writes it: sleep in hours (as the day's log keeps it) as time asleep; Training load (a
- *  feature) as the last 7 days' load, since a load has no unit and each number says what span it covers */
+ *  feature) as a load, which has no unit */
 export function readyValue(k: ReadyKey, v: number, num: Num): string {
   switch (k) {
     case "sleep": return mins(v * 60);
     case "restingHr": return `${Math.round(v)} bpm`;
     case "hrv": return `${Math.round(v)} ms`;
-    case "load": return `${num(v)} in 7 days`;
+    case "load": return num(v);
   }
+}
+/** The time a part's value covers, so each row says it: last night's sleep, today's resting heart rate and HRV (ago 1:
+ *  the band hasn't synced today, so they are the day before's), the last 7 days' training load */
+export function readyWhen(k: ReadyKey, ago?: 1): string {
+  if (k === "load") return "in the last 7 days";
+  if (k === "sleep") return ago ? "the night before last" : "last night";
+  return ago ? "yesterday" : "today";
 }
 /** The parts in the score's order: sleep, resting heart rate, HRV, then the training load */
 export const READY_ORDER: ReadyKey[] = ["sleep", "restingHr", "hrv", "load"];
@@ -28,16 +35,17 @@ export const READY_ORDER: ReadyKey[] = ["sleep", "restingHr", "hrv", "load"];
 /** Every part of a readiness as a row (with `extra` rows a screen adds, e.g. Home's short night), in READY_ORDER */
 export function readinessRows(r: Readiness, num: Num, extra: ReadyRow[] = []): ReadyRow[] {
   const f = (k: ReadyKey, v: number) => readyValue(k, v, num);
+  const now = (k: ReadyKey, v: number, ago?: 1) => `${f(k, v)} ${readyWhen(k, ago)}`;
   const ready = r.parts.filter((x) => x.value != null).map((x): ReadyRow => {
     const p = READY_PART[x.key], d = x.baseline != null ? x.value! - x.baseline : 0;
-    return { key: x.key, icon: p.icon, t: p.t, s: x.baseline != null ? `${f(x.key, x.value!)} · usual ${x.key === "load" ? `${num(x.baseline)} a week` : f(x.key, x.baseline)}` : f(x.key, x.value!),
+    return { key: x.key, icon: p.icon, t: p.t, s: x.baseline != null ? `${now(x.key, x.value!, x.ago)} · usual ${x.key === "load" ? `${num(x.baseline)} a week` : f(x.key, x.baseline)}` : now(x.key, x.value!, x.ago),
       // the load's points mean nothing alone: how far off is a share of the usual, as Stats → Heart's card says it
       r: x.effect === "flat" || x.baseline == null ? "As usual" : x.key === "load" ? `${x.change! < 0 ? "-" : "+"}${Math.abs(Math.round(x.change!))}%` : `${d < 0 ? "-" : "+"}${f(x.key, Math.abs(d))}`,
       tone: x.effect === "up" ? "pos" : x.effect === "down" ? "neg" : undefined };
   });
   const building = (r.building ?? []).map((x): ReadyRow => {
     const left = (r.need ?? 7) - x.days;
-    return { key: x.key, icon: READY_PART[x.key].icon, t: READY_PART[x.key].t, s: `${f(x.key, x.value)} · usual in ${left} ${left === 1 ? "day" : "days"}`, r: "Learning", tone: "muted" };
+    return { key: x.key, icon: READY_PART[x.key].icon, t: READY_PART[x.key].t, s: `${now(x.key, x.value, x.ago)} · usual known in ${left} ${left === 1 ? "day" : "days"}`, r: "Learning", tone: "muted" };
   });
   return [...ready, ...building, ...extra].sort((a, b) => READY_ORDER.indexOf(a.key) - READY_ORDER.indexOf(b.key));
 }

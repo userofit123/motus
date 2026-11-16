@@ -82,8 +82,8 @@ export interface ScorePart {
   /** what was counted and what the guideline asks: nights in range / nights, minutes / 150, steps a day / target... */
   value: number;
   target: number;
-  /** the part's own detail: the average night (minutes), the average efficiency (0-1), moderate and vigorous minutes,
-   *  sets per group */
+  /** the part's own detail: the average night (minutes) and the nights under and over the hours, the average efficiency
+   *  (0-1), moderate and vigorous minutes, sets per group */
   extra?: Record<string, number>;
 }
 export interface Score {
@@ -112,21 +112,22 @@ const median = (a: number[]) => { const s = [...a].sort((x, y) => x - y), m = Ma
 
 /**
  * Sleep over the week's full nights (at least MIN_NIGHTS):
- *   duration 50: the share of nights within the recommended hours for your age;
+ *   duration 50: the share of nights within the recommended hours for your age (extra: how many were under, over);
  *   efficiency 25: the share of nights asleep for 85 % or more of the time in bed;
  *   regularity 25: the share of nights whose bed and wake times were both within an hour of the week's usual (median).
  */
 export function sleepScore(nights: readonly ScoreNight[], age: number | null): Score | null {
   if (nights.length < MIN_NIGHTS) return null;
   const [lo, hi] = sleepRange(age), n = nights.length;
-  const inRange = nights.filter((x) => x.asleepMin >= lo * 60 && x.asleepMin <= hi * 60).length;
+  const short = nights.filter((x) => x.asleepMin < lo * 60).length, long = nights.filter((x) => x.asleepMin > hi * 60).length;
+  const inRange = n - short - long;
   const effs = nights.map((x) => (x.inBedMin > 0 ? Math.min(1, x.asleepMin / x.inBedMin) : 0));
   const good = effs.filter((e) => e >= GOOD_EFFICIENCY).length;
   const bed = median(nights.map((x) => x.bedAt)), wake = median(nights.map((x) => x.wakeAt));
   const regular = nights.filter((x) => Math.abs(x.bedAt - bed) <= REGULAR_MIN && Math.abs(x.wakeAt - wake) <= REGULAR_MIN).length;
   const avg = Math.round(nights.reduce((t, x) => t + x.asleepMin, 0) / n);
   return total("sleep", [
-    { key: "duration", weight: SLEEP_WEIGHTS.duration, share: inRange / n, value: inRange, target: n, extra: { avgMin: avg, lo, hi } },
+    { key: "duration", weight: SLEEP_WEIGHTS.duration, share: inRange / n, value: inRange, target: n, extra: { avgMin: avg, lo, hi, short, long } },
     { key: "efficiency", weight: SLEEP_WEIGHTS.efficiency, share: good / n, value: good, target: n, extra: { avg: Math.round((effs.reduce((t, e) => t + e, 0) / n) * 100) / 100 } },
     { key: "regularity", weight: SLEEP_WEIGHTS.regularity, share: regular / n, value: regular, target: n },
   ]);

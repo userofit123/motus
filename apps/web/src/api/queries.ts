@@ -100,9 +100,9 @@ export const useHealthDay = (date: MaybeRef<string | null>, enabled: MaybeRef<bo
   queryFn: () => api.get<HealthDay>(`/health/day/${unref(date)}`), enabled: computed(() => !!unref(date) && unref(enabled)), ...keepOpt(opts) });
 /** How ready for training today, from last night's sleep, resting heart rate and HRV against your usual (baseline), and
  * with Training load on the last 7 days' load against the 4-week average (load: value and baseline are weeks' loads) */
-export interface ReadinessPart { key: "sleep" | "restingHr" | "hrv" | "load"; value: number | null; baseline: number | null; change: number | null; effect: "up" | "down" | "flat" }
+export interface ReadinessPart { key: "sleep" | "restingHr" | "hrv" | "load"; value: number | null; baseline: number | null; change: number | null; effect: "up" | "down" | "flat"; ago?: 1 }
 // building: parts with today's value but fewer than `need` days for a usual yet (never the load, whose 4 weeks fill on their own)
-export interface ReadinessBuilding { key: Exclude<ReadinessPart["key"], "load">; value: number; days: number }
+export interface ReadinessBuilding { key: Exclude<ReadinessPart["key"], "load">; value: number; days: number; ago?: 1 }
 // why: one line from the parts that moved the score most and what the label advises (an older server sends none)
 export interface Readiness { score: number | null; label: "Ready" | "Normal" | "Take it easy" | null; why?: string | null; parts: ReadinessPart[]; building: ReadinessBuilding[]; need: number; date: string }
 // under "stats": a workout, activity, band sync or settings change (the Training load feature, the max heart rate) all touch stats
