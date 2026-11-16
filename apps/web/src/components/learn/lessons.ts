@@ -1,7 +1,7 @@
 // Lessons behind the learn button (graduation cap) in a block's header: what a number means and the research it comes
 // from. Research-based explanations live here, never as text under a chart, so the blocks show only the data.
 // A new lesson is one more entry; the sheet lays every lesson out the same way.
-import { WEEKLY_SET_RANGE, SLEEP_WEIGHTS, ACTIVITY_WEIGHTS, STRENGTH_WEIGHTS, WEEKLY_ACTIVE_MIN, STRENGTH_DAYS, GOOD_EFFICIENCY, MODERATE_FROM, VIGOROUS_FROM } from "@motus/shared";
+import { WEEKLY_SET_RANGE, SLEEP_WEIGHTS, ACTIVITY_WEIGHTS, STRENGTH_WEIGHTS, WEEKLY_ACTIVE_MIN, STRENGTH_DAYS, GOOD_EFFICIENCY, MODERATE_FROM, VIGOROUS_FROM, SET_LOAD, MINUTE_LOAD, MIN_LOAD_DAYS, HR_ZONES, ZONE_WEIGHTS } from "@motus/shared";
 
 /** `ref`: a source's full reference, under what it found */
 export type LessonRow = { icon: string; t: string; s?: string; r?: string; ok?: boolean; ref?: string };
@@ -95,6 +95,24 @@ export const LESSONS = {
       { heading: "How Motus counts", rows: [
         { icon: "calendar", t: "Strength days", s: `Days with hard sets, against ${STRENGTH_DAYS} a week`, r: points(STRENGTH_WEIGHTS.days) },
         { icon: "activity", t: `Muscle groups with ${lo}+ hard sets`, s: "Chest, back, shoulders, arms, core and legs", r: points(STRENGTH_WEIGHTS.groups) },
+      ] },
+    ],
+  },
+  // training load has no research source of its own to cite here: the lesson says what a point is and how it is compared
+  trainingLoad: {
+    title: "Training load",
+    intro: "How much training your body took in, as points. One point is one minute at a very light heart rate; harder minutes count more, so a hard session adds many more points than an easy one. Motus compares your last 7 days with your usual week.",
+    sections: [
+      { heading: "How Motus counts", rows: [
+        ...HR_ZONES.map((z, i) => ({ icon: "heart", t: `${z.name} heart rate`, s: "Each minute", r: i === 0 ? "1 point" : `${ZONE_WEIGHTS[i]} points` })),
+        { icon: "dumbbell", t: "Done sets", s: "When that is more than the heart rate gives, as heart rate drops between sets", r: `${SET_LOAD} points each` },
+        { icon: "activity", t: "Activity without heart rate", s: "Each minute", r: `${MINUTE_LOAD} points` },
+      ] },
+      { heading: "Against your usual", rows: [
+        { icon: "calendar", t: "Last 7 days", s: "Today and the 6 days before it" },
+        { icon: "stats", t: "Your usual week", s: `The average week of the last 4, after ${MIN_LOAD_DAYS} days of training` },
+        { icon: "arrowUp", t: "More than 30% above usual", s: "A big jump: keep the next day or two lighter" },
+        { icon: "arrowDown", t: "More than 20% below usual", s: "A lighter week, which raises your readiness" },
       ] },
     ],
   },

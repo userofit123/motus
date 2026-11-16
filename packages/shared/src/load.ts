@@ -53,6 +53,6 @@ export function loadTrend(days: readonly { date: string; load: number }[], today
   return { week, usual, ratio, state };
 }
 
-/** How a load is worked out, in one plain sentence for the screens that show it (TRIMP-style zone minutes, or 4 per set
- *  when that is more; acute:chronic 7:28) */
-export const LOAD_METHOD = "Minutes in each heart rate zone, weighted by how hard the zone is (sets count when that is more); your last 7 days against your usual week.";
+/** What a load point is, in one plain sentence for the screens that show it (TRIMP-style zone minutes, or 4 per set
+ *  when that is more; the full lesson is trainingLoad in the learn sheet) */
+export const LOAD_METHOD = "Training load is counted in points: a minute at a very light heart rate is 1 point, a minute at maximum is 5.";

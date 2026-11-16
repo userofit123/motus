@@ -19,6 +19,7 @@ import DaySessionList from "./DaySessionList.vue";
 import BarChart from "../BarChart.vue";
 import { useFmt, activityIcon } from "../../core/format";
 import Icon from "../Icon.vue";
+import LearnButton from "../learn/LearnButton.vue";
 import { adviceWord, useDevice } from "../../native/health";
 import LineChart from "../LineChart.vue";
 import Sparkline from "../Sparkline.vue";
@@ -172,7 +173,7 @@ const loadRow = computed(() => {
   // the status as What stands out's rows show it: an icon for which way it went, in the same tone as the result
   const icon = pct == null ? "clock" : t.state === "lighter" ? "arrowDown" : t.state === "steady" ? "check" : "arrowUp";
   return { icon, t: t.state ? LOAD_STATE[t.state] : "Learning your usual",
-    s: t.ratio == null ? `${fmt.value.num(t.week, 0)} in the last 7 days · your usual after 3 weeks of training` : `${fmt.value.num(t.week, 0)} in the last 7 days · usual ${fmt.value.num(t.usual, 0)} a week`,
+    s: t.ratio == null ? `${fmt.value.num(t.week, 0)} points in the last 7 days · usual after 3 weeks of training` : `${fmt.value.num(t.week, 0)} points in the last 7 days · usual ${fmt.value.num(t.usual, 0)} points a week`,
     rv: pct == null ? "Learning" : t.state === "steady" ? "As usual" : `${pct < 0 ? "-" : "+"}${Math.abs(pct)}%`,
     tone: pct == null ? "muted" : t.state === "lighter" ? "pos" : t.state === "steady" ? undefined : "neg" };
 });
@@ -243,7 +244,7 @@ const tiles = computed(() => {
 
       <!-- training load: a chart card as the zones', with the comparison as a What stands out row under its title -->
       <div v-if="loadOn && loadHas && loadRow" class="card" :class="{ spt: tiles.length || insights.length || vitals.length || zBars.length }">
-        <div class="lbl hgap">Training load{{ loadPerWeek ? ", by week" : "" }}</div>
+        <div class="lbl hgap"><span class="grow">Training load, points a {{ loadPerWeek ? "week" : "day" }}</span><LearnButton topic="trainingLoad" /></div>
         <div class="list ht-ins">
           <div class="li">
             <Icon :name="loadRow.icon" :size="18" :class="loadRow.tone" />
