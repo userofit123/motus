@@ -15,6 +15,7 @@
 // 80% of the session (releaseOutside) make the session its own activity again with the next read (restored_at), and
 // the figures copied from it (copied) are taken back, so its steps don't count twice.
 import type { Ctx } from "../router";
+import { lockRecords } from "./healthDerive";
 
 const HC = "health_connect";
 
@@ -138,6 +139,9 @@ export async function releaseOutside(ctx: Ctx, kind: "activity" | "workout", id:
  * person edited (edited_at, 047) or unlinked (apart) stays their own. Returns how many.
  */
 export async function linkBandSessions(ctx: Ctx, from: string, to: string): Promise<number> {
+  // the records lock first, as a health read and a restore take it, so the pass's row and the trigger's lock (on the
+  // imported activity's delete) are always taken in the same order and the two can't wait on each other
+  await lockRecords(ctx.q, ctx.userId);
   const before = await linkHistory(ctx);
   return before + await linkRange(ctx, from, to);
 }
