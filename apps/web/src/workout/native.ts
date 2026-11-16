@@ -285,11 +285,13 @@ export type NativeVoiceProblem = "none" | "engine" | "timeout" | "language" | "v
 /** Speaks a voice cue through the phone's own speech in the Android app (MotusWorkoutPlugin.speak), at `level` (0-1,
  *  workout/runtime.ts levelOf). Answers with why it wasn't said (null: it was), once the phone knows; false outside the
  *  app, where the caller uses the browser's. `test`: asked for by hand, so a speech engine that failed a moment ago is
- *  tried again. */
-export function nativeSpeak(text: string, level: number, test = false): Promise<NativeVoiceProblem | null> | false {
+ *  tried again. `pick`: hear that engine and voice instead (Settings' play buttons). */
+export function nativeSpeak(text: string, level: number, test = false, pick?: { engine?: string | null; voice?: string | null }): Promise<NativeVoiceProblem | null> | false {
   const p = plugin("MotusWorkout");
   if (!p || !isNativeApp() || typeof p.speak !== "function") return false;
-  return Promise.resolve(p.speak({ text, level, test })).then(
+  // `pick`: an engine and voice to hear in Settings, said by a one-off engine (Voice.preview), not the cues' own
+  const args = pick ? { text, level, preview: true, engine: pick.engine ?? undefined, voice: pick.voice ?? undefined } : { text, level, test };
+  return Promise.resolve(p.speak(args)).then(
     (r: { problem?: NativeVoiceProblem } | undefined) => r?.problem ?? null,
     // the call itself failed: the app couldn't reach the phone's speech at all (not the engine's fault)
     () => "app" as const);
@@ -300,6 +302,42 @@ export function nativeWarmVoice() {
   const p = plugin("MotusWorkout");
   if (!p || !isNativeApp() || typeof p.warmVoice !== "function") return false;
   Promise.resolve(p.warmVoice()).catch(() => {});
+  return true;
+}
+/** What the Android app knows about the phone's speech (MotusWorkoutPlugin.voiceInfo, Voice.java info): its engines,
+ *  the default, the engine in use and its English voices, and the latest problem. null outside the app, in an older app
+ *  without it, or when the call fails. */
+export interface NativeVoiceInfo {
+  engines: { name: string; label: string }[];
+  defaultEngine?: string | null;
+  engine?: string | null;
+  ready: boolean;
+  starting: boolean;
+  said: boolean;
+  english?: boolean;
+  voice?: string;
+  /** the engine's own voice for its English, before the chosen one: Settings names the others against it */
+  defaultVoice?: string;
+  voices?: { name: string; lang: string; network: boolean; missing: boolean }[];
+  problem?: NativeVoiceProblem;
+}
+export async function nativeVoiceInfo(): Promise<NativeVoiceInfo | null> {
+  const p = plugin("MotusWorkout");
+  if (!p || !isNativeApp() || typeof p.voiceInfo !== "function") return null;
+  try { return (await p.voiceInfo()) as NativeVoiceInfo; } catch { return null; }
+}
+/** Tells the Android app the engine and voice chosen on this phone (null: the phone's default), so the cues with the
+ *  screen locked use them too. */
+export function nativeSetVoice(c: { engine?: string | null; voice?: string | null; voiceEngine?: string | null }) {
+  const p = plugin("MotusWorkout");
+  if (!p || !isNativeApp() || typeof p.setVoice !== "function") return;
+  Promise.resolve(p.setVoice({ engine: c.engine ?? undefined, voice: c.voice ?? undefined, voiceEngine: c.voiceEngine ?? undefined })).catch(() => {});
+}
+/** Opens the phone's Text-to-speech settings from the Android app; false outside it or in an older app. */
+export function nativeOpenSpeechSettings() {
+  const p = plugin("MotusWorkout");
+  if (!p || !isNativeApp() || typeof p.openSpeechSettings !== "function") return false;
+  Promise.resolve(p.openSpeechSettings()).catch(() => {});
   return true;
 }
 /** A vibration through the phone in the Android app (workout/runtime.ts vibrate says why); false outside it. An older

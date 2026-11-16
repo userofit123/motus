@@ -358,7 +358,10 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener2 {
             if (problem != null) r.put("problem", problem);
             call.resolve(r);
         };
-        Voice.say(getContext(), call.getString("text", ""), level == null ? 1f : level.floatValue(), Boolean.TRUE.equals(call.getBoolean("test", false)), heard);
+        float lv = level == null ? 1f : level.floatValue();
+        // `preview`: an engine (`engine`) and voice (`voice`) picked in Settings to hear, not the cues' own
+        if (Boolean.TRUE.equals(call.getBoolean("preview", false))) Voice.preview(getContext(), call.getString("text", ""), lv, call.getString("engine", null), call.getString("voice", null), heard);
+        else Voice.say(getContext(), call.getString("text", ""), lv, Boolean.TRUE.equals(call.getBoolean("test", false)), heard);
         new Handler(Looper.getMainLooper()).postDelayed(() -> heard.done("timeout"), SPEAK_ANSWER_MS);
     }
     private static final long SPEAK_ANSWER_MS = 30_000;
@@ -367,6 +370,33 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener2 {
     @PluginMethod
     public void warmVoice(PluginCall call) {
         Voice.warm(getContext());
+        call.resolve();
+    }
+
+    /** What Settings shows about the phone's speech on this phone (Voice.info): its engines, the choice, the engine in
+     *  use with its English voices, and the latest problem. Starts the engine to find out. */
+    @PluginMethod
+    public void voiceInfo(PluginCall call) {
+        Voice.info(getContext(), call::resolve);
+    }
+
+    /** The engine (`engine`, a package) and voice (`voice`, with `voiceEngine`, the engine that listed it) chosen in
+     *  Settings on this phone; left out for the phone's default. */
+    @PluginMethod
+    public void setVoice(PluginCall call) {
+        Voice.setChoice(getContext(), call.getString("engine", null), call.getString("voice", null), call.getString("voiceEngine", null));
+        call.resolve();
+    }
+
+    /** The phone's Text-to-speech settings (where the engine is chosen and voices are downloaded), else its Settings. */
+    @PluginMethod
+    public void openSpeechSettings(PluginCall call) {
+        Context ctx = getContext();
+        try { ctx.startActivity(new Intent("com.android.settings.TTS_SETTINGS").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); }
+        catch (RuntimeException e) {
+            try { ctx.startActivity(new Intent(android.provider.Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); }
+            catch (RuntimeException e2) { call.reject("no settings"); return; }
+        }
         call.resolve();
     }
 
@@ -664,6 +694,8 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener2 {
     protected void handleOnResume() {
         super.handleOnResume();
         keepRecording();
+        // the person may have fixed the phone's speech settings meanwhile: the next cue tries the engines at once
+        Voice.resumed();
         // the Record screen is still open: listen again (the counter reports its total on registering)
         if (previewWanted && !previewing) previewing = counterSensor() != null && stepsAllowed() && register();
     }

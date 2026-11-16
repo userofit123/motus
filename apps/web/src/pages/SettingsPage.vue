@@ -21,6 +21,7 @@ import { PROGRESSION_MODES, LOWER_AFTER, MISSED_HINT, PROGRESSION_INTRO, RANGE_B
 import PrefRow from "../components/PrefRow.vue";
 import { prefGroups, featurePatch } from "../core/workoutPrefs";
 import { previewVoice } from "../workout/runtime";
+import VoiceRows from "../components/VoiceRows.vue";
 import ChoiceTiles from "../components/ChoiceTiles.vue";
 import Menu from "../components/Menu.vue";
 import BackupSection from "../components/settings/BackupSection.vue";
@@ -211,7 +212,9 @@ await loaded(me);
           </div>
           <template v-for="g in prefs" :key="g.id">
             <div class="sh"><h2>{{ g.title }}</h2></div>
-            <div class="card"><PrefRow v-for="r in g.rows" :key="r.key" :row="r" :value="w[r.key]" :prefs="w" @set="set({ workout: { [r.key]: $event } })" /></div>
+            <div class="card"><template v-for="r in g.rows" :key="r.key"><PrefRow :row="r" :value="w[r.key]" :prefs="w" @set="set({ workout: { [r.key]: $event } })" />
+              <!-- what speaks Voice cues on this device and whether it works, right under their switch while it's on -->
+              <VoiceRows v-if="r.key === 'voice' && w.voice && w.sound" :prefs="w" /></template></div>
           </template>
           <div class="sh"><h2>Progression</h2></div>
           <div class="card">
