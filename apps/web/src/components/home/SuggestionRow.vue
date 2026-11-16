@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // One Home suggestion, the same row in the Suggested block and in its "All" sheet: the figure, what to do and why.
 // A routine opens its page and its calendar button plans it; a muscle (or a gap in your routines) opens the exercises for
-// it and its + starts a new routine. The cross dismisses it, and with it that routine and muscle group, for a week.
+// it and its + starts a new routine. The cross dismisses it, and with it that routine and those muscles, for a week.
 import { muscleName, type HomeSuggestion } from "@motus/shared";
 import { useRouter } from "vue-router";
 import Icon from "../Icon.vue";

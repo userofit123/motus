@@ -319,7 +319,7 @@ const stepDays = computed(() => Array.from({ length: 7 }, (_, i) => {
 // the scale reaches the target too, so its line is always inside the bars' height
 const stepMax = computed(() => Math.max(1, stepGoal.value?.target ?? 0, ...stepDays.value.map((x) => x.n)));
 
-// a dismissed suggestion keeps its routine and muscle group away for a week, so a near-duplicate doesn't take its place;
+// a dismissed suggestion keeps its routine and its muscles away for a week, so a near-duplicate doesn't take its place;
 // the list redraws without waiting for the server
 const hideSuggestion = (x: HomeSuggestion) => {
   const gone = (y: HomeSuggestion) => y.hide.some((k) => x.hide.includes(k));

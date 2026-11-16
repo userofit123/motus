@@ -47,15 +47,17 @@ describe("suggestions", () => {
   }
   const suggest = async () => (await call("GET", "/home")).suggest as any[];
 
-  it("points out a muscle group none of your routines works, at most two gaps", async () => {
+  it("points out a muscle group none of your routines works, at most four gaps", async () => {
     await personWith(["chest"]);
     const sug = await suggest();
     const gaps = sug.filter((x) => x.kind === "gap" || x.kind === "target");
-    // groups in their usual order: back and shoulders are the first ones nothing works
-    expect(gaps.map((x) => x.muscle)).toEqual(["back", "shoulders"]);
+    // whole groups with several muscles first, then the one-muscle ones by their muscle
+    expect(gaps.map((x) => x.muscle)).toEqual(["back", "arms", "legs", "shoulders"]);
     expect(gaps[0].routineId).toBeNull();
     expect(gaps[0].title).toBe("Add exercises for your back");
-    expect(gaps[0].reason).toBe("None of your routines train your back");
+    expect(gaps[0].reason).toBe("None of your routines work your back");
+    expect(gaps[3].title).toBe("Add an exercise for your shoulders");
+    expect(gaps[3].reason).toBe("None of your routines work it");
     expect(gaps[0].muscles).toContain("lats");
   }, 60000);
 
@@ -73,18 +75,21 @@ describe("suggestions", () => {
     await doWorkout(r);
     await call("PUT", `/routines/${r}`, { archived: true });
     const gaps = (await suggest()).filter((x) => x.kind === "gap" || x.kind === "target");
-    expect(gaps.map((x) => x.muscle)).not.toContain("back");
-    expect(gaps[0].muscle).toBe("shoulders");
+    expect(gaps.map((x) => x.muscle)).toEqual(["arms", "legs", "shoulders", "middle back"]);
   }, 60000);
 
   it("points out a muscle only ever worked as a helper once every group is covered", async () => {
     await personWith(["chest", "lats", "middle back", "shoulders", "biceps", "triceps", "abdominals", "quadriceps", "hamstrings", "glutes", "calves"]);
     const sug = await suggest();
     expect(sug.some((x) => x.kind === "gap")).toBe(false);
-    const fa = sug.find((x) => x.kind === "target");
-    expect(fa?.muscle).toBe("forearms");
-    expect(fa?.title).toBe("Add exercises for your forearms");
-    expect(fa?.reason).toBe("Your routines only use your forearms as a helper");
+    const targets = sug.filter((x) => x.kind === "target");
+    // specific muscles inside groups you train still show: the back days have no lower back or traps
+    expect(targets.map((x) => x.muscle)).toEqual(["forearms", "lower back", "traps", "adductors"]);
+    expect(targets[0].title).toBe("Add an exercise for your forearms");
+    expect(targets[0].reason).toBe("Your routines only use it as a helper muscle");
+    expect(targets[1].title).toBe("Add an exercise for your lower back (spinal erectors)");
+    expect(targets[1].reason).toBe("Your routines train your lats and middle back, but not this part of your back");
+    expect(targets[1].hide).toEqual(["m:lower back"]);
   }, 60000);
 
   // a workout of a routine that is then archived, moved back by `daysAgo`: trained outside the routines you keep
@@ -102,19 +107,19 @@ describe("suggestions", () => {
     const lats = (await suggest()).find((x) => x.muscle === "lats");
     expect(lats?.kind).toBe("missed");
     expect(lats?.routineId).toBeNull();
-    expect(lats?.title).toBe("Train your lats");
+    expect(lats?.title).toBe("Train your lats (sides of your back)");
     expect(lats?.reason).toBe("Your lats were last trained 1 week ago");
   }, 60000);
 
   it("gives a muscle trained a month ago its own tip, and its group no second one", async () => {
     await personWith(["chest"]);
-    await trainedOutside("quadriceps", 30); // a month ago: legs is still a gap, but the fifth one
+    await trainedOutside("quadriceps", 30); // a month ago: legs would be a gap, but the quads already have a tip
     const sug = await suggest();
-    expect(sug.filter((x) => x.kind === "gap").map((x) => x.muscle)).toEqual(["back", "shoulders"]);
+    expect(sug.filter((x) => x.kind === "gap" || x.kind === "target").map((x) => x.muscle)).toEqual(["back", "arms", "shoulders", "abdominals"]);
     const quads = sug.find((x) => x.muscle === "quadriceps");
     expect(quads?.kind).toBe("missed");
     expect(quads?.routineId).toBeNull();
-    expect(sug.filter((x) => x.hide.includes("m:legs"))).toHaveLength(1);
+    expect(sug.filter((x) => x.hide.includes("m:quadriceps"))).toHaveLength(1);
   }, 60000);
 
   it("drops a suggestion once its routine is planned or going", async () => {

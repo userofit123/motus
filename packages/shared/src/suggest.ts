@@ -2,15 +2,18 @@
 // - program: the next workout of a program you follow
 // - order: the routine that usually follows the one you did last (twice is a habit)
 // - missed: a muscle not trained for a week while you trained the others, or for 10 days or more
-// - gap: a muscle group none of your routines trains; target: a muscle your routines only use as a helper
+// - gap: a whole muscle group (back, arms, legs) none of your routines trains
+// - target: one specific muscle none of your routines trains, or only as a helper, even inside a group you do train
+//   (back days with lats and middle back but nothing for the lower back)
 // - low: a muscle with far fewer sets than the rest in the last four weeks
 // - oldest: the routines you haven't done for longest
-// Each says what to do in its title (a routine's name, or "Train your lats" / "Add exercises for your core") and why in one
-// plain sentence. One suggestion per routine and per muscle group, so Back never shows twice in different words. A plan or
-// a workout in progress for that routine or muscle means it is taken care of, so it drops out; dismissing one keeps that
-// routine and muscle group away for a week, so a near-duplicate doesn't take its place.
+// The title says what to do (a routine's name, "Train your triceps", "Add an exercise for your lower back (spinal
+// erectors)") and the reason says why in one short sentence. A muscle is named by itself, never only by its group, with
+// where it is when the name doesn't say. One suggestion per routine and per muscle, so the same muscle never shows twice
+// in different words. A plan or a workout in progress for that routine or muscle means it is taken care of, so it drops
+// out; dismissing one keeps that routine and those muscles away for a week, so a near-duplicate doesn't take its place.
 // Pure, so the rules are tested without a database: the engine gathers the numbers.
-import { GROUPS, groupOf, muscleName } from "./muscles";
+import { GROUPS, MUSCLES, groupOf, muscleName } from "./muscles";
 import { agoDays } from "./units";
 import type { HomeSuggestion } from "./types";
 
@@ -31,25 +34,35 @@ export interface SuggestInput {
   routineMuscles: { routineId: string; muscle: string; n: number; main: boolean }[];
   /** routines planned from today on, or the one in progress, and the main muscles those plans and that workout train */
   planned: { routineIds: string[]; muscles: string[] };
-  /** dismissed suggestions: subject ("r:<routine id>" / "m:<group id>") → when */
+  /** dismissed suggestions: subject ("r:<routine id>" / "m:<muscle>") → when */
   hidden: Record<string, string>;
 }
 
-// the muscles worth a nudge; forearms count as one people ask about, the other small ones (neck, adductors…) only show up
-// as part of a routine
+// the big muscles: the ones a training week is judged by (whether you're active, what "most muscles" got), and the ones a
+// "missed" tip names even with no routine for them; the smaller ones get that tip only when a routine trains them
 const MAIN = ["chest", "lats", "middle back", "shoulders", "biceps", "triceps", "abdominals", "quadriceps", "hamstrings", "glutes", "calves"];
-const WATCH = [...MAIN, "forearms"];
+// every specific muscle the app knows, less the neck, which the app leaves out of its muscle views everywhere (Stats,
+// Home's groups) as one that isn't trained on its own
+const WATCH = MUSCLES.filter((m) => m !== "neck") as string[];
 const DAY = 86400000;
-/** how long a dismissed routine or muscle group stays away */
+/** how long a dismissed routine or muscle stays away */
 export const DISMISS_DAYS = 7;
-const MAX = 8, PER_KIND = 2;
-// both sorts of gap count as one kind: two of them at most, so the workouts that are due still find room
+// gaps get more room (a person can miss several specific muscles); the order at the end still puts one of each kind first
+const MAX = 10, PER_KIND = 2, PER_GAP = 4;
+// both sorts of gap count as one kind
 const family = (k: HomeSuggestion["kind"]) => (k === "target" ? "gap" : k);
 
 const lower = (m: string) => muscleName(m).toLowerCase();
-const SINGLE = new Set(["chest", "middle back", "lower back", "core", "back"]);
-/** "Your lats were" / "Your chest was" */
-const yours = (name: string) => `Your ${name} ${SINGLE.has(name) ? "was" : "were"}`;
+// where a muscle is, for the names that don't say it; a name that is already a place gets the muscle's own name instead
+const WHERE: Record<string, string> = {
+  lats: "sides of your back", traps: "between your neck and shoulders", "middle back": "rhomboids", "lower back": "spinal erectors",
+  quadriceps: "front of your thighs", hamstrings: "back of your thighs", adductors: "inner thighs", abductors: "outer hips",
+};
+/** "lower back (spinal erectors)", "chest" */
+export const muscleLabel = (m: string) => (WHERE[m] ? `${lower(m)} (${WHERE[m]})` : lower(m));
+const SINGLE = new Set(["chest", "middle back", "lower back", "back"]);
+/** "lats and middle back", "chest, shoulders and triceps" */
+const list = (xs: string[]) => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs.at(-1)}`);
 
 /** The dismissals worth keeping as `subjects` are dismissed at `at`: those still within DISMISS_DAYS, in the current
  *  form ("r:" / "m:"). The others come back as null, which the settings drop on saving (withDefaults), so the list
@@ -64,9 +77,10 @@ export function dismissalPatch(hidden: Record<string, string>, subjects: string[
   return out;
 }
 
-/** What a dismissal of this suggestion keeps away: its routine and the muscle groups it is about. */
+/** What a dismissal of this suggestion keeps away: its routine and each specific muscle it is about (not their whole
+ *  group, so lower back can still be suggested after a lats tip is dismissed). */
 export function suggestionSubjects(x: Pick<HomeSuggestion, "routineId" | "muscles">): string[] {
-  return [...(x.routineId ? [`r:${x.routineId}`] : []), ...new Set((x.muscles ?? []).map((m) => `m:${groupOf(m)}`))];
+  return [...(x.routineId ? [`r:${x.routineId}`] : []), ...new Set((x.muscles ?? []).map((m) => `m:${m}`))];
 }
 
 export function pickSuggestions(d: SuggestInput): HomeSuggestion[] {
@@ -76,9 +90,9 @@ export function pickSuggestions(d: SuggestInput): HomeSuggestion[] {
   const plannedR = new Set(d.planned.routineIds), plannedM = new Set(d.planned.muscles);
   const add = (x: Omit<HomeSuggestion, "key" | "hide">) => {
     const hide = suggestionSubjects(x);
-    if (out.length >= MAX || out.filter((y) => family(y.kind) === family(x.kind)).length >= PER_KIND) return;
+    if (out.length >= MAX || out.filter((y) => family(y.kind) === family(x.kind)).length >= (family(x.kind) === "gap" ? PER_GAP : PER_KIND)) return;
     if (hide.some(isHidden) || out.some((y) => y.hide.some((s) => hide.includes(s)))) return;
-    // taken care of: that routine is planned or going, or a planned routine trains this muscle
+    // taken care of: that routine is planned or going, or a planned routine trains this muscle as a main muscle
     if ((x.routineId && plannedR.has(x.routineId)) || (x.muscles ?? []).some((m) => plannedM.has(m))) return;
     out.push({ key: `${x.kind}:${x.routineId ?? x.muscle}`, hide, ...x });
   };
@@ -105,38 +119,70 @@ export function pickSuggestions(d: SuggestInput): HomeSuggestion[] {
   const helped = (m: string) => d.routineMuscles.some((h) => !h.main && h.muscle === m && byId.has(h.routineId));
   const days = (m: string) => d.muscleDays[m];
   const sets = (m: string) => d.sets28[m] ?? 0;
-  const known = MAIN.filter((m) => days(m) != null); // only muscles you have trained before
-  // gaps (only once you have routines, so a new account isn't told everything is missing), leaving out what you trained
-  // outside your routines in the last four weeks: that isn't missing from your training
-  const gaps = d.routines.length ? GROUPS.filter((g) => g.id !== "neck" && !g.muscles.some((m) => routineFor(m) || sets(m) > 0)) : [];
-  const targets = d.routines.length ? WATCH.filter((m) => !routineFor(m) && sets(m) === 0 && !gaps.some((g) => g.muscles.includes(m))) : [];
-  const why = (name: string, help: boolean) => (help ? `Your routines only use your ${name} as a helper` : `None of your routines train your ${name}`);
-  const gapTips: Omit<HomeSuggestion, "key" | "hide">[] = [
-    ...gaps.map((g) => { const name = g.name.toLowerCase(); return { kind: "gap" as const, title: `Add exercises for your ${name}`, reason: why(name, g.muscles.some(helped)), routineId: null, color: null, muscle: g.id, muscles: g.muscles.filter((m) => WATCH.includes(m)) }; }),
-    ...targets.map((m) => ({ kind: "target" as const, title: `Add exercises for your ${lower(m)}`, reason: why(lower(m), helped(m)), routineId: null, color: null, muscle: m, muscles: [m] })),
-  ];
-  // a muscle's tip opens the routine that trains it most; with none, it opens the exercises for it
-  const muscleTip = (m: string, kind: "missed" | "low", reason: string) => {
+  const known = (ms: string[]) => ms.filter((m) => days(m) != null); // only muscles you have trained before
+  type Name = (m: string) => string;
+  /** "Your lats were" / "Your lower back (spinal erectors) was" */
+  const yours = (ms: string[], name: Name, verb: [string, string]) =>
+    `Your ${ms.length === 1 ? name(ms[0]!) : list(ms.map(lower))} ${ms.length === 1 && SINGLE.has(ms[0]!) ? verb[0] : verb[1]}`;
+  // a muscle's tip opens the routine that trains it most; with none, it says to train the muscle and opens its exercises.
+  // The muscle's place is said once: in the title when the title names it, else in the reason. `also`: more muscles due
+  // for the same rule; the ones the same routine trains join this tip (one routine, one tip, and a dismissal keeps them
+  // all away), and the reason names those it is equally true for (`same`)
+  const muscleTip = (m: string, kind: "missed" | "low", reason: (ms: string[], name: Name) => string, also: string[] = [], same: (x: string) => boolean = () => false) => {
     const rid = routineFor(m), r = rid ? byId.get(rid)! : null;
-    add({ kind, title: r ? r.name : `Train your ${lower(m)}`, reason, routineId: r?.id ?? null, color: r?.color ?? null, muscle: m, muscles: [m] });
+    if (!r) return add({ kind, title: `Train your ${muscleLabel(m)}`, reason: reason([m], lower), routineId: null, color: null, muscle: m, muscles: [m] });
+    // left out: muscles dismissed, planned or already in another tip, which would otherwise keep this whole tip away
+    const free = (x: string) => !isHidden(`m:${x}`) && !plannedM.has(x) && !out.some((y) => y.hide.includes(`m:${x}`));
+    const ms = [m, ...also.filter((x) => x !== m && routineFor(x) === rid && free(x))];
+    add({ kind, title: r.name, reason: reason([m, ...ms.slice(1).filter(same)], muscleLabel), routineId: r.id, color: r.color, muscle: m, muscles: ms });
   };
 
-  // a muscle left out: a week while you trained most of the others, or 10 days or more
-  const active = known.length >= 4 && known.filter((m) => days(m)! < 7).length >= known.length * 0.6;
-  for (const m of known.filter((x) => days(x)! >= (active ? 7 : 10)).sort((a, b) => days(b)! - days(a)!))
-    muscleTip(m, "missed", `${yours(lower(m))} last trained ${agoDays(days(m)!)}`);
+  // a muscle left out: a week while you trained most of the others, or 10 days or more. The big ones always count; a
+  // smaller one (lower back, traps, adductors…) only when a routine trains it, so a muscle you once hit by chance doesn't nag
+  const big = known(MAIN);
+  const active = big.length >= 4 && big.filter((m) => days(m)! < 7).length >= big.length * 0.6;
+  const due = known(WATCH).filter((m) => (MAIN.includes(m) || routineFor(m)) && days(m)! >= (active ? 7 : 10)).sort((a, b) => days(b)! - days(a)!);
+  for (const m of due)
+    muscleTip(m, "missed", (ms, name) => `${yours(ms, name, ["was", "were"])} last trained ${agoDays(days(m)!)}`, due, (x) => agoDays(days(x)!) === agoDays(days(m)!));
 
-  for (const x of gapTips) add(x);
+  // gaps, only once you have routines (so a new account isn't told everything is missing), leaving out what you trained
+  // outside your routines in the last four weeks: that isn't missing from your training. A group with several muscles
+  // and none of them trained is one tip; otherwise each specific muscle is its own, so a missing lower back shows even
+  // though your back days train the lats
+  const trained = (m: string) => !!routineFor(m) || sets(m) > 0;
+  if (d.routines.length) {
+    for (const g of GROUPS.filter((x) => x.id !== "neck" && x.muscles.length > 1 && !x.muscles.some(trained))) {
+      const name = g.name.toLowerCase();
+      add({ kind: "gap", title: `Add exercises for your ${name}`, reason: g.muscles.some(helped) ? `Your routines only use your ${name} as a helper` : `None of your routines work your ${name}`, routineId: null, color: null, muscle: g.id, muscles: g.muscles });
+    }
+    for (const m of WATCH.filter((x) => !trained(x))) {
+      const g = GROUPS.find((x) => x.muscles.includes(m))!;
+      if (g.muscles.length > 1 && !g.muscles.some(trained)) continue; // the whole group's tip covers it
+      // name what the group's routines do train, so it's clear which part is missing
+      const others = g.muscles.filter((x) => x !== m && routineFor(x)), group = g.name.toLowerCase();
+      const reason = helped(m) ? "Your routines only use it as a helper muscle"
+        : others.length === g.muscles.length - 1 && others.length > 0 ? `Your routines train the rest of your ${group}, but not this`
+        : others.length ? `Your routines train your ${list(others.map(lower))}, but not this part of your ${group}`
+        : "None of your routines work it";
+      add({ kind: "target", title: `Add an exercise for your ${muscleLabel(m)}`, reason, routineId: null, color: null, muscle: m, muscles: [m] });
+    }
+  }
 
-  // far fewer sets lately: under a quarter of what a typical muscle got in four weeks
-  const counts = known.map(sets).filter((n) => n > 0).sort((a, b) => a - b);
+  // far fewer sets lately: under a quarter of what a typical big muscle got in four weeks
+  const counts = big.map(sets).filter((n) => n > 0).sort((a, b) => a - b);
   const typical = counts.length >= 4 ? counts[Math.floor(counts.length / 2)]! : 0;
-  if (typical >= 8)
-    for (const m of known.filter((x) => routineFor(x) && sets(x) > 0 && sets(x) < typical / 4).sort((a, b) => sets(a) - sets(b)))
-      muscleTip(m, "low", `Only ${sets(m)} ${sets(m) === 1 ? "set" : "sets"} for your ${lower(m)} in 4 weeks, against ${typical} for most muscles`);
+  if (typical >= 8) {
+    const few = known(WATCH).filter((x) => routineFor(x) && sets(x) > 0 && sets(x) < typical / 4).sort((a, b) => sets(a) - sets(b));
+    for (const m of few)
+      muscleTip(m, "low", (_, name) => `Only ${sets(m)} ${sets(m) === 1 ? "set" : "sets"} for your ${name(m)} in 4 weeks, against ${typical} for most muscles`);
+  }
 
-  // the routines done longest ago (3 days or more)
+  // the routines done longest ago (3 days or more); worded as the Routines page words them
   for (const r of d.routines.filter((x) => (x.daysAgo ?? 99) >= 3).sort((a, b) => (b.daysAgo ?? 9999) - (a.daysAgo ?? 9999)))
     add({ kind: "oldest", title: r.name, reason: r.daysAgo != null ? `Last done ${agoDays(r.daysAgo)}` : "Not done yet", routineId: r.id, color: r.color });
-  return out;
+
+  // best first, but one of each kind before the second of any, so the three on Home aren't all gaps or all routines
+  const nth = new Map<HomeSuggestion, number>(), seen: Record<string, number> = {};
+  for (const x of out) { const f = family(x.kind); nth.set(x, (seen[f] = (seen[f] ?? -1) + 1)); }
+  return out.map((x, i) => [x, i] as const).sort((a, b) => nth.get(a[0])! - nth.get(b[0])! || a[1] - b[1]).map(([x]) => x);
 }
