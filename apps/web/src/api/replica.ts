@@ -11,15 +11,16 @@ import { readStr, writeStr } from "../core/prefs";
 export const sync = reactive({ on: false, online: true, syncing: false, waiting: 0, lastAt: 0, error: "", removed: 0 });
 /** What the person is told about rows removed from this device; with `failed` (kept here, refused) the two read together. */
 export const removedText = (n: number, alone = true) => !n ? ""
-  : alone ? `${n} item${n === 1 ? "" : "s"} that didn't fit the server's data ${n === 1 ? "was" : "were"} removed from this device`
+  : alone ? `${n} item${n === 1 ? "" : "s"} the server doesn't have ${n === 1 ? "was" : "were"} removed from this device`
   : `${n} item${n === 1 ? "" : "s"} removed from this device`;
 /** The person has seen the notice: it goes, here and in the copy. */
 export async function dismissRemoved() {
-  sync.removed = 0;
-  await R?.clearRemoved(db);
-  await saved();
+  try {
+    await R?.clearRemoved(db);
+    sync.removed = 0;
+    await saved();
+  } catch { /* the notice stays and can be dismissed again */ }
 }
-
 
 // what only the server can do: signing in, the admin pages, files, and sync itself
 // health/records: every Health Connect record (M-238), kept by the server only (too many for the copy here; Health
@@ -240,7 +241,7 @@ async function run(): Promise<Error | null> {
     // rows removed from this device when its copy was made again are told by the notice (sync.removed, set below
     // whatever the sync ends in), not by this line
     if (r.removed.length) console.warn("Sync: removed from this device when its copy was made again", r.removed);
-    const error = failed ? `${failed} change${failed === 1 ? "" : "s"} from this device didn't fit the server's data` : "";
+    const error = failed ? `${failed} change${failed === 1 ? "" : "s"} from this device ${failed === 1 ? "wasn't" : "weren't"} accepted by the server` : "";
     ok = true;
     failingSince = 0;
     Object.assign(sync, { online: true, error, lastAt: Date.now() });

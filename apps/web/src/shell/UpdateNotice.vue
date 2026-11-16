@@ -28,14 +28,16 @@ const active = useActive();
 const readyHere = computed(() => updater.ready && updater.stagedVersion === updateAvailable.value);
 // App & Versions says all this itself, so the notice keeps out of its way there. The workout check waits for the answer:
 // before it, "no workout" only means "not known yet", and the notice would flash when the app opens during a workout.
-const removedShown = computed(() => sync.removed > 0);
+const removedShown = computed(() => sync.removed > 0 && active.isFetched.value && !active.data.value);
 const shown = computed(() => removedShown.value || (app && !!updateAvailable.value && dismissed.value !== updateAvailable.value
   && active.isFetched.value && !active.data.value && route.path !== "/settings/versions"));
 // screen readers announce a status line whose text changes, not one that arrives already filled, so the line is always
 // there and gets its text a moment after the notice shows (also when it shows as the app opens, once the line exists)
 const announce = ref("");
 let timer: ReturnType<typeof setTimeout> | undefined;
-watch(shown, (on) => {
+// the key changes when the notice switches between the two messages, so the new text is announced again
+const announceKey = computed(() => removedShown.value ? "removed" : updateAvailable.value);
+watch([shown, announceKey], ([on]) => {
   clearTimeout(timer);
   announce.value = "";
   if (on) timer = setTimeout(() => { announce.value = removedShown.value ? removedText(sync.removed) : `Update available: ${updateAvailable.value}`; }, 150);
@@ -75,16 +77,16 @@ onBeforeUnmount(() => { clearTimeout(timer); ro?.disconnect(); root.style.remove
       </div>
     </template>
     <template v-else>
-    <span class="upn-ic"><Icon name="download" :size="15" /></span>
-    <div class="upn-txt">
-      <b>Update available: {{ updateAvailable }}</b>
-      <div class="s">{{ sub }}</div>
-      <div v-if="updater.downloading && updater.progress !== null" class="pbar"><i :style="{ width: Math.round(updater.progress * 100) + '%' }"></i></div>
-    </div>
-    <div class="upn-acts">
-      <button type="button" class="btn tonal s" @click="view">View</button>
-      <button v-if="!updater.downloading" type="button" class="btn s" @click="primary">{{ readyHere ? `Install ${updateAvailable}` : "Download update" }}</button>
-    </div>
+      <span class="upn-ic"><Icon name="download" :size="15" /></span>
+      <div class="upn-txt">
+        <b>Update available: {{ updateAvailable }}</b>
+        <div class="s">{{ sub }}</div>
+        <div v-if="updater.downloading && updater.progress !== null" class="pbar"><i :style="{ width: Math.round(updater.progress * 100) + '%' }"></i></div>
+      </div>
+      <div class="upn-acts">
+        <button type="button" class="btn tonal s" @click="view">View</button>
+        <button v-if="!updater.downloading" type="button" class="btn s" @click="primary">{{ readyHere ? `Install ${updateAvailable}` : "Download update" }}</button>
+      </div>
     </template>
     <button type="button" class="ib sm plain" aria-label="Close" title="Close" @click="dismiss"><Icon name="close" :size="16" /></button>
   </div>
