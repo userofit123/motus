@@ -2,6 +2,20 @@
 
 The top entry's version is the one the release workflow publishes. Add a new `## [x.y.z]` section to release.
 
+## [0.1.33] - 2026-11-16
+
+- Voice cues work: when a rest ends Motus says the next set (e.g. "Bench press, set 3, 8 reps at 80 kilos") and "10 seconds" before it, also with the screen locked; music gets quieter while it speaks. Needs Play sounds on.
+- Home suggestions: a suggestion goes away once you plan or start it, dismissing one keeps that routine and muscle away for a week, each says plainly what and why, and All shows every suggestion.
+- Every setting does what it says: Rest timer on the lock screen, Keep the screen on and Planned workout reminders now follow their switches; settings that never did anything are gone.
+- Nothing from your band is counted twice: hourly steps add up to the day, heart rate from two apps counts once, the same workout from two apps is one activity, and your band's copy of a workout or walk you recorded is matched to it (Imported data shows it, with Unlink). Old duplicates are cleaned up once after updating.
+- A finished workout shows your band's heart rate with each set and rest marked, time in each zone, calories and recovery; activities also show speed and cadence.
+- A Calendar day shows the whole day by hour: last night's sleep, steps, heart rate and your sessions on one timeline.
+- Readiness says in one line why it is what it is; an optional Training load (Settings → Features) compares your last 7 days with your usual.
+- Optional Health scores (Settings → Features) for sleep, activity and strength, each scored against published guidelines and naming its source, in Stats → Scores and as Home blocks.
+- Steps shows what stands out: active minutes against 150 a week, your current streak and your usual busiest hour.
+- Motus also saves total calories, speed, power, cadence, workout laps, temperature, blood pressure, blood sugar, body composition and nutrition from Health Connect, asking only for the new kinds in one prompt.
+- Updating adds a few database changes on first start.
+
 ## [0.1.32] - 2026-11-15
 
 - Motus saves every record from your watch or band with its time and source (each step count, heart rate reading, sleep stage and more), back as far as Health Connect holds. Daily steps, sleep, resting heart rate and an activity's steps and heart rate are worked out from them.
