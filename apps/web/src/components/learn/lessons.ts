@@ -101,18 +101,20 @@ export const LESSONS = {
   // training load has no research source of its own to cite here: the lesson says what a point is and how it is compared
   trainingLoad: {
     title: "Training load",
-    intro: "How much training your body took in, as points. One point is one minute at a very light heart rate; harder minutes count more, so a hard session adds many more points than an easy one. Motus compares your last 7 days with your usual week.",
+    intro: "How much training your body took in, as load points. One load point is one minute at a very light heart rate; harder minutes count more, so a hard session adds many more load points than an easy one. Motus compares your last 7 days with your usual week.",
     sections: [
       { heading: "How Motus counts", rows: [
-        ...HR_ZONES.map((z, i) => ({ icon: "heart", t: `${z.name} heart rate`, s: "Each minute", r: i === 0 ? "1 point" : `${ZONE_WEIGHTS[i]} points` })),
-        { icon: "dumbbell", t: "Done sets", s: "When that is more than the heart rate gives, as heart rate drops between sets", r: `${SET_LOAD} points each` },
-        { icon: "activity", t: "Activity without heart rate", s: "Each minute", r: `${MINUTE_LOAD} points` },
+        ...HR_ZONES.map((z, i) => ({ icon: "heart", t: `${z.name} heart rate`, s: "Each minute", r: i === 0 ? "1 load point" : `${ZONE_WEIGHTS[i]} load points` })),
+        { icon: "dumbbell", t: "Done sets", s: "Counted instead of heart rate when they give more, as heart rate drops between sets", r: `${SET_LOAD} load points each` },
+        { icon: "activity", t: "Activity without heart rate", s: "Each minute", r: `${MINUTE_LOAD} load points` },
       ] },
       { heading: "Against your usual", rows: [
         { icon: "calendar", t: "Last 7 days", s: "Today and the 6 days before it" },
-        { icon: "stats", t: "Your usual week", s: `The average week of the last 4, after ${MIN_LOAD_DAYS} days of training` },
-        { icon: "arrowUp", t: "More than 30% above usual", s: "A big jump: keep the next day or two lighter" },
-        { icon: "arrowDown", t: "More than 20% below usual", s: "A lighter week, which raises your readiness" },
+        { icon: "stats", t: "Your usual week", s: `The average week of the last 4, from ${MIN_LOAD_DAYS / 7} weeks after your first workout` },
+        { icon: "arrowDown", t: "Less than usual", s: "More than 20% below your usual week: raises your readiness" },
+        { icon: "check", t: "About your usual", s: "From 20% below to 30% above your usual week" },
+        { icon: "arrowUp", t: "More than usual", s: "30-50% above your usual week: lowers your readiness" },
+        { icon: "arrowUp", t: "Much more than usual", s: "More than 50% above your usual week: lowers your readiness more" },
       ] },
     ],
   },

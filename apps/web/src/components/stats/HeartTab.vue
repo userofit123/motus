@@ -8,7 +8,7 @@
 import { computed, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { useQuery } from "@tanstack/vue-query";
-import { ymd, weekStartOf, zoneMinutes, highRestingDays, LOAD_METHOD } from "@motus/shared";
+import { ymd, weekStartOf, zoneMinutes, highRestingDays } from "@motus/shared";
 import { api } from "../../api/client";
 import { useWorkouts, useActivities, useTypeName, useSettings, useTrainingLoad } from "../../api/queries";
 import { mins } from "../../core/sleep";
@@ -173,7 +173,7 @@ const loadRow = computed(() => {
   // the status as What stands out's rows show it: an icon for which way it went, in the same tone as the result
   const icon = pct == null ? "clock" : t.state === "lighter" ? "arrowDown" : t.state === "steady" ? "check" : "arrowUp";
   return { icon, t: t.state ? LOAD_STATE[t.state] : "Learning your usual",
-    s: t.ratio == null ? `${fmt.value.num(t.week, 0)} points in the last 7 days · usual after 3 weeks of training` : `${fmt.value.num(t.week, 0)} points in the last 7 days · usual ${fmt.value.num(t.usual, 0)} points a week`,
+    s: t.ratio == null ? `${fmt.value.num(t.week, 0)} load points in the last 7 days${t.left ? ` · your usual in ${t.left} ${t.left === 1 ? "day" : "days"}` : ""}` : `${fmt.value.num(t.week, 0)} load points in the last 7 days · usual ${fmt.value.num(t.usual, 0)} a week`,
     rv: pct == null ? "Learning" : t.state === "steady" ? "As usual" : `${pct < 0 ? "-" : "+"}${Math.abs(pct)}%`,
     tone: pct == null ? "muted" : t.state === "lighter" ? "pos" : t.state === "steady" ? undefined : "neg" };
 });
@@ -244,7 +244,7 @@ const tiles = computed(() => {
 
       <!-- training load: a chart card as the zones', with the comparison as a What stands out row under its title -->
       <div v-if="loadOn && loadHas && loadRow" class="card" :class="{ spt: tiles.length || insights.length || vitals.length || zBars.length }">
-        <div class="lbl hgap"><span class="grow">Training load, points a {{ loadPerWeek ? "week" : "day" }}</span><LearnButton topic="trainingLoad" /></div>
+        <div class="lbl hgap"><span class="grow">Training load (load points){{ loadPerWeek ? ", by week" : "" }}</span><LearnButton topic="trainingLoad" /></div>
         <div class="list ht-ins">
           <div class="li">
             <Icon :name="loadRow.icon" :size="18" :class="loadRow.tone" />
@@ -253,7 +253,7 @@ const tiles = computed(() => {
           </div>
         </div>
         <BarChart class="ht-chart" :bars="loadBars" :height="170" :fmt="(v) => fmt.num(v, 0)" @pick="openLoad" />
-        <div class="tiny ht-line">{{ LOAD_METHOD }} {{ loadPerWeek ? "Tap a week to open it." : "Tap a day to open it." }}{{ lq.data.value && !lq.data.value.maxHr ? " Set your max heart rate or year of birth in Body for heart rate to count." : "" }}</div>
+        <div class="tiny ht-line">{{ loadPerWeek ? "Tap a week to open it." : "Tap a day to open it." }}{{ lq.data.value && !lq.data.value.maxHr ? " Set your max heart rate or year of birth in Body for heart rate to count." : "" }}</div>
       </div>
 
       <!-- how hard each workout and activity was, over the stretch: its average and highest heart rate, as Stats → Sleep's

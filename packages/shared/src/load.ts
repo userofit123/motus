@@ -36,6 +36,8 @@ export interface LoadTrend {
   /** week / usual: the acute:chronic ratio, null while the 4 weeks are still filling (or had no load) */
   ratio: number | null;
   state: LoadState | null;
+  /** days until the usual is known (counted from the first session), null when there is no session or it is known */
+  left?: number | null;
 }
 
 /**
@@ -50,9 +52,7 @@ export function loadTrend(days: readonly { date: string; load: number }[], today
   const ready = !!first && first <= back(MIN_LOAD_DAYS) && usual > 0;
   const ratio = ready ? Math.round((week / usual) * 100) / 100 : null;
   const state: LoadState | null = ratio == null ? null : ratio < 0.8 ? "lighter" : ratio <= 1.3 ? "steady" : ratio <= 1.5 ? "higher" : "much higher";
-  return { week, usual, ratio, state };
+  const since = first ? Math.floor((Date.parse(today + "T12:00:00Z") - Date.parse(first + "T12:00:00Z")) / 86400000) : 0;
+  return { week, usual, ratio, state, left: first && ratio == null && since < MIN_LOAD_DAYS ? MIN_LOAD_DAYS - since : null };
 }
 
-/** What a load point is, in one plain sentence for the screens that show it (TRIMP-style zone minutes, or 4 per set
- *  when that is more; the full lesson is trainingLoad in the learn sheet) */
-export const LOAD_METHOD = "Training load is counted in points: a minute at a very light heart rate is 1 point, a minute at maximum is 5.";

@@ -114,7 +114,7 @@ export const useHealthScores = (enabled: MaybeRef<boolean> = true) => useQuery({
   queryFn: () => api.get<{ scores: HealthScores | null }>("/health/scores", { tz: new Date().getTimezoneOffset() }).then((r) => r.scores) });
 /** Training load (Stats → Heart): each session's load over [from, to] and the 28 days before, and the 7:28 comparison as of `to`; load null while the feature is off */
 export interface LoadSession { kind: "workout" | "activity"; id: string; name: string | null; type: string | null; date: string; load: number; hr: boolean }
-export interface TrainingLoad { sessions: LoadSession[]; trend: { week: number; usual: number; ratio: number | null; state: "lighter" | "steady" | "higher" | "much higher" | null }; maxHr: boolean }
+export interface TrainingLoad { sessions: LoadSession[]; trend: { week: number; usual: number; ratio: number | null; state: "lighter" | "steady" | "higher" | "much higher" | null; left?: number | null }; maxHr: boolean }
 export const useTrainingLoad = (range: MaybeRef<{ from: string; to: string }>, enabled: MaybeRef<boolean> = true) => useQuery({
   queryKey: computed(() => ["stats", "load", unref(range).from, unref(range).to]), enabled,
   queryFn: () => api.get<{ load: TrainingLoad | null }>("/health/load", { ...unref(range), tz: new Date().getTimezoneOffset() }).then((r) => r.load) });

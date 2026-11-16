@@ -13,13 +13,13 @@ export const READY_PART: Record<ReadyKey, { icon: string; t: string }> = {
   sleep: { icon: "moon", t: "Sleep" }, restingHr: { icon: "heartPulse", t: "Resting heart rate" }, hrv: { icon: "wave", t: "HRV" }, load: { icon: "load", t: "Training load" },
 };
 /** A part's value as its row writes it: sleep in hours (as the day's log keeps it) as time asleep; Training load (a
- *  feature) in points (see the Training load lesson) */
+ *  feature) in load points (see the Training load lesson) */
 export function readyValue(k: ReadyKey, v: number, num: Num): string {
   switch (k) {
     case "sleep": return mins(v * 60);
     case "restingHr": return `${Math.round(v)} bpm`;
     case "hrv": return `${Math.round(v)} ms`;
-    case "load": return `${num(v)} points`;
+    case "load": return `${num(v)} load points`;
   }
 }
 /** The time a part's value covers, so each row says it: last night's sleep, today's resting heart rate and HRV (ago 1:
@@ -46,7 +46,7 @@ export function readinessRows(r: Readiness, num: Num, extra: ReadyRow[] = []): R
   const now = (k: ReadyKey, v: number, ago?: 1) => `${f(k, v)} ${readyWhen(k, ago)}`;
   const ready = r.parts.filter((x) => x.value != null).map((x): ReadyRow => {
     const p = READY_PART[x.key], d = x.baseline != null ? x.value! - x.baseline : 0;
-    return { key: x.key, icon: p.icon, t: p.t, s: x.baseline != null ? `${now(x.key, x.value!, x.ago)} · usual ${x.key === "load" ? `${num(x.baseline)} points a week` : f(x.key, x.baseline)}` : now(x.key, x.value!, x.ago),
+    return { key: x.key, icon: p.icon, t: p.t, s: x.baseline != null ? `${now(x.key, x.value!, x.ago)} · usual ${x.key === "load" ? `${num(x.baseline)} a week` : f(x.key, x.baseline)}` : now(x.key, x.value!, x.ago),
       // the load's points mean nothing alone: how far off is a share of the usual, as Stats → Heart's card says it
       r: x.effect === "flat" || x.baseline == null ? "As usual" : x.key === "load" ? `${x.change! < 0 ? "-" : "+"}${Math.abs(Math.round(x.change!))}%` : `${d < 0 ? "-" : "+"}${f(x.key, Math.abs(d))}`,
       tone: x.effect === "up" ? "pos" : x.effect === "down" ? "neg" : undefined };
