@@ -78,8 +78,8 @@ const schedLine = (s: any) => { const t = scheduleSummary(s, fmt.value.day, fmt.
 // removing one of its plans works as everywhere else (planActions): a repeating one asks first, a one-off one has Undo
 const schedRemove = (s: any) => removeItem({ scheduleId: s.id, name: routine.value.name, repeats: s.rule !== "once" });
 // the band's heart rate in the sessions it saw (History tab): average and highest over them, the average per session over
-// time (a point's tip gives it; the list below opens each workout), and each session row's average
-const hrSessions = computed(() => (routine.value?.hr?.sessions ?? []).filter((x: any) => x.avgHr).map((x: any) => ({ x: new Date(x.date).getTime(), y: Math.round(x.avgHr) })));
+// time (a point's tip gives it and opens that workout), and each session row's average
+const hrSessions = computed(() => (routine.value?.hr?.sessions ?? []).filter((x: any) => x.avgHr).map((x: any) => ({ x: new Date(x.date).getTime(), y: Math.round(x.avgHr), id: x.workoutId })));
 const hrOf = computed(() => new Map<string, number>((routine.value?.hr?.sessions ?? []).filter((x: any) => x.avgHr).map((x: any) => [x.workoutId, Math.round(x.avgHr)])));
 const noteMenu = useNoteMenu();
 // a note on one of the routine's exercises says which; notes on the routine itself need no label
@@ -158,10 +158,10 @@ await loaded(r, summaries, notes, rems, schedules, history);
 
     <div v-else-if="tab === 'history'">
       <div v-if="(history.data.value?.length ?? 0) > 1" class="grid g2 spb">
-        <div class="card"><div class="lbl hgap">Duration (min)</div><LineChart :points="history.data.value.map((w: any) => ({ x: new Date(w.startedAt).getTime(), y: Math.round(w.durationS / 60) }))" :height="160" /></div>
-        <div class="card"><div class="lbl hgap">Volume ({{ fmt.wu }})</div><LineChart :points="history.data.value.map((w: any) => ({ x: new Date(w.startedAt).getTime(), y: fmt.fromKg(w.volumeKg) }))" :height="160" :fmt="(v) => fmt.num(v, 0)" /></div>
+        <div class="card"><div class="lbl hgap">Duration (min)</div><LineChart :points="history.data.value.map((w: any) => ({ x: new Date(w.startedAt).getTime(), y: Math.round(w.durationS / 60), id: w.id }))" :height="160" @pick="(wid) => router.push(`/workouts/${wid}`)" /></div>
+        <div class="card"><div class="lbl hgap">Volume ({{ fmt.wu }})</div><LineChart :points="history.data.value.map((w: any) => ({ x: new Date(w.startedAt).getTime(), y: fmt.fromKg(w.volumeKg), id: w.id }))" :height="160" :fmt="(v) => fmt.num(v, 0)" @pick="(wid) => router.push(`/workouts/${wid}`)" /></div>
       </div>
-      <HeartRate v-if="routine.hr" class="spb" :height="160" :avg="routine.hr.avg" :max="routine.hr.max" :sessions="hrSessions" />
+      <HeartRate v-if="routine.hr" class="spb" :height="160" :avg="routine.hr.avg" :max="routine.hr.max" :sessions="hrSessions" @pick="(wid) => router.push(`/workouts/${wid}`)" />
       <div class="card">
         <div v-if="!history.data.value?.length" class="empty"><b>Not done yet</b>Each time you do this routine, it's listed here.</div>
         <div class="list"><div v-for="w in history.data.value" :key="w.id" class="li click" @click="router.push(`/workouts/${w.id}`)">

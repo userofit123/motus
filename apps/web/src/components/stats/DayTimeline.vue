@@ -4,7 +4,8 @@
 // colours, the steps as a small bar an hour and the heart rate as the charts' line, both in the day charts' own colour; the
 // day's workouts and activities shaded across every lane in their Calendar colours with the strip along the top, as on
 // the Stats day charts, and the same hour labels under it. The tip says what the band saved at that hour and names the
-// session it falls in; like every chart it opens nothing (the day card's tiles and session list lead on). It shows only
+// session it falls in. Clicked or tapped, the tip stays and opens what was under the pointer: a session the session
+// (pick), a lane its Stats tab on this day (open), its reading first in the tip. It shows only
 // what Stats' days show in full, so it stays small. The night is a small hypnogram, a row per stage named on the left as
 // Stats → Sleep's (M-253): its stretches are minutes long, a few pixels at a day's scale, so in one row they ran together
 // into a barcode; in their own rows each stage reads as where in the night it fell. The rows sit under the lane's name
@@ -15,10 +16,11 @@
 // The names sit in their own strip on the left and the hours beside them in a strip that scrolls, so the chart can be
 // zoomed in (useChartZoom.ts: pinched, ctrl+wheeled or with Day by hour's buttons, up to HOUR_PX an hour, a minute 3px
 // wide, as a day's minutes-long stretches need) and scrolled while the names stay in place. Hovering, clicking or
-// tapping shows the hour's tip.
+// tapping shows the hour's tip; only a clicked or tapped tip opens (useChartZoom.ts).
 import { computed, ref, useId } from "vue";
+import Icon from "../Icon.vue";
 import { useWidth } from "../useWidth";
-import { useTip } from "../useTip";
+import { useTip, TIP_ROOM, CHEVRON_W } from "../useTip";
 import { useChartZoom, HOUR_PX } from "../useChartZoom";
 import { useFmt } from "../../core/format";
 import { segColor, LANES, SEG_NAME, NO_STAGES_COLOR, type Seg } from "../../core/sleep";
@@ -28,16 +30,20 @@ import ChartShade from "../ChartShade.vue";
 import { shadeSpan, shadeFill } from "../chartShade";
 
 const props = defineProps<{ tl: DayTimeline; day: string; sessions: DaySession[] }>();
+const emit = defineEmits<{ open: [tab: "sleep" | "steps" | "heart"]; pick: [id: string] }>();
 const fmt = useFmt();
 const box = ref<HTMLElement | null>(null);
 // margins as LineChart's and the night's lanes, so the hours line up with the Stats day charts; P.l is the names' strip
 // the gap between lanes is wide enough that the night's rows, the steps' bars and the heart rate's line read as three charts
-const W = useWidth(box), P = { l: 44, r: 12, t: 8, b: 22 }, GAP = 14;
+// P.t: the room a pinned tip takes at the top (useTip), so it stays inside the chart, clear of the lanes and of Day by
+// hour's header and buttons above it; the sessions' shading starts under it, at the first lane, as on Steps by hour and
+// the heart rate by hour, so the tip there never sits in a session's tint
+const W = useWidth(box), P = { l: 44, r: 12, t: TIP_ROOM, b: 22 }, GAP = 14;
 const hours = computed(() => (props.tl.to - props.tl.from) / 3600_000);
 // the hours' strip: the card's width beside the names at 1x; zoomed, the hours stretch and the right margin doesn't
 const base = computed(() => Math.max(1, W.value - P.l - P.r));
-const { sc, cls, zoom, most, on, cw: PW, left, set, by, scrollTo, pinned, dragging } = useChartZoom({ box, base, pad: P.r,
-  max: () => (hours.value * HOUR_PX) / base.value, range: () => props.day, clear: () => (hover.value = null) });
+const { sc, cls, zoom, most, on, cw: PW, left, set, by, scrollTo, pinned, pick, unpin, dragging } = useChartZoom({ box, base, pad: P.r,
+  max: () => (hours.value * HOUR_PX) / base.value, range: () => props.day, clear: () => { hover.value = null; go.value = null; } });
 // a lane's name as its lines: "Heart rate" is too wide for the margin on one, so it takes two, centred on its middle (ny)
 // what: the lane's name for a screen reader, listed in the chart's label
 type Lane = { key: "sleep" | "steps" | "heart"; name: string[]; what: string; y: number; h: number; ny: number };
@@ -122,21 +128,52 @@ const timeAt = (e: MouseEvent) => {
   const svg = (e.currentTarget as Element).closest("svg")!, r = svg.getBoundingClientRect(), x = ((e.clientX - r.left) / r.width) * PW.value;
   return x < 0 || x > PW.value - P.r ? null : props.tl.from + (x / (PW.value - P.r)) * (props.tl.to - props.tl.from);
 };
-// a finger's tip stays put while the compatibility mouse events a tap sends come and go; a drag shows none
+// a pinned tip stays put while the mouse moves on (or a tap's compatibility mouse events come and go); a drag shows none
 const move = (e: MouseEvent) => { if (!pinned.value) hover.value = dragging() ? null : timeAt(e); };
 const leave = () => { if (!pinned.value) hover.value = null; };
-// a click or a tap shows the hour's tip, as hovering does (useChartZoom keeps a finger's until a tap outside)
-const click = (e: MouseEvent) => { hover.value = timeAt(e); };
+// a click or a tap pins the hour's tip (useChartZoom); what its tip opens: the session shaded where it was tapped, else
+// the lane
+const go = ref<{ tab: Lane["key"] } | { id: string } | null>(null);
+function click(e: MouseEvent) {
+  const r = (e.currentTarget as Element).getBoundingClientRect(), x = ((e.clientX - r.left) / r.width) * PW.value, y = ((e.clientY - r.top) / r.height) * H.value;
+  // a session within its shaded band, a lane within its own rows; the room for the tip above them is empty space
+  const inPlot = y >= P.t && y <= H.value - P.b;
+  const at = timeAt(e), z = inPlot ? shades.value.find((s) => x >= s.x && x <= s.x + s.w) : undefined;
+  const l = inPlot ? lanes.value.find((l) => y >= Math.max(P.t, l.y - GAP / 2) && y <= l.y + l.h + GAP / 2) : undefined;
+  // the same session, or the same lane in the same hour, puts the tip away; so does a click outside every lane
+  const key = at == null || (!z && !l) ? null : z ? z.key : `${l!.key}@${Math.floor(at / 3600_000)}`;
+  pick(key);
+  if (key == null) return;
+  hover.value = at;
+  go.value = z ? { id: z.key } : l ? { tab: l.key } : null;
+}
+const openGo = () => { const g = go.value; if (!pinned.value || !g) return; unpin(); if ("id" in g) emit("pick", g.id); else emit("open", g.tab); };
+// the tip is never wider than the chart (useTip): past that, the hour goes first, then the other lanes' readings from
+// the last, so it keeps leading with what was picked; whatever is still too long ends in the ellipsis (.ctip-r).
+// Widths by the tip's text: tied to .ctip's 12px font (about 6.6px a character, 7.2 bold) and its padding, dot and gaps
+// (about 30px); change them with it
+const TIP_CH = 6.6, TIP_B = 7.2, TIP_PAD = 30;
+const fit = (head: string, rest: string[], go: boolean) => {
+  const room = W.value - TIP_PAD - (go ? CHEVRON_W : 0) - head.length * TIP_B, r = [...rest];
+  while (r.length > 1 && r.join(" · ").length * TIP_CH > room) r.pop();
+  return r;
+};
 const tip = computed(() => {
   const at = hover.value; if (at == null) return null;
   const h0 = new Date(at); h0.setMinutes(0, 0, 0);
-  const a = h0.getTime(), parts: string[] = [];
-  const seg = props.tl.sleep.find((s) => at >= s.a && at < s.b); if (seg) parts.push(SEG_NAME[seg.k]);
-  const st = props.tl.steps.find((s) => s.a === a); if (st) parts.push(`${fmt.value.num(st.value, 0)} steps`);
-  const near = props.tl.hr.reduce<[number, number] | null>((m, p) => (Math.abs(p[0] - at) <= 10 * 60000 && (!m || Math.abs(p[0] - at) < Math.abs(m[0] - at)) ? p : m), null); if (near) parts.push(`${fmt.value.num(near[1], 0)} bpm`);
-  for (const z of shades.value) if (at >= z.a && at <= z.b) parts.push(z.name);
+  const a = h0.getTime(), parts: { k: Lane["key"] | string; text: string }[] = [];
+  const seg = props.tl.sleep.find((s) => at >= s.a && at < s.b); if (seg) parts.push({ k: "sleep", text: SEG_NAME[seg.k] });
+  const st = props.tl.steps.find((s) => s.a === a); if (st) parts.push({ k: "steps", text: `${fmt.value.num(st.value, 0)} steps` });
+  const near = props.tl.hr.reduce<[number, number] | null>((m, p) => (Math.abs(p[0] - at) <= 10 * 60000 && (!m || Math.abs(p[0] - at) < Math.abs(m[0] - at)) ? p : m), null); if (near) parts.push({ k: "heart", text: `${fmt.value.num(near[1], 0)} bpm` });
+  for (const z of shades.value) if (at >= z.a && at <= z.b) parts.push({ k: z.key, text: z.name });
+  // a pinned tip leads with what it opens (the session, or the lane's reading, or the lane's name when it read nothing
+  // that hour), so the chevron after it plainly opens that
+  const g = pinned.value ? go.value : null, key = g ? ("id" in g ? g.id : g.tab) : null;
+  if (key && !parts.some((p) => p.k === key) && g && "tab" in g) parts.unshift({ k: key, text: lane(g.tab)!.name.join(" ") });
+  const texts = [...parts.filter((p) => p.k === key), ...parts.filter((p) => p.k !== key)].map((p) => p.text);
   // the tip is placed over the whole chart (it may rise above the scrolling strip), so by where the hour is on screen
-  return parts.length ? { x: sx(at), at: P.l + sx(at) - left.value, head: parts[0]!, rest: [...parts.slice(1), `${t(a)}-${t(a + 3600_000)}`] } : null;
+  if (!texts.length) return null;
+  return { x: sx(at), at: P.l + sx(at) - left.value, head: texts[0]!, rest: fit(texts[0]!, [...texts.slice(1), `${t(a)}-${t(a + 3600_000)}`], !!g), go: !!g };
 });
 </script>
 
@@ -164,13 +201,13 @@ const tip = computed(() => {
             <rect v-for="(b, i) in stepBars" :key="'s' + i" :x="b.x" :y="b.y" :width="b.w" :height="b.h" :rx="b.rx" :style="{ fill: DAY_DATA_COLOR }" />
             <path v-if="hrPath" :d="hrPath" class="ln" :style="{ stroke: DAY_DATA_COLOR }" />
           </g>
-          <ChartShade v-for="z in shades" :key="z.key" :x="z.x" :w="z.w" :y="0" :h="H - P.b" :color="z.color" :fill="hatchOf(z.color)" />
+          <ChartShade v-for="z in shades" :key="z.key" :x="z.x" :w="z.w" :y="P.t" :h="H - P.b - P.t" :color="z.color" :fill="hatchOf(z.color)" />
           <line v-if="tip" class="gl" :x1="tip.x" :x2="tip.x" :y1="P.t" :y2="H - P.b" pointer-events="none" />
           <text v-for="h in xt" :key="h.at" class="ax" :x="sx(h.at)" :y="H - 4" :text-anchor="h.at <= tl.from ? 'start' : 'middle'">{{ h.text }}</text>
         </svg>
       </div>
     </div>
-    <div v-if="tip" ref="tipEl" class="ctip" :style="tipStyle(tip.at, P.t + 'px')"><b>{{ tip.head }}</b><template v-for="p in tip.rest" :key="p"> · {{ p }}</template></div>
+    <div v-if="tip" ref="tipEl" class="ctip" :class="{ go: tip.go }" :role="tip.go ? 'button' : undefined" :tabindex="tip.go ? 0 : undefined" :style="tipStyle(tip.at, P.t, tip.go, pinned)" @pointerdown="tip.go ? $event.preventDefault() : undefined" @click.stop.prevent="openGo" @keydown.enter.prevent="openGo" @keydown.space.prevent="openGo"><b>{{ tip.head }}</b><template v-if="tip.rest.length"><span class="sep">·</span><span class="ctip-r">{{ tip.rest.join(" · ") }}</span></template><Icon v-if="tip.go" name="right" :size="13" class="ctip-go" /></div>
     <div v-if="legend.length" class="bmlegend dtl-leg"><span v-for="k in legend" :key="k.name + k.color"><i :style="{ background: k.swatch }" />{{ k.name }}</span></div>
   </div>
 </template>

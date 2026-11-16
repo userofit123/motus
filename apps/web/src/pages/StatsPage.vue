@@ -14,7 +14,7 @@ import DotLine from "../components/DotLine.vue";
 import SearchField from "../components/SearchField.vue";
 import AppSelect from "../components/AppSelect.vue";
 import LineChart from "../components/LineChart.vue";
-import { useTip } from "../components/useTip";
+import { useTip, TIP_ROOM } from "../components/useTip";
 import { useWidth } from "../components/useWidth";
 import BarChart from "../components/BarChart.vue";
 import BodyMap from "../components/BodyMap.vue";
@@ -120,18 +120,31 @@ const heat = computed(() => {
   const start = new Date(); start.setDate(start.getDate() - 7 * 25 - daysIntoWeek(start.getDay(), s.value.firstDay));
   return Array.from({ length: 26 * 7 }, (_, i) => { const x = new Date(start); x.setDate(start.getDate() + i); const k = localYmd(x); return { k, n: on.get(k) ?? 0, future: x > new Date() }; });
 });
-// a day's tip, as every chart's: over its square on hover, a click or a tap, kept until the pointer leaves, a tap outside or
-// a scroll; it opens nothing, as no chart does
-const heatBox = ref<HTMLElement | null>(null), heatTip = ref<{ i: number; x: number; y: number } | null>(null);
+// a day's tip, as every chart's: over its square on hover, gone when the pointer leaves; a click or a tap pins it until a
+// click or tap outside or any scroll, and a pinned tip of a day you trained opens the Calendar on that day (its chevron).
+// Pinned, it is clicked, so it sits above the whole grid, never over a square, in TIP_ROOM kept free over the grid so it
+// doesn't cover the card's title either. Clicking the same day again, the room above the grid or between its squares
+// puts it away
+const heatBox = ref<HTMLElement | null>(null), heatTip = ref<{ i: number; x: number; y: number; pin?: boolean } | null>(null);
 const { el: heatTipEl, style: heatTipStyle } = useTip(useWidth(heatBox));
-function heatAt(e: Event, i: number) {
+function heatAt(e: Event, i: number, pin = false) {
+  if (!pin && heatTip.value?.pin) return;
+  if (pin && heatTip.value?.pin && heatTip.value.i === i) { heatTip.value = null; return; }
   const box = heatBox.value; if (!box || heat.value[i]?.future) { heatTip.value = null; return; }
   const r = (e.currentTarget as HTMLElement).getBoundingClientRect(), b = box.getBoundingClientRect();
-  heatTip.value = { i, x: r.left - b.left + r.width / 2, y: r.top - b.top };
+  heatTip.value = { i, x: r.left - b.left + r.width / 2, y: pin ? TIP_ROOM : r.top - b.top, pin };
 }
 const heatOut = (e: PointerEvent) => { if (heatTip.value && !heatBox.value?.contains(e.target as Node)) heatTip.value = null; };
-watch(heatTip, (t) => { if (t) document.addEventListener("pointerdown", heatOut, true); else document.removeEventListener("pointerdown", heatOut, true); });
-onBeforeUnmount(() => document.removeEventListener("pointerdown", heatOut, true));
+const heatAway = () => { heatTip.value = null; };
+const heatUnlisten = () => { document.removeEventListener("pointerdown", heatOut, true); document.removeEventListener("scroll", heatAway, true); };
+watch(() => heatTip.value?.pin, (p) => {
+  if (!p) return heatUnlisten();
+  document.addEventListener("pointerdown", heatOut, true);
+  document.addEventListener("scroll", heatAway, { capture: true, passive: true });
+});
+onBeforeUnmount(heatUnlisten);
+const heatGo = computed(() => (heatTip.value?.pin && heat.value[heatTip.value.i]?.n ? heat.value[heatTip.value.i]!.k : null));
+const openHeat = () => { const d = heatGo.value; if (!d) return; heatTip.value = null; router.push(`/history?date=${d}`); };
 const heatText = (n: number) => (!n ? "No training" : n === 1 ? "Trained once" : n === 2 ? "Trained twice" : `Trained ${n} times`);
 const dow = computed(() => { const c = [0, 0, 0, 0, 0, 0, 0]; for (const w of d.value?.workouts ?? []) c[new Date(w.startedAt).getDay()]!++; return weekdayOrder(s.value.firstDay).map((j) => ({ label: "SMTWTFS"[j]!, value: c[j]! })); });
 const hours = computed(() => { const b = [0, 0, 0, 0, 0, 0]; for (const w of d.value?.workouts ?? []) b[Math.floor(new Date(w.startedAt).getHours() / 4)]!++; return ["0-4", "4-8", "8-12", "12-16", "16-20", "20-24"].map((l, i) => ({ label: l, value: b[i]! })); });
@@ -204,12 +217,12 @@ watch([() => avail.data.value, () => scoresQ.data.value, () => readyQ.data.value
       <div class="grid g2 spt">
         <div class="card"><div class="lbl hgap">Workouts per week{{ wkGoal ? ` · goal ${wkGoal}` : "" }}</div><BarChart :bars="weeks.slice(-16).map((w) => ({ label: wlabel(w.week).split(' ')[0]!, full: wlabel(w.week), group: monthOf(w.week), value: w.workouts, dim: !!wkGoal && w.workouts < wkGoal }))" :goal="wkGoal ?? undefined" :height="170" /></div>
         <div class="card"><div class="lbl hgap">Days you trained · last 6 months</div>
-          <div ref="heatBox" class="heatw"><div class="heat" @scroll.passive="heatTip = null" @mouseleave="heatTip = null"><i v-for="(c, i) in heat" :key="c.k" :role="c.future ? undefined : 'img'" :aria-label="c.future ? undefined : `${heatText(c.n)}, ${fmt.date(c.k, { weekday: 'short', day: 'numeric', month: 'short' })}`" @mouseenter="heatAt($event, i)" @click="heatAt($event, i)" :style="c.future ? { opacity: 0 } : c.n ? { background: `color-mix(in srgb, var(--acc) ${Math.min(100, 45 + c.n * 30)}%, var(--s2))` } : undefined" /></div>
-            <div v-if="heatTip && heat[heatTip.i]" ref="heatTipEl" class="ctip" :style="heatTipStyle(heatTip.x, heatTip.y + 'px')"><b>{{ heatText(heat[heatTip.i]!.n) }}</b> · {{ fmt.date(heat[heatTip.i]!.k, { weekday: "short", day: "numeric", month: "short" }) }}</div></div>
+          <div ref="heatBox" class="heatw" :style="{ paddingTop: TIP_ROOM + 'px' }" @click.self="heatTip = null"><div class="heat" @click.self="heatTip = null" @scroll.passive="heatTip = null" @mouseleave="heatTip?.pin || (heatTip = null)"><i v-for="(c, i) in heat" :key="c.k" :role="c.future ? undefined : 'img'" :aria-label="c.future ? undefined : `${heatText(c.n)}, ${fmt.date(c.k, { weekday: 'short', day: 'numeric', month: 'short' })}`" @mouseenter="heatAt($event, i)" @click="heatAt($event, i, true)" :style="c.future ? { opacity: 0 } : c.n ? { background: `color-mix(in srgb, var(--acc) ${Math.min(100, 45 + c.n * 30)}%, var(--s2))` } : undefined" /></div>
+            <div v-if="heatTip && heat[heatTip.i]" ref="heatTipEl" class="ctip" :class="{ go: heatGo }" :role="heatGo ? 'button' : undefined" :tabindex="heatGo ? 0 : undefined" :style="heatTipStyle(heatTip.x, heatTip.y, !!heatGo, !!heatTip.pin)" @pointerdown="heatGo ? $event.preventDefault() : undefined" @click.stop.prevent="openHeat" @keydown.enter.prevent="openHeat" @keydown.space.prevent="openHeat"><b>{{ heatText(heat[heatTip.i]!.n) }}</b><span class="sep">·</span><span class="ctip-r">{{ fmt.date(heat[heatTip.i]!.k, { weekday: "short", day: "numeric", month: "short" }) }}</span><Icon v-if="heatGo" name="right" :size="13" class="ctip-go" /></div></div>
           <div class="grid g2" style="margin-top:14px;gap:12px"><div><div class="tiny" style="margin-bottom:4px">Workouts by weekday</div><BarChart :bars="dow" :height="90" /></div><div><div class="tiny" style="margin-bottom:4px">Workouts by time of day</div><BarChart :bars="hours" :height="90" /></div></div>
         </div>
       </div>
-      <div class="card spt"><div class="lbl hgap">Duration (min)</div><LineChart :points="d.workouts.map((w: any) => ({ x: new Date(w.startedAt).getTime(), y: Math.round(w.durationS / 60), label: w.name }))" :height="160" /></div>
+      <div class="card spt"><div class="lbl hgap">Duration (min)</div><LineChart :points="d.workouts.map((w: any) => ({ x: new Date(w.startedAt).getTime(), y: Math.round(w.durationS / 60), id: w.id, label: w.name }))" :height="160" @pick="(id) => router.push(`/workouts/${id}`)" /></div>
     </template>
 
     <template v-else-if="tab === 'routines'">

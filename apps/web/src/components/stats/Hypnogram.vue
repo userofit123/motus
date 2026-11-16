@@ -8,7 +8,7 @@
 // Hovering, clicking or tapping a stretch shows its tip.
 import { computed, ref } from "vue";
 import { useWidth } from "../useWidth";
-import { useTip } from "../useTip";
+import { useTip, TIP_ROOM } from "../useTip";
 import { useChartZoom, timeTicks, tickRoom, TICK_CH, HOUR_PX } from "../useChartZoom";
 import { useFmt } from "../../core/format";
 import { LANES, laneOf, segColor, SEG_NAME, mins, type Seg } from "../../core/sleep";
@@ -16,10 +16,15 @@ import { LANES, laneOf, segColor, SEG_NAME, mins, type Seg } from "../../core/sl
 const props = defineProps<{ segs: Seg[]; from: number; to: number; xt: number[]; height?: number }>();
 const fmt = useFmt();
 const box = ref<HTMLElement | null>(null);
-const W = useWidth(box), H = computed(() => props.height ?? 150), P = { l: 44, r: 12, t: 10, b: 22 };
+// TIP_ROOM at the top for a pinned tip, as every chart with tips keeps (useTip), so the night's charts under it, which
+// keep the same, still line up; its lanes as tall as the height alone gave them
+const P = { l: 44, r: 12, t: TIP_ROOM, b: 22 };
+/** The top margin the chart had before it kept TIP_ROOM; the room takes its place, so the chart is that much taller */
+const MARGIN_T = 10;
+const W = useWidth(box), H = computed(() => (props.height ?? 150) + TIP_ROOM - MARGIN_T);
 const base = computed(() => Math.max(1, W.value - P.l - P.r));
 const hover = ref<number | null>(null);
-const { sc, cls, on, cw: CW, left, pinned } = useChartZoom({ box, base, pad: P.r,
+const { sc, cls, on, cw: CW, left, pinned, pick } = useChartZoom({ box, base, pad: P.r,
   max: () => ((props.to - props.from) / 3600_000) * HOUR_PX / base.value, range: () => `${props.from}-${props.to}`, clear: () => (hover.value = null) });
 const lh = computed(() => (H.value - P.t - P.b) / LANES.length);
 // across the plot strip, which starts right of the lane names
@@ -38,12 +43,21 @@ const ticks = computed(() => {
   const end = CW.value - P.r;
   return timeTicks(props.from, props.to, end, tickRoom(t(props.from)), false).map((x) => { const w = t(x).length * TICK_CH, at = sx(x); return { x, a: at - w / 2 < 0 ? "start" : at + w / 2 > end ? "end" : "middle" }; });
 });
-const { el: tipEl, style: tipStyle } = useTip(W);
-// a finger's tip stays put while the compatibility mouse events a tap sends come and go
+const { el: tipEl, style: tipStyle, span: tipSpan } = useTip(W);
+// where the tip's foot sits: over its stretch; pinned, it rises above every stretch under its whole width, into the room
+// kept at the chart's top, never covering one
+const tipTop = (i: number) => {
+  const b = blocks.value[i]!, at = (x: { x: number; w: number }) => P.l + x.x - left.value;
+  if (!pinned.value) return b.y;
+  const { lo, hi } = tipSpan(at(b) + b.w / 2);
+  return blocks.value.reduce((t, x) => (at(x) < hi && at(x) + x.w > lo ? Math.min(t, x.y) : t), b.y);
+};
+// a pinned tip stays put while the mouse moves on (or a tap's compatibility mouse events come and go)
 const enter = (i: number) => { if (!pinned.value) hover.value = i; };
 const leave = () => { if (!pinned.value) hover.value = null; };
-// a click or a tap shows the stretch's tip, as hovering does (useChartZoom keeps a finger's until a tap outside)
-const click = (i: number) => { hover.value = i; };
+// a click or a tap pins the stretch's tip (useChartZoom) until a click or tap outside or a scroll; a stretch opens nothing,
+// so its tip has no chevron and never takes the pointer
+const click = (i: number) => { pick(i); hover.value = i; };
 </script>
 
 <template>
@@ -54,16 +68,17 @@ const click = (i: number) => { hover.value = i; };
         <text v-for="(l, i) in LANES" :key="l.k" class="ax" :x="P.l - 6" :y="P.t + (i + 0.5) * lh + 3" text-anchor="end">{{ l.name }}</text>
       </svg>
       <div ref="sc" class="zsc" :class="cls">
-        <svg class="chart" :viewBox="`0 0 ${CW} ${H}`" :style="{ height: H + 'px', ...(on ? { width: CW + 'px' } : {}) }" role="img" :aria-label="`Sleep stages, ${t(from)}-${t(to)}`" @mouseleave="leave">
-          <line v-for="(l, i) in LANES" :key="l.k" class="gl" :x1="0" :x2="CW - P.r" :y1="P.t + (i + 0.5) * lh" :y2="P.t + (i + 0.5) * lh" />
-          <text v-for="x in ticks" :key="x.x" class="ax" :x="sx(x.x)" :y="H - 4" :text-anchor="x.a">{{ t(x.x) }}</text>
-          <line v-for="(j, i) in joins" :key="'j' + i" class="hy-j" :x1="j.x" :x2="j.x" :y1="j.y1" :y2="j.y2" />
+        <svg class="chart" :viewBox="`0 0 ${CW} ${H}`" :style="{ height: H + 'px', ...(on ? { width: CW + 'px' } : {}) }" role="img" :aria-label="`Sleep stages, ${t(from)}-${t(to)}`" @mouseleave="leave" @click.self="pick(null)">
+          <!-- gridlines, hours and joins let a tap through to the chart, so a tap on them is empty space, as on every chart -->
+          <line v-for="(l, i) in LANES" :key="l.k" class="gl" :x1="0" :x2="CW - P.r" :y1="P.t + (i + 0.5) * lh" :y2="P.t + (i + 0.5) * lh" pointer-events="none" />
+          <text v-for="x in ticks" :key="x.x" class="ax" :x="sx(x.x)" :y="H - 4" :text-anchor="x.a" pointer-events="none">{{ t(x.x) }}</text>
+          <line v-for="(j, i) in joins" :key="'j' + i" class="hy-j" :x1="j.x" :x2="j.x" :y1="j.y1" :y2="j.y2" pointer-events="none" />
           <rect v-for="(b, i) in blocks" :key="i" :x="b.x" :y="b.y" :width="b.w" :height="bh" rx="2" :style="{ fill: segColor(b.k) }" :opacity="hover != null && hover !== i ? 0.55 : 1" @mouseenter="enter(i)" @click="click(i)" />
         </svg>
       </div>
     </div>
-    <div v-if="hover != null && blocks[hover]" class="ctip" ref="tipEl" :style="tipStyle(P.l + blocks[hover]!.x + blocks[hover]!.w / 2 - left, blocks[hover]!.y + 'px')">
-      <b>{{ SEG_NAME[blocks[hover]!.k] }}</b> · {{ t(blocks[hover]!.a) }}-{{ t(blocks[hover]!.b) }} · {{ mins((blocks[hover]!.b - blocks[hover]!.a) / 60000) }}
+    <div v-if="hover != null && blocks[hover]" class="ctip" ref="tipEl" :style="tipStyle(P.l + blocks[hover]!.x + blocks[hover]!.w / 2 - left, tipTop(hover), false, pinned)">
+      <b>{{ SEG_NAME[blocks[hover]!.k] }}</b><span class="sep">·</span><span class="ctip-r">{{ t(blocks[hover]!.a) }}-{{ t(blocks[hover]!.b) }} · {{ mins((blocks[hover]!.b - blocks[hover]!.a) / 60000) }}</span>
     </div>
   </div>
 </template>

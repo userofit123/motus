@@ -3,18 +3,19 @@
 // (laid out as Stats → Routines' cards, the value as a workout's Average rest), then the beats per minute over the
 // session's time. Only the tiles when the band handed over an average and no readings. chart: the line alone, for a
 // day card (Stats → Heart), whose numbers are already in its tiles above. sessions: a routine's (its page's History
-// tab) average per session over the days instead of one session's readings.
+// tab) average per session over the days instead of one session's readings; a point's pinned tip opens that workout (pick).
 // day: a whole day's readings (Stats → Heart), drawn midnight to midnight with the hours under it, left open where the
 // band read nothing, the day's workouts and activities shaded behind it in their colours (spans) and the hours given in
-// ticks; a reading in one names it in its tip (LineChart). color: the line's own colour.
+// ticks; a reading in one names it in its tip (LineChart), which opens the session (pick). color: the line's own colour.
 // inline: inside a card of its own (no card around it).
 import { computed } from "vue";
 import { useFmt } from "../core/format";
 import LineChart from "./LineChart.vue";
 import { hrPoints } from "../native/health";
 
-const props = defineProps<{ avg?: number | null; max?: number | null; hr?: [number, number][] | null; chart?: boolean; height?: number; sessions?: { x: number; y: number }[];
-  day?: { from: number; to: number; spans: { a: number; b: number; name: string; color: string }[]; ticks: number[]; color: string }; inline?: boolean }>();
+const props = defineProps<{ avg?: number | null; max?: number | null; hr?: [number, number][] | null; chart?: boolean; height?: number; sessions?: { x: number; y: number; id: string }[];
+  day?: { from: number; to: number; spans: { a: number; b: number; id: string; name: string; color: string }[]; ticks: number[]; color: string }; inline?: boolean }>();
+const emit = defineEmits<{ pick: [id: string] }>();
 const fmt = useFmt();
 const t = (x: number) => fmt.value.time(new Date(x).toISOString());
 // a day as one point per 5 minutes it has readings in (their average), so a minute-by-minute band still draws a calm
@@ -40,7 +41,7 @@ const maxV = computed(() => props.max ?? (ys.value.length ? ys.value.reduce((m, 
     </div>
     <div v-if="sessions && points.length > 1" class="lbl hgap">Average per session (bpm)</div>
     <LineChart v-if="points.length > 1" :points="points" :height="height ?? 140" :fmt="(v) => fmt.num(v, 0)" :xfmt="sessions ? undefined : (x) => fmt.time(new Date(x).toISOString())"
-      :domain="day ? [day.from, day.to] : undefined" :xt="day?.ticks" :gap="day ? 15 * 60000 : undefined" :shade="day?.spans" :color="day?.color" />
+      :domain="day ? [day.from, day.to] : undefined" :xt="day?.ticks" :gap="day ? 15 * 60000 : undefined" :shade="day?.spans" :color="day?.color" @pick="(id) => emit('pick', id)" />
   </div>
 </template>
 

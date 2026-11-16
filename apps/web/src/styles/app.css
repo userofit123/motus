@@ -661,6 +661,23 @@ html.phone .cal .dots i.plan { background: none; border: 1px solid var(--ec, var
 .chart .cbar[data-dim] { fill: color-mix(in srgb, var(--acc) 75%, transparent); }
 .chart .goal { stroke: var(--tx2); stroke-width: 1; stroke-dasharray: 4 4; opacity: .7; }
 .ctip { position: absolute; pointer-events: none; background: var(--tx); color: var(--bg); padding: 6px 9px; border-radius: 9px; font-size: 12px; white-space: nowrap; transform: translate(-50%, calc(-100% - 10px)); z-index: 5; }
+/* one line, never wider than its chart (useTip sets max-width): the bold head, its dot, then the rest, which gives way
+   first and ends in an ellipsis when it doesn't fit; the head is cut only when even it doesn't fit alone. The gap is a
+   space's width at the tip's 12px, so the dot after the head sits as the " · " dots inside the rest do */
+.ctip { display: flex; align-items: center; gap: .28em; box-sizing: border-box; }
+.ctip > b { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.ctip > .sep, .ctip > .ctip-go { flex: none; }
+.ctip > .sep { color: inherit; }
+.ctip .ctip-r { flex: 0 1000 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* a clicked or tapped tip over something that opens (useChartZoom.ts): the list rows' chevron at its end, and the whole
+   tip opens it; a little taller to the touch than it looks, so a finger finds it (the tip's 27px and 3px above and below,
+   33px). It takes the keyboard's focus too, ringed as the app's other focused controls */
+.ctip.go { pointer-events: auto; cursor: pointer; }
+.ctip.go::before { content: ""; position: absolute; inset: -3px 0; }
+.ctip.go:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
+/* the chevron is quieter than the tip's words, as the list rows' is muted beside their text (the tip's colours are
+   inverted, so no muted token fits) */
+.ctip .ctip-go { margin-inline: -2px -3px; opacity: .65; }
 /* a zoomable chart (useChartZoom.ts): the axis names in a strip that stays put, the plot beside them in a strip that
    scrolls sideways once zoomed. Pinching it is the chart's, not the page's; one finger still scrolls either way. No
    scrollbar (it would make the card taller): a finger, a trackpad, the wheel or the mouse moves it. */

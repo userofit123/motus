@@ -11,6 +11,7 @@
 // their exact times and listed under the chart, as on Stats → Heart's day. Moved with the Calendar's bar; a day's
 // link (?day=) follows it, so a refresh or Back keeps the day.
 import { computed, ref, watch } from "vue";
+import { useRouter } from "vue-router";
 import { useQuery, keepPreviousData } from "@tanstack/vue-query";
 import { ymd, weekStartDate, ACTIVE_HOUR_STEPS, stillStretch, currentStreak, typicalHour } from "@motus/shared";
 import { api } from "../../api/client";
@@ -32,6 +33,7 @@ export type StepsView = StretchView;
 const view = defineModel<StepsView>("view", { required: true });
 const props = defineProps<{ day?: string }>();
 const emit = defineEmits<{ "update:day": [day: string] }>();
+const router = useRouter();
 const fmt = useFmt();
 const s = useSettings();
 const dev = useDevice();
@@ -101,7 +103,7 @@ const hours = computed(() => {
 });
 // in bars: hours since midnight (a clock change day's bars are its real hours, so this holds then too)
 const inBars = (t: number) => (t - dayStart.value) / 3600_000;
-const shade = computed(() => sessions.value.filter((x) => x.b > x.a).map((x) => ({ a: inBars(x.a), b: inBars(x.b), color: x.color, name: x.name })));
+const shade = computed(() => sessions.value.filter((x) => x.b > x.a).map((x) => ({ a: inBars(x.a), b: inBars(x.b), color: x.color, id: x.key, name: x.name })));
 // every 6 hours, closer as the chart is zoomed in (a bar is an hour, so its width is an hour's)
 const xt = (slot: number) => zoomHours(anchor.value, fmt.value, slot).map((h) => ({ at: inBars(h.at), text: h.text }));
 const legend = computed(() => legendOf(sessions.value));
@@ -221,17 +223,19 @@ const bars = computed(() => {
   if (view.value !== "year") return days.value.map((d) => {
     const n = stepsOn(d), full = fmt.value.date(d, { day: "numeric", month: "short" });
     return { label: view.value === "week" ? fmt.value.date(d, { weekday: "short" }) : full.split(" ")[0]!, full, ...(view.value === "month" ? { group: month(d) } : {}),
-      tip: fmt.value.date(d, { weekday: "short", day: "numeric", month: "short" }), value: n, ...(goal.value && n >= goal.value ? { color: "var(--pos)" } : {}) };
+      tip: fmt.value.date(d, { weekday: "short", day: "numeric", month: "short" }), value: n, ...(goal.value && n >= goal.value ? { color: "var(--pos)" } : {}), id: n ? d : undefined };
   });
   const wk = new Map<string, number[]>();
   for (const d of days.value) { const k = ymd(weekStartDate(at(d), s.value.firstDay)); const n = stepsOn(d); wk.set(k, n ? [...(wk.get(k) ?? []), n] : (wk.get(k) ?? [])); }
   return [...wk].map(([k, ns]) => {
     const full = fmt.value.date(k, { day: "numeric", month: "short" }), v = ns.length ? ns.reduce((t, n) => t + n, 0) / ns.length : 0;
-    return { label: full.split(" ")[0]!, full, group: month(k), tip: `week of ${full}`, value: Math.round(v), ...(goal.value && v >= goal.value ? { color: "var(--pos)" } : {}) };
+    return { label: full.split(" ")[0]!, full, group: month(k), tip: `week of ${full}`, value: Math.round(v), ...(goal.value && v >= goal.value ? { color: "var(--pos)" } : {}), id: ns.length ? k : undefined };
   });
 });
 const periodFrom = computed(() => { const r = withSteps.value.map((d) => steps.value.get(d)!); return r.length && r.every((x) => x.source && x.source !== "manual" && x.source !== "activities") ? fromWhere(r.every((x) => x.worn !== false), dev.value) : ""; });
 const tiles = computed(() => 1 + (goal.value ? 1 : 0) + (goal.value && streak.value ? 1 : 0));
+// a bar's tip opens its day, a week's bar (the year view) its week
+const pick = (d: string) => { anchor.value = d; view.value = view.value === "year" ? "week" : "day"; };
 const openDay = (d: string | null) => { if (d) { anchor.value = d; view.value = "day"; } };
 </script>
 
@@ -265,7 +269,7 @@ const openDay = (d: string | null) => { if (d) { anchor.value = d; view.value = 
         <div class="csec"><div class="lbl hgap">Steps by hour</div>
           <template v-if="hours.length">
             <!-- keyed by the day: its hour labels are the same every day, so without it a zoom would carry over to the next -->
-            <BarChart :key="anchor" :bars="hours" :height="170" :fmt="n0" :shade="shade" :xt="xt" />
+            <BarChart :key="anchor" :bars="hours" :height="170" :fmt="n0" :shade="shade" :xt="xt" @pick="(id) => router.push(id)" />
             <div v-if="legend.length" class="bmlegend st-leg"><span><i :style="{ background: DAY_DATA_COLOR }" />Steps</span><span v-for="k in legend" :key="k.color"><i :style="{ background: k.color }" />{{ k.name }}</span></div>
             <div v-if="busiest" class="tiny st-line">Busiest hour {{ busiest.tip }} · {{ n0(busiest.value) }} steps</div>
             <div v-if="still" class="tiny st-line">Quietest stretch {{ still.span }} · {{ mins(still.hours * 60) }} under {{ ACTIVE }} steps an hour</div>
@@ -312,7 +316,7 @@ const openDay = (d: string | null) => { if (d) { anchor.value = d; view.value = 
 
       <div class="card spt">
         <div class="lbl hgap">{{ view === "year" ? "Average steps a day, by week" : "Steps per day" }}{{ periodFrom ? ` · ${periodFrom}` : "" }}{{ goal ? ` · goal ${n0(goal)}` : "" }}</div>
-        <BarChart :bars="bars" :goal="goal ?? undefined" :height="170" :fmt="n0" />
+        <BarChart :bars="bars" :goal="goal ?? undefined" :height="170" :fmt="n0" @pick="pick" />
         <div v-if="bars.some((b) => b.color)" class="bmlegend st-leg"><span><i style="background: var(--acc)" />Steps</span><span><i style="background: var(--pos)" />Goal reached</span></div>
         <div class="tiny st-line">{{ view === "year" ? "Tap a week to see its average steps a day." : "Tap a day to see its steps." }}</div>
       </div>

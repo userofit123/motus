@@ -88,7 +88,7 @@ const dayTop = computed(() => dayTiles.value.length > 0 || tlHas.value);
       </div>
     </div>
     <div v-if="tlHas" :class="{ csec: dayTiles.length }">
-      <DayByHour :tl="tl" :day="day" :sessions="tlSessions" /></div>
+      <DayByHour :tl="tl" :day="day" :sessions="tlSessions" @open="(tab) => router.push(`/stats?tab=${tab}&day=${day}`)" @pick="(id) => router.push(id)" /></div>
     <div :class="{ 'csec dsess': dayTop }"><div v-if="dayTop && items.length" class="lbl hgap">Workouts and activities</div>
     <div v-if="!items.length" class="tiny">{{ day === today ? "Nothing logged or planned today yet." : day > today ? "Nothing planned. Use Plan to put a routine on this day." : "No workouts or activities on this day." }}</div>
     <div class="list"><div v-for="x in items" :key="x.id ?? x.scheduleId" class="li click" @click="open(x)">

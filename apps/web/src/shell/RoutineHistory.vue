@@ -41,7 +41,12 @@ const trendOpts = computed(() => {
 });
 const pick = ref<string | null>(null);
 const trendEx = computed(() => (trendOpts.value.some((o) => o.value === pick.value) ? pick.value : trendOpts.value[0]?.value ?? null));
-const trend = computed(() => points.value.filter((t) => t.exerciseId === trendEx.value).map((t) => ({ x: new Date(t.at).getTime(), y: fmt.value.fromKg(t.kg) })));
+const trend = computed(() => points.value.filter((t) => t.exerciseId === trendEx.value).map((t) => ({ x: new Date(t.at).getTime(), y: fmt.value.fromKg(t.kg), id: t.versionId })));
+// a point's tip opens its version, which may be on a page of the list not loaded yet: open it all the same
+function openVersion(vid: string) {
+  const t = points.value.find((p) => p.versionId === vid);
+  open.value = list.value.find((v) => v.id === vid) ?? (t ? { id: vid, createdAt: t.at, reason: t.reason, workoutId: null, workoutName: t.workoutName, name: "", exercises: 0, current: false } : null);
+}
 
 // one version, as it was
 const open = ref<Version | null>(null);
@@ -66,7 +71,7 @@ async function restore() {
       <div v-if="trend.length > 1" class="card spb">
         <div class="row hgap"><span class="lbl grow">Weight ({{ fmt.wu }})</span>
           <AppSelect v-if="trendOpts.length > 1" :model-value="trendEx" :options="trendOpts" title="Exercise" style="width:auto" @update:model-value="(v) => (pick = v)" /></div>
-        <LineChart :points="trend" :height="150" :fmt="(v) => fmt.num(v, 1)" />
+        <LineChart :points="trend" :height="150" :fmt="(v) => fmt.num(v, 1)" @pick="openVersion" />
       </div>
       <div v-if="!list.length" class="empty"><b>No history yet</b>Each time a workout or an edit changes this routine, the new version is kept here.</div>
       <div v-else class="card"><div class="list">

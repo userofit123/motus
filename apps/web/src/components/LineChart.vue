@@ -4,22 +4,31 @@
 // instead of first, middle and last; gap: a longer break between two points (ms) leaves the line open there, so time
 // without readings isn't drawn as a straight line; shade: spans of time set off behind the line (a day's workouts), in
 // their own colour with a strip along the top when they have one (none when soft: a quieter span, a workout's rests),
-// at least 8px wide so a short one still shows, named in the tip of a point inside it.
+// at least 8px wide so a short one still shows, named in the tip of a point inside it. A point with an `id` (a workout,
+// a day) opens it (pick) from its pinned tip; a shade with one, from the tip of a point clicked or tapped over it.
 // It zooms sideways (useChartZoom.ts) until its points are about 32px apart (or an hour HOUR_PX wide, or 4x), the time labels
 // coming closer as it spreads out; the value labels sit in their own strip on the left, which stays put while the
 // plot scrolls. Charts sharing a zoom (a night's) zoom by their hours alone, so they stay lined up. Hovering, clicking or
-// tapping shows the nearest point's tip; a chart never opens another page.
+// tapping shows the nearest point's tip; only a clicked or tapped tip opens (useChartZoom.ts).
 import { computed, ref } from "vue";
+import Icon from "./Icon.vue";
 import { useWidth } from "./useWidth";
-import { useTip } from "./useTip";
+import { useTip, TIP_ROOM } from "./useTip";
 import { useChartZoom, timeTicks, tickRoom, TICK_CH, TICK_GAP, inChartGroup, HOUR_PX } from "./useChartZoom";
 import { useFmt } from "../core/format";
 import ChartShade from "./ChartShade.vue";
 import { shadeSpan } from "./chartShade";
 
-const props = defineProps<{ points: { x: number; y: number; label?: string }[]; height?: number; fmt?: (v: number) => string; xfmt?: (t: number) => string; color?: string; zero?: boolean; domain?: [number, number]; xt?: number[]; gap?: number; shade?: { a: number; b: number; color?: string; soft?: boolean; name?: string }[] }>();
+const props = defineProps<{ points: { x: number; y: number; label?: string; id?: string }[]; height?: number; fmt?: (v: number) => string; xfmt?: (t: number) => string; color?: string; zero?: boolean; domain?: [number, number]; xt?: number[]; gap?: number; shade?: { a: number; b: number; color?: string; soft?: boolean; name?: string; id?: string }[] }>();
+const emit = defineEmits<{ pick: [id: string] }>();
 const box = ref<HTMLElement | null>(null);
-const W = useWidth(box), H = computed(() => props.height ?? 200), P = { l: 44, r: 12, t: 10, b: 22 };
+// every chart with tips keeps TIP_ROOM at its top for a pinned tip (P.t, useTip), so the tip stays inside the chart, over
+// no point and no header above it, and sibling charts have the same air over their plots: the chart is that much taller
+// than its height, its plot as tall as the height alone gave it
+const P = { l: 44, r: 12, t: TIP_ROOM, b: 22 };
+/** The top margin the chart had before it kept TIP_ROOM; the room takes its place, so the chart is that much taller */
+const MARGIN_T = 10;
+const W = useWidth(box), H = computed(() => (props.height ?? 200) + TIP_ROOM - MARGIN_T);
 // the plot's width at 1x: the card's, less the value labels' strip (P.l) and the right margin (P.r, which doesn't stretch)
 const base = computed(() => Math.max(1, W.value - P.l - P.r));
 const uid = Math.random().toString(36).slice(2);
@@ -36,12 +45,12 @@ const dom = computed(() => {
 });
 const span = computed(() => { const d = dom.value; return d.x1 - d.x0; });
 const grouped = inChartGroup(), hourCap = () => ((span.value / 3600_000) * HOUR_PX) / base.value;
-const { sc, cls, on, cw: CW, left, pinned, dragging } = useChartZoom({ box, base, pad: P.r,
+const { sc, cls, on, cw: CW, left, pinned, pick, unpin, dragging } = useChartZoom({ box, base, pad: P.r,
   // a short span (a 40-minute workout's heart rate) is narrower than its card at HOUR_PX, yet its readings are seconds
   // apart: it still zooms up to 4x when it has the points for it
   max: () => (grouped ? hourCap() : Math.min(64, (sorted.value.length * 32) / base.value, Math.max(4, hourCap()))),
   // another day or period fits the card again; points added live (a workout's heart rate) keep the zoom
-  range: () => (props.domain ? props.domain.join("-") : String(sorted.value[0]?.x)), clear: () => (hover.value = null) });
+  range: () => (props.domain ? props.domain.join("-") : String(sorted.value[0]?.x)), clear: () => { hover.value = null; go.value = null; } });
 // across the plot strip, which starts right of the value labels
 const sx = (x: number) => { const d = dom.value; return (d.x1 === d.x0 ? 0.5 : (x - d.x0) / (d.x1 - d.x0)) * (CW.value - P.r); };
 const sy = (y: number) => { const d = dom.value; return P.t + (1 - (y - d.y0) / (d.y1 - d.y0)) * (H.value - P.t - P.b); };
@@ -81,15 +90,41 @@ const xticks = computed(() => {
 });
 const hover = ref<number | null>(null);
 // near either edge the tip slides inwards, so it isn't cut off
-const { el: tipEl, style: tipStyle } = useTip(W);
+const { el: tipEl, style: tipStyle, span: tipSpan } = useTip(W);
+// where the tip's foot sits: over its point (useTip's 10px gap clears the 5px dot); pinned, the tip is clicked, so it
+// rises above every point under its whole width, and the ones just beyond, whose lines run in under it, into the room
+// kept at the chart's top
+const tipTop = (i: number) => {
+  const at = (p: { x: number }) => P.l + sx(p.x) - left.value, s = sorted.value;
+  let t = sy(s[i]!.y);
+  if (!pinned.value) return t;
+  const { lo, hi } = tipSpan(at(s[i]!), !!go.value);
+  s.forEach((p, j) => { const x = at(p); if ((x >= lo && x <= hi) || (x < lo && at(s[j + 1] ?? p) >= lo) || (x > hi && at(s[j - 1] ?? p) <= hi)) t = Math.min(t, sy(p.y)); });
+  // nor inside a session's tint: over one, it sits in the room above the plot, where every day chart's shading starts
+  if (props.shade?.some((z) => { const s = shadeX(z); return P.l + s.x - left.value < hi && P.l + s.x + s.w - left.value > lo; })) t = Math.min(t, P.t);
+  return t;
+};
 const shadeX = (z: { a: number; b: number }) => shadeSpan(sx(Math.max(z.a, dom.value.x0)), sx(Math.min(z.b, dom.value.x1)));
 const svgX = (e: MouseEvent) => { const r = (e.currentTarget as SVGElement).getBoundingClientRect(); return ((e.clientX - r.left) / r.width) * CW.value; };
 const nearest = (x: number) => { let best = 0, bd = Infinity; sorted.value.forEach((p, i) => { const d = Math.abs(sx(p.x) - x); if (d < bd) { bd = d; best = i; } }); return best; };
 // the shaded sessions a point falls in, named in its tip as BarChart's bars name theirs
 const shadeName = (t: number) => (props.shade ?? []).filter((z) => z.name && z.a <= t && z.b >= t).map((z) => z.name).join(", ");
-// a click or a tap shows the nearest point's tip, as hovering does (useChartZoom keeps a finger's until a tap outside)
-const click = (e: MouseEvent) => { hover.value = nearest(svgX(e)); };
-// a finger's tip stays put while the compatibility mouse events a tap sends come and go; a drag shows none
+// a click or a tap pins the nearest point's tip (useChartZoom); what its tip opens: the session shaded where it was
+// tapped, else the point
+const go = ref<string | null>(null);
+/** How far from a point a click still counts as on it; further, and outside any session, it's empty chart space */
+const REACH = 24;
+const svgY = (e: MouseEvent, h: number) => { const svg = (e.currentTarget as Element).closest("svg")!, r = svg.getBoundingClientRect(); return ((e.clientY - r.top) / r.height) * h; };
+function click(e: MouseEvent) {
+  const x = svgX(e), z = props.shade?.find((s) => s.id && s.b > dom.value.x0 && s.a < dom.value.x1 && x >= shadeX(s).x && x <= shadeX(s).x + shadeX(s).w);
+  // the room kept for the tip above the plot, and the time labels under it, are empty space too
+  const y = svgY(e, H.value), i = nearest(x), near = y >= P.t && y <= H.value - P.b && (z || Math.abs(sx(sorted.value[i]!.x) - x) <= REACH);
+  pick(near ? `${z?.id ?? ""}@${i}` : null);
+  if (!near) return;
+  hover.value = i; go.value = z?.id ?? sorted.value[i]?.id ?? null;
+}
+const openGo = () => { const id = go.value; if (!pinned.value || !id) return; unpin(); emit("pick", id); };
+// a pinned tip stays put while the mouse moves on (or a tap's compatibility mouse events come and go); a drag shows none
 function move(e: MouseEvent) {
   if (pinned.value) return;
   hover.value = dragging() ? null : nearest(svgX(e));
@@ -121,8 +156,8 @@ const xf = (t: number) => (props.xfmt ? props.xfmt(t) : df.value.date(t));
     </svg>
     </div>
     </div>
-    <div v-if="hover != null && sorted[hover]" class="ctip" ref="tipEl" :style="tipStyle(P.l + sx(sorted[hover]!.x) - left, (sy(sorted[hover]!.y) / H) * 100 + '%')">
-      <b>{{ f(sorted[hover]!.y) }}</b> · {{ sorted[hover]!.label ?? xf(sorted[hover]!.x) }}<template v-if="shadeName(sorted[hover]!.x)"> · {{ shadeName(sorted[hover]!.x) }}</template>
+    <div v-if="hover != null && sorted[hover]" class="ctip" :class="{ go: pinned && go }" ref="tipEl" :role="pinned && go ? 'button' : undefined" :tabindex="pinned && go ? 0 : undefined" :style="tipStyle(P.l + sx(sorted[hover]!.x) - left, tipTop(hover), !!(pinned && go), pinned)" @pointerdown="pinned && go ? $event.preventDefault() : undefined" @click.stop.prevent="openGo" @keydown.enter.prevent="openGo" @keydown.space.prevent="openGo">
+      <b>{{ f(sorted[hover]!.y) }}</b><span class="sep">·</span><span class="ctip-r">{{ sorted[hover]!.label ?? xf(sorted[hover]!.x) }}<template v-if="shadeName(sorted[hover]!.x)"> · {{ shadeName(sorted[hover]!.x) }}</template></span><Icon v-if="pinned && go" name="right" :size="13" class="ctip-go" />
     </div>
   </div>
 </template>

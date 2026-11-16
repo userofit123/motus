@@ -6,9 +6,14 @@
 //    browser's own scrolling, so the page still scrolls up and down over it)
 //  - a computer: ctrl or ⌘ with the wheel zooms around the pointer (a trackpad's pinch sends the same); the plain wheel
 //    scrolls it sideways, handing the wheel back to the page at either end; the mouse drags it
-// A chart never opens another page (the developer's rule): a mouse's hover or click and a finger's tap only show its tip.
-// A finger's tip stays until a tap outside the chart or a scroll. A click or tap on a chart stays in it, so a card or link
-// around it doesn't take it either. No double tap to fit it back: two quick taps on bars are how a finger reads them.
+// Tapping or clicking a chart never opens another page (the developer's rule: the whole column used to): it only shows
+// the tip, as a mouse's hover does. A click or a tap pins the tip until a click or tap outside the chart or a scroll. A
+// pinned tip over something that opens (a workout, a day) ends with the list rows' chevron and is itself tapped to open
+// it; the chevron says so, so it isn't opened by accident. A tip without the chevron never takes the pointer. The tip
+// sits above every item under it, inside the chart (useTip's TIP_ROOM), never over one. Tapping the same item again, or
+// empty chart space, puts the tip away. While one is pinned, hovering other items shows nothing: one tip at a time, the
+// one that was chosen. A click or tap on a chart stays in it, so a card or link around it doesn't take it either. No
+// double tap to fit it back: two quick taps on bars are how a finger reads them.
 // Charts stacked over the same hours (a night's stages over its heart rate) share one zoom and scroll (shareChartZoom),
 // so they stay lined up as a video editor's tracks.
 import { computed, inject, nextTick, onBeforeUnmount, provide, ref, watch, type InjectionKey, type Ref } from "vue";
@@ -27,7 +32,7 @@ export function shareChartZoom() { provide(GROUP, { zoom: ref(1), x: ref(0) }); 
 export const inChartGroup = () => inject(GROUP, null) != null;
 
 type Opts = {
-  /** The whole chart, its tip included: a tap outside it puts a finger's tip away */
+  /** The whole chart, its tip included: a click or tap outside it puts a pinned tip away */
   box: Ref<HTMLElement | null>;
   /** The plot's width at 1x, the part that stretches */
   base: Ref<number>;
@@ -76,20 +81,31 @@ export function useChartZoom(o: Opts) {
   }
   const by = (f: number, at?: number) => set(zoom.value * f, at);
 
-  // a finger's tip stays until a tap outside the chart; a mouse's goes when the mouse leaves
+  // a clicked or tapped tip stays until a click or tap outside the chart (the mouse can then move onto its link); a
+  // hovered one goes when the mouse leaves
   const pinned = ref(false);
-  const unpin = () => { if (!pinned.value) return; pinned.value = false; o.clear(); };
+  let pinKey: unknown = null, drop = false;
+  const unpin = () => { pinKey = null; if (!pinned.value) return; pinned.value = false; o.clear(); };
+  /** In a chart's click: the item clicked (null: empty chart space). The same item again, or empty space, puts the pinned
+   *  tip away instead of pinning it; nothing a chart's tap does ever opens anything */
+  const pick = (key: unknown) => { if (pinned.value && (key == null || key === pinKey)) drop = true; else pinKey = key; };
   const outside = (e: PointerEvent) => { if (pinned.value && !o.box.value?.contains(e.target as Node)) unpin(); };
-  watch(pinned, (p) => { if (p) document.addEventListener("pointerdown", outside, true); else document.removeEventListener("pointerdown", outside, true); });
-  // a mouse moving over the chart takes over from a finger's tip (a laptop with a touch screen)
-  const mouse = (e: PointerEvent) => { if (e.pointerType === "mouse") unpin(); };
-  watch(o.box, (now, was) => { was?.removeEventListener("pointermove", mouse); now?.addEventListener("pointermove", mouse); });
+  // a click in the chart but not on its plot (the fixed label strip, the legend) is empty space too: it puts the tip away.
+  // The plot's own clicks stop at the scroller (clickLast) and the tip's at the tip, so only these get here
+  const boxClick = () => unpin();
+  watch(o.box, (now, was) => { was?.removeEventListener("click", boxClick); now?.addEventListener("click", boxClick); });
+  // any scroll (the page under a wheel, or a finger's drag that began on the chart) moves the tip off what it names
+  const scrolledAway = () => unpin();
+  const unlisten = () => { document.removeEventListener("pointerdown", outside, true); document.removeEventListener("scroll", scrolledAway, true); };
+  watch(pinned, (p) => {
+    if (!p) return unlisten();
+    document.addEventListener("pointerdown", outside, true);
+    document.addEventListener("scroll", scrolledAway, { capture: true, passive: true });
+  });
 
   // the mouse drags it sideways as a finger does; a drag isn't also a click on what's under it
-  let touch = false;
   let drag: { x: number; left: number; moved: boolean; id: number } | null = null;
   const down = (e: PointerEvent) => {
-    touch = e.pointerType !== "mouse";
     if (!on.value || e.pointerType !== "mouse" || e.button !== 0 || !sc.value) return;
     drag = { x: e.clientX, left: sc.value.scrollLeft, moved: false, id: e.pointerId };
   };
@@ -103,9 +119,13 @@ export function useChartZoom(o: Opts) {
   };
   const release = (e: PointerEvent) => { if (drag?.moved) { try { sc.value?.releasePointerCapture(e.pointerId); } catch { /* already released */ } } };
   const clickFirst = (e: MouseEvent) => { if (drag?.moved) { e.stopPropagation(); e.preventDefault(); } drag = null; };
-  // a click or tap on the chart stays in it (it only shows a tip); a finger's tip is kept until a tap outside. The chart's
-  // own handlers have set the tip by now (they sit on what's inside, so hear the click first)
-  const clickLast = (e: MouseEvent) => { e.stopPropagation(); e.preventDefault(); if (touch) pinned.value = true; };
+  // a click or tap on the chart stays in it and pins the tip. The chart's own handlers have set the tip by now (they sit
+  // on what's inside, so hear the click first)
+  const clickLast = (e: MouseEvent) => {
+    e.stopPropagation(); e.preventDefault();
+    // a tap on empty space with nothing pinned: the tip a tap's compatibility mouse events showed goes too
+    if (drop) { drop = false; unpin(); } else if (pinKey != null) pinned.value = true; else o.clear();
+  };
   /** True while the mouse is dragging the chart, when hovering shows no tip */
   const dragging = () => !!drag?.moved;
 
@@ -186,13 +206,13 @@ export function useChartZoom(o: Opts) {
     scrollTo(u * now * zoom.value - (now + (o.pad ?? 0)) / 2);
   });
   onBeforeUnmount(() => {
-    document.removeEventListener("pointerdown", outside, true);
-    o.box.value?.removeEventListener("pointermove", mouse);
+    unlisten();
+    o.box.value?.removeEventListener("click", boxClick);
     for (const [n, f, opt] of listen) sc.value?.removeEventListener(n, f, opt);
     sc.value?.removeEventListener("touchmove", tmove as EventListener);
   });
 
-  return { sc, cls, zoom, left, on, can, cw, most, set, by, scrollTo, reset, pinned, dragging };
+  return { sc, cls, zoom, left, on, can, cw, most, set, by, scrollTo, reset, pinned, pick, unpin, dragging };
 }
 
 const MIN = 60_000, DAY = 86_400_000;

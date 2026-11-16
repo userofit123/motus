@@ -4,31 +4,44 @@
 // chart has only a few bars, its `short` one ("N") when a grouped chart is too narrow for the usual one. A bar's `group` ("2026") is a second axis line, shown
 // where it changes, so a run of months says which year each is in; `values` prints each bar's value above it. A bar's
 // `parts` stack inside it from the bottom (a night's sleep stages), each in its own colour (`hatch`: as thin stripes of it,
-// for a quieter part that still reads apart from the solid ones). shade: stretches set off behind the bars in their own
-// colour (a day's workouts over its hours), from and to in bars (2.5 = halfway through the third), named in the tip of
-// each bar they cover; xt: fixed axis labels at such positions in place of the bars' own, or a function giving them for a
+// for a quieter part that still reads apart from the solid ones); a bar with an `id` opens it (pick) from its pinned tip.
+// shade: stretches set off behind the bars in their own colour (a day's workouts over its hours), from and to in bars
+// (2.5 = halfway through the third), named in the tip of each bar they cover; one with an id opens from the tip of a bar
+// clicked or tapped over it; xt: fixed axis labels at such positions in place of the bars' own, or a function giving them for a
 // bar's width once zoomed (0 when it fits the card), so they get closer as it spreads out.
 // It zooms sideways (useChartZoom.ts): pinched or ctrl+wheeled until a bar has about 80px, its labels named more often
-// as the bars spread. Hovering, clicking or tapping a bar shows its tip; a chart never opens another page.
+// as the bars spread. Hovering, clicking or tapping a bar shows its tip; only a clicked or tapped tip opens (useChartZoom.ts).
 import { computed, ref, useId } from "vue";
 import { useWidth } from "./useWidth";
-import { useTip } from "./useTip";
+import { useTip, TIP_ROOM } from "./useTip";
 import { useChartZoom } from "./useChartZoom";
+import Icon from "./Icon.vue";
 import ChartShade from "./ChartShade.vue";
 import { shadeSpan } from "./chartShade";
-const props = defineProps<{ bars: { label: string; value: number; dim?: boolean; color?: string; tip?: string; group?: string; short?: string; full?: string; parts?: { value: number; color: string; hatch?: boolean }[] }[]; height?: number; fmt?: (v: number) => string; band?: [number, number]; horizontal?: boolean; goal?: number; values?: boolean;
-  shade?: { a: number; b: number; color: string; name: string }[]; xt?: { at: number; text: string }[] | ((slot: number) => { at: number; text: string }[]) }>();
+const props = defineProps<{ bars: { label: string; value: number; dim?: boolean; color?: string; tip?: string; group?: string; short?: string; full?: string; parts?: { value: number; color: string; hatch?: boolean }[]; id?: string }[]; height?: number; fmt?: (v: number) => string; band?: [number, number]; horizontal?: boolean; goal?: number; values?: boolean;
+  shade?: { a: number; b: number; color: string; name: string; id?: string }[]; xt?: { at: number; text: string }[] | ((slot: number) => { at: number; text: string }[]) }>();
+const emit = defineEmits<{ pick: [id: string] }>();
 const uid = useId();
 // a stacked bar's parts, bottom up: where each starts and ends
 const stack = (parts: { value: number; color: string; hatch?: boolean }[]) => { let at = 0; return parts.filter((p) => p.value > 0).map((p) => ({ color: p.color, hatch: p.hatch, lo: at, hi: (at += p.value) })); };
-const H = computed(() => props.height ?? 160);
+// every chart with tips keeps TIP_ROOM at its top for a pinned tip (useTip), so the tip stays inside the chart, over no
+// bar and no header above it, and sibling charts have the same air over their bars: the chart is that much taller than
+// its height, its bars as tall as the height alone gave them
+/** The height of the value printed over a bar */
+const VALUE_H = 16;
+/** The top margin the chart had before it kept TIP_ROOM (room for the values, when printed); the room takes its place,
+ *  so the chart is that much taller */
+const marginT = computed(() => (props.values ? 18 : 8));
+// room under the bars for the labels (and the group line), and over them for the values and a pinned tip
+const top = computed(() => TIP_ROOM + (props.values ? VALUE_H : 0));
+const H = computed(() => (props.height ?? 160) + top.value - marginT.value);
 const max = computed(() => Math.max(1, ...props.bars.map((b) => b.value), props.band?.[1] ?? 0, props.goal ?? 0));
 const hover = ref<number | null>(null);
 const box = ref<HTMLElement | null>(null);
 const W = useWidth(box);
 // the period the bars cover: another one fits the card again (a live refresh of the same bars doesn't)
 const range = () => { const a = props.bars[0], b = props.bars.at(-1); return [props.bars.length, a?.full ?? a?.label, a?.group, b?.full ?? b?.label, b?.group].join("|"); };
-const { sc, cls, on, cw: CW, left, pinned, dragging } = useChartZoom({ box, base: W, max: () => (80 * props.bars.length) / Math.max(1, W.value), range, clear: () => (hover.value = null) });
+const { sc, cls, on, cw: CW, left, pinned, pick, unpin, dragging } = useChartZoom({ box, base: W, max: () => (80 * props.bars.length) / Math.max(1, W.value), range, clear: () => { hover.value = null; go.value = null; } });
 const slot = computed(() => CW.value / Math.max(1, props.bars.length));
 const bw = computed(() => Math.max(4, Math.min(28, slot.value * 0.6)));
 const grouped = computed(() => props.bars.some((b) => b.group));
@@ -42,9 +55,7 @@ const narrow = computed(() => grouped.value && props.bars.every((b) => b.short) 
 const text = (b: (typeof props.bars)[number]) => (long.value ? b.full ?? b.label : narrow.value ? b.short! : b.label);
 const every = computed(() => Math.max(1, Math.ceil((grouped.value || long.value ? room(text) : 34) / slot.value)));
 const named = (i: number) => i % every.value === (props.bars.length - 1) % every.value;
-// room under the bars for the labels (and the group line), and over them for the values
 const bottom = computed(() => (grouped.value ? 32 : 18));
-const top = computed(() => (props.values ? 18 : 8));
 const y = (v: number) => H.value - bottom.value - (v / max.value) * (H.value - bottom.value - top.value);
 // the group's name sits under its first named bar (so it always has a label over it), left out when the next group's
 // name comes too close for both to fit ("2025" over a lone December beside "2026" on a phone)
@@ -63,14 +74,39 @@ const starts = (i: number) => {
 const GW = 30;
 const gx = (i: number) => (i * slot.value + (slot.value - bw.value) / 2 + GW > CW.value ? { x: i * slot.value + (slot.value + bw.value) / 2, a: "end" } : { x: i * slot.value + (slot.value - bw.value) / 2, a: "start" });
 // a tip over a bar near either edge slides inwards, so a long one isn't cut off
-const { el: tipEl, style: tipStyle } = useTip(W);
+const { el: tipEl, style: tipStyle, span: tipSpan } = useTip(W);
+// where the tip's foot sits: over its bar (and the value printed on it); pinned, the tip is clicked, so it rises above
+// every bar under its whole width, never covering one, into the room kept at the chart's top
+const tipTop = (i: number) => {
+  const at = (b: (typeof props.bars)[number]) => y(b.value) - (props.values && b.value > 0 ? VALUE_H : 0);
+  let t = at(props.bars[i]!);
+  if (!pinned.value) return t;
+  const { lo, hi } = tipSpan((i + 0.5) * slot.value - left.value, !!go.value);
+  props.bars.forEach((b, j) => { const x0 = j * slot.value - left.value; if (x0 + slot.value > lo && x0 < hi) t = Math.min(t, at(b)); });
+  // nor inside a session's tint: over one, it sits in the room above the plot, where every day chart's shading starts
+  if (props.shade?.some((z) => { const s = shadeX(z); return s.x - left.value < hi && s.x + s.w - left.value > lo; })) t = Math.min(t, TIP_ROOM);
+  return t;
+};
 const f = (v: number) => (props.fmt ? props.fmt(v) : String(Math.round(v * 10) / 10));
-// a shaded stretch at least SHADE_MIN wide, so a 5-minute walk still shows
+// a shaded stretch at least SHADE_MIN wide, so a 5-minute walk still shows and can be tapped
 const shadeX = (z: { a: number; b: number }) => shadeSpan(z.a * slot.value, z.b * slot.value);
 const shadeName = (i: number) => props.shade?.filter((z) => z.a < i + 1 && z.b > i).map((z) => z.name).join(", ") ?? "";
-// a click or a tap shows the bar's tip, as hovering does (useChartZoom keeps a finger's until a tap outside)
-const click = (i: number) => { hover.value = i; };
-// a finger's tip stays put while the compatibility mouse events a tap sends come and go; a drag shows none
+const shadeAt = (e: MouseEvent) => {
+  const svg = (e.currentTarget as Element | null)?.closest("svg");
+  if (!props.shade?.length || !svg) return null;
+  const r = svg.getBoundingClientRect(), x = ((e.clientX - r.left) / r.width) * CW.value;
+  return props.shade.find((z) => { if (!z.id) return false; const s = shadeX(z); return x >= s.x && x <= s.x + s.w; }) ?? null;
+};
+// a click or a tap pins the bar's tip (useChartZoom); what its tip opens: the session shaded where it was tapped, else the bar
+const go = ref<string | null>(null);
+const svgY = (e: MouseEvent, h: number) => { const svg = (e.currentTarget as Element).closest("svg")!, r = svg.getBoundingClientRect(); return ((e.clientY - r.top) / r.height) * h; };
+// a click in the room kept for the tip, above the bars, is empty space: it puts a pinned tip away
+const click = (e: MouseEvent, b: (typeof props.bars)[number], i: number) => {
+  if (svgY(e, H.value) < TIP_ROOM) { pick(null); return; }
+  pick(i); hover.value = i; go.value = shadeAt(e)?.id ?? b.id ?? null;
+};
+const openGo = () => { const id = go.value; if (!pinned.value || !id) return; unpin(); emit("pick", id); };
+// a pinned tip stays put while the mouse moves on (or a tap's compatibility mouse events come and go); a drag shows none
 const enter = (i: number) => { if (!pinned.value && !dragging()) hover.value = i; };
 const leave = () => { if (!pinned.value) hover.value = null; };
 const ticks = computed(() => (typeof props.xt === "function" ? props.xt(on.value ? slot.value : 0) : props.xt));
@@ -95,9 +131,9 @@ const xtAnchor = (at: number) => (at <= 0 ? "start" : at >= props.bars.length ? 
       <line class="gl" x1="0" :x2="CW" :y1="H - bottom" :y2="H - bottom" />
       <line v-if="goal" class="goal" x1="0" :x2="CW" :y1="y(goal)" :y2="y(goal)" />
       <g v-for="(z, i) in shade" :key="'s' + i" class="shz"><title>{{ z.name }}</title>
-        <ChartShade v-bind="shadeX(z)" :y="0" :h="H - bottom" :color="z.color" />
+        <ChartShade v-bind="shadeX(z)" :y="TIP_ROOM" :h="H - bottom - TIP_ROOM" :color="z.color" />
       </g>
-      <g v-for="(b, i) in bars" :key="i" @mouseenter="enter(i)" @mouseleave="leave" @click="click(i)">
+      <g v-for="(b, i) in bars" :key="i" @mouseenter="enter(i)" @mouseleave="leave" @click="click($event, b, i)">
         <rect :x="i * slot" :width="slot" y="0" :height="H" fill="transparent" />
         <template v-if="b.parts && b.value > 0">
           <clipPath :id="`${uid}-${i}`"><rect :x="i * slot + (slot - bw) / 2" :width="bw" :y="y(b.value)" :height="Math.max(2, H - bottom - y(b.value))" :rx="Math.min(5, bw / 3)" /></clipPath>
@@ -114,7 +150,7 @@ const xtAnchor = (at: number) => (at <= 0 ? "start" : at >= props.bars.length ? 
       <text v-for="t in ticks" :key="'x' + t.at" class="ax" :x="t.at * slot" :y="H - bottom + 14" :text-anchor="xtAnchor(t.at)">{{ t.text }}</text>
     </svg>
     </div>
-    <div v-if="hover != null && bars[hover]" class="ctip" ref="tipEl" :style="tipStyle((hover + 0.5) * slot - left, y(bars[hover]!.value) + 'px')"><b>{{ f(bars[hover]!.value) }}</b> · {{ bars[hover]!.tip ?? bars[hover]!.full ?? bars[hover]!.label }}{{ shadeName(hover) ? ` · ${shadeName(hover)}` : "" }}</div>
+    <div v-if="hover != null && bars[hover]" class="ctip" :class="{ go: pinned && go }" ref="tipEl" :role="pinned && go ? 'button' : undefined" :tabindex="pinned && go ? 0 : undefined" :style="tipStyle((hover + 0.5) * slot - left, tipTop(hover), !!(pinned && go), pinned)" @pointerdown="pinned && go ? $event.preventDefault() : undefined" @click.stop.prevent="openGo" @keydown.enter.prevent="openGo" @keydown.space.prevent="openGo"><b>{{ f(bars[hover]!.value) }}</b><span class="sep">·</span><span class="ctip-r">{{ bars[hover]!.tip ?? bars[hover]!.full ?? bars[hover]!.label }}{{ shadeName(hover) ? ` · ${shadeName(hover)}` : "" }}</span><Icon v-if="pinned && go" name="right" :size="13" class="ctip-go" /></div>
   </div>
 </template>
 
