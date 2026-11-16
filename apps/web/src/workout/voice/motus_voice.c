@@ -1,5 +1,5 @@
-/* Motus's built-in voice: Flite (CMU, BSD-style licence in FLITE-LICENSE.txt) with its "slt" US English voice, built
- * to WebAssembly by build.sh. Used for Voice cues when the device has no voice of its own (a Linux browser or the
+/* Motus's built-in voice: Flite (CMU, BSD-style licence in public/licenses/flite.txt) with its "slt" US English voice, built
+ * to WebAssembly by build.sh. Used for Voice cues when the device has no English voice (a Linux browser or the
  * desktop app without speech-dispatcher, a phone without an English voice), so the cues work with nothing installed.
  * This file is Motus's own, not part of Flite: the small entry points the page calls (builtinVoice.ts). */
 #include <stdlib.h>
