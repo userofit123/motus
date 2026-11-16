@@ -20,10 +20,16 @@ async function metaOf(q: Sql): Promise<ReplicaMeta> {
   const r = (await q.query("SELECT value FROM app_meta WHERE key = 'replica'")).rows[0]?.value;
   return { cursor: 0, pushed: 0, device: "", catalog: "", ready: false, v: 0, ...(r ?? {}) };
 }
-async function saveMeta(db: Db, patch: Partial<ReplicaMeta>) {
-  const next = { ...(await replicaMeta(db)), ...patch };
-  await db.admin.query("INSERT INTO app_meta (key, value) VALUES ('replica', $1) ON CONFLICT (key) DO UPDATE SET value = $1", [JSON.stringify(next)]);
+const saveMeta = (db: Db, patch: Partial<ReplicaMeta>) => saveMetaIn(db.admin, patch);
+async function saveMetaIn(q: Sql, patch: Partial<ReplicaMeta>) {
+  const next = { ...(await metaOf(q)), ...patch };
+  await q.query("INSERT INTO app_meta (key, value) VALUES ('replica', $1) ON CONFLICT (key) DO UPDATE SET value = $1", [JSON.stringify(next)]);
   return next;
+}
+/** Rows changed here and not yet sent (read with q, so inside a transaction it is that transaction's view). */
+async function waitingIn(q: Sql) {
+  const m = await metaOf(q);
+  return Number((await q.query("SELECT count(DISTINCT (tbl, pk)) AS n FROM sync_log WHERE seq > $1", [m.pushed])).rows[0].n);
 }
 
 /** The shared catalog, as the server has it (the same ids, so people's rows can point at it). */
@@ -41,8 +47,7 @@ export async function loadCatalog(db: Db, stamp: string, rows: Record<string, un
 type Snapshot = { cursor: number; user: any; tables: Record<string, Record<string, unknown>[]> };
 /** The first full copy: the person, then every table, parents first. Nothing of this is sent back. */
 export async function loadSnapshot(db: Db, snap: Snapshot) {
-  await db.tx((q) => writeSnapshot(q, snap));
-  return snapshotLoaded(db, snap);
+  return db.tx(async (q) => { await writeSnapshot(q, snap); return snapshotLoaded(q, snap); });
 }
 async function writeSnapshot(q: Sql, snap: Snapshot) {
   await q.query("SELECT set_config('motus.sync_apply', '1', true)");
@@ -55,22 +60,15 @@ async function writeSnapshot(q: Sql, snap: Snapshot) {
       await q.query(`INSERT INTO ${t.name} SELECT * FROM jsonb_populate_recordset(NULL::${t.name}, $1::jsonb) ON CONFLICT DO NOTHING`, [JSON.stringify(rows.slice(i, i + 200))]);
   }
 }
-async function snapshotLoaded(db: Db, snap: Snapshot) {
-  const pushed = Number((await db.admin.query("SELECT coalesce(max(seq), 0) AS s FROM sync_log")).rows[0].s);
-  return saveMeta(db, { cursor: snap.cursor, pushed, device: (await replicaMeta(db)).device || uuidv7(), ready: true, v: COPY_VERSION });
+// in the same transaction as the rows: a change made here meanwhile is after `pushed` (sent later), never marked sent
+async function snapshotLoaded(q: Sql, snap: Snapshot) {
+  const pushed = Number((await q.query("SELECT coalesce(max(seq), 0) AS s FROM sync_log")).rows[0].s);
+  return saveMetaIn(q, { cursor: snap.cursor, pushed, device: (await metaOf(q)).device || uuidv7(), ready: true, v: COPY_VERSION });
 }
 
 /** Whether the copy has to be made again from the server (see ReplicaMeta.v). */
 export const outdated = (m: ReplicaMeta) => m.ready && m.v < COPY_VERSION;
 
-/**
- * Empties the copy of the person's rows, so loadSnapshot makes it again. Only with nothing waiting to be sent (it
- * would be lost). The shared catalog stays; the device keeps its name.
- */
-export async function clearCopy(db: Db) {
-  await db.tx(clearRows);
-  await saveMeta(db, { ready: false, cursor: 0 });
-}
 async function clearRows(q: Sql) {
   await q.query("SELECT set_config('motus.sync_apply', '1', true)");
   for (const t of [...SYNCED].reverse()) await q.query(`DELETE FROM ${t.name}${t.name === "exercises" ? " WHERE owner_id IS NOT NULL" : ""}`);
@@ -79,14 +77,21 @@ async function clearRows(q: Sql) {
 
 /**
  * The copy made again from the server's catalog and snapshot (fetched first, so a failed fetch leaves the copy as it
- * was): after a restore with Replace on the server (the pull says reset), or for an outdated copy. Only with nothing
- * waiting to be sent: what is waiting is lost.
+ * was): after a restore with Replace on the server (the pull says reset), or for an outdated copy. Returns null and
+ * leaves the copy as it is when something here is waiting to be sent: the fetch can take minutes, and a change made
+ * meanwhile would be erased with the copy and never sent (the app sends it, then makes the copy again).
  */
-export async function remakeCopy(db: Db, cat: { stamp: string; rows: Record<string, unknown>[] }, snap: Snapshot) {
+export async function remakeCopy(db: Db, cat: { stamp: string; rows: Record<string, unknown>[] }, snap: Snapshot): Promise<ReplicaMeta | null> {
+  // the shared catalog first (the person's rows point at it); taking it in loses nothing, whatever happens next
   await loadCatalog(db, cat.stamp, cat.rows);
-  // emptied and filled in one go, so a screen reading meanwhile sees the old rows or the new ones, never none
-  await db.tx(async (q) => { await clearRows(q); await writeSnapshot(q, snap); });
-  return snapshotLoaded(db, snap);
+  // emptied and filled in one go, so a screen reading meanwhile sees the old rows or the new ones, never none; the
+  // check for waiting changes in the same transaction, so none can land between it and the emptying
+  return db.tx(async (q) => {
+    if (await waitingIn(q)) return null;
+    await clearRows(q);
+    await writeSnapshot(q, snap);
+    return snapshotLoaded(q, snap);
+  });
 }
 
 /** What changed here since the last send (the latest change per row), and up to where in the log that goes. */
@@ -107,10 +112,7 @@ export async function markSent(db: Db, upTo: number) {
   await saveMeta(db, { pushed: upTo });
 }
 /** Rows not yet sent to the server, for "N changes waiting". */
-export async function waitingCount(db: Db) {
-  const m = await replicaMeta(db);
-  return Number((await db.admin.query("SELECT count(DISTINCT (tbl, pk)) AS n FROM sync_log WHERE seq > $1", [m.pushed])).rows[0].n);
-}
+export const waitingCount = (db: Db) => waitingIn(db.admin);
 
 /**
  * Writes the server's changes into this copy. A row changed here more recently (and not yet sent) keeps this

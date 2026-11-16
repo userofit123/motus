@@ -147,6 +147,7 @@ export async function startReplica(user: { id: string }): Promise<boolean> {
         if (!meta.ready) throw e;
       }
       if (fresh) {
+        // null (left as it is) if something is waiting: it is sent first, and the copy is made again at a later start
         if (remake) await R.remakeCopy(db, fresh.cat, fresh.snap);
         else { await R.loadCatalog(db, fresh.cat.stamp, fresh.cat.rows); await R.loadSnapshot(db, fresh.snap); }
       }
@@ -220,13 +221,15 @@ async function run(): Promise<Error | null> {
       const p = await call("GET", `/sync/pull?since=${m.cursor}&device=${encodeURIComponent(m.device)}&user=${encodeURIComponent(userId)}`);
       // everything was replaced on the server (a restore): the copy is made again from it, as the changes would leave
       // rows only this copy had beside the restored ones (M-257). What was waiting here went first (above); a change
-      // made since then goes on the next run, which then makes the copy again.
+      // made since then (also while the snapshot downloads: remakeCopy checks again as it empties the copy) goes on
+      // the next run, which then makes the copy again.
       if (p.reset) {
         if (await R.waitingCount(db)) { again = true; break; }
         const cat = await call("GET", "/sync/catalog");
         const snap = await httpTransport.request("GET", `/sync/snapshot?user=${encodeURIComponent(userId)}`, undefined, { wait: 120_000 });
-        wrote = true; changed = true;
-        await R.remakeCopy(db, cat, snap);
+        wrote = true;
+        if (!(await R.remakeCopy(db, cat, snap))) { again = true; break; }
+        changed = true;
         retry.length = 0;
         break;
       }

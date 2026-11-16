@@ -115,9 +115,8 @@ describe("a copy made before M-184", () => {
     const m = await replica.replicaMeta(dev.db);
     expect(replica.outdated(m)).toBe(true);
     expect(await replica.waitingCount(dev.db)).toBe(0);
-    await replica.clearCopy(dev.db);
-    expect((await replica.replicaMeta(dev.db)).ready).toBe(false);
-    const again = await replica.loadSnapshot(dev.db, await ok(as(A)("GET", "/sync/snapshot", undefined, { user: A })));
+    const again = (await replica.remakeCopy(dev.db, await ok(as(A)("GET", "/sync/catalog")), await ok(as(A)("GET", "/sync/snapshot", undefined, { user: A }))))!;
+    expect(again).not.toBeNull();
     expect(replica.outdated(again)).toBe(false);
     expect(again.device).toBe(m.device);
     const names = (await dev.db.admin.query("SELECT name FROM routines")).rows.map((r: any) => r.name);

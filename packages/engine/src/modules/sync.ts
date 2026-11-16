@@ -23,6 +23,17 @@ function sameUser(userId: string, copyOf: unknown) {
   if (copyOf != null && copyOf !== "" && copyOf !== userId) throw new HttpError(409, "Signed in as someone else");
 }
 
+/**
+ * Whether a row read back for a device is the person's own: read under row-level security already, and checked again
+ * here so a device is never sent another account's row whatever the policies say. The shared catalog counts as anyone's
+ * (a device has it anyway; a deletion would remove it there). A row without an owner column is a child of an owned one,
+ * checked by its policy (visible(), 002).
+ */
+function ownedBy(userId: string, tbl: string, row: Record<string, unknown>) {
+  if (tbl === "exercises") return row.owner_id == null || row.owner_id === userId;
+  return !("user_id" in row) || row.user_id === userId;
+}
+
 export function syncRoutes(r: Router) {
   r.get("/sync/catalog", async ({ q }) => ({
     stamp: await catalogStamp(q),
@@ -52,7 +63,10 @@ export function syncRoutes(r: Router) {
     // everything was replaced since this copy was made or last caught up (a restore, 049): the app makes its copy again
     // from a snapshot (sync/replica.ts remakeCopy), as the changes would leave a row only the device had (M-257). The
     // changes still come, for an app from before this that applies them as before.
-    const reset = since > 0 && since < Number((await q.query("SELECT seq FROM sync_resets")).rows[0]?.seq ?? 0);
+    // A copy made after the restore starts at or past it (the snapshot's cursor is the log's end then, and the log only
+    // grows), so it is told once; a copy still at 0 (made from an empty account, or never caught up) is told too.
+    const resetAt = Number((await q.query("SELECT seq FROM sync_resets WHERE user_id = $1", [userId])).rows[0]?.seq ?? 0);
+    const reset = since < resetAt;
     return { cursor, more: page.length === PAGE, catalog: await catalogStamp(q), changes, ...(reset ? { reset } : {}) };
   });
 
@@ -75,11 +89,15 @@ export function syncRoutes(r: Router) {
     }
     const { applied, failed, kept, cleared } = await applyChanges(ctx.q, ctx.userId, accepted, { origin: device });
     // the device gets back the server's version of what wasn't written as sent: a finished workout it would have
-    // reopened, and a row with a reference to someone else's row cleared
-    rejected.push(...kept, ...cleared);
+    // reopened, a row with a reference to someone else's row cleared, and a row the server refused (it no longer fits
+    // here, or its id is another account's): otherwise the device keeps that row for good, beside the server's, and a
+    // later restore that gives it a new id here shows it twice there (M-257)
+    rejected.push(...kept, ...cleared, ...failed.map((f) => f.change));
     const now = await readRows(ctx.q, rejected);
     const back: Change[] = rejected.map((c) => {
-      const row = now.get(keyOf(c.tbl, c.pk)) ?? null;
+      const found = now.get(keyOf(c.tbl, c.pk)) ?? null;
+      // only this person's row (or the shared catalog's) goes back; a row of another account is a deletion
+      const row = found && ownedBy(ctx.userId, c.tbl, found) ? found : null;
       return { tbl: c.tbl, pk: c.pk, op: row ? "upsert" : "delete", at: new Date().toISOString(), row };
     });
     if (applied) ctx.changed("everything");
