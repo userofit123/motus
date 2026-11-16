@@ -6,7 +6,6 @@
 // line starts with the trend), the time in heart rate zones, and the heart rate during workouts and activities: how hard
 // each one was (the average of each, its chart, the sessions themselves), and how many of the stretch's have one.
 import { computed, ref, watch } from "vue";
-import { useRouter } from "vue-router";
 import { useQuery } from "@tanstack/vue-query";
 import { ymd, weekStartOf, zoneMinutes, highRestingDays } from "@motus/shared";
 import { api } from "../../api/client";
@@ -29,7 +28,6 @@ export type HeartView = StretchView;
 const view = defineModel<HeartView>("view", { required: true });
 const props = defineProps<{ day?: string }>();
 const emit = defineEmits<{ "update:day": [day: string] }>();
-const router = useRouter();
 const fmt = useFmt();
 const dev = useDevice();
 const typeName = useTypeName();
@@ -66,7 +64,7 @@ const resting = computed(() => daily.value.filter((x) => x.kind === "resting_hr"
 // line starts with the smoothed trend and how far it moved over the last 7 days, then the latest
 const VITALS = [{ id: "resting_hr", name: "Resting heart rate", unit: "bpm" }, { id: "spo2", name: "Blood oxygen", unit: "%" }, { id: "hrv", name: "HRV", unit: "ms" }] as const;
 const vitals = computed(() => VITALS.map((v) => {
-  const pts = daily.value.filter((x) => x.kind === v.id && inRange(x.date)).map((x) => ({ x: new Date(x.date + "T12:00").getTime(), y: Number(x.value), id: x.date })).sort((a, b) => a.x - b.x);
+  const pts = daily.value.filter((x) => x.kind === v.id && inRange(x.date)).map((x) => ({ x: new Date(x.date + "T12:00").getTime(), y: Number(x.value) })).sort((a, b) => a.x - b.x);
   let ema: number | null = null;
   const trend = pts.map((p) => (ema = ema == null ? p.y : ema + 0.15 * (p.y - ema)));
   // rounded before its sign is chosen, so a small move reads "+0", never "-0"
@@ -133,13 +131,11 @@ const zBars = computed(() => {
   const rows = new Map<string, number[]>();
   for (const [d, m] of zDays.value) { const k = zPerWeek.value ? weekStartOf(new Date(d + "T12:00"), settings.value.firstDay) : d; const r = rows.get(k) ?? rows.set(k, ZONES.map(() => 0)).get(k)!; m.forEach((v, i) => (r[i]! += v)); }
   return [...rows].map(([k, m]) => { const full = fmt.value.date(k, { day: "numeric", month: "short" });
-    return { id: k, label: full.split(" ")[0]!, full, group: month(k), tip: zPerWeek.value ? `week of ${full}` : fmt.value.date(k, { weekday: "short", day: "numeric", month: "short" }),
+    return { label: full.split(" ")[0]!, full, group: month(k), tip: zPerWeek.value ? `week of ${full}` : fmt.value.date(k, { weekday: "short", day: "numeric", month: "short" }),
       value: m.reduce((t, v) => t + v, 0), parts: m.map((v, i) => ({ value: v, color: ZONES[i]!.color })) }; });
 });
 // moderate or harder (zones 3 to 5): the minutes most activity advice counts
-// the charts open what was tapped, as Steps' and Sleep's: a vitals point or a zones bar its day, a zones bar by week its week
-const openDay = (d: string) => { anchor.value = d; view.value = "day"; };
-const openZone = (k: string) => { anchor.value = k; view.value = zPerWeek.value ? "week" : "day"; };
+// a tap on a chart shows its tip (the day's or week's value), as on Steps and Sleep; the day picker opens a day
 const zHard = computed(() => zDays.value.reduce((t, [, m]) => t + m[2]! + m[3]! + m[4]!, 0));
 
 // training load (the Training load feature, M-245): each day's load over the stretch (a week's over two months, as the
@@ -160,7 +156,7 @@ const loadBars = computed(() => {
   }
   for (const x of l.sessions) if (inRange(x.date)) { const k = loadPerWeek.value ? weekStartOf(new Date(x.date + "T12:00"), settings.value.firstDay) : x.date; if (rows.has(k)) rows.set(k, rows.get(k)! + x.load); }
   return [...rows].map(([k, v]) => { const full = fmt.value.date(k, { day: "numeric", month: "short" });
-    return { id: k, label: full.split(" ")[0]!, full, group: fmt.value.date(k, { month: "short" }), tip: loadPerWeek.value ? `week of ${full}` : fmt.value.date(k, { weekday: "short", day: "numeric", month: "short" }), value: v }; });
+    return { label: full.split(" ")[0]!, full, group: fmt.value.date(k, { month: "short" }), tip: loadPerWeek.value ? `week of ${full}` : fmt.value.date(k, { weekday: "short", day: "numeric", month: "short" }), value: v }; });
 });
 const loadHas = computed(() => loadBars.value.some((b) => b.value > 0) || (lq.data.value?.trend.week ?? 0) > 0);
 // the same ranges as Readiness's load part: steady reads "As usual" there, lighter raises the score, higher lowers it
@@ -178,7 +174,6 @@ const loadRow = computed(() => {
     rv: pct == null ? "Learning" : t.state === "steady" ? "As usual" : `${pct < 0 ? "-" : "+"}${Math.abs(pct)}%`,
     tone: pct == null ? "muted" : t.state === "lighter" ? "pos" : t.state === "steady" ? undefined : "neg" };
 });
-const openLoad = (k: string) => { anchor.value = k; view.value = loadPerWeek.value ? "week" : "day"; };
 
 // the stretch's numbers on top, as Steps' and Sleep's tiles, each only with data: the average resting heart rate (the
 // first, with its days' line), the average HRV, the moderate-or-harder minutes a week (a stretch shorter than a week
@@ -233,14 +228,14 @@ const tiles = computed(() => {
       </div>
 
       <!-- each a card as the body measurements' -->
-      <div v-if="vitals.length" class="grid g2" :class="{ spt: tiles.length || insights.length }"><div v-for="(v, i) in vitals" :key="v.id" class="card"><div class="lbl hgap">{{ v.name }} ({{ v.unit }})</div>
-        <LineChart :points="v.pts" :height="140" :fmt="v.f" @pick="openDay" /><div class="tiny ht-line">{{ v.line }}{{ !zBars.length && i === 0 ? " Tap a day to open it." : "" }}</div></div></div>
+      <div v-if="vitals.length" class="grid g2" :class="{ spt: tiles.length || insights.length }"><div v-for="v in vitals" :key="v.id" class="card"><div class="lbl hgap">{{ v.name }} ({{ v.unit }})</div>
+        <LineChart :points="v.pts" :height="140" :fmt="v.f" /><div class="tiny ht-line">{{ [v.line, `Tap a day to see its ${v.id === "hrv" ? "HRV" : v.name.toLowerCase()}.`].filter(Boolean).join(". ") }}</div></div></div>
 
       <div v-if="zBars.length" class="card" :class="{ spt: tiles.length || insights.length || vitals.length }">
         <div class="lbl hgap">Time in heart rate zones{{ zPerWeek ? ", by week" : "" }} · max {{ maxHr!.bpm }} bpm{{ maxHr!.own ? "" : " from your age" }}</div>
-        <BarChart :bars="zBars" :height="170" :fmt="(v) => mins(v)" @pick="openZone" />
+        <BarChart :bars="zBars" :height="170" :fmt="(v) => mins(v)" />
         <div class="bmlegend ht-leg"><span v-for="z in ZONES" :key="z.key"><i :style="{ background: z.color }" />{{ z.name }}</span></div>
-        <div class="tiny ht-line">{{ zPerWeek ? "Tap a week to open it." : "Tap a day to open it." }}</div>
+        <div class="tiny ht-line">{{ zPerWeek ? "Tap a week to see its total time in heart rate zones." : "Tap a day to see its total time in heart rate zones." }}</div>
       </div>
 
       <!-- training load: a chart card as the zones', with the comparison as a What stands out row under its title -->
@@ -253,8 +248,8 @@ const tiles = computed(() => {
             <b class="r rv" :class="loadRow.tone">{{ loadRow.rv }}</b>
           </div>
         </div>
-        <BarChart class="ht-chart" :bars="loadBars" :height="170" :fmt="(v) => fmt.num(v, 0)" @pick="openLoad" />
-        <div class="tiny ht-line">{{ loadPerWeek ? "Tap a week to open it." : "Tap a day to open it." }}{{ lq.data.value && !lq.data.value.maxHr ? " Set your max heart rate or year of birth in Body for heart rate to count." : "" }}</div>
+        <BarChart class="ht-chart" :bars="loadBars" :height="170" :fmt="(v) => fmt.num(v, 0)" />
+        <div class="tiny ht-line">{{ loadPerWeek ? "Tap a week to see its training load." : "Tap a day to see its training load." }}{{ lq.data.value && !lq.data.value.maxHr ? " Set your max heart rate or year of birth in Body for heart rate to count." : "" }}</div>
       </div>
 
       <!-- how hard each workout and activity was, over the stretch: its average and highest heart rate, as Stats → Sleep's
@@ -263,7 +258,7 @@ const tiles = computed(() => {
         <div class="ch"><span class="bi"><Icon name="dumbbell" :size="15" /></span><span class="t grow">Heart rate in workouts</span><span v-if="sessions.length" class="tiny">{{ sessions.length }}</span></div>
         <template v-if="sessions.length">
           <template v-if="sessions.length > 2"><div class="lbl hgap">Average per session (bpm)</div>
-            <LineChart :points="sessions.map((x) => ({ x: x.a, y: x.avgHr!, id: x.key, label: x.name }))" :height="160" :fmt="(v) => fmt.num(v, 0)" @pick="(id) => router.push(id)" /></template>
+            <LineChart :points="sessions.map((x) => ({ x: x.a, y: x.avgHr!, label: x.name }))" :height="160" :fmt="(v) => fmt.num(v, 0)" /></template>
           <div :class="{ csec: sessions.length > 2 }"><DaySessionList :sessions="newest" dated :value="(x) => `${Math.round(x.avgHr!)} bpm`" :sub="(x) => (x.maxHr != null ? `highest ${Math.round(x.maxHr)} bpm` : '')" /></div>
           <div class="tiny ht-line">How hard each workout and activity was: its average and highest heart rate.{{ total > sessions.length ? ` ${total - sessions.length} more in this ${view} have none: wear your ${adviceWord(dev)} while you record to add it.` : "" }}</div>
         </template>

@@ -76,7 +76,7 @@ const label = (x: Tile) => [x.label, x.value, x.unit, x.sub].filter(Boolean).joi
 
 // the day's workouts and activities: shaded on the chart, and listed under it
 const { q: calQ, sessions } = useDaySessions(date, computed(() => true));
-const spans = computed(() => sessions.value.filter((s) => s.b > s.a).map((s) => ({ a: s.a, b: s.b, id: s.key, name: s.name, color: s.color })));
+const spans = computed(() => sessions.value.filter((s) => s.b > s.a).map((s) => ({ a: s.a, b: s.b, name: s.name, color: s.color })));
 const legend = computed(() => legendOf(sessions.value));
 const ticks = computed(() => dayHours(date.value, fmt.value).map((h) => h.at));
 
@@ -119,7 +119,7 @@ watch(() => !recs.isLoading.value && !day.isLoading.value && !calQ.isLoading.val
     </div>
 
     <div class="csec"><div class="lbl hgap">Heart rate by hour</div>
-      <template v-if="charted"><HeartRate inline chart :hr="samples" :height="170" :day="{ from: from.getTime(), to: to.getTime(), spans, ticks, color: DAY_DATA_COLOR }" @pick="(id) => router.push(id)" />
+      <template v-if="charted"><HeartRate inline chart :hr="samples" :height="170" :day="{ from: from.getTime(), to: to.getTime(), spans, ticks, color: DAY_DATA_COLOR }" />
         <div v-if="legend.length" class="bmlegend hd-leg"><span><i :style="{ background: DAY_DATA_COLOR }" />Heart rate</span><span v-for="k in legend" :key="k.color"><i :style="{ background: k.color }" />{{ k.name }}</span></div></template>
       <div v-else class="tiny">{{ noRecords("day") }}</div></div>
 

@@ -7,6 +7,8 @@
 // before began. A night imported before band records were kept has no record: it shows its totals (the stage bar, the
 // night's own heart rate series), never empty charts.
 // Each part after the first a block-padding below the one before, under a faint line, as Stats → Heart's day.
+// The stages and the curves under them cover the same hours at the same width, so they share one zoom and scroll
+// (shareChartZoom): zoomed into 3 am on one, every one shows 3 am, lined up as a video editor's tracks.
 import { computed } from "vue";
 import { useQuery, keepPreviousData } from "@tanstack/vue-query";
 import { ymd } from "@motus/shared";
@@ -23,9 +25,11 @@ import StageBar from "./StageBar.vue";
 import Hypnogram from "./Hypnogram.vue";
 import DaySessionList from "./DaySessionList.vue";
 import { useDaySessions, noRecords, type DaySession } from "./daySessions";
+import { shareChartZoom } from "../useChartZoom";
 
 // noTimes: the night's times are in the card's header (Stats → Sleep), so not in the line under the ring
 const props = defineProps<{ date: string; noTimes?: boolean }>();
+shareChartZoom();
 const fmt = useFmt();
 const dev = useDevice();
 // keeping the night before while the next loads, so stepping a night doesn't flash

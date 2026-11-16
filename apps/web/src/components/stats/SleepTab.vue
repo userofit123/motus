@@ -176,7 +176,7 @@ const bars = computed(() => {
   if (!perWeek.value) return days.value.map((x) => {
     const full = fmt.value.date(x.date, { day: "numeric", month: "short" }), n = x.night;
     const tip = fmt.value.date(x.date, { weekday: "short", day: "numeric", month: "short" }) + (n ? ` · ${fmt.value.time(n.startAt)}-${fmt.value.time(n.endAt)}` : "") + (x.full ? "" : " · short record");
-    return { label: full.split(" ")[0]!, full, group: month(x.date), tip, value: x.min / 60, ...(x.full ? { parts: part(n, x.min) } : { color: SHORT_COLOR }), id: n ? x.date : undefined };
+    return { label: full.split(" ")[0]!, full, group: month(x.date), tip, value: x.min / 60, ...(x.full ? { parts: part(n, x.min) } : { color: SHORT_COLOR }) };
   });
   const wk = new Map<string, number[]>();
   for (const x of nightDays.value) { const k = weekStartOf(new Date(x.date + "T12:00"), s.value.firstDay); wk.set(k, [...(wk.get(k) ?? []), x.min]); }
@@ -197,7 +197,7 @@ const TRENDS = [
 const trends = computed(() => TRENDS.map((t) => {
   const ns = full.value.filter((n) => t.v(n) != null);
   // a point's tip names its night as the other charts' tips do ("Sat 7 Nov")
-  const pts = ns.map((n) => ({ x: new Date(n.date + "T12:00").getTime(), y: Number(t.v(n)), id: n.date, label: fmt.value.date(n.date, { weekday: "short", day: "numeric", month: "short" }) }));
+  const pts = ns.map((n) => ({ x: new Date(n.date + "T12:00").getTime(), y: Number(t.v(n)), label: fmt.value.date(n.date, { weekday: "short", day: "numeric", month: "short" }) }));
   const u = (n: number) => t.unit === "%" ? pc(Math.round(n * 10) / 10) : `${fmt.value.num(n, 0)} ${t.unit}`;
   const lows = ns.map((n) => t.lo(n)).filter((x): x is number => x != null);
   const mean = avg(pts.map((p) => p.y));
@@ -352,20 +352,20 @@ const list = computed(() => showAll.value ? nights.value : nights.value.slice(0,
       </div>
 
       <div class="card spt">
-        <div class="lbl hgap">{{ perWeek ? "Average time asleep per night, by week" : "Time asleep per night" }} (h) · target {{ BAND[0] }}-{{ BAND[1] }}</div>
-        <BarChart :bars="bars" :band="BAND" :height="170" :fmt="hours" @pick="openNight" />
+        <div class="lbl hgap">{{ perWeek ? "Average time asleep a night, by week" : "Time asleep per night" }} (h) · target {{ BAND[0] }}-{{ BAND[1] }}</div>
+        <BarChart :bars="bars" :band="BAND" :height="170" :fmt="hours" />
         <div v-if="legend.length && !perWeek" class="bmlegend sl-leg"><span v-for="k in legend" :key="k.name"><i :style="{ background: k.color }" />{{ k.name }}</span></div>
-        <div v-if="nights.length || shortCount" class="tiny sl-line">{{ [nights.length ? "Time asleep leaves out the time awake in bed." : "", shortCount ? `${shortCount} short ${shortCount === 1 ? "record" : "records"} (under ${MIN_NIGHT_H} hours) left out of the averages.` : "", !perWeek && nights.length ? "Tap a night to open it." : ""].filter(Boolean).join(" ") }}</div>
+        <div v-if="nights.length || shortCount" class="tiny sl-line">{{ [nights.length ? "Time asleep leaves out the time awake in bed." : "", shortCount ? `${shortCount} short ${shortCount === 1 ? "record" : "records"} (under ${MIN_NIGHT_H} hours) left out of the averages.` : "", nights.length ? (perWeek ? "Tap a week to see its average time asleep a night." : "Tap a night to see its time asleep.") : ""].filter(Boolean).join(" ") }}</div>
       </div>
 
       <div v-if="full.length > 1" class="card spt">
         <div class="lbl hgap">Bedtime and wake time</div>
-        <SleepSchedule :nights="full" :bed="bed" :wake="wake" @pick="openNight" />
+        <SleepSchedule :nights="full" :bed="bed" :wake="wake" />
         <div v-if="schedule" class="tiny sl-line">{{ schedule }}</div>
       </div>
 
       <div v-if="trends.length" class="grid g2 spt"><div v-for="t in trends" :key="t.id" class="card"><div class="lbl hgap">{{ t.name }} ({{ t.unit }})</div>
-        <LineChart :points="t.pts" :height="140" :fmt="t.f" @pick="openNight" /><div class="tiny sl-line">{{ t.line }}</div></div></div>
+        <LineChart :points="t.pts" :height="140" :fmt="t.f" /><div class="tiny sl-line">{{ t.line }}</div></div></div>
 
       <template v-if="nights.length">
         <div class="sh"><h2>Nights</h2><span class="tiny">{{ nights.length }}</span></div>

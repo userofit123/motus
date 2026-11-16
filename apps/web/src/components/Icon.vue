@@ -26,9 +26,9 @@ const ICONS: Record<string, string> = {
   split: "M15 3 9 21M3 3v7h4.5M16.5 21v-7h2.25a2 2 0 0 1 0 4h-2.25M18.75 18 21 21",
   expand: "M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7",
   shrink: "M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7",
-  // two chevrons pointing out: make a chart wider (it scrolls sideways); pointing in: fit it back to the screen
-  widen: "M8 7l-5 5 5 5M16 7l5 5-5 5",
-  narrow: "M4 7l5 5-5 5M20 7l-5 5 5 5",
+  // the search glass with a plus or a minus in it: zoom a chart in (it spreads out and scrolls sideways) or out
+  zoomIn: "M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM21 21l-4.3-4.3M8 11h6M11 8v6",
+  zoomOut: "M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM21 21l-4.3-4.3M8 11h6",
   down: "M6 9l6 6 6-6",
   up: "M18 15l-6-6-6 6",
   timer: "M12 21a8 8 0 1 0 0-16 8 8 0 0 0 0 16zM12 9v4l2.5 2.5M9 2h6",

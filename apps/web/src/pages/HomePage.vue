@@ -4,7 +4,7 @@
 // (no reminder waiting, no goal due soon, no program running) stays away until it has; feature blocks need their feature.
 import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
-import { num, fromM, percentChange, orderGoals, dismissalPatch, HOME_BLOCKS, ageOf, stepsTarget, sleepRange, type Goal, type HomeData, type HomeSuggestion, type HomePlan, type HomeRecord, type HomeGroup, type HomeWeek, type ScoreKey } from "@motus/shared";
+import { num, fromM, percentChange, orderGoals, dismissalPatch, HOME_BLOCKS, GLANCE_RINGS, ageOf, stepsTarget, sleepRange, type Goal, type HomeData, type HomeSuggestion, type HomePlan, type HomeRecord, type HomeGroup, type HomeWeek, type ScoreKey, type GlanceRing } from "@motus/shared";
 import { useCalendar, useHome, useSettings, saveSettings, useAchievements, useGoals, useHealthAvailable, useHealthDay, useReadiness, useHealthScores, useSleep, useDaily, useTypeName, loaded, type HealthAvailable, type ReadinessPart, type ReadinessBuilding } from "../api/queries";
 import { api } from "../api/client";
 import { invalidate, queryClient } from "../api/live";
@@ -78,7 +78,7 @@ const META: Record<string, { name: string; desc: string; icon: string; size: Siz
   scoreStrength: { name: "Strength score", desc: "Your last 7 days of strength training against the guidelines", icon: "dumbbell", size: "m" },
   // off until picked in Edit home (M-260, M-261)
   quickStats: { name: "Today at a glance", desc: "Rings for today's steps, resting heart rate and active calories, last night's sleep and your readiness", icon: "eye", size: "m" },
-  calendarDay: { name: "Today's calendar", get desc() { return `Today as the Calendar shows it: your ${adviceWord(dev.value)}'s numbers, the day by hour, and your workouts and activities`; }, icon: "calendar", size: "l" },
+  calendarDay: { name: "Your day", get desc() { return `Today as the Calendar shows it: your ${adviceWord(dev.value)}'s numbers, the day by hour, and your workouts and activities`; }, icon: "calendar", size: "l" },
 };
 // a block whose feature is off is absent everywhere, Edit home included
 const FEATURE: Record<string, string> = { program: "programs", daily: "dailyLog", achievements: "achievements", scoreSleep: "scores", scoreActivity: "scores", scoreStrength: "scores" };
@@ -323,36 +323,43 @@ const stepDays = computed(() => Array.from({ length: 7 }, (_, i) => {
 // the scale reaches the target too, so its line is always inside the bars' height
 const stepMax = computed(() => Math.max(1, stepGoal.value?.target ?? 0, ...stepDays.value.map((x) => x.n)));
 
-// Today at a glance (M-260): today's numbers as rings, each only when there, each opening its Stats tab on today. A ring
+// Today at a glance (M-260): today's numbers as rings, each only when there and picked, each opening the Stats tab that shows it. A ring
 // fills toward the number it is measured by (your steps goal, else the guideline's steps a day; the guideline's least
 // hours asleep for your age; readiness out of 100). Resting heart rate and active calories have no number to reach, so
 // theirs is a full ring in a faint accent: a reading, not progress (a bare track would read as nothing done). Names and
 // units are the app's own ("Resting heart rate", "57 bpm")
 const age = computed(() => ageOf(s.value.profile.birthYear));
 const NO_TARGET = "color-mix(in srgb, var(--acc) 30%, transparent)";
-interface Glance { key: string; icon: string; label: string; value: string; unit?: string; pct: number; done?: boolean; color?: string; aria: string; to: string }
+// Readiness in full (its score, word and parts) is in Stats → Scores, which is there whenever readiness has a score; while
+// its usual is still being learnt there is no score to read yet, so Heart (or Sleep, without heart data) on today, where
+// the readings it is learning from come in. The Readiness block and its ring both open this
+const readyTo = computed(() => (rd.value?.score != null ? "/stats?tab=scores" : `/stats?tab=${avail.data.value?.heart ? "heart" : "sleep"}&day=${today}`));
+interface Glance { key: GlanceRing; icon: string; label: string; value: string; unit?: string; pct: number; done?: boolean; color?: string; aria: string; to: string }
 const glance = computed<Glance[]>(() => {
-  const d = day.value, out: Glance[] = [], on = (tab: string) => `/stats?tab=${tab}&day=${today}`;
+  const d = day.value, out: Glance[] = [], on = (tab: string, at = today) => `/stats?tab=${tab}&day=${at}`;
   if (d?.steps != null) {
     const t = stepGoal.value?.target || stepsTarget(age.value);
     out.push({ key: "steps", icon: "steps", label: "Steps", value: fmt.value.num(d.steps, 0), pct: d.steps / t, done: d.steps >= t,
       aria: `Steps today ${fmt.value.num(d.steps, 0)} of ${fmt.value.num(t, 0)}`, to: on("steps") });
   }
-  const rhr = d?.restingHr ?? partOf("restingHr")?.value ?? null;
-  if (rhr != null) out.push({ key: "heart", icon: "heartPulse", label: "Resting heart rate", value: String(Math.round(rhr)), unit: "bpm", pct: 1, color: NO_TARGET, aria: `Resting heart rate ${Math.round(rhr)} bpm`, to: on("heart") });
+  // without today's own, readiness's (yesterday's when the band hasn't synced today yet): it opens Heart on that day
+  const rhr = d?.restingHr ?? partOf("restingHr")?.value ?? null, rhrDay = d?.restingHr == null && partOf("restingHr")?.ago ? yesterday : today;
+  if (rhr != null) out.push({ key: "restingHr", icon: "heartPulse", label: "Resting heart rate", value: String(Math.round(rhr)), unit: "bpm", pct: 1, color: NO_TARGET, aria: `Resting heart rate ${Math.round(rhr)} bpm`, to: on("heart", rhrDay) });
   if (night.value?.date === today) {
     const m = asleepMin(night.value), least = sleepRange(age.value)[0] * 60;
-    out.push({ key: "sleep", icon: "moon", label: "Last night", value: mins(m), pct: m / least, done: m >= least, aria: `Asleep last night ${mins(m)}`, to: on("sleep") });
+    out.push({ key: "sleep", icon: "moon", label: "Last night", value: mins(m), pct: m / least, done: m >= least, aria: `Asleep last night ${mins(m)}`, to: on("sleep", night.value.date) });
   }
   const r = rd.value;
-  if (r?.score != null) out.push({ key: "ready", icon: "gauge", label: "Readiness", value: String(r.score), pct: r.score / 100, color: r.label === "Take it easy" ? "var(--warn)" : undefined,
-    aria: `Readiness ${r.score}${r.label ? `, ${r.label}` : ""}`, to: on("heart") });
-  if (d?.activeKcal) out.push({ key: "kcal", icon: "flame", label: "Active calories", value: fmt.value.num(d.activeKcal, 0), unit: "kcal", pct: 1, color: NO_TARGET,
+  if (r?.score != null) out.push({ key: "readiness", icon: "gauge", label: "Readiness", value: String(r.score), pct: r.score / 100, color: r.label === "Take it easy" ? "var(--warn)" : undefined,
+    aria: `Readiness ${r.score}${r.label ? `, ${r.label}` : ""}`, to: readyTo.value });
+  if (d?.activeKcal) out.push({ key: "activeKcal", icon: "flame", label: "Active calories", value: fmt.value.num(d.activeKcal, 0), unit: "kcal", pct: 1, color: NO_TARGET,
     // the Steps tab only exists with steps data, so the Activity today block's rule
     aria: `Active calories today ${fmt.value.num(d.activeKcal, 0)} kcal`, to: avail.data.value?.steps ? on("steps") : "/stats?tab=activities" });
-  return out;
+  // only the rings picked in Edit home (all of them unless some were switched off)
+  const shown = new Set(s.value.home.glance);
+  return out.filter((x) => shown.has(x.key));
 });
-// Today's calendar (M-261): the Calendar's card for today, read only while the block is on
+// Your day (M-261, first named Today's calendar): the Calendar's card for today, read only while the block is on
 const todayCal = useCalendar({ from: today, to: today }, computed(() => isOn("calendarDay")));
 const todayItems = computed(() => calendarDays(todayCal.data.value, today).get(today) ?? []);
 
@@ -434,8 +441,21 @@ const solo = computed(() => {
   return out;
 });
 async function reset() {
-  if (await confirm("Put Home back the way it started?", { text: "Blocks go back to their first order and switches. Pinned goals stay.", ok: "Reset" })) saveSettings({ home: { blocks: HOME_BLOCKS } });
+  if (await confirm("Put Home back the way it started?", { text: "Blocks go back to their first order and switches, and Today at a glance shows all its rings again. Pinned goals stay.", ok: "Reset" })) saveSettings({ home: { blocks: HOME_BLOCKS, glance: [...GLANCE_RINGS] } });
 }
+
+// Today at a glance's rings: which ones it shows, in its fixed order, from its Edit home tile as Pinned goals' are
+const glanceOpen = ref(false);
+// each line names the number its ring fills toward, the same one the ring uses
+const GLANCE_ROWS = computed<Record<GlanceRing, { icon: string; t: string; s: string }>>(() => ({
+  steps: { icon: "steps", t: "Steps", s: stepGoal.value?.target ? `Today, against your goal of ${fmt.value.num(stepGoal.value.target, 0)} steps` : `Today, against ${fmt.value.num(stepsTarget(age.value), 0)} steps, the aim for your age` },
+  restingHr: { icon: "heartPulse", t: "Resting heart rate", s: "Your latest reading, in bpm" },
+  sleep: { icon: "moon", t: "Last night", s: `Time asleep, against at least ${sleepRange(age.value)[0]} hours, the aim for your age` },
+  readiness: { icon: "gauge", t: "Readiness", s: "Today's score out of 100" },
+  activeKcal: { icon: "flame", t: "Active calories", s: "Today, in kcal" },
+}));
+const setGlance = (k: GlanceRing, on: boolean) =>
+  saveSettings({ home: { glance: GLANCE_RINGS.filter((x) => (x === k ? on : s.value.home.glance.includes(x))) } }, { quiet: true });
 
 // pinned goals: which ones, their order, and whether each brings its streak
 const pinOpen = ref(false);
@@ -482,6 +502,7 @@ await loaded(home, ach, avail, hDay, ready, nightsQ, dailyQ, todayCal);
         <div class="tiny">{{ META[x.id]!.desc }}</div>
         <div class="emv">
           <button v-if="x.id === 'pinned'" class="lnk inl" @click="pinOpen = true">{{ picked.length ? `${picked.length} pinned, change` : "Pin goals" }}</button>
+          <button v-else-if="x.id === 'quickStats'" class="lnk inl" @click="glanceOpen = true">{{ s.home.glance.length ? (s.home.glance.length === GLANCE_RINGS.length ? `All ${GLANCE_RINGS.length} rings, change` : `${s.home.glance.length} of ${GLANCE_RINGS.length} rings, change`) : "Choose rings" }}</button>
           <span class="grow" />
           <button class="ib sm plain" :class="{ end: i === 0 }" :aria-disabled="i === 0" :aria-label="`Move ${META[x.id]!.name} earlier`" :title="`Move ${META[x.id]!.name} earlier`" @click="move(x.id, -1)"><Icon name="up" :size="18" /></button>
           <button class="ib sm plain" :class="{ end: i === listed.length - 1 }" :aria-disabled="i === listed.length - 1" :aria-label="`Move ${META[x.id]!.name} later`" :title="`Move ${META[x.id]!.name} later`" @click="move(x.id, 1)"><Icon name="down" :size="18" /></button>
@@ -663,7 +684,7 @@ await loaded(home, ach, avail, hDay, ready, nightsQ, dailyQ, todayCal);
 
         <!-- readiness: the score as a pinned goal's value and ring, what it means, then what made it as a report's highlights;
              while the usual is being learnt, the days the score waits for in their place, and each part's days so far -->
-        <div v-else-if="id === 'readiness' && rd" class="card hb sz-m click" :data-solo="solo.has(id) || undefined" v-bind="link('/stats?tab=heart')">
+        <div v-else-if="id === 'readiness' && rd" class="card hb sz-m click" :data-solo="solo.has(id) || undefined" v-bind="link(readyTo)">
           <div class="ch"><span class="bi"><Icon name="gauge" :size="15" /></span><span class="t grow">Readiness</span><span v-if="hasReadyParts && !readyWait" class="tiny">Vs your usual</span></div>
           <div v-if="readyWait" class="row"><div class="big grow">{{ readyWait.left }}<small>{{ readyWait.left === 1 ? "day" : "days" }} until your score</small></div><Ring :pct="readyWait.days / readyWait.need" :size="40" /></div>
           <div v-else class="row"><div class="big grow">{{ rd.score }}<small v-if="rd.label">{{ rd.label }}</small></div><Ring :pct="rd.score! / 100" :size="40" :color="rd.label === 'Take it easy' ? 'var(--warn)' : undefined" /></div>
@@ -739,7 +760,7 @@ await loaded(home, ach, avail, hDay, ready, nightsQ, dailyQ, todayCal);
           </template>
         </div>
 
-        <!-- today at a glance: a ring per number, each opening its Stats tab on today; five to a row, or three and two -->
+        <!-- today at a glance: a ring per picked number, each opening the Stats tab that shows it in full; five to a row, or three and two -->
         <div v-else-if="id === 'quickStats'" class="card hb wkc sz-m" :data-solo="solo.has(id) || undefined">
           <div class="ch"><span class="bi"><Icon name="eye" :size="15" /></span><span class="t grow">Today at a glance</span></div>
           <div class="glance">
@@ -751,9 +772,9 @@ await loaded(home, ach, avail, hDay, ready, nightsQ, dailyQ, todayCal);
           </div>
         </div>
 
-        <!-- today's calendar: the Calendar's own card for today, its header opening the Calendar on today -->
+        <!-- your day: the Calendar's own card for today, its header opening the Calendar on today -->
         <CalendarDay v-else-if="id === 'calendarDay'" class="hb sz-l" :day="today" :today="today" :items="todayItems">
-          <template #head><div class="ch"><span class="bi"><Icon name="calendar" :size="15" /></span><span class="t grow">Today's calendar</span><button class="lnk" @click="planOpen = { rule: 'once', startDate: today }"><Icon name="plus" :size="14" />Plan</button><button class="lnk" @click="router.push(`/history?date=${today}`)">Calendar</button></div></template>
+          <template #head><div class="ch"><span class="bi"><Icon name="calendar" :size="15" /></span><span class="t grow">Your day</span><button class="lnk" @click="planOpen = { rule: 'once', startDate: today }"><Icon name="plus" :size="14" />Plan</button><button class="lnk" @click="router.push(`/history?date=${today}`)">Calendar</button></div></template>
         </CalendarDay>
 
         <div v-else-if="id === 'achievements'" class="card hb sz-m click" :data-solo="solo.has(id) || undefined" v-bind="link('/stats?tab=achievements')">
@@ -777,6 +798,15 @@ await loaded(home, ach, avail, hDay, ready, nightsQ, dailyQ, todayCal);
     </Sheet>
     <ScheduleEditor v-if="planOpen" :schedule="planOpen" @close="planOpen = null" />
     <GoalSheet v-if="goalOpen" :id="goalOpen" @close="goalOpen = null" @edit="(g) => router.push(`/goals?edit=${g.id}`)" @status="goalStatus" @delete="goalDelete" />
+    <Sheet v-if="glanceOpen" title="Today at a glance" @close="glanceOpen = false">
+      <p class="tiny hgap">Choose the rings this block shows. Each one appears once its reading is in.</p>
+      <label v-for="k in GLANCE_RINGS" :key="k" class="tgl">
+        <Icon :name="GLANCE_ROWS[k].icon" :size="18" class="gsi" />
+        <div class="grow"><div class="t">{{ GLANCE_ROWS[k].t }}</div><div class="s">{{ GLANCE_ROWS[k].s }}</div></div>
+        <span class="tg"><input type="checkbox" :checked="s.home.glance.includes(k)" @change="setGlance(k, ($event.target as HTMLInputElement).checked)" /></span>
+      </label>
+      <div v-if="!s.home.glance.length" class="tiny">With no ring picked, Home hides this block.</div>
+    </Sheet>
     <Sheet v-if="pinOpen" title="Pinned goals" @close="pinOpen = false">
       <p class="tiny hgap">Each pinned goal gets its own block on Home, in this order. Weekly and monthly goals can bring their streak along.</p>
       <TransitionGroup name="mv" tag="div">
@@ -844,7 +874,7 @@ html.phone .gtile { grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); }
 .glv { max-width: 100%; overflow: hidden; text-overflow: ellipsis; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; line-height: 1.2; }
 .glv small { font-size: var(--fs-sm); font-weight: 500; color: var(--tx2); }
 .gll { min-height: 2.4em; font-size: var(--fs-sm); color: var(--tx2); line-height: 1.2; }
-/* Today's calendar: a block's children are 4px apart (.hb's gap) on top of their own margins, so each section takes those
+/* Your day: a block's children are 4px apart (.hb's gap) on top of their own margins, so each section takes those
    4px back and sits --cpy below the one before, as on the Calendar page; the header does the same (.hb > .ch) */
 .hb > :deep(.csec) { margin-top: calc(var(--cpy) - 4px); }
 .wbars { display: flex; align-items: flex-end; gap: 6px; height: 34px; margin-top: auto; padding-top: var(--hg); box-sizing: content-box; }
@@ -951,5 +981,10 @@ html.phone .gtile { grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); }
 /* the foot: the pinned goals' link on the left, the arrows on the right with their icons lined up under the switch's edge */
 .emv { display: flex; align-items: center; gap: 4px; margin-top: auto; margin-inline-end: calc((18px - 36px) / 2); }
 .tgl.sub-t { padding-inline-start: calc(var(--cpx) + var(--hg)); }
+/* a ring's icon in its row of the Today at a glance sheet, as the Routine changes rows' icons (RoutineChanges .rc-i):
+   its size kept beside a long name, in the quiet text colour */
+.gsi { flex: none; color: var(--tx2); }
+/* the note under the rings' rows keeps a row's spacing from the last row's line */
+.tgl + .tiny { margin-top: var(--lpy); }
 .hsw { cursor: pointer; align-self: stretch; display: flex; align-items: center; }
 </style>

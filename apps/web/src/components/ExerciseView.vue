@@ -181,7 +181,7 @@ const menu = computed<MenuItem[]>(() => [
     <div v-else-if="tab === 'charts'">
       <div class="chips hgap"><button v-for="[k, l] in CHARTS" :key="k" class="fchip" :class="{ on: chart === k }" @click="chart = k">{{ l }}</button></div>
       <div v-if="!sessions.length" class="empty"><Icon name="stats" :size="32" /><b>No charts yet</b>Its progress is charted here after your first workout with it.</div>
-      <div v-else class="card"><LineChart :points="points" :height="220" :fmt="(v) => fmt.num(v, 1)" @pick="openWorkout" /></div>
+      <div v-else class="card"><LineChart :points="points" :height="220" :fmt="(v) => fmt.num(v, 1)" /></div>
     </div>
 
     <div v-else-if="tab === 'records'">

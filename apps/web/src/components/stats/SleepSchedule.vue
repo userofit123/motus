@@ -2,16 +2,17 @@
 // When each night began and ended: one bar per night from bedtime (top) to getting up (bottom), on the hours of the
 // night, so an even schedule reads as a level row of bars. Where bedtimes and wake times usually fall (bed, wake: from 5
 // nights on) lies behind them as two shaded bands with dashed edges, plain to see yet quieter than the bars. Styled as BarChart (gridlines, axis text with the month under its first
-// day, bars, tip); a night can be clicked (pick) to open it.
+// day, bars, tip). It zooms sideways as BarChart does (useChartZoom.ts), the hours staying put in their own strip on the
+// left. Hovering, clicking or tapping a night shows its tip; a chart never opens another page.
 import { computed, ref } from "vue";
 import { useWidth } from "../useWidth";
 import { useTip } from "../useTip";
+import { useChartZoom } from "../useChartZoom";
 import { useFmt } from "../../core/format";
 import { nightMin, nightIso } from "../../core/sleep";
 
 type Span = { lo: number; hi: number; n: number } | null;
 const props = defineProps<{ nights: { date: string; startAt: string; endAt: string }[]; height?: number; bed?: Span; wake?: Span }>();
-const emit = defineEmits<{ pick: [date: string] }>();
 const fmt = useFmt();
 const box = ref<HTMLElement | null>(null);
 const W = useWidth(box), H = computed(() => props.height ?? 170);
@@ -30,7 +31,12 @@ const dom = computed(() => {
   const lo = Math.floor((Math.min(...r.map((x) => x.a)) - 30) / 60) * 60, hi = Math.ceil((Math.max(...r.map((x) => x.b)) + 30) / 60) * 60;
   return { lo, hi: Math.max(hi, lo + 120) };
 });
-const slot = computed(() => (W.value - P.l) / Math.max(1, rows.value.length));
+const hover = ref<number | null>(null);
+// the bars' strip beside the hours: the card's width less theirs at 1x, until a night has about 80px
+const base = computed(() => Math.max(1, W.value - P.l));
+const { sc, cls, on, cw: CW, left, pinned } = useChartZoom({ box, base, max: () => (80 * rows.value.length) / base.value,
+  range: () => `${rows.value.length}|${rows.value[0]?.date}|${rows.value.at(-1)?.date}`, clear: () => (hover.value = null) });
+const slot = computed(() => CW.value / Math.max(1, rows.value.length));
 const bw = computed(() => Math.max(3, Math.min(14, slot.value * 0.6)));
 const y = (m: number) => P.t + ((m - dom.value.lo) / (dom.value.hi - dom.value.lo)) * (H.value - P.t - P.b);
 // a gridline every 2 hours (every 4 over a long span), labelled with the time of day
@@ -56,27 +62,39 @@ const starts = (i: number) => {
   return next < 0 || (next - i) * slot.value >= 34;
 };
 // as BarChart's: from its bar's left edge, or back from its right edge when it would run past the chart's
-const gx = (i: number) => { const l = P.l + i * slot.value + (slot.value - bw.value) / 2; return l + 30 > W.value ? { x: l + bw.value, a: "end" } : { x: l, a: "start" }; };
+const gx = (i: number) => { const l = i * slot.value + (slot.value - bw.value) / 2; return l + 30 > CW.value ? { x: l + bw.value, a: "end" } : { x: l, a: "start" }; };
 // the usual range of bedtimes and of wake times, once there are enough nights to call it usual
 const bands = computed(() => [props.bed, props.wake].filter((t): t is NonNullable<Span> => !!t && t.n >= 5).map((t) => ({ y: y(t.lo), h: Math.max(2, y(t.hi) - y(t.lo)) })));
-const hover = ref<number | null>(null);
 // as BarChart's: near either edge the tip slides inwards, so it isn't cut off
 const { el: tipEl, style: tipStyle } = useTip(W);
+// a finger's tip stays put while the compatibility mouse events a tap sends come and go
+const enter = (i: number) => { if (!pinned.value) hover.value = i; };
+const leave = () => { if (!pinned.value) hover.value = null; };
+// a click or a tap shows the night's tip, as hovering does (useChartZoom keeps a finger's until a tap outside)
+const click = (i: number) => { hover.value = i; };
 </script>
 
 <template>
   <div ref="box" style="position:relative">
-    <svg v-if="rows.length" class="chart" :viewBox="`0 0 ${W} ${H}`" :style="{ height: H + 'px' }" @mouseleave="hover = null">
-      <g v-for="(b, i) in bands" :key="'b' + i" class="uband"><rect :x="P.l" :width="W - P.l" :y="b.y" :height="b.h" /><line :x1="P.l" :x2="W" :y1="b.y" :y2="b.y" /><line :x1="P.l" :x2="W" :y1="b.y + b.h" :y2="b.y + b.h" /></g>
-      <g v-for="t in ticks" :key="t"><line class="gl" :x1="P.l" :x2="W" :y1="y(t)" :y2="y(t)" /><text class="ax" :x="P.l - 6" :y="y(t) + 3" text-anchor="end">{{ clock(t) }}</text></g>
-      <g v-for="(r, i) in rows" :key="r.date" style="cursor:pointer" @mouseenter="hover = i" @click="emit('pick', r.date)">
-        <rect :x="P.l + i * slot" :width="slot" :y="0" :height="H" fill="transparent" />
-        <rect class="cbar" :x="P.l + i * slot + (slot - bw) / 2" :width="bw" :y="y(r.a)" :height="Math.max(2, y(r.b) - y(r.a))" :rx="Math.min(5, bw / 3)" />
-        <text v-if="named(i)" class="ax" :x="P.l + i * slot + slot / 2" :y="H - P.b + 14" text-anchor="middle">{{ num(r.date) }}</text>
-        <text v-if="starts(i)" class="ax grp" :x="gx(i).x" :y="H - 4" :text-anchor="gx(i).a">{{ month(r.date) }}</text>
-      </g>
-    </svg>
-    <div v-if="hover != null && rows[hover]" class="ctip" ref="tipEl" :style="tipStyle(P.l + (hover + 0.5) * slot, y(rows[hover]!.a) + 'px')">
+    <div v-if="rows.length" class="zrow">
+      <!-- the hours, still while the nights scroll -->
+      <svg class="chart zfix" :viewBox="`0 0 ${P.l} ${H}`" :style="{ width: P.l + 'px', height: H + 'px' }" aria-hidden="true">
+        <text v-for="t in ticks" :key="t" class="ax" :x="P.l - 6" :y="y(t) + 3" text-anchor="end">{{ clock(t) }}</text>
+      </svg>
+      <div ref="sc" class="zsc" :class="cls">
+        <svg class="chart" :viewBox="`0 0 ${CW} ${H}`" :style="{ height: H + 'px', ...(on ? { width: CW + 'px' } : {}) }" @mouseleave="leave">
+          <g v-for="(b, i) in bands" :key="'b' + i" class="uband"><rect :x="0" :width="CW" :y="b.y" :height="b.h" /><line :x1="0" :x2="CW" :y1="b.y" :y2="b.y" /><line :x1="0" :x2="CW" :y1="b.y + b.h" :y2="b.y + b.h" /></g>
+          <line v-for="t in ticks" :key="t" class="gl" :x1="0" :x2="CW" :y1="y(t)" :y2="y(t)" />
+          <g v-for="(r, i) in rows" :key="r.date" @mouseenter="enter(i)" @click="click(i)">
+            <rect :x="i * slot" :width="slot" :y="0" :height="H" fill="transparent" />
+            <rect class="cbar" :x="i * slot + (slot - bw) / 2" :width="bw" :y="y(r.a)" :height="Math.max(2, y(r.b) - y(r.a))" :rx="Math.min(5, bw / 3)" />
+            <text v-if="named(i)" class="ax" :x="i * slot + slot / 2" :y="H - P.b + 14" text-anchor="middle">{{ num(r.date) }}</text>
+            <text v-if="starts(i)" class="ax grp" :x="gx(i).x" :y="H - 4" :text-anchor="gx(i).a">{{ month(r.date) }}</text>
+          </g>
+        </svg>
+      </div>
+    </div>
+    <div v-if="hover != null && rows[hover]" class="ctip" ref="tipEl" :style="tipStyle(P.l + (hover + 0.5) * slot - left, y(rows[hover]!.a) + 'px')">
       <b>{{ fmt.time(rows[hover]!.startAt) }}-{{ fmt.time(rows[hover]!.endAt) }}</b> · {{ day(rows[hover]!.date) }}
     </div>
   </div>

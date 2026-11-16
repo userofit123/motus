@@ -268,7 +268,8 @@ html[data-mode="light"] .pr { color: #9a6d00; }
 .ib.sm { width: 36px; height: 36px; }
 .ib.sm svg { width: 18px; height: 18px; }
 .ib.plain { border: 0; background: none; }
-.ib.plain:hover { background: var(--s2); }
+/* a disabled one (Day by hour's zoom out at the whole day) doesn't answer the pointer */
+.ib.plain:hover:not(:disabled) { background: var(--s2); }
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
 .btn.block { width: 100%; }
 .btn.lg { min-height: 52px; font-size: 15px; padding: 12px 26px; }
@@ -323,18 +324,6 @@ html.phone .sht .sh_h::before { content: ""; position: absolute; left: 50%; top:
 html.phone .sht .sh_h { position: relative; padding-top: 22px; }
 html.phone .sht { --shx: var(--cpx); }
 html.phone .sht .sh_b { padding: 4px var(--shx) calc(var(--cpy) + 3px); }
-/* the Calendar's Day by hour full screen (M-253): a large window on a computer, as tall as the chart; on a phone the whole
-   screen, no handle (it isn't pulled down), and turned on its side while the phone is held upright, so it is landscape */
-.sht.full.dbh-full { height: auto; }
-/* its chart's tip rises over the header, as it rises over the card's */
-.sht.dbh-full .sh_b { overflow: visible; }
-html.phone .scr.dbh-scr { padding: 0; align-items: stretch; background: var(--bg); }
-html.phone .sht.full.dbh-full { height: 100%; max-height: none; border: 0; border-radius: 0; box-shadow: none; animation: fo .15s; padding: var(--st) var(--sr) 0 var(--sl); }
-html.phone .sht.dbh-full .sh_h::before { content: none; }
-html.phone .sht.dbh-full .sh_h { padding-top: 16px; }
-/* turned a quarter clockwise, its sides lie along the screen's right, bottom, left and top edges, so take those insets */
-html.phone .sht.full.dbh-full.rot { position: fixed; top: 0; left: 100vw; width: 100vh; height: 100vw; left: 100dvw; width: 100dvh; height: 100dvw; transform-origin: top left; transform: rotate(90deg); padding: var(--sr) var(--sb) var(--sl) var(--st); }
-html.phone .sht.dbh-full.rot .sh_b:last-child { padding-bottom: calc(var(--cpy) + 3px); }
 html.phone .sht .sh_f { padding: 12px var(--cpx) calc(12px + var(--sb)); }
 /* the sheet runs to the screen's bottom edge, its background under the navigation bar; when it has no footer to lift,
    its body ends that far up instead, so its last row stays clear of the bar (--sb: env() or the Android app's bar size) */
@@ -667,11 +656,29 @@ html.phone .cal .dots i.plan { background: none; border: 1px solid var(--ec, var
 .chart .ax { fill: var(--tx2); font-size: 10.5px; }
 .chart .ln { fill: none; stroke: var(--acc); stroke-width: 2.2; vector-effect: non-scaling-stroke; stroke-linejoin: round; stroke-linecap: round; }
 .chart .ar { fill: url(#cg-acc); opacity: .5; }
-.chart .pt { fill: var(--bg); stroke: var(--acc); stroke-width: 2; cursor: pointer; }
+.chart .pt { fill: var(--bg); stroke: var(--acc); stroke-width: 2; }
 .chart .cbar { fill: var(--acc); }
 .chart .cbar[data-dim] { fill: color-mix(in srgb, var(--acc) 75%, transparent); }
 .chart .goal { stroke: var(--tx2); stroke-width: 1; stroke-dasharray: 4 4; opacity: .7; }
 .ctip { position: absolute; pointer-events: none; background: var(--tx); color: var(--bg); padding: 6px 9px; border-radius: 9px; font-size: 12px; white-space: nowrap; transform: translate(-50%, calc(-100% - 10px)); z-index: 5; }
+/* a zoomable chart (useChartZoom.ts): the axis names in a strip that stays put, the plot beside them in a strip that
+   scrolls sideways once zoomed. Pinching it is the chart's, not the page's; one finger still scrolls either way. No
+   scrollbar (it would make the card taller): a finger, a trackpad, the wheel or the mouse moves it. */
+.zrow { display: flex; }
+.zfix { flex: none; user-select: none; }
+.zsc { flex: 1; min-width: 0; }
+.zsc.zable { touch-action: pan-x pan-y; }
+.zsc.zon { overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scrollbar-width: none; cursor: grab; user-select: none; }
+.zsc.zon::-webkit-scrollbar { display: none; }
+/* the edge with more chart beyond it fades out (zfl: the left, zfr: the right), so a zoomed chart reads as one that
+   scrolls; a mask is only ever opaque or clear, so its colours are no theme's */
+.zsc.zfl { -webkit-mask-image: linear-gradient(to right, transparent, #000 24px); mask-image: linear-gradient(to right, transparent, #000 24px); }
+.zsc.zfr { -webkit-mask-image: linear-gradient(to left, transparent, #000 24px); mask-image: linear-gradient(to left, transparent, #000 24px); }
+.zsc.zfl.zfr { -webkit-mask-image: linear-gradient(to right, transparent, #000 24px, #000 calc(100% - 24px), transparent); mask-image: linear-gradient(to right, transparent, #000 24px, #000 calc(100% - 24px), transparent); }
+/* base.css keeps every svg inside its box; a zoomed chart is wider than the strip on purpose */
+.zsc.zon > .chart { max-width: none; }
+/* the heat map's tip sits over the scrolling grid, so the grid's wrapper holds it */
+.heatw { position: relative; }
 .heat { display: grid; grid-auto-flow: column; grid-template-rows: repeat(7, 11px); gap: 3px; overflow-x: auto; padding-bottom: 4px; }
 .heat i { width: 11px; height: 11px; border-radius: 3px; background: var(--s2); }
 

@@ -3,9 +3,13 @@
 // bottom, so deeper sleep sits lower), each stretch a block in its stage's colour in its lane, thin joins between one
 // stretch and the next so the night reads as one line. Styled as LineChart (same margins, gridlines and axis text), so
 // it lines up with the heart rate, blood oxygen and breathing charts under it; a stretch's tip gives its stage and times.
+// It zooms sideways as they do (useChartZoom.ts), up to HOUR_PX an hour so a few minutes awake can be looked at, the lane
+// names staying put in their own strip; on a night's page it shares their zoom and scroll, so all stay lined up.
+// Hovering, clicking or tapping a stretch shows its tip.
 import { computed, ref } from "vue";
 import { useWidth } from "../useWidth";
 import { useTip } from "../useTip";
+import { useChartZoom, timeTicks, tickRoom, TICK_CH, HOUR_PX } from "../useChartZoom";
 import { useFmt } from "../../core/format";
 import { LANES, laneOf, segColor, SEG_NAME, mins, type Seg } from "../../core/sleep";
 
@@ -13,8 +17,13 @@ const props = defineProps<{ segs: Seg[]; from: number; to: number; xt: number[];
 const fmt = useFmt();
 const box = ref<HTMLElement | null>(null);
 const W = useWidth(box), H = computed(() => props.height ?? 150), P = { l: 44, r: 12, t: 10, b: 22 };
+const base = computed(() => Math.max(1, W.value - P.l - P.r));
+const hover = ref<number | null>(null);
+const { sc, cls, on, cw: CW, left, pinned } = useChartZoom({ box, base, pad: P.r,
+  max: () => ((props.to - props.from) / 3600_000) * HOUR_PX / base.value, range: () => `${props.from}-${props.to}`, clear: () => (hover.value = null) });
 const lh = computed(() => (H.value - P.t - P.b) / LANES.length);
-const sx = (t: number) => P.l + ((t - props.from) / Math.max(1, props.to - props.from)) * (W.value - P.l - P.r);
+// across the plot strip, which starts right of the lane names
+const sx = (t: number) => ((t - props.from) / Math.max(1, props.to - props.from)) * (CW.value - P.r);
 // a block sits in the middle of its lane, a little short of it so neighbouring lanes stay apart
 const bh = computed(() => Math.max(6, lh.value * 0.62));
 const by = (i: number) => P.t + i * lh.value + (lh.value - bh.value) / 2;
@@ -22,19 +31,38 @@ const blocks = computed(() => props.segs.map((s) => { const i = laneOf(s.k), x =
 // where one stretch hands over to the next in another lane: a hairline from one lane to the other
 const joins = computed(() => blocks.value.slice(1).map((s, j) => { const p = blocks.value[j]!; return p.i === s.i ? null : { x: s.x, y1: Math.min(p.y, s.y) + bh.value / 2, y2: Math.max(p.y, s.y) + bh.value / 2 }; }).filter((x) => !!x));
 const t = (x: number) => fmt.value.time(new Date(x).toISOString());
-const hover = ref<number | null>(null);
+// the caller's hours at 1x (lined up with the charts under it); zoomed in, as many as fit, on the clock's whole hours
+// or minutes
+const ticks = computed(() => {
+  if (!on.value) return props.xt.map((x) => ({ x, a: x <= props.from ? "start" : x >= props.to ? "end" : "middle" }));
+  const end = CW.value - P.r;
+  return timeTicks(props.from, props.to, end, tickRoom(t(props.from)), false).map((x) => { const w = t(x).length * TICK_CH, at = sx(x); return { x, a: at - w / 2 < 0 ? "start" : at + w / 2 > end ? "end" : "middle" }; });
+});
 const { el: tipEl, style: tipStyle } = useTip(W);
+// a finger's tip stays put while the compatibility mouse events a tap sends come and go
+const enter = (i: number) => { if (!pinned.value) hover.value = i; };
+const leave = () => { if (!pinned.value) hover.value = null; };
+// a click or a tap shows the stretch's tip, as hovering does (useChartZoom keeps a finger's until a tap outside)
+const click = (i: number) => { hover.value = i; };
 </script>
 
 <template>
   <div ref="box" style="position:relative">
-    <svg class="chart" :viewBox="`0 0 ${W} ${H}`" :style="{ height: H + 'px' }" role="img" :aria-label="`Sleep stages, ${t(from)}-${t(to)}`" @mouseleave="hover = null">
-      <g v-for="(l, i) in LANES" :key="l.k"><line class="gl" :x1="P.l" :x2="W - P.r" :y1="P.t + (i + 0.5) * lh" :y2="P.t + (i + 0.5) * lh" /><text class="ax" :x="P.l - 6" :y="P.t + (i + 0.5) * lh + 3" text-anchor="end">{{ l.name }}</text></g>
-      <text v-for="x in xt" :key="x" class="ax" :x="sx(x)" :y="H - 4" :text-anchor="x <= from ? 'start' : x >= to ? 'end' : 'middle'">{{ t(x) }}</text>
-      <line v-for="(j, i) in joins" :key="'j' + i" class="hy-j" :x1="j.x" :x2="j.x" :y1="j.y1" :y2="j.y2" />
-      <rect v-for="(b, i) in blocks" :key="i" :x="b.x" :y="b.y" :width="b.w" :height="bh" rx="2" :style="{ fill: segColor(b.k) }" :opacity="hover != null && hover !== i ? 0.55 : 1" @mouseenter="hover = i" />
-    </svg>
-    <div v-if="hover != null && blocks[hover]" class="ctip" ref="tipEl" :style="tipStyle(blocks[hover]!.x + blocks[hover]!.w / 2, blocks[hover]!.y + 'px')">
+    <div class="zrow">
+      <!-- the lane names, still while the night scrolls -->
+      <svg class="chart zfix" :viewBox="`0 0 ${P.l} ${H}`" :style="{ width: P.l + 'px', height: H + 'px' }" aria-hidden="true">
+        <text v-for="(l, i) in LANES" :key="l.k" class="ax" :x="P.l - 6" :y="P.t + (i + 0.5) * lh + 3" text-anchor="end">{{ l.name }}</text>
+      </svg>
+      <div ref="sc" class="zsc" :class="cls">
+        <svg class="chart" :viewBox="`0 0 ${CW} ${H}`" :style="{ height: H + 'px', ...(on ? { width: CW + 'px' } : {}) }" role="img" :aria-label="`Sleep stages, ${t(from)}-${t(to)}`" @mouseleave="leave">
+          <line v-for="(l, i) in LANES" :key="l.k" class="gl" :x1="0" :x2="CW - P.r" :y1="P.t + (i + 0.5) * lh" :y2="P.t + (i + 0.5) * lh" />
+          <text v-for="x in ticks" :key="x.x" class="ax" :x="sx(x.x)" :y="H - 4" :text-anchor="x.a">{{ t(x.x) }}</text>
+          <line v-for="(j, i) in joins" :key="'j' + i" class="hy-j" :x1="j.x" :x2="j.x" :y1="j.y1" :y2="j.y2" />
+          <rect v-for="(b, i) in blocks" :key="i" :x="b.x" :y="b.y" :width="b.w" :height="bh" rx="2" :style="{ fill: segColor(b.k) }" :opacity="hover != null && hover !== i ? 0.55 : 1" @mouseenter="enter(i)" @click="click(i)" />
+        </svg>
+      </div>
+    </div>
+    <div v-if="hover != null && blocks[hover]" class="ctip" ref="tipEl" :style="tipStyle(P.l + blocks[hover]!.x + blocks[hover]!.w / 2 - left, blocks[hover]!.y + 'px')">
       <b>{{ SEG_NAME[blocks[hover]!.k] }}</b> · {{ t(blocks[hover]!.a) }}-{{ t(blocks[hover]!.b) }} · {{ mins((blocks[hover]!.b - blocks[hover]!.a) / 60000) }}
     </div>
   </div>

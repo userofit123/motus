@@ -11,7 +11,6 @@
 // their exact times and listed under the chart, as on Stats → Heart's day. Moved with the Calendar's bar; a day's
 // link (?day=) follows it, so a refresh or Back keeps the day.
 import { computed, ref, watch } from "vue";
-import { useRouter } from "vue-router";
 import { useQuery, keepPreviousData } from "@tanstack/vue-query";
 import { ymd, weekStartDate, ACTIVE_HOUR_STEPS, stillStretch, currentStreak, typicalHour } from "@motus/shared";
 import { api } from "../../api/client";
@@ -27,13 +26,12 @@ import BarChart from "../BarChart.vue";
 import Sparkline from "../Sparkline.vue";
 import DayNav from "./DayNav.vue";
 import DaySessionList from "./DaySessionList.vue";
-import { useDaySessions, useToday, legendOf, dayHours, noRecords, stretchOf, stepDay, stretchTitle, DAY_DATA_COLOR, type StretchView } from "./daySessions";
+import { useDaySessions, useToday, legendOf, zoomHours, noRecords, stretchOf, stepDay, stretchTitle, DAY_DATA_COLOR, type StretchView } from "./daySessions";
 
 export type StepsView = StretchView;
 const view = defineModel<StepsView>("view", { required: true });
 const props = defineProps<{ day?: string }>();
 const emit = defineEmits<{ "update:day": [day: string] }>();
-const router = useRouter();
 const fmt = useFmt();
 const s = useSettings();
 const dev = useDevice();
@@ -103,8 +101,9 @@ const hours = computed(() => {
 });
 // in bars: hours since midnight (a clock change day's bars are its real hours, so this holds then too)
 const inBars = (t: number) => (t - dayStart.value) / 3600_000;
-const shade = computed(() => sessions.value.filter((x) => x.b > x.a).map((x) => ({ a: inBars(x.a), b: inBars(x.b), color: x.color, id: x.key, name: x.name })));
-const xt = computed(() => dayHours(anchor.value, fmt.value).map((h) => ({ at: inBars(h.at), text: h.text })));
+const shade = computed(() => sessions.value.filter((x) => x.b > x.a).map((x) => ({ a: inBars(x.a), b: inBars(x.b), color: x.color, name: x.name })));
+// every 6 hours, closer as the chart is zoomed in (a bar is an hour, so its width is an hour's)
+const xt = (slot: number) => zoomHours(anchor.value, fmt.value, slot).map((h) => ({ at: inBars(h.at), text: h.text }));
 const legend = computed(() => legendOf(sessions.value));
 // the steps of recorded activities a band didn't count by the hour are in the total but not in the bars: said under them
 const offHours = computed(() => { const inH = hours.value.reduce((t, h) => t + h.value, 0); return hours.value.length && sessions.value.some((x) => x.steps) ? Math.max(0, dayN.value - inH) : 0; });
@@ -207,8 +206,8 @@ type Insight = { key: string; icon: string; t: string; s: string; rv: string; to
 const insights = computed(() => {
   const out: Insight[] = [];
   const m = minutesPart.value;
-  // the tone and the split are the score row's own; the aim stays in the result ("90 of 150"), as there
-  if (m) out.push({ key: "min", icon: "bolt", t: "Active minutes", s: `last 7 days · ${minutesSplit(m, n0)}`, rv: `${n0(m.value)} of ${m.target}`, tone: scoreRow(m, n0).tone });
+  // the tone and the split are the score row's own, and the aim is in the line as there ("90 min", not "180 of 150" once past it)
+  if (m) out.push({ key: "min", icon: "bolt", t: "Active minutes", s: `last 7 days · ${minutesSplit(m, n0)} · aim for ${m.target} minutes or more`, rv: `${n0(m.value)} min`, tone: scoreRow(m, n0).tone });
   const k = nowStreak.value;
   if (k) out.push({ key: "streak", icon: "link", t: "Current streak", s: `goal reached every day since ${k.more ? "at least " : ""}${day(k.since!)}${k.todayDone ? "" : " · today still to go"}`,
     rv: `${k.days}${k.more ? "+" : ""} ${k.days === 1 ? "day" : "days"}`, tone: "pos" });
@@ -222,16 +221,15 @@ const bars = computed(() => {
   if (view.value !== "year") return days.value.map((d) => {
     const n = stepsOn(d), full = fmt.value.date(d, { day: "numeric", month: "short" });
     return { label: view.value === "week" ? fmt.value.date(d, { weekday: "short" }) : full.split(" ")[0]!, full, ...(view.value === "month" ? { group: month(d) } : {}),
-      tip: fmt.value.date(d, { weekday: "short", day: "numeric", month: "short" }), value: n, ...(goal.value && n >= goal.value ? { color: "var(--pos)" } : {}), id: n ? d : undefined };
+      tip: fmt.value.date(d, { weekday: "short", day: "numeric", month: "short" }), value: n, ...(goal.value && n >= goal.value ? { color: "var(--pos)" } : {}) };
   });
   const wk = new Map<string, number[]>();
   for (const d of days.value) { const k = ymd(weekStartDate(at(d), s.value.firstDay)); const n = stepsOn(d); wk.set(k, n ? [...(wk.get(k) ?? []), n] : (wk.get(k) ?? [])); }
   return [...wk].map(([k, ns]) => {
     const full = fmt.value.date(k, { day: "numeric", month: "short" }), v = ns.length ? ns.reduce((t, n) => t + n, 0) / ns.length : 0;
-    return { label: full.split(" ")[0]!, full, group: month(k), tip: `week of ${full}`, value: Math.round(v), ...(goal.value && v >= goal.value ? { color: "var(--pos)" } : {}), id: ns.length ? k : undefined };
+    return { label: full.split(" ")[0]!, full, group: month(k), tip: `week of ${full}`, value: Math.round(v), ...(goal.value && v >= goal.value ? { color: "var(--pos)" } : {}) };
   });
 });
-const pick = (d: string) => { anchor.value = d; view.value = view.value === "year" ? "week" : "day"; };
 const periodFrom = computed(() => { const r = withSteps.value.map((d) => steps.value.get(d)!); return r.length && r.every((x) => x.source && x.source !== "manual" && x.source !== "activities") ? fromWhere(r.every((x) => x.worn !== false), dev.value) : ""; });
 const tiles = computed(() => 1 + (goal.value ? 1 : 0) + (goal.value && streak.value ? 1 : 0));
 const openDay = (d: string | null) => { if (d) { anchor.value = d; view.value = "day"; } };
@@ -266,7 +264,8 @@ const openDay = (d: string | null) => { if (d) { anchor.value = d; view.value = 
         </div>
         <div class="csec"><div class="lbl hgap">Steps by hour</div>
           <template v-if="hours.length">
-            <BarChart :bars="hours" :height="170" :fmt="n0" :shade="shade" :xt="xt" @pick="(id) => router.push(id)" />
+            <!-- keyed by the day: its hour labels are the same every day, so without it a zoom would carry over to the next -->
+            <BarChart :key="anchor" :bars="hours" :height="170" :fmt="n0" :shade="shade" :xt="xt" />
             <div v-if="legend.length" class="bmlegend st-leg"><span><i :style="{ background: DAY_DATA_COLOR }" />Steps</span><span v-for="k in legend" :key="k.color"><i :style="{ background: k.color }" />{{ k.name }}</span></div>
             <div v-if="busiest" class="tiny st-line">Busiest hour {{ busiest.tip }} · {{ n0(busiest.value) }} steps</div>
             <div v-if="still" class="tiny st-line">Quietest stretch {{ still.span }} · {{ mins(still.hours * 60) }} under {{ ACTIVE }} steps an hour</div>
@@ -313,9 +312,9 @@ const openDay = (d: string | null) => { if (d) { anchor.value = d; view.value = 
 
       <div class="card spt">
         <div class="lbl hgap">{{ view === "year" ? "Average steps a day, by week" : "Steps per day" }}{{ periodFrom ? ` · ${periodFrom}` : "" }}{{ goal ? ` · goal ${n0(goal)}` : "" }}</div>
-        <BarChart :bars="bars" :goal="goal ?? undefined" :height="170" :fmt="n0" @pick="pick" />
+        <BarChart :bars="bars" :goal="goal ?? undefined" :height="170" :fmt="n0" />
         <div v-if="bars.some((b) => b.color)" class="bmlegend st-leg"><span><i style="background: var(--acc)" />Steps</span><span><i style="background: var(--pos)" />Goal reached</span></div>
-        <div class="tiny st-line">{{ view === "year" ? "Tap a week to open it." : "Tap a day to open it." }}</div>
+        <div class="tiny st-line">{{ view === "year" ? "Tap a week to see its average steps a day." : "Tap a day to see its steps." }}</div>
       </div>
     </template>
   </template>

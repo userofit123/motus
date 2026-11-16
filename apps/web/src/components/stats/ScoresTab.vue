@@ -1,11 +1,12 @@
 <script setup lang="ts">
 // Stats → Scores (the Health scores feature, M-247): each score of the last 7 days as a tile, then its parts as rows with
 // the guideline it is based on, as Home's score blocks show them. Recovery is Readiness (from your own usual), shown
-// beside them rather than worked out a second way. Only scores whose data is there; the tab is absent without any.
+// beside them rather than worked out a second way. Only scores whose data is there; the tab is absent without any. With
+// the Health scores feature off the tab holds Readiness alone (it is no feature), and the scores aren't asked for.
 import { computed } from "vue";
 import { RECOVERY_BASIS } from "@motus/shared";
 import SourceRow from "../learn/SourceRow.vue";
-import { useHealthScores, useReadiness } from "../../api/queries";
+import { useHealthScores, useReadiness, useSettings } from "../../api/queries";
 import { useFmt } from "../../core/format";
 import { SCORE_META, SCORE_KEYS, scoreRow, scoreWhy } from "../../core/scores";
 import { readinessRows } from "../../core/readiness";
@@ -13,9 +14,12 @@ import Icon from "../Icon.vue";
 
 const fmt = useFmt();
 const num = (v: number) => fmt.value.num(v, 0);
-const sq = useHealthScores();
+const settings = useSettings();
+// a disabled query still hands back what it had cached, so the scores are read only while the feature is on
+const on = computed(() => !!settings.value.features.scores);
+const sq = useHealthScores(on);
 const rq = useReadiness();
-const scores = computed(() => SCORE_KEYS.flatMap((k) => { const s = sq.data.value?.[k]; return s ? [{ ...s, meta: SCORE_META[k] }] : []; }));
+const scores = computed(() => SCORE_KEYS.flatMap((k) => { const s = on.value && sq.data.value?.[k]; return s ? [{ ...s, meta: SCORE_META[k] }] : []; }));
 const ready = computed(() => (rq.data.value?.score != null ? rq.data.value : null));
 // the number big and its word in the sub line, as the other tabs' tiles keep a long word ("Take it easy") out of the value
 const tiles = computed(() => [
@@ -26,11 +30,11 @@ const tiles = computed(() => [
 const readyRows = computed(() => (ready.value ? readinessRows(ready.value, num) : []));
 // the scores follow the adult guidelines: under 18 the server sends none and says why (minor); Readiness, from your
 // own usual, still shows
-const minor = computed(() => !!sq.data.value?.minor);
+const minor = computed(() => on.value && !!sq.data.value?.minor);
 </script>
 
 <template>
-  <div v-if="sq.isLoading.value" class="empty">Loading…</div>
+  <div v-if="sq.isLoading.value || rq.isLoading.value" class="empty">Loading…</div>
   <div v-else-if="minor && !tiles.length" class="card empty"><Icon name="gauge" :size="34" /><b>No scores under 18</b>The scores follow the guidelines for adults, which differ for children and teens.</div>
   <div v-else-if="!tiles.length" class="card empty"><Icon name="gauge" :size="34" /><b>No scores yet</b>Scores come once a week of sleep, steps, heart rate or workouts is in.</div>
   <template v-else>

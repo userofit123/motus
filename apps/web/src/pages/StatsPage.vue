@@ -2,10 +2,10 @@
 // Stats (requirement 16): progress over time overall, per routine, per exercise, per muscle group and for activities.
 // Body weight and measurements are charted on the Body page (one thing, like one exercise's charts on its page);
 // /stats?tab=body, the old Body tab, is sent there (router.ts).
-import { computed, ref, watch } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { GROUPS, muscleName, weekStartOf, weekStartDate, daysIntoWeek, weekdayOrder, statsPeriod, STATS_PERIODS, ymd, type StatsPeriod, WEEKLY_SET_RANGE, num, percentChange } from "@motus/shared";
-import { useStats, useHealthScores, useSettings, useAchievements, useGoals, useHealthAvailable, useTypeName, useActivityFigures, loaded } from "../api/queries";
+import { useStats, useHealthScores, useReadiness, useSettings, useAchievements, useGoals, useHealthAvailable, useTypeName, useActivityFigures, loaded } from "../api/queries";
 import { useFmt, unitOf, localYmd, activityIcon } from "../core/format";
 import { startOpen } from "../core/ui";
 import { fromWhere, useDevice } from "../native/health";
@@ -14,6 +14,8 @@ import DotLine from "../components/DotLine.vue";
 import SearchField from "../components/SearchField.vue";
 import AppSelect from "../components/AppSelect.vue";
 import LineChart from "../components/LineChart.vue";
+import { useTip } from "../components/useTip";
+import { useWidth } from "../components/useWidth";
 import BarChart from "../components/BarChart.vue";
 import BodyMap from "../components/BodyMap.vue";
 import Sparkline from "../components/Sparkline.vue";
@@ -66,9 +68,16 @@ const p = computed<any>(() => prev.data.value);
 // Steps, Sleep and Heart only once a band (or a script) has handed over that kind of data: never an empty tab for something
 // this person doesn't track
 const avail = useHealthAvailable();
-// Scores (the Health scores feature) once one of them has its data
+// Scores once one of the health scores (a feature) has its data, or once Readiness has a score: Readiness is no feature
+// (it comes with a band's sleep and heart data) and this tab is the one place it is shown in full, so Home's Readiness
+// opens it there with the Health scores feature off too (the tab then holds Readiness alone)
 const scoresQ = useHealthScores(computed(() => !!s.value.features.scores));
-const hasScores = computed(() => !!s.value.features.scores && !!scoresQ.data.value && !!(scoresQ.data.value.sleep || scoresQ.data.value.activity || scoresQ.data.value.strength || scoresQ.data.value.minor));
+// readiness needs a band's sleep or heart data, so it is only asked for once there is some (and only then counted:
+// a disabled query still hands back what it had cached)
+const readyOn = computed(() => !!(avail.data.value?.sleep || avail.data.value?.heart));
+const readyQ = useReadiness(readyOn);
+const hasScores = computed(() => (!!s.value.features.scores && !!scoresQ.data.value && !!(scoresQ.data.value.sleep || scoresQ.data.value.activity || scoresQ.data.value.strength || scoresQ.data.value.minor))
+  || (readyOn.value && readyQ.data.value?.score != null));
 const TABS = computed(() => [["overview", "Overview"], ["routines", "Routines"], ["exercises", "Exercises"], ["muscles", "Muscles"], ["activities", "Activities"],
   ...(avail.data.value?.steps ? [["steps", "Steps"]] : []), ...(avail.data.value?.sleep ? [["sleep", "Sleep"]] : []), ...(avail.data.value?.heart ? [["heart", "Heart"]] : []), ...(hasScores.value ? [["scores", "Scores"]] : []), ...(s.value.features.reports ? [["reports", "Reports"]] : []), ...(s.value.features.achievements ? [["achievements", "Achievements"]] : [])]);
 
@@ -111,6 +120,19 @@ const heat = computed(() => {
   const start = new Date(); start.setDate(start.getDate() - 7 * 25 - daysIntoWeek(start.getDay(), s.value.firstDay));
   return Array.from({ length: 26 * 7 }, (_, i) => { const x = new Date(start); x.setDate(start.getDate() + i); const k = localYmd(x); return { k, n: on.get(k) ?? 0, future: x > new Date() }; });
 });
+// a day's tip, as every chart's: over its square on hover, a click or a tap, kept until the pointer leaves, a tap outside or
+// a scroll; it opens nothing, as no chart does
+const heatBox = ref<HTMLElement | null>(null), heatTip = ref<{ i: number; x: number; y: number } | null>(null);
+const { el: heatTipEl, style: heatTipStyle } = useTip(useWidth(heatBox));
+function heatAt(e: Event, i: number) {
+  const box = heatBox.value; if (!box || heat.value[i]?.future) { heatTip.value = null; return; }
+  const r = (e.currentTarget as HTMLElement).getBoundingClientRect(), b = box.getBoundingClientRect();
+  heatTip.value = { i, x: r.left - b.left + r.width / 2, y: r.top - b.top };
+}
+const heatOut = (e: PointerEvent) => { if (heatTip.value && !heatBox.value?.contains(e.target as Node)) heatTip.value = null; };
+watch(heatTip, (t) => { if (t) document.addEventListener("pointerdown", heatOut, true); else document.removeEventListener("pointerdown", heatOut, true); });
+onBeforeUnmount(() => document.removeEventListener("pointerdown", heatOut, true));
+const heatText = (n: number) => (!n ? "No training" : n === 1 ? "Trained once" : n === 2 ? "Trained twice" : `Trained ${n} times`);
 const dow = computed(() => { const c = [0, 0, 0, 0, 0, 0, 0]; for (const w of d.value?.workouts ?? []) c[new Date(w.startedAt).getDay()]!++; return weekdayOrder(s.value.firstDay).map((j) => ({ label: "SMTWTFS"[j]!, value: c[j]! })); });
 const hours = computed(() => { const b = [0, 0, 0, 0, 0, 0]; for (const w of d.value?.workouts ?? []) b[Math.floor(new Date(w.startedAt).getHours() / 4)]!++; return ["0-4", "4-8", "8-12", "12-16", "16-20", "20-24"].map((l, i) => ({ label: l, value: b[i]! })); });
 // exercises
@@ -153,8 +175,8 @@ const avgOf = (pts: { y: number }[]) => pts.reduce((t, p) => t + p.y, 0) / Math.
 // show the page once its data is in, all at once
 await loaded(st, prev, ach, avail);
 // a tab that isn't there (Sleep in a link, after its data was deleted) falls back to Overview
-// (Scores waits for its scores, which load after the page)
-watch([() => avail.data.value, () => scoresQ.data.value], () => { if (!TABS.value.some(([k]) => k === tab.value) && !(tab.value === "scores" && scoresQ.isFetching.value)) tab.value = "overview"; }, { immediate: true });
+// (Scores waits for its scores and Readiness, which load after the page)
+watch([() => avail.data.value, () => scoresQ.data.value, () => readyQ.data.value, () => scoresQ.isFetching.value, () => readyQ.isFetching.value], () => { if (!TABS.value.some(([k]) => k === tab.value) && !(tab.value === "scores" && (scoresQ.isFetching.value || readyQ.isFetching.value))) tab.value = "overview"; }, { immediate: true });
 </script>
 
 <template>
@@ -182,11 +204,12 @@ watch([() => avail.data.value, () => scoresQ.data.value], () => { if (!TABS.valu
       <div class="grid g2 spt">
         <div class="card"><div class="lbl hgap">Workouts per week{{ wkGoal ? ` · goal ${wkGoal}` : "" }}</div><BarChart :bars="weeks.slice(-16).map((w) => ({ label: wlabel(w.week).split(' ')[0]!, full: wlabel(w.week), group: monthOf(w.week), value: w.workouts, dim: !!wkGoal && w.workouts < wkGoal }))" :goal="wkGoal ?? undefined" :height="170" /></div>
         <div class="card"><div class="lbl hgap">Days you trained · last 6 months</div>
-          <div class="heat"><i v-for="c in heat" :key="c.k" :title="`${c.k}: ${c.n}`" :style="c.future ? { opacity: 0 } : c.n ? { background: `color-mix(in srgb, var(--acc) ${Math.min(100, 45 + c.n * 30)}%, var(--s2))` } : undefined" /></div>
+          <div ref="heatBox" class="heatw"><div class="heat" @scroll.passive="heatTip = null" @mouseleave="heatTip = null"><i v-for="(c, i) in heat" :key="c.k" :role="c.future ? undefined : 'img'" :aria-label="c.future ? undefined : `${heatText(c.n)}, ${fmt.date(c.k, { weekday: 'short', day: 'numeric', month: 'short' })}`" @mouseenter="heatAt($event, i)" @click="heatAt($event, i)" :style="c.future ? { opacity: 0 } : c.n ? { background: `color-mix(in srgb, var(--acc) ${Math.min(100, 45 + c.n * 30)}%, var(--s2))` } : undefined" /></div>
+            <div v-if="heatTip && heat[heatTip.i]" ref="heatTipEl" class="ctip" :style="heatTipStyle(heatTip.x, heatTip.y + 'px')"><b>{{ heatText(heat[heatTip.i]!.n) }}</b> · {{ fmt.date(heat[heatTip.i]!.k, { weekday: "short", day: "numeric", month: "short" }) }}</div></div>
           <div class="grid g2" style="margin-top:14px;gap:12px"><div><div class="tiny" style="margin-bottom:4px">Workouts by weekday</div><BarChart :bars="dow" :height="90" /></div><div><div class="tiny" style="margin-bottom:4px">Workouts by time of day</div><BarChart :bars="hours" :height="90" /></div></div>
         </div>
       </div>
-      <div class="card spt"><div class="lbl hgap">Duration (min)</div><LineChart :points="d.workouts.map((w: any) => ({ x: new Date(w.startedAt).getTime(), y: Math.round(w.durationS / 60), id: w.id, label: w.name }))" :height="160" @pick="(id) => router.push(`/workouts/${id}`)" /></div>
+      <div class="card spt"><div class="lbl hgap">Duration (min)</div><LineChart :points="d.workouts.map((w: any) => ({ x: new Date(w.startedAt).getTime(), y: Math.round(w.durationS / 60), label: w.name }))" :height="160" /></div>
     </template>
 
     <template v-else-if="tab === 'routines'">

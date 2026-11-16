@@ -25,7 +25,7 @@ const nights = (p: ScorePart) => (p.target === SCORE_DAYS ? `${p.target} nights`
 const days = (n: number) => `${n} ${n === 1 ? "day" : "days"}`;
 const nightsN = (n: number) => `${n} ${n === 1 ? "night" : "nights"}`;
 
-/** Active minutes split by effort, so the result ("120 of 150") adds up without maths: "60 moderate · 30 vigorous,
+/** Active minutes split by effort, so the result ("120 min") adds up without maths: "60 moderate · 30 vigorous,
  *  counted double" (an older server sends no moderate count: what the result leaves after the vigorous ones) */
 export function minutesSplit(p: ScorePart, num: Num): string {
   const vig = x(p, "vigorous"), mod = p.extra?.moderate ?? Math.max(0, p.value - 2 * vig);
@@ -33,8 +33,9 @@ export function minutesSplit(p: ScorePart, num: Num): string {
 }
 
 /** A part as a row: met in full reads positive, under half negative, as Readiness's rows take the tone of their effect.
- *  Every line: what the result counts, then " · " and its average or breakdown when there is one (Active minutes: the
- *  breakdown alone, its title says what it counts); never the aim, which the result already shows ("4 of 7") */
+ *  A part counted out of a fixed whole (nights of the week, muscle groups) reads "4 of 7", its line saying what it counts,
+ *  then " · " and its average when there is one. A part with a least amount to reach (active minutes, steps, strength
+ *  days) shows its own number alone and its line names the aim, since it can go past it: "5 of 2" days read as a muddle */
 export function scoreRow(p: ScorePart, num: Num): ScoreRow {
   const tone = p.share >= 1 ? "pos" : p.share < 0.5 ? "neg" : undefined;
   switch (p.key) {
@@ -45,9 +46,9 @@ export function scoreRow(p: ScorePart, num: Num): ScoreRow {
     // the split by effort (WHO's moderate and vigorous intensity) under the title, never a "Moderate" title, which is
     // Heart's 70 % zone; the icon is zone minutes' bolt, since these are minutes at a heart rate effort (heartPulse is
     // the resting heart rate)
-    case "minutes": return { key: p.key, icon: "bolt", t: "Active minutes", s: minutesSplit(p, num), r: `${num(p.value)} of ${p.target}`, tone };
-    case "steps": return { key: p.key, icon: "steps", t: "Daily steps", s: "Average steps a day", r: `${num(p.value)} of ${num(p.target)}`, tone };
-    case "days": return { key: p.key, icon: "calendar", t: "Strength days", s: "Days with hard sets", r: of(p), tone };
+    case "minutes": return { key: p.key, icon: "bolt", t: "Active minutes", s: `${minutesSplit(p, num)} · aim for ${num(p.target)} minutes or more`, r: `${num(p.value)} min`, tone };
+    case "steps": return { key: p.key, icon: "steps", t: "Daily steps", s: `Average steps a day · aim for ${num(p.target)} or more`, r: num(p.value), tone };
+    case "days": return { key: p.key, icon: "calendar", t: "Strength days", s: `Days with hard sets · aim for ${days(p.target)} or more`, r: days(p.value), tone };
     case "groups": { const low = short(p);
       return { key: p.key, icon: "activity", t: `Muscle groups with ${SETS}+ hard sets`, s: low.length ? `Under ${SETS}: ${low.join(", ")}` : `All ${p.target} at ${SETS} or more`, r: of(p), tone }; }
   }

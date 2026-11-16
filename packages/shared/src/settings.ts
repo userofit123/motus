@@ -74,8 +74,9 @@ export interface Settings {
   /** blocks: Home's blocks in the order shown, each shown or hidden (Edit home).
    *  hidden: Home suggestions you dismissed ("r:<routine id>" / "m:<muscle group>" → when), kept away for a week
    *  (DISMISS_DAYS); each dismissal also clears the ones past that (dismissalPatch).
-   *  goals: the goals pinned to Home as their own blocks, in order, each with or without its streak */
-  home: { blocks: HomeBlock[]; hidden: Record<string, string>; goals: { id: string; streak: boolean }[] };
+   *  goals: the goals pinned to Home as their own blocks, in order, each with or without its streak.
+   *  glance: the rings Today at a glance may show (GLANCE_RINGS keys); each still waits for its number */
+  home: { blocks: HomeBlock[]; hidden: Record<string, string>; goals: { id: string; streak: boolean }[]; glance: GlanceRing[] };
   /** the order of your goals on the Goals page (Reorder goals); goals not in it follow, newest first */
   goalsOrder: string[];
   features: Record<string, boolean>;
@@ -115,7 +116,7 @@ export const HOME_BLOCKS: HomeBlock[] = [
   { id: "suggest", on: true }, { id: "reminders", on: true }, { id: "activityToday", on: true },
   { id: "scoreSleep", on: true }, { id: "scoreActivity", on: true }, { id: "scoreStrength", on: true },
   { id: "records", on: false }, { id: "feed", on: false }, { id: "daily", on: false }, { id: "achievements", on: false },
-  // At a glance (today's numbers as rings) and Today's calendar (the Calendar's card for today): off until picked in Edit home
+  // At a glance (today's numbers as rings) and Your day (the Calendar's card for today): off until picked in Edit home
   { id: "quickStats", on: false }, { id: "calendarDay", on: false },
 ];
 /** Home's blocks made safe (they sync from any device): unknown ids and repeats dropped, missing ones appended with their default. */
@@ -135,6 +136,16 @@ export function cleanHomeBlocks(saved: unknown): HomeBlock[] {
   }
   for (const d of HOME_BLOCKS) if (!seen.has(d.id)) out.push({ ...d });
   return out;
+}
+
+/** Today at a glance's rings, in the order the block draws them (M-260); a new account has all of them */
+export const GLANCE_RINGS = ["steps", "restingHr", "sleep", "readiness", "activeKcal"] as const;
+export type GlanceRing = (typeof GLANCE_RINGS)[number];
+/** The rings picked for Today at a glance made safe (they sync from any device): unknown keys and repeats dropped, kept in
+ *  the block's order. Nothing saved means all of them; an empty list stays empty (every ring switched off on purpose). */
+export function cleanGlance(saved: unknown): GlanceRing[] {
+  if (!Array.isArray(saved)) return [...GLANCE_RINGS];
+  return GLANCE_RINGS.filter((k) => saved.includes(k));
 }
 
 /** The saved goal order made safe (it syncs from any device): ids only, each once. Ids of deleted goals are dropped by orderGoals. */
@@ -166,7 +177,7 @@ export const DEFAULT_SETTINGS: Settings = {
   platesKg: [25, 20, 15, 10, 5, 2.5, 1.25],
   platesLb: [45, 35, 25, 10, 5, 2.5],
   workdays: null,
-  home: { blocks: HOME_BLOCKS, hidden: {}, goals: [] },
+  home: { blocks: HOME_BLOCKS, hidden: {}, goals: [], glance: [...GLANCE_RINGS] },
   goalsOrder: [],
   features: FEATURE_DEFAULTS,
   notifications: { scheduled: true },
@@ -206,7 +217,7 @@ export function withDefaults(saved: unknown): Settings {
   const { cards: _c, sections: _s, ...home } = out.home as Settings["home"] & { cards?: unknown; sections?: unknown };
   // a dismissal cleared by sending null (dismissalPatch) goes, as does anything else that isn't a time
   const hidden = Object.fromEntries(Object.entries(home.hidden && typeof home.hidden === "object" ? home.hidden : {}).filter((e): e is [string, string] => typeof e[1] === "string"));
-  out.home = { ...home, hidden, blocks: cleanHomeBlocks(home.blocks) };
+  out.home = { ...home, hidden, blocks: cleanHomeBlocks(home.blocks), glance: cleanGlance(home.glance) };
   // "After a workout, update its routine", "Start from what you did last time" and "Last time's numbers come from" are
   // gone: a routine always holds where you are now (its numbers follow each finished workout, then Progression), and
   // structure changes are only ever saved when ticked on the Finish screen, so the old choices mean nothing and are dropped

@@ -3,42 +3,43 @@
 // the band saved (only those), named on the left as the Sleep night's lanes are: the night's stretches in their stage
 // colours, the steps as a small bar an hour and the heart rate as the charts' line, both in the day charts' own colour; the
 // day's workouts and activities shaded across every lane in their Calendar colours with the strip along the top, as on
-// the Stats day charts, and the same hour labels under it. A lane opens its Stats tab on this day (open), a shaded
-// session opens the session (pick); the tip says what the band saved at that hour. It shows only what Stats' days show
-// in full, so it stays small and points into them. The night is a small hypnogram, a row per stage named on the left as
+// the Stats day charts, and the same hour labels under it. The tip says what the band saved at that hour and names the
+// session it falls in; like every chart it opens nothing (the day card's tiles and session list lead on). It shows only
+// what Stats' days show in full, so it stays small. The night is a small hypnogram, a row per stage named on the left as
 // Stats → Sleep's (M-253): its stretches are minutes long, a few pixels at a day's scale, so in one row they ran together
 // into a barcode; in their own rows each stage reads as where in the night it fell. The rows sit under the lane's name
 // "Sleep", which is set apart from the stage names as Steps' and Heart rate's are, so the night reads as one part.
 // The sessions' spans are hatched here, not plainly tinted as on the Stats charts: an activity's teal is REM's and a
 // routine's colour can be any stage's, so a plain tint across the rows would seem to be one more stretch of that stage.
 // Stripes over every lane can't be read as a stage, and the legend's swatches are striped the same way.
-// The names sit in their own strip on the left and the hours beside them in a strip that can scroll, so the chart can be
-// drawn wider than the card (wide: about 40px an hour, M-253, as a day's minutes-long stretches need) and scrolled while
-// the names stay in place. full: drawn in the full screen (its own window, wider than the card). rot: the chart is turned
-// on its side (the full screen on a phone held upright), so the pointer's place along the hours is its height on screen.
-import { computed, nextTick, ref, useId, watch } from "vue";
+// The names sit in their own strip on the left and the hours beside them in a strip that scrolls, so the chart can be
+// zoomed in (useChartZoom.ts: pinched, ctrl+wheeled or with Day by hour's buttons, up to HOUR_PX an hour, a minute 3px
+// wide, as a day's minutes-long stretches need) and scrolled while the names stay in place. Hovering, clicking or
+// tapping shows the hour's tip.
+import { computed, ref, useId } from "vue";
 import { useWidth } from "../useWidth";
 import { useTip } from "../useTip";
+import { useChartZoom, HOUR_PX } from "../useChartZoom";
 import { useFmt } from "../../core/format";
 import { segColor, LANES, SEG_NAME, NO_STAGES_COLOR, type Seg } from "../../core/sleep";
-import { dayHours, legendOf, DAY_DATA_COLOR, type DaySession } from "./daySessions";
+import { zoomHours, legendOf, DAY_DATA_COLOR, type DaySession } from "./daySessions";
 import type { DayTimeline } from "./dayTimeline";
 import ChartShade from "../ChartShade.vue";
 import { shadeSpan, shadeFill } from "../chartShade";
 
-const props = defineProps<{ tl: DayTimeline; day: string; sessions: DaySession[]; wide?: boolean; full?: boolean; rot?: boolean }>();
-const emit = defineEmits<{ open: [tab: "sleep" | "steps" | "heart"]; pick: [id: string] }>();
+const props = defineProps<{ tl: DayTimeline; day: string; sessions: DaySession[] }>();
 const fmt = useFmt();
-const box = ref<HTMLElement | null>(null), sc = ref<HTMLElement | null>(null);
+const box = ref<HTMLElement | null>(null);
 // margins as LineChart's and the night's lanes, so the hours line up with the Stats day charts; P.l is the names' strip
 // the gap between lanes is wide enough that the night's rows, the steps' bars and the heart rate's line read as three charts
 const W = useWidth(box), P = { l: 44, r: 12, t: 8, b: 22 }, GAP = 14;
-// the hours' strip: the card's width beside the names, or wide at least twice that and 40px an hour, so a phone shows
-// about 7 hours at a time and a computer's wider card half the day
 const hours = computed(() => (props.tl.to - props.tl.from) / 3600_000);
-const PW = computed(() => { const fit = Math.max(0, W.value - P.l); return props.wide ? Math.round(Math.max(2 * fit, hours.value * 40)) : fit; });
+// the hours' strip: the card's width beside the names at 1x; zoomed, the hours stretch and the right margin doesn't
+const base = computed(() => Math.max(1, W.value - P.l - P.r));
+const { sc, cls, zoom, most, on, cw: PW, left, set, by, scrollTo, pinned, dragging } = useChartZoom({ box, base, pad: P.r,
+  max: () => (hours.value * HOUR_PX) / base.value, range: () => props.day, clear: () => (hover.value = null) });
 // a lane's name as its lines: "Heart rate" is too wide for the margin on one, so it takes two, centred on its middle (ny)
-// what: the lane's name for a screen reader, as its button says it
+// what: the lane's name for a screen reader, listed in the chart's label
 type Lane = { key: "sleep" | "steps" | "heart"; name: string[]; what: string; y: number; h: number; ny: number };
 const LINE = 11;
 // the night's rows in the Sleep tab hypnogram's order (awake on top, deep at the foot), only the stages the night has; a
@@ -98,57 +99,34 @@ const hatchOf = (c: string) => `url(#${hatches.value.find((h) => h.color === c)?
 // the lanes and the night's rows are named on the left, so the legend names only the sessions' colours, each swatch
 // striped as its spans are, so it never seems to name a row
 const legend = computed(() => legendOf(shades.value).map((k) => ({ ...k, swatch: `repeating-linear-gradient(-45deg, ${k.color} 0 2px, ${shadeFill(k.color)} 2px 4px)` })));
-// an hour label every 6 hours on the card, as the Stats day charts; made wide or full screen, one every 3, 2 or every
-// hour, as many as fit with room between them ("10:00 PM" is wider than "22:00")
-const xt = computed(() => {
-  const all = dayHours(props.day, fmt.value, 1), need = Math.max(...all.map((h) => h.text.length)) * 6.5 + 12;
-  const w = props.wide || props.full ? hourW.value : 0;
-  return dayHours(props.day, fmt.value, [1, 2, 3].find((n) => n * w >= need) ?? 6);
-});
+// an hour label every 6 hours on the card, as the Stats day charts; zoomed in, closer as the hours spread out
+const xt = computed(() => zoomHours(props.day, fmt.value, on.value ? hourW.value : 0));
 
-// made wide, the hours' strip starts at the night (or the day's first record), not at midnight with the day out of view
-const scrollX = ref(0);
+// Day by hour's buttons: twice or half the zoom around the middle of what's in view; the first step in starts at the
+// night (or the day's first record), not at midnight with the day out of view
 const first = () => props.tl.night?.a ?? Math.min(...props.tl.steps.map((s) => s.a), ...props.tl.hr.map((p) => p[0]), ...props.sessions.map((s) => s.a));
-watch(() => [props.wide, props.day] as const, async () => {
-  await nextTick();
-  const el = sc.value; if (!el) return;
+function zoomIn() {
+  const from1 = !on.value;
+  by(2);
   const at = first();
-  el.scrollLeft = props.wide && Number.isFinite(at) ? Math.max(0, sx(at) - 24) : 0;
-}, { immediate: true });
-const scrolled = () => { scrollX.value = sc.value?.scrollLeft ?? 0; hover.value = null; };
-// a mouse drags the wide chart sideways as a finger does; a drag isn't also a click on the lane or session under it
-let drag: { x: number; left: number; moved: boolean; id: number } | null = null;
-const down = (e: PointerEvent) => {
-  if (!props.wide || e.pointerType !== "mouse" || e.button !== 0 || !sc.value) return;
-  drag = { x: e.clientX, left: sc.value.scrollLeft, moved: false, id: e.pointerId };
-};
-const pan = (e: PointerEvent) => {
-  if (!drag || !sc.value) return;
-  if (!(e.buttons & 1)) { drag = null; return; }
-  const dx = e.clientX - drag.x;
-  // captured only once it is a drag, so a plain click still reaches the lane or session under the pointer
-  if (!drag.moved && Math.abs(dx) > 4) { drag.moved = true; try { sc.value.setPointerCapture(drag.id); } catch { /* the pointer is gone */ } }
-  if (drag.moved) sc.value.scrollLeft = drag.left - dx;
-};
-const up = (e: MouseEvent) => { if (drag?.moved) { e.stopPropagation(); e.preventDefault(); } drag = null; };
-const release = (e: PointerEvent) => { if (drag?.moved) { try { sc.value?.releasePointerCapture(e.pointerId); } catch { /* already released */ } } };
-// the mouse wheel scrolls the wide strip sideways; at either end the page gets the wheel again
-const wheel = (e: WheelEvent) => {
-  const el = sc.value; if (!props.wide || !el || Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
-  const max = el.scrollWidth - el.clientWidth;
-  if (max <= 0 || (e.deltaY < 0 && el.scrollLeft <= 0) || (e.deltaY > 0 && el.scrollLeft >= max - 1)) return;
-  e.preventDefault(); el.scrollLeft += e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
-};
+  if (from1 && Number.isFinite(at)) scrollTo(sx(at) - 24);
+}
+const zoomOut = () => (zoom.value / 2 < 1.02 ? set(1) : by(0.5));
+defineExpose({ zoom, most, zoomIn, zoomOut });
 
 // the tip: what the band read in the hour under the pointer (the night's stage, the steps, the heart rate), the first in
-// bold as every chart's tip, then the hour; a session names itself on its shade, so the tip stays one line on a phone
+// bold as every chart's tip, then the session it falls in and the hour
 const hover = ref<number | null>(null);
 const { el: tipEl, style: tipStyle } = useTip(W);
-const move = (e: MouseEvent) => {
-  if (drag?.moved) { hover.value = null; return; }
-  const r = (e.currentTarget as SVGElement).getBoundingClientRect(), x = props.rot ? e.clientY - r.top : e.clientX - r.left;
-  hover.value = x < 0 || x > PW.value - P.r ? null : props.tl.from + (x / (PW.value - P.r)) * (props.tl.to - props.tl.from);
+const timeAt = (e: MouseEvent) => {
+  const svg = (e.currentTarget as Element).closest("svg")!, r = svg.getBoundingClientRect(), x = ((e.clientX - r.left) / r.width) * PW.value;
+  return x < 0 || x > PW.value - P.r ? null : props.tl.from + (x / (PW.value - P.r)) * (props.tl.to - props.tl.from);
 };
+// a finger's tip stays put while the compatibility mouse events a tap sends come and go; a drag shows none
+const move = (e: MouseEvent) => { if (!pinned.value) hover.value = dragging() ? null : timeAt(e); };
+const leave = () => { if (!pinned.value) hover.value = null; };
+// a click or a tap shows the hour's tip, as hovering does (useChartZoom keeps a finger's until a tap outside)
+const click = (e: MouseEvent) => { hover.value = timeAt(e); };
 const tip = computed(() => {
   const at = hover.value; if (at == null) return null;
   const h0 = new Date(at); h0.setMinutes(0, 0, 0);
@@ -156,26 +134,25 @@ const tip = computed(() => {
   const seg = props.tl.sleep.find((s) => at >= s.a && at < s.b); if (seg) parts.push(SEG_NAME[seg.k]);
   const st = props.tl.steps.find((s) => s.a === a); if (st) parts.push(`${fmt.value.num(st.value, 0)} steps`);
   const near = props.tl.hr.reduce<[number, number] | null>((m, p) => (Math.abs(p[0] - at) <= 10 * 60000 && (!m || Math.abs(p[0] - at) < Math.abs(m[0] - at)) ? p : m), null); if (near) parts.push(`${fmt.value.num(near[1], 0)} bpm`);
+  for (const z of shades.value) if (at >= z.a && at <= z.b) parts.push(z.name);
   // the tip is placed over the whole chart (it may rise above the scrolling strip), so by where the hour is on screen
-  return parts.length ? { x: sx(at), at: P.l + sx(at) - scrollX.value, head: parts[0]!, rest: [...parts.slice(1), `${t(a)}-${t(a + 3600_000)}`] } : null;
+  return parts.length ? { x: sx(at), at: P.l + sx(at) - left.value, head: parts[0]!, rest: [...parts.slice(1), `${t(a)}-${t(a + 3600_000)}`] } : null;
 });
 </script>
 
 <template>
   <div ref="box" class="dtl">
     <div class="dtl-row">
-      <!-- the names: each lane's (a button into its Stats tab, as the lane is) and the night's stages', fixed while the hours scroll -->
+      <!-- the names: each lane's and the night's stages', fixed while the hours scroll -->
       <svg class="chart dtl-names" :viewBox="`0 0 ${P.l} ${H}`" :style="{ width: P.l + 'px', height: H + 'px' }" aria-hidden="true">
-        <text v-for="l in lanes" :key="l.key" class="ax dtl-name" :y="l.ny + 3 - ((l.name.length - 1) * LINE) / 2" text-anchor="end" @click="emit('open', l.key)"><tspan v-for="(w, i) in l.name" :key="w" :x="P.l - 6" :dy="i ? LINE : 0">{{ w }}</tspan></text>
+        <text v-for="l in lanes" :key="l.key" class="ax dtl-name" :y="l.ny + 3 - ((l.name.length - 1) * LINE) / 2" text-anchor="end"><tspan v-for="(w, i) in l.name" :key="w" :x="P.l - 6" :dy="i ? LINE : 0">{{ w }}</tspan></text>
         <text v-for="r in sleepRows" :key="r.k" class="ax" :x="P.l - 6" :y="r.y + 3" text-anchor="end">{{ r.name }}</text>
       </svg>
-      <div ref="sc" class="dtl-sc" :class="{ wide }" @scroll.passive="scrolled" @pointerdown="down" @pointermove="pan" @pointerup="release" @pointercancel="release" @wheel="wheel" @click.capture="up">
-        <svg class="chart" :viewBox="`0 0 ${PW} ${H}`" :style="{ width: PW + 'px', height: H + 'px' }" role="group" aria-label="Day by hour" @mousemove="move" @mouseleave="hover = null">
-          <!-- each lane: a faint line along its foot, and the whole lane a button into its Stats tab -->
-          <g v-for="l in lanes" :key="l.key" class="dtl-lane" role="button" tabindex="0" :aria-label="l.what" @click="emit('open', l.key)" @keydown.enter="emit('open', l.key)">
-            <rect :x="0" :y="l.y - GAP / 2" :width="Math.max(0, PW - P.r)" :height="l.h + GAP" fill="transparent" />
-            <line class="gl" :x1="0" :x2="PW - P.r" :y1="l.y + l.h" :y2="l.y + l.h" />
-          </g>
+      <div ref="sc" class="zsc" :class="cls">
+        <svg class="chart" :viewBox="`0 0 ${PW} ${H}`" :style="{ width: PW + 'px', height: H + 'px' }" role="img" :aria-label="`Day by hour: ${lanes.map((l) => l.what).join(', ')}`" @mousemove="move" @mouseleave="leave" @click="click">
+          <!-- the whole plot answers the pointer (an svg's empty parts don't), and each lane has a faint line along its foot -->
+          <rect :x="0" :y="0" :width="Math.max(0, PW - P.r)" :height="H" fill="transparent" />
+          <line v-for="l in lanes" :key="l.key" class="gl" :x1="0" :x2="PW - P.r" :y1="l.y + l.h" :y2="l.y + l.h" />
           <!-- the Sleep tab's no-stages stripes (BarChart's hatch) -->
           <defs><pattern :id="`${uid}-ns`" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="4" height="4" :style="{ fill: NO_STAGES_COLOR, opacity: 0.3 }" /><rect width="2" height="4" :style="{ fill: NO_STAGES_COLOR }" /></pattern>
             <!-- the sessions' stripes: wider and fainter than the night's, a background across every lane -->
@@ -187,10 +164,7 @@ const tip = computed(() => {
             <rect v-for="(b, i) in stepBars" :key="'s' + i" :x="b.x" :y="b.y" :width="b.w" :height="b.h" :rx="b.rx" :style="{ fill: DAY_DATA_COLOR }" />
             <path v-if="hrPath" :d="hrPath" class="ln" :style="{ stroke: DAY_DATA_COLOR }" />
           </g>
-          <g v-for="z in shades" :key="z.key" class="dtl-sess" role="button" tabindex="0" :aria-label="`${z.name}, ${t(z.a)}-${t(z.b)}`" @click="emit('pick', z.key)" @keydown.enter="emit('pick', z.key)">
-            <title>{{ z.name }}</title>
-            <ChartShade :x="z.x" :w="z.w" :y="0" :h="H - P.b" :color="z.color" :fill="hatchOf(z.color)" />
-          </g>
+          <ChartShade v-for="z in shades" :key="z.key" :x="z.x" :w="z.w" :y="0" :h="H - P.b" :color="z.color" :fill="hatchOf(z.color)" />
           <line v-if="tip" class="gl" :x1="tip.x" :x2="tip.x" :y1="P.t" :y2="H - P.b" pointer-events="none" />
           <text v-for="h in xt" :key="h.at" class="ax" :x="sx(h.at)" :y="H - 4" :text-anchor="h.at <= tl.from ? 'start' : 'middle'">{{ h.text }}</text>
         </svg>
@@ -205,15 +179,8 @@ const tip = computed(() => {
 .dtl { position: relative; }
 .dtl-row { display: flex; }
 .dtl-names { flex: none; user-select: none; }
-.dtl-names .dtl-name { cursor: pointer; }
-/* the hours' strip; wide, it scrolls sideways only (the page still scrolls up and down over it) */
-.dtl-sc { flex: 1; min-width: 0; overflow: hidden; }
-/* no scrollbar (it would make the card taller when made wide): a finger, a trackpad or the mouse drags it */
-.dtl-sc.wide { overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scrollbar-width: none; cursor: grab; user-select: none; }
-.dtl-sc.wide::-webkit-scrollbar { display: none; }
-.dtl-sc .chart { width: auto; }
-.dtl-lane, .dtl-sess { cursor: pointer; outline: none; }
-.dtl-lane:focus-visible rect, .dtl-sess:focus-visible :deep(rect:first-of-type) { stroke: var(--acc); stroke-width: 2; }
+/* the hours' strip (.zsc, app.css) is drawn as wide as the zoom makes it, not the card's width */
+.zsc .chart { width: auto; }
 .dtl-leg { margin-top: var(--hg); }
 /* a lane's name over its stage names: the stronger text, so the night's stage rows read as one part named Sleep */
 .chart .dtl-name { fill: var(--tx); font-weight: 600; }

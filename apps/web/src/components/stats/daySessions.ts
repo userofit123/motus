@@ -7,6 +7,7 @@ import { computed, onScopeDispose, ref, type Ref } from "vue";
 import { ymd, weekStartDate } from "@motus/shared";
 import { useCalendar, useTypeName } from "../../api/queries";
 import { activityIcon, type useFmt } from "../../core/format";
+import { tickRoom } from "../useChartZoom";
 
 export interface DaySession {
   key: string; kind: "workout" | "activity"; icon: string; name: string; color: string;
@@ -77,9 +78,18 @@ export function legendOf(sessions: DaySession[]) {
   });
 }
 
-/** The hour labels both day charts use: midnight, 6, 12 and 18 o'clock of the day, as [ms, text] */
+/** The hour labels both day charts use: midnight, 6, 12 and 18 o'clock of the day, as [ms, text]; every in hours,
+ *  a half or a quarter for a zoomed chart */
 export function dayHours(day: string, fmt: ReturnType<typeof useFmt>["value"], every = 6) {
-  return Array.from({ length: Math.ceil(24 / every) }, (_, i) => i * every).map((h) => { const d = new Date(day + "T00:00"); d.setHours(h, 0, 0, 0); return { at: d.getTime(), text: fmt.time(d.toISOString()) }; });
+  return Array.from({ length: Math.ceil(24 / every) }, (_, i) => i * every).map((h) => { const d = new Date(day + "T00:00"); d.setHours(0, Math.round(h * 60), 0, 0); return { at: d.getTime(), text: fmt.time(d.toISOString()) }; });
+}
+
+/** A day chart's hour labels for an hour hourPx wide: every 6 hours when it fits its card (hourPx 0), zoomed in one
+ *  every 3, 2 or 1 hours, or every 30 or 15 minutes, as many as fit with room between them ("10:00 PM" is wider than
+ *  "22:00") */
+export function zoomHours(day: string, fmt: ReturnType<typeof useFmt>["value"], hourPx: number) {
+  const need = Math.max(...dayHours(day, fmt, 1).map((h) => tickRoom(h.text)));
+  return dayHours(day, fmt, [0.25, 0.5, 1, 2, 3].find((n) => n * hourPx >= need) ?? 6);
 }
 
 /** What a day or night says when only its totals were saved (it synced before Motus kept every band record): the same

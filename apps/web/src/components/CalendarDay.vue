@@ -18,7 +18,7 @@ export function calendarDays(c: { workouts: any[]; activities: any[]; planned: a
 </script>
 
 <script setup lang="ts">
-// One day's card as the Calendar shows it under the month (M-253), also Home's "Today's calendar" block (M-261): the
+// One day's card as the Calendar shows it under the month (M-253), also Home's "Your day" block (M-261): the
 // band's numbers for the day as a report's tiles, then its hours and its sessions, each under a faint line and named as
 // Stats' day cards name theirs. The heading above it is the page's own (the Calendar's date and its Plan, Home's block
 // header through the head slot, inside the card)
@@ -88,7 +88,7 @@ const dayTop = computed(() => dayTiles.value.length > 0 || tlHas.value);
       </div>
     </div>
     <div v-if="tlHas" :class="{ csec: dayTiles.length }">
-      <DayByHour :tl="tl" :day="day" :sessions="tlSessions" @open="(tab) => router.push(`/stats?tab=${tab}&day=${day}`)" @pick="(id) => router.push(id)" /></div>
+      <DayByHour :tl="tl" :day="day" :sessions="tlSessions" /></div>
     <div :class="{ 'csec dsess': dayTop }"><div v-if="dayTop && items.length" class="lbl hgap">Workouts and activities</div>
     <div v-if="!items.length" class="tiny">{{ day === today ? "Nothing logged or planned today yet." : day > today ? "Nothing planned. Use Plan to put a routine on this day." : "No workouts or activities on this day." }}</div>
     <div class="list"><div v-for="x in items" :key="x.id ?? x.scheduleId" class="li click" @click="open(x)">

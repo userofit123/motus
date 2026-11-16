@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cleanHomeBlocks, cleanGoalsOrder, orderGoals, withDefaults, HOME_BLOCKS, WORKOUT_SOUNDS, cleanWorkoutSound } from "./settings";
+import { cleanHomeBlocks, cleanGlance, GLANCE_RINGS, cleanGoalsOrder, orderGoals, withDefaults, HOME_BLOCKS, WORKOUT_SOUNDS, cleanWorkoutSound } from "./settings";
 
 const ids = (x: { id: string }[]) => x.map((s) => s.id);
 
@@ -39,7 +39,7 @@ describe("Home blocks", () => {
     expect(cleanHomeBlocks([{ id: "today", on: false }])[0]).toEqual({ id: "today", on: false });
     expect(cleanHomeBlocks([{ id: "week", on: true }, { id: "today", on: true }]).slice(0, 2)).toEqual([{ id: "week", on: true }, { id: "today", on: true }]);
   });
-  it("appends At a glance and Today's calendar, switched off, to a saved layout", () => {
+  it("appends At a glance and Your day, switched off, to a saved layout", () => {
     const out = cleanHomeBlocks([{ id: "today", on: true }, { id: "week", on: true }]);
     expect(ids(out).slice(-2)).toEqual(["quickStats", "calendarDay"]);
     for (const id of ["quickStats", "calendarDay"]) expect(out.find((s) => s.id === id)?.on).toBe(false);
@@ -49,6 +49,23 @@ describe("Home blocks", () => {
     expect("cards" in s.home || "sections" in s.home).toBe(false);
     expect(s.home.blocks).toEqual(HOME_BLOCKS);
     expect(s.home.goals).toEqual([{ id: "g", streak: true }]);
+  });
+});
+
+describe("Today at a glance's rings", () => {
+  it("shows every ring when nothing is saved", () => {
+    expect(withDefaults({}).home.glance).toEqual([...GLANCE_RINGS]);
+    expect(withDefaults({ home: { blocks: [] } }).home.glance).toEqual([...GLANCE_RINGS]);
+    expect(cleanGlance(undefined)).toEqual([...GLANCE_RINGS]);
+    expect(cleanGlance("steps")).toEqual([...GLANCE_RINGS]);
+  });
+  it("drops unknown keys and repeats, and keeps the block's order", () => {
+    expect(cleanGlance(["activeKcal", "nope", "steps", "steps", 3, null, "sleep"])).toEqual(["steps", "sleep", "activeKcal"]);
+    expect(withDefaults({ home: { glance: ["readiness", "x"] } }).home.glance).toEqual(["readiness"]);
+  });
+  it("keeps every ring switched off", () => {
+    expect(cleanGlance([])).toEqual([]);
+    expect(withDefaults({ home: { glance: [] } }).home.glance).toEqual([]);
   });
 });
 
