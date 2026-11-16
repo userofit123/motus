@@ -34,7 +34,9 @@ const ys = computed(() => props.samples.map((p) => p[1]));
 const avg = computed(() => (ys.value.length ? Math.round(ys.value.reduce((t, v) => t + v, 0) / ys.value.length) : props.avg != null ? Math.round(props.avg) : null));
 const max = computed(() => (ys.value.length ? Math.max(...ys.value) : props.max != null ? Math.round(props.max) : null));
 
-// the band's active calories over the session: each record's share of it by time (a record can run past either end)
+// the band's active calories over the session: each record's share of it by time (a record can run past either end),
+// one app's (the most): two apps writing the same band's calories (or the phone's estimate beside the band's) would
+// count them twice; a record sent twice under two ids (same app, start and end) counts once
 const kcalQ = useQuery({
   queryKey: computed(() => ["readings", "session", "active_kcal", props.from, props.to]),
   queryFn: () => bandRecords("active_kcal", range.value.a, range.value.b),
@@ -42,12 +44,16 @@ const kcalQ = useQuery({
   retry: false,
 });
 const kcal = computed(() => {
-  let t = 0;
+  const byApp = new Map<string, number>(), seen = new Set<string>();
   for (const r of kcalQ.data.value ?? []) {
+    const k = `${r.origin ?? ""}|${r.start}|${r.end ?? ""}`;
+    if (seen.has(k)) continue;
+    seen.add(k);
     const s = Date.parse(r.start), e = r.end ? Date.parse(r.end) : s, v = r.value ?? 0;
-    t += e > s ? (v * Math.max(0, Math.min(e, props.to) - Math.max(s, props.from))) / (e - s) : s >= props.from && s < props.to ? v : 0;
+    const t = e > s ? (v * Math.max(0, Math.min(e, props.to) - Math.max(s, props.from))) / (e - s) : s >= props.from && s < props.to ? v : 0;
+    byApp.set(r.origin ?? "", (byApp.get(r.origin ?? "") ?? 0) + t);
   }
-  return Math.round(t);
+  return Math.round(Math.max(0, ...byApp.values()));
 });
 
 // an activity's speed and cadence, asked for only when its days have them (older servers don't know the kinds at all)
@@ -63,9 +69,17 @@ const motionQ = useQuery({
   retry: false,
 });
 // one type's values over the session, [unix seconds, value]: a record's samples, else its one value at its start
-const seriesOf = (type: string) => (motionQ.data.value ?? []).filter((r: BandRecord) => r.type === type)
-  .flatMap((r) => r.samples ?? (r.value != null ? [[Date.parse(r.start) / 1000, r.value] as [number, number]] : []))
-  .filter((p) => p[1] > 0 && p[0] * 1000 >= props.from && p[0] * 1000 < props.to).sort((a, b) => a[0] - b[0]);
+// (a second another record already has, from a second app or sent twice, is one reading)
+const seriesOf = (type: string) => {
+  const taken = new Set<number>();
+  return (motionQ.data.value ?? []).filter((r: BandRecord) => r.type === type)
+    .flatMap((r) => {
+      const mine = (r.samples ?? (r.value != null ? [[Date.parse(r.start) / 1000, r.value] as [number, number]] : [])).filter((p) => !taken.has(p[0]));
+      for (const p of mine) taken.add(p[0]);
+      return mine;
+    })
+    .filter((p) => p[1] > 0 && p[0] * 1000 >= props.from && p[0] * 1000 < props.to).sort((a, b) => a[0] - b[0]);
+};
 const mean = (xs: [number, number][]) => xs.reduce((t, p) => t + p[1], 0) / xs.length;
 // speed comes in metres a second: as a pace (time per km or mile) or a speed (km or miles an hour); a pace leaves out
 // standing still (under about 1 km/h), which would be an endless pace

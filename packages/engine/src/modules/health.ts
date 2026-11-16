@@ -687,6 +687,16 @@ export function healthRoutes(r: Router) {
       if (!open(key) || h?.ref) continue;
       // brought in before the log existed: noted, not added again
       let ref: string | null = (await ctx.q.query("SELECT id::text AS id FROM activities WHERE client_id = $1", [clientId])).rows[0]?.id ?? null;
+      // the same session under another Health Connect id: written by a second app (the band's own app and Gadgetbridge,
+      // a fitness app copying it) or read on a second phone. One already brought in over nearly the same time (each
+      // overlapping the other by 80%) is that session: noted for it, not added again, so its time, steps and distance
+      // count once (Stats, scores, a day's steps with the walks). Only sessions brought in from Health Connect: one
+      // recorded in Motus is the person's own and stays apart from the import log. Deleting it marks both keys (034).
+      if (!ref) ref = (await ctx.q.query(
+        `SELECT id::text AS id FROM activities WHERE source = $3 AND started_at < $2::timestamptz AND ended_at > $1::timestamptz
+           AND extract(epoch FROM least(ended_at, $2::timestamptz) - greatest(started_at, $1::timestamptz))
+             >= 0.8 * greatest(extract(epoch FROM ended_at - started_at), extract(epoch FROM $2::timestamptz - $1::timestamptz))
+         ORDER BY abs(extract(epoch FROM started_at - $1::timestamptz)) LIMIT 1`, [isoTime(s.start), isoTime(s.end), HEALTH_SOURCE])).rows[0]?.id ?? null;
       if (!ref) {
         const type = str(s.type, 40) || "other";
         const known = (await ctx.q.query("SELECT 1 FROM activity_types WHERE slug = $1", [type])).rows.length > 0;
@@ -992,6 +1002,9 @@ export function healthRoutes(r: Router) {
         LEFT JOIN body_metrics bm ON h.kind IN ('weight', 'body_fat') AND bm.id::text = h.ref
         LEFT JOIN activities a ON h.kind = 'activity' AND a.id::text = h.ref
         WHERE h.deleted_at IS NULL AND (d.date IS NOT NULL OR bm.id IS NOT NULL OR a.id IS NOT NULL)
+          -- one session brought in by two apps is one activity, listed once (the first key)
+          AND NOT (h.kind = 'activity' AND EXISTS (SELECT 1 FROM health_imports o
+            WHERE o.kind = 'activity' AND o.ref = h.ref AND o.deleted_at IS NULL AND o.key < h.key))
       ) x ${after ? "WHERE (sort_at, key) < ($2::timestamptz, $3::text)" : ""}
       ORDER BY sort_at DESC, key DESC LIMIT ${limit + 1}`, after ? [tz, cAt, cKey] : [tz]);
     const page = rows.slice(0, limit);

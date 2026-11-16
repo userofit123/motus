@@ -37,7 +37,7 @@ const known = (r: Rec) => r.dv?.type != null && r.dv.type !== 0;
  * Exact duplicates (same app, start and end) count once, the most recently changed (the phone's once()/ownDays: Health
  * Connect keeps the newest; the first seen wins a tie).
  */
-function once(recs: Rec[]): Rec[] {
+export function once(recs: Rec[]): Rec[] {
   const kept = new Map<string, Rec>();
   for (const r of recs) {
     const k = `${r.o}\u0000${r.s}\u0000${r.e ?? r.s}`, cur = kept.get(k);
@@ -74,9 +74,7 @@ export function bandDays(recs: Rec[], days: Iterable<string>, kinds?: AppKinds):
   for (const r of recs) (byApp.get(r.o) ?? byApp.set(r.o, []).get(r.o)!).push(r);
   const own: { totals: Map<string, number>; device: WornDevice | null }[] = [];
   for (const [app, list] of byApp) {
-    let type: number | undefined;
-    if (kinds?.has(app)) type = kinds.get(app);
-    else { const newest = [...list].sort((a, b) => b.s - a.s); type = (newest.find(known) ?? newest[0])?.dv?.type; }
+    const type = appType(app, list, kinds);
     if (!isBand(app, type)) continue;
     const totals = new Map<string, number>();
     for (const r of once(list)) addByDay(r, totals);
@@ -92,6 +90,32 @@ export function bandDays(recs: Rec[], days: Iterable<string>, kinds?: AppKinds):
     if (best) out.set(d, { value: Math.round(best.value), device: best.device });
   }
   return out;
+}
+
+/**
+ * An app's kind of device for bandDays: from kinds (appKinds) when it knows the app, else its newest record here that
+ * names a device type, else its newest (the phone's bandOrigin).
+ */
+export function appType(app: string, list: Rec[], kinds?: AppKinds): number | undefined {
+  if (kinds?.has(app)) return kinds.get(app);
+  const newest = [...list].sort((a, b) => b.s - a.s);
+  return (newest.find(known) ?? newest[0])?.dv?.type;
+}
+
+/**
+ * The samples ([unix seconds, value]) of several records, a second another record already has left out: two apps
+ * writing the same band's readings, or the same records sent from two phones under other ids, would otherwise count
+ * each beat twice (an average weighted to them, a sample count doubled). The first record with a second keeps it,
+ * with all of its own readings in it (one record never repeats itself). Sorted by time.
+ */
+export function onePerSecond(lists: [number, number][][]): [number, number][] {
+  const taken = new Set<number>(), out: [number, number][] = [];
+  for (const list of lists) {
+    const mine = list.filter((q) => !taken.has(q[0]));
+    for (const q of mine) taken.add(q[0]);
+    out.push(...mine);
+  }
+  return out.sort((a, b) => a[0] - b[0]);
 }
 
 /**
@@ -149,7 +173,7 @@ export function spanBand(steps: Rec[], hrRecs: Rec[], startS: number, endS: numb
   for (const g of groups.values()) {
     if (!g.band) continue;
     const recs = once(g.recs), inSpan = recs.filter(crosses);
-    const hr = (hrByApp.get(g.app) ?? []).flatMap((r) => (r.p ?? []).map((q) => q[0])).filter((t) => t >= from && t <= to).length;
+    const hr = onePerSecond((hrByApp.get(g.app) ?? []).map((r) => r.p ?? [])).filter((q) => q[0] >= from && q[0] <= to).length;
     const span = { inside: inSpan.length > 0, raw: inSpan.reduce((n, r) => n + inside(r), 0), hr,
       covered: recs.some((r) => (r.e ?? r.s) >= endS) && recs.some((r) => r.s <= startS) };
     if (!span.inside && !hr) continue;
@@ -162,10 +186,10 @@ export function spanBand(steps: Rec[], hrRecs: Rec[], startS: number, endS: numb
 /**
  * The band's heart rate readings inside the span as [unix seconds, bpm], averaged into at most 600 time buckets (the
  * phone's rangeHr, in milliseconds as there: bucket (ms - t0) * 600 / span in whole numbers, time the bucket's average
- * ms in whole seconds).
+ * ms in whole seconds). A second read by two apps (or sent twice under two ids) counts once (onePerSecond).
  */
 export function rangeHr(hrs: Rec[], startS: number, endS: number): [number, number][] | null {
-  const samples = hrs.flatMap((r) => r.p ?? []).filter((q) => q[0] >= startS && q[0] <= endS).sort((a, b) => a[0] - b[0]);
+  const samples = onePerSecond(hrs.map((r) => r.p ?? [])).filter((q) => q[0] >= startS && q[0] <= endS);
   if (!samples.length) return null;
   if (samples.length <= 600) return samples.map((q) => [q[0], q[1]]);
   const t0 = Math.round(startS * 1000), span = Math.max(Math.round(endS * 1000) - t0, 1);
@@ -317,7 +341,7 @@ const wakeDay = (r: Rec) => dayOf((r.e ?? r.s) + r.z);
  * Each wake-up day's sleep from the night's sessions (the phone's sleep() and sleepNights(), the day of a session's end
  * where it was written): hours: the time asleep, overlapping sessions' asleep parts counted once; night: from the
  * earliest start to the latest end, minutes per stage (sessions with stages first, then the longest; a later one only
- * fills time the earlier ones left), and every app's heart rate (average, lowest, at most 300 points), SpO2 and
+ * fills time the earlier ones left), and every app's heart rate (each second once: onePerSecond; average, lowest, at most 300 points), SpO2 and
  * breathing rate in that window. A day without time asleep is left out.
  */
 export function sleepDays(sessions: Rec[], hr: Rec[], spo2: Rec[], resp: Rec[], days: Iterable<string>): Map<string, { hours: number | null; night: NightIn | null }> {
@@ -374,7 +398,7 @@ export function sleepDays(sessions: Rec[], hr: Rec[], spo2: Rec[], resp: Rec[], 
     return null;
   };
   const hrAcc = nights.map(() => ({ sum: 0, n: 0, min: Infinity, bt: new Array<number>(300).fill(0), bb: new Array<number>(300).fill(0), bn: new Array<number>(300).fill(0) }));
-  if (nights.length) for (const r of hr) for (const [t, b] of r.p ?? []) {
+  if (nights.length) for (const [t, b] of onePerSecond(hr.map((r) => r.p ?? []))) {
     const i = at(t);
     if (i == null) continue;
     const h = hrAcc[i]!, n = nights[i]!;

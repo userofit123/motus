@@ -23,11 +23,19 @@ export async function hrSamples(from: Date, to: Date): Promise<[number, number][
   const parts: Promise<{ records: HrRecord[] }>[] = [];
   for (let a = from.getTime(); a < to.getTime(); a += SPAN_MS)
     parts.push(api.get<{ records: HrRecord[] }>("/health/records", { type: "heart_rate", from: new Date(a).toISOString(), to: new Date(Math.min(to.getTime(), a + SPAN_MS)).toISOString() }));
-  return (await Promise.all(parts)).flatMap((r) => r.records.flatMap((x) => x.samples ?? [])).sort((a, b) => a[0] - b[0]);
+  // a second another record already has (two apps writing the band's readings, or the same records sent from two
+  // phones) is one reading, so a chart's points, averages and counts don't count it twice; a record's own readings all stay
+  const taken = new Set<number>(), out: [number, number][] = [];
+  for (const r of (await Promise.all(parts)).flatMap((x) => x.records)) {
+    const mine = (r.samples ?? []).filter((q) => !taken.has(q[0]));
+    for (const q of mine) taken.add(q[0]);
+    out.push(...mine);
+  }
+  return out.sort((a, b) => a[0] - b[0]);
 }
 
-/** A saved band record as GET /health/records hands it out: its time, and an amount or reading, or samples ([unix seconds, value]) */
-export type BandRecord = { type: string; start: string; end?: string; value?: number; samples?: [number, number][] };
+/** A saved band record as GET /health/records hands it out: its time, and an amount or reading, or samples ([unix seconds, value]); origin: the app that wrote it */
+export type BandRecord = { type: string; start: string; end?: string; value?: number; samples?: [number, number][]; origin?: string };
 /** The saved records of these types (comma separated) over [from, to), at most 40 days */
 export const bandRecords = (types: string, from: Date, to: Date) =>
   api.get<{ records: BandRecord[] }>("/health/records", { type: types, from: from.toISOString(), to: to.toISOString() }).then((r) => r.records);

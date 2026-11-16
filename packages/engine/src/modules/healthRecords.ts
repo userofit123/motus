@@ -10,7 +10,7 @@ import { dateStr, tzOf } from "../util";
 import { RECORD_TYPES } from "../migrations/045_health_records_more";
 import { HEALTH_DELETED_MAX } from "@motus/shared";
 import { afterRecords } from "./health";
-import { lockRecords, noteRead, shift } from "./healthDerive";
+import { lockRecords, noteRead, shift, once, isBand, appType, appKinds, type AppKinds, type SumType } from "./healthDerive";
 
 export type RecordType = (typeof RECORD_TYPES)[number];
 const isType = (t: unknown): t is RecordType => typeof t === "string" && (RECORD_TYPES as readonly string[]).includes(t);
@@ -254,15 +254,66 @@ const isZone = (z: unknown): z is string => {
   try { new Intl.DateTimeFormat("en-US", { timeZone: z }); return true; } catch { return false; }
 };
 
+// Amounts a device measures. Where two apps write them (the band's app beside the phone's own step counter or Google
+// Fit, or two apps for the same band), adding them up would count the same steps twice, so one app counts per day, as
+// the day's total (bandDays): a band, watch or ring first, then the larger. Water is every app's (each its own drinks).
+const ONE_APP = new Set<RecordType>(["steps", "distance", "active_kcal", "floors", "elevation", "total_kcal", "wheelchair_pushes"]);
+
 /**
  * One type's records over [fromS, toS) by hour of the app's calendar (zone: an IANA zone, so a day with a clock change
  * is right, or minutes behind UTC as getTimezoneOffset):
  * amounts (steps, distance, calories, floors, climb, water) shared out over the hours by how much of each record's time
- * falls in them; samples and readings as lowest, highest and average; sleep as minutes of each stage (a night without
- * stages as "2", asleep, as Health Connect numbers it); sessions as minutes; meals' energy in the hour they began.
- * Hours without data are left out.
+ * falls in them, a day's hours from one app (ONE_APP; kinds: appKinds, so an app is a band or not as for the day's
+ * total), exact copies (same app, start and end) once; samples and readings as lowest, highest and average, each
+ * second once; sleep as minutes of each stage (a night without stages as "2", asleep, as Health Connect numbers it) and
+ * sessions as minutes, each moment once where sessions overlap (two apps writing the same night); meals' energy in the
+ * hour they began. Hours without data are left out.
  */
-export function hourly(type: RecordType, recs: Rec[], fromS: number, toS: number, zone: string | number): Hour[] {
+export function hourly(type: RecordType, recs: Rec[], fromS: number, toS: number, zone: string | number, kinds?: AppKinds): Hour[] {
+  if (SHAPE[type] !== "sum") return rollup(type, recs, fromS, toS, zone);
+  const byApp = new Map<string, Rec[]>();
+  for (const r of recs) (byApp.get(r.o) ?? byApp.set(r.o, []).get(r.o)!).push(r);
+  if (!ONE_APP.has(type)) return rollup(type, [...byApp.values()].flatMap(once), fromS, toS, zone);
+  const offAt = offsetFn(zone);
+  const dayOf = (h: Hour) => { const t = Date.parse(h.at) / 1000; return new Date((t + offAt(t)) * 1000).toISOString().slice(0, 10); };
+  const apps = [...byApp].map(([app, list]) => {
+    const hours = rollup(type, once(list), fromS, toS, zone), totals = new Map<string, number>();
+    for (const h of hours) totals.set(dayOf(h), (totals.get(dayOf(h)) ?? 0) + (h.sum ?? 0));
+    return { band: isBand(app, appType(app, list, kinds)), hours, totals };
+  });
+  const out: Hour[] = [];
+  for (const d of new Set(apps.flatMap((a) => [...a.totals.keys()]))) {
+    let best: { band: boolean; v: number; hours: Hour[] } | null = null;
+    for (const a of apps) {
+      const v = a.totals.get(d) ?? 0;
+      // the first of equals stays, as bandDays
+      if (v > 0 && (!best || (a.band && !best.band) || (a.band === best.band && v > best.v))) best = { band: a.band, v, hours: a.hours };
+    }
+    if (best) out.push(...best.hours.filter((h) => dayOf(h) === d));
+  }
+  return out.sort((a, b) => a.at.localeCompare(b.at));
+}
+
+/** The parts of [a, b) that no interval in claimed covers; [a, b) is then claimed too (kept sorted and merged). */
+function claim(claimed: [number, number][], a: number, b: number): [number, number][] {
+  const free: [number, number][] = [];
+  let cur = a;
+  for (const [x, y] of claimed) {
+    if (y <= cur) continue;
+    if (x >= b) break;
+    if (x > cur) free.push([cur, x]);
+    cur = Math.max(cur, y);
+    if (cur >= b) break;
+  }
+  if (cur < b) free.push([cur, b]);
+  const all = [...claimed, [a, b] as [number, number]].sort((p, q) => p[0] - q[0]), merged: [number, number][] = [];
+  for (const iv of all) { const last = merged.at(-1); if (last && iv[0] <= last[1]) last[1] = Math.max(last[1], iv[1]); else merged.push([iv[0], iv[1]]); }
+  claimed.splice(0, claimed.length, ...merged);
+  return free;
+}
+
+/** hourly() for these records as they are (no app picked). */
+function rollup(type: RecordType, recs: Rec[], fromS: number, toS: number, zone: string | number): Hour[] {
   const offAt = offsetFn(zone), hourOf = (t: number) => { const off = offAt(t); return Math.floor((t + off) / 3600) * 3600 - off; };
   const hours = new Map<number, Hour & { total?: number }>();
   const at = (h: number) => hours.get(h) ?? hours.set(h, { at: new Date(h * 1000).toISOString(), n: 0 }).get(h)!;
@@ -274,24 +325,35 @@ export function hourly(type: RecordType, recs: Rec[], fromS: number, toS: number
     for (let q = a; q < b;) { const n = Math.min(b, Math.floor(q / 900) * 900 + 900), h = hourOf(q); secsIn.set(h, (secsIn.get(h) ?? 0) + n - q); q = n; }
     for (const [h, s] of secsIn) if (s > 0) f(at(h), s);
   };
+  // the seconds a record before had: one read by two apps (or sent twice under two ids) counts once (onePerSecond)
+  const seen = new Set<number>();
   const point = (t: number, v: number) => {
     if (t < fromS || t >= toS) return;
     const h = at(hourOf(t));
     h.min = Math.min(h.min ?? v, v); h.max = Math.max(h.max ?? v, v); h.total = (h.total ?? 0) + v; h.n++;
   };
   const shape = SHAPE[type];
-  for (const r of recs) {
+  // sessions (sleep, workouts) staged ones first, then the longest, each moment counted for the first that has it (as
+  // sleepDays): two apps writing the same night, or one sent twice under two ids, are one night
+  const ordered = shape === "sleep" || shape === "session"
+    ? [...recs].sort((a, b) => +!a.st?.length - +!b.st?.length || ((b.e ?? b.s) - b.s) - ((a.e ?? a.s) - a.s)) : recs;
+  const claimed: [number, number][] = [];
+  for (const r of ordered) {
     if (shape === "sum") {
       const e = r.e ?? r.s;
       if (e <= r.s) { if (r.s >= fromS && r.s < toS) { const h = at(hourOf(r.s)); h.sum = (h.sum ?? 0) + r.v!; h.n++; } continue; }
       spread(r.s, e, (h, s) => { h.sum = (h.sum ?? 0) + (r.v! * s) / (e - r.s); h.n++; });
-    } else if (shape === "series") for (const [t, v] of r.p ?? []) point(t, v);
+    } else if (shape === "series") {
+      const mine = (r.p ?? []).filter((q) => !seen.has(q[0]));
+      for (const [t, v] of mine) { seen.add(t); point(t, v); }
+    }
     else if (shape === "meal") { if (r.v != null && r.s >= fromS && r.s < toS) { const h = at(hourOf(r.s)); h.sum = (h.sum ?? 0) + r.v; h.n++; } }
-    else if (shape === "instant") point(r.s, r.v!);
+    else if (shape === "instant") { if (!seen.has(r.s)) { seen.add(r.s); point(r.s, r.v!); } }
     else if (shape === "sleep") {
       const st = r.st?.length ? r.st : [[r.s, r.e ?? r.s, 2] as [number, number, number]];
-      for (const [a, b, k] of st) spread(a, b, (h, s) => { h.stages ??= {}; h.stages[k] = (h.stages[k] ?? 0) + s / 60; h.n++; });
-    } else spread(r.s, r.e ?? r.s, (h, s) => { h.sum = (h.sum ?? 0) + s / 60; h.n++; });
+      for (const [a, b, k] of st)
+        if (b > a) for (const [x, y] of claim(claimed, a, b)) spread(x, y, (h, s) => { h.stages ??= {}; h.stages[k] = (h.stages[k] ?? 0) + s / 60; h.n++; });
+    } else if ((r.e ?? r.s) > r.s) for (const [x, y] of claim(claimed, r.s, r.e!)) spread(x, y, (h, s) => { h.sum = (h.sum ?? 0) + s / 60; h.n++; });
   }
   const round = (v: number) => Math.round(v * 100) / 100;
   return [...hours.entries()].sort((a, b) => a[0] - b[0]).map(([, h]) => {
@@ -454,7 +516,9 @@ export function healthRecordRoutes(r: Router) {
     const { fromS, toS } = span(qs);
     const [type] = typesOf(qs.type);
     const recs = [...(await blocks(ctx, type!, fromS, toS)).values()].flatMap((x) => Object.values(x)).filter((x) => overlaps(x, fromS, toS));
-    return { type, hours: hourly(type!, recs, fromS, toS, isZone(qs.zone) ? qs.zone : tzOf(qs)) };
+    // an app is a band or not as for the day's total (appKinds), so the hours add up to the day's number
+    const sum = type === "steps" || type === "distance" || type === "active_kcal" ? (await appKinds(ctx.q, [type as SumType])).get(type as SumType) : undefined;
+    return { type, hours: hourly(type!, recs, fromS, toS, isZone(qs.zone) ? qs.zone : tzOf(qs), sum) };
   });
 
   // Which days have records of which types, and how many (from, to: days, to not included), so screens offer only what
