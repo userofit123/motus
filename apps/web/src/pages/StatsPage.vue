@@ -68,7 +68,7 @@ const p = computed<any>(() => prev.data.value);
 const avail = useHealthAvailable();
 // Scores (the Health scores feature) once one of them has its data
 const scoresQ = useHealthScores(computed(() => !!s.value.features.scores));
-const hasScores = computed(() => !!s.value.features.scores && !!scoresQ.data.value && !!(scoresQ.data.value.sleep || scoresQ.data.value.activity || scoresQ.data.value.strength));
+const hasScores = computed(() => !!s.value.features.scores && !!scoresQ.data.value && !!(scoresQ.data.value.sleep || scoresQ.data.value.activity || scoresQ.data.value.strength || scoresQ.data.value.minor));
 const TABS = computed(() => [["overview", "Overview"], ["routines", "Routines"], ["exercises", "Exercises"], ["muscles", "Muscles"], ["activities", "Activities"],
   ...(avail.data.value?.steps ? [["steps", "Steps"]] : []), ...(avail.data.value?.sleep ? [["sleep", "Sleep"]] : []), ...(avail.data.value?.heart ? [["heart", "Heart"]] : []), ...(hasScores.value ? [["scores", "Scores"]] : []), ...(s.value.features.reports ? [["reports", "Reports"]] : []), ...(s.value.features.achievements ? [["achievements", "Achievements"]] : [])]);
 

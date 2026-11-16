@@ -9,9 +9,7 @@ import { api } from "../../api/client";
 import type { HealthDay } from "../../api/queries";
 import { hrSamples } from "../../core/heart";
 import { nightSegments, type Seg, type SleepRecord } from "../../core/sleep";
-
-const midnight = (d: string) => new Date(d + "T00:00").getTime();
-const nextMidnight = (d: string) => { const x = new Date(d + "T00:00"); x.setDate(x.getDate() + 1); return x.getTime(); };
+import { midnight, nextMidnight } from "./daySessions";
 const iso = (ms: number) => new Date(ms).toISOString();
 const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 // a day's heart rate as one reading per 5 minutes (their average), as Stats → Heart's day draws it

@@ -742,6 +742,8 @@ describe("readiness", () => {
     // a 30-minute walk a day without heart rate (moderate: 210 of 150) and 4,000 steps a day (half of 8,000)
     for (let i = 0; i < 7; i++)
       await eng.db.admin.query("INSERT INTO activities (id, user_id, type, started_at, duration_s) VALUES ($1, $2, 'walk', $3, 1800)", [uuidv7(), S, day(i) + "T10:00:00Z"]);
+    // an hour of yoga isn't a moving type: it adds no minutes
+    await eng.db.admin.query("INSERT INTO activities (id, user_id, type, started_at, duration_s) VALUES ($1, $2, 'yoga', $3, 3600)", [uuidv7(), S, day(1) + "T18:00:00Z"]);
     await as("PUT", "/daily", { entries: Array.from({ length: 7 }, (_, i) => ({ date: day(i), kind: "steps", value: 4000 })) });
     const r = (await as("GET", "/health/scores", undefined, { tz: "0" })).scores;
     expect(r).toMatchObject({ from: day(6), to: day(0), sleep: null, strength: null });

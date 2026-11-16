@@ -36,8 +36,9 @@ export function useToday() {
 }
 
 const num = (v: number | string | null | undefined) => (v == null || v === "" || !(Number(v) > 0) ? null : Number(v));
-const midnight = (d: string) => new Date(d + "T00:00").getTime();
-const nextMidnight = (d: string) => { const x = new Date(d + "T00:00"); x.setDate(x.getDate() + 1); return x.getTime(); };
+/** A day's ("YYYY-MM-DD") local midnight and the next one, in ms */
+export const midnight = (d: string) => new Date(d + "T00:00").getTime();
+export const nextMidnight = (d: string) => { const x = new Date(d + "T00:00"); x.setDate(x.getDate() + 1); return x.getTime(); };
 
 /** The day's sessions, oldest first, from the Calendar's data (kept on screen while the next day loads) */
 export function useDaySessions(day: Ref<string>, enabled: Ref<boolean>) {

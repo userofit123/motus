@@ -9,6 +9,8 @@ import { computed, ref } from "vue";
 import { useWidth } from "./useWidth";
 import { useTip } from "./useTip";
 import { useFmt } from "../core/format";
+import ChartShade from "./ChartShade.vue";
+import { shadeSpan } from "./chartShade";
 
 const props = defineProps<{ points: { x: number; y: number; label?: string; id?: string }[]; height?: number; fmt?: (v: number) => string; xfmt?: (t: number) => string; color?: string; zero?: boolean; domain?: [number, number]; xt?: number[]; gap?: number; shade?: { a: number; b: number; color?: string; soft?: boolean; id?: string; name?: string }[] }>();
 const emit = defineEmits<{ pick: [id: string] }>();
@@ -56,8 +58,7 @@ const xticks = computed(() => {
 const hover = ref<number | null>(null);
 // near either edge the tip slides inwards, so it isn't cut off
 const { el: tipEl, style: tipStyle } = useTip(W);
-const SHADE_MIN = 8;
-const shadeX = (z: { a: number; b: number }) => { const x = sx(Math.max(z.a, dom.value.x0)); return { x, w: Math.max(SHADE_MIN, sx(Math.min(z.b, dom.value.x1)) - x) }; };
+const shadeX = (z: { a: number; b: number }) => shadeSpan(sx(Math.max(z.a, dom.value.x0)), sx(Math.min(z.b, dom.value.x1)));
 const svgX = (e: MouseEvent) => { const r = (e.currentTarget as SVGElement).getBoundingClientRect(); return ((e.clientX - r.left) / r.width) * W.value; };
 function click(e: MouseEvent) {
   const x = svgX(e), z = props.shade?.find((s) => s.id && s.b > dom.value.x0 && s.a < dom.value.x1 && x >= shadeX(s).x && x <= shadeX(s).x + shadeX(s).w);
@@ -82,8 +83,7 @@ const xf = (t: number) => (props.xfmt ? props.xfmt(t) : df.value.date(t));
     <svg v-else class="chart" :viewBox="`0 0 ${W} ${H}`" :style="{ height: H + 'px', ...(shade?.some((z) => z.id) ? { cursor: 'pointer' } : {}) }" @mousemove="move" @mouseleave="hover = null" @click="click">
       <defs><linearGradient :id="'cg' + uid" x1="0" y1="0" x2="0" y2="1"><stop offset="0" :stop-color="color ?? 'var(--acc)'" stop-opacity=".35" /><stop offset="1" :stop-color="color ?? 'var(--acc)'" stop-opacity="0" /></linearGradient></defs>
       <g v-for="(z, i) in (shade ?? []).filter((s) => s.b > dom.x0 && s.a < dom.x1)" :key="'s' + i"><title v-if="z.name">{{ z.name }}</title>
-        <rect class="shd" :x="shadeX(z).x" :y="P.t" :width="shadeX(z).w" :height="H - P.t - P.b" :rx="z.color ? 0 : 3" :style="z.color ? { fill: `color-mix(in srgb, ${z.color} 16%, transparent)` } : undefined" />
-        <rect v-if="z.color && !z.soft" :x="shadeX(z).x" :y="P.t" :width="shadeX(z).w" height="3" rx="1.5" :style="{ fill: z.color }" />
+        <ChartShade v-bind="shadeX(z)" :y="P.t" :h="H - P.t - P.b" :color="z.color" :soft="z.soft" />
       </g>
       <g v-for="t in ticks" :key="t"><line class="gl" :x1="P.l" :x2="W - P.r" :y1="sy(t)" :y2="sy(t)" /><text class="ax" :x="P.l - 6" :y="sy(t) + 3" text-anchor="end">{{ f(t) }}</text></g>
       <text v-for="t in xticks" :key="'x' + t.x" class="ax" :x="sx(t.x)" :y="H - 4" :text-anchor="t.anchor">{{ t.text }}</text>

@@ -11,6 +11,8 @@
 import { computed, ref, useId } from "vue";
 import { useWidth } from "./useWidth";
 import { useTip } from "./useTip";
+import ChartShade from "./ChartShade.vue";
+import { shadeSpan } from "./chartShade";
 const props = defineProps<{ bars: { label: string; value: number; dim?: boolean; color?: string; tip?: string; group?: string; short?: string; full?: string; parts?: { value: number; color: string; hatch?: boolean }[]; id?: string }[]; height?: number; fmt?: (v: number) => string; band?: [number, number]; horizontal?: boolean; goal?: number; values?: boolean;
   shade?: { a: number; b: number; color: string; id: string; name: string }[]; xt?: { at: number; text: string }[] }>();
 const emit = defineEmits<{ pick: [id: string] }>();
@@ -58,9 +60,8 @@ const gx = (i: number) => (i * slot.value + (slot.value - bw.value) / 2 + GW > W
 // a tip over a bar near either edge slides inwards, so a long one isn't cut off
 const { el: tipEl, style: tipStyle } = useTip(W);
 const f = (v: number) => (props.fmt ? props.fmt(v) : String(Math.round(v * 10) / 10));
-// a shaded stretch at least 8px wide to tap, so a 5-minute walk still opens
-const SHADE_MIN = 8;
-const shadeX = (z: { a: number; b: number }) => ({ x: z.a * slot.value, w: Math.max(SHADE_MIN, (z.b - z.a) * slot.value) });
+// a shaded stretch at least SHADE_MIN wide to tap, so a 5-minute walk still opens
+const shadeX = (z: { a: number; b: number }) => shadeSpan(z.a * slot.value, z.b * slot.value);
 const shadeAt = (e: MouseEvent) => {
   if (!props.shade?.length || !box.value) return null;
   const r = box.value.getBoundingClientRect(), x = ((e.clientX - r.left) / r.width) * W.value;
@@ -88,8 +89,7 @@ const xtAnchor = (at: number) => (at <= 0 ? "start" : at >= props.bars.length ? 
       <line class="gl" x1="0" :x2="W" :y1="H - bottom" :y2="H - bottom" />
       <line v-if="goal" class="goal" x1="0" :x2="W" :y1="y(goal)" :y2="y(goal)" />
       <g v-for="(z, i) in shade" :key="'s' + i" class="shz"><title>{{ z.name }}</title>
-        <rect :x="shadeX(z).x" :width="shadeX(z).w" y="0" :height="H - bottom" :style="{ fill: `color-mix(in srgb, ${z.color} 16%, transparent)` }" />
-        <rect :x="shadeX(z).x" :width="shadeX(z).w" y="0" height="3" rx="1.5" :style="{ fill: z.color }" />
+        <ChartShade v-bind="shadeX(z)" :y="0" :h="H - bottom" :color="z.color" />
       </g>
       <g v-for="(b, i) in bars" :key="i" :style="b.id || shadeName(i) ? { cursor: 'pointer' } : undefined" @mouseenter="hover = i" @mouseleave="hover = null" @click="click($event, b)">
         <rect :x="i * slot" :width="slot" y="0" :height="H" fill="transparent" />

@@ -109,7 +109,7 @@ export interface Readiness { score: number | null; label: "Ready" | "Normal" | "
 export const useReadiness = (enabled: MaybeRef<boolean> = true) => useQuery({ queryKey: ["stats", "readiness"], queryFn: () => api.get<Readiness>("/health/readiness", { tz: new Date().getTimezoneOffset() }), enabled });
 /** Health scores (the Health scores feature): sleep, activity and strength over the last 7 days, each null without its
  *  data; scores null while the feature is off. Under "stats" as readiness, so a workout, sync or settings change reloads them */
-export type HealthScores = { from: string; to: string; age: number | null; sleep: Score | null; activity: Score | null; strength: Score | null };
+export type HealthScores = { from: string; to: string; age: number | null; /** under 18: no scores, the guidelines scored are the adult ones */ minor?: boolean; sleep: Score | null; activity: Score | null; strength: Score | null };
 export const useHealthScores = (enabled: MaybeRef<boolean> = true) => useQuery({ queryKey: ["stats", "scores"], enabled,
   queryFn: () => api.get<{ scores: HealthScores | null }>("/health/scores", { tz: new Date().getTimezoneOffset() }).then((r) => r.scores) });
 /** Training load (Stats → Heart): each session's load over [from, to] and the 28 days before, and the 7:28 comparison as of `to`; load null while the feature is off */

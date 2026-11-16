@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // One day at a glance (the Calendar's day card): the day from midnight to midnight as one chart, a lane for each part
 // the band saved (only those), named on the left as the Sleep night's lanes are: the night's stretches in their stage
-// colours, the steps as a small bar an hour and the heart rate as a thin line, both in the day charts' own colour; the
+// colours, the steps as a small bar an hour and the heart rate as the charts' line, both in the day charts' own colour; the
 // day's workouts and activities shaded across every lane in their Calendar colours with the strip along the top, as on
 // the Stats day charts, and the same hour labels under it. A lane opens its Stats tab on this day (open), a shaded
 // session opens the session (pick); the tip says what the band saved at that hour. It shows only what Stats' days show
@@ -13,6 +13,8 @@ import { useFmt } from "../../core/format";
 import { segColor, SEG_NAME } from "../../core/sleep";
 import { dayHours, legendOf, DAY_DATA_COLOR, type DaySession } from "./daySessions";
 import type { DayTimeline } from "./dayTimeline";
+import ChartShade from "../ChartShade.vue";
+import { shadeSpan } from "../chartShade";
 
 const props = defineProps<{ tl: DayTimeline; day: string; sessions: DaySession[] }>();
 const emit = defineEmits<{ open: [tab: "sleep" | "steps" | "heart"]; pick: [id: string] }>();
@@ -20,14 +22,17 @@ const fmt = useFmt();
 const box = ref<HTMLElement | null>(null);
 // margins as LineChart's and the night's lanes, so the hours line up with the Stats day charts
 const W = useWidth(box), P = { l: 44, r: 12, t: 8, b: 22 }, GAP = 6;
-type Lane = { key: "sleep" | "steps" | "heart"; name: string; what: string; y: number; h: number };
+// a lane's name as its lines: "Last night" is too wide for the margin on one, so it takes two, centred on the lane
+type Lane = { key: "sleep" | "steps" | "heart"; name: string[]; what: string; y: number; h: number };
+const LINE = 11;
 const lanes = computed<Lane[]>(() => {
   const out: Lane[] = [];
   let y = P.t;
-  const add = (key: Lane["key"], name: string, what: string, h: number) => { out.push({ key, name, what, y, h }); y += h + GAP; };
-  if (props.tl.sleep.length) add("sleep", "Sleep", "Sleep", 20);
-  if (props.tl.steps.length) add("steps", "Steps", "Steps", 34);
-  if (props.tl.hr.length) add("heart", "Heart", "Heart rate", 34);
+  const add = (key: Lane["key"], name: string[], what: string, h: number) => { out.push({ key, name, what, y, h }); y += h + GAP; };
+  // the night that ended this morning (the day's sleep is the night before it, as everywhere), named so
+  if (props.tl.sleep.length) add("sleep", ["Last", "night"], "Last night's sleep", 20);
+  if (props.tl.steps.length) add("steps", ["Steps"], "Steps", 34);
+  if (props.tl.hr.length) add("heart", ["Heart"], "Heart rate", 34);
   return out;
 });
 const lane = (k: Lane["key"]) => lanes.value.find((l) => l.key === k);
@@ -49,11 +54,13 @@ const hrPath = computed(() => {
   const y = (v: number) => l.y + pad + (1 - (v - lo) / span) * (l.h - 2 * pad);
   return props.tl.hr.map(([x, v], i) => `${!i || x - props.tl.hr[i - 1]![0] > 15 * 60000 ? "M" : "L"}${sx(x).toFixed(1)},${y(v).toFixed(1)}`).join("");
 });
-// a session at least 8px wide, so a 5-minute walk can still be tapped, as on the day charts
-const SHADE_MIN = 8;
-const shades = computed(() => props.sessions.filter((s) => s.b > s.a && s.b > props.tl.from && s.a < props.tl.to).map((s) => { const x = sx(Math.max(s.a, props.tl.from)); return { ...s, x, w: Math.max(SHADE_MIN, sx(Math.min(s.b, props.tl.to)) - x) }; }));
-// the stages the night's lane shows, in the night's lane order, then a colour per kind of session, as the day charts' legends
+// each session's span as on the day charts (chartShade.ts: at least 8px wide, so a 5-minute walk can still be tapped)
+const shades = computed(() => props.sessions.filter((s) => s.b > s.a && s.b > props.tl.from && s.a < props.tl.to).map((s) => ({ ...s, ...shadeSpan(sx(Math.max(s.a, props.tl.from)), sx(Math.min(s.b, props.tl.to))) })));
+// the day's own data first (steps and heart rate share the day charts' colour, so one swatch names what is drawn), as
+// Steps' and Heart's day legends start; then the stages the night's lane shows, in its order, and a colour per kind of session
+const dataName = computed(() => { const st = props.tl.steps.length > 0, hr = props.tl.hr.length > 0; return st && hr ? "Steps and heart rate" : st ? "Steps" : hr ? "Heart rate" : ""; });
 const legend = computed(() => [
+  ...(dataName.value ? [{ color: DAY_DATA_COLOR, name: dataName.value }] : []),
   ...(["awake", "rem", "light", "deep", "asleep"] as const).filter((k) => props.tl.sleep.some((s) => s.k === k)).map((k) => ({ color: segColor(k), name: SEG_NAME[k] })),
   ...legendOf(shades.value),
 ]);
@@ -73,7 +80,7 @@ const tip = computed(() => {
   const a = h0.getTime(), parts: string[] = [];
   const seg = props.tl.sleep.find((s) => at >= s.a && at < s.b); if (seg) parts.push(SEG_NAME[seg.k]);
   const st = props.tl.steps.find((s) => s.a === a); if (st) parts.push(`${fmt.value.num(st.value, 0)} steps`);
-  const near = props.tl.hr.reduce<[number, number] | null>((m, p) => (Math.abs(p[0] - at) <= 10 * 60000 && (!m || Math.abs(p[0] - at) < Math.abs(m[0] - at)) ? p : m), null); if (near) parts.push(`${near[1]} bpm`);
+  const near = props.tl.hr.reduce<[number, number] | null>((m, p) => (Math.abs(p[0] - at) <= 10 * 60000 && (!m || Math.abs(p[0] - at) < Math.abs(m[0] - at)) ? p : m), null); if (near) parts.push(`${fmt.value.num(near[1], 0)} bpm`);
   return parts.length ? { x: sx(at), head: parts[0]!, rest: [...parts.slice(1), `${t(a)}-${t(a + 3600_000)}`] } : null;
 });
 </script>
@@ -84,18 +91,17 @@ const tip = computed(() => {
       <!-- each lane: its name, a faint line along its foot, and the whole lane a button into its Stats tab -->
       <g v-for="l in lanes" :key="l.key" class="dtl-lane" role="button" tabindex="0" :aria-label="`${l.what} on this day`" @click="emit('open', l.key)" @keydown.enter="emit('open', l.key)">
         <rect :x="P.l" :y="l.y - GAP / 2" :width="Math.max(0, W - P.l - P.r)" :height="l.h + GAP" fill="transparent" />
-        <text class="ax" :x="P.l - 6" :y="l.y + l.h / 2 + 3" text-anchor="end">{{ l.name }}</text>
+        <text class="ax" :y="l.y + l.h / 2 + 3 - ((l.name.length - 1) * LINE) / 2" text-anchor="end"><tspan v-for="(w, i) in l.name" :key="w" :x="P.l - 6" :dy="i ? LINE : 0">{{ w }}</tspan></text>
         <line v-if="l.key !== 'sleep'" class="gl" :x1="P.l" :x2="W - P.r" :y1="l.y + l.h" :y2="l.y + l.h" />
       </g>
       <g pointer-events="none">
         <rect v-for="(b, i) in sleepBlocks" :key="'z' + i" :x="b.x" :y="b.y" :width="b.w" :height="b.h" rx="2" :style="{ fill: segColor(b.k) }" />
         <rect v-for="(b, i) in stepBars" :key="'s' + i" :x="b.x" :y="b.y" :width="b.w" :height="b.h" :rx="b.rx" :style="{ fill: DAY_DATA_COLOR }" />
-        <path v-if="hrPath" :d="hrPath" class="dtl-hr" :style="{ stroke: DAY_DATA_COLOR }" />
+        <path v-if="hrPath" :d="hrPath" class="ln" :style="{ stroke: DAY_DATA_COLOR }" />
       </g>
       <g v-for="z in shades" :key="z.key" class="dtl-sess" role="button" tabindex="0" :aria-label="`${z.name}, ${t(z.a)}-${t(z.b)}`" @click="emit('pick', z.key)" @keydown.enter="emit('pick', z.key)">
         <title>{{ z.name }}</title>
-        <rect :x="z.x" :width="z.w" y="0" :height="H - P.b" :style="{ fill: `color-mix(in srgb, ${z.color} 16%, transparent)` }" />
-        <rect :x="z.x" :width="z.w" y="0" height="3" rx="1.5" :style="{ fill: z.color }" />
+        <ChartShade :x="z.x" :w="z.w" :y="0" :h="H - P.b" :color="z.color" />
       </g>
       <line v-if="tip" class="gl" :x1="tip.x" :x2="tip.x" :y1="P.t" :y2="H - P.b" pointer-events="none" />
       <text v-for="h in xt" :key="h.at" class="ax" :x="sx(h.at)" :y="H - 4" :text-anchor="h.at <= tl.from ? 'start' : 'middle'">{{ h.text }}</text>
@@ -108,7 +114,6 @@ const tip = computed(() => {
 <style scoped>
 .dtl { position: relative; }
 .dtl-lane, .dtl-sess { cursor: pointer; outline: none; }
-.dtl-lane:focus-visible rect, .dtl-sess:focus-visible rect:first-of-type { stroke: var(--acc); stroke-width: 2; }
-.dtl-hr { fill: none; stroke-width: 1.5; vector-effect: non-scaling-stroke; stroke-linejoin: round; stroke-linecap: round; }
+.dtl-lane:focus-visible rect, .dtl-sess:focus-visible :deep(rect:first-of-type) { stroke: var(--acc); stroke-width: 2; }
 .dtl-leg { margin-top: var(--hg); }
 </style>

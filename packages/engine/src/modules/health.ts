@@ -30,7 +30,7 @@ import { isSum, DERIVED_DAYS, shift, lockRecords, loadReads, loadBlocks, appKind
   type DerivedType, type SpanBand, type SumType } from "./healthDerive";
 import { isNight, cleanWornDevice, plausibleSteps, stepsTyped, appSteps, bandStepsVerdict, daySteps, type WornDevice } from "@motus/shared";
 import { maxHeartRate, sessionLoad, loadTrend, CHRONIC_DAYS, exercisePeaks, type LoadTrend, type HrTick } from "@motus/shared";
-import { SCORE_DAYS, ageOf, effortMinutes, sleepScore, activityScore, strengthScore, groupSets, GROUPS } from "@motus/shared";
+import { SCORE_DAYS, ageOf, scoresFor, effortMinutes, sleepScore, activityScore, strengthScore, muscleSets } from "@motus/shared";
 import { getSettings } from "./settings";
 
 export const HEALTH_SOURCE = "health_connect";
@@ -899,6 +899,8 @@ export function healthRoutes(r: Router) {
     if (!st.features.scores) return { scores: null };
     const tz = tzOf(qs), today = dayIn(ctx.now(), tz), from = shift(today, -(SCORE_DAYS - 1));
     const age = ageOf(st.profile?.birthYear, ctx.now()), max = maxHeartRate(st.profile ?? {}, ctx.now())?.bpm ?? null;
+    // the guidelines scored are the adult ones: under 18 no scores, and Stats → Scores says why (minor)
+    if (!scoresFor(age)) return { scores: { from, to: today, age, minor: true, sleep: null, activity: null, strength: null } };
     const inWeek = (at: string | Date) => { const d = dayIn(at, tz); return d >= from && d <= today; };
     // the app's minute of the day of an instant, counted from noon so a night's times don't wrap at midnight
     const fromNoon = (iso: string) => { const d = new Date(Date.parse(iso) - tz * 60000); return (d.getUTCHours() * 60 + d.getUTCMinutes() + 720) % 1440; };
@@ -911,8 +913,10 @@ export function healthRoutes(r: Router) {
       return { asleepMin: asleep, inBedMin, bedAt, wakeAt: bedAt + inBedMin };
     }).filter((n) => isNight(n.asleepMin / 60));
 
-    // activity: minutes of effort from each day's heart rate (with a max heart rate to place it); a day without heart rate
-    // counts its recorded activities' time as moderate (walks, runs and rides are at least that, by WHO's examples)
+    // activity: minutes of effort from each day's heart rate (with a max heart rate to place it); recorded activities of a
+    // moving type (one that covers distance: walk, run, hike, cycle, swim, row...; not yoga, stretching or other) count
+    // as moderate, as WHO's examples are, on days without heart rate, or for the whole week when heart rate covers too
+    // few days (activityScore picks)
     const hrDays = max ? (await ctx.q.query<{ date: string; hr: unknown }>(
       "SELECT to_char(date, 'YYYY-MM-DD') AS date, hr FROM hr_days WHERE date >= $1::date AND date <= $2::date", [from, today])).rows : [];
     let moderate = 0, vigorous = 0;
@@ -924,12 +928,21 @@ export function healthRoutes(r: Router) {
       moderate += m.moderate; vigorous += m.vigorous; hrDates.add(d.date);
     }
     const lo = shift(from, -1), hi = shift(today, 2);
+    await ensureTypes(ctx);
     const acts = (await ctx.q.query<{ started_at: string; duration_s: number | string | null }>(
-      "SELECT started_at, duration_s FROM activities WHERE started_at >= $1::date AND started_at < $2::date", [lo, hi])).rows;
-    for (const a of acts) if (inWeek(a.started_at) && !hrDates.has(dayIn(a.started_at, tz))) moderate += (Number(a.duration_s) || 0) / 60;
+      `SELECT a.started_at, a.duration_s FROM activities a JOIN activity_types t ON t.user_id = a.user_id AND t.slug = a.type
+       WHERE t.has_distance AND a.started_at >= $1::date AND a.started_at < $2::date`, [lo, hi])).rows;
+    let activityMin = 0, activityMinOffHr = 0;
+    for (const a of acts) {
+      if (!inWeek(a.started_at)) continue;
+      const m = (Number(a.duration_s) || 0) / 60;
+      activityMin += m;
+      if (!hrDates.has(dayIn(a.started_at, tz))) activityMinOffHr += m;
+    }
     const steps = (await stepsByDay(ctx.q, from, shift(today, 1), tz)).map((x) => Number(x.value) || 0);
 
-    // strength: only for someone who trains (a finished workout in the last 4 weeks); the week's days and hard sets per group
+    // strength: only for someone who trains (a finished workout in the last 4 weeks); the week's days with a finished hard
+    // set, and hard sets per muscle as Stats → Muscles counts them
     const sets = (await ctx.q.query<{ workout_id: string; started_at: string; primary_muscles: string[]; secondary_muscles: string[]; n: string | number }>(
       `SELECT w.id AS workout_id, w.started_at, e.primary_muscles, e.secondary_muscles, count(s.id) AS n
        FROM workouts w LEFT JOIN workout_exercises we ON we.workout_id = w.id LEFT JOIN exercises e ON e.id = we.exercise_id
@@ -938,14 +951,14 @@ export function healthRoutes(r: Router) {
     const week = sets.filter((x) => inWeek(x.started_at));
     const trains = sets.some((x) => dayIn(x.started_at, tz) <= today);
     const strength = trains ? strengthScore({
-      days: new Set(week.map((x) => dayIn(x.started_at, tz))).size,
-      sets: groupSets(week.filter((x) => x.primary_muscles).map((x) => ({ primary: x.primary_muscles, secondary: x.secondary_muscles ?? [], sets: Number(x.n) })), GROUPS),
+      days: new Set(week.filter((x) => Number(x.n) > 0).map((x) => dayIn(x.started_at, tz))).size,
+      sets: muscleSets(week.filter((x) => x.primary_muscles).map((x) => ({ primary: x.primary_muscles, secondary: x.secondary_muscles ?? [], sets: Number(x.n) }))),
     }) : null;
 
     return { scores: {
       from, to: today, age,
       sleep: sleepScore(ns, age),
-      activity: activityScore({ moderate, vigorous, minutesDays: hrDates.size, stepDays: steps }, age),
+      activity: activityScore({ moderate, vigorous, minutesDays: hrDates.size, activityMin, activityMinOffHr, stepDays: steps }, age),
       strength,
     } };
   });

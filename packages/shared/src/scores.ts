@@ -4,7 +4,15 @@
 // - sleep stages: consumer bands estimate them loosely and no guideline sets healthy shares of deep or REM sleep;
 // - resting heart rate and HRV against a norm: healthy values differ too much between people, so they are only compared
 //   with your own usual, which Readiness already does (Recovery is Readiness, never a second recovery score);
-// - an overall score: the guidelines give no honest way to weigh sleep against training.
+// - an overall score: the guidelines give no honest way to weigh sleep against training;
+// - anyone under 18: the guidelines differ for children and teens (WHO 60 minutes a day, other sleep hours), so the
+//   scores are for adults only and Stats → Scores says so.
+import { eachSample } from "./heart";
+import { GROUPS, WEEKLY_SET_RANGE } from "./muscles";
+
+/** The scores follow the adult guidelines, so they are worked out from this age on (and without a year of birth) */
+export const SCORE_MIN_AGE = 18;
+export const scoresFor = (age: number | null) => age == null || age >= SCORE_MIN_AGE;
 
 /** How many days a score covers: the last 7 (today in them), as the guidelines count per week */
 export const SCORE_DAYS = 7;
@@ -41,7 +49,9 @@ export const SLEEP_WEIGHTS = { duration: 50, efficiency: 25, regularity: 25 } as
 export const MIN_NIGHTS = 3;
 
 // ---- activity
-/** Heart rate as a share of max that is moderate and vigorous effort (ACSM, Garber et al. 2011: 64-76 %, 77-95 %) */
+/** Heart rate as a share of max that is moderate-intensity and vigorous-intensity effort (ACSM, Garber et al. 2011:
+ *  64-76 %, 77-95 %). Not Heart's zones (HR_ZONES' "Moderate" starts at 70 %): the UI says "moderate effort" here and
+ *  "Moderate" only for the zone, so one word keeps one meaning */
 export const MODERATE_FROM = 0.64, VIGOROUS_FROM = 0.77;
 /** WHO 2020: at least 150 minutes of moderate activity a week (or 75 vigorous; a vigorous minute counts as two) */
 export const WEEKLY_ACTIVE_MIN = 150;
@@ -49,15 +59,15 @@ export const WEEKLY_ACTIVE_MIN = 150;
  *  60; the lower end is the target */
 export const stepsTarget = (age: number | null) => (age != null && age >= 60 ? 6000 : 8000);
 export const ACTIVITY_WEIGHTS = { minutes: 60, steps: 40 } as const;
-/** Days of heart rate or steps the week needs before those parts count (fewer would undercount the week) */
+/** Days of heart rate or steps the week needs before those parts count (fewer would undercount the week); with heart
+ *  rate on fewer days, only recorded activities' minutes stand in for the minutes part */
 export const MIN_DAYS = 3;
 
 // ---- strength
 /** WHO 2020: muscle-strengthening activities on 2 or more days a week, working all major muscle groups */
 export const STRENGTH_DAYS = 2;
-/** Hard sets a muscle group needs in a week for more growth (Schoenfeld, Ogborn & Krieger 2017: 10 or more) */
-export const GROUP_SETS = 10;
-/** The major muscle groups counted (Motus's groups, neck left out as the Muscles views do) */
+/** The major muscle groups counted (Motus's groups, neck left out as the Muscles views do). Each needs the low end of
+ *  WEEKLY_SET_RANGE (10 hard sets a week, Schoenfeld, Ogborn & Krieger 2017), counted as Stats → Muscles counts them */
 export const SCORE_GROUPS = ["chest", "back", "shoulders", "arms", "core", "legs"] as const;
 export const STRENGTH_WEIGHTS = { days: 50, groups: 50 } as const;
 
@@ -122,31 +132,34 @@ export function sleepScore(nights: readonly ScoreNight[], age: number | null): S
   ]);
 }
 
-/** Minutes at moderate and vigorous effort from heart rate samples ([unix seconds, bpm]), each counting for the time up to
- *  the next one (at most 5 minutes: a longer gap is the band off), as the zone minutes count */
+/** Minutes at moderate and vigorous effort from heart rate samples ([unix seconds, bpm]), each sample counting for the
+ *  time eachSample gives it (up to the next one, at most SAMPLE_MAX_S, the last one a minute), as zone minutes count */
 export function effortMinutes(samples: readonly (readonly [number, number])[], maxHr: number): { moderate: number; vigorous: number } {
-  const s = [...samples].sort((a, b) => a[0] - b[0]);
   let moderate = 0, vigorous = 0;
-  for (let i = 0; i + 1 < s.length; i++) {
-    const min = Math.min(300, s[i + 1]![0] - s[i]![0]) / 60, share = s[i]![1] / maxHr;
-    if (share >= VIGOROUS_FROM) vigorous += min; else if (share >= MODERATE_FROM) moderate += min;
-  }
+  eachSample(samples, (_t, bpm, secs) => {
+    const share = bpm / maxHr;
+    if (share >= VIGOROUS_FROM) vigorous += secs / 60; else if (share >= MODERATE_FROM) moderate += secs / 60;
+  });
   return { moderate: Math.round(moderate), vigorous: Math.round(vigorous) };
 }
 
 /**
  * Activity over the week:
- *   minutes 60: moderate minutes plus twice the vigorous ones against WHO's 150 a week (with heart rate on at least
- *   MIN_DAYS days, or activities to count); more than 150 counts as met;
+ *   minutes 60: moderate minutes plus twice the vigorous ones against WHO's 150 a week; more than 150 counts as met.
+ *   With heart rate on at least MIN_DAYS days: its minutes plus the moving activities on days without it
+ *   (activityMinOffHr); on fewer days the heart rate would undercount the week, so only the week's moving activities
+ *   count (activityMin, as moderate); without either the part is left out;
  *   steps 40: the average daily steps (over at least MIN_DAYS days with steps) against the level where the benefit levels
  *   off for your age.
  * A part without its data is left out and the other takes all the weight.
  */
-export function activityScore(x: { moderate: number; vigorous: number; minutesDays: number; stepDays: number[] }, age: number | null): Score | null {
+export function activityScore(x: { moderate: number; vigorous: number; minutesDays: number; activityMin: number; activityMinOffHr: number; stepDays: number[] }, age: number | null): Score | null {
   const parts: ScorePart[] = [];
-  if (x.minutesDays >= MIN_DAYS || x.moderate + x.vigorous > 0) {
-    const eq = Math.round(x.moderate + 2 * x.vigorous);
-    parts.push({ key: "minutes", weight: ACTIVITY_WEIGHTS.minutes, share: clamp01(eq / WEEKLY_ACTIVE_MIN), value: eq, target: WEEKLY_ACTIVE_MIN, extra: { moderate: Math.round(x.moderate), vigorous: Math.round(x.vigorous) } });
+  const hr = x.minutesDays >= MIN_DAYS;
+  if (hr || x.activityMin > 0) {
+    const moderate = hr ? x.moderate + x.activityMinOffHr : x.activityMin, vigorous = hr ? x.vigorous : 0;
+    const eq = Math.round(moderate + 2 * vigorous);
+    parts.push({ key: "minutes", weight: ACTIVITY_WEIGHTS.minutes, share: clamp01(eq / WEEKLY_ACTIVE_MIN), value: eq, target: WEEKLY_ACTIVE_MIN, extra: { moderate: Math.round(moderate), vigorous: Math.round(vigorous) } });
   }
   const days = x.stepDays.filter((s) => s > 0);
   if (days.length >= MIN_DAYS) {
@@ -156,27 +169,25 @@ export function activityScore(x: { moderate: number; vigorous: number; minutesDa
   return total("activity", parts);
 }
 
-/** Hard sets per major muscle group: a working set counts 1 for a group its exercise's main muscles are in, else 0.5 for
- *  a group only its helping muscles are in (as sets per muscle count), once per group however many of its muscles work */
-export function groupSets(rows: readonly { primary: readonly string[]; secondary: readonly string[]; sets: number }[], groups: readonly { id: string; muscles: readonly string[] }[]): Record<string, number> {
-  const out: Record<string, number> = {};
-  for (const g of groups) {
-    out[g.id] = rows.reduce((t, r) => t + (r.primary.some((m) => g.muscles.includes(m)) ? r.sets : r.secondary.some((m) => g.muscles.includes(m)) ? r.sets * 0.5 : 0), 0);
-  }
-  return out;
+/** Hard sets per major muscle group from sets per muscle (muscleSets: a working set 1 for each main muscle, 0.5 for each
+ *  helper), summed over the group's muscles as Stats → Muscles' "Working sets, last 7 days" sums them */
+export function groupSets(muscles: Readonly<Record<string, number>>): Record<string, number> {
+  return Object.fromEntries(GROUPS.map((g) => [g.id, g.muscles.reduce((t, m) => t + (muscles[m] ?? 0), 0)]));
 }
 
 /**
  * Strength training over the week (only for someone who trains: a finished workout in the last 4 weeks):
- *   days 50: days with a finished workout against WHO's 2;
- *   groups 50: the share of the six major muscle groups with 10 or more hard sets.
+ *   days 50: days with at least one finished hard (not warm-up) set against WHO's 2;
+ *   groups 50: the share of the six major muscle groups at the low end of WEEKLY_SET_RANGE (10 hard sets) or more.
+ * sets: hard sets per muscle (muscleSets), grouped here as Stats → Muscles groups them.
  */
 export function strengthScore(x: { days: number; sets: Record<string, number> }): Score {
-  const met = SCORE_GROUPS.filter((g) => (x.sets[g] ?? 0) >= GROUP_SETS).length;
+  const g = groupSets(x.sets);
+  const met = SCORE_GROUPS.filter((k) => (g[k] ?? 0) >= WEEKLY_SET_RANGE[0]).length;
   return total("strength", [
     { key: "days", weight: STRENGTH_WEIGHTS.days, share: clamp01(x.days / STRENGTH_DAYS), value: x.days, target: STRENGTH_DAYS },
     { key: "groups", weight: STRENGTH_WEIGHTS.groups, share: met / SCORE_GROUPS.length, value: met, target: SCORE_GROUPS.length,
-      extra: Object.fromEntries(SCORE_GROUPS.map((g) => [g, Math.round((x.sets[g] ?? 0) * 10) / 10])) },
+      extra: Object.fromEntries(SCORE_GROUPS.map((k) => [k, Math.round((g[k] ?? 0) * 10) / 10])) },
   ])!;
 }
 

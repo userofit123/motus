@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { sleepRange, sleepScore, effortMinutes, activityScore, groupSets, strengthScore, stepsTarget, ageOf, type ScoreNight } from "./scores";
-import { GROUPS } from "./muscles";
+import { sleepRange, sleepScore, effortMinutes, activityScore, groupSets, strengthScore, stepsTarget, ageOf, scoresFor, type ScoreNight } from "./scores";
+import { muscleSets } from "./muscles";
 
 // a night: hours asleep, hours in bed, bed time as minutes from noon (11 pm = 660), woken that long after
 const night = (asleepH: number, bedH: number, bedAt = 660): ScoreNight => ({ asleepMin: asleepH * 60, inBedMin: bedH * 60, bedAt, wakeAt: bedAt + bedH * 60 });
@@ -44,7 +44,7 @@ describe("health scores", () => {
   });
 
   it("counts a vigorous minute as two of WHO's 150", () => {
-    const s = activityScore({ moderate: 50, vigorous: 25, minutesDays: 7, stepDays: [] }, 30)!;
+    const s = activityScore({ moderate: 50, vigorous: 25, minutesDays: 7, activityMin: 0, activityMinOffHr: 0, stepDays: [] }, 30)!;
     expect(s.parts).toHaveLength(1);
     expect(s.parts[0]!.value).toBe(100);
     expect(s.score).toBe(67);
@@ -53,21 +53,36 @@ describe("health scores", () => {
   it("takes the steps target by age and leaves out a part without data", () => {
     expect(stepsTarget(30)).toBe(8000);
     expect(stepsTarget(65)).toBe(6000);
-    const s = activityScore({ moderate: 0, vigorous: 0, minutesDays: 1, stepDays: [6000, 6000, 6000, 0] }, 65)!;
+    const s = activityScore({ moderate: 0, vigorous: 0, minutesDays: 1, activityMin: 0, activityMinOffHr: 0, stepDays: [6000, 6000, 6000, 0] }, 65)!;
     expect(s.parts.map((p) => p.key)).toEqual(["steps"]);
     expect(s.score).toBe(100);
-    expect(activityScore({ moderate: 0, vigorous: 0, minutesDays: 0, stepDays: [9000] }, 30)).toBeNull();
+    expect(activityScore({ moderate: 0, vigorous: 0, minutesDays: 0, activityMin: 0, activityMinOffHr: 0, stepDays: [9000] }, 30)).toBeNull();
   });
 
-  it("counts a set once per muscle group, half for helping muscles", () => {
-    const g = groupSets([{ primary: ["quadriceps", "glutes"], secondary: ["hamstrings", "lower back"], sets: 4 }], GROUPS);
-    expect(g.legs).toBe(4);
+  it("lets only recorded activities stand in when heart rate covers too few days", () => {
+    // 2 days of heart rate: its 90 minutes don't count, the week's 40 activity minutes do
+    const a = activityScore({ moderate: 90, vigorous: 0, minutesDays: 2, activityMin: 40, activityMinOffHr: 10, stepDays: [] }, 30)!;
+    expect(a.parts[0]!.value).toBe(40);
+    expect(activityScore({ moderate: 90, vigorous: 0, minutesDays: 2, activityMin: 0, activityMinOffHr: 0, stepDays: [] }, 30)).toBeNull();
+    // enough heart rate: its minutes plus the activities on days without it
+    expect(activityScore({ moderate: 90, vigorous: 0, minutesDays: 3, activityMin: 40, activityMinOffHr: 10, stepDays: [] }, 30)!.parts[0]!.value).toBe(100);
+  });
+
+  it("scores adults only", () => {
+    expect(scoresFor(17)).toBe(false);
+    expect(scoresFor(18)).toBe(true);
+    expect(scoresFor(null)).toBe(true);
+  });
+
+  it("sums sets per muscle into groups as Stats → Muscles does", () => {
+    const g = groupSets(muscleSets([{ primary: ["quadriceps", "glutes"], secondary: ["hamstrings", "lower back"], sets: 4 }]));
+    expect(g.legs).toBe(10);
     expect(g.back).toBe(2);
     expect(g.chest).toBe(0);
   });
 
   it("scores strength on WHO's 2 days and 10 sets per group", () => {
-    const s = strengthScore({ days: 1, sets: { chest: 12, back: 10, legs: 9 } });
+    const s = strengthScore({ days: 1, sets: { chest: 12, lats: 6, "middle back": 4, quadriceps: 9 } });
     // days 50 * 0.5, groups 50 * 2/6
     expect(s.score).toBe(42);
     expect(s.label).toBe("Low");

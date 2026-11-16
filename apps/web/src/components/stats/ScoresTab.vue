@@ -4,10 +4,10 @@
 // beside them rather than worked out a second way. Only scores whose data is there; the tab is absent without any.
 import { computed } from "vue";
 import { SCORE_SOURCES } from "@motus/shared";
-import { useHealthScores, useReadiness, type ReadinessPart } from "../../api/queries";
+import { useHealthScores, useReadiness } from "../../api/queries";
 import { useFmt } from "../../core/format";
-import { mins } from "../../core/sleep";
-import { SCORE_META, SCORE_KEYS, scoreRow, scoreWhy, type ScoreRow } from "../../core/scores";
+import { SCORE_META, SCORE_KEYS, scoreRow, scoreWhy } from "../../core/scores";
+import { readinessRows } from "../../core/readiness";
 import Icon from "../Icon.vue";
 
 const fmt = useFmt();
@@ -16,31 +16,27 @@ const sq = useHealthScores();
 const rq = useReadiness();
 const scores = computed(() => SCORE_KEYS.flatMap((k) => { const s = sq.data.value?.[k]; return s ? [{ ...s, meta: SCORE_META[k] }] : []; }));
 const ready = computed(() => (rq.data.value?.score != null ? rq.data.value : null));
+// the number big and its word in the sub line, as the other tabs' tiles keep a long word ("Take it easy") out of the value
 const tiles = computed(() => [
-  ...scores.value.map((s) => ({ key: s.key, icon: s.meta.icon, label: s.meta.name, value: s.score, unit: s.label, sub: s.meta.span })),
-  ...(ready.value ? [{ key: "recovery", icon: "gauge", label: "Readiness", value: ready.value.score!, unit: ready.value.label ?? "", sub: "Today" }] : []),
+  ...scores.value.map((s) => ({ key: s.key, icon: s.meta.icon, label: s.meta.name, value: s.score, sub: `${s.label} · ${s.meta.span}` })),
+  ...(ready.value ? [{ key: "recovery", icon: "gauge", label: "Readiness", value: ready.value.score!, sub: `${ready.value.label ? ready.value.label + " · " : ""}Today` }] : []),
 ]);
-// Readiness's parts as rows, in the words Home's Readiness block uses: the value against your usual and how far off it is
-const PART: Record<ReadinessPart["key"], { icon: string; t: string; f: (v: number) => string }> = {
-  sleep: { icon: "moon", t: "Sleep", f: (h) => mins(h * 60) }, restingHr: { icon: "heartPulse", t: "Resting heart rate", f: (v) => `${Math.round(v)} bpm` },
-  hrv: { icon: "wave", t: "HRV", f: (v) => `${Math.round(v)} ms` }, load: { icon: "load", t: "Training load", f: (v) => `${num(v)} in 7 days` },
-};
-const readyRows = computed<ScoreRow[]>(() => (ready.value?.parts ?? []).filter((x) => x.value != null && x.baseline != null).map((x) => {
-  const p = PART[x.key];
-  const off = x.key === "load" ? `${x.change! < 0 ? "-" : "+"}${Math.abs(Math.round(x.change!))}%` : `${x.value! - x.baseline! < 0 ? "-" : "+"}${p.f(Math.abs(x.value! - x.baseline!))}`;
-  return { key: x.key, icon: p.icon, t: p.t, s: `${p.f(x.value!)} · usual ${x.key === "load" ? `${num(x.baseline!)} a week` : p.f(x.baseline!)}`,
-    r: x.effect === "flat" ? "As usual" : off, tone: x.effect === "up" ? "pos" : x.effect === "down" ? "neg" : undefined };
-}));
+// Readiness's parts in the rows Home's Readiness block shows (core/readiness.ts)
+const readyRows = computed(() => (ready.value ? readinessRows(ready.value, num) : []));
+// the scores follow the adult guidelines: under 18 the server sends none and says why (minor); Readiness, from your
+// own usual, still shows
+const minor = computed(() => !!sq.data.value?.minor);
 </script>
 
 <template>
   <div v-if="sq.isLoading.value" class="empty">Loading…</div>
+  <div v-else-if="minor && !tiles.length" class="card empty"><Icon name="gauge" :size="34" /><b>No scores under 18</b>The scores follow the guidelines for adults, which differ for children and teens.</div>
   <div v-else-if="!tiles.length" class="card empty"><Icon name="gauge" :size="34" /><b>No scores yet</b>Scores come once a week of sleep, steps, heart rate or workouts is in.</div>
   <template v-else>
     <!-- the scores' numbers, as Steps', Sleep's and Heart's tiles -->
     <div class="grid g4" :class="tiles.length < 4 ? `n${tiles.length}` : ''">
       <div v-for="(x, i) in tiles" :key="x.key" class="card stat" :class="{ hero: i === 0 }"><div class="lbl"><span class="bi"><Icon :name="x.icon" :size="15" /></span>{{ x.label }}</div>
-        <div class="val">{{ x.value }}<small>{{ x.unit }}</small></div><div class="sub">{{ x.sub }}</div></div>
+        <div class="val">{{ x.value }}</div><div class="sub">{{ x.sub }}</div></div>
     </div>
 
     <!-- each score's parts as Stats → Heart's What stands out rows, then why and what it is based on -->
@@ -68,6 +64,7 @@ const readyRows = computed<ScoreRow[]>(() => (ready.value?.parts ?? []).filter((
         </div>
       </div>
       <div class="tiny sc-line">{{ SCORE_SOURCES.recovery }}</div>
+      <div v-if="minor" class="tiny sc-line">Sleep, activity and strength scores follow the adult guidelines, so they start at 18.</div>
     </div>
   </template>
 </template>

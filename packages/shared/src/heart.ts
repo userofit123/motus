@@ -28,19 +28,27 @@ export function zoneOf(bpm: number, max: number): number {
 export const SAMPLE_MAX_S = 300;
 
 /**
- * Minutes in each zone from heart rate samples ([unix seconds, bpm], any order), each counting for the time up to the
- * next one (at most SAMPLE_MAX_S; the last one a minute). by: groups them (a day's key from its time), else one group "".
+ * Walks heart rate samples ([unix seconds, bpm], any order) in time order, each with the seconds it counts for: the time
+ * up to the next one, at most SAMPLE_MAX_S, the last one a minute. Zone minutes and the health scores' effort minutes
+ * both count through this, so a minute is the same minute everywhere.
+ */
+export function eachSample(samples: readonly (readonly [number, number])[], fn: (t: number, bpm: number, secs: number) => void): void {
+  const s = [...samples].sort((a, b) => a[0] - b[0]);
+  for (let i = 0; i < s.length; i++) fn(s[i]![0], s[i]![1], i + 1 < s.length ? Math.min(SAMPLE_MAX_S, s[i + 1]![0] - s[i]![0]) : 60);
+}
+
+/**
+ * Minutes in each zone from heart rate samples ([unix seconds, bpm], any order), each counting as eachSample says.
+ * by: groups them (a day's key from its time), else one group "".
  */
 export function zoneMinutes(samples: readonly (readonly [number, number])[], max: number, by: (t: number) => string = () => ""): Map<string, number[]> {
-  const s = [...samples].sort((a, b) => a[0] - b[0]);
   const out = new Map<string, number[]>();
-  for (let i = 0; i < s.length; i++) {
-    const z = zoneOf(s[i]![1], max);
-    if (z < 0) continue;
-    const secs = i + 1 < s.length ? Math.min(SAMPLE_MAX_S, s[i + 1]![0] - s[i]![0]) : 60;
-    const k = by(s[i]![0]), row = out.get(k) ?? out.set(k, HR_ZONES.map(() => 0)).get(k)!;
+  eachSample(samples, (t, bpm, secs) => {
+    const z = zoneOf(bpm, max);
+    if (z < 0) return;
+    const k = by(t), row = out.get(k) ?? out.set(k, HR_ZONES.map(() => 0)).get(k)!;
     row[z]! += secs / 60;
-  }
+  });
   return out;
 }
 
