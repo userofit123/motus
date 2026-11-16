@@ -344,8 +344,9 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener2 {
     }
 
     /** A Voice cue spoken now while the app is on screen (`text`, `level` 0-1): the WebView has no speech of its own.
-     *  Answers once the phone has begun saying it (`problem` left out) or why it couldn't (Voice.Heard), so the app can
-     *  say so rather than stay silent; one with no answer within SPEAK_ANSWER_MS counts as an engine that won't start.
+     *  Answers once the phone has said it (`problem` left out) or why it couldn't (Voice.Heard), so the app can say so
+     *  rather than stay silent. Voice lets go of a stuck engine itself and answers "timeout"; SPEAK_ANSWER_MS, longer
+     *  than any of its own waits, only makes sure the app is never left without an answer.
      *  `test`: asked for by hand (Voice cues just turned on), so an engine that failed a moment ago is tried again. */
     @PluginMethod
     public void speak(PluginCall call) {
@@ -358,9 +359,9 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener2 {
             call.resolve(r);
         };
         Voice.say(getContext(), call.getString("text", ""), level == null ? 1f : level.floatValue(), Boolean.TRUE.equals(call.getBoolean("test", false)), heard);
-        new Handler(Looper.getMainLooper()).postDelayed(() -> heard.done("engine"), SPEAK_ANSWER_MS);
+        new Handler(Looper.getMainLooper()).postDelayed(() -> heard.done("timeout"), SPEAK_ANSWER_MS);
     }
-    private static final long SPEAK_ANSWER_MS = 10_000;
+    private static final long SPEAK_ANSWER_MS = 30_000;
 
     /** Starts the phone's speech engine as a rest with Voice cues begins, so its first cue isn't held up by the start. */
     @PluginMethod

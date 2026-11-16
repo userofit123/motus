@@ -1,6 +1,7 @@
 package org.motus.app;
 
 import android.content.Context;
+import android.content.Intent;
 import android.media.AudioAttributes;
 import android.media.AudioFocusRequest;
 import android.media.AudioManager;
@@ -29,11 +30,20 @@ final class Voice {
     // a failed start waits this long before the next try, doubled each time up to MAX_WAIT_MS, so a phone without a
     // working engine isn't bound to it again on every cue
     private static final long FIRST_WAIT_MS = 2_000, MAX_WAIT_MS = 5 * 60_000;
+    // an engine not started within START_MS, or a cue not begun within BEGIN_MS or not finished within SAY_MAX_MS, is
+    // stuck (bound but never answering): it is let go so the next cue gets a fresh one rather than waiting on it for
+    // good. Timed by elapsedRealtime, which runs on while the phone sleeps, and also checked as each cue comes in, so a
+    // cue with the screen locked (RestCues) never waits on an engine that got stuck at an earlier one.
+    private static final long START_MS = 6_000, BEGIN_MS = 5_000, SAY_MAX_MS = 15_000;
     private static Context app;
     private static TextToSpeech tts;
     private static boolean ready;
     private static int failures;
-    private static long retryAt;
+    private static long retryAt, madeAt, spokeAt;
+    // the engine has an English voice (pickLanguage): without one a cue isn't said in another language's voice
+    private static boolean english;
+    // why there is no engine to use: "none" (no speech engine on the phone) or "engine" (it failed to start)
+    private static String down = "engine";
     // the one cue waiting for the engine to start (a newer one replaces it: only the latest is still worth saying)
     private static String pendingText;
     private static float pendingLevel;
@@ -43,17 +53,19 @@ final class Voice {
     private static boolean started;
     private static AudioFocusRequest focus;
     // a call coming in (or another app taking the sound for a while, or for good): the cue stops rather than talking over
-    // it; a short duck (a notification sound) lets it carry on
+    // it, and is answered "busy", as it wasn't heard whole; a short duck (a notification sound) lets it carry on
     private static final AudioManager.OnAudioFocusChangeListener ON_FOCUS = change -> {
         if (change == AudioManager.AUDIOFOCUS_LOSS || change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT)
-            main.post(() -> { pendingText = null; answer(true, null); if (tts != null && ready && current != null) { tts.stop(); answer(false, null); release(); } });
+            main.post(() -> { pendingText = null; answer(true, "busy"); if (tts != null && ready && current != null) { tts.stop(); answer(false, "busy"); release(); } });
     };
 
     private Voice() {}
 
-    /** What became of a cue: `problem` null when it was said (or a newer cue took its place), else why not: "engine" (no
-     *  speech engine, or it won't start), "voice" (its voice is still downloading), "network" (the voice needs the
-     *  internet), "busy" (the sound is taken, as by a call), "error" (anything else). Answered once. */
+    /** What became of a cue, once it was said to its end: `problem` null when it was (or a newer cue took its place),
+     *  else why not: "none" (no speech engine on the phone), "engine" (there is one, but it won't start or work),
+     *  "timeout" (it didn't answer), "language" (it has no English voice), "voice" (its voice isn't downloaded yet),
+     *  "network" (the voice needs the internet), "busy" (the sound was taken, as by a call), "error" (anything else).
+     *  Answered once. */
     interface Heard { void done(String problem); }
     private static final Heard NOBODY = problem -> {};
     // who hears back about the cue waiting for the engine, and about the one being said
@@ -67,7 +79,7 @@ final class Voice {
     /** Starts the engine ahead of a cue, so the cue isn't held up by it. */
     static void warm(Context ctx) {
         Context a = ctx.getApplicationContext();
-        main.post(() -> { app = a; engine(); });
+        main.post(() -> { app = a; unstick(); engine(); });
     }
 
     /** Says `text` at `level` (0-1), in place of anything still being said. */
@@ -80,8 +92,9 @@ final class Voice {
         Context a = ctx.getApplicationContext();
         main.post(() -> {
             app = a;
+            unstick();
             if (retry && tts == null) retryAt = 0;
-            if (engine() == null) { heard.done("engine"); return; }
+            if (engine() == null) { heard.done(down); return; }
             if (ready) { answer(false, null); currentHeard = heard; speak(text, level, false); }
             else { answer(true, null); pendingText = text; pendingLevel = level; pendingHeard = heard; }
         });
@@ -99,22 +112,22 @@ final class Voice {
 
     private static TextToSpeech engine() {
         if (tts != null) return tts;
-        if (app == null || SystemClock.uptimeMillis() < retryAt) return null;
+        if (app == null) { down = "engine"; return null; }
+        if (!installed()) { down = "none"; return null; }
+        if (SystemClock.uptimeMillis() < retryAt) { down = "engine"; return null; }
         final TextToSpeech[] made = new TextToSpeech[1];
         try {
             made[0] = new TextToSpeech(app, status -> main.post(() -> {
                 if (made[0] != tts) return; // given up meanwhile (drop shut it down)
                 if (status != TextToSpeech.SUCCESS) { failed(); return; }
                 ready = true;
-                // the cues are English, as the app is: the phone's own English, else British, American, any English
-                Locale own = Locale.getDefault();
-                for (Locale l : new Locale[] { own.getLanguage().equals("en") ? own : null, Locale.UK, Locale.US, Locale.ENGLISH }) {
-                    if (l != null && tts.isLanguageAvailable(l) >= TextToSpeech.LANG_AVAILABLE) { tts.setLanguage(l); break; }
-                }
+                english = pickLanguage();
                 tts.setSpeechRate(1.05f);
                 tts.setAudioAttributes(ATTRS);
                 tts.setOnUtteranceProgressListener(new UtteranceProgressListener() {
-                    @Override public void onStart(String id) { main.post(() -> { if (id.equals(current)) { started = true; answer(false, null); } }); }
+                    // begun: back on screen it is left to finish (stop); answered only at its end, so a cue cut off
+                    // part way (a call) is told as not heard
+                    @Override public void onStart(String id) { main.post(() -> { if (id.equals(current)) started = true; }); }
                     // a cue said to its end: the engine works, so the wait after failures starts over (not when it
                     // merely started: one that starts and then can't speak would otherwise retry at once every time)
                     @Override public void onDone(String id) { main.post(() -> { failures = 0; ended(id); }); }
@@ -125,11 +138,33 @@ final class Voice {
                 if (pendingText != null) { String t = pendingText; pendingText = null; currentHeard = pendingHeard; pendingHeard = NOBODY; speak(t, pendingLevel, true); }
             }));
             tts = made[0];
+            madeAt = SystemClock.elapsedRealtime();
+            english = false;
+            main.postDelayed(Voice::unstick, START_MS + 50);
         } catch (RuntimeException e) {
             tts = made[0]; // shut down by failed() if it got as far as binding
             failed();
         }
         return tts;
+    }
+
+    /** A speech engine is on the phone at all (the manifest's TTS_SERVICE query lets the app see one). */
+    @SuppressWarnings("deprecation")
+    private static boolean installed() {
+        try { return !app.getPackageManager().queryIntentServices(new Intent(TextToSpeech.Engine.INTENT_ACTION_TTS_SERVICE), 0).isEmpty(); }
+        catch (RuntimeException e) { return true; } // can't tell: the engine's own start says
+    }
+
+    /** The cues are English, as the app is: the phone's own English, else British, American, any English. False when the
+     *  engine has none of them, or has them without their voice (LANG_MISSING_DATA). */
+    private static boolean pickLanguage() {
+        Locale own = Locale.getDefault();
+        for (Locale l : new Locale[] { own.getLanguage().equals("en") ? own : null, Locale.UK, Locale.US, Locale.ENGLISH }) {
+            if (l == null) continue;
+            try { if (tts.setLanguage(l) >= TextToSpeech.LANG_AVAILABLE) return true; }
+            catch (RuntimeException ignored) { /* the engine went away: speaking finds that out */ }
+        }
+        return false;
     }
 
     /** The engine didn't start or stopped working: let it go (unbinding it) and wait longer before the next try. */
@@ -138,8 +173,22 @@ final class Voice {
         answer(true, "engine");
         answer(false, "engine");
         drop();
+        down = "engine";
         failures++;
         retryAt = SystemClock.uptimeMillis() + Math.min(MAX_WAIT_MS, FIRST_WAIT_MS << Math.min(failures - 1, 16));
+    }
+
+    /** Lets go of a stuck engine (START_MS, BEGIN_MS, SAY_MAX_MS): whoever waits on it hears "timeout", and the next cue
+     *  starts a fresh one at once (it is let go only after the wait, so it isn't bound anew on every cue either). */
+    private static void unstick() {
+        if (tts == null) return;
+        long now = SystemClock.elapsedRealtime();
+        boolean stuck = !ready ? now - madeAt > START_MS : current != null && now - spokeAt > (started ? SAY_MAX_MS : BEGIN_MS);
+        if (!stuck) return;
+        pendingText = null;
+        answer(true, "timeout");
+        answer(false, "timeout");
+        drop();
     }
 
     private static void drop() {
@@ -151,6 +200,10 @@ final class Voice {
 
     /** `again`: the engine was just made anew for this cue, so a second failure isn't tried a third time. */
     private static void speak(String text, float level, boolean again) {
+        // no English voice: said in no voice rather than read out by another language's; looked for again at each cue,
+        // so one downloaded meanwhile is used
+        if (!english) english = pickLanguage();
+        if (!english) { answer(false, "language"); return; }
         Bundle p = new Bundle();
         p.putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, Math.max(0f, Math.min(1f, level)));
         String id = "motus-cue-" + (++utterances);
@@ -158,23 +211,29 @@ final class Voice {
         started = false;
         // refused (a phone call going on): not said, rather than over the call
         if (!hold()) { release(); answer(false, "busy"); return; }
-        if (tts.speak(text, TextToSpeech.QUEUE_FLUSH, p, id) == TextToSpeech.SUCCESS) return;
+        spokeAt = SystemClock.elapsedRealtime();
+        if (tts.speak(text, TextToSpeech.QUEUE_FLUSH, p, id) == TextToSpeech.SUCCESS) {
+            main.postDelayed(Voice::unstick, BEGIN_MS + 50);
+            main.postDelayed(Voice::unstick, SAY_MAX_MS + 50);
+            return;
+        }
         // the engine died under us (updated or killed by Android): a fresh one says it, once
         if (again) { failed(); return; }
         Heard h = currentHeard;
         currentHeard = NOBODY;
         drop();
         pendingText = text; pendingLevel = level; pendingHeard = h;
-        if (engine() == null) { pendingText = null; answer(true, "engine"); }
+        if (engine() == null) { pendingText = null; answer(true, down); }
     }
 
     private static void ended(String id) {
         if (!id.equals(current)) return;
-        answer(false, null); // stopped before it began (a newer cue took over): not a fault
+        answer(false, null); // said, or stopped before it began (a newer cue took over): not a fault
         release();
     }
 
     private static String problemOf(int code) {
+        // also "no voice installed for this language" on some engines: the app's message covers both
         if (code == TextToSpeech.ERROR_NOT_INSTALLED_YET) return "voice";
         if (code == TextToSpeech.ERROR_NETWORK || code == TextToSpeech.ERROR_NETWORK_TIMEOUT) return "network";
         if (code == TextToSpeech.ERROR_OUTPUT) return "busy";

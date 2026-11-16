@@ -15,7 +15,8 @@ const emit = defineEmits<{ set: [v: unknown] }>();
 const play = (id: unknown) => (props.row.key === "tickSound" ? previewTick : previewCue)({ ...props.prefs, [props.row.key]: id });
 // a new volume is played at once, so you hear what you chose
 function setNum(v: number) { emit("set", v); if (props.row.key === "cueVolume") previewCue({ ...props.prefs, cueVolume: v }); }
-// Voice cues turned on are heard at once too (the rest over sound, then the words), or told why they can't be
+// Voice cues turned on are heard at once too (the rest over sound, then the words; only the words during a rest), or
+// told why they can't be
 function setOn(on: boolean) { emit("set", on); if (on && props.row.key === "voice") previewVoice(props.prefs); }
 const label = (v: unknown) => props.row.options?.find((o) => o.value === v)?.label ?? "";
 </script>

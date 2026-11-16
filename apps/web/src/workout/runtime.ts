@@ -5,6 +5,7 @@ import { reactive, ref } from "vue";
 import { readJson, writeJson } from "../core/prefs";
 import { withDefaults, cleanWorkoutSound, cleanCueVolume, SOUND_IDS, REST_OVER_SOUND_DEFAULT, COUNTDOWN_SOUND_DEFAULT, type SoundId, type WorkoutSound } from "@motus/shared";
 import { soundUrl } from "../core/sounds";
+import { VOICE_EXAMPLE } from "../core/workoutPrefs";
 import { api } from "../api/client";
 import { queryClient } from "../api/live";
 import { showRestCountdown, clearRestCountdown, scheduleRestAlarm, cancelRestAlarm, scheduleRestCues, cancelRestCues, notifyRestOverWeb, isNativeApp, backgroundTimers, nativeVibrate, nativeSpeak, nativeWarmVoice, type NativeVoiceProblem } from "./native";
@@ -337,15 +338,21 @@ function warmVoice() {
 // Said once a session: Voice cues are on but this device can't speak them, so their silence isn't taken for a fault
 const toldNoVoice = new Set<string>();
 /** Says once why a voice cue wasn't spoken (`always`: every time), by the speech engine's reason: the browser's, or the
- *  Android app's (NativeVoiceProblem); none: no voice installed. */
+ *  Android app's (NativeVoiceProblem); none: no voice installed. Each says the cause, then what to do. */
 function noVoice(why?: SpeechSynthesisErrorCode | NativeVoiceProblem, always = false) {
-  const text = why === "engine" ? "This phone has no speech engine, so Voice cues can't be spoken. Install Speech Services by Google from the Play Store"
-    : why === "voice" ? "The phone's voice is still downloading, so Voice cues can't be spoken yet. Try again in a few minutes"
-    : why === "not-allowed" ? "The browser blocked Voice cues until you tap or click in Motus once"
-    : why === "audio-busy" || why === "audio-hardware" || why === "busy" ? "Voice cues couldn't be spoken: the sound is in use or unavailable"
-    : why === "network" ? "Voice cues couldn't be spoken: this voice needs an internet connection"
-    : !why || why === "synthesis-unavailable" || why === "voice-unavailable" || why === "language-unavailable" ? "No voice found on this device, so Voice cues can't be spoken"
-    : "Voice cues couldn't be spoken";
+  const text = why === "none" ? "This phone has no speech engine, so Voice cues can't be spoken. Install Speech Services by Google from the Play Store"
+    : why === "engine" ? "The phone's speech engine isn't working, so Voice cues can't be spoken. Check the phone's Text-to-speech settings, or install Speech Services by Google"
+    : why === "timeout" ? "The phone's speech engine didn't answer, so Voice cues weren't spoken. Try again, or check the phone's Text-to-speech settings"
+    : why === "app" ? "Motus couldn't reach the phone's speech engine, so Voice cues weren't spoken. Close Motus and open it again"
+    // "voice" is also an engine's "no voice for this language": either way the fix is downloading it, not waiting
+    : why === "language" ? "The phone has no English voice, so Voice cues can't be spoken. Download one in the phone's Text-to-speech settings"
+    : why === "voice" ? "The phone's English voice isn't downloaded yet, so Voice cues can't be spoken. Download it in the phone's Text-to-speech settings"
+    : why === "not-allowed" ? "The browser blocks Voice cues until you use the page, so they weren't spoken. Tap or click anywhere in Motus once"
+    : why === "audio-busy" || why === "busy" ? "A call or another app was using the sound, so Voice cues weren't spoken. Try again once the sound is free"
+    : why === "audio-hardware" ? "This device's sound isn't working, so Voice cues can't be spoken. Check its speaker or headphones"
+    : why === "network" ? "This voice needs the internet, so Voice cues weren't spoken. Connect to the internet, or download the voice in the Text-to-speech settings"
+    : !why || why === "synthesis-unavailable" || why === "voice-unavailable" || why === "language-unavailable" ? "This device has no voice installed, so Voice cues can't be spoken. Install a text-to-speech voice in its settings"
+    : "The speech engine gave an error, so Voice cues weren't spoken. Try again";
   if (toldNoVoice.has(text) && !always) return;
   toldNoVoice.add(text);
   toast(text, { kind: "err", ms: 6000 });
@@ -360,8 +367,10 @@ export function elapsed(w: { startedAt: string; pausedS: number; pauseStartedAt:
 export const previewCue = (v: CueVoice) => restOver({ ...v, sound: true });
 export const previewTick = (v: CueVoice) => note({ ...v, sound: true }, 0);
 /** Voice cues as a rest's end gives them, heard where they are turned on: the rest over sound, then the words after it
- *  (an example set, as no workout is open), at the volume chosen there. Says why when the voice can't be heard. */
+ *  (the example in the setting's hint, workoutPrefs.ts VOICE_EXAMPLE), at the volume chosen there. During a running
+ *  rest only the words: a rest over sound then would sound like the rest ending. Says why when the voice can't be heard. */
 export function previewVoice(v: CueVoice) {
-  restOver({ ...v, sound: true });
-  speak("Rest over. Bench press, set 3, 8 reps", { ...v, sound: true }, true);
+  const sound = !restActive();
+  restOver({ ...v, sound });
+  speak(VOICE_EXAMPLE, { ...v, sound }, true);
 }

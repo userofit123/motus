@@ -277,9 +277,11 @@ export function clearIntervalNotice() {
   plugin("MotusWorkout")?.clearTimer?.().catch?.(() => {});
   void closeWebNotice("motus-timer");
 }
-/** Why the phone didn't say a voice cue (Voice.java Heard): no working speech engine, its voice still downloading,
- *  a voice that needs the internet, the sound taken (a call), or anything else. */
-export type NativeVoiceProblem = "engine" | "voice" | "network" | "busy" | "error";
+/** Why the phone didn't say a voice cue (Voice.java Heard): no speech engine on the phone ("none"), one that won't
+ *  start or work ("engine"), one that didn't answer ("timeout"), no English voice ("language"), its voice not downloaded
+ *  ("voice"), a voice that needs the internet, the sound taken (a call), anything else, or the app's own call to the
+ *  phone failing ("app"). */
+export type NativeVoiceProblem = "none" | "engine" | "timeout" | "language" | "voice" | "network" | "busy" | "error" | "app";
 /** Speaks a voice cue through the phone's own speech in the Android app (MotusWorkoutPlugin.speak), at `level` (0-1,
  *  workout/runtime.ts levelOf). Answers with why it wasn't said (null: it was), once the phone knows; false outside the
  *  app, where the caller uses the browser's. `test`: asked for by hand, so a speech engine that failed a moment ago is
@@ -289,8 +291,8 @@ export function nativeSpeak(text: string, level: number, test = false): Promise<
   if (!p || !isNativeApp() || typeof p.speak !== "function") return false;
   return Promise.resolve(p.speak({ text, level, test })).then(
     (r: { problem?: NativeVoiceProblem } | undefined) => r?.problem ?? null,
-    // the call itself failed: the phone's speech can't be reached, as good as no engine
-    () => "engine" as const);
+    // the call itself failed: the app couldn't reach the phone's speech at all (not the engine's fault)
+    () => "app" as const);
 }
 /** Starts the phone's speech engine in the Android app as a rest with Voice cues begins (MotusWorkoutPlugin.warmVoice),
  *  so the first cue isn't held up by its start; false outside it or in an older app without it. */

@@ -123,7 +123,8 @@ public class RestCues extends BroadcastReceiver {
             played = true;
         }
         // the voice after the sound (the WARN and END alarms have one note each), dropped with it when it is too late,
-        // and taken off with the notes when the app comes back (cancel; MotusWorkoutPlugin.cancelRestCues also stops one being said)
+        // and taken off with the notes when the app comes back (cancel; MotusWorkoutPlugin.cancelRestCues also stops one being said);
+        // an engine stuck since an earlier cue is let go as this one comes in (Voice.unstick), so it is said by a fresh one
         String say = intent.getStringExtra("say");
         float level = (float) Math.pow(Math.max(10, Math.min(100, volume)) / 100.0, 2);
         boolean speaks = played && say != null;

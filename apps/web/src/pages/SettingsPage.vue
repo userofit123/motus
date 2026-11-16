@@ -19,7 +19,8 @@ import NumStep from "../components/NumStep.vue";
 import RadioList from "../components/RadioList.vue";
 import { PROGRESSION_MODES, LOWER_AFTER, MISSED_HINT, PROGRESSION_INTRO, RANGE_BOTTOM_HINT, RANGE_TOP_HINT } from "../core/progression";
 import PrefRow from "../components/PrefRow.vue";
-import { prefGroups } from "../core/workoutPrefs";
+import { prefGroups, featurePatch } from "../core/workoutPrefs";
+import { previewVoice } from "../workout/runtime";
 import ChoiceTiles from "../components/ChoiceTiles.vue";
 import Menu from "../components/Menu.vue";
 import BackupSection from "../components/settings/BackupSection.vue";
@@ -66,6 +67,12 @@ const parentName = computed(() => (sub.value ? SECTIONS.value.find((x) => x[0] =
 const go = (k: string) => router.push(`/settings/${k}`);
 const DAY_OPTS = computed(() => weekdayOrder(s.value.firstDay).map((d) => ({ value: d, label: WEEKDAYS[d]!.slice(0, 3) })));
 const set = (patch: Record<string, unknown>) => saveSettings(patch);
+// Voice cues switched on here are ready to hear at once (featurePatch turns on their setting and Play sounds), and an
+// example is spoken now, as by their own switch, so you know straight away whether this device can speak them
+function setFeature(id: string, on: boolean) {
+  void set(featurePatch(id, on));
+  if (id === "voice" && on) previewVoice(s.value.workout);
+}
 // Progression's steps are kept in kg and shown in your weight unit
 const wIn = (kg: number) => Math.round(fromKg(kg, s.value.units.weight) * 100) / 100;
 const kgOf = (v: number) => toKg(v, s.value.units.weight);
@@ -247,7 +254,7 @@ await loaded(me);
         <template v-else-if="sec === 'features'">
           <p class="muted" style="margin:0">Motus shows only what you use. Switch on what you want; switched off, a feature is gone from every screen.</p>
           <template v-for="[g, fs] in groups" :key="g"><div class="sh"><h2>{{ g }}</h2></div>
-            <div class="card"><label v-for="f in fs" :key="f.id" class="tgl"><div class="grow"><div class="t">{{ f.name }}</div><div class="s">{{ f.desc }}</div></div><span class="tg"><input type="checkbox" :checked="!!s.features[f.id]" @change="set({ features: { [f.id]: ($event.target as HTMLInputElement).checked } })" /></span></label></div></template>
+            <div class="card"><label v-for="f in fs" :key="f.id" class="tgl"><div class="grow"><div class="t">{{ f.name }}</div><div class="s">{{ f.desc }}</div></div><span class="tg"><input type="checkbox" :checked="!!s.features[f.id]" @change="setFeature(f.id, ($event.target as HTMLInputElement).checked)" /></span></label></div></template>
         </template>
 
         <template v-else-if="sec === 'appearance'">
