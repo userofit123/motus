@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // The phone's "More" tab: you at the top, the pages that don't fit in the tab bar, quick logging, then the way into
-// Settings. Settings itself holds every option; this page only links to the few you reach for often.
+// Settings; Appearance is the icon in the header. Settings itself holds every option; this page only links to the few you reach for often.
 import { computed } from "vue";
 import { useRouter } from "vue-router";
 import { logSheet, bodySheet, dailySheet, activitySheet, appearanceOpen } from "../core/ui";
@@ -26,7 +26,10 @@ const PAGES = computed<[to: string, label: string, icon: string, hint: string][]
 
 <template>
   <div class="page">
-    <div class="ph"><h1>More</h1></div>
+    <!-- Appearance sits in the header, one tap from the tab like the computer rail's Appearance button; a borderless icon
+         like the other phone headers' ⋮. data-theme-open keeps the panel's outside-click from closing it again -->
+    <div class="ph"><div><h1>More</h1></div>
+      <div class="acts"><button class="ib sm plain" data-theme-open aria-label="Appearance" title="Appearance" @click="appearanceOpen = !appearanceOpen"><Icon name="palette" /></button></div></div>
     <!-- you: opens your account -->
     <div class="card click me" role="button" tabindex="0" @click="router.push('/settings/account')" @keydown.enter="router.push('/settings/account')">
       <div class="av" aria-hidden="true">{{ initials }}</div>
@@ -51,8 +54,6 @@ const PAGES = computed<[to: string, label: string, icon: string, hint: string][]
 
     <div class="sh"><h2>App</h2></div>
     <div class="card flush">
-      <!-- data-theme-open keeps the panel's outside-click from closing it again -->
-      <div class="li click" data-theme-open @click="appearanceOpen = !appearanceOpen"><span class="bi sg"><Icon name="palette" :size="17" /></span><div class="grow"><div class="t">Appearance</div><div class="s">Colours, style, layout</div></div></div>
       <div class="li click" @click="router.push('/settings')"><span class="bi sg"><Icon name="settings" :size="17" /></span><div class="grow"><div class="t">Settings</div><div class="s">Workouts, units, features, your data</div></div><Icon name="right" :size="16" class="muted" /></div>
     </div>
   </div>
