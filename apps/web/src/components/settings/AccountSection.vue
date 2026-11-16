@@ -9,7 +9,7 @@ import { useQuery } from "@tanstack/vue-query";
 import { useMe } from "../../api/queries";
 import { api } from "../../api/client";
 import { invalidate } from "../../api/live";
-import { sync, schedule } from "../../api/replica";
+import { sync, schedule, removedText } from "../../api/replica";
 import { signOut, isLocalAccount } from "../../core/session";
 import { prompt } from "../../core/ask";
 import { toast, toastError, savedToast, savedError } from "../../core/toast";
@@ -78,7 +78,7 @@ async function deleteAccount() {
   </div>
 
   <div v-if="sync.on" class="card"><div class="li"><Icon name="refresh" :size="18" class="muted" /><div class="grow"><div class="t">Works offline</div>
-    <div class="s">{{ !sync.online ? "Can't reach the server: changes are saved on this device" : sync.syncing ? "Syncing…" : sync.lastAt ? `In sync · ${ago(new Date(sync.lastAt).toISOString())}` : "Getting ready" }}{{ sync.waiting ? ` · ${sync.waiting} waiting to be sent` : "" }}{{ sync.error ? ` · ${sync.error}` : "" }}</div></div>
+    <div class="s">{{ !sync.online ? "Can't reach the server: changes are saved on this device" : sync.syncing ? "Syncing…" : sync.lastAt ? `In sync · ${ago(new Date(sync.lastAt).toISOString())}` : "Getting ready" }}{{ sync.waiting ? ` · ${sync.waiting} waiting to be sent` : "" }}{{ sync.error ? ` · ${sync.error}` : "" }}{{ sync.removed ? ` · ${removedText(sync.removed, !sync.error)}` : "" }}</div></div>
     <button class="qb" :disabled="sync.syncing" @click="schedule(0)">Sync now</button></div></div>
 
   <template v-if="localAccount === false">

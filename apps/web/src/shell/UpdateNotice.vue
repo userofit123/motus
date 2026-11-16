@@ -4,10 +4,13 @@
 // Download update starts the download here, View opens App & Versions, the × hides it. With "Download updates
 // automatically" on, the download has already started when the notice shows, so it shows the progress instead of a
 // button. Only in the apps: a browser has nothing to download (the rail's Update button says what to do there).
+// The same bar also tells, until the × is pressed, that rows were removed from this device when its copy was made
+// again (sync.removed, api/replica.ts); that comes first, and the update notice follows once it is dismissed.
 // Never during a workout (§12.3.6): it waits until the workout ends (a background download may go on meanwhile).
 import { computed, onBeforeUnmount, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { updater, updateAvailable } from "../core/updater";
+import { sync, removedText, dismissRemoved } from "../api/replica";
 import { detectPlatform } from "../core/releases";
 import { useActive } from "../api/queries";
 import Icon from "../components/Icon.vue";
@@ -25,8 +28,9 @@ const active = useActive();
 const readyHere = computed(() => updater.ready && updater.stagedVersion === updateAvailable.value);
 // App & Versions says all this itself, so the notice keeps out of its way there. The workout check waits for the answer:
 // before it, "no workout" only means "not known yet", and the notice would flash when the app opens during a workout.
-const shown = computed(() => app && !!updateAvailable.value && dismissed.value !== updateAvailable.value
-  && active.isFetched.value && !active.data.value && route.path !== "/settings/versions");
+const removedShown = computed(() => sync.removed > 0);
+const shown = computed(() => removedShown.value || (app && !!updateAvailable.value && dismissed.value !== updateAvailable.value
+  && active.isFetched.value && !active.data.value && route.path !== "/settings/versions"));
 // screen readers announce a status line whose text changes, not one that arrives already filled, so the line is always
 // there and gets its text a moment after the notice shows (also when it shows as the app opens, once the line exists)
 const announce = ref("");
@@ -34,7 +38,7 @@ let timer: ReturnType<typeof setTimeout> | undefined;
 watch(shown, (on) => {
   clearTimeout(timer);
   announce.value = "";
-  if (on) timer = setTimeout(() => { announce.value = `Update available: ${updateAvailable.value}`; }, 150);
+  if (on) timer = setTimeout(() => { announce.value = removedShown.value ? removedText(sync.removed) : `Update available: ${updateAvailable.value}`; }, 150);
 }, { immediate: true });
 const sub = computed(() => (updater.downloading ? updater.status || "Downloading"
   : readyHere.value ? "Downloaded, ready to install"
@@ -46,7 +50,7 @@ function primary() {
   void updater.install();
 }
 const view = () => router.push("/settings/versions");
-const dismiss = () => { dismissed.value = updateAvailable.value; };
+const dismiss = () => { if (removedShown.value) void dismissRemoved(); else dismissed.value = updateAvailable.value; };
 
 // on the desktop the notice floats at the bottom: the short messages and the page's end make room for its height
 const el = ref<HTMLElement | null>(null);
@@ -63,6 +67,14 @@ onBeforeUnmount(() => { clearTimeout(timer); ro?.disconnect(); root.style.remove
 <template>
   <span class="upn-live" role="status">{{ announce }}</span>
   <div v-if="shown" ref="el" class="upn">
+    <template v-if="removedShown">
+      <span class="upn-ic"><Icon name="info" :size="15" /></span>
+      <div class="upn-txt">
+        <b>Removed from this device</b>
+        <div class="s">{{ removedText(sync.removed) }}</div>
+      </div>
+    </template>
+    <template v-else>
     <span class="upn-ic"><Icon name="download" :size="15" /></span>
     <div class="upn-txt">
       <b>Update available: {{ updateAvailable }}</b>
@@ -73,6 +85,7 @@ onBeforeUnmount(() => { clearTimeout(timer); ro?.disconnect(); root.style.remove
       <button type="button" class="btn tonal s" @click="view">View</button>
       <button v-if="!updater.downloading" type="button" class="btn s" @click="primary">{{ readyHere ? `Install ${updateAvailable}` : "Download update" }}</button>
     </div>
+    </template>
     <button type="button" class="ib sm plain" aria-label="Close" title="Close" @click="dismiss"><Icon name="close" :size="16" /></button>
   </div>
 </template>

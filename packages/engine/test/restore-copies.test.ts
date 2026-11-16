@@ -482,6 +482,31 @@ describe("a restore with Replace and the devices' copies", () => {
     expect(await replica.waitingCount(phone.e.db)).toBe(0);
   }, 180000);
 
+  it("keeps what it removed until the person has seen it, even when the sync fails right after the copy is made again", async () => {
+    const w = await world();
+    const phone = await w.device();
+    const off = await w.flaky("goals", "23514");
+    const { id: g } = await on(phone.e, w.U)("POST", "/goals", goal(20));
+    expect((await w.sync(phone)).refused.length).toBe(1);
+    await off();
+    await on(phone.e, w.U)("POST", "/goals", goal(30)); // waits to be sent, so the send after the copy is made again fails
+    await w.S("POST", "/import", { data: await w.backup(), mode: "replace" });
+    let remade = false;
+    // the send after the copy is made again fails (as the app would see on a dropped connection); whether the round
+    // ends well or not, the news is already in the copy
+    await replica.syncRound(phone.e.db, w.U, {
+      push: async (body) => { if (remade) throw new Error("server down"); return w.push(body); },
+      pull: (m) => w.S("GET", "/sync/pull", undefined, { since: String(m.cursor), device: m.device }),
+      catalog: () => w.S("GET", "/sync/catalog"),
+      snapshot: async () => { remade = true; return w.S("GET", "/sync/snapshot"); },
+    }).catch(() => {});
+    expect(remade).toBe(true);
+    expect(await replica.removedList(phone.e.db)).toEqual([{ tbl: "goals", pk: { id: g } }]);
+    expect((await phone.e.db.admin.query("SELECT value FROM app_meta WHERE key = 'sync_removed'")).rows[0].value).toEqual([{ tbl: "goals", pk: { id: g } }]);
+    await replica.clearRemoved(phone.e.db);
+    expect(await replica.removedList(phone.e.db)).toEqual([]);
+  }, 180000);
+
   it("keeps a row refused for good that changed here since, and sends it", async () => {
     const w = await world();
     const phone = await w.device();

@@ -31,9 +31,9 @@ async function saveMetaIn(q: Sql, patch: Partial<ReplicaMeta>) {
  * A row the server didn't take when it was sent (modules/sync.ts push), kept in app_meta 'sync_hold' (not a synced
  * table: it is this copy's own business). The row itself stays here as it is. refused: for good (another account's
  * id, a check it breaks...): not sent again unless it changes here again, and left out when the copy is made again
- * after a restore with Replace (remakeCopy) unless it changed here since. Otherwise it failed for a passing reason (a deadlock, a timeout): it still
- * waits to be sent, and is sent again from `next` on (ms), waiting longer after each try (retryWait). at: when it
- * changed here; op: what was sent.
+ * after a restore with Replace (remakeCopy) unless it changed here since. Otherwise it failed for a passing reason
+ * (a deadlock, a timeout): it still waits to be sent, and is sent again from `next` on (ms), waiting longer after each
+ * try (retryWait). at: when it changed here; op: what was sent.
  */
 export interface Hold { tbl: string; pk: Record<string, unknown>; at: string; op: "upsert" | "delete"; refused?: boolean; tries?: number; next?: number }
 async function holdsIn(q: Sql): Promise<Record<string, Hold>> {
@@ -43,6 +43,18 @@ async function saveHolds(q: Sql, holds: Record<string, Hold>) {
   await q.query("INSERT INTO app_meta (key, value) VALUES ('sync_hold', $1) ON CONFLICT (key) DO UPDATE SET value = $1", [JSON.stringify(holds)]);
 }
 export const holds = (db: Db) => holdsIn(db.admin);
+
+/**
+ * Rows gone from this device when its copy was made again (remakeCopy), kept in app_meta 'sync_removed' until the
+ * person has seen the notice about them (clearRemoved), so a failed sync or a closed app doesn't lose the news. Only
+ * which rows (table and key): what they held is gone with them.
+ */
+export interface Removed { tbl: string; pk: Record<string, unknown> }
+async function removedIn(q: Sql): Promise<Removed[]> {
+  return (await q.query("SELECT value FROM app_meta WHERE key = 'sync_removed'")).rows[0]?.value ?? [];
+}
+export const removedList = (db: Db) => removedIn(db.admin);
+export async function clearRemoved(db: Db) { await db.admin.query("DELETE FROM app_meta WHERE key = 'sync_removed'"); }
 /** How long a row that failed for a passing reason waits before its next try: 5 s, doubling, at most 10 minutes. */
 export const retryWait = (tries: number) => Math.min(5_000 * 2 ** Math.max(0, Math.min(tries, 20) - 1), 10 * 60_000);
 
@@ -174,7 +186,15 @@ export async function remakeCopy(db: Db, cat: { stamp: string; rows: Record<stri
       if (lost.has(keyOf(c.tbl, c.pk))) continue;
       await q.query("INSERT INTO sync_log (user_id, tbl, pk, op, at) VALUES ($1, $2, $3::jsonb, $4, $5)", [userId, c.tbl, JSON.stringify(c.pk), c.op, c.at]);
     }
-    return { ...meta, dropped: kept.filter((c) => lost.has(keyOf(c.tbl, c.pk))), leftOut };
+    const dropped = kept.filter((c) => lost.has(keyOf(c.tbl, c.pk)));
+    // told to the person in the same all-or-nothing step: a sync that fails right after still leaves the news (added to
+    // what they haven't seen yet)
+    if (dropped.length || leftOut.length) {
+      const seen = new Map((await removedIn(q)).map((r) => [keyOf(r.tbl, r.pk), r]));
+      for (const c of [...leftOut, ...dropped]) seen.set(keyOf(c.tbl, c.pk), { tbl: c.tbl, pk: c.pk });
+      await q.query("INSERT INTO app_meta (key, value) VALUES ('sync_removed', $1) ON CONFLICT (key) DO UPDATE SET value = $1", [JSON.stringify([...seen.values()])]);
+    }
+    return { ...meta, dropped, leftOut };
   });
 }
 

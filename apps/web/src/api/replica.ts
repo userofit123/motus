@@ -7,7 +7,19 @@ import { ApiError, NeedsServerError, httpTransport, server, setTransport, type R
 import { invalidate, setRemoteHandler } from "./live";
 import { readStr, writeStr } from "../core/prefs";
 
-export const sync = reactive({ on: false, online: true, syncing: false, waiting: 0, lastAt: 0, error: "" });
+// removed: rows gone from this device when its copy was made again, not yet seen (kept in the copy, R.removedList)
+export const sync = reactive({ on: false, online: true, syncing: false, waiting: 0, lastAt: 0, error: "", removed: 0 });
+/** What the person is told about rows removed from this device; with `failed` (kept here, refused) the two read together. */
+export const removedText = (n: number, alone = true) => !n ? ""
+  : alone ? `${n} item${n === 1 ? "" : "s"} that didn't fit the server's data ${n === 1 ? "was" : "were"} removed from this device`
+  : `${n} item${n === 1 ? "" : "s"} removed from this device`;
+/** The person has seen the notice: it goes, here and in the copy. */
+export async function dismissRemoved() {
+  sync.removed = 0;
+  await R?.clearRemoved(db);
+  await saved();
+}
+
 
 // what only the server can do: signing in, the admin pages, files, and sync itself
 // health/records: every Health Connect record (M-238), kept by the server only (too many for the copy here; Health
@@ -26,8 +38,6 @@ let eng: any = null, R: any = null, db: any = null, userId = "", name = "";
 let running = false, again = false, timer: ReturnType<typeof setTimeout> | null = null;
 // when the current run of failures began (0 = the last sync worked), and when the app was last brought back
 let failingSince = 0, shownAt = 0;
-// rows gone from this device when an outdated copy was made again at the start: told at the next sync (run)
-let removedAtStart: unknown[] = [];
 // what signing out has to undo, so the next person signing in on this tab starts clean
 let releaseLock = () => {}, stopEvents: AbortController | null = null, tick: ReturnType<typeof setInterval> | null = null;
 
@@ -151,12 +161,13 @@ export async function startReplica(user: { id: string }): Promise<boolean> {
       if (fresh) {
         // anything changed here since the check above is kept and sent (R.remakeCopy)
         if (remake) {
-          const made = await R.remakeCopy(db, fresh.cat, fresh.snap);
-          removedAtStart = [...made.leftOut, ...made.dropped];
+          await R.remakeCopy(db, fresh.cat, fresh.snap);
         }
         else { await R.loadCatalog(db, fresh.cat.stamp, fresh.cat.rows); await R.loadSnapshot(db, fresh.snap); }
       }
     }
+    // rows removed by that (or by a sync that failed before they were seen) are told until the person has seen them
+    sync.removed = (await R.removedList(db)).length;
     // nothing is saved on its own (pglite.ts): the tables and the first copy go to disk now, not with the first change
     await saved();
   } catch {
@@ -226,16 +237,10 @@ async function run(): Promise<Error | null> {
     // stay here, and aren't sent again unless changed)
     failed = r.refused.length;
     if (failed) console.warn("Sync: the server refused", r.refused);
-    // and rows gone from this device when its copy was made again (after a restore with Replace, or at the start for
-    // an outdated copy): refused ones, and ones that no longer fit the restored data (R.remakeCopy)
-    const removed = [...removedAtStart, ...r.removed];
-    removedAtStart = [];
-    if (removed.length) console.warn("Sync: removed from this device when its copy was made again", removed);
-    const n = removed.length;
-    const error = [
-      failed ? `${failed} change${failed === 1 ? "" : "s"} from this device didn't fit the server's data` : "",
-      n ? `${n} change${n === 1 ? "" : "s"} that didn't fit the server's data ${n === 1 ? "was" : "were"} removed from this device` : "",
-    ].filter(Boolean).join(" · ");
+    // rows removed from this device when its copy was made again are told by the notice (sync.removed, set below
+    // whatever the sync ends in), not by this line
+    if (r.removed.length) console.warn("Sync: removed from this device when its copy was made again", r.removed);
+    const error = failed ? `${failed} change${failed === 1 ? "" : "s"} from this device didn't fit the server's data` : "";
     ok = true;
     failingSince = 0;
     Object.assign(sync, { online: true, error, lastAt: Date.now() });
@@ -251,6 +256,8 @@ async function run(): Promise<Error | null> {
       sync.error = (e as Error).message;
     }
   } finally {
+    // also after a failed sync: the removal is kept in the copy, so it is told even if the rest of the sync didn't finish
+    if (R && db) sync.removed = (await R.removedList(db).catch(() => null))?.length ?? sync.removed;
     // a save lists every file and reads every IndexedDB key, and page reads queue behind it: only when this run wrote
     // locally (what came in, what was marked sent), or failed partway, when it may have
     if (wrote || !ok) await saved();
@@ -287,7 +294,7 @@ export async function eraseReplica() {
   if (tick) clearInterval(tick); tick = null;
   if (timer) clearTimeout(timer); timer = null;
   await db?.close().catch(() => {});
-  db = null; eng = null; userId = ""; failingSince = 0; removedAtStart = []; Object.assign(sync, { waiting: 0, error: "", syncing: false });
+  db = null; eng = null; userId = ""; failingSince = 0; Object.assign(sync, { waiting: 0, error: "", syncing: false, removed: 0 });
   releaseLock(); releaseLock = () => {};
   await dropDatabase(`/pglite/${name}`);
   writeStr(UNSENT(), "0");
