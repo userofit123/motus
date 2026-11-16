@@ -19,7 +19,7 @@ import { useSettings, useHealthScores } from "../../api/queries";
 import { useFmt, unitOf } from "../../core/format";
 import { useStepGoal } from "../../core/goals";
 import { mins } from "../../core/sleep";
-import { scoreRow } from "../../core/scores";
+import { minutesSplit, scoreRow } from "../../core/scores";
 import { fromWhere, useDevice } from "../../native/health";
 import Icon from "../Icon.vue";
 import Ring from "../Ring.vue";
@@ -207,8 +207,8 @@ type Insight = { key: string; icon: string; t: string; s: string; rv: string; to
 const insights = computed(() => {
   const out: Insight[] = [];
   const m = minutesPart.value;
-  // the tone is the score row's own rule
-  if (m) out.push({ key: "min", icon: "bolt", t: "Active minutes", s: `last 7 days · aim ${m.target} a week`, rv: `${n0(m.value)} of ${m.target}`, tone: scoreRow(m, n0).tone });
+  // the tone and the split are the score row's own; the aim stays in the result ("90 of 150"), as there
+  if (m) out.push({ key: "min", icon: "bolt", t: "Active minutes", s: `last 7 days · ${minutesSplit(m, n0)}`, rv: `${n0(m.value)} of ${m.target}`, tone: scoreRow(m, n0).tone });
   const k = nowStreak.value;
   if (k) out.push({ key: "streak", icon: "link", t: "Current streak", s: `goal reached every day since ${k.more ? "at least " : ""}${day(k.since!)}${k.todayDone ? "" : " · today still to go"}`,
     rv: `${k.days}${k.more ? "+" : ""} ${k.days === 1 ? "day" : "days"}`, tone: "pos" });

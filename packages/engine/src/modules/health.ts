@@ -269,19 +269,21 @@ type Effect = "up" | "down" | "flat";
 export interface ReadinessPart { key: "sleep" | "restingHr" | "hrv" | "load"; value: number; baseline: number; change: number; effect: Effect; ago?: 1 }
 type BodyKey = Exclude<ReadinessPart["key"], "load">;
 // the one line that says why, cause then advice: what each part that raised or lowered the score did, then what the
-// label advises. No day for the body's parts: their rows below already say "last night", "today" or "yesterday" beside
-// each value. The load keeps its 7 days, in the words Stats → Heart's Training load card uses ("more"/"less than usual").
+// label advises. Short enough for two lines on a phone (about 110 characters): no "than usual", which the block's
+// "Vs your usual" already says. Each cause says its own time where the line mixes periods: sleep names its night
+// ("last night", or "the night before last" when that is the newest night the score used), the load its 7 days; the
+// resting heart rate and HRV are the day's, which their rows below give ("today", or "yesterday").
 const WHY: Record<ReadinessPart["key"], { up: string; down: string }> = {
-  sleep: { up: "you slept more than usual", down: "you slept less than usual" },
+  sleep: { up: "you slept more last night", down: "you slept less last night" },
   restingHr: { up: "your resting heart rate is down", down: "your resting heart rate is up" },
   hrv: { up: "your HRV is up", down: "your HRV is down" },
-  load: { up: "you trained less than usual in the last 7 days", down: "you trained more than usual in the last 7 days" },
+  load: { up: "you trained less in the last 7 days", down: "you trained more in the last 7 days" },
 };
 // the parts a calm day names, so the line never claims a part the score left out (e.g. a night too short to count)
 const NAME: Record<ReadinessPart["key"], string> = { sleep: "sleep", restingHr: "resting heart rate", hrv: "HRV", load: "training" };
-const ADVICE = { Ready: "a good day to train hard", Normal: "train as planned", "Take it easy": "keep today's training light" } as const;
+const ADVICE = { Ready: "a good day to train hard", Normal: "train as planned", "Take it easy": "keep today light" } as const;
 // Normal when everything named pulled the score down: "train as planned" would contradict the reasons before it
-const NORMAL_DOWN = "keep today's training moderate";
+const NORMAL_DOWN = "keep today moderate";
 export interface ReadinessBuilding { key: BodyKey; value: number; days: number; ago?: 1 }
 /**
  * How ready for training the body looks today, from last night's sleep, today's resting heart rate and HRV, each against
@@ -296,9 +298,9 @@ export interface ReadinessBuilding { key: BodyKey; value: number; days: number; 
  *   clamped to 0-100. Ready from 75, Normal from 50, else Take it easy. No score with fewer than 2 body parts (sleep,
  *   resting heart rate, HRV): the load alone says nothing about how the body has recovered.
  * why: one line from the (at most two) parts that moved the score most, then what the label advises ("You slept less
- * than usual and your resting heart rate is up: keep today's training light"; a Normal day whose named parts all lowered
- * it: "keep today's training moderate"); each part's row gives its own day, so the line stays short. M-247's Recovery
- * score reuses this rather than working out its own. ago: a part's value is yesterday's (absent: today's).
+ * last night and your resting heart rate is up: keep today light"; a Normal day whose named parts all lowered it: "keep
+ * today moderate"); sleep names its night, the load its 7 days, so the line says which time each cause covers.
+ * M-247's Recovery score reuses this rather than working out its own. ago: a part's value is yesterday's (absent: today's).
  * change: sleep in minutes, resting heart rate and HRV in % (signed). effect: which way the part moves the score; flat
  * within a small margin (15 min of sleep, 3 % resting heart rate, 5 % HRV) that is everyday noise.
  * building: the parts with today's value but too few days for a usual yet (days of the `need`), so Home can show the
@@ -343,18 +345,22 @@ export function readiness(parts: { key: BodyKey; value: number; history: number[
   if (body < 2) return { score: null, label: null, why: null, parts: out, building, need: MIN_BASELINE };
   const s = Math.round(clamp(score, 0, 100));
   const label = s >= 75 ? "Ready" : s >= 50 ? "Normal" : "Take it easy";
-  return { score: s, label, why: whyLine(moved, out.map((p) => p.key), label), parts: out, building, need: MIN_BASELINE };
+  return { score: s, label, why: whyLine(moved, out.map((p) => p.key), label, out.some((p) => p.key === "sleep" && p.ago)), parts: out, building, need: MIN_BASELINE };
 }
 /** The readiness line: the one or two parts that moved the score most ("and" when they agree, "but" when not), then the
- *  advice: "You slept less than usual and your resting heart rate is up: keep today's training light." With none moved,
- *  the parts the score used: "Your resting heart rate and HRV are close to your usual: train as planned." */
-function whyLine(moved: Map<ReadinessPart["key"], number>, used: ReadinessPart["key"][], label: keyof typeof ADVICE): string {
+ *  advice: "You slept less last night and your resting heart rate is up: keep today light." With none moved, the parts
+ *  the score used: "Your resting heart rate and HRV are close to your usual: train as planned." sleepAgo: the night the
+ *  score used is the one before last (last night's has not synced yet). */
+function whyLine(moved: Map<ReadinessPart["key"], number>, used: ReadinessPart["key"][], label: keyof typeof ADVICE, sleepAgo = false): string {
   const top = [...moved].sort((a, b) => Math.abs(b[1]) - Math.abs(a[1])).slice(0, 2);
   if (!top.length) {
     const names = used.map((k) => NAME[k]).join(", ").replace(/, ([^,]*)$/, " and $1");
     return `Your ${names} are close to your usual: ${ADVICE[label]}.`;
   }
-  const word = ([k, p]: [ReadinessPart["key"], number]) => WHY[k][p > 0 ? "up" : "down"];
+  const word = ([k, p]: [ReadinessPart["key"], number]) => {
+    const w = WHY[k][p > 0 ? "up" : "down"];
+    return k === "sleep" && sleepAgo ? w.replace("last night", "the night before last") : w;
+  };
   // the second "you" goes when both start with it: "you trained ... and slept ..."
   const second = top[1] ? word(top[1]).replace(/^you (?=\S+ )/, word(top[0]!).startsWith("you ") ? "" : "you ") : "";
   const two = top[1] ? `${word(top[0]!)} ${(top[0]![1] > 0) === (top[1][1] > 0) ? "and" : "but"} ${second}` : word(top[0]!);
