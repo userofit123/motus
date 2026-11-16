@@ -49,8 +49,14 @@ function key(ev: KeyboardEvent) {
   if (ev.key === "ArrowRight") go(W.state.cur + 1);
   if (ev.key === "ArrowLeft") go(W.state.cur - 1);
 }
-onMounted(() => { if (W.prefs.value.keepAwake) keepAwake(true); addEventListener("keydown", key); });
-onBeforeUnmount(() => { keepAwake(false); removeEventListener("keydown", key); });
+// "Keep the screen on" follows the switch while the workout is open (the Workout settings popup can change it mid-way),
+// and is asked for again on coming back: a browser lets the screen lock go whenever the page is hidden
+let mounted = false;
+const awake = () => { if (mounted) keepAwake(W.prefs.value.keepAwake); };
+const onVisible = () => { if (document.visibilityState === "visible") awake(); };
+watch(() => W.prefs.value.keepAwake, awake);
+onMounted(() => { mounted = true; awake(); addEventListener("keydown", key); document.addEventListener("visibilitychange", onVisible); });
+onBeforeUnmount(() => { mounted = false; keepAwake(false); removeEventListener("keydown", key); document.removeEventListener("visibilitychange", onVisible); });
 // no workout any more (finished or discarded elsewhere): go home. Not while fetching: right after Start, the cached
 // answer is still "none" until the new workout arrives
 watch(() => W.active.isFetched.value && !W.active.isFetching.value && !reloadQueued.value && !W.active.data.value && !W.state.pending, (gone) => { if (gone) router.replace("/"); });

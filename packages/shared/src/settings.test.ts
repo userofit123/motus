@@ -64,6 +64,16 @@ describe("Goal order", () => {
     expect(out.firstDay).toBe(0);
     expect("weeklyGoal" in withDefaults({})).toBe(false);
   });
+  it("drops the settings nothing read: 1RM formula, layout, unsent notifications, backup time and photos, Ask before skipping", () => {
+    const out = withDefaults({ e1rm: "brzycki", layout: "phone", notifications: { scheduled: false, goals: true, updates: true, inactivity: true },
+      backup: { at: "03:00", media: false, keep: 7 }, workout: { confirmSkip: true, autoRest: false } });
+    const o = out as unknown as Record<string, unknown>;
+    expect("e1rm" in o || "layout" in o).toBe(false);
+    expect(out.notifications).toEqual({ scheduled: false });
+    expect(out.backup).toEqual({ on: true, every: "daily", keep: 7, encrypt: false });
+    expect("confirmSkip" in out.workout).toBe(false);
+    expect(out.workout.autoRest).toBe(false);
+  });
 });
 
 describe("Workout cue sound and volume", () => {

@@ -30,7 +30,9 @@ const save = () => writeJson("motusRest", rest);
 /** The sounds the cues play (rest over, countdown), and how loud (10-100 %). `sound` false ("Workout sounds" off):
  *  none plays; a preview leaves it out. `voice` (Voice cues, under Play sounds): the cues are also spoken, at the same level. */
 export interface CueVoice { cueSound: WorkoutSound; tickSound: WorkoutSound; cueVolume: number; sound?: boolean }
-export interface Cues extends CueVoice { sound: boolean; vibrate: boolean; warn10: boolean; voice: boolean; countdown: boolean; next?: boolean }
+/** `lockScreen` ("Rest timer on the lock screen"): off, the Android app's rest countdown stays in the shade but is hidden
+ *  on the lock screen. */
+export interface Cues extends CueVoice { sound: boolean; vibrate: boolean; warn10: boolean; voice: boolean; countdown: boolean; next?: boolean; lockScreen?: boolean }
 let cues: Cues = { sound: true, cueSound: REST_OVER_SOUND_DEFAULT, tickSound: COUNTDOWN_SOUND_DEFAULT, cueVolume: 100, vibrate: true, warn10: true, voice: false, countdown: true, next: true };
 // Whether `cues` holds a running workout's effective settings (account settings plus that workout's own overrides).
 // Only then do the background alarm and RestCues use it; otherwise the saved account settings apply.
@@ -39,9 +41,9 @@ let workoutCues = false;
 export const setCues = (c: Cues, forWorkout = true) => { cues = c; workoutCues = forWorkout; if (restActive()) prepare(c); };
 /** Sound and vibration as chosen in Settings → Workout, read from the settings the app has loaded, so they are right
  *  on any page (the cues above are only filled once a workout screen has been opened). */
-export function savedCues(): CueVoice & { sound: boolean; vibrate: boolean; warn10: boolean; countdown: boolean; voice: boolean } {
+export function savedCues(): CueVoice & { sound: boolean; vibrate: boolean; warn10: boolean; countdown: boolean; voice: boolean; lockScreen: boolean } {
   const all = withDefaults(queryClient.getQueryData<{ settings?: unknown }>(["settings", "me"])?.settings ?? {}), w = all.workout;
-  return { sound: w.sound, vibrate: w.vibrate, cueSound: w.cueSound, tickSound: w.tickSound, cueVolume: w.cueVolume, warn10: w.warn10, countdown: w.countdown, voice: w.voice && !!all.features.voice };
+  return { sound: w.sound, vibrate: w.vibrate, cueSound: w.cueSound, tickSound: w.tickSound, cueVolume: w.cueVolume, warn10: w.warn10, countdown: w.countdown, voice: w.voice && !!all.features.voice, lockScreen: w.lockScreen };
 }
 /** Vibrates in a pattern of on/off milliseconds. In the Android app through the phone itself (MotusWorkoutPlugin.vibrate):
  *  the WebView's navigator.vibrate counts as touch feedback (off or faint on many phones), is refused until the page
@@ -192,7 +194,7 @@ function dropAlarm() {
 }
 // a new end time: the countdown in the shade shows it, and in the background the alarm moves with it
 function restTimeSet() {
-  showRestCountdown(rest.endAt!, rest.next);
+  showRestCountdown(rest.endAt!, rest.next, (workoutCues ? cues : savedCues()).lockScreen !== false);
   if (hidden()) planAlarm();
 }
 if (typeof document !== "undefined") document.addEventListener("visibilitychange", () => { if (hidden()) planAlarm(); else { const covered = alarmOn; dropAlarm(); catchUpCues(covered); } });

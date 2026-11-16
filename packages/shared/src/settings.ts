@@ -52,7 +52,6 @@ export interface WorkoutPrefs {
   autoAdvance: boolean;
   showPrevious: boolean;
   showReminders: boolean;
-  confirmSkip: boolean;
 }
 
 export interface Settings {
@@ -70,7 +69,6 @@ export interface Settings {
   barKg: number;
   platesKg: number[];
   platesLb: number[];
-  e1rm: "epley" | "brzycki";
   /** the work week (Sunday = 0); null: from the first day of the week, Sunday to Thursday or Monday to Friday */
   workdays: number[] | null;
   /** blocks: Home's blocks in the order shown, each shown or hidden (Edit home).
@@ -81,10 +79,10 @@ export interface Settings {
   /** the order of your goals on the Goals page (Reorder goals); goals not in it follow, newest first */
   goalsOrder: string[];
   features: Record<string, boolean>;
-  notifications: { scheduled: boolean; goals: boolean; updates: boolean; inactivity: boolean };
-  backup: { on: boolean; every: "workout" | "daily" | "weekly"; at: string; keep: number; encrypt: boolean; media: boolean };
+  /** scheduled: planned workout reminders (Android app, native/plannedNotifications.ts) */
+  notifications: { scheduled: boolean };
+  backup: { on: boolean; every: "workout" | "daily" | "weekly"; keep: number; encrypt: boolean };
   updates: { autoCheck: boolean; autoDownload: boolean; wifiOnly: boolean };
-  layout: "auto" | "desktop" | "phone";
   /** maxHr: the max heart rate set by the person (bpm), else null: worked out from birthYear for the heart rate zones */
   profile: { heightCm: number | null; birthYear: number | null; sex: "" | "male" | "female"; maxHr: number | null };
   gyms: { id: string; name: string; equipment: string[] }[];
@@ -157,22 +155,20 @@ export const DEFAULT_SETTINGS: Settings = {
     autoRest: true, restEndNext: true, restBetweenSetsS: 90, restAfterExerciseS: 150, restByKindS: {}, restStretchBetweenS: 10, restStretchAfterS: 15,
     sessionNotice: true, countdown: true,
     sound: true, cueSound: REST_OVER_SOUND_DEFAULT, tickSound: COUNTDOWN_SOUND_DEFAULT, cueVolume: 100, vibrate: true, warn10: true, voice: false, keepAwake: true, lockScreen: true, showWarmups: true, autoAdvance: true,
-    showPrevious: false, showReminders: true, confirmSkip: false,
+    showPrevious: false, showReminders: true,
   },
   increments: { kg: 2.5, lb: 5 },
   progression: { mode: "suggest", repsMin: 6, repsMax: 12, stepKg: null, stepOneSideKg: null, lowerAfter: 3 },
   barKg: 20,
   platesKg: [25, 20, 15, 10, 5, 2.5, 1.25],
   platesLb: [45, 35, 25, 10, 5, 2.5],
-  e1rm: "epley",
   workdays: null,
   home: { blocks: HOME_BLOCKS, hidden: {}, goals: [] },
   goalsOrder: [],
   features: FEATURE_DEFAULTS,
-  notifications: { scheduled: true, goals: true, updates: true, inactivity: false },
-  backup: { on: true, every: "daily", at: "03:00", keep: 14, encrypt: false, media: true },
+  notifications: { scheduled: true },
+  backup: { on: true, every: "daily", keep: 14, encrypt: false },
   updates: { autoCheck: true, autoDownload: true, wifiOnly: false },
-  layout: "auto",
   profile: { heightCm: null, birthYear: null, sex: "", maxHr: null },
   gyms: [],
   activeGym: null,
@@ -211,7 +207,9 @@ export function withDefaults(saved: unknown): Settings {
   // "After a workout, update its routine", "Start from what you did last time" and "Last time's numbers come from" are
   // gone: a routine always holds where you are now (its numbers follow each finished workout, then Progression), and
   // structure changes are only ever saved when ticked on the Finish screen, so the old choices mean nothing and are dropped
-  const { updateRoutine: _u, prefillFromLast: _pl, prefillScope: _ps, ...workout } = out.workout as WorkoutPrefs & { updateRoutine?: unknown; prefillFromLast?: unknown; prefillScope?: unknown };
+  // "Ask before skipping an exercise" went too: skipping always asks (skip, do it later or only the sets left), so the
+  // switch changed nothing
+  const { updateRoutine: _u, prefillFromLast: _pl, prefillScope: _ps, confirmSkip: _cs, ...workout } = out.workout as WorkoutPrefs & { updateRoutine?: unknown; prefillFromLast?: unknown; prefillScope?: unknown; confirmSkip?: unknown };
   // before there were two sounds the one chosen also played the countdown: kept for it until a countdown sound is chosen
   // (only one of the sounds of that time; a ringing rest over sound chosen since never became the countdown by itself)
   const savedTick = (saved as { workout?: { tickSound?: unknown } } | null)?.workout?.tickSound;
@@ -222,6 +220,13 @@ export function withDefaults(saved: unknown): Settings {
   // the old fixed weekly and daily step targets, and the marks that the app had made its own starting goals from them:
   // goals took their place, made only by the person, so nothing reads them any more
   for (const k of ["weeklyGoal", "stepGoal", "goalsSeeded", "stepGoalSeeded"]) delete (out as unknown as Record<string, unknown>)[k];
+  // never read, so dropped (M-249): the 1RM formula (every estimate is Epley), the layout (chosen per device, kept on the
+  // device: core/device.ts), the notifications nothing sent (goals, updates, inactivity) and the backup's time of day
+  // and "with photos" (a backup runs when due and always holds the photos)
+  for (const k of ["e1rm", "layout"]) delete (out as unknown as Record<string, unknown>)[k];
+  out.notifications = { scheduled: out.notifications.scheduled !== false };
+  const { at: _at, media: _m, ...backup } = out.backup as Settings["backup"] & { at?: unknown; media?: unknown };
+  out.backup = backup;
   // the "Progression rules" feature switch went with them: Progression is always there, its mode Off when unwanted
   // (someone who had it switched off and never chose a mode gets Off, so nothing starts moving their weights)
   const savedMode = (saved as { progression?: { mode?: unknown } } | null)?.progression?.mode;

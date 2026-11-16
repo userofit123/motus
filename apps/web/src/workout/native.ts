@@ -98,9 +98,10 @@ function closeWebNotice(tag: string) {
 // the rest countdown's buttons (Android): the same as the workout screen's +15 and Skip rest, a bit more at a time
 const REST_BUTTONS: NoticeButton[] = [{ id: "rest-more", title: "+30s" }, { id: "rest-skip", title: "Skip rest" }];
 
-// The rest countdown in the notification shade (Android app), in place of the workout's while the rest runs.
-export function showRestCountdown(endAt: number, body: string) {
-  plugin("MotusWorkout")?.showRest?.({ endAt, body, actions: REST_BUTTONS }).catch?.(() => {});
+// The rest countdown in the notification shade (Android app), in place of the workout's while the rest runs; on the lock
+// screen too unless "Rest timer on the lock screen" is off (`lockScreen`).
+export function showRestCountdown(endAt: number, body: string, lockScreen: boolean) {
+  plugin("MotusWorkout")?.showRest?.({ endAt, body, lockScreen, actions: REST_BUTTONS }).catch?.(() => {});
 }
 export function clearRestCountdown() {
   plugin("MotusWorkout")?.clearRest?.().catch?.(() => {});

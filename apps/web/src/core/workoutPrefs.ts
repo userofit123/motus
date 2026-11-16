@@ -46,7 +46,6 @@ export const WORKOUT_PREF_GROUPS: PrefGroup[] = [
     { key: "keepAwake", label: "Keep the screen on", hint: "" },
     { key: "sessionNotice", label: "Show the workout as a notification", hint: "Its name, the exercise and set you're on, and how far along you are" },
     { key: "showReminders", label: "Show reminders and pinned notes", hint: "Notes written in this workout always show" },
-    { key: "confirmSkip", label: "Ask before skipping an exercise", hint: "" },
   ] },
 ];
 

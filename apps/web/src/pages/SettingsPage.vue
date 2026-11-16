@@ -120,7 +120,7 @@ const EQUIP_OPTS = EQUIPMENT.map((q) => ({ value: q, label: q.replace(/\b\w/g, (
 const delGym = (g: any) => set({ gyms: s.value.gyms.filter((x) => x.id !== g.id), activeGym: s.value.activeGym === g.id ? null : s.value.activeGym });
 const groups = computed(() => { const m = new Map<string, typeof READY_FEATURES>(); for (const f of READY_FEATURES) m.set(f.group, [...(m.get(f.group) ?? []), f]); return [...m]; });
 // only the notifications the app actually sends are offered
-const NOTIF: [keyof Settings["notifications"], string, string][] = [["scheduled", "Planned workouts", "Before a routine's scheduled time"]];
+const NOTIF: [keyof Settings["notifications"], string, string][] = [["scheduled", "Planned workouts", "Before a routine's scheduled time, in the Android app"]];
 // asked of Android in the app (its web view has no browser notifications, which used to read as "Not available here"),
 // of the browser otherwise
 const notifPerm = ref<NotificationState | null>(null);

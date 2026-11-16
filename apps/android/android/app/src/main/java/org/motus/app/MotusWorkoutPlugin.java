@@ -176,6 +176,9 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener2 {
         channel();
         long endAt = call.getLong("endAt", System.currentTimeMillis());
         String body = call.getString("body", "");
+        // "Rest timer on the lock screen" off: still in the shade, left off the lock screen (Android ignores an app's
+        // public lock screen setting on its channel, so the notification's own visibility decides)
+        boolean lockScreen = call.getBoolean("lockScreen", true);
         Intent open = new Intent(getContext(), MainActivity.class);
         open.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP);
         PendingIntent pi = PendingIntent.getActivity(getContext(), 0, open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
@@ -188,7 +191,7 @@ public class MotusWorkoutPlugin extends Plugin implements SensorEventListener2 {
             .setChronometerCountDown(true)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
-            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setVisibility(lockScreen ? NotificationCompat.VISIBILITY_PUBLIC : NotificationCompat.VISIBILITY_SECRET)
             .setCategory(NotificationCompat.CATEGORY_STOPWATCH)
             .setTimeoutAfter(Math.max(1000, endAt - System.currentTimeMillis() + 2000))
             .setContentIntent(pi);

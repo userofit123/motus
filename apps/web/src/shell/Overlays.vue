@@ -21,7 +21,7 @@ import { computed, onMounted, onBeforeUnmount, watch } from "vue";
 import { useSettings } from "../api/queries";
 import { maybeAutoBackup } from "../core/backup";
 import { toast } from "../core/toast";
-import { schedulePlanned } from "../native/plannedNotifications";
+import { usePlannedReminders } from "../native/plannedNotifications";
 import { watchHealth } from "../native/health";
 import CommandPalette from "./CommandPalette.vue";
 
@@ -31,10 +31,11 @@ const key = (e: KeyboardEvent) => { if (e.key === "n" && !e.metaKey && !e.ctrlKe
 onMounted(() => addEventListener("keydown", key));
 // an automatic backup when one is due (Settings → Backup)
 const settings = useSettings();
+// planned workout notifications (Android app), following the switch and the planned days
+usePlannedReminders(() => settings.value.notifications.scheduled);
 let checked = false;
 watch(settings, (s) => {
   if (checked || !s) return; checked = true;
-  schedulePlanned(s.notifications.scheduled);
   // steps, sleep, weight and workouts from Health Connect (Android app), while the feature is on
   watchHealth(() => !!settings.value.features.healthConnect);
   setTimeout(() => maybeAutoBackup(s.backup, false, (run) => toast("A backup is due", { action: { label: "Download", run }, ms: 12000 })), 4000);
