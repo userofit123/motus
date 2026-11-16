@@ -28,8 +28,15 @@ async function openFull() {
   full.value = true; ready.value = false;
   // turned only once the browser has said whether it turns the screen, so a phone that can doesn't flash it turned
   if (!phone()) { ready.value = true; return; }
+  // closed while a request was pending (or the card left): undo what it has since done, as closeFull would
+  const undo = () => {
+    try { (screen.orientation as Lockable | undefined)?.unlock?.(); } catch { /* never locked */ }
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  };
   try { await document.documentElement.requestFullscreen?.({ navigationUI: "hide" }); } catch { /* not offered: the chart turns itself */ }
+  if (!full.value) { undo(); return; }
   try { await (screen.orientation as Lockable | undefined)?.lock?.("landscape"); } catch { /* the same */ }
+  if (!full.value) { undo(); return; }
   ready.value = true; upright();
 }
 function closeFull() {
@@ -44,19 +51,21 @@ const pick = (id: string) => { closeFull(); emit("pick", id); };
 
 const key = (e: KeyboardEvent) => { if (e.key === "Escape" && full.value) { e.stopPropagation(); closeFull(); } };
 let backId = 0, unlock = () => {};
+// run once per opening: by the watcher on close, or by unmount (the watcher is stopped by then), never both
+const release = () => { if (backId) { sheetClosed(backId); backId = 0; } unlock(); unlock = () => {}; };
 watch(full, (on) => {
   if (on) { backId = sheetOpened(closeFull); unlock = lockScroll(); }
-  else { sheetClosed(backId); unlock(); }
+  else release();
 });
 // Back on a phone first leaves the browser's full screen, without a step the router sees: that closes this too
 const left = () => { if (!document.fullscreenElement && full.value) closeFull(); };
 onMounted(() => { addEventListener("resize", upright); addEventListener("keydown", key); document.addEventListener("fullscreenchange", left); });
-onBeforeUnmount(() => { removeEventListener("resize", upright); removeEventListener("keydown", key); document.removeEventListener("fullscreenchange", left); closeFull(); });
+onBeforeUnmount(() => { removeEventListener("resize", upright); removeEventListener("keydown", key); document.removeEventListener("fullscreenchange", left); closeFull(); release(); });
 </script>
 
 <template>
   <div class="lbl hgap"><span class="grow">Day by hour</span>
-    <button type="button" class="ib sm plain dbh-b" :aria-pressed="wide" :aria-label="wide ? 'Fit to the card' : 'Make wider'" :title="wide ? 'Fit to the card' : 'Make wider'" @click="wide = !wide"><Icon :name="wide ? 'narrow' : 'widen'" /></button>
+    <button type="button" class="ib sm plain dbh-b" :aria-label="wide ? 'Fit to the card' : 'Make wider'" :title="wide ? 'Fit to the card' : 'Make wider'" @click="wide = !wide"><Icon :name="wide ? 'narrow' : 'widen'" /></button>
     <button type="button" class="ib sm plain dbh-b" aria-label="Full screen" title="Full screen" @click="openFull"><Icon name="expand" /></button>
   </div>
   <DayTimeline :tl="tl" :day="day" :sessions="sessions" :wide="wide" @open="open" @pick="pick" />
@@ -73,6 +82,6 @@ onBeforeUnmount(() => { removeEventListener("resize", upright); removeEventListe
 <style scoped>
 /* as the learn button in a header: the header keeps its height, the last icon lines up with the card's edge */
 .dbh-b { flex: none; margin: -10px 0; color: var(--tx2); }
-.dbh-b:hover, .dbh-b[aria-pressed="true"] { color: var(--acc); }
+.dbh-b:hover { color: var(--acc); }
 .dbh-b + .dbh-b { margin-inline: -8px -9px; }
 </style>

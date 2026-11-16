@@ -117,18 +117,28 @@ watch(() => [props.wide, props.day] as const, async () => {
 }, { immediate: true });
 const scrolled = () => { scrollX.value = sc.value?.scrollLeft ?? 0; hover.value = null; };
 // a mouse drags the wide chart sideways as a finger does; a drag isn't also a click on the lane or session under it
-let drag: { x: number; left: number; moved: boolean } | null = null;
+let drag: { x: number; left: number; moved: boolean; id: number } | null = null;
 const down = (e: PointerEvent) => {
   if (!props.wide || e.pointerType !== "mouse" || e.button !== 0 || !sc.value) return;
-  drag = { x: e.clientX, left: sc.value.scrollLeft, moved: false };
+  drag = { x: e.clientX, left: sc.value.scrollLeft, moved: false, id: e.pointerId };
 };
 const pan = (e: PointerEvent) => {
   if (!drag || !sc.value) return;
   if (!(e.buttons & 1)) { drag = null; return; }
-  const dx = e.clientX - drag.x; if (Math.abs(dx) > 4) drag.moved = true;
+  const dx = e.clientX - drag.x;
+  // captured only once it is a drag, so a plain click still reaches the lane or session under the pointer
+  if (!drag.moved && Math.abs(dx) > 4) { drag.moved = true; try { sc.value.setPointerCapture(drag.id); } catch { /* the pointer is gone */ } }
   if (drag.moved) sc.value.scrollLeft = drag.left - dx;
 };
 const up = (e: MouseEvent) => { if (drag?.moved) { e.stopPropagation(); e.preventDefault(); } drag = null; };
+const release = (e: PointerEvent) => { if (drag?.moved) { try { sc.value?.releasePointerCapture(e.pointerId); } catch { /* already released */ } } };
+// the mouse wheel scrolls the wide strip sideways; at either end the page gets the wheel again
+const wheel = (e: WheelEvent) => {
+  const el = sc.value; if (!props.wide || !el || Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+  const max = el.scrollWidth - el.clientWidth;
+  if (max <= 0 || (e.deltaY < 0 && el.scrollLeft <= 0) || (e.deltaY > 0 && el.scrollLeft >= max - 1)) return;
+  e.preventDefault(); el.scrollLeft += e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
+};
 
 // the tip: what the band read in the hour under the pointer (the night's stage, the steps, the heart rate), the first in
 // bold as every chart's tip, then the hour; a session names itself on its shade, so the tip stays one line on a phone
@@ -159,7 +169,7 @@ const tip = computed(() => {
         <text v-for="l in lanes" :key="l.key" class="ax dtl-name" :y="l.ny + 3 - ((l.name.length - 1) * LINE) / 2" text-anchor="end" @click="emit('open', l.key)"><tspan v-for="(w, i) in l.name" :key="w" :x="P.l - 6" :dy="i ? LINE : 0">{{ w }}</tspan></text>
         <text v-for="r in sleepRows" :key="r.k" class="ax" :x="P.l - 6" :y="r.y + 3" text-anchor="end">{{ r.name }}</text>
       </svg>
-      <div ref="sc" class="dtl-sc" :class="{ wide }" @scroll.passive="scrolled" @pointerdown="down" @pointermove="pan" @click.capture="up">
+      <div ref="sc" class="dtl-sc" :class="{ wide }" @scroll.passive="scrolled" @pointerdown="down" @pointermove="pan" @pointerup="release" @pointercancel="release" @wheel="wheel" @click.capture="up">
         <svg class="chart" :viewBox="`0 0 ${PW} ${H}`" :style="{ width: PW + 'px', height: H + 'px' }" role="group" aria-label="Day by hour" @mousemove="move" @mouseleave="hover = null">
           <!-- each lane: a faint line along its foot, and the whole lane a button into its Stats tab -->
           <g v-for="l in lanes" :key="l.key" class="dtl-lane" role="button" tabindex="0" :aria-label="l.what" @click="emit('open', l.key)" @keydown.enter="emit('open', l.key)">
