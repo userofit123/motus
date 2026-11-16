@@ -1,5 +1,4 @@
 <script lang="ts">
-import type { HealthDay } from "../api/queries";
 import { localYmd } from "../core/format";
 /** The Calendar's entries by day ("YYYY-MM-DD"): workouts, activities and plans (the engine leaves out plans already done,
  *  by their routine, activity type, or started from the plan); a plan before today is marked missed. The Calendar page
@@ -16,8 +15,6 @@ export function calendarDays(c: { workouts: any[]; activities: any[]; planned: a
   for (const xs of m.values()) xs.sort((a, b) => (a.kind === "planned" ? 1 : 0) - (b.kind === "planned" ? 1 : 0) || (a.startedAt && b.startedAt ? a.startedAt.localeCompare(b.startedAt) : 0));
   return m;
 }
-/** Whether the band's numbers give the day's card any tiles (the same checks as its tiles below) */
-export const hasDayTiles = (d: HealthDay | null | undefined) => !!d && !!(d.sleep || d.sleepH || d.restingHr != null || d.steps || d.distanceM);
 </script>
 
 <script setup lang="ts">
@@ -84,7 +81,7 @@ const dayTop = computed(() => dayTiles.value.length > 0 || tlHas.value);
   <div class="card" :class="{ wkc: dayTop }">
     <slot name="head" />
     <div v-if="dayTiles.length" class="wstats dtiles">
-      <div v-for="x in dayTiles" :key="x.key" class="ws" :class="{ click: x.open }" :role="x.open ? 'button' : 'group'" :tabindex="x.open ? 0 : undefined" :aria-label="[x.label, x.value, x.unit, x.sub].filter(Boolean).join(' ')" @click.stop="x.open?.()" @keydown.enter.stop="x.open?.()">
+      <div v-for="x in dayTiles" :key="x.key" class="ws" :class="{ click: x.open }" :role="x.open ? 'button' : 'group'" :tabindex="x.open ? 0 : undefined" :aria-label="[x.label, x.value, x.unit, x.sub].filter(Boolean).join(' ')" @click="x.open?.()" @keydown.enter="x.open?.()">
         <div class="wlb"><Icon :name="x.icon" :size="14" />{{ x.label }}<Icon v-if="x.open" name="right" :size="14" class="wgo" /></div>
         <div class="wv">{{ x.value }} <small v-if="x.unit">{{ x.unit }}</small></div>
         <div class="wd">{{ x.sub }}</div>
@@ -93,8 +90,8 @@ const dayTop = computed(() => dayTiles.value.length > 0 || tlHas.value);
     <div v-if="tlHas" :class="{ csec: dayTiles.length }">
       <DayByHour :tl="tl" :day="day" :sessions="tlSessions" @open="(tab) => router.push(`/stats?tab=${tab}&day=${day}`)" @pick="(id) => router.push(id)" /></div>
     <div :class="{ 'csec dsess': dayTop }"><div v-if="dayTop && items.length" class="lbl hgap">Workouts and activities</div>
-    <div v-if="!items.length" class="tiny">{{ day >= today ? "Nothing planned. Use Plan to put a routine on this day." : "No workouts or activities on this day." }}</div>
-    <div class="list"><div v-for="x in items" :key="x.id ?? x.scheduleId" class="li click" @click.stop="open(x)">
+    <div v-if="!items.length" class="tiny">{{ day === today ? "Nothing logged or planned today yet." : day > today ? "Nothing planned. Use Plan to put a routine on this day." : "No workouts or activities on this day." }}</div>
+    <div class="list"><div v-for="x in items" :key="x.id ?? x.scheduleId" class="li click" @click="open(x)">
       <Icon :name="icon(x)" :size="18" :style="{ color: x.color ?? (x.kind === 'activity' ? ACTIVITY_COLOR : WORKOUT_COLOR) }" /><div class="grow"><div class="t" :style="x.missed ? { opacity: .5 } : undefined">{{ label(x) }}</div><div class="s"><template v-if="x.kind === 'planned'">{{ x.missed ? "Missed" : "Planned workout" }}</template><DotLine v-else :parts="[fmt.time(x.startedAt), hrPart(x)].filter((p) => p != null)" /></div></div><SessionStats v-if="x.kind !== 'planned'" :x="x" /><span v-if="x.kind === 'planned'" @click.stop><Menu :items="unplanItems(x)" :label="`Options for ${x.name}`" /></span><Icon v-else name="right" class="muted" /></div></div>
     </div>
   </div>

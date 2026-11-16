@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Home (requirement 9): one board of blocks in your order (Edit home, from the ⋮ menu). Today leads; blocks are half a row on
+// Home (requirement 9): one board of blocks in your order (Edit home, from the ⋮ menu). Today leads by default; blocks are half a row on
 // a computer (a whole row on the phone) or the whole row; a half-size block left alone in its row takes the whole row. A block with nothing to say right now
 // (no reminder waiting, no goal due soon, no program running) stays away until it has; feature blocks need their feature.
 import { computed, ref } from "vue";
@@ -33,7 +33,7 @@ import GoalSheet from "../components/GoalSheet.vue";
 import SessionStats from "../components/SessionStats.vue";
 import DotLine from "../components/DotLine.vue";
 import TodayHero from "../components/home/TodayHero.vue";
-import CalendarDay, { calendarDays, hasDayTiles } from "../components/CalendarDay.vue";
+import CalendarDay, { calendarDays } from "../components/CalendarDay.vue";
 import SuggestionRow from "../components/home/SuggestionRow.vue";
 import StageBar from "../components/stats/StageBar.vue";
 import { adviceWord, useDevice } from "../native/health";
@@ -77,7 +77,7 @@ const META: Record<string, { name: string; desc: string; icon: string; size: Siz
   scoreActivity: { name: "Activity score", desc: "Your last 7 days of active minutes and steps against the guidelines", icon: "moveRing", size: "m" },
   scoreStrength: { name: "Strength score", desc: "Your last 7 days of strength training against the guidelines", icon: "dumbbell", size: "m" },
   // off until picked in Edit home (M-260, M-261)
-  quickStats: { name: "Today at a glance", desc: "Rings for today's steps, resting heart rate and active calories, last night's sleep and your readiness", icon: "moveRing", size: "m" },
+  quickStats: { name: "Today at a glance", desc: "Rings for today's steps, resting heart rate and active calories, last night's sleep and your readiness", icon: "eye", size: "m" },
   calendarDay: { name: "Today's calendar", get desc() { return `Today as the Calendar shows it: your ${adviceWord(dev.value)}'s numbers, the day by hour, and your workouts and activities`; }, icon: "calendar", size: "l" },
 };
 // a block whose feature is off is absent everywhere, Edit home included
@@ -325,10 +325,12 @@ const stepMax = computed(() => Math.max(1, stepGoal.value?.target ?? 0, ...stepD
 
 // Today at a glance (M-260): today's numbers as rings, each only when there, each opening its Stats tab on today. A ring
 // fills toward the number it is measured by (your steps goal, else the guideline's steps a day; the guideline's least
-// hours asleep for your age; readiness out of 100); resting heart rate and active calories have none, so theirs is the
-// bare track. Each value stands alone (its unit in its name, "Active kcal"), so five fit side by side at 360px
+// hours asleep for your age; readiness out of 100). Resting heart rate and active calories have no number to reach, so
+// theirs is a full ring in a faint accent: a reading, not progress (a bare track would read as nothing done). Names and
+// units are the app's own ("Resting heart rate", "57 bpm")
 const age = computed(() => ageOf(s.value.profile.birthYear));
-interface Glance { key: string; icon: string; label: string; value: string; pct: number; done?: boolean; color?: string; aria: string; to: string }
+const NO_TARGET = "color-mix(in srgb, var(--acc) 30%, transparent)";
+interface Glance { key: string; icon: string; label: string; value: string; unit?: string; pct: number; done?: boolean; color?: string; aria: string; to: string }
 const glance = computed<Glance[]>(() => {
   const d = day.value, out: Glance[] = [], on = (tab: string) => `/stats?tab=${tab}&day=${today}`;
   if (d?.steps != null) {
@@ -337,7 +339,7 @@ const glance = computed<Glance[]>(() => {
       aria: `Steps today ${fmt.value.num(d.steps, 0)} of ${fmt.value.num(t, 0)}`, to: on("steps") });
   }
   const rhr = d?.restingHr ?? partOf("restingHr")?.value ?? null;
-  if (rhr != null) out.push({ key: "heart", icon: "heartPulse", label: "Resting HR", value: String(Math.round(rhr)), pct: 0, aria: `Resting heart rate ${Math.round(rhr)} bpm`, to: on("heart") });
+  if (rhr != null) out.push({ key: "heart", icon: "heartPulse", label: "Resting heart rate", value: String(Math.round(rhr)), unit: "bpm", pct: 1, color: NO_TARGET, aria: `Resting heart rate ${Math.round(rhr)} bpm`, to: on("heart") });
   if (night.value?.date === today) {
     const m = asleepMin(night.value), least = sleepRange(age.value)[0] * 60;
     out.push({ key: "sleep", icon: "moon", label: "Last night", value: mins(m), pct: m / least, done: m >= least, aria: `Asleep last night ${mins(m)}`, to: on("sleep") });
@@ -345,12 +347,14 @@ const glance = computed<Glance[]>(() => {
   const r = rd.value;
   if (r?.score != null) out.push({ key: "ready", icon: "gauge", label: "Readiness", value: String(r.score), pct: r.score / 100, color: r.label === "Take it easy" ? "var(--warn)" : undefined,
     aria: `Readiness ${r.score}${r.label ? `, ${r.label}` : ""}`, to: on("heart") });
-  if (d?.activeKcal) out.push({ key: "kcal", icon: "flame", label: "Active kcal", value: fmt.value.num(d.activeKcal, 0), pct: 0, aria: `Active calories today ${fmt.value.num(d.activeKcal, 0)} kcal`, to: on("steps") });
+  if (d?.activeKcal) out.push({ key: "kcal", icon: "flame", label: "Active calories", value: fmt.value.num(d.activeKcal, 0), unit: "kcal", pct: 1, color: NO_TARGET,
+    // the Steps tab only exists with steps data, so the Activity today block's rule
+    aria: `Active calories today ${fmt.value.num(d.activeKcal, 0)} kcal`, to: avail.data.value?.steps ? on("steps") : "/stats?tab=activities" });
   return out;
 });
 // Today's calendar (M-261): the Calendar's card for today, read only while the block is on
 const todayCal = useCalendar({ from: today, to: today }, computed(() => isOn("calendarDay")));
-const todayItems = computed(() => calendarDays(todayCal.data.value as any, today).get(today) ?? []);
+const todayItems = computed(() => calendarDays(todayCal.data.value, today).get(today) ?? []);
 
 // a dismissed suggestion keeps its routine and its muscles away for a week, so a near-duplicate doesn't take its place;
 // the list redraws without waiting for the server
@@ -384,7 +388,8 @@ const shows = (id: string): boolean => {
     case "activityToday": return actStats.value.length > 0;
     case "scoreSleep": case "scoreActivity": case "scoreStrength": return !!scoreOf(id);
     case "quickStats": return glance.value.length > 0;
-    case "calendarDay": return todayItems.value.length > 0 || hasDayTiles(day.value) || !!day.value?.hr;
+    // switched on, it always shows: an empty day says so in the Calendar's words, so the block never looks missing
+    case "calendarDay": return true;
     default: return true;
   }
 };
@@ -734,13 +739,13 @@ await loaded(home, ach, avail, hDay, ready, nightsQ, dailyQ, todayCal);
           </template>
         </div>
 
-        <!-- today at a glance: a ring per number, each opening its Stats tab on today; they wrap at a narrow width -->
-        <div v-else-if="id === 'quickStats'" class="card hb sz-m" :data-solo="solo.has(id) || undefined">
-          <div class="ch"><span class="bi"><Icon name="moveRing" :size="15" /></span><span class="t grow">Today at a glance</span></div>
+        <!-- today at a glance: a ring per number, each opening its Stats tab on today; five to a row, or three and two -->
+        <div v-else-if="id === 'quickStats'" class="card hb wkc sz-m" :data-solo="solo.has(id) || undefined">
+          <div class="ch"><span class="bi"><Icon name="eye" :size="15" /></span><span class="t grow">Today at a glance</span></div>
           <div class="glance">
             <div v-for="x in glance" :key="x.key" class="gl click" :aria-label="x.aria" :title="x.aria" v-bind="link(x.to)">
               <span class="glr"><Ring :pct="x.pct" :size="52" :color="x.color" /><Icon :name="x.icon" :size="18" class="gli" :class="{ done: x.done }" /></span>
-              <span class="glv">{{ x.value }}</span>
+              <span class="glv">{{ x.value }} <small v-if="x.unit">{{ x.unit }}</small></span>
               <span class="gll">{{ x.label }}</span>
             </div>
           </div>
@@ -760,7 +765,7 @@ await loaded(home, ach, avail, hDay, ready, nightsQ, dailyQ, todayCal);
         </div>
       </template>
       <!-- every block switched off, or none with anything to show now -->
-      <div v-if="!blocks.length" class="card empty sz-l"><Icon name="info" :size="34" /><b>Nothing to show</b>Choose which blocks Home shows.<br /><button class="btn tonal" @click="editing = true">Edit home</button></div>
+      <div v-if="!blocks.length" class="card empty sz-l"><Icon name="home" :size="34" /><template v-if="listed.some((x) => x.on)"><b>Nothing to show today</b>Your blocks have nothing for today yet. Add more in Edit home.</template><template v-else><b>Nothing to show</b>Every block is switched off. Choose which ones Home shows.</template><br /><button class="btn tonal" @click="editing = true">Edit home</button></div>
     </div>
     <div v-else-if="home.isLoading.value" class="hgrid"><div class="card today-ph sz-l" /><div v-for="i in 2" :key="i" class="card sz-m today-ph" /></div>
     <div v-else class="card empty"><Icon name="info" :size="34" /><b>Couldn't load Home</b>{{ (home.error.value as Error | null)?.message }}<br /><button class="btn tonal" @click="home.refetch()">Try again</button></div>
@@ -823,9 +828,13 @@ html.phone .gtile .big { font-size: clamp(20px, 6vw, var(--fs-val)); }
 html.phone .gtile { grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); }
 
 /* the stat tiles of this week and the last workout are the shared .wkc/.wstats ones (app.css) */
-/* today at a glance: equal columns of a ring with its icon inside, the value under it and its name under that; as many
-   to a row as fit (five at 360px), the rest wrapping onto the next */
-.glance { display: grid; grid-template-columns: repeat(auto-fit, minmax(52px, 1fr)); gap: var(--hg) var(--tdy); }
+/* today at a glance: equal columns of a ring with its icon inside, the value under it and its name under that. Three to a
+   row in a narrow block (the phone: three and two, the last row centred), five in a wider one (a computer's half row).
+   Names are the stat tiles' size and may take two lines; each keeps room for two, so every column of a row is as tall
+   and their rings, values and names line up */
+.glance { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--hg) var(--tdy); }
+.gl { flex: 0 0 calc((100% - 2 * var(--tdy)) / 3); }
+@container (min-width: 440px) { .gl { flex-basis: calc((100% - 4 * var(--tdy)) / 5); } }
 .gl { position: relative; display: flex; flex-direction: column; align-items: center; gap: 2px; min-width: 0; padding-block: var(--tdy); text-align: center; border-radius: var(--r-sm); }
 .gl.click:hover { background: color-mix(in srgb, var(--tx) 3%, transparent); }
 .glr { position: relative; display: grid; place-items: center; margin-bottom: 4px; }
@@ -833,8 +842,10 @@ html.phone .gtile { grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); }
 .gli { position: absolute; color: var(--tx2); }
 .gli.done { color: var(--acc); }
 .glv { max-width: 100%; overflow: hidden; text-overflow: ellipsis; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; line-height: 1.2; }
-.gll { font-size: var(--fs-xs); color: var(--tx2); line-height: 1.2; }
-/* Today's calendar: its sections a block's gap closer, so they sit as far apart as on the Calendar page */
+.glv small { font-size: var(--fs-sm); font-weight: 500; color: var(--tx2); }
+.gll { min-height: 2.4em; font-size: var(--fs-sm); color: var(--tx2); line-height: 1.2; }
+/* Today's calendar: a block's children are 4px apart (.hb's gap) on top of their own margins, so each section takes those
+   4px back and sits --cpy below the one before, as on the Calendar page; the header does the same (.hb > .ch) */
 .hb > :deep(.csec) { margin-top: calc(var(--cpy) - 4px); }
 .wbars { display: flex; align-items: flex-end; gap: 6px; height: 34px; margin-top: auto; padding-top: var(--hg); box-sizing: content-box; }
 .wbars i { flex: 1; border-radius: 4px 4px 2px 2px; background: color-mix(in srgb, var(--acc) 28%, transparent); }
