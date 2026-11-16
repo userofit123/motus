@@ -17,8 +17,8 @@ const monthKey = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).pad
 
 // what one month (or year) added up to while the history is read, then its counts once it is done
 interface Acc { k: string; workouts: number; timeS: number; volumeKg: number; sets: number; activities: number; distM: number; days: Set<string>; routines: Map<string, number>; groups: Map<string, number>; records: HomeRecord[];
-  // what a band handed over: minutes asleep a night, resting heart rate and HRV a day, a workout's average heart rate
-  sleep: number[]; rhr: number[]; hrv: number[]; whr: number[] }
+  // what a band handed over: minutes asleep a night, steps, resting heart rate and HRV a day, a workout's average heart rate
+  sleep: number[]; rhr: number[]; hrv: number[]; whr: number[]; steps: number[] }
 type Period = Omit<Acc, "days"> & { days: number; top?: [string, number]; group?: { name: string; sets: number } };
 interface StatsWorkout { startedAt: string; durationS: number; volumeKg: number; sets: number; name: string; muscles: Record<string, number>; avgHr?: number | string | null }
 interface StatsDaily { date: string | Date; kind: string; value: number | string }
@@ -29,7 +29,7 @@ const by = (key: (d: Date) => string, dayKey: (d: string) => string) => computed
   if (!d) return [];
   const get = (k: string): Acc => {
     let x = m.get(k);
-    if (!x) m.set(k, (x = { k, workouts: 0, timeS: 0, volumeKg: 0, sets: 0, activities: 0, distM: 0, days: new Set(), routines: new Map(), groups: new Map(), records: [], sleep: [], rhr: [], hrv: [], whr: [] }));
+    if (!x) m.set(k, (x = { k, workouts: 0, timeS: 0, volumeKg: 0, sets: 0, activities: 0, distM: 0, days: new Set(), routines: new Map(), groups: new Map(), records: [], sleep: [], rhr: [], hrv: [], whr: [], steps: [] }));
     return x;
   };
   for (const w of d.workouts) {
@@ -43,7 +43,7 @@ const by = (key: (d: Date) => string, dayKey: (d: string) => string) => computed
   for (const r of d.records ?? []) m.get(key(new Date(r.at)))?.records.push(r);
   // a day's numbers count in the month (or year) it is a day of, in one that has a report (a workout or an activity);
   // sleep only as a night, not a nap or partial record (as Stats → Sleep averages it)
-  const DAILY: Record<string, "sleep" | "rhr" | "hrv"> = { sleep_h: "sleep", resting_hr: "rhr", hrv: "hrv" };
+  const DAILY: Record<string, "sleep" | "rhr" | "hrv" | "steps"> = { sleep_h: "sleep", resting_hr: "rhr", hrv: "hrv", steps: "steps" };
   for (const x of d.daily ?? []) {
     const f = DAILY[x.kind], v = Number(x.value);
     if (f && v > 0 && (f !== "sleep" || isNight(v))) m.get(dayKey(String(x.date).slice(0, 10)))?.[f].push(f === "sleep" ? v * 60 : v);
@@ -127,8 +127,9 @@ const build = (m: Period, p: Totals | undefined, prev: string) => {
     ...(m.group ? [{ key: "group", icon: "activity", t: "Top muscle group", s: m.group.name, r: `${m.group.sets} sets` }] : []),
     // the count on the right as Records has it; the distance under the name only when there is one
     ...(m.activities ? [{ key: "act", icon: "walk", t: "Activities", s: m.distM > 0 ? `${fmt.value.dist(m.distM, 1)} in total` : "", r: String(m.activities) }] : []),
-    // then what a band handed over, each only when there: sleep a night, resting heart rate (with HRV under it), and the
+    // then what a band handed over, each only when there: steps a day (as Stats → Steps averages them), sleep a night, resting heart rate (with HRV under it), and the
     // workouts' heart rate, the average on the right as the counts above
+    ...(m.steps.length ? [{ key: "steps", icon: "steps", t: "Steps", s: `Average of ${m.steps.length} ${m.steps.length === 1 ? "day" : "days"}`, r: `${fmt.value.num(mean(m.steps), 0)} steps` }] : []),
     ...(m.sleep.length ? [{ key: "sleep", icon: "moon", t: "Sleep", s: `Average of ${m.sleep.length} ${m.sleep.length === 1 ? "night" : "nights"}`, r: mins(mean(m.sleep)) }] : []),
     ...(m.rhr.length ? [{ key: "rhr", icon: "heartPulse", t: "Resting heart rate", s: `Average of ${m.rhr.length} ${m.rhr.length === 1 ? "day" : "days"}`, r: `${Math.round(mean(m.rhr))} bpm` }]
       : m.hrv.length ? [{ key: "hrv", icon: "wave", t: "HRV", s: "", r: `${Math.round(mean(m.hrv))} ms` }] : []),

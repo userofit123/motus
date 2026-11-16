@@ -2,7 +2,9 @@
 // Stats → Steps (M-241), there once there are steps at all (typed, from a band or from recorded walks). Day: the day's
 // steps against the steps goal and your usual day as one card's hero, the band's distance, active calories and active
 // hours as its tiles, how the steps spread over its hours (walks and workouts marked) and the day's sessions. Week, month, year: a bar a day (a year:
-// the average day of each week), the average, the best day, the days the goal was reached and the longest run of them.
+// the average day of each week), the average, the best day, the days the goal was reached and the longest run of them,
+// and what stands out (M-246): the Activity score's active minutes, the current run of goal days and your usual busiest
+// hour. A day also says its longest stretch with little walking (from steps, so standing still counts as still).
 // A day's total is the daily log's (stepsByDay: the value the day shows everywhere, recorded walks counted in); the
 // hours come from the band's saved records (/health/records/hourly), only for days they were saved: a day with a total
 // and no hours shows its total and tiles and says so. The day's workouts and activities are shaded on the hours over
@@ -11,11 +13,12 @@
 import { computed, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { useQuery, keepPreviousData } from "@tanstack/vue-query";
-import { ymd, weekStartDate } from "@motus/shared";
+import { ymd, weekStartDate, ACTIVE_HOUR_STEPS, stillStretch, currentStreak, typicalHour } from "@motus/shared";
 import { api } from "../../api/client";
-import { useSettings } from "../../api/queries";
+import { useSettings, useHealthScores } from "../../api/queries";
 import { useFmt, unitOf } from "../../core/format";
 import { useStepGoal } from "../../core/goals";
+import { mins } from "../../core/sleep";
 import { fromWhere, useDevice } from "../../native/health";
 import Icon from "../Icon.vue";
 import Ring from "../Ring.vue";
@@ -106,8 +109,15 @@ const legend = computed(() => legendOf(sessions.value));
 const offHours = computed(() => { const inH = hours.value.reduce((t, h) => t + h.value, 0); return hours.value.length && sessions.value.some((x) => x.steps) ? Math.max(0, dayN.value - inH) : 0; });
 const busiest = computed(() => hours.value.reduce<(typeof hours.value)[number] | null>((m, h) => (!m || h.value > m.value ? h : m), null));
 // active hours: hours with at least 250 steps, as trackers count them
-const ACTIVE = 250;
+const ACTIVE = ACTIVE_HOUR_STEPS;
 const activeH = computed(() => hours.value.filter((h) => h.value >= ACTIVE).length);
+// the day's longest stretch with little walking (stillStretch: between its first and last active hour, a workout or
+// activity breaks it, only hours already over), said under the chart as its busiest hour is
+const still = computed(() => {
+  if (!hours.value.length) return null;
+  const x = stillStretch(hours.value, (a, b) => sessions.value.some((y) => y.a < b && y.b > a), Date.now());
+  return x && { span: `${fmt.value.time(new Date(x.from).toISOString())}-${fmt.value.time(new Date(x.to).toISOString())}`, hours: x.hours };
+});
 // your usual day: the middle of the 4 weeks before (days with steps), from 5 of them
 const usual = computed(() => {
   const xs: number[] = [];
@@ -159,6 +169,42 @@ const streak = computed(() => {
   return top;
 });
 const month = (d: string) => fmt.value.date(d, { month: "short" });
+
+// what stands out over a week or month, as Stats → Heart's and Sleep's rows, each only when there is something to say:
+// the active minutes of the last 7 days (the Activity score's own, so the number is the one Stats → Scores shows; only
+// with that feature on, and on the stretch that holds today), the run of goal days up to today (Longest streak above is
+// the stretch's best), and the hour your days usually have the most steps (from the band's hours)
+const scoresOn = computed(() => !!s.value.features.scores);
+const scoresQ = useHealthScores(scoresOn);
+const minutesPart = computed(() => (scoresOn.value && view.value === "week" && hasToday.value ? scoresQ.data.value?.activity?.parts.find((p) => p.key === "minutes") ?? null : null));
+const nowStreak = computed(() => {
+  if (!goal.value || !hasToday.value) return null;
+  const list: string[] = [];
+  for (let d = from.value; d <= today.value; d = plus(d, 1)) list.push(d);
+  const x = currentStreak(list, (d) => stepsOn(d) >= goal.value!);
+  return x.days ? x : null;
+});
+const spanQ = useQuery({ queryKey: computed(() => ["readings", "hourly", "steps", range.value.from, range.value.to]), retry: false, placeholderData: keepPreviousData,
+  enabled: computed(() => (view.value === "week" || view.value === "month") && withSteps.value.length >= 3),
+  queryFn: () => api.get<{ hours: { at: string; sum?: number }[] }>("/health/records/hourly", { type: "steps", from: midnight(range.value.from).toISOString(), to: midnight(range.value.to).toISOString(), zone }) });
+const usualHour = computed(() => {
+  if (spanQ.isPlaceholderData.value) return null;
+  return typicalHour((spanQ.data.value?.hours ?? []).map((h) => { const d = new Date(h.at); return { day: ymd(d), hour: d.getHours(), value: h.sum ?? 0 }; }));
+});
+const hourSpan = (h: number) => { const a = new Date(2000, 0, 1, h); return `${fmt.value.time(a.toISOString())}-${fmt.value.time(new Date(a.getTime() + 3600_000).toISOString())}`; };
+type Insight = { key: string; icon: string; t: string; s: string; rv: string; tone?: "pos" | "neg" };
+const insights = computed(() => {
+  const out: Insight[] = [];
+  const m = minutesPart.value;
+  // met in full reads positive, under half negative, as the score's own row
+  if (m) out.push({ key: "min", icon: "bolt", t: "Active minutes", s: `last 7 days · aim ${m.target} a week`, rv: `${n0(m.value)} of ${m.target}`, tone: m.share >= 1 ? "pos" : m.share < 0.5 ? "neg" : undefined });
+  const k = nowStreak.value;
+  if (k) out.push({ key: "streak", icon: "link", t: "Current streak", s: `goal reached every day since ${day(k.since!)}${k.todayDone ? "" : " · today still to go"}`,
+    rv: `${k.days}${k.more ? "+" : ""} ${k.days === 1 ? "day" : "days"}`, tone: "pos" });
+  const h = usualHour.value;
+  if (h) out.push({ key: "hour", icon: "clock", t: "Usual busiest hour", s: `${hourSpan(h.hour)} · average of ${h.days} days`, rv: `${n0(h.avg)} steps` });
+  return out;
+});
 // a bar a day (in green once it reached the goal, as Home's and the calendar's), tapped to open the day; a year as the
 // average day of each week (of its days with steps), tapped to open the week, since 365 bars would be hairlines
 const bars = computed(() => {
@@ -212,6 +258,7 @@ const openDay = (d: string | null) => { if (d) { anchor.value = d; view.value = 
             <BarChart :bars="hours" :height="170" :fmt="n0" :shade="shade" :xt="xt" @pick="(id) => router.push(id)" />
             <div v-if="legend.length" class="bmlegend st-leg"><span><i :style="{ background: DAY_DATA_COLOR }" />Steps</span><span v-for="k in legend" :key="k.color"><i :style="{ background: k.color }" />{{ k.name }}</span></div>
             <div v-if="busiest" class="tiny st-line">Busiest hour {{ busiest.tip }} · {{ n0(busiest.value) }} steps</div>
+            <div v-if="still" class="tiny st-line">Quietest stretch {{ still.span }} · {{ mins(still.hours * 60) }} under {{ ACTIVE }} steps an hour</div>
             <div v-if="offHours >= 50" class="tiny st-line">{{ n0(offHours) }} steps of the total come from recorded activities and aren't in the hours.</div>
           </template>
           <div v-else-if="!hourQ.isFetching.value" class="tiny">{{ noRecords("day") }}</div>
@@ -231,6 +278,17 @@ const openDay = (d: string | null) => { if (d) { anchor.value = d; view.value = 
         <div class="card hero stat"><div class="lbl"><span class="bi"><Icon name="steps" :size="15" /></span>Steps</div><div class="val">{{ n0(avg) }}</div><div class="sub">average of {{ withSteps.length }} {{ withSteps.length === 1 ? "day" : "days" }}</div><Sparkline v-if="withSteps.length > 1" :values="withSteps.map(stepsOn)" color="var(--onc)" /></div>
         <div v-if="goal" class="card stat"><div class="lbl"><span class="bi"><Icon name="target" :size="15" /></span>Goal reached</div><div class="val">{{ reached }}<small>{{ reached === 1 ? "day" : "days" }}</small></div><div class="sub">of {{ withSteps.length }} · goal {{ n0(goal) }}</div></div>
         <div v-if="goal && streak" class="card stat"><div class="lbl"><span class="bi"><Icon name="link" :size="15" /></span>Longest streak</div><div class="val">{{ streak }}<small>{{ streak === 1 ? "day" : "days" }}</small></div><div class="sub">goal reached in a row</div></div>
+      </div>
+      <!-- as Stats → Heart's and Sleep's -->
+      <div v-if="insights.length" class="card wkc spt">
+        <div class="ch"><span class="bi"><Icon name="sparkle" :size="15" /></span><span class="t grow">What stands out</span></div>
+        <div class="list st-ins">
+          <div v-for="x in insights" :key="x.key" class="li">
+            <Icon :name="x.icon" :size="18" :class="x.tone ?? 'muted'" />
+            <div class="grow"><div class="t">{{ x.t }}</div><div class="s">{{ x.s }}</div></div>
+            <b class="r rv" :class="x.tone">{{ x.rv }}</b>
+          </div>
+        </div>
       </div>
       <!-- the best and worst day and the stretch's total, once there are days to compare, as Sleep's best and worst nights -->
       <div v-if="withSteps.length > 1" class="card wkc spt">
@@ -255,4 +313,9 @@ const openDay = (d: string | null) => { if (d) { anchor.value = d; view.value = 
 <style scoped>
 .st-line { margin-top: var(--tdy); }
 .st-leg { margin-top: var(--hg); }
+/* the highlights as Stats → Heart's and Sleep's: the last row without its line, the number in the row's tone */
+.st-ins .li:last-child { border-bottom: 0; padding-bottom: 0; }
+.st-ins .li:first-child { padding-top: 0; }
+.st-ins .grow { min-width: 0; }
+.rv { font-variant-numeric: tabular-nums; white-space: nowrap; }
 </style>
