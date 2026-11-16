@@ -2,6 +2,17 @@
 
 The top entry's version is the one the release workflow publishes. Add a new `## [x.y.z]` section to release.
 
+## [0.1.35] - 2026-11-16
+
+- Voice cues work everywhere: when a rest ends you hear the rest over sound, then the next set spoken, e.g. "Rest over. Bench press, set 3, 8 reps at 80 kilos". If your browser, the desktop app or the phone has no English voice, Motus speaks in its own built-in voice, so nothing needs installing. Turning Voice cues on in Features switches everything it needs on and plays an example; if the phone can't speak, a message says why and where to fix it.
+- Readiness and the health scores say when each number is from ("last night", "today", "in the last 7 days"), give the reason then the advice in two lines, e.g. "You slept less last night and your resting heart rate looks tired: train lightly today.", and the sleep score reads "You slept less than 7 hours on 3 of 7 nights: aim for 7-9 hours."
+- Training load is counted in load points ("705 load points in the last 7 days · usual 219 points a week"), with a short lesson on the Heart tab explaining what a point is.
+- Scores that are based on studies have a "Where the numbers come from" row that opens a short lesson on what the studies found and how Motus counts the score.
+- The Calendar's day view is easier to read: straight lines between the tiles, a sleep chart with one row per stage, workouts and activities as striped bands with their own header, and Day by hour can be made wider to scroll through the hours or opened full screen in landscape.
+- The More page has an Appearance button in its top right corner, and buttons side by side in a page header no longer touch on phones.
+- No more duplicated goals, routines or other items after restoring a backup with replace: every device rebuilds its copy from the server once, keeping changes it hasn't sent yet. Changes the server can't save for a moment are retried later, and if anything has to be removed from a device a notice says so until you close it.
+- Updating adds a few database changes on first start, and backups made with this version need it to be restored.
+
 ## [0.1.34] - 2026-11-16
 
 - Home suggestions name specific muscles your routines miss, even inside a group you train, e.g. "Add an exercise for your lower back (along your lower spine)", with one plain reason. Dismissing one hides only that muscle for a week.
