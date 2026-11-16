@@ -46,6 +46,16 @@ describe("usual busiest hour", () => {
     ];
     expect(typicalHour(h)).toEqual({ hour: 8, avg: 900, days: 3 });
   });
+  it("leaves out the skipped day, so today's unfinished hours don't count", () => {
+    const h = [
+      { day: "a", hour: 8, value: 500 }, { day: "a", hour: 18, value: 900 },
+      { day: "b", hour: 8, value: 500 }, { day: "b", hour: 18, value: 900 },
+      { day: "c", hour: 8, value: 500 }, { day: "c", hour: 18, value: 900 },
+      { day: "t", hour: 8, value: 2000 },
+    ];
+    expect(typicalHour(h)).toEqual({ hour: 8, avg: 875, days: 4 });
+    expect(typicalHour(h, "t")).toEqual({ hour: 18, avg: 900, days: 3 });
+  });
   it("is none under 3 days", () => {
     expect(typicalHour([{ day: "a", hour: 8, value: 900 }, { day: "b", hour: 8, value: 900 }])).toBeNull();
   });

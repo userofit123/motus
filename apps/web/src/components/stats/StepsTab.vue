@@ -19,6 +19,7 @@ import { useSettings, useHealthScores } from "../../api/queries";
 import { useFmt, unitOf } from "../../core/format";
 import { useStepGoal } from "../../core/goals";
 import { mins } from "../../core/sleep";
+import { scoreRow } from "../../core/scores";
 import { fromWhere, useDevice } from "../../native/health";
 import Icon from "../Icon.vue";
 import Ring from "../Ring.vue";
@@ -177,29 +178,39 @@ const month = (d: string) => fmt.value.date(d, { month: "short" });
 const scoresOn = computed(() => !!s.value.features.scores);
 const scoresQ = useHealthScores(scoresOn);
 const minutesPart = computed(() => (scoresOn.value && view.value === "week" && hasToday.value ? scoresQ.data.value?.activity?.parts.find((p) => p.key === "minutes") ?? null : null));
+// the current run is counted over a fixed look-back (not the shown stretch), so every view says the same number; "N+"
+// only when the run goes past it
+const STREAK_BACK = 400;
+const streakFrom = computed(() => plus(today.value, -STREAK_BACK));
+const streakQ = useQuery({ queryKey: computed(() => ["activities", "daily", "streak", streakFrom.value]), placeholderData: keepPreviousData,
+  enabled: computed(() => !!goal.value && hasToday.value),
+  queryFn: () => api.get<Daily[]>("/daily", { from: streakFrom.value, tz: new Date().getTimezoneOffset() }) });
 const nowStreak = computed(() => {
-  if (!goal.value || !hasToday.value) return null;
+  if (!goal.value || !hasToday.value || !streakQ.data.value) return null;
+  const n = new Map<string, number>();
+  for (const x of streakQ.data.value) if (x.kind === "steps") n.set(String(x.date).slice(0, 10), Number(x.value));
   const list: string[] = [];
-  for (let d = from.value; d <= today.value; d = plus(d, 1)) list.push(d);
-  const x = currentStreak(list, (d) => stepsOn(d) >= goal.value!);
-  return x.days ? x : null;
+  for (let d = streakFrom.value; d <= today.value; d = plus(d, 1)) list.push(d);
+  const x = currentStreak(list, (d) => (n.get(d) ?? 0) >= goal.value!);
+  // the same number as the Longest streak tile when the run lies inside the shown stretch: said once
+  return x.days && (x.more || x.days !== streak.value) ? x : null;
 });
 const spanQ = useQuery({ queryKey: computed(() => ["readings", "hourly", "steps", range.value.from, range.value.to]), retry: false, placeholderData: keepPreviousData,
   enabled: computed(() => (view.value === "week" || view.value === "month") && withSteps.value.length >= 3),
   queryFn: () => api.get<{ hours: { at: string; sum?: number }[] }>("/health/records/hourly", { type: "steps", from: midnight(range.value.from).toISOString(), to: midnight(range.value.to).toISOString(), zone }) });
 const usualHour = computed(() => {
   if (spanQ.isPlaceholderData.value) return null;
-  return typicalHour((spanQ.data.value?.hours ?? []).map((h) => { const d = new Date(h.at); return { day: ymd(d), hour: d.getHours(), value: h.sum ?? 0 }; }));
+  return typicalHour((spanQ.data.value?.hours ?? []).map((h) => { const d = new Date(h.at); return { day: ymd(d), hour: d.getHours(), value: h.sum ?? 0 }; }), today.value);
 });
 const hourSpan = (h: number) => { const a = new Date(2000, 0, 1, h); return `${fmt.value.time(a.toISOString())}-${fmt.value.time(new Date(a.getTime() + 3600_000).toISOString())}`; };
 type Insight = { key: string; icon: string; t: string; s: string; rv: string; tone?: "pos" | "neg" };
 const insights = computed(() => {
   const out: Insight[] = [];
   const m = minutesPart.value;
-  // met in full reads positive, under half negative, as the score's own row
-  if (m) out.push({ key: "min", icon: "bolt", t: "Active minutes", s: `last 7 days · aim ${m.target} a week`, rv: `${n0(m.value)} of ${m.target}`, tone: m.share >= 1 ? "pos" : m.share < 0.5 ? "neg" : undefined });
+  // the tone is the score row's own rule
+  if (m) out.push({ key: "min", icon: "bolt", t: "Active minutes", s: `last 7 days · aim ${m.target} a week`, rv: `${n0(m.value)} of ${m.target}`, tone: scoreRow(m, n0).tone });
   const k = nowStreak.value;
-  if (k) out.push({ key: "streak", icon: "link", t: "Current streak", s: `goal reached every day since ${day(k.since!)}${k.todayDone ? "" : " · today still to go"}`,
+  if (k) out.push({ key: "streak", icon: "link", t: "Current streak", s: `goal reached every day since ${k.more ? "at least " : ""}${day(k.since!)}${k.todayDone ? "" : " · today still to go"}`,
     rv: `${k.days}${k.more ? "+" : ""} ${k.days === 1 ? "day" : "days"}`, tone: "pos" });
   const h = usualHour.value;
   if (h) out.push({ key: "hour", icon: "clock", t: "Usual busiest hour", s: `${hourSpan(h.hour)} · average of ${h.days} days`, rv: `${n0(h.avg)} steps` });

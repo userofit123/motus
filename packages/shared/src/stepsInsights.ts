@@ -59,12 +59,13 @@ export function currentStreak(days: readonly string[], reached: (d: string) => b
 
 /**
  * The hour of the day with the most steps on average, over the days that have hourly steps at all: hour 0-23, its
- * average steps and the days counted. null under TYPICAL_MIN_DAYS days or without any steps.
+ * average steps and the days counted. skip: a day left out (today, whose later hours aren't over yet and would pull the
+ * afternoon and evening down). null under TYPICAL_MIN_DAYS days or without any steps.
  */
-export function typicalHour(hours: readonly { day: string; hour: number; value: number }[]): { hour: number; avg: number; days: number } | null {
+export function typicalHour(hours: readonly { day: string; hour: number; value: number }[], skip?: string): { hour: number; avg: number; days: number } | null {
   const sums = new Map<number, number>(), days = new Set<string>();
   for (const h of hours) {
-    if (h.value <= 0) continue;
+    if (h.value <= 0 || h.day === skip) continue;
     days.add(h.day);
     sums.set(h.hour, (sums.get(h.hour) ?? 0) + h.value);
   }
