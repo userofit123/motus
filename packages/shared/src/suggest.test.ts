@@ -47,7 +47,7 @@ describe("pickSuggestions", () => {
     const s = pickSuggestions(input({ muscleDays: { ...Object.fromEntries(ALL.map((m) => [m, 2])), lats: 12, "middle back": 11 } }));
     const pull = s.filter((x) => x.routineId === "pull");
     expect(pull).toHaveLength(1);
-    expect(pull[0]).toMatchObject({ kind: "missed", title: "Pull", reason: "Your lats and middle back were last trained 1 week ago" });
+    expect(pull[0]).toMatchObject({ kind: "missed", title: "Pull", reason: "Your lats (sides of your back) and middle back (between your shoulder blades) were last trained 1 week ago" });
     expect(pull[0]!.hide).toEqual(["r:pull", "m:lats", "m:middle back"]);
     // the same muscle never shows twice under another rule
     expect(s.filter((x) => x.hide.includes("m:lats"))).toHaveLength(1);
@@ -75,33 +75,65 @@ describe("pickSuggestions", () => {
   it("a whole muscle group none of your routines trains is one tip", () => {
     const noArms = MUSCLES.filter((h) => !["biceps", "triceps", "forearms"].includes(h.muscle));
     const s = pickSuggestions(input({ routineMuscles: noArms, sets28: { ...Object.fromEntries(ALL.map((m) => [m, 12])), biceps: 0, triceps: 0 } }));
-    expect(s.find((x) => x.kind === "gap")).toMatchObject({ muscle: "arms", title: "Add exercises for your arms", reason: "None of your routines work your arms", muscles: ["biceps", "triceps", "forearms"] });
+    expect(s.find((x) => x.kind === "gap")).toMatchObject({ muscle: "arms", title: "Add exercises for your arms", reason: "None of your routines train your arms", muscles: ["biceps", "triceps", "forearms"] });
     expect(s.some((x) => x.kind === "target" && ["biceps", "triceps", "forearms"].includes(x.muscle!))).toBe(false);
+  });
+
+  it("a group tip that was dropped leaves its muscles their own tips", () => {
+    const noArms = MUSCLES.filter((h) => !["biceps", "triceps", "forearms"].includes(h.muscle));
+    // biceps already has a "missed" tip, which keeps the arms tip away: triceps and forearms must still show
+    const s = pickSuggestions(input({ routineMuscles: noArms, muscleDays: { ...Object.fromEntries(ALL.map((m) => [m, 2])), biceps: 12 }, sets28: { ...Object.fromEntries(ALL.map((m) => [m, 12])), biceps: 0, triceps: 0 } }));
+    expect(s.some((x) => x.kind === "gap" && x.muscle === "arms")).toBe(false);
+    expect(s.find((x) => x.muscle === "biceps")).toMatchObject({ kind: "missed", title: "Train your biceps" });
+    expect(s.find((x) => x.muscle === "triceps")).toMatchObject({ kind: "target", reason: "None of your routines train them" });
+    expect(s.find((x) => x.muscle === "forearms")).toMatchObject({ kind: "target", reason: "None of your routines train them" });
+  });
+
+  it("a group is a helper-only tip only when every muscle in it is one", () => {
+    const mixed = [...MUSCLES.filter((h) => !["biceps", "triceps", "forearms"].includes(h.muscle)), { routineId: "push", muscle: "triceps", n: 1, main: false }];
+    const sets = { ...Object.fromEntries(ALL.map((m) => [m, 12])), biceps: 0, triceps: 0 };
+    const s = pickSuggestions(input({ routineMuscles: mixed, sets28: sets }));
+    expect(s.some((x) => x.kind === "gap" && x.muscle === "arms")).toBe(false);
+    expect(s.find((x) => x.muscle === "triceps")).toMatchObject({ reason: "Your routines only use them as a helper" });
+    expect(s.find((x) => x.muscle === "biceps")).toMatchObject({ reason: "None of your routines train them" });
+    const all = [...mixed, { routineId: "push", muscle: "biceps", n: 1, main: false }, { routineId: "push", muscle: "forearms", n: 1, main: false }];
+    expect(pickSuggestions(input({ routineMuscles: all, sets28: sets })).find((x) => x.muscle === "arms")).toMatchObject({ reason: "Your routines only use your arms as a helper" });
+  });
+
+  it("a missed tip names every muscle it holds with where it is; muscles left out of it get their own tips", () => {
+    const days = { ...Object.fromEntries(ALL.map((m) => [m, 2])), "middle back": 20, lats: 12 };
+    const s = pickSuggestions(input({ muscleDays: days }));
+    const pull = s.find((x) => x.routineId === "pull")!;
+    expect(pull.reason).toBe("Your middle back (between your shoulder blades) was last trained 2 weeks ago");
+    expect(pull.muscles).toEqual(["middle back"]);
+    expect(s.find((x) => x.muscle === "lats")).toMatchObject({ routineId: null, title: "Train your lats (sides of your back)", reason: "Your lats were last trained 1 week ago" });
+    const both = pickSuggestions(input({ muscleDays: { ...Object.fromEntries(ALL.map((m) => [m, 2])), lats: 12, "middle back": 11 } })).find((x) => x.routineId === "pull");
+    expect(both?.reason).toBe("Your lats (sides of your back) and middle back (between your shoulder blades) were last trained 1 week ago");
   });
 
   it("a one-muscle group none of your routines trains is named by its muscle", () => {
     const s = pickSuggestions(input({ routineMuscles: MUSCLES.filter((h) => h.muscle !== "abdominals"), sets28: { ...Object.fromEntries(ALL.map((m) => [m, 12])), abdominals: 0 } }));
-    expect(s.find((x) => x.muscle === "abdominals")).toMatchObject({ kind: "target", title: "Add an exercise for your abs", reason: "None of your routines work it", hide: ["m:abdominals"] });
+    expect(s.find((x) => x.muscle === "abdominals")).toMatchObject({ kind: "target", title: "Add an exercise for your abs", reason: "None of your routines train them", hide: ["m:abdominals"] });
   });
 
   it("names a specific muscle missing inside a group you train, with where it is and what your routines do train", () => {
     const s = pickSuggestions(input());
     expect(s.find((x) => x.muscle === "lower back")).toMatchObject({
-      kind: "target", title: "Add an exercise for your lower back (spinal erectors)",
-      reason: "Your routines train your lats and middle back, but not this part of your back", hide: ["m:lower back"],
+      kind: "target", title: "Add an exercise for your lower back (along your lower spine)",
+      reason: "Your routines train your lats (sides of your back) and middle back (between your shoulder blades), but not this part of your back", hide: ["m:lower back"],
     });
     expect(s.find((x) => x.muscle === "traps")).toMatchObject({ title: "Add an exercise for your traps (between your neck and shoulders)" });
     // the rest of the group trained: said as such
     const withTraps = [...MUSCLES, { routineId: "pull", muscle: "traps", n: 1, main: true }, { routineId: "legs", muscle: "lower back", n: 1, main: true }];
     const legs = pickSuggestions(input({ routineMuscles: [...withTraps, { routineId: "legs", muscle: "abductors", n: 1, main: true }] }));
-    expect(legs.find((x) => x.muscle === "adductors")).toMatchObject({ title: "Add an exercise for your adductors (inner thighs)", reason: "Your routines train the rest of your legs, but not this" });
+    expect(legs.find((x) => x.muscle === "adductors")).toMatchObject({ title: "Add an exercise for your adductors (inner thighs)", reason: "Your routines train the rest of your legs, but not this part of your legs" });
   });
 
   it("a muscle only a helper in your routines is suggested on its own, and its dismissal hides only that muscle", () => {
     const withHelper = [...MUSCLES, { routineId: "pull", muscle: "lower back", n: 1, main: false }];
     const s = pickSuggestions(input({ routineMuscles: withHelper }));
     const lb = s.find((x) => x.muscle === "lower back")!;
-    expect(lb).toMatchObject({ title: "Add an exercise for your lower back (spinal erectors)", reason: "Your routines only use it as a helper muscle" });
+    expect(lb).toMatchObject({ title: "Add an exercise for your lower back (along your lower spine)", reason: "Your routines only use it as a helper" });
     const after = pickSuggestions(input({ routineMuscles: withHelper, hidden: { "m:lower back": daysAgo(1) } }));
     expect(after.some((x) => x.muscle === "lower back")).toBe(false);
     expect(after.some((x) => x.muscle === "traps")).toBe(true);
@@ -121,7 +153,7 @@ describe("pickSuggestions", () => {
     const routines = [...MUSCLES, { routineId: "back", muscle: "lower back", n: 2, main: true }];
     const days = { ...Object.fromEntries(ALL.map((m) => [m, 2])), "lower back": 12 };
     const base = input({ routineMuscles: routines, routines: [...PPL, R("back", "Back", 1)], muscleDays: days });
-    expect(pickSuggestions(base).find((x) => x.hide.includes("m:lower back"))).toMatchObject({ kind: "missed", title: "Back", reason: "Your lower back (spinal erectors) was last trained 1 week ago" });
+    expect(pickSuggestions(base).find((x) => x.hide.includes("m:lower back"))).toMatchObject({ kind: "missed", title: "Back", reason: "Your lower back (along your lower spine) was last trained 1 week ago" });
     expect(pickSuggestions({ ...base, planned: { routineIds: ["back"], muscles: ["lower back"] } }).some((x) => x.hide.includes("m:lower back"))).toBe(false);
     expect(pickSuggestions({ ...base, planned: { routineIds: ["pull"], muscles: ["lats", "middle back", "biceps"] } }).some((x) => x.hide.includes("m:lower back"))).toBe(true);
   });
@@ -133,7 +165,7 @@ describe("pickSuggestions", () => {
 
   it("points out a muscle your routines only use as a helper", () => {
     const s = pickSuggestions(input());
-    expect(s.find((x) => x.kind === "target")).toMatchObject({ muscle: "forearms", title: "Add an exercise for your forearms", reason: "Your routines only use it as a helper muscle" });
+    expect(s.find((x) => x.kind === "target")).toMatchObject({ muscle: "forearms", title: "Add an exercise for your forearms", reason: "Your routines only use them as a helper" });
   });
 
   it("points out a muscle with far fewer sets than the rest", () => {

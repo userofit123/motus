@@ -55,14 +55,14 @@ describe("suggestions", () => {
     expect(gaps.map((x) => x.muscle)).toEqual(["back", "arms", "legs", "shoulders"]);
     expect(gaps[0].routineId).toBeNull();
     expect(gaps[0].title).toBe("Add exercises for your back");
-    expect(gaps[0].reason).toBe("None of your routines work your back");
+    expect(gaps[0].reason).toBe("None of your routines train your back");
     expect(gaps[3].title).toBe("Add an exercise for your shoulders");
-    expect(gaps[3].reason).toBe("None of your routines work it");
+    expect(gaps[3].reason).toBe("None of your routines train them");
     expect(gaps[0].muscles).toContain("lats");
   }, 60000);
 
   it("says a group is only worked as a helper", async () => {
-    await personWith(["chest", "lats", "shoulders"], { chest: ["triceps"] });
+    await personWith(["chest", "lats", "shoulders"], { chest: ["biceps", "triceps", "forearms"] });
     const arms = (await suggest()).find((x) => x.muscle === "arms");
     expect(arms?.title).toBe("Add exercises for your arms");
     expect(arms?.reason).toBe("Your routines only use your arms as a helper");
@@ -86,9 +86,9 @@ describe("suggestions", () => {
     // specific muscles inside groups you train still show: the back days have no lower back or traps
     expect(targets.map((x) => x.muscle)).toEqual(["forearms", "lower back", "traps", "adductors"]);
     expect(targets[0].title).toBe("Add an exercise for your forearms");
-    expect(targets[0].reason).toBe("Your routines only use it as a helper muscle");
-    expect(targets[1].title).toBe("Add an exercise for your lower back (spinal erectors)");
-    expect(targets[1].reason).toBe("Your routines train your lats and middle back, but not this part of your back");
+    expect(targets[0].reason).toBe("Your routines only use them as a helper");
+    expect(targets[1].title).toBe("Add an exercise for your lower back (along your lower spine)");
+    expect(targets[1].reason).toBe("Your routines train your lats (sides of your back) and middle back (between your shoulder blades), but not this part of your back");
     expect(targets[1].hide).toEqual(["m:lower back"]);
   }, 60000);
 
