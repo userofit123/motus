@@ -688,12 +688,13 @@ await loaded(home, ach, avail, hDay, ready, nightsQ, dailyQ, todayCal);
         </div>
 
         <!-- the newest night: time asleep with the share of the time tracked asleep as its ring (NightRing, as Stats → Sleep's night), then its stages; it
-             opens that night there. The percent is in the ring only; the line under it says what the ring is, so it doesn't read as a score (M-264) -->
+             opens that night there. The line under the ring says what its percent is, so it doesn't read as a score (M-264), even for a nap, whose
+             reason for being left out follows as on Stats → Sleep's night -->
         <div v-else-if="id === 'sleep' && night" class="card hb sz-m click" :data-solo="solo.has(id) || undefined" v-bind="link(`/stats?tab=sleep&day=${night.date}`)">
           <div class="ch"><span class="bi"><Icon name="moon" :size="15" /></span><span class="t grow">{{ nightName }}</span><span class="tiny">{{ fmt.time(night.startAt) }}-{{ fmt.time(night.endAt) }}</span></div>
           <div class="row"><div class="big grow">{{ mins(asleepMin(night)) }}<small>{{ nightShort ? "short record" : "asleep" }}</small></div><NightRing :night="night" :size="40" /></div>
+          <div class="tiny">{{ nightRingLine(night) }}</div>
           <div v-if="nightShort" class="tiny">{{ SHORT_WHY }}</div>
-          <div v-else class="tiny">{{ nightRingLine(night) }}</div>
           <div v-if="hasStages(night) || night.awakeMin" class="hstages"><StageBar :night="night" /></div>
         </div>
 

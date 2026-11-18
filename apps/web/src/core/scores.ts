@@ -1,8 +1,8 @@
 // The health scores (@motus/shared scores.ts) as Home's blocks and Stats → Scores show them, in one place so both read
 // the same: each score's name, icon and stretch, its parts as rows (what, the guideline, how much of it was met) and the
 // one line that says why it is what it is.
-import { GROUPS, WEEKLY_SET_RANGE, SCORE_DAYS, SCORE_SOURCES, type Score, type ScoreKey, type ScorePart } from "@motus/shared";
-import { mins } from "./sleep";
+import { GROUPS, WEEKLY_SET_RANGE, SCORE_DAYS, MIN_NIGHTS, SCORE_SOURCES, type Score, type ScoreKey, type ScorePart } from "@motus/shared";
+import { mins, pctDown } from "./sleep";
 
 // `lesson`: the lesson its "Where the aims come from" row opens (components/learn/lessons.ts)
 export const SCORE_META: Record<ScoreKey, { name: string; icon: string; span: string; sources: string; lesson: "sleepScore" | "activityScore" | "strengthScore" }> = {
@@ -42,12 +42,13 @@ export function scoreRow(p: ScorePart, num: Num): ScoreRow {
     // each row's result counts nights, so its line says which nights it counts, then the average
     case "duration": return { key: p.key, icon: "moon", t: "Hours asleep", s: `Nights with ${x(p, "lo")}-${x(p, "hi")} hours · average ${mins(x(p, "avgMin"))}`, r: of(p), tone };
     // the share of the time the band tracked spent asleep: it can't know when you got into bed, so never "in bed". Only
-    // nights the band split into asleep and awake count, so when that is fewer than the week's the line says why its
-    // "of" is smaller than the other rows'; with too few the part is left out of the score (weight 0) and says so
+    // nights the band split into asleep and awake count, so when that is fewer than the week's the line says so (its "of"
+    // is smaller than the other rows'); with too few the part is left out of the score (weight 0) and says so as
+    // Readiness's left-out rows do, the fact then the reason
     case "efficiency": {
-      if (p.weight === 0) return { key: p.key, icon: "bed", t: "Stayed asleep", s: p.value ? `Time awake recorded on only ${p.value} of ${p.target} nights` : "Time awake not recorded", r: "Left out", tone: "muted" };
+      if (p.weight === 0) return { key: p.key, icon: "bed", t: "Stayed asleep", s: p.value ? `Time awake recorded on ${p.value} of ${p.target} nights · needs ${MIN_NIGHTS} nights to count` : `No time awake recorded in the last ${SCORE_DAYS} nights · nothing to count`, r: "Left out", tone: "muted" };
       const out = x(p, "nights") - p.target;
-      return { key: p.key, icon: "bed", t: "Stayed asleep", s: `Nights asleep for 85% or more of the time tracked · average ${Math.round(x(p, "avg") * 100)}%${out > 0 ? ` · time awake not recorded on ${nightsN(out)}` : ""}`, r: of(p), tone }; }
+      return { key: p.key, icon: "bed", t: "Stayed asleep", s: `Nights asleep for 85% or more of the time tracked · average ${pctDown(x(p, "avg"))}%${out > 0 ? ` · time awake missing on ${nightsN(out)}` : ""}`, r: of(p), tone }; }
     case "regularity": return { key: p.key, icon: "clock", t: "Regular times", s: "Nights within an hour of your usual bed and wake times", r: of(p), tone };
     // the split by effort (WHO's moderate and vigorous intensity) under the title, never a "Moderate" title, which is
     // Heart's 70 % zone; the icon is zone minutes' bolt, since these are minutes at a heart rate effort (heartPulse is

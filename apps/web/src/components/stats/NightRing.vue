@@ -7,27 +7,30 @@
 import { computed } from "vue";
 import Ring from "../Ring.vue";
 import type { SleepNight } from "../../api/queries";
-import { awakeKnown, efficiency, inBedMin, mins } from "../../core/sleep";
+import { asleepPct, awakeKnown, efficiency, nightRingLine } from "../../core/sleep";
 import { GOOD_EFFICIENCY } from "@motus/shared";
 
 const props = defineProps<{ night: SleepNight; size: number; stroke?: number }>();
 const known = computed(() => awakeKnown(props.night));
 const pct = computed(() => (known.value ? efficiency(props.night) : 0));
-// rounded down, so a night with time awake never reads "100%" and 84.6% stays under the 85% the score counts from
-const whole = computed(() => Math.floor(pct.value * 100));
-const label = computed(() => (known.value ? `Asleep for ${whole.value}% of the ${mins(inBedMin(props.night))} tracked` : "Time awake not recorded"));
+const whole = computed(() => asleepPct(props.night));
+// Home's 40px ring has a smaller hole than Stats → Sleep's 64px one: a smaller number and "%" keep clear of the stroke
+const small = computed(() => props.size < 56);
 </script>
 
 <template>
-  <span class="nring" role="img" :aria-label="label">
+  <span class="nring" :class="{ sm: small }" role="img" :aria-label="nightRingLine(night)">
     <Ring aria-hidden="true" :pct="pct" :size="size" :stroke="stroke" />
-    <span aria-hidden="true" :class="{ done: known && pct >= GOOD_EFFICIENCY, none: !known }">{{ known ? `${whole}%` : "-" }}</span>
+    <span aria-hidden="true" :class="{ done: known && pct >= GOOD_EFFICIENCY, none: !known }"><template v-if="known">{{ whole }}<small>%</small></template><template v-else>-</template></span>
   </span>
 </template>
 
 <style scoped>
 .nring { position: relative; flex: none; display: grid; }
 .nring > span { position: absolute; inset: 0; display: grid; place-items: center; font-size: var(--fs-sm); font-weight: 700; font-variant-numeric: tabular-nums; }
+.nring small { font-size: 1em; }
+.nring.sm > span { font-size: var(--fs-xs); }
+.nring.sm small { font-size: 0.75em; }
 .nring .done { color: var(--acc); }
 .nring .none { color: var(--tx2); }
 </style>

@@ -36,9 +36,16 @@ export const awakeKnown = (n: SleepNight) => hasStages(n) || (n.awakeMin ?? 0) >
 /** The share of the tracked time spent asleep, 0-1: the band's own minutes asleep (not hours typed in, which were never
  *  measured against its record), as the sleep score counts it */
 export const efficiency = (n: SleepNight) => { const b = inBedMin(n); return b ? Math.min(1, n.asleepMin / b) : 0; };
-/** The line under a night's ring (NightRing), on Home and Stats → Sleep alike: what the ring shows, without repeating the
- *  percent in it, or why it is empty */
-export const nightRingLine = (n: SleepNight) => `${mins(inBedMin(n))} tracked · ${awakeKnown(n) ? "ring shows how much of it you slept" : "time awake not recorded"}`;
+/** A share (0-1) as a whole percent rounded down, so a night with time awake never reads "100%" and 84.6% stays under the
+ *  85% the sleep score counts from; the tiny nudge stops 0.29 (28.999… in floating point) from losing a whole percent */
+export const pctDown = (v: number) => Math.floor(v * 100 + 1e-6);
+/** The percent in a night's ring, and in its sleep score's Stayed asleep row (the same minutes the score counts) */
+export const asleepPct = (n: SleepNight) => pctDown(efficiency(n));
+/** The line under a night's ring (NightRing), on Home and Stats → Sleep alike, and the ring's own label: what the ring
+ *  shows, or why it is empty. Said even for a nap, so the percent in the ring is never left unexplained */
+export const nightRingLine = (n: SleepNight) => (awakeKnown(n)
+  ? `Asleep for ${asleepPct(n)}% of the ${mins(inBedMin(n))} tracked`
+  : `${mins(inBedMin(n))} tracked · time awake not recorded`);
 
 /** A time of night as minutes after the noon before, so 23:30 and 00:30 sit an hour apart rather than a day */
 export const nightMin = (iso: string) => { const d = new Date(iso); return (d.getHours() * 60 + d.getMinutes() + 720) % 1440; };
