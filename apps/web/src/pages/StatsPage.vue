@@ -198,7 +198,7 @@ watch([() => avail.data.value, () => scoresQ.data.value, () => readyQ.data.value
       <div v-if="tab === 'steps'" class="acts"><AppSelect v-model="stepsView" :options="STEP_VIEWS" title="View" style="width:auto" /></div>
       <div v-else-if="tab === 'sleep'" class="acts"><AppSelect v-model="sleepView" :options="SLEEP_VIEWS" title="View" style="width:auto" /></div>
       <div v-else-if="tab === 'heart'" class="acts"><AppSelect v-model="heartView" :options="STEP_VIEWS" title="View" style="width:auto" /></div>
-      <div v-else-if="tab !== 'reports' && tab !== 'scores'" class="acts"><AppSelect v-model="rk" :options="PERIODS" title="Period" style="width:auto" /></div></div>
+      <div v-else-if="tab !== 'reports' && tab !== 'scores' && tab !== 'achievements'" class="acts"><AppSelect v-model="rk" :options="PERIODS" title="Period" style="width:auto" /></div></div>
     <div class="tabs"><button v-for="[k, l] in TABS" :key="k" :class="{ on: tab === k }" @click="tab = k!">{{ l }}</button></div>
 <Transition name="sw" mode="out-in"><div :key="tab">
     <div v-if="!d && st.isError.value" class="card empty"><Icon name="info" :size="34" /><b>Couldn't load your stats</b>{{ (st.error.value as Error | null)?.message }}<br /><button class="btn tonal" @click="st.refetch()">Try again</button></div>
