@@ -11,7 +11,7 @@ import { useQuery, keepPreviousData } from "@tanstack/vue-query";
 import { zoneMinutes, ymd } from "@motus/shared";
 import { useHealthDay } from "../../api/queries";
 import { useFmt } from "../../core/format";
-import { ZONES, useMaxHr, hrSamples } from "../../core/heart";
+import { ZONES, useMaxHr, hrSamples, zoneNote } from "../../core/heart";
 import Icon from "../Icon.vue";
 import HeartRate from "../HeartRate.vue";
 import StageBar from "./StageBar.vue";
@@ -87,6 +87,8 @@ const zones = computed(() => {
   return ZONES.map((z, i) => ({ key: z.key, name: z.name, color: z.color, min: Math.round(m[i] ?? 0) }));
 });
 const zoned = computed(() => zones.value.some((z) => z.min > 0));
+// under the bar: how long the day was in a zone at all and where each starts, so its minutes read against the chart
+const zNote = computed(() => (maxHr.value ? zoneNote(maxHr.value.bpm, zones.value.reduce((t, z) => t + z.min, 0), date.value === today.value ? "today" : "on this day") : ""));
 const charted = computed(() => samples.value.length > 1);
 // "Loading…" only the first time: stepping to another day keeps the card as it is until the day is in, so it doesn't jump
 const loaded = ref(false);
@@ -123,7 +125,7 @@ watch(() => !recs.isLoading.value && !day.isLoading.value && !calQ.isLoading.val
         <div v-if="legend.length" class="bmlegend hd-leg"><span><i :style="{ background: DAY_DATA_COLOR }" />Heart rate</span><span v-for="k in legend" :key="k.color"><i :style="{ background: k.color }" />{{ k.name }}</span></div></template>
       <div v-else class="tiny">{{ noRecords("day") }}</div></div>
 
-    <div v-if="zoned" class="csec"><div class="lbl hgap">Time in heart rate zones · max {{ maxHr!.bpm }} bpm{{ maxHr!.own ? "" : " from your age" }}</div><StageBar :parts="zones" /></div>
+    <div v-if="zoned" class="csec"><div class="lbl hgap">Time in heart rate zones · max {{ maxHr!.bpm }} bpm{{ maxHr!.own ? "" : " from your age" }}</div><StageBar :parts="zones" /><div class="tiny zn-line">{{ zNote }}</div></div>
     <div v-else-if="!maxHr && charted" class="tiny csec"><button class="lnk inl" @click="router.push('/body?tab=details')">Set your year of birth or max heart rate</button> to see the time in heart rate zones.</div>
 
     <div v-if="sessions.length" class="csec"><div class="lbl hgap">Workouts and activities</div>
@@ -133,4 +135,6 @@ watch(() => !recs.isLoading.value && !day.isLoading.value && !calQ.isLoading.val
 
 <style scoped>
 .hd-leg { margin-top: var(--hg); }
+/* apart from the zones' legend as the legend is from its bar */
+.zn-line { margin-top: var(--hg); }
 </style>

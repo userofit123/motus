@@ -11,7 +11,7 @@ import { useRouter } from "vue-router";
 import { useQuery } from "@tanstack/vue-query";
 import { zoneMinutes, restRecovery, fromM, ymd, SAMPLE_MAX_S, type SetSpan } from "@motus/shared";
 import { useFmt } from "../core/format";
-import { ZONES, useMaxHr, bandRecords, bandTypesOn, type BandRecord } from "../core/heart";
+import { ZONES, useMaxHr, zoneNote, bandRecords, bandTypesOn, type BandRecord } from "../core/heart";
 import { hrPoints, fromWhere, useDevice } from "../native/health";
 import Icon from "./Icon.vue";
 import LineChart from "./LineChart.vue";
@@ -145,6 +145,9 @@ const zones = computed(() => {
   return ZONES.map((z, i) => ({ key: z.key, name: z.name, color: z.color, min: Math.round(m[i] ?? 0) }));
 });
 const zoned = computed(() => zones.value.some((z) => z.min > 0));
+// under the bar, as Stats → Heart's day: how long the session was in a zone at all and where each starts (a workout
+// comes with its sets, an activity without)
+const zNote = computed(() => (maxHr.value ? zoneNote(maxHr.value.bpm, zones.value.reduce((t, z) => t + z.min, 0), props.sets ? "during this workout" : "during this activity") : ""));
 </script>
 
 <template>
@@ -165,13 +168,14 @@ const zoned = computed(() => zones.value.some((z) => z.min > 0));
       <LineChart :points="curve.points" :height="150" :fmt="curve.fmt" :xfmt="t" :domain="[from, to]" :gap="SAMPLE_MAX_S * 1000" :shade="shade" />
       <div v-if="shade?.length" class="bmlegend sh-leg"><span><i class="sh-hr" />Heart rate</span><span><i :style="{ background: color }" />Sets</span><span v-if="rested"><i class="sh-rest" />Rests</span></div>
     </div>
-    <div v-if="zoned" class="csec"><div class="lbl hgap">Time in heart rate zones · max {{ maxHr!.bpm }} bpm{{ maxHr!.own ? "" : " from your age" }}</div><StageBar :parts="zones" /></div>
+    <div v-if="zoned" class="csec"><div class="lbl hgap">Time in heart rate zones · max {{ maxHr!.bpm }} bpm{{ maxHr!.own ? "" : " from your age" }}</div><StageBar :parts="zones" /><div class="tiny zn-line">{{ zNote }}</div></div>
     <div v-else-if="!maxHr && samples.length > 1" class="tiny csec"><button class="lnk inl" @click="router.push('/body?tab=details')">Set your year of birth or max heart rate</button> to see the time in heart rate zones.</div>
   </div>
 </template>
 
 <style scoped>
 .sh-leg { margin-top: var(--hg); }
+.zn-line { margin-top: var(--hg); }
 .sh-leg .sh-hr { background: var(--acc); }
 /* a rest is a quiet grey span behind the line (the chart draws it at 16%; a touch stronger here so the dot shows) */
 .sh-leg .sh-rest { background: color-mix(in srgb, var(--tx2) 35%, transparent); }

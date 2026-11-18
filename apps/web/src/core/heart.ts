@@ -6,9 +6,21 @@ import { useQuery } from "@tanstack/vue-query";
 import { HR_ZONES, maxHeartRate } from "@motus/shared";
 import { api } from "../api/client";
 import { useSettings } from "../api/queries";
+import { mins } from "./sleep";
 
 export const ZONE_COLORS = ["color-mix(in srgb, var(--acc) 30%, var(--s2))", "color-mix(in srgb, var(--acc) 62%, var(--s2))", "var(--acc)", "var(--warn)", "var(--neg)"];
 export const ZONES = HR_ZONES.map((z, i) => ({ ...z, color: ZONE_COLORS[i]! }));
+
+/**
+ * The line under a time-in-zones bar (M-277): only the time at half the max or more is in a zone, so a resting day's
+ * hours aren't in the bar and its shares are of that time alone; this says how long that was and where each zone
+ * starts in bpm, so "Very light 7m" reads against a chart that rises to 130. Each start as zoneOf counts it (the first
+ * whole bpm at the zone's share of the max). total: the bar's minutes; when: its time ("today", "during this workout").
+ */
+export function zoneNote(max: number, total: number, when: string): string {
+  const at = ZONES.map((z) => Math.ceil(z.from * max));
+  return `Your heart rate was ${at[0]} bpm or more (half your max) for ${mins(total)} ${when}. Zones start at: ${ZONES.map((z, i) => `${z.name} ${at[i]}`).join(", ")} bpm.`;
+}
 
 /** The max heart rate in use (Body → About you), null when neither it nor a year of birth is set */
 export function useMaxHr() {
