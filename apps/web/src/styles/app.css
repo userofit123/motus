@@ -186,6 +186,10 @@ hr.sep { border: 0; border-top: 1px solid var(--ol); margin: 14px 0; }
 .stat.hero .sub .sep { color: inherit; }
 .stat .spark { position: absolute; right: 0; bottom: 0; width: 55%; height: 46px; opacity: .9; pointer-events: none; }
 .ring { flex: none; }
+/* a recurring goal's last periods under its streak, oldest first: a bar each, accent when reached, faint when not */
+.gdots { display: flex; gap: 4px; }
+.gdots i { flex: 1; height: 6px; border-radius: 3px; background: color-mix(in srgb, currentColor 14%, transparent); }
+.gdots i.on { background: var(--acc); }
 
 /* ---------- lists ---------- */
 .list { display: flex; flex-direction: column; }
@@ -998,4 +1002,10 @@ html.phone #pop .aph::before { content: ""; position: absolute; left: 50%; top: 
 /* a part of a day or night card (Stats → Steps' and Heart's day, Sleep's night): a block-padding below the one before,
    under a faint line; right under the card's header it needs no line */
 .csec { margin-top: var(--cpy); padding-top: var(--cpy); border-top: 1px solid var(--ol); }
+/* rows of a score's parts (Stats → Scores, Routine check), as Stats → Heart's highlights: the first without space above,
+   the last without its line, the value on the right in tabular figures on one line */
+.crows .li:first-child { padding-top: 0; }
+.crows .li:last-child { border-bottom: 0; padding-bottom: 0; }
+.crows .grow { min-width: 0; }
+.crows .rv { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .ch + .csec { margin-top: 0; padding-top: 0; border-top: 0; }

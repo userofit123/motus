@@ -65,8 +65,8 @@ const menu = computed(() => !g.value ? [] : [
       <div class="tiny gs-when">{{ goalSub(g, s) }}{{ goalSub(g, s) ? " · since " : "Since " }}{{ fmt.date(g.startDate, { day: "numeric", month: "short", year: "numeric" }) }}{{ g.deadline && g.period !== "once" ? ` · deadline ${fmt.date(g.deadline, { day: "numeric", month: "short", year: "numeric" })}` : "" }}</div>
 
       <div v-if="periodic" class="grid g2 gs-runs">
-        <div class="card stat"><div class="lbl"><span class="bi"><Icon name="flame" :size="15" /></span>Streak</div><div class="val">{{ d.streak }}<small>{{ periodWord(g, d.streak) }}</small></div><div class="sub">in a row</div></div>
-        <div class="card stat"><div class="lbl"><span class="bi"><Icon name="trophy" :size="15" /></span>Best</div><div class="val">{{ d.best }}<small>{{ periodWord(g, d.best) }}</small></div><div class="sub">longest run</div></div>
+        <div class="card stat"><div class="lbl"><span class="bi"><Icon name="flame" :size="15" /></span>Streak</div><div class="val">{{ d.streak }}<small>{{ periodWord(g, d.streak) }}</small></div><div class="sub">In a row</div></div>
+        <div class="card stat"><div class="lbl"><span class="bi"><Icon name="trophy" :size="15" /></span>Best</div><div class="val">{{ d.best }}<small>{{ periodWord(g, d.best) }}</small></div><div class="sub">Longest run</div></div>
       </div>
       <div v-if="periodic && d.periods.length" class="card"><div class="lbl hgap">Last {{ d.periods.length }} {{ periodWord(g, 2) }}</div>
         <BarChart :bars="d.periods.map((p: any) => ({ label: wlabel(p.from), value: p.value, dim: !p.met }))" :goal="g.target" :fmt="showU" :height="150" /></div>

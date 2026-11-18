@@ -22,6 +22,10 @@ export const periodWord = (g: Pick<Goal, "period">, n = 1) => {
   const w = g.period === "month" ? "month" : g.period === "day" ? "day" : "week";
   return n === 1 ? w : w + "s";
 };
+/** a recurring goal's last periods, oldest first, each true when it reached the target; eight empty ones before it has any,
+ * so the row of dots under its streak is never bare (Home's pinned goals and the goal cards) */
+export const periodDots = (g: Pick<Goal, "target" | "progress">) =>
+  g.progress?.history?.length ? g.progress.history.map((x) => x.value >= g.target) : Array<boolean>(8).fill(false);
 /** the window a goal is counted over right now */
 export const periodNow = (g: Pick<Goal, "period">) => (g.period === "day" ? "Today" : g.period === "week" ? "This week" : g.period === "month" ? "This month" : "So far");
 
