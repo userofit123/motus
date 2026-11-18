@@ -32,7 +32,7 @@ const pace = computed(() => (props.goal.status === "achieved" || !recurring(prop
   <div class="card click gcard">
     <div class="ch">
       <span class="bi"><Icon :name="goalIcon(goal)" :size="15" /></span>
-      <div class="grow" style="min-width:0"><div class="t">{{ goal.title }}</div><div v-if="sub" class="tiny ellipsis">{{ sub }}</div></div>
+      <div class="grow" style="min-width:0"><div class="t">{{ goal.title }}</div><div v-if="sub" class="tiny gsub">{{ sub }}</div></div>
     </div>
     <div class="gtile">
       <div class="gmain">
@@ -65,7 +65,12 @@ const pace = computed(() => (props.goal.status === "achieved" || !recurring(prop
 /* a card is about as narrow as Home's tile on a phone, so it takes the phone's split, and its values scale with the card:
    Home's phone size at 360px, up to the full size in a wide card */
 .gcard .gtile { grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); }
-.gcard .gtile .big { font-size: clamp(20px, 7.3cqi, var(--fs-val)); }
+.gcard .gtile .big { font-size: clamp(15px, 7.3cqi, var(--fs-val)); }
+/* a value is never cut: when the unit does not fit beside the number it wraps under it, and both halves keep one size */
+.gcard .gtile .big { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 5px; white-space: normal; overflow: visible; }
+.gcard .gtile .big small { margin-inline-start: 0; }
+/* the line under the title wraps (two lines at most) instead of being cut */
+.gcard .gsub { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 /* the pace line ends the progress half on the line of the other half's dots or trend */
 .gtile .gpace { align-self: end; line-height: 1; margin-bottom: -2px; }
 </style>
