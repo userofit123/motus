@@ -4,13 +4,13 @@
 // (no reminder waiting, no goal due soon, no program running) stays away until it has; feature blocks need their feature.
 import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
-import { num, fromM, percentChange, weekStartDate, orderGoals, dismissalPatch, HOME_BLOCKS, GLANCE_RINGS, ageOf, stepsTarget, sleepRange, type Goal, type HomeData, type HomeSuggestion, type HomePlan, type HomeRecord, type HomeGroup, type HomeWeek, type ScoreKey, type GlanceRing } from "@motus/shared";
+import { num, percentChange, weekStartDate, orderGoals, dismissalPatch, HOME_BLOCKS, GLANCE_RINGS, ageOf, stepsTarget, sleepRange, type Goal, type HomeData, type HomeSuggestion, type HomePlan, type HomeRecord, type HomeGroup, type HomeWeek, type ScoreKey, type GlanceRing } from "@motus/shared";
 import { useCalendar, useHome, useSettings, saveSettings, useAchievements, useGoals, useHealthAvailable, useHealthDay, useReadiness, useHealthScores, useSleep, useDaily, useTypeName, loaded, type HealthAvailable, type ReadinessPart, type ReadinessBuilding } from "../api/queries";
 import { api } from "../api/client";
 import { invalidate, queryClient } from "../api/live";
 import { confirm } from "../core/ask";
 import { toast } from "../core/toast";
-import { onHome, streakOnHome, toggleHomeGoal, setHomeStreak, periodWord, goalSub } from "../core/goals";
+import { onHome, streakOnHome, toggleHomeGoal, setHomeStreak, periodWord, goalSub, periodDots, recurring, goalValue, goalUnit, goalTarget, goalIcon, goalSide, goalTrend, hasTrend } from "../core/goals";
 import { asleepMin, hasStages, isFull, mins, nightRingLine, SHORT_WHY } from "../core/sleep";
 import NightRing from "../components/stats/NightRing.vue";
 import { SCORE_META, scoreRow, scoreWhy } from "../core/scores";
@@ -149,51 +149,13 @@ const dueText = (g: Goal) => { const d = daysLeft(g); return d === 0 ? "Ends tod
 // (nothing for a one-off goal, whose progress says it all); the same in Goals and Goals due soon
 const listSub = (g: Goal) => (g.period !== "once" || (g.name && g.summary) ? goalSub(g, s.value) : "");
 const reached = (g: Goal) => g.status === "achieved" || !!g.progress?.done;
-// the unit after a goal's number, as the stat tiles write it ("142.5 kg", "12,500 steps", "1 session")
-const COUNT_UNITS: Record<string, [string, string]> = { sessions: ["session", "sessions"], times: ["time", "times"], workouts: ["workout", "workouts"], weeks: ["week", "weeks"], reps: ["rep", "reps"], sets: ["set", "sets"], steps: ["step", "steps"] };
-// sleep in hours and minutes as everywhere ("7h 30m"), its unit in the number
-const goalVal = (g: Goal, v: number) => { const u = g.progress?.unit; return u === "h" ? fmt.value.dur(Math.round(v * 60) * 60, true) : u === "kg" ? fmt.value.w(v) : u === "km" ? fmt.value.num(fromM(v * 1000, fmt.value.du), 1) : u === "cm" ? fmt.value.len(v) : fmt.value.num(v, u === "min" || !!COUNT_UNITS[u ?? ""] ? 0 : 1); };
-const goalUnit = (g: Goal, v: number) => { const u = g.progress?.unit ?? ""; const c = COUNT_UNITS[u]; return c ? c[v === 1 ? 0 : 1] : u === "kg" ? fmt.value.wu : u === "km" ? fmt.value.du : u === "cm" ? fmt.value.lu : u === "h" ? "" : u; };
-// the tile's tiny line names the target the same way for every goal: "of 150 kg" for goals that count up to it,
-// "Target 80 kg" for body goals (which can head up or down) and goals that must stay under it
-const goalTarget = (g: Goal) => `${g.scope === "body" || g.comparator === "<=" ? "Target" : "of"} ${goalVal(g, g.target)} ${goalUnit(g, g.target)}`.trim();
 // "0 of 30 min today" for a daily goal (its own period says the rest); other periods keep their line after the progress
 const goalLine = (g: Goal) => {
   const label = goalLabel(g, fmt.value).replace(" / ", " of ");
   return g.period === "day" && g.scope !== "body" ? `${label} today` : [label, listSub(g)].filter(Boolean).join(" · ");
 };
-const goalIcon = (g: Goal) => ({ activity: g.scopeId === "workout" ? "dumbbell" : "walk", routine: "routines", exercise: "dumbbell", muscle: "activity", body: "scale" } as Record<string, string>)[g.scope] ?? "target";
 // progress.pct is a share (0 to 1); the rows show it as a percent and the bar is that wide
 const pct = (g: Goal) => Math.max(0, Math.min(100, (g.progress?.pct ?? 0) * 100));
-// a pinned goal without its streak fills the same half with when: the day it was achieved, the days left to its deadline,
-// or the day it started; under it the goal's trend (its last periods, or its entries for a one-off goal)
-const noon = (d: string) => d.slice(0, 10) + "T12:00:00"; // a calendar day read on this device's calendar, not as UTC midnight
-const shortDate = (d: string) => fmt.value.date(noon(d), { day: "numeric", month: "short" });
-// both halves of the tile are built the same way, row by row: header, big value, a tiny line, then the bottom element.
-// The big value stays short (a number and one word) so it fits the narrower half at 360px without being cut
-type GoalSide = { icon: string; label: string; big: string; small?: string; sub: string };
-const goalSide = (g: Goal & { showStreak?: boolean }): GoalSide => {
-  if (g.showStreak) {
-    const n = g.progress?.streak ?? 0;
-    return { icon: "flame", label: "Streak", big: String(n), small: periodWord(g, n), sub: "In a row" };
-  }
-  // the ring's tick shows it is done; this half names the day
-  if (g.status === "achieved" && g.achievedAt) return { icon: "check", label: "Done on", big: fmt.value.date(g.achievedAt, { day: "numeric", month: "short" }), sub: when(g.achievedAt) };
-  if (g.deadline && !reached(g)) {
-    // calendar days left with today counted, as the goal's own pace says
-    const d = daysLeft(g) + 1;
-    return d > 0 ? { icon: "calendar", label: "Days left", big: String(d), sub: `Ends ${shortDate(g.deadline)}` }
-      : { icon: "calendar", label: "Deadline", big: shortDate(g.deadline), sub: "Deadline passed" };
-  }
-  return { icon: "calendar", label: "Started", big: shortDate(g.startDate), sub: when(noon(g.startDate)) };
-};
-const trend = (g: Goal) => (g.progress?.history ?? []).map((x) => x.value);
-// recurring goals end on their last periods as dots (filled when reached), one-off goals on their trend line; with no
-// periods yet the dots are all empty, and a trend with nothing to draw is a flat line, so the half is never bare
-const recurring = (g: Goal) => g.period !== "once";
-const dots = (g: Goal) => (g.progress?.history?.length ? g.progress.history.map((x) => x.value >= g.target) : Array<boolean>(8).fill(false));
-const hasTrend = (g: Goal) => trend(g).length > 1 && trend(g).some((v) => v);
-
 // "Today", "Yesterday", "3 days ago": the day something was last done, by this device's calendar (as everywhere else)
 const when = (iso: string | null | undefined) => { const a = ago(iso); return a.charAt(0).toUpperCase() + a.slice(1); };
 const calDays = (iso: string) => { const d = new Date(iso), n = new Date(); return Math.round((new Date(n.getFullYear(), n.getMonth(), n.getDate()).getTime() - new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()) / 86400000); };
@@ -543,26 +505,26 @@ await loaded(home, ach, avail, hDay, ready, nightsQ, dailyQ, todayCal);
              shown without its streak the day it started, ends or was done; both halves end on its periods' dots
              (recurring goals) or its trend (one-off goals) -->
         <div v-else-if="id === 'pinned'" class="pins">
-          <div v-for="g in pinnedGoals" :key="g.id" class="card hb gtile sz-m click" :class="{ hero: reached(g) }" :data-solo="solo.has(`pinned:${g.id}`) || undefined" v-bind="link(() => (goalOpen = g.id))">
+          <div v-for="g in pinnedGoals" :key="g.id" class="card gtile sz-m click" :class="{ hero: reached(g) }" :data-solo="solo.has(`pinned:${g.id}`) || undefined" v-bind="link(() => (goalOpen = g.id))">
             <div class="gmain">
               <div class="ch"><span class="bi"><Icon :name="goalIcon(g)" :size="15" /></span><span class="t grow ellipsis">{{ g.title }}</span></div>
               <div class="row">
                 <!-- like the stat tiles: the current number big with its unit small, the target on the tiny line -->
-                <div class="big grow">{{ goalVal(g, g.progress?.current ?? 0) }}<small>{{ goalUnit(g, g.progress?.current ?? 0) }}</small></div>
+                <div class="big grow">{{ goalValue(g, g.progress?.current ?? 0, fmt) }}<small>{{ goalUnit(g, g.progress?.current ?? 0, fmt) }}</small></div>
                 <!-- the ring and its check keep the accent gradient on a reached (accent) tile too, as on the goal cards -->
                 <Ring :pct="g.progress?.pct ?? 0" :size="40" :done="reached(g)" />
               </div>
-              <div class="tiny">{{ goalTarget(g) }}</div>
+              <div class="tiny">{{ goalTarget(g, fmt) }}</div>
             </div>
             <div class="grun">
-              <div class="ch"><span class="bi"><Icon :name="goalSide(g).icon" :size="15" /></span><span class="t">{{ goalSide(g).label }}</span></div>
-              <div class="row"><div class="big grow">{{ goalSide(g).big }}<small v-if="goalSide(g).small">{{ goalSide(g).small }}</small></div></div>
-              <div class="tiny">{{ goalSide(g).sub }}</div>
+              <div class="ch"><span class="bi"><Icon :name="goalSide(g, fmt).icon" :size="15" /></span><span class="t">{{ goalSide(g, fmt).label }}</span></div>
+              <div class="row"><div class="big grow">{{ goalSide(g, fmt).big }}<small v-if="goalSide(g, fmt).small">{{ goalSide(g, fmt).small }}</small></div></div>
+              <div class="tiny">{{ goalSide(g, fmt).sub }}</div>
               <!-- the bottom element sits in one fixed box: the last eight periods as dots, oldest first, filled when reached;
                    or a one-off goal's trend -->
               <div class="gfoot" aria-hidden="true">
-                <div v-if="recurring(g)" class="gdots"><i v-for="(on, k) in dots(g)" :key="k" :class="{ on }" /></div>
-                <Sparkline v-else-if="hasTrend(g)" :values="trend(g)" :color="reached(g) ? 'var(--onc)' : undefined" />
+                <div v-if="recurring(g)" class="gdots"><i v-for="(on, k) in periodDots(g)" :key="k" :class="{ on }" /></div>
+                <Sparkline v-else-if="hasTrend(g)" :values="goalTrend(g)" :color="reached(g) ? 'var(--onc)' : undefined" />
                 <div v-else class="gflat" />
               </div>
             </div>
@@ -865,10 +827,6 @@ html.phone .hgrid .sz-m { grid-column: 1 / -1; }
 .big { font-size: var(--fs-val); font-weight: 650; letter-spacing: -.8px; line-height: 1.1; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .big small { font-size: var(--fs); font-weight: 500; margin-inline-start: 5px; color: var(--tx2); letter-spacing: 0; }
 .hero .big small, .hero .tiny { color: color-mix(in srgb, var(--onc) 75%, transparent); }
-/* a goal's value carries its unit beside the ring ("12,500 steps"), so at 360px the goal half is a little wider and both
-   halves' values a step smaller, the same in both halves so they still line up */
-html.phone .gtile .big { font-size: clamp(20px, 6vw, var(--fs-val)); }
-html.phone .gtile { grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); }
 
 /* the stat tiles of this week and the last workout are the shared .wkc/.wstats ones (app.css) */
 /* today at a glance: equal columns of a ring with its icon inside, the value under it and its name under that. Three to a
@@ -908,27 +866,9 @@ html.phone .gtile { grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); }
 .lnm { min-width: 0; color: var(--tx); font-weight: 600; }
 .lday { color: var(--tx2); white-space: nowrap; flex: none; }
 
-/* a pinned goal: its two halves side by side, split by a faint line. Both share the tile's four rows (subgrid), so header,
-   value, tiny line and bottom box line up across the halves whatever each holds; the header is spaced from the value
-   like every other block's (.hb > .ch), and the value row is the ring's height in both halves */
-.gtile { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); grid-template-rows: auto minmax(40px, auto) auto 1fr; column-gap: var(--cpx); row-gap: 4px; }
-.gmain, .grun { grid-row: 1 / -1; display: grid; grid-template-rows: subgrid; grid-template-columns: minmax(0, 1fr); row-gap: 4px; min-width: 0; align-items: center; }
-.gmain > .ch, .grun > .ch { margin-bottom: calc(var(--hg) - 4px); }
-.gtile .tiny { align-self: start; }
-.gtile .row { align-self: stretch; }
-.grun { padding-inline-start: var(--cpx); border-inline-start: 1px solid var(--ol); }
-.hero .grun { border-color: color-mix(in srgb, var(--onc) 18%, transparent); }
-/* the bottom box: one height for dots, trend and flat line, so stacked tiles are the same height */
-.gfoot { align-self: end; height: 28px; padding-top: var(--hg); box-sizing: content-box; display: flex; align-items: flex-end; }
-.gdots { flex: 1; display: flex; gap: 4px; }
-.gdots i { flex: 1; height: 6px; border-radius: 3px; }
-/* off and on look the same for the streak dots and the muscle groups' dots */
-.gdots i, .mdot { background: color-mix(in srgb, currentColor 14%, transparent); }
-.gdots i.on, .mg.on .mdot { background: var(--acc); }
-.hero .gdots i.on { background: var(--onc); }
-.gfoot .spark, .gflat { position: static; display: block; width: 100%; height: 28px; }
-/* nothing to draw yet: the trend's flat baseline, in the empty dots' colour */
-.gflat { background: linear-gradient(color-mix(in srgb, currentColor 14%, transparent), color-mix(in srgb, currentColor 14%, transparent)) bottom 4px left / 100% 2px no-repeat; }
+/* a pinned goal is the shared goal tile (.gtile, app.css); the muscle groups' dots look like its streak dots, off and on */
+.mdot { background: color-mix(in srgb, currentColor 14%, transparent); }
+.mg.on .mdot { background: var(--acc); }
 
 /* goal rows: title and state, the bar, the numbers */
 .glist { display: flex; flex-direction: column; gap: var(--hg); }
