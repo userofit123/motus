@@ -5,7 +5,7 @@ import { computed, ref, watch, nextTick, onBeforeUnmount } from "vue";
 import { exerciseComplete, nextSet, usesWeight, usesReps, usesDuration, usesDistance, toM, fromM, parseQuick, warmups, muscleName, sideJoins, restDefaultsOf, refitSet, keepsWeight, type Tracking, type WorkoutExercise, type WorkoutSet } from "@motus/shared";
 import { joinRest } from "../core/plannedRest";
 import { SET_KINDS, setNo as setNoOf, sideJoinCls } from "../core/format";
-import { useWorkout } from "./useWorkout";
+import { useWorkout, exerciseNoteSheet } from "./useWorkout";
 import { mediaUrl, api } from "../api/client";
 import { exerciseSheet, noteSheet, reminderSheet } from "../core/ui";
 import { prompt } from "../core/ask";
@@ -222,7 +222,7 @@ const nowId = computed(() => (W.state.active === props.index ? nextSet(visibleSe
       <button class="fchip" :class="{ acc: !sided }" @click="W.addSet(e)"><Icon name="plus" :size="14" />Set</button>
       <button v-if="e.repRestS" class="fchip" :class="{ on: repTimer }" @click="toggleRepTimer"><Icon name="timer" :size="14" />{{ repTimer ? "Stop rep timer" : `Rep timer ${e.repRestS}s` }}</button>
       <div class="grow" />
-      <button class="fchip" @click="noteSheet = { targets: [...(e.routineExerciseId && !e.swapped ? [{ type: 'routine_exercise', id: e.routineExerciseId, label: `${e.exercise.name} in ${W.state.w?.name || 'this routine'}` }] : []), { type: 'exercise', id: e.exerciseId, label: `${e.exercise.name}, every time` }, ...(W.state.w?.routineId ? [{ type: 'routine', id: W.state.w.routineId, label: `The whole routine` }] : []), { type: 'workout_exercise', id: e.id, label: 'Just today' }], workoutId: W.state.w?.id }"><Icon name="note" :size="14" />Note</button>
+      <button class="fchip" @click="noteSheet = exerciseNoteSheet(e)"><Icon name="note" :size="14" />Note</button>
     </div>
     <!-- notes for this exercise: under it, where you look after a set -->
     <div v-if="isCur && shownNotes.length" ref="notesEl" class="exnotes">

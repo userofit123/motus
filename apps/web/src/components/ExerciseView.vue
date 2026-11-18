@@ -13,6 +13,7 @@ import { confirm } from "../core/ask";
 import { useNoteMenu } from "../core/noteMenu";
 import { sidesItem, SIDES_HINT } from "../core/sides";
 import { trackItem } from "../core/track";
+import { exerciseNoteSheet, runningExercise } from "../workout/useWorkout";
 import { toast, savedToast } from "../core/toast";
 import Icon from "./Icon.vue";
 import DotLine from "./DotLine.vue";
@@ -89,10 +90,16 @@ async function del() {
   exerciseSheet.value = null;
   router.push("/exercises");
 }
+// opened from the running workout (its name, About this exercise): a note goes with that workout, with the same
+// choices as the Note pill under its sets, so it shows under the exercise straight away (M-274)
+function addNote() {
+  const we = router.currentRoute.value.name === "workout" ? runningExercise(props.id) : undefined;
+  noteSheet.value = we ? exerciseNoteSheet(we) : { targets: [{ type: "exercise", id: props.id, label: e.value.name }] };
+}
 function openWorkout(id: string) { exerciseSheet.value = null; router.push(`/workouts/${id}`); }
 // in groups: notes and reminders, favourites, how you do it, changing it, then Delete on its own
 const menu = computed<MenuItem[]>(() => [
-  { label: "Add a note", icon: "note", run: () => (noteSheet.value = { targets: [{ type: "exercise", id: props.id, label: e.value.name }] }) },
+  { label: "Add a note", icon: "note", run: addNote },
   { label: "Remind me next time", icon: "bell", run: () => (reminderSheet.value = { targetType: "exercise", targetId: props.id, label: e.value.name }) },
   { label: e.value?.favourite ? "Remove from favourites" : "Add to favourites", icon: "star", sep: true, run: () => fav.run(!e.value?.favourite) },
   // built-in exercises too: what you count it by, and one side at a time, is yours to say
@@ -210,7 +217,7 @@ const menu = computed<MenuItem[]>(() => [
 
     <div v-else-if="tab === 'notes'">
       <div class="row hgap">
-        <button class="btn tonal s" @click="noteSheet = { targets: [{ type: 'exercise', id: props.id, label: e.name }] }"><Icon name="plus" :size="16" />Note</button>
+        <button class="btn tonal s" @click="addNote"><Icon name="plus" :size="16" />Note</button>
         <button class="btn o s" @click="reminderSheet = { targetType: 'exercise', targetId: props.id, label: e.name }"><Icon name="bell" :size="16" />Reminder</button>
       </div>
       <div v-if="!notes.data.value?.length && !pending.length" class="empty"><Icon name="note" :size="32" /><b>No notes yet</b>Write how it felt, what to change, or whether it suits you.</div>

@@ -432,6 +432,32 @@ export function replacingWorkout(): () => void {
 }
 
 /**
+ * The note sheet for an exercise of the running workout: the same places to choose from wherever the note is started
+ * (the Note pill under its sets, its About sheet), each tied to this workout. A note started from the exercise's About
+ * sheet used to be the exercise's alone, without "Just today" and without the workout, so it never showed under the
+ * exercise when kept on record or with pinned notes switched off (M-274).
+ */
+export function exerciseNoteSheet(e: WorkoutExercise) {
+  const w = state.w;
+  return {
+    targets: [
+      ...(e.routineExerciseId && !e.swapped ? [{ type: "routine_exercise", id: e.routineExerciseId, label: `${e.exercise.name} in ${w?.name || "this routine"}` }] : []),
+      { type: "exercise", id: e.exerciseId, label: `${e.exercise.name}, every time` },
+      ...(w?.routineId ? [{ type: "routine", id: w.routineId, label: "The whole routine" }] : []),
+      { type: "workout_exercise", id: e.id, label: "Just today" },
+    ],
+    workoutId: w?.id,
+  };
+}
+/** This exercise in the running workout (the one on screen when it is in there twice), or undefined. */
+export function runningExercise(exerciseId: string): WorkoutExercise | undefined {
+  const w = state.w;
+  if (w?.status !== "in_progress") return undefined;
+  const cur = w.exercises[state.cur];
+  return cur?.exerciseId === exerciseId ? cur : w.exercises.find((x) => x.exerciseId === exerciseId);
+}
+
+/**
  * The workout is over (finished or cancelled): every screen drops it now, not when the next reload comes back, so no
  * "workout in progress" bar lingers and Start doesn't find it running.
  */
