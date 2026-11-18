@@ -12,7 +12,7 @@ import { ymd, weekStartOf, zoneMinutes, highRestingDays } from "@motus/shared";
 import { api } from "../../api/client";
 import { useWorkouts, useActivities, useTypeName, useSettings, useTrainingLoad } from "../../api/queries";
 import { mins } from "../../core/sleep";
-import { ZONES, useMaxHr, hrSamples } from "../../core/heart";
+import { ZONES, zoneParts, useMaxHr, hrSamples } from "../../core/heart";
 import HeartDay from "./HeartDay.vue";
 import DayNav from "./DayNav.vue";
 import DaySessionList from "./DaySessionList.vue";
@@ -240,7 +240,7 @@ const tiles = computed(() => {
       <div v-if="zBars.length" class="card" :class="{ spt: tiles.length || insights.length || vitals.length }">
         <div class="lbl hgap">Time in heart rate zones{{ zPerWeek ? ", by week" : "" }} · max {{ maxHr!.bpm }} bpm{{ maxHr!.own ? "" : " from your age" }}</div>
         <BarChart :bars="zBars" :height="170" :fmt="(v) => mins(v)" @pick="openZone" />
-        <div class="bmlegend ht-leg"><span v-for="z in ZONES" :key="z.key"><i :style="{ background: z.color }" />{{ z.name }}</span></div>
+        <div class="bmlegend ht-leg"><span v-for="z in zoneParts([], maxHr!.bpm)" :key="z.key"><i :style="{ background: z.color }" />{{ z.name }}<span class="ht-from">{{ z.from }}</span></span></div>
         <div class="tiny ht-line">{{ zPerWeek ? "Tap a week to see its total time in heart rate zones." : "Tap a day to see its total time in heart rate zones." }}</div>
       </div>
 
@@ -278,6 +278,7 @@ const tiles = computed(() => {
 <style scoped>
 .ht-line { margin-top: var(--tdy); }
 .ht-leg { margin-top: var(--hg); }
+.ht-from { font-variant-numeric: tabular-nums; }
 /* the load chart under its status row, as the legend under the zones chart */
 .ht-chart { margin-top: var(--hg); }
 /* the highlights as Stats → Sleep's: the last row without its line, the number in the row's tone */

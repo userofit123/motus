@@ -3,7 +3,7 @@
 // workout's or activity's own stretch of them.
 import { computed } from "vue";
 import { useQuery } from "@tanstack/vue-query";
-import { HR_ZONES, maxHeartRate, duration } from "@motus/shared";
+import { HR_ZONES, maxHeartRate, duration, eachSample } from "@motus/shared";
 import { api } from "../api/client";
 import { useSettings } from "../api/queries";
 
@@ -18,14 +18,22 @@ export const ZONES = HR_ZONES.map((z, i) => ({ ...z, color: ZONE_COLORS[i]! }));
 export const zoneParts = (m: number[], max: number) =>
   ZONES.map((z, i) => ({ key: z.key, name: z.name, color: z.color, from: `${Math.ceil(z.from * max)}+`, min: m[i] ?? 0 }));
 
+/** The minutes the samples cover (each counts as eachSample says), in or under the zones: what "the rest" is measured against */
+export const coveredMinutes = (samples: readonly (readonly [number, number])[]) => {
+  let secs = 0;
+  eachSample(samples, (_t, _bpm, s) => (secs += s));
+  return secs / 60;
+};
+
 /**
  * The one line under a time-in-zones bar: only the time at the first zone's start or more is in the bar, so a resting
  * day's hours aren't in it and its shares are of that time alone. total: the legend's whole minutes added up, so the two
- * agree (0: only seconds, "<1m"); when: its time ("today", "during this workout"); below: some of that time was under
- * the zones (always so for a day).
+ * agree (0: only seconds, "<1m"); when: its time ("today", "during this workout"); below: whether the readings also
+ * cover time under the zones (covered minutes - minutes in zones > 1), so time with no readings isn't called lower; max:
+ * the max heart rate, for the first zone's start, which is what "lower" means.
  */
-export const zoneNote = (total: number, when: string, below: boolean) =>
-  `Your heart rate was in a zone for ${total ? duration(total * 60, true) : "<1m"} ${when}${below ? "; the rest of the time it was lower" : ""}.`;
+export const zoneNote = (total: number, when: string, below: boolean, max: number) =>
+  `Your heart rate was in a zone for ${total ? duration(total * 60, true) : "<1m"} ${when}${below ? `; the rest of the time it was below ${Math.ceil(ZONES[0]!.from * max)} bpm` : ""}.`;
 
 /** The max heart rate in use (Body → About you), null when neither it nor a year of birth is set */
 export function useMaxHr() {

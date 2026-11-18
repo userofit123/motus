@@ -11,7 +11,7 @@ import { useQuery, keepPreviousData } from "@tanstack/vue-query";
 import { zoneMinutes, ymd } from "@motus/shared";
 import { useHealthDay } from "../../api/queries";
 import { useFmt } from "../../core/format";
-import { useMaxHr, hrSamples, zoneNote, zoneParts } from "../../core/heart";
+import { useMaxHr, hrSamples, zoneNote, zoneParts, coveredMinutes } from "../../core/heart";
 import Icon from "../Icon.vue";
 import HeartRate from "../HeartRate.vue";
 import StageBar from "./StageBar.vue";
@@ -87,8 +87,9 @@ const zones = computed(() => {
   return zoneParts(m, maxHr.value.bpm);
 });
 const zoned = computed(() => zones.value.some((z) => z.min > 0));
-// under the bar: how long the day was in a zone at all (where each starts is on the legend)
-const zNote = computed(() => { const total = zones.value.reduce((t, z) => t + Math.round(z.min), 0); return zoneNote(total, date.value === today.value ? "today" : "on this day", true); });
+// under the bar: how long the day was in a zone at all (where each starts is on the legend), and, when the readings cover
+// time below the zones, where they start
+const zNote = computed(() => { const total = zones.value.reduce((t, z) => t + Math.round(z.min), 0); return zoneNote(total, date.value === today.value ? "today" : "on this day", coveredMinutes(samples.value) - zones.value.reduce((t, z) => t + z.min, 0) > 1, maxHr.value!.bpm); });
 const charted = computed(() => samples.value.length > 1);
 // "Loading…" only the first time: stepping to another day keeps the card as it is until the day is in, so it doesn't jump
 const loaded = ref(false);
