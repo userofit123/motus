@@ -318,6 +318,52 @@ describe("activities", () => {
     expect(o.status).toBe(404);
     expect(new Date((await call("GET", `/activities/${typed}`)).startedAt).toISOString()).toBe("2026-10-29T17:30:00.000Z");
   });
+  it("cuts the heart rate and the pauses to an activity's new times", async () => {
+    // readings every minute: 100-104 bpm until 07:40, 160 from 07:45 (the walk home with the recording still on)
+    const t0 = Date.parse("2026-10-27T07:00:00Z") / 1000;
+    const hr = Array.from({ length: 121 }, (_, i) => [t0 + i * 60, i <= 40 ? 100 + (i % 5) : i >= 45 ? 160 : 0]).filter((p) => p[1]);
+    const avgAll = Math.round(hr.reduce((s, p) => s + p[1]!, 0) / hr.length);
+    const walk = async (avg: number) => {
+      const { id } = await call("POST", "/activities", { type: "walk", startedAt: "2026-10-27T07:00:00Z", endedAt: "2026-10-27T09:00:00Z", durationS: 110 * 60, source: "gps" });
+      await eng.db.admin.query("UPDATE activities SET hr = $2::jsonb, max_hr = 160, avg_hr = $3 WHERE id = $1", [id, JSON.stringify(hr), avg]);
+      return id as string;
+    };
+    const row = async (aid: string) => (await eng.db.admin.query("SELECT hr, max_hr, avg_hr, duration_s FROM activities WHERE id = $1", [aid])).rows[0];
+    // the band's average follows the readings left inside the new times
+    const band = await walk(avgAll);
+    await call("PUT", `/activities/${band}/times`, { startedAt: "2026-10-27T07:00:00Z", endedAt: "2026-10-27T07:40:00Z" });
+    const a = await row(band);
+    expect(a.max_hr).toBe(104);
+    expect(a.avg_hr).toBe(102);
+    expect(a.hr.every((p: number[]) => p[0]! <= t0 + 41 * 60)).toBe(true);
+    // an average typed in stays; with no reading left inside, the band's series and max go
+    const typed = await walk(90);
+    await call("PUT", `/activities/${typed}/times`, { startedAt: "2026-10-27T10:00:00Z", endedAt: "2026-10-27T10:30:00Z" });
+    const y = await row(typed);
+    expect([y.hr, y.max_hr, y.avg_hr]).toEqual([null, null, 90]);
+    // and the band's own average goes with them
+    await call("PUT", `/activities/${band}/times`, { startedAt: "2026-10-27T10:00:00Z", endedAt: "2026-10-27T10:30:00Z" });
+    expect((await row(band)).avg_hr).toBeNull();
+    // 10 minutes paused can't all fit into 5 minutes: they were outside, and the duration is the whole new time
+    const short = await walk(avgAll);
+    await call("PUT", `/activities/${short}/times`, { startedAt: "2026-10-27T07:00:00Z", endedAt: "2026-10-27T07:05:00Z" });
+    expect((await row(short)).duration_s).toBe(300);
+  });
+  it("cuts a workout's heart rate and pauses to its new times", async () => {
+    const { id } = await call("POST", "/workouts/log", { name: "Forgot to finish", startedAt: "2026-10-26T18:00:00Z", durationS: 3600, exercises: [] });
+    const t0 = Date.parse("2026-10-26T18:00:00Z") / 1000;
+    const hr = Array.from({ length: 71 }, (_, i) => [t0 + i * 60, i <= 46 ? 120 : 90]); // a minute either side counts
+    await eng.db.admin.query("UPDATE workouts SET ended_at = '2026-10-26T19:10:00Z', paused_s = 600, hr = $2::jsonb, max_hr = 120, avg_hr = 110 WHERE id = $1", [id, JSON.stringify(hr)]);
+    const row = async () => (await eng.db.admin.query("SELECT hr, max_hr, avg_hr, paused_s FROM workouts WHERE id = $1", [id])).rows[0];
+    await call("PUT", `/workouts/${id}`, { startedAt: "2026-10-26T18:00:00Z", endedAt: "2026-10-26T18:45:00Z" });
+    const w = await row();
+    expect([w.max_hr, w.avg_hr, w.paused_s]).toEqual([120, 120, 600]);
+    expect((await call("GET", `/workouts/${id}`)).report.totals.durationS).toBe(35 * 60);
+    // 10 minutes paused don't fit into 5: the duration is the whole 5 minutes, as the times sheet shows
+    await call("PUT", `/workouts/${id}`, { startedAt: "2026-10-26T18:00:00Z", endedAt: "2026-10-26T18:05:00Z" });
+    expect((await row()).paused_s).toBe(0);
+    expect((await call("GET", `/workouts/${id}`)).report.totals.durationS).toBe(300);
+  });
   it("changes a workout's times, never to an end before its start", async () => {
     const { id } = await call("POST", "/workouts/log", { name: "Late", startedAt: "2026-10-28T18:00:00Z", durationS: 3600, exercises: [] });
     await call("PUT", `/workouts/${id}`, { startedAt: "2026-10-28T18:00:00Z", endedAt: "2026-10-28T18:45:00Z" });

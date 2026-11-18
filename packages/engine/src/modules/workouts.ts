@@ -1,6 +1,6 @@
 // Workouts: starting one (from a routine or empty), logging sets, skipping, reordering and replacing exercises,
 // finishing, logging a past workout, editing and duplicating, and the full detail with records and improvements.
-import { e1rm, usesWeight, ymd, pairSets, planSetRest, restDefaultsOf, liftedKg, liftsWeight, LIFTED_SQL, TRACKING_SQL, structureChanges, type Tracking, type RoutineExercise, type ExerciseStatus, type SetKind, type RestByKind, type RestDefaults, type WorkoutExercise, type HomeRecord, type Workout, type WorkoutSummary, type Routine } from "@motus/shared";
+import { e1rm, usesWeight, ymd, pairSets, planSetRest, restDefaultsOf, liftedKg, liftsWeight, LIFTED_SQL, TRACKING_SQL, structureChanges, pausedWithin, type Tracking, type RoutineExercise, type ExerciseStatus, type SetKind, type RestByKind, type RestDefaults, type WorkoutExercise, type HomeRecord, type Workout, type WorkoutSummary, type Routine } from "@motus/shared";
 import type { Router, Ctx } from "../router";
 import type { Sql } from "../db";
 import { camel, id, optId, str, strList, intOrNull, numOrNull, bool, oneOf, isoTime, secondsBetween, visible } from "../util";
@@ -9,7 +9,7 @@ import { notFound, bad, HttpError } from "../errors";
 import { getSettings, saveSettings } from "./settings";
 import { buildPlan, loadRoutine, pendingReminders, withWorkoutOverrides } from "./plan";
 import { getExercises, exerciseSessions, savePrefs } from "./library";
-import { exerciseHrOf } from "./health";
+import { exerciseHrOf, cutHeartRate } from "./health";
 import { linkFor, releaseOutside } from "./bandMatch";
 
 const KINDS = ["warmup", "normal", "drop", "failure"] as const;
@@ -544,6 +544,14 @@ export function workoutRoutes(r: Router) {
     if (("startedAt" in b || "endedAt" in b) && en && Date.parse(isoTime(en)) <= Date.parse(isoTime(st))) throw bad("The end has to be after the start");
     if ("startedAt" in b) put("started_at", isoTime(b.startedAt));
     if ("endedAt" in b) put("ended_at", b.endedAt ? isoTime(b.endedAt) : null);
+    // a finished one's new times (as an activity's, PUT /activities/:id/times): only the total paused is stored, so it
+    // stays unless it would fill the whole new time (pausedWithin); the heart rate kept is cut to the new times
+    if (("startedAt" in b || "endedAt" in b) && en) {
+      const from = Date.parse(isoTime(st)) / 1000, to = Date.parse(isoTime(en)) / 1000;
+      if (!("pausedS" in b) && b.pause !== false && pausedWithin(to - from, w.paused_s) !== w.paused_s) put("paused_s", 0);
+      const h = cutHeartRate(w, from, to);
+      if (h) { put("hr", h.hr ? JSON.stringify(h.hr) : null); put("max_hr", h.max); put("avg_hr", h.avg); }
+    }
     if ("settings" in b) put("settings", JSON.stringify(b.settings ?? {}));
     if ("pausedS" in b) put("paused_s", intOrNull(b.pausedS, 0, 864000) ?? 0);
     if (b.pause === true && !w.pause_started_at) put("pause_started_at", ctx.now().toISOString());

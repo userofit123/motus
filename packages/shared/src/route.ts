@@ -183,3 +183,7 @@ export class MotionSteps {
     return this.run;
   }
 }
+
+/** Whether a route can be cut to new times: every point has its time (an imported track may have points without). */
+export const routeCuttable = (route: unknown): route is number[][] =>
+  Array.isArray(route) && route.length > 0 && route.every((pt) => Array.isArray(pt) && !!pt[2]);

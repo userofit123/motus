@@ -70,3 +70,8 @@ export function daySteps(own: number | null, typed: boolean, walked: number): { 
 
 /** The most Health Connect deletions one POST /health/records takes (the engine keeps no more, the phone sends no more at once). */
 export const HEALTH_DELETED_MAX = 10_000;
+
+/** Seconds paused that still count once an activity's or workout's times change. Only the total paused is stored, not
+ *  when, so the pauses stay as long as they were; when they would fill the whole new time they can't all have been
+ *  inside it, and none count (the duration is the whole new time, never 0). One rule for the engine and the times sheet. */
+export const pausedWithin = (spanS: number, pausedS: number) => (pausedS > 0 && pausedS < spanS ? pausedS : 0);

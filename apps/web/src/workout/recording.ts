@@ -281,7 +281,8 @@ function setPaused(on: boolean) {
 const stepsRev = ref(0);
 const stepsSettled = () => { stepsRev.value++; };
 /** saves it as an activity and returns its id */
-export async function finishRecording(): Promise<string> {
+/** sync: false when the caller changes its times first and asks the band after (RecordActivity.finishAt) */
+export async function finishRecording(sync = true): Promise<string> {
   const r = recording.value!;
   // the last steps before Finish (or before a Pause just pressed); none taken while paused
   if (!r.pauseAt || settling) await settleSteps();
@@ -292,7 +293,7 @@ export async function finishRecording(): Promise<string> {
   const res = await api.post("/activities", { type: r.type, startedAt: new Date(r.startedAt).toISOString(), endedAt: new Date(end).toISOString(), durationS: Math.round(recElapsedS.value), route: r.route, distanceM: rs?.distanceM, movingS: rs?.movingS, elevationM: rs?.elevationM, steps: recStepsCounted.value ? r.steps : null, source: "gps", clientId: `gps:${r.startedAt}` });
   recording.value = null; persist(); stopAll();
   invalidate(["activities", "stats", "goals", "home", "calendar"]);
-  syncAfterSession(); // its heart rate from the band
+  if (sync) syncAfterSession(); // its heart rate from the band
   return res.id;
 }
 export function discardRecording() { recording.value = null; persist(); stopAll(); }

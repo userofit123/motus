@@ -141,6 +141,19 @@ export function heartRate(v: unknown, startS: number, endS: number, points = HR_
   return { hr, avg, max, min };
 }
 
+/**
+ * An activity's or workout's heart rate once its times change: the readings it already has, cut to the new times
+ * (the band's sync after it can add more). An average typed in stays (bandAvg); with no reading left inside, the band's
+ * series, max and average go. null when it has no readings, so there is nothing to cut.
+ */
+export function cutHeartRate(row: { hr: unknown; avg_hr: unknown }, startS: number, endS: number): { hr: [number, number][] | null; max: number | null; avg: number | null } | null {
+  if (!Array.isArray(row.hr) || !row.hr.length) return null;
+  const h = heartRate(row.hr, startS, endS, HR_POINTS, 1);
+  if (h) return { hr: h.hr, max: h.max, avg: bandAvg(row.hr, row.avg_hr, h.avg) };
+  const typed = bandAvg(row.hr, row.avg_hr, -1);
+  return { hr: null, max: null, avg: typed === -1 ? null : typed };
+}
+
 /** The most heart rate points kept per night: a night is long and calm, so fewer than a workout. */
 const NIGHT_HR_POINTS = 300;
 /** A value from a band, or null when missing or out of range (a glitch is dropped, not the night). */

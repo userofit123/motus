@@ -22,7 +22,7 @@ import { useSessionSamples } from "../core/heart";
 import Sheet from "../components/Sheet.vue";
 import StepSourceRows from "../components/StepSourceRows.vue";
 import TimesSheet from "../components/TimesSheet.vue";
-import { routeSplits, M_PER_MI, fromM, activityDistance, activityClimb, appSteps, stepsTyped, bandStepsVerdict, type ActivityType } from "@motus/shared";
+import { routeSplits, M_PER_MI, fromM, activityDistance, activityClimb, appSteps, stepsTyped, bandStepsVerdict, routeCuttable, type ActivityType } from "@motus/shared";
 import { fromWhere, useDevice, adviceWord, canActivitySources, activitySources, inRangesWindow, syncAfterSession, type ActivitySources } from "../native/health";
 
 const route = useRoute(), router = useRouter();
@@ -167,7 +167,7 @@ await loaded(q, types);
     <SessionHeart v-if="fromMs != null && toMs != null" class="spt" :from="fromMs" :to="toMs" :samples="samples" :avg="a.avgHr" :max="a.maxHr" :motion="ownDist || pace ? 'pace' : 'speed'" :own-pace="!!pace" />
     <div v-if="a.notes" class="banner note spt"><Icon name="note" :size="18" class="note-ic" />{{ a.notes }}</div>
     <TimesSheet v-if="timing" title="Change times" :start="a.startedAt" :end="a.endedAt ?? a.startedAt" :paused="pausedS" :duration="a.durationS" was="Was" ok="Save" :save="saveTimes"
-      :note="a.route?.length ? 'Any part of the route outside these times is removed, with its distance.' : undefined" @close="timing = false" />
+      :note="routeCuttable(a.route) ? 'Any part of the route outside these times is removed, with its distance.' : undefined" @close="timing = false" />
     <Sheet v-if="srcs" title="Where these steps came from" @close="srcs = null">
       <p class="muted hgap">Steps each app saved to Health Connect from {{ fmt.time(a.startedAt) }} to {{ fmt.time(a.endedAt) }}. When your {{ srcWord }} has data for the whole {{ (a.name || typeName(a.type)).toLowerCase() }}, Motus uses its count.</p>
       <div v-if="srcs.error" class="empty sm"><b>Couldn't read Health Connect</b>{{ srcs.error }}<br /><button class="btn tonal" @click="showSources">Try again</button></div>
