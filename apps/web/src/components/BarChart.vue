@@ -25,7 +25,7 @@ const uid = useId();
 // a stacked bar's parts, bottom up: where each starts and ends
 const stack = (parts: { value: number; color: string; hatch?: boolean }[]) => { let at = 0; return parts.filter((p) => p.value > 0).map((p) => ({ color: p.color, hatch: p.hatch, lo: at, hi: (at += p.value) })); };
 // every chart with tips keeps TIP_ROOM at its top for a pinned tip (useTip), so the tip stays inside the chart, over no
-// bar and no header above it, and sibling charts have the same air over their bars: the chart is that much taller than
+// bar (under a header the room slides up behind it, charts.css .cht), and sibling charts have the same air over their bars: the chart is that much taller than
 // its height, its bars as tall as the height alone gave them
 /** The height of the value printed over a bar */
 const VALUE_H = 16;
@@ -124,7 +124,7 @@ const xtAnchor = (at: number) => (at <= 0 ? "start" : at >= props.bars.length ? 
       <span class="num tiny" style="width:42px;text-align:end;color:var(--tx)">{{ f(b.value) }}</span>
     </div>
   </div>
-  <div v-else ref="box" style="position:relative">
+  <div v-else ref="box" class="cht" style="position:relative" :style="{ '--tipup': top - marginT + 'px' }">
     <div ref="sc" class="zsc" :class="cls">
     <svg class="chart" :viewBox="`0 0 ${CW} ${H}`" :style="{ height: H + 'px', ...(on ? { width: CW + 'px' } : {}) }">
       <rect v-if="band" x="0" :width="CW" :y="y(band[1])" :height="y(band[0]) - y(band[1])" fill="var(--pos)" opacity=".08" />

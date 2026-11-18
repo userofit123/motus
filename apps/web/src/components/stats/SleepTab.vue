@@ -13,7 +13,7 @@ import { ymd, weekStartOf, isNightMin, MIN_NIGHT_H } from "@motus/shared";
 import { api } from "../../api/client";
 import { useSettings, useWorkouts, useSleep, useHealthDay, type SleepNight } from "../../api/queries";
 import { useFmt, localYmd } from "../../core/format";
-import { STAGES, NO_STAGES_COLOR, NO_STAGES_SWATCH, SHORT_COLOR, hasStages, isFull, asleepMin, inBedMin, efficiency, awakeKnown, nightMin, nightIso, mins, typical } from "../../core/sleep";
+import { STAGES, NO_STAGES_COLOR, NO_STAGES_SWATCH, SHORT_COLOR, hasStages, isFull, asleepMin, inBedMin, efficiency, awakeKnown, nightMin, nightIso, mins, typical, pctDown } from "../../core/sleep";
 import Icon from "../Icon.vue";
 import { adviceWord, deviceWord, useDevice } from "../../native/health";
 import BarChart from "../BarChart.vue";
@@ -88,7 +88,9 @@ const openBar = (d: string) => { if (perWeek.value) { anchor.value = d; view.val
 const openNight = (d: string | null | undefined) => { if (d) { anchor.value = d; picked.value = true; view.value = "night"; } };
 
 // the stretch's nights, keeping the last stretch's while the next loads so stepping doesn't flash
-const q = useSleep(range, computed(() => !isNight.value), { keep: true });
+// with the Health scores feature on, each night with its own sleep score for the list of nights
+const scoresOn = computed(() => !!s.value.features.scores);
+const q = useSleep(computed(() => (scoresOn.value ? { ...range.value, scores: 1 as const, tz: new Date().getTimezoneOffset() } : range.value)), computed(() => !isNight.value), { keep: true });
 // the last 30 days' nights, for how last night compares
 const recentQ = useSleep(computed(() => ({ from: plus(today.value, -31) })), computed(() => !isNight.value), { keep: true });
 // the daily log from the first of the stretch's month, under the key Home's daily log uses, so live updates reload it
@@ -319,7 +321,7 @@ const list = computed(() => showAll.value ? nights.value : nights.value.slice(0,
         <div v-if="bed" class="card stat"><div class="lbl"><span class="bi"><Icon name="clock" :size="15" /></span>Bedtime</div><div class="val">{{ clock(bed.at) }}</div><div class="sub">{{ spread(bed)[0] }} <span class="nw">{{ spread(bed)[1] }}</span></div></div>
         <div v-if="wake" class="card stat"><div class="lbl"><span class="bi"><Icon name="bell" :size="15" /></span>Wake time</div><div class="val">{{ clock(wake.at) }}</div><div class="sub">{{ spread(wake)[0] }} <span class="nw">{{ spread(wake)[1] }}</span></div></div>
         <div v-if="deepPct != null" class="card stat"><div class="lbl"><span class="bi"><Icon name="layers" :size="15" /></span>Deep sleep</div><div class="val">{{ deepPct }}<small>%</small></div><div class="sub">of time asleep</div></div>
-        <div v-else-if="avgBed != null" class="card stat"><div class="lbl"><span class="bi"><Icon name="device" :size="15" /></span>Time tracked</div><div class="val">{{ mins(avgBed) }}</div><div class="sub"><template v-if="avgEff != null">{{ Math.floor(avgEff * 100) }}% of it asleep</template><template v-else>time awake <span class="nw">not recorded</span></template></div></div>
+        <div v-else-if="avgBed != null" class="card stat"><div class="lbl"><span class="bi"><Icon name="device" :size="15" /></span>Time tracked</div><div class="val">{{ mins(avgBed) }}</div><div class="sub"><template v-if="avgEff != null">{{ pctDown(avgEff) }}% of it asleep</template><template v-else>time awake <span class="nw">not recorded</span></template></div></div>
       </div>
       <!-- the best and worst night and the sleep debt, once there are nights to compare -->
       <div v-if="nightDays.length > 1" class="card wkc spt">
@@ -375,7 +377,7 @@ const list = computed(() => showAll.value ? nights.value : nights.value.slice(0,
         <div class="card"><div class="list">
           <div v-for="n in list" :key="n.date" class="li click" role="button" tabindex="0" @click="openNight(n.date)" @keydown.enter="openNight(n.date)">
             <span class="bi sg"><Icon name="moon" :size="16" /></span>
-            <div class="grow"><div class="t">{{ day(n.date) }}</div><div class="s">{{ fmt.time(n.startAt) }}-{{ fmt.time(n.endAt) }} · {{ isFull(n) ? `${mins(inBedMin(n))} tracked` : "short record" }}</div></div>
+            <div class="grow"><div class="t">{{ day(n.date) }}</div><div class="s">{{ fmt.time(n.startAt) }}-{{ fmt.time(n.endAt) }} · {{ isFull(n) ? `${mins(inBedMin(n))} tracked` : "short record" }}<template v-if="n.score"> · score {{ n.score.score }}</template></div></div>
             <b class="num" :class="{ muted: !isFull(n) }">{{ mins(asleepMin(n)) }}</b>
           </div>
         </div></div>

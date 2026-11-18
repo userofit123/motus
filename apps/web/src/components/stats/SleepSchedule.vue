@@ -19,7 +19,7 @@ const emit = defineEmits<{ pick: [date: string] }>();
 const fmt = useFmt();
 const box = ref<HTMLElement | null>(null);
 // every night opens, so the chart keeps TIP_ROOM at its top for a pinned tip (useTip): the tip stays inside the chart,
-// over no bar and no header above it; the chart is that much taller than its height, its bars as tall
+// over no bar (under a header the room slides up behind it, charts.css .cht); the chart is that much taller than its height, its bars as tall
 const P = { l: 44, t: TIP_ROOM, b: 32 };
 /** The top margin the chart had before it kept TIP_ROOM; the room takes its place, so the chart is that much taller */
 const MARGIN_T = 8;
@@ -97,7 +97,7 @@ const openGo = () => { const n = hover.value != null ? rows.value[hover.value] :
 </script>
 
 <template>
-  <div ref="box" style="position:relative">
+  <div ref="box" style="position:relative" :class="{ cht: rows.length }" :style="{ '--tipup': TIP_ROOM - MARGIN_T + 'px' }">
     <div v-if="rows.length" class="zrow">
       <!-- the hours, still while the nights scroll -->
       <svg class="chart zfix" :viewBox="`0 0 ${P.l} ${H}`" :style="{ width: P.l + 'px', height: H + 'px' }" aria-hidden="true">

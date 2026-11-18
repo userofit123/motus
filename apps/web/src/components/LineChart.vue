@@ -26,7 +26,7 @@ const props = defineProps<{ points: { x: number; y: number; raw?: number; label?
 const emit = defineEmits<{ pick: [id: string] }>();
 const box = ref<HTMLElement | null>(null);
 // every chart with tips keeps TIP_ROOM at its top for a pinned tip (P.t, useTip), so the tip stays inside the chart, over
-// no point and no header above it, and sibling charts have the same air over their plots: the chart is that much taller
+// no point (under a header the room slides up behind it, charts.css .cht), and sibling charts have the same air over their plots: the chart is that much taller
 // than its height, its plot as tall as the height alone gave it
 const P = { l: 44, r: 12, t: TIP_ROOM, b: 22 };
 /** The top margin the chart had before it kept TIP_ROOM; the room takes its place, so the chart is that much taller */
@@ -142,7 +142,7 @@ const xf = (t: number) => (props.xfmt ? props.xfmt(t) : df.value.date(t));
 </script>
 
 <template>
-  <div ref="box" style="position:relative">
+  <div ref="box" style="position:relative" :class="{ cht: points.length }" :style="{ '--tipup': TIP_ROOM - MARGIN_T + 'px' }">
     <div v-if="!points.length" class="empty" style="padding:calc(var(--cpy) * 2) 0">No data yet</div>
     <div v-else class="zrow">
     <!-- the value labels, still while the plot scrolls -->

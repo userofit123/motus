@@ -2,8 +2,9 @@
 // as it takes so it never runs past either edge (a long tip, "7h 15m · Sat 14 Nov · 23:05-6:40", near the edge of a
 // phone-wide chart). Its width is measured, since what it says changes from point to point. span: where across the chart
 // the tip will lie, so a pinned tip can be raised above everything under it (it is clicked, so it mustn't cover a bar).
-// A pinned tip never rises above the chart's own top: charts whose tips open something keep TIP_ROOM free at their top
-// for it, so it covers neither their items nor the headers and controls above the chart. A tip is never wider than its
+// A pinned tip never rises above the chart's own top: charts with tips keep TIP_ROOM free at their top for it, so it
+// covers none of their items. Under a header that room slides up behind the header (charts.css, .cht), so the header
+// isn't a tip's height away from its plot; a pinned tip may lie over the header while it is pinned. A tip is never wider than its
 // chart: one line, its bold head kept and the rest cut short with an ellipsis (.ctip-r).
 import { onBeforeUnmount, ref, watch, type Ref } from "vue";
 

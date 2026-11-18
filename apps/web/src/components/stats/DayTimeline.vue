@@ -178,7 +178,8 @@ const tip = computed(() => {
 </script>
 
 <template>
-  <div ref="box" class="dtl">
+  <!-- under its header the tip room slides up behind it (charts.css .cht), by the room less a line chart's top margin -->
+  <div ref="box" class="dtl cht" :style="{ '--tipup': TIP_ROOM - 10 + 'px' }">
     <div class="dtl-row">
       <!-- the names: each lane's and the night's stages', fixed while the hours scroll -->
       <svg class="chart dtl-names" :viewBox="`0 0 ${P.l} ${H}`" :style="{ width: P.l + 'px', height: H + 'px' }" aria-hidden="true">

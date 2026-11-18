@@ -83,9 +83,14 @@ export interface SleepNight {
   lightMin: number | null; deepMin: number | null; remMin: number | null;
   avgHr: number | null; minHr: number | null; avgSpo2: number | null; minSpo2: number | null; respRate: number | null;
   edited: boolean; sleepH: number;
+  /** the night's own sleep score (shared nightScore), sent when asked for (scores: 1) with the Health scores feature on;
+   *  none for a nap or part of a night, nor under 18 */
+  score?: Score;
 }
-export const useSleep = (range: MaybeRef<{ from?: string; to?: string }>, enabled: MaybeRef<boolean> = true, opts?: QueryOpts) => useQuery({ queryKey: computed(() => ["health", "sleep", unref(range)]), queryFn: () => api.get<{ nights: SleepNight[] }>("/health/sleep", unref(range)), enabled, ...keepOpt(opts) });
-export const useSleepNight = (date: MaybeRef<string>, opts?: QueryOpts) => useQuery({ queryKey: computed(() => ["health", "sleep", "night", unref(date)]), queryFn: () => api.get<SleepNight & { hr: [number, number][] | null }>(`/health/sleep/${unref(date)}`), enabled: computed(() => !!unref(date)), ...keepOpt(opts) });
+export const useSleep = (range: MaybeRef<{ from?: string; to?: string; scores?: 1; tz?: number }>, enabled: MaybeRef<boolean> = true, opts?: QueryOpts) => useQuery({ queryKey: computed(() => ["health", "sleep", unref(range)]), queryFn: () => api.get<{ nights: SleepNight[] }>("/health/sleep", unref(range)), enabled, ...keepOpt(opts) });
+// scores: with each night's own sleep score (the Health scores feature; in the key, so switching it on fetches them)
+export const useSleepNight = (date: MaybeRef<string>, opts?: QueryOpts & { scores?: MaybeRef<boolean> }) => useQuery({ queryKey: computed(() => ["health", "sleep", "night", unref(date), !!unref(opts?.scores)]),
+  queryFn: () => api.get<SleepNight & { hr: [number, number][] | null }>(`/health/sleep/${unref(date)}`, unref(opts?.scores) ? { scores: 1, tz: new Date().getTimezoneOffset() } : undefined), enabled: computed(() => !!unref(date)), ...keepOpt(opts) });
 /** One day from a band: its night (the one that ended that morning), the heart rate through the day (series: [unix
  *  seconds, bpm]), the day's vitals and totals; each null when the band handed nothing over for it */
 export interface HealthDay {

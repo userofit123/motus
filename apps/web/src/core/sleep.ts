@@ -43,8 +43,9 @@ export const pctDown = (v: number) => Math.floor(v * 100 + 1e-6);
 export const asleepPct = (n: SleepNight) => pctDown(efficiency(n));
 /** The line under a night's ring (NightRing), on Home and Stats → Sleep alike, and the ring's own label: what the ring
  *  shows, or why it is empty. Said even for a nap, so the percent in the ring is never left unexplained */
-export const nightRingLine = (n: SleepNight) => (awakeKnown(n)
-  ? `Asleep for ${asleepPct(n)}% of the ${mins(inBedMin(n))} tracked`
+// lower: it follows other words on its line ("23:10-06:40 · asleep for…"), so it starts in lowercase
+export const nightRingLine = (n: SleepNight, lower = false) => (awakeKnown(n)
+  ? `${lower ? "asleep" : "Asleep"} for ${asleepPct(n)}% of the ${mins(inBedMin(n))} tracked`
   : `${mins(inBedMin(n))} tracked · time awake not recorded`);
 
 /** A time of night as minutes after the noon before, so 23:30 and 00:30 sit an hour apart rather than a day */

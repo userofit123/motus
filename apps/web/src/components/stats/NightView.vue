@@ -6,6 +6,8 @@
 // awake; the heart rate, blood oxygen and breathing through the night; and the workouts and activities since the day
 // before began. A night imported before band records were kept has no record: it shows its totals (the stage bar, the
 // night's own heart rate series), never empty charts.
+// With the Health scores feature on, the night's own sleep score (shared nightScore) comes after its tiles: the number,
+// the line that says why, and its three parts as Stats → Scores' rows, each met or missed for this night.
 // Each part after the first a block-padding below the one before, under a faint line, as Stats → Heart's day.
 // The stages and the curves under them cover the same hours at the same width, so they share one zoom and scroll
 // (shareChartZoom): zoomed into 3 am on one, every one shows 3 am, lined up as a video editor's tracks.
@@ -13,13 +15,14 @@ import { computed } from "vue";
 import { useQuery, keepPreviousData } from "@tanstack/vue-query";
 import { ymd } from "@motus/shared";
 import { api } from "../../api/client";
-import { useSleep, useSleepNight } from "../../api/queries";
+import { useSettings, useSleep, useSleepNight } from "../../api/queries";
 import { useFmt } from "../../core/format";
-import { asleepMin, hasStages, nightRingLine, isFull, mins, nightSegments, SEG_NAME, segColor, SHORT_WHY, type Seg, type SleepRecord } from "../../core/sleep";
+import { asleepMin, asleepPct, hasStages, nightRingLine, isFull, mins, nightSegments, SEG_NAME, segColor, SHORT_WHY, type Seg, type SleepRecord } from "../../core/sleep";
 import { hrSamples } from "../../core/heart";
 import { deviceWord, useDevice } from "../../native/health";
 import Icon from "../Icon.vue";
 import NightRing from "./NightRing.vue";
+import ScoreHead from "./ScoreHead.vue";
 import LineChart from "../LineChart.vue";
 import StageBar from "./StageBar.vue";
 import Hypnogram from "./Hypnogram.vue";
@@ -33,7 +36,8 @@ shareChartZoom();
 const fmt = useFmt();
 const dev = useDevice();
 // keeping the night before while the next loads, so stepping a night doesn't flash
-const nq = useSleepNight(computed(() => props.date), { keep: true });
+const settings = useSettings();
+const nq = useSleepNight(computed(() => props.date), { keep: true, scores: computed(() => !!settings.value.features.scores) });
 const n = computed(() => nq.data.value ?? null);
 const t0 = computed(() => (n.value ? Date.parse(n.value.startAt) : 0)), t1 = computed(() => (n.value ? Date.parse(n.value.endAt) : 0));
 const iso = (ms: number) => new Date(ms).toISOString();
@@ -129,6 +133,25 @@ const curves = computed(() => {
   ].filter((c) => c.pts.length > 1 || c.line);
 });
 
+// the night's sleep score: what it met and missed, in the words of Stats → Scores' sleep rows, for one night
+const score = computed(() => n.value?.score ?? null);
+const scoreRows = computed(() => (score.value?.parts ?? []).map((p) => {
+  const met = p.share >= 1, left = p.weight === 0, ex = p.extra ?? {}, lo = ex.lo ?? 7, hi = ex.hi ?? 9;
+  const r = left ? "Left out" : met ? "Met" : "Missed", tone = left ? "muted" : met ? "pos" : "neg";
+  if (p.key === "duration") return { key: p.key, icon: "moon", t: "Hours asleep", s: `${mins(ex.asleepMin ?? 0)} · aim for ${lo}-${hi} hours`, r, tone };
+  if (p.key === "efficiency") return { key: p.key, icon: "bed", t: "Stayed asleep", s: left ? "No time awake recorded this night · nothing to count" : `Asleep for ${asleepPct(n.value!)}% of the time tracked · aim for 85% or more`, r, tone };
+  return { key: p.key, icon: "clock", t: "Regular times", s: left ? `Your usual times need ${p.target} nights in the last 7 days` : "Aim for bed and wake times within an hour of your usual", r, tone };
+}));
+// cause then advice for the part it missed most, as Stats → Scores' line under a score
+const scoreLine = computed(() => {
+  const x = score.value, p = x?.parts.find((y) => y.key === x.weakest), ex = p?.extra ?? {}, lo = ex.lo ?? 7, hi = ex.hi ?? 9;
+  if (!x) return "";
+  if (!p) return "This night met every guideline.";
+  if (p.key === "duration") return `You slept ${(ex.asleepMin ?? 0) < lo * 60 ? `less than ${lo}` : `more than ${hi}`} hours: aim for ${lo}-${hi} hours.`;
+  if (p.key === "efficiency") return "You were awake for over 15% of the time tracked: aim to be asleep for 85% or more of it.";
+  return "Your bed or wake time was over an hour off your usual: keep to the same times.";
+});
+
 // the workouts and activities from the start of the day before to going to bed, as Stats → Steps' and Heart's day lists,
 // each with how long before bed it ended
 const dayBefore = computed(() => { const d = new Date(props.date + "T12:00"); d.setDate(d.getDate() - 1); return ymd(d); });
@@ -148,7 +171,7 @@ const beforeBed = (x: DaySession) => mins(Math.max(0, t0.value - x.b) / 60000);
       <NightRing :night="n" :size="64" :stroke="7" />
       <div class="grow">
         <div class="gs-val">{{ mins(asleepMin(n)) }}<small>asleep</small></div>
-        <div class="tiny"><template v-if="!noTimes">{{ fmt.time(n.startAt) }}-{{ fmt.time(n.endAt) }} · </template>{{ nightRingLine(n) }}</div>
+        <div class="tiny"><template v-if="!noTimes">{{ fmt.time(n.startAt) }}-{{ fmt.time(n.endAt) }} · </template>{{ nightRingLine(n, !noTimes) }}</div>
         <div v-if="vsUsual" class="tiny"><span :class="vsUsual.tone">{{ vsUsual.text }}</span> vs usual {{ vsUsual.usual }}</div>
       </div>
     </div>
@@ -160,6 +183,19 @@ const beforeBed = (x: DaySession) => mins(Math.max(0, t0.value - x.b) / 60000);
         <div class="wlb"><Icon :name="x.icon" :size="14" />{{ x.label }}</div>
         <div class="wv">{{ x.value }} <small v-if="x.unit">{{ x.unit }}</small></div>
         <div class="wd">{{ x.sub }}</div>
+      </div>
+    </div>
+
+    <div v-if="score" class="csec">
+      <div class="lbl hgap">Sleep score for this night</div>
+      <ScoreHead :score="score.score" :label="score.label" :warn="score.label === 'Low'" small />
+      <div class="tiny nv-why">{{ scoreLine }}</div>
+      <div class="list crows">
+        <div v-for="x in scoreRows" :key="x.key" class="li">
+          <Icon :name="x.icon" :size="18" class="muted" />
+          <div class="grow"><div class="t">{{ x.t }}</div><div class="s">{{ x.s }}</div></div>
+          <b class="r rv" :class="x.tone">{{ x.r }}</b>
+        </div>
       </div>
     </div>
 
@@ -187,4 +223,6 @@ const beforeBed = (x: DaySession) => mins(Math.max(0, t0.value - x.b) / 60000);
 <style scoped>
 .nv-note { margin-top: var(--hg); }
 .nv-line { margin-top: var(--tdy); }
+/* why under the score and above its rows, as on Stats → Scores */
+.nv-why { margin-top: var(--tdy); margin-bottom: var(--cpy); }
 </style>

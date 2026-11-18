@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { sleepRange, sleepScore, effortMinutes, activityScore, groupSets, strengthScore, stepsTarget, ageOf, scoresFor, type ScoreNight } from "./scores";
+import { sleepRange, sleepScore, nightScore, effortMinutes, activityScore, groupSets, strengthScore, stepsTarget, ageOf, scoresFor, type ScoreNight } from "./scores";
 import { muscleSets } from "./muscles";
 
 // a night: hours asleep, hours in bed, bed time as minutes from noon (11 pm = 660), woken that long after
@@ -106,6 +106,31 @@ describe("health scores", () => {
     expect(s.score).toBe(42);
     expect(s.label).toBe("Low");
     expect(s.weakest).toBe("groups");
+  });
+
+  it("scores one night from the week's parts, each met or not", () => {
+    const ok = night(8, 8.5), week = [night(8, 8.5), night(7.5, 8), ok];
+    expect(nightScore(ok, week, 30)).toMatchObject({ score: 100, label: "Good", weakest: null });
+    // too short (6 hours asleep, about the usual times): the duration part (50) is missed, the other two are met
+    const short: ScoreNight = { asleepMin: 360, inBedMin: 400, bedAt: 700, wakeAt: 1100 };
+    expect(nightScore(short, [...week, short], 30)).toMatchObject({ score: 50, label: "Fair", weakest: "duration" });
+    // awake for a quarter of the record: efficiency (25) missed
+    const restless: ScoreNight = { asleepMin: 450, inBedMin: 600, bedAt: 630, wakeAt: 1230, bandAsleepMin: 450 };
+    expect(nightScore(restless, week, 30).score).toBe(75);
+    // two hours later than the usual: regularity (25) missed
+    const late = night(8, 8.5, 780);
+    expect(nightScore(late, week, 30)).toMatchObject({ score: 75, weakest: "regularity" });
+  });
+
+  it("leaves a night's parts out that it can't judge", () => {
+    // no usual from fewer than three nights: regularity out, the rest takes all the weight
+    const s = nightScore(night(8, 8.5), [], 30);
+    expect(s.parts.find((p) => p.key === "regularity")).toMatchObject({ weight: 0, extra: { left: 1 } });
+    expect(s.score).toBe(100);
+    // the band didn't tell asleep from awake: efficiency out, so a short night is all duration missed
+    const t = nightScore({ asleepMin: 360, inBedMin: 510, bedAt: 660, wakeAt: 1170, bandAsleepMin: null }, [night(8, 8.5), night(8, 8.5)], 30);
+    expect(t.parts.find((p) => p.key === "efficiency")!.weight).toBe(0);
+    expect(t.score).toBe(Math.round((25 / 75) * 100));
   });
 
   it("works out the age from the year of birth", () => {

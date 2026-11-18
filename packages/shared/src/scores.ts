@@ -134,10 +134,39 @@ export function sleepScore(nights: readonly ScoreNight[], age: number | null): S
     // so the score's card can say it was left out and why (value: the nights it had, target: the week's)
     effs.length >= MIN_NIGHTS
       ? { key: "efficiency" as const, weight: SLEEP_WEIGHTS.efficiency, share: good / effs.length, value: good, target: effs.length,
-        extra: { avg: Math.round((effs.reduce((t, e) => t + e, 0) / effs.length) * 100) / 100, nights: n } }
+        // rounded down as every sleep percent is (core/sleep pctDown), so 84.6% never reads as the 85% aim
+        extra: { avg: Math.floor((effs.reduce((t, e) => t + e, 0) / effs.length) * 100 + 1e-6) / 100, nights: n } }
       : { key: "efficiency" as const, weight: 0, share: 1, value: effs.length, target: n, extra: { left: 1 } },
     { key: "regularity", weight: SLEEP_WEIGHTS.regularity, share: regular / n, value: regular, target: n },
   ]);
+}
+
+/**
+ * One night's sleep score (M-271): the week's three parts with the week's weights, for this night alone, so each is met
+ * or not (a night has no "4 of 7"):
+ *   duration 50: within the recommended hours for your age (extra: the night's minutes asleep, the hours);
+ *   efficiency 25: asleep for 85 % or more of the band's record; left out (weight 0) when the band didn't tell asleep
+ *   from awake, as the week leaves such nights out;
+ *   regularity 25: bed and wake times both within an hour of your usual, the median of the full nights in the
+ *   SCORE_DAYS days ending with this one (this one among them), as the week's score takes its usual from its own nights.
+ *   One or two nights make no usual (the week asks for MIN_NIGHTS), so with fewer it is left out (weight 0).
+ * recent: the full nights of those days; this night is counted in them whether or not it is passed.
+ */
+export function nightScore(night: ScoreNight, recent: readonly ScoreNight[], age: number | null): Score {
+  const [lo, hi] = sleepRange(age);
+  const inRange = night.asleepMin >= lo * 60 && night.asleepMin <= hi * 60 ? 1 : 0;
+  const parts: ScorePart[] = [{ key: "duration", weight: SLEEP_WEIGHTS.duration, share: inRange, value: inRange, target: 1, extra: { asleepMin: night.asleepMin, lo, hi } }];
+  if (night.bandAsleepMin !== null && night.inBedMin > 0) {
+    const eff = Math.min(1, (night.bandAsleepMin ?? night.asleepMin) / night.inBedMin), good = eff >= GOOD_EFFICIENCY ? 1 : 0;
+    parts.push({ key: "efficiency", weight: SLEEP_WEIGHTS.efficiency, share: good, value: good, target: 1, extra: { eff: Math.floor(eff * 100 + 1e-6) / 100 } });
+  } else parts.push({ key: "efficiency", weight: 0, share: 1, value: 0, target: 1, extra: { left: 1 } });
+  const all = recent.includes(night) ? recent : [...recent, night];
+  if (all.length >= MIN_NIGHTS) {
+    const bed = median(all.map((x) => x.bedAt)), wake = median(all.map((x) => x.wakeAt));
+    const ok = Math.abs(night.bedAt - bed) <= REGULAR_MIN && Math.abs(night.wakeAt - wake) <= REGULAR_MIN ? 1 : 0;
+    parts.push({ key: "regularity", weight: SLEEP_WEIGHTS.regularity, share: ok, value: ok, target: 1, extra: { bed: Math.round(bed), wake: Math.round(wake) } });
+  } else parts.push({ key: "regularity", weight: 0, share: 1, value: all.length, target: MIN_NIGHTS, extra: { left: 1 } });
+  return total("sleep", parts)!;
 }
 
 /** Minutes at moderate and vigorous effort from heart rate samples ([unix seconds, bpm]), each sample counting for the

@@ -217,7 +217,7 @@ watch([() => avail.data.value, () => scoresQ.data.value, () => readyQ.data.value
       <div class="grid g2 spt">
         <div class="card"><div class="lbl hgap">Workouts per week{{ wkGoal ? ` · goal ${wkGoal}` : "" }}</div><BarChart :bars="weeks.slice(-16).map((w) => ({ label: wlabel(w.week).split(' ')[0]!, full: wlabel(w.week), group: monthOf(w.week), value: w.workouts, dim: !!wkGoal && w.workouts < wkGoal }))" :goal="wkGoal ?? undefined" :height="170" /></div>
         <div class="card"><div class="lbl hgap">Days you trained · last 6 months</div>
-          <div ref="heatBox" class="heatw" :style="{ paddingTop: TIP_ROOM + 'px' }" @click.self="heatTip = null"><div class="heat" @click.self="heatTip = null" @scroll.passive="heatTip = null" @mouseleave="heatTip?.pin || (heatTip = null)"><i v-for="(c, i) in heat" :key="c.k" :role="c.future ? undefined : 'img'" :aria-label="c.future ? undefined : `${heatText(c.n)}, ${fmt.date(c.k, { weekday: 'short', day: 'numeric', month: 'short' })}`" @mouseenter="heatAt($event, i)" @click="heatAt($event, i, true)" :style="c.future ? { opacity: 0 } : c.n ? { background: `color-mix(in srgb, var(--acc) ${Math.min(100, 45 + c.n * 30)}%, var(--s2))` } : undefined" /></div>
+          <div ref="heatBox" class="heatw cht" :style="{ paddingTop: TIP_ROOM + 'px', '--tipup': TIP_ROOM - 8 + 'px' }" @click.self="heatTip = null"><div class="heat" @click.self="heatTip = null" @scroll.passive="heatTip = null" @mouseleave="heatTip?.pin || (heatTip = null)"><i v-for="(c, i) in heat" :key="c.k" :role="c.future ? undefined : 'img'" :aria-label="c.future ? undefined : `${heatText(c.n)}, ${fmt.date(c.k, { weekday: 'short', day: 'numeric', month: 'short' })}`" @mouseenter="heatAt($event, i)" @click="heatAt($event, i, true)" :style="c.future ? { opacity: 0 } : c.n ? { background: `color-mix(in srgb, var(--acc) ${Math.min(100, 45 + c.n * 30)}%, var(--s2))` } : undefined" /></div>
             <div v-if="heatTip && heat[heatTip.i]" ref="heatTipEl" class="ctip" :class="{ go: heatGo }" :role="heatGo ? 'button' : undefined" :tabindex="heatGo ? 0 : undefined" :style="heatTipStyle(heatTip.x, heatTip.y, !!heatGo, !!heatTip.pin)" @pointerdown="heatGo ? $event.preventDefault() : undefined" @click.stop.prevent="openHeat" @keydown.enter.prevent="openHeat" @keydown.space.prevent="openHeat"><b>{{ heatText(heat[heatTip.i]!.n) }}</b><span class="sep">·</span><span class="ctip-r">{{ fmt.date(heat[heatTip.i]!.k, { weekday: "short", day: "numeric", month: "short" }) }}</span><Icon v-if="heatGo" name="right" :size="13" class="ctip-go" /></div></div>
           <div class="grid g2" style="margin-top:14px;gap:12px"><div><div class="tiny" style="margin-bottom:4px">Workouts by weekday</div><BarChart :bars="dow" :height="90" /></div><div><div class="tiny" style="margin-bottom:4px">Workouts by time of day</div><BarChart :bars="hours" :height="90" /></div></div>
         </div>
@@ -228,14 +228,14 @@ watch([() => avail.data.value, () => scoresQ.data.value, () => readyQ.data.value
     <template v-else-if="tab === 'routines'">
       <div v-if="!d.routines.length" class="card empty"><Icon name="routines" :size="34" /><b>No routine workouts in this period</b>Workouts started from a routine are compared here.</div>
       <div class="grid g2">
-        <div v-for="r in d.routines" :key="r.routineId" class="card click" @click="router.push(`/routines/${r.routineId}`)">
-          <div class="row"><span class="dot" :style="r.color ? { background: r.color } : undefined" /><b class="grow">{{ r.name }}</b><span class="tiny">Done {{ r.times }}×</span></div>
-          <div class="grid g3 keep" style="margin:10px 0;gap:8px">
-            <div><div class="lbl">Average duration</div><div style="font-weight:600">{{ fmt.dur(r.avgDurationS, true) }}</div></div>
-            <div><div class="lbl">Planned duration</div><div style="font-weight:600">{{ r.estimateS ? fmt.dur(r.estimateS, true) : "-" }}</div></div>
-            <div><div class="lbl">Exercises skipped</div><div style="font-weight:600">{{ Math.round(r.skipRate * 100) }}%</div></div>
+        <div v-for="r in d.routines" :key="r.routineId" class="card wkc click" @click="router.push(`/routines/${r.routineId}`)">
+          <div class="row hgap"><span class="dot" :style="r.color ? { background: r.color } : undefined" /><b class="grow">{{ r.name }}</b><span class="tiny">Done {{ r.times }}×</span></div>
+          <div class="wstats plain">
+            <div class="ws" role="group" :aria-label="`Average duration ${fmt.dur(r.avgDurationS, true)}`"><div class="wlb"><Icon name="clock" :size="14" />Average duration</div><div class="wv">{{ fmt.dur(r.avgDurationS, true) }}</div></div>
+            <div class="ws" role="group" :aria-label="`Planned duration ${r.estimateS ? fmt.dur(r.estimateS, true) : 'none'}`"><div class="wlb"><Icon name="timer" :size="14" />Planned duration</div><div class="wv">{{ r.estimateS ? fmt.dur(r.estimateS, true) : "-" }}</div></div>
+            <div class="ws" role="group" :aria-label="`Exercises skipped ${Math.round(r.skipRate * 100)}%`"><div class="wlb"><Icon name="skip" :size="14" />Exercises skipped</div><div class="wv">{{ Math.round(r.skipRate * 100) }}%</div></div>
           </div>
-          <div class="lbl hgap">Volume per workout ({{ fmt.wu }})</div>
+          <div class="lbl hgap csec">Volume per workout ({{ fmt.wu }})</div>
           <LineChart :points="r.trend.map((t: any) => ({ x: new Date(t.at).getTime(), y: fmt.fromKg(t.volumeKg) }))" :height="110" :fmt="(v) => fmt.num(v / 1000, 1) + 'k'" />
         </div>
       </div>
