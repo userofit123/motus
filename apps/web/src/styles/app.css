@@ -119,10 +119,16 @@ hr.sep { border: 0; border-top: 1px solid var(--ol); margin: 14px 0; }
    breakpoints sit where that smallest size stops fitting, so nothing overlaps the next tile or is cut off */
 .wkc { container-type: inline-size; min-width: 0; }
 .wstats { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: var(--hg); }
-.wstats .ws { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+/* a label or line too long for its tile ("Lowest heart rate" in a third of a phone's block) wraps between words instead
+   of running past the block's edge, where the last tile's was cut off (M-282). Each tile shares the row's rows
+   (subgrid), so a two-line label in one tile moves every tile's value down with it and the values stay level */
+.wstats .ws { display: grid; grid-template-rows: subgrid; grid-row: span 3; row-gap: 2px; align-content: start; min-width: 0; }
+/* every tile of a block has the same parts (a sub line shown for one is shown, maybe empty, for all), so the spans match */
+.wstats .ws:not(:has(> :nth-child(3))) { grid-row: span 2; }
 .wstats .ws + .ws { border-inline-start: 1px solid var(--ol); padding-inline-start: var(--hg); }
-.wstats .wlb { display: flex; align-items: center; gap: 4px; font-size: var(--fs-sm); color: var(--tx2); white-space: nowrap; }
-.wstats .wlb svg { color: var(--acc); flex: none; }
+.wstats .wlb { display: flex; align-items: flex-start; gap: 4px; font-size: var(--fs-sm); color: var(--tx2); }
+/* the icon (always 14px) centred on the label's first line, where it was when labels kept to one line */
+.wstats .wlb svg { color: var(--acc); flex: none; margin-block-start: calc((1lh - 14px) / 2); }
 /* a tile that opens something (the Calendar's day tiles, Stats → Sleep's nights): the rows' hover tint and a chevron at
    the end of its label. The tint is rounded on a layer of its own inside the tile's line: rounding the tile itself bent
    the line between tiles at its ends (M-252). It reaches half the gap past the text on both sides (a tile after a line
@@ -133,17 +139,26 @@ hr.sep { border: 0; border-top: 1px solid var(--ol); margin: 14px 0; }
 .wstats .ws.click:hover::before { background: color-mix(in srgb, var(--tx) 3%, transparent); }
 .wstats .wlb .wgo { margin-inline-start: auto; color: var(--tx2); }
 /* a tile is (block - gaps and lines) / tiles; the value may take a tile / 5.6, room for about 5.6 characters' widths */
-.wstats .wv { font-size: clamp(var(--fs-lg), calc((100cqi - 4 * var(--hg)) / 16.8), calc(var(--fs-lg) * 1.25)); font-weight: 650; line-height: 1.2; font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* the number keeps one line; a unit that no longer fits beside it ("2,920,000 steps" in a third of a phone's block) goes
+   under it instead of past the block's edge */
+.wstats .wv { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: .25em; font-size: clamp(var(--fs-lg), calc((100cqi - 4 * var(--hg)) / 16.8), calc(var(--fs-lg) * 1.25)); font-weight: 650; line-height: 1.2; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .wstats.n4 .wv { font-size: clamp(var(--fs-lg), calc((100cqi - 6 * var(--hg)) / 22.4), calc(var(--fs-lg) * 1.25)); }
 .wstats .wv small { font-size: var(--fs); font-weight: 500; color: var(--tx2); letter-spacing: 0; }
 /* the line keeps its height when there is no change to show, so the tiles stay level */
-.wstats .wd { font-size: var(--fs-sm); line-height: 1.4; min-height: 1.4em; color: var(--tx2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.wstats .wd { font-size: var(--fs-sm); line-height: 1.4; min-height: 1.4em; color: var(--tx2); font-variant-numeric: tabular-nums; }
 @container (max-width: 460px) {
   /* two rows of two: the row gap is one and a half block paddings, a little less space than before */
   .wstats.n4 { grid-auto-flow: row; grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: calc(1.5 * var(--cpy)); }
   .wstats.n4 .ws:nth-child(odd) { border-inline-start: 0; padding-inline-start: 0; }
   .wstats.n4 .ws.click:nth-child(odd)::before { inset-inline-start: calc(var(--hg) / -2); }
   .wstats.n4 .wv { font-size: clamp(var(--fs-lg), calc((100cqi - 2 * var(--hg)) / 11.2), calc(var(--fs-lg) * 1.25)); }
+}
+/* five tiles (a workout's heart, calories, recovery, pace and cadence) are too many for one row of a block under 640px:
+   three over two, each row starting without a line as two by two does */
+@container (min-width: 331px) and (max-width: 640px) {
+  .wstats:has(> .ws:nth-child(5)) { grid-auto-flow: row; grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: calc(1.5 * var(--cpy)); }
+  .wstats:has(> .ws:nth-child(5)) .ws:nth-child(3n+1) { border-inline-start: 0; padding-inline-start: 0; }
+  .wstats:has(> .ws:nth-child(5)) .ws.click:nth-child(3n+1)::before { inset-inline-start: calc(var(--hg) / -2); }
 }
 /* a narrow block (the phone, or a narrow window) can't fit three tiles across without cutting the values, so the stats
    become rows instead: label on the left, value and change on the right, lined up in columns */
@@ -154,7 +169,7 @@ hr.sep { border: 0; border-top: 1px solid var(--ol); margin: 14px 0; }
   /* a tile with no box of its own would make its tint a cell of the grid */
   .wstats .ws.click::before { content: none; }
   .wstats .wlb { align-self: center; }
-  .wstats .wv, .wstats.n4 .wv { font-size: var(--fs-lg); text-align: end; }
+  .wstats .wv, .wstats.n4 .wv { font-size: var(--fs-lg); text-align: end; justify-content: flex-end; }
   .wstats .wd { text-align: end; }
   /* rows2 (a night's tiles, a day's steps): a longer label ("Heart rate while asleep") and unit ("breaths/min") no
      longer fit beside a three-column row, so the line goes under the label and the value stands on the right, as a

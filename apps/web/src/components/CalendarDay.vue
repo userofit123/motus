@@ -102,7 +102,6 @@ const dayTop = computed(() => dayTiles.value.length > 0 || tlHas.value);
    or under the last, as their session list's */
 .dsess .li:first-child { padding-top: 0; }
 .dsess .li:last-child { border-bottom: 0; padding-bottom: 0; }
-/* the phone shows these as rows whose label column is what the subtitles leave over: with the tighter gap "Resting heart rate" still fits beside a night's times; a longer label wraps instead of running under its value */
+/* the phone shows these as rows whose label column is what the subtitles leave over: with the tighter gap "Resting heart rate" still fits beside a night's times; a longer label wraps instead of running under its value (as every tile's label does, app.css) */
 .dtiles { column-gap: var(--hg); }
-.dtiles .wlb { white-space: normal; }
 </style>
