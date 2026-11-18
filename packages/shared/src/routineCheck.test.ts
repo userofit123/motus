@@ -35,10 +35,10 @@ describe("routine check", () => {
     const c = routineCheck([squat(5), rdl(2)], 2)!;
     const v = key(c, "volume")!;
     expect(v.value).toBe("1 of 3");
-    expect(v.detail).toContain("Hamstrings");
+    expect(v.detail).toContain("for hamstrings: add");
     expect(v.detail).toContain("Romanian deadlift");
     // chest isn't trained here (a leg day), so it isn't missed
-    expect(v.detail).not.toContain("Chest");
+    expect(v.detail).not.toContain("chest");
   });
 
   it("asks for each muscle twice a week", () => {
@@ -85,6 +85,6 @@ describe("routine check", () => {
     const bad = programCheck([[bench(6)]])!;
     expect(bad.label).toBe("Low");
     // a week checks every major muscle: no back is missed
-    expect(key(bad, "volume")!.detail).toContain("no sets");
+    expect(key(bad, "volume")!.detail).toContain("No sets for back");
   });
 });

@@ -1118,7 +1118,7 @@ change:
      report and year in review, strength standards.
    - **Off by default (switch on as wanted):** RPE/RIR, voice cues, gym profiles, sharing routines,
      quick text entry, progress photos, share images, Health Connect, Strava, Wear OS, API tokens,
-     MCP / "send to Claude", web-bundle live updates, command palette.
+     MCP / "send to Claude", web-bundle live updates, command palette, routine check.
 4. **The set table shows four columns**: `Previous · kg · Reps · ✓`. RPE, set type and timing
    appear only if their feature is on.
 5. **Button budget.** The active workout shows at most: the set table, "+ Add set", Notes, the timer,

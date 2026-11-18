@@ -78,6 +78,8 @@ const r1 = (x: number) => Math.round(x * 2) / 2;
 const n = (x: number) => String(r1(x));
 const plural = (x: number, one: string, many = `${one}s`) => `${n(x)} ${r1(x) === 1 ? one : many}`;
 const list = (a: string[]) => (a.length <= 1 ? a.join("") : `${a.slice(0, -1).join(", ")} and ${a[a.length - 1]}`);
+/** a muscle's name inside a sentence */
+const low1 = (m: { name: string }) => m.name.toLowerCase();
 const lifting = (s: CheckSession) => s.filter((e) => !NOT_LIFTING.has(e.category));
 const working = (e: CheckExercise) => e.sets.filter((s) => s.kind !== "warmup");
 
@@ -105,10 +107,10 @@ function volume(week: Record<string, number>, all: boolean, span: string): Check
   const tips: string[] = [];
   for (const m of low.slice(0, 2)) {
     const s = week[m.id]!;
-    tips.push(s ? `${m.name} gets ${plural(s, "set")} ${span}: add ${Math.ceil(lo - s)}, e.g. ${m.example}.` : `${m.name} gets no sets: add ${lo} ${span}, e.g. ${m.example}.`);
+    tips.push(s ? `${plural(s, "set")} ${span} for ${low1(m)}: add ${Math.ceil(lo - s)}, e.g. ${m.example}.` : `No sets for ${low1(m)}: add ${lo} ${span}, e.g. ${m.example}.`);
   }
-  if (low.length > 2) tips.push(`${list(low.slice(2).map((m) => m.name))} also ${low.length > 3 ? "get" : "gets"} under ${lo}.`);
-  if (!tips.length && high.length) tips.push(`${list(high.map((m) => m.name))} ${high.length > 1 ? "get" : "gets"} over ${hi} sets ${span}, which adds little and is harder to recover from: drop a few.`);
+  if (low.length > 2) tips.push(`Under ${lo} ${span} too: ${list(low.slice(2).map(low1))}.`);
+  if (!tips.length && high.length) tips.push(`Over ${hi} sets ${span} for ${list(high.map(low1))}, which adds little and is harder to recover from: drop a few.`);
   const detail = tips.length ? tips.join(" ") : `Every muscle ${all ? "" : "it trains "}gets ${lo}-${hi} sets ${span}.`;
   return { key: "volume", title: "Sets per muscle", weight: CHECK_WEIGHTS.volume, share, status: statusOf(share), value: `${met} of ${ms.length}`, detail };
 }
@@ -122,7 +124,7 @@ function frequency(days: Record<string, number>[], week: Record<string, number>)
   const share = (ms.length - once.length) / ms.length;
   const detail = !once.length ? `Each muscle is trained on ${TWICE} or more days a week.`
     : days.length === 1 ? `Done once a week, each muscle is trained on 1 day. Twice a week builds more: do it twice, or spread its sets over 2 days.`
-    : `${list(once.slice(0, 3).map((m) => m.name))}${once.length > 3 ? ` and ${once.length - 3} more` : ""} ${once.length > 1 ? "are" : "is"} trained on 1 day a week. Twice builds more: spread ${once.length > 1 ? "their" : "its"} sets over 2 days.`;
+    : `Trained on 1 day a week: ${list(once.slice(0, 3).map(low1))}${once.length > 3 ? ` and ${once.length - 3} more` : ""}. Twice builds more: spread the sets over 2 days.`;
   return { key: "frequency", title: "Muscles trained twice a week", weight: CHECK_WEIGHTS.frequency, share, status: statusOf(share), value: `${ms.length - once.length} of ${ms.length}`, detail };
 }
 

@@ -48,7 +48,7 @@ const minor = computed(() => on.value && !!sq.data.value?.minor);
     <div v-for="s in scores" :key="s.key" class="card wkc spt">
       <div class="ch"><span class="bi"><Icon :name="s.meta.icon" :size="15" /></span><span class="t grow">{{ s.meta.name }}</span><span class="tiny">{{ s.meta.span }}</span></div>
       <div class="tiny sc-why">{{ scoreWhy(s, num) }}</div>
-      <div class="list sc-rows">
+      <div class="list crows">
         <div v-for="x in s.parts.map((p) => scoreRow(p, num))" :key="x.key" class="li">
           <Icon :name="x.icon" :size="18" class="muted" />
           <div class="grow"><div class="t">{{ x.t }}</div><div class="s">{{ x.s }}</div></div>
@@ -62,7 +62,7 @@ const minor = computed(() => on.value && !!sq.data.value?.minor);
     <div v-if="ready" class="card wkc spt">
       <div class="ch"><span class="bi"><Icon name="gauge" :size="15" /></span><span class="t grow">Readiness</span><span class="tiny">Vs your usual</span></div>
       <div v-if="ready.why" class="tiny sc-why">{{ ready.why }}</div>
-      <div v-if="readyRows.length" class="list sc-rows">
+      <div v-if="readyRows.length" class="list crows">
         <div v-for="x in readyRows" :key="x.key" class="li">
           <Icon :name="x.icon" :size="18" class="muted" />
           <div class="grow"><div class="t">{{ x.t }}</div><div class="s">{{ x.s }}</div></div>
@@ -79,9 +79,4 @@ const minor = computed(() => on.value && !!sq.data.value?.minor);
 .sc-line { margin-top: var(--tdy); }
 /* why under the title and above the rows, as on Home's score blocks */
 .sc-why { margin-bottom: var(--cpy); }
-/* the rows as Stats → Heart's highlights: the first without space above, the last without its line */
-.sc-rows .li:first-child { padding-top: 0; }
-.sc-rows .li:last-child { border-bottom: 0; padding-bottom: 0; }
-.sc-rows .grow { min-width: 0; }
-.rv { font-variant-numeric: tabular-nums; white-space: nowrap; }
 </style>

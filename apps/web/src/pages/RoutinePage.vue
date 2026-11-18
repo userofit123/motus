@@ -22,6 +22,10 @@ import LineChart from "../components/LineChart.vue";
 import PlanSets from "../components/PlanSets.vue";
 import BodyMap from "../components/BodyMap.vue";
 import HeartRate from "../components/HeartRate.vue";
+import NumStep from "../components/NumStep.vue";
+import RoutineCheckCard from "../components/RoutineCheckCard.vue";
+import { sessionOf, timesAWeek } from "../core/routineCheck";
+import { routineCheck } from "@motus/shared";
 import { useRoutineMenu } from "../core/routineMenu";
 import { removeItem } from "../components/home/planActions";
 import { useNoteMenu } from "../core/noteMenu";
@@ -81,6 +85,14 @@ const schedRemove = (s: any) => removeItem({ scheduleId: s.id, name: routine.val
 // time (a point's tip gives it and opens that workout), and each session row's average
 const hrSessions = computed(() => (routine.value?.hr?.sessions ?? []).filter((x: any) => x.avgHr).map((x: any) => ({ x: new Date(x.date).getTime(), y: Math.round(x.avgHr), id: x.workoutId })));
 const hrOf = computed(() => new Map<string, number>((routine.value?.hr?.sessions ?? []).filter((x: any) => x.avgHr).map((x: any) => [x.workoutId, Math.round(x.avgHr)])));
+// the Routine check (feature): the routine as a week of it, done as often as its plan or the last 4 weeks say until the
+// row's stepper changes it (for this look only, nothing is saved)
+const checkOn = computed(() => !!st.value.features.routineCheck);
+const usual = computed(() => timesAWeek(id.value, schedules.data.value ?? [], history.data.value ?? []));
+const perWeekSet = ref<number | null>(null);
+const perWeek = computed(() => perWeekSet.value ?? usual.value.n);
+const check = computed(() => (checkOn.value && routine.value ? routineCheck(sessionOf(routine.value), perWeek.value) : null));
+const perWeekFrom = computed(() => (perWeekSet.value != null ? "For this check only" : { plan: "From your planned days", done: "From your last 4 weeks", none: "Not planned or done yet" }[usual.value.from]));
 const noteMenu = useNoteMenu();
 // a note on one of the routine's exercises says which; notes on the routine itself need no label
 const noteWhere = (n: any) => (n.targetType === "routine_exercise" ? routine.value?.exercises.find((e: any) => e.id === n.targetId)?.exercise?.name ?? null : null);
@@ -154,6 +166,11 @@ await loaded(r, summaries, notes, rems, schedules, history);
         </div>
       </div>
     </div>
+    <!-- below both columns: its rows say what to change in full, which the side column is too narrow for -->
+    <RoutineCheckCard v-if="check" class="spt" :check="check" title="Routine check" span="Per week">
+      <div class="li"><Icon name="dumbbell" :size="18" class="muted" /><div class="grow"><div class="t">Times a week</div><div class="s">{{ perWeekFrom }}</div></div>
+        <NumStep :value="perWeek" :min="1" :max="7" label="Times a week" @set="(v) => (perWeekSet = v)" /></div>
+    </RoutineCheckCard>
     </div>
 
     <div v-else-if="tab === 'history'">

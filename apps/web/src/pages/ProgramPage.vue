@@ -1,11 +1,11 @@
 <script setup lang="ts">
 // One program: where you are and what's next (Start), the plan week by week with what was done, and whether you're on schedule.
-import { loaded } from "../api/queries";
+import { loaded, useSettings } from "../api/queries";
 import { goBack } from "../core/leave";
 import { computed, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { useQuery } from "@tanstack/vue-query";
-import type { ProgramDetail } from "@motus/shared";
+import { useQueries, useQuery } from "@tanstack/vue-query";
+import { programCheck, weekMuscleSets, type ProgramDetail } from "@motus/shared";
 import { api } from "../api/client";
 import { invalidate } from "../api/live";
 import { useFmt, unitOf } from "../core/format";
@@ -14,6 +14,8 @@ import Icon from "../components/Icon.vue";
 import MuscleFig from "../components/MuscleFig.vue";
 import Menu from "../components/Menu.vue";
 import ProgramEditor from "../components/ProgramEditor.vue";
+import RoutineCheckCard from "../components/RoutineCheckCard.vue";
+import { sessionOf } from "../core/routineCheck";
 import { useProgramMenu } from "../core/programMenu";
 
 const route = useRoute(), router = useRouter();
@@ -52,6 +54,21 @@ const hasDeload = computed(() => p.value?.plan.some((w) => w.deload));
 const dayLine = (d: ProgramDetail["plan"][number]["days"][number]) =>
   d.status === "done" ? `${fmt.value.date(d.workout!.startedAt, { weekday: "short", day: "numeric", month: "short" })} · ${fmt.value.dur(d.workout!.durationS, true)} · ${fmt.value.vol(d.workout!.volumeKg)}`
   : d.status === "next" ? (behind.value ? "Up next · behind the calendar" : "Up next") : d.status === "late" ? "Not done yet · its week has passed" : "";
+// the Routine check (feature) of the program's first full week (not a deload one), from its routines as Routines loads
+// them (the same cache); asked for only while the feature is on
+const st = useSettings();
+const checkOn = computed(() => !!st.value.features.routineCheck);
+const checkWeek = computed(() => (checkOn.value ? p.value?.plan.find((w) => !w.deload && w.days.length) ?? null : null));
+const weekIds = computed(() => [...new Set((checkWeek.value?.days ?? []).map((d) => d.routineId))]);
+const weekRoutines = useQueries({ queries: computed(() => weekIds.value.map((rid) => ({ queryKey: ["routines", rid], queryFn: () => api.get(`/routines/${rid}`) }))) });
+const check = computed(() => {
+  if (!checkWeek.value || weekRoutines.value.some((x) => !x.data)) return null;
+  // one session per routine, so a routine done twice in the week is the same workout twice
+  const byId = new Map(weekIds.value.map((rid, i) => [rid, sessionOf(weekRoutines.value[i]!.data)]));
+  const days = checkWeek.value.days.map((d) => byId.get(d.routineId)!);
+  const c = programCheck(days);
+  return c ? { c, muscles: weekMuscleSets(days) } : null;
+});
 // show the page once its data is in, all at once
 await loaded(q);
 </script>
@@ -102,6 +119,7 @@ await loaded(q);
           </div>
         </div>
         <p v-if="hasDeload" class="tiny spt">Deload weeks are lighter weeks to recover: working weights are {{ p.deloadPct }}% lower.</p>
+        <RoutineCheckCard v-if="check" class="spt" :check="check.c" title="Program check" :span="`Week ${checkWeek!.week}`" :muscles="check.muscles" />
       </section>
       <!-- its own heading so both columns start level, and so it keeps the section gap when the columns stack on a phone -->
       <section>
