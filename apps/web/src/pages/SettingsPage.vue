@@ -235,8 +235,8 @@ await loaded(me);
           </div>
           <div class="sh"><h2>Weights</h2></div>
           <div class="card">
-            <div class="li"><div class="grow"><div class="t">Stepper step</div><div class="s">How much − and + change a weight during a workout</div></div>
-              <NumStep :value="s.increments[s.units.weight]" :step="s.units.weight === 'lb' ? 1 : 0.5" :min="s.units.weight === 'lb' ? 0.5 : 0.25" :max="100" :unit="s.units.weight" label="stepper step" @set="(v) => set({ increments: { [s.units.weight]: v } })" /></div>
+            <div class="li"><div class="grow"><div class="t">Weight buttons change by</div><div class="s">How much the - and + buttons add or take off when you log a set</div></div>
+              <NumStep :value="s.increments[s.units.weight]" :step="s.units.weight === 'lb' ? 1 : 0.5" :min="s.units.weight === 'lb' ? 0.5 : 0.25" :max="100" :unit="s.units.weight" label="weight change" @set="(v) => set({ increments: { [s.units.weight]: v } })" /></div>
             <div v-if="s.features.plates || s.features.warmupCalc" class="li"><div class="grow"><div class="t">Bar weight</div></div>
               <NumStep :value="s.units.weight === 'lb' ? Math.round(wIn(s.barKg)) : wIn(s.barKg)" :step="s.units.weight === 'lb' ? 1 : 0.5" :min="1" :max="100" :unit="s.units.weight" label="bar weight" @set="(v) => set({ barKg: kgOf(v) })" /></div>
             <div v-if="s.features.plates" class="li"><div class="grow"><div class="t">Your plates</div><div class="s">{{ (s.units.weight === "kg" ? s.platesKg : s.platesLb).join(", ") }} {{ s.units.weight }}</div></div><button class="qb acc" @click="editPlates">Edit</button></div>
