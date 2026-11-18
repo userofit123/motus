@@ -11,7 +11,7 @@ import { useRouter } from "vue-router";
 import { useQuery } from "@tanstack/vue-query";
 import { zoneMinutes, restRecovery, fromM, ymd, SAMPLE_MAX_S, type SetSpan } from "@motus/shared";
 import { useFmt } from "../core/format";
-import { ZONES, useMaxHr, zoneNote, bandRecords, bandTypesOn, type BandRecord } from "../core/heart";
+import { useMaxHr, zoneNote, zoneParts, bandRecords, bandTypesOn, type BandRecord } from "../core/heart";
 import { hrPoints, fromWhere, useDevice } from "../native/health";
 import Icon from "./Icon.vue";
 import LineChart from "./LineChart.vue";
@@ -142,12 +142,12 @@ const rested = computed(() => !!shade.value?.some((z) => z.soft));
 const zones = computed(() => {
   if (!maxHr.value || props.samples.length < 2) return [];
   const m = zoneMinutes(props.samples, maxHr.value.bpm).get("") ?? [];
-  return ZONES.map((z, i) => ({ key: z.key, name: z.name, color: z.color, min: Math.round(m[i] ?? 0) }));
+  return zoneParts(m, maxHr.value.bpm);
 });
 const zoned = computed(() => zones.value.some((z) => z.min > 0));
-// under the bar, as Stats → Heart's day: how long the session was in a zone at all and where each starts (a workout
-// comes with its sets, an activity without)
-const zNote = computed(() => (maxHr.value ? zoneNote(maxHr.value.bpm, zones.value.reduce((t, z) => t + z.min, 0), props.sets ? "during this workout" : "during this activity") : ""));
+// under the bar, as Stats → Heart's day: how long the session was in a zone at all, and whether the rest of it was
+// lower (a workout comes with its sets, an activity without)
+const zNote = computed(() => { const total = zones.value.reduce((t, z) => t + Math.round(z.min), 0); return zoneNote(total, props.sets ? "during this workout" : "during this activity", (props.to - props.from) / 60000 - total > 1); });
 </script>
 
 <template>

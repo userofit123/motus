@@ -3,24 +3,29 @@
 // workout's or activity's own stretch of them.
 import { computed } from "vue";
 import { useQuery } from "@tanstack/vue-query";
-import { HR_ZONES, maxHeartRate } from "@motus/shared";
+import { HR_ZONES, maxHeartRate, duration } from "@motus/shared";
 import { api } from "../api/client";
 import { useSettings } from "../api/queries";
-import { mins } from "./sleep";
 
 export const ZONE_COLORS = ["color-mix(in srgb, var(--acc) 30%, var(--s2))", "color-mix(in srgb, var(--acc) 62%, var(--s2))", "var(--acc)", "var(--warn)", "var(--neg)"];
 export const ZONES = HR_ZONES.map((z, i) => ({ ...z, color: ZONE_COLORS[i]! }));
 
 /**
- * The line under a time-in-zones bar (M-277): only the time at half the max or more is in a zone, so a resting day's
- * hours aren't in the bar and its shares are of that time alone; this says how long that was and where each zone
- * starts in bpm, so "Very light 7m" reads against a chart that rises to 130. Each start as zoneOf counts it (the first
- * whole bpm at the zone's share of the max). total: the bar's minutes; when: its time ("today", "during this workout").
+ * A time-in-zones bar's parts (StageBar) from the minutes in each zone (zoneMinutes, light to hot): each with where it
+ * starts as zoneOf counts it (the first whole bpm at the zone's share of the max, "130+"), so the legend reads against a
+ * chart that rises to 130 (M-277). Minutes stay unrounded, so a short spike at 130 still shows Moderate ("<1m").
  */
-export function zoneNote(max: number, total: number, when: string): string {
-  const at = ZONES.map((z) => Math.ceil(z.from * max));
-  return `Your heart rate was ${at[0]} bpm or more (half your max) for ${mins(total)} ${when}. Zones start at: ${ZONES.map((z, i) => `${z.name} ${at[i]}`).join(", ")} bpm.`;
-}
+export const zoneParts = (m: number[], max: number) =>
+  ZONES.map((z, i) => ({ key: z.key, name: z.name, color: z.color, from: `${Math.ceil(z.from * max)}+`, min: m[i] ?? 0 }));
+
+/**
+ * The one line under a time-in-zones bar: only the time at the first zone's start or more is in the bar, so a resting
+ * day's hours aren't in it and its shares are of that time alone. total: the legend's whole minutes added up, so the two
+ * agree (0: only seconds, "<1m"); when: its time ("today", "during this workout"); below: some of that time was under
+ * the zones (always so for a day).
+ */
+export const zoneNote = (total: number, when: string, below: boolean) =>
+  `Your heart rate was in a zone for ${total ? duration(total * 60, true) : "<1m"} ${when}${below ? "; the rest of the time it was lower" : ""}.`;
 
 /** The max heart rate in use (Body → About you), null when neither it nor a year of birth is set */
 export function useMaxHr() {
