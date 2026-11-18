@@ -13,7 +13,7 @@ import { ymd, weekStartOf, isNightMin, MIN_NIGHT_H } from "@motus/shared";
 import { api } from "../../api/client";
 import { useSettings, useWorkouts, useSleep, useHealthDay, type SleepNight } from "../../api/queries";
 import { useFmt, localYmd } from "../../core/format";
-import { STAGES, NO_STAGES_COLOR, NO_STAGES_SWATCH, SHORT_COLOR, hasStages, isFull, asleepMin, inBedMin, efficiency, nightMin, nightIso, mins, typical } from "../../core/sleep";
+import { STAGES, NO_STAGES_COLOR, NO_STAGES_SWATCH, SHORT_COLOR, hasStages, isFull, asleepMin, inBedMin, efficiency, awakeKnown, nightMin, nightIso, mins, typical } from "../../core/sleep";
 import Icon from "../Icon.vue";
 import { adviceWord, deviceWord, useDevice } from "../../native/health";
 import BarChart from "../BarChart.vue";
@@ -145,7 +145,8 @@ const bed = computed(() => typical(full.value.map((n) => nightMin(n.startAt))));
 const wake = computed(() => typical(full.value.map((n) => { const a = nightMin(n.startAt), b = nightMin(n.endAt); return b < a ? b + 1440 : b; })));
 const deepPct = computed(() => { const ns = full.value.filter((n) => n.deepMin != null && n.asleepMin); return ns.length ? Math.round((ns.reduce((t, n) => t + n.deepMin!, 0) / ns.reduce((t, n) => t + n.asleepMin, 0)) * 100) : null; });
 const avgBed = computed(() => avg(full.value.map(inBedMin)));
-const avgEff = computed(() => avg(full.value.map(efficiency)));
+// only the nights the band told asleep from awake: the others read 100% whatever the night was
+const avgEff = computed(() => avg(full.value.filter(awakeKnown).map(efficiency)));
 const clock = (m: number) => fmt.value.time(nightIso(m));
 // where bedtimes (or wake times) usually fall: the middle half from 5 nights on, else the earliest to the latest; one
 // night says nothing about a habit, so it only says so
@@ -155,7 +156,7 @@ const span = (t: Typical) => (t.lo === t.hi ? `at ${clock(t.at)}` : clock(t.lo) 
 // with 2-4 nights only the earliest to the latest, since any word beside it no longer fits a phone's tile on one line
 const spread = (t: Typical) => (t.n === 1 ? ["from 1 night", ""] : [t.n >= 5 ? "usually" : "", span(t)]);
 const schedule = computed(() => bed.value && wake.value && bed.value.n > 1 ? `${bed.value.n >= 5 ? "Usual times shaded: to bed" : "To bed"} ${span(bed.value)} · up ${span(wake.value)}` : "");
-// the tiles there are data for: time asleep always, then bedtime, wake time, and deep sleep or else time in bed
+// the tiles there are data for: time asleep always, then bedtime, wake time, and deep sleep or else the time tracked
 const tiles = computed(() => 1 + (bed.value ? 1 : 0) + (wake.value ? 1 : 0) + (deepPct.value != null || avgBed.value != null ? 1 : 0));
 
 // nightly time asleep: a bar a night, stacked deep / light / REM when the band told them apart (a night it didn't, or a
@@ -318,7 +319,7 @@ const list = computed(() => showAll.value ? nights.value : nights.value.slice(0,
         <div v-if="bed" class="card stat"><div class="lbl"><span class="bi"><Icon name="clock" :size="15" /></span>Bedtime</div><div class="val">{{ clock(bed.at) }}</div><div class="sub">{{ spread(bed)[0] }} <span class="nw">{{ spread(bed)[1] }}</span></div></div>
         <div v-if="wake" class="card stat"><div class="lbl"><span class="bi"><Icon name="bell" :size="15" /></span>Wake time</div><div class="val">{{ clock(wake.at) }}</div><div class="sub">{{ spread(wake)[0] }} <span class="nw">{{ spread(wake)[1] }}</span></div></div>
         <div v-if="deepPct != null" class="card stat"><div class="lbl"><span class="bi"><Icon name="layers" :size="15" /></span>Deep sleep</div><div class="val">{{ deepPct }}<small>%</small></div><div class="sub">of time asleep</div></div>
-        <div v-else-if="avgBed != null" class="card stat"><div class="lbl"><span class="bi"><Icon name="bed" :size="15" /></span>In bed</div><div class="val">{{ mins(avgBed) }}</div><div class="sub">{{ Math.round(avgEff! * 100) }}% of it asleep</div></div>
+        <div v-else-if="avgBed != null" class="card stat"><div class="lbl"><span class="bi"><Icon name="bed" :size="15" /></span>Time tracked</div><div class="val">{{ mins(avgBed) }}</div><div class="sub">{{ avgEff != null ? `${Math.round(avgEff * 100)}% of it asleep` : "time awake not recorded" }}</div></div>
       </div>
       <!-- the best and worst night and the sleep debt, once there are nights to compare -->
       <div v-if="nightDays.length > 1" class="card wkc spt">
@@ -357,7 +358,7 @@ const list = computed(() => showAll.value ? nights.value : nights.value.slice(0,
         <div class="lbl hgap">{{ perWeek ? "Average time asleep a night, by week" : "Time asleep per night" }} (h) · target {{ BAND[0] }}-{{ BAND[1] }}</div>
         <BarChart :bars="bars" :band="BAND" :height="170" :fmt="hours" @pick="openBar" />
         <div v-if="legend.length && !perWeek" class="bmlegend sl-leg"><span v-for="k in legend" :key="k.name"><i :style="{ background: k.color }" />{{ k.name }}</span></div>
-        <div v-if="nights.length || shortCount" class="tiny sl-line">{{ [nights.length ? "Time asleep leaves out the time awake in bed." : "", shortCount ? `${shortCount} short ${shortCount === 1 ? "record" : "records"} (under ${MIN_NIGHT_H} hours) left out of the averages.` : "", nights.length ? (perWeek ? "Tap a week to see its average time asleep a night." : "Tap a night to see its time asleep.") : ""].filter(Boolean).join(" ") }}</div>
+        <div v-if="nights.length || shortCount" class="tiny sl-line">{{ [nights.length ? "Time asleep leaves out the time you were awake in the night." : "", shortCount ? `${shortCount} short ${shortCount === 1 ? "record" : "records"} (under ${MIN_NIGHT_H} hours) left out of the averages.` : "", nights.length ? (perWeek ? "Tap a week to see its average time asleep a night." : "Tap a night to see its time asleep.") : ""].filter(Boolean).join(" ") }}</div>
       </div>
 
       <div v-if="full.length > 1" class="card spt">
@@ -374,7 +375,7 @@ const list = computed(() => showAll.value ? nights.value : nights.value.slice(0,
         <div class="card"><div class="list">
           <div v-for="n in list" :key="n.date" class="li click" role="button" tabindex="0" @click="openNight(n.date)" @keydown.enter="openNight(n.date)">
             <span class="bi sg"><Icon name="moon" :size="16" /></span>
-            <div class="grow"><div class="t">{{ day(n.date) }}</div><div class="s">{{ fmt.time(n.startAt) }}-{{ fmt.time(n.endAt) }} · {{ isFull(n) ? `${mins(inBedMin(n))} in bed` : "short record" }}</div></div>
+            <div class="grow"><div class="t">{{ day(n.date) }}</div><div class="s">{{ fmt.time(n.startAt) }}-{{ fmt.time(n.endAt) }} · {{ isFull(n) ? `${mins(inBedMin(n))} tracked` : "short record" }}</div></div>
             <b class="num" :class="{ muted: !isFull(n) }">{{ mins(asleepMin(n)) }}</b>
           </div>
         </div></div>

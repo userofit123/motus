@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// One night in full, for Stats → Sleep's Night view: time asleep against the time in bed as a ring, and against your usual
+// One night in full, for Stats → Sleep's Night view: time asleep against the time the band tracked as a ring, and against your usual
 // night; when you fell asleep
 // and woke up, the time awake and the lowest heart rate as a report's tiles; the stages across the night (a hypnogram,
 // from the band's saved sleep record) with the time of each, adding up to the ring's time asleep and the tile's time
@@ -15,7 +15,7 @@ import { ymd } from "@motus/shared";
 import { api } from "../../api/client";
 import { useSleep, useSleepNight } from "../../api/queries";
 import { useFmt } from "../../core/format";
-import { asleepMin, inBedMin, efficiency, hasStages, isFull, mins, nightSegments, SEG_NAME, segColor, SHORT_WHY, type Seg, type SleepRecord } from "../../core/sleep";
+import { asleepMin, inBedMin, efficiency, awakeKnown, hasStages, isFull, mins, nightSegments, SEG_NAME, segColor, SHORT_WHY, type Seg, type SleepRecord } from "../../core/sleep";
 import { hrSamples } from "../../core/heart";
 import { deviceWord, useDevice } from "../../native/health";
 import Icon from "../Icon.vue";
@@ -89,8 +89,8 @@ const tiles = computed<Tile[]>(() => {
   if (!n.value) return [];
   const out: Tile[] = [];
   const apart = (a: number, b: number) => Math.abs(a - b) >= 5 * 60_000;
-  out.push({ key: "fell", icon: "clock", label: "Fell asleep", value: clock(fell.value), unit: "", sub: apart(fell.value, t0.value) ? `in bed ${clock(t0.value)}` : "" });
-  out.push({ key: "woke", icon: "bell", label: "Woke up", value: clock(woke.value), unit: "", sub: apart(woke.value, t1.value) ? `up ${clock(t1.value)}` : "" });
+  out.push({ key: "fell", icon: "clock", label: "Fell asleep", value: clock(fell.value), unit: "", sub: apart(fell.value, t0.value) ? `tracked from ${clock(t0.value)}` : "" });
+  out.push({ key: "woke", icon: "bell", label: "Woke up", value: clock(woke.value), unit: "", sub: apart(woke.value, t1.value) ? `tracked to ${clock(t1.value)}` : "" });
   if (awakeMin.value) out.push({ key: "awake", icon: "eye", label: "Awake", value: mins(awakeMin.value), unit: "", sub: wakes.value.length ? (wakes.value.length === 1 ? "once" : `${wakes.value.length} times`) : "during the night" });
   if (lowHr.value != null) out.push({ key: "hr", icon: "heart", label: "Lowest heart rate", value: fmt.value.num(lowHr.value, 0), unit: "bpm", sub: low.value ? `at ${clock(low.value[0] * 1000)}` : "" });
   return out;
@@ -148,7 +148,7 @@ const beforeBed = (x: DaySession) => mins(Math.max(0, t0.value - x.b) / 60000);
       <Ring :pct="efficiency(n)" :size="64" :stroke="7" :done="efficiency(n) >= 0.85" />
       <div class="grow">
         <div class="gs-val">{{ mins(asleepMin(n)) }}<small>asleep</small></div>
-        <div class="tiny"><template v-if="!noTimes">{{ fmt.time(n.startAt) }}-{{ fmt.time(n.endAt) }} · </template>{{ mins(inBedMin(n)) }} in bed · {{ Math.round(efficiency(n) * 100) }}% of it asleep</div>
+        <div class="tiny"><template v-if="!noTimes">{{ fmt.time(n.startAt) }}-{{ fmt.time(n.endAt) }} · </template>{{ mins(inBedMin(n)) }} tracked · {{ awakeKnown(n) ? `${Math.round(efficiency(n) * 100)}% of it asleep` : "time awake not recorded" }}</div>
         <div v-if="vsUsual" class="tiny"><span :class="vsUsual.tone">{{ vsUsual.text }}</span> vs usual {{ vsUsual.usual }}</div>
       </div>
     </div>

@@ -17,7 +17,7 @@ export const scoresFor = (age: number | null) => age == null || age >= SCORE_MIN
 /** How many days a score covers: the last 7 (today in them), as the guidelines count per week */
 export const SCORE_DAYS = 7;
 
-// ---- sources: each score's "Where the numbers come from" row names them in a few words and opens its lesson, which
+// ---- sources: each score's "Where the aims come from" row names them in a few words and opens its lesson, which
 // says what each found and gives the full reference
 export const SCORE_SOURCES = {
   sleep: "National Sleep Foundation 2015, 2017 and 2023",
@@ -102,14 +102,18 @@ function total(key: ScoreKey, parts: ScorePart[]): Score | null {
 }
 
 /** A night for the sleep score: minutes asleep, and when it began and ended as minutes from noon (so a night's times
- *  don't wrap at midnight) */
-export interface ScoreNight { asleepMin: number; inBedMin: number; bedAt: number; wakeAt: number }
+ *  don't wrap at midnight). inBedMin is the band's record from start to end: it starts when the band saw you fall
+ *  asleep, not when you got into bed, which no band knows. bandAsleepMin: the band's own minutes asleep in that record,
+ *  for efficiency (typed hours were not measured against it); null when the band didn't tell asleep from awake (no
+ *  stages, no time awake), where efficiency would read 100% whatever the night was, so the night has none. */
+export interface ScoreNight { asleepMin: number; inBedMin: number; bedAt: number; wakeAt: number; bandAsleepMin?: number | null }
 const median = (a: number[]) => { const s = [...a].sort((x, y) => x - y), m = Math.floor(s.length / 2); return s.length % 2 ? s[m]! : (s[m - 1]! + s[m]!) / 2; };
 
 /**
  * Sleep over the week's full nights (at least MIN_NIGHTS):
  *   duration 50: the share of nights within the recommended hours for your age (extra: how many were under, over);
- *   efficiency 25: the share of nights asleep for 85 % or more of the time in bed;
+ *   efficiency 25: the share of nights asleep for 85 % or more of the band's record (only nights it told asleep from
+ *   awake, and left out with fewer than MIN_NIGHTS of them);
  *   regularity 25: the share of nights whose bed and wake times were both within an hour of the week's usual (median).
  */
 export function sleepScore(nights: readonly ScoreNight[], age: number | null): Score | null {
@@ -117,14 +121,16 @@ export function sleepScore(nights: readonly ScoreNight[], age: number | null): S
   const [lo, hi] = sleepRange(age), n = nights.length;
   const short = nights.filter((x) => x.asleepMin < lo * 60).length, long = nights.filter((x) => x.asleepMin > hi * 60).length;
   const inRange = n - short - long;
-  const effs = nights.map((x) => (x.inBedMin > 0 ? Math.min(1, x.asleepMin / x.inBedMin) : 0));
+  const effs = nights.filter((x) => x.bandAsleepMin !== null && x.inBedMin > 0).map((x) => Math.min(1, (x.bandAsleepMin ?? x.asleepMin) / x.inBedMin));
   const good = effs.filter((e) => e >= GOOD_EFFICIENCY).length;
   const bed = median(nights.map((x) => x.bedAt)), wake = median(nights.map((x) => x.wakeAt));
   const regular = nights.filter((x) => Math.abs(x.bedAt - bed) <= REGULAR_MIN && Math.abs(x.wakeAt - wake) <= REGULAR_MIN).length;
   const avg = Math.round(nights.reduce((t, x) => t + x.asleepMin, 0) / n);
   return total("sleep", [
     { key: "duration", weight: SLEEP_WEIGHTS.duration, share: inRange / n, value: inRange, target: n, extra: { avgMin: avg, lo, hi, short, long } },
-    { key: "efficiency", weight: SLEEP_WEIGHTS.efficiency, share: good / n, value: good, target: n, extra: { avg: Math.round((effs.reduce((t, e) => t + e, 0) / n) * 100) / 100 } },
+    // only over the nights the band told asleep from awake, and only with enough of them to say something
+    ...(effs.length >= MIN_NIGHTS ? [{ key: "efficiency" as const, weight: SLEEP_WEIGHTS.efficiency, share: good / effs.length, value: good, target: effs.length,
+      extra: { avg: Math.round((effs.reduce((t, e) => t + e, 0) / effs.length) * 100) / 100 } }] : []),
     { key: "regularity", weight: SLEEP_WEIGHTS.regularity, share: regular / n, value: regular, target: n },
   ]);
 }

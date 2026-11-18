@@ -28,10 +28,14 @@ export const hasStages = (n: SleepNight) => n.deepMin != null || n.lightMin != n
 export const asleepMin = (n: SleepNight) => (n.edited && n.sleepH ? Math.round(n.sleepH * 60) : n.asleepMin);
 /** Whether a night's record counts as a night, or is a nap or partial record left out of averages and counts */
 export const isFull = (n: SleepNight) => isNightMin(asleepMin(n));
-/** Minutes from going to bed to getting up */
+/** Minutes the band's record covers, from its start to its end ("tracked" in the UI): it starts when the band saw you
+ *  fall asleep, or a little before when it logged you awake first, never when you got into bed, which no band knows */
 export const inBedMin = (n: SleepNight) => Math.max(0, Math.round((Date.parse(n.endAt) - Date.parse(n.startAt)) / 60000));
-/** The share of the time in bed spent asleep, 0-1 */
-export const efficiency = (n: SleepNight) => { const b = inBedMin(n); return b ? Math.min(1, asleepMin(n) / b) : 0; };
+/** Whether the band told asleep from awake that night (stages, or time awake); without, its record is all asleep */
+export const awakeKnown = (n: SleepNight) => hasStages(n) || (n.awakeMin ?? 0) > 0;
+/** The share of the tracked time spent asleep, 0-1: the band's own minutes asleep (not hours typed in, which were never
+ *  measured against its record), as the sleep score counts it */
+export const efficiency = (n: SleepNight) => { const b = inBedMin(n); return b ? Math.min(1, n.asleepMin / b) : 0; };
 
 /** A time of night as minutes after the noon before, so 23:30 and 00:30 sit an hour apart rather than a day */
 export const nightMin = (iso: string) => { const d = new Date(iso); return (d.getHours() * 60 + d.getMinutes() + 720) % 1440; };

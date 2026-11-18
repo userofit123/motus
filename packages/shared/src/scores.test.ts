@@ -32,6 +32,17 @@ describe("health scores", () => {
     expect(s.weakest).toBe("duration");
   });
 
+  it("scores efficiency only on nights the band split into asleep and awake, from its own minutes", () => {
+    // typed hours (8) against a 9-hour record would read 89 %; the band's own 7 h reads 78 %
+    const typed = { ...night(8, 9), bandAsleepMin: 7 * 60 };
+    const s = sleepScore([typed, typed, typed, { ...night(8, 8), bandAsleepMin: null }], 30)!;
+    expect(s.parts.find((p) => p.key === "efficiency")).toMatchObject({ value: 0, target: 3 });
+    // fewer than three such nights: no efficiency part, the score from the other two
+    const t = sleepScore([typed, ...Array.from({ length: 3 }, () => ({ ...night(8, 8.5), bandAsleepMin: null }))], 30)!;
+    expect(t.parts.map((p) => p.key)).toEqual(["duration", "regularity"]);
+    expect(t.score).toBe(100);
+  });
+
   it("counts the nights under and over the hours, so the line can say which", () => {
     const s = sleepScore([night(6, 6.5), night(6, 6.5), night(10, 10.5), night(8, 8.5)], 30)!;
     expect(s.parts[0]).toMatchObject({ value: 1, target: 4, extra: { short: 2, long: 1 } });

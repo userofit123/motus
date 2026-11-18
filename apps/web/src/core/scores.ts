@@ -4,7 +4,7 @@
 import { GROUPS, WEEKLY_SET_RANGE, SCORE_DAYS, SCORE_SOURCES, type Score, type ScoreKey, type ScorePart } from "@motus/shared";
 import { mins } from "./sleep";
 
-// `lesson`: the lesson its "Where the numbers come from" row opens (components/learn/lessons.ts)
+// `lesson`: the lesson its "Where the aims come from" row opens (components/learn/lessons.ts)
 export const SCORE_META: Record<ScoreKey, { name: string; icon: string; span: string; sources: string; lesson: "sleepScore" | "activityScore" | "strengthScore" }> = {
   sleep: { name: "Sleep score", icon: "moon", span: "Last 7 nights", sources: SCORE_SOURCES.sleep, lesson: "sleepScore" },
   activity: { name: "Activity score", icon: "moveRing", span: "Last 7 days", sources: SCORE_SOURCES.activity, lesson: "activityScore" },
@@ -41,7 +41,8 @@ export function scoreRow(p: ScorePart, num: Num): ScoreRow {
   switch (p.key) {
     // each row's result counts nights, so its line says which nights it counts, then the average
     case "duration": return { key: p.key, icon: "moon", t: "Hours asleep", s: `Nights with ${x(p, "lo")}-${x(p, "hi")} hours · average ${mins(x(p, "avgMin"))}`, r: of(p), tone };
-    case "efficiency": return { key: p.key, icon: "bed", t: "Asleep in bed", s: `Nights at 85% or more · average ${Math.round(x(p, "avg") * 100)}%`, r: of(p), tone };
+    // the share of the time the band tracked spent asleep: it can't know when you got into bed, so never "in bed"
+    case "efficiency": return { key: p.key, icon: "bed", t: "Stayed asleep", s: `Nights asleep for 85% or more of the time tracked · average ${Math.round(x(p, "avg") * 100)}%`, r: of(p), tone };
     case "regularity": return { key: p.key, icon: "clock", t: "Regular times", s: "Nights within an hour of your usual bed and wake times", r: of(p), tone };
     // the split by effort (WHO's moderate and vigorous intensity) under the title, never a "Moderate" title, which is
     // Heart's 70 % zone; the icon is zone minutes' bolt, since these are minutes at a heart rate effort (heartPulse is
@@ -70,7 +71,7 @@ export function scoreWhy(s: Score, num: Num): string {
       if (over && under) return `You slept less than ${lo} hours on ${nightsN(under)} and more than ${hi} hours on ${over}: ${aim}.`;
       return `You slept ${over ? `more than ${hi}` : `less than ${lo}`} hours on ${over || under} of ${nights(p)}: ${aim}.`;
     }
-    case "efficiency": return `You were asleep less than 85% of your time in bed on ${off} of ${nights(p)}: aim for 85% or more.`;
+    case "efficiency": return `You were awake for over 15% of the time tracked on ${off} of ${nights(p)}: aim to be asleep for 85% or more of it.`;
     case "regularity": return `Your bed or wake time was over an hour off your usual on ${off} of ${nights(p)}: keep to the same times.`;
     case "minutes": return `You had ${num(p.value)} active minutes: ${num(off)} more would reach the ${p.target} a week.`;
     case "steps": return `You averaged ${num(p.value)} steps a day: aim for ${num(p.target)} or more.`;

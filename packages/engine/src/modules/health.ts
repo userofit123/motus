@@ -1023,7 +1023,10 @@ export function healthRoutes(r: Router) {
     const ns = (await nights(ctx, "n.date >= $1::date AND n.date <= $2::date", [from, today], false)).map((n) => {
       const asleep = n.edited && n.sleepH ? Math.round(n.sleepH * 60) : n.asleepMin;
       const bedAt = fromNoon(n.startAt), inBedMin = Math.max(0, Math.round((Date.parse(n.endAt) - Date.parse(n.startAt)) / 60000));
-      return { asleepMin: asleep, inBedMin, bedAt, wakeAt: bedAt + inBedMin };
+      // the share asleep compares the band's own minutes with the band's record; a night it didn't split into asleep and
+      // awake has none (it would read 100%)
+      const split = n.lightMin != null || n.deepMin != null || n.remMin != null || n.awakeMin > 0;
+      return { asleepMin: asleep, inBedMin, bedAt, wakeAt: bedAt + inBedMin, bandAsleepMin: split ? n.asleepMin : null };
     }).filter((n) => isNight(n.asleepMin / 60));
 
     // activity: minutes of effort from each day's heart rate (with a max heart rate to place it); recorded activities of a
