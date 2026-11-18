@@ -11,7 +11,8 @@
 // plot scrolls. Charts sharing a zoom (a night's) zoom by their hours alone, so they stay lined up. Hovering, clicking or
 // tapping shows the nearest point's tip; only a clicked or tapped tip opens (useChartZoom.ts).
 // A point with a `raw` value (body weight's weigh-in under its smoothed trend) also draws that value as its own dot, off
-// the line, so what was logged always shows; its tip leads with the raw value and names the line's value with `line`.
+// the line, so what was logged always shows; its tip leads with the raw value and names the line's value with `line`,
+// unless the two read the same (a single weigh-in).
 import { computed, ref } from "vue";
 import Icon from "./Icon.vue";
 import { useWidth } from "./useWidth";
@@ -162,7 +163,7 @@ const xf = (t: number) => (props.xfmt ? props.xfmt(t) : df.value.date(t));
     </div>
     </div>
     <div v-if="hover != null && sorted[hover]" class="ctip" :class="{ go: pinned && go }" ref="tipEl" :role="pinned && go ? 'button' : undefined" :tabindex="pinned && go ? 0 : undefined" :style="tipStyle(P.l + sx(sorted[hover]!.x) - left, tipTop(hover), !!(pinned && go), pinned)" @pointerdown="pinned && go ? $event.preventDefault() : undefined" @click.stop.prevent="openGo" @keydown.enter.prevent="openGo" @keydown.space.prevent="openGo">
-      <b>{{ f(sorted[hover]!.raw ?? sorted[hover]!.y) }}</b><span class="sep">·</span><span class="ctip-r"><template v-if="sorted[hover]!.raw != null">{{ line }} {{ f(sorted[hover]!.y) }} · </template>{{ sorted[hover]!.label ?? xf(sorted[hover]!.x) }}<template v-if="shadeName(sorted[hover]!.x)"> · {{ shadeName(sorted[hover]!.x) }}</template></span><Icon v-if="pinned && go" name="right" :size="13" class="ctip-go" />
+      <b>{{ f(sorted[hover]!.raw ?? sorted[hover]!.y) }}</b><span class="sep">·</span><span class="ctip-r"><template v-if="sorted[hover]!.raw != null && f(sorted[hover]!.raw!) !== f(sorted[hover]!.y)">{{ line }} {{ f(sorted[hover]!.y) }} · </template>{{ sorted[hover]!.label ?? xf(sorted[hover]!.x) }}<template v-if="shadeName(sorted[hover]!.x)"> · {{ shadeName(sorted[hover]!.x) }}</template></span><Icon v-if="pinned && go" name="right" :size="13" class="ctip-go" />
     </div>
   </div>
 </template>

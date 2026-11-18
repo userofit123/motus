@@ -113,9 +113,10 @@ await loaded(body);
         <div class="card stat"><div class="lbl"><span class="bi"><Icon :name="bwMoved == null || bwMoved === 0 ? 'swap' : bwMoved > 0 ? 'arrowUp' : 'arrowDown'" :size="15" /></span>Change</div><div class="val">{{ bwMoved != null ? signed(bwMoved) : "-" }}<small>{{ bwMoved != null ? fmt.wu : "" }}</small></div><div class="sub">{{ pMoved != null ? `${signed(pMoved, fmt.wu)} vs previous` : "Nothing to compare with" }}</div></div>
         <div class="card stat"><div class="lbl"><span class="bi"><Icon name="calendar" :size="15" /></span>Weigh-ins</div><div class="val">{{ bw.length }}</div><div class="sub">{{ percentChange(bw.length, pbw.length) ? `${percentChange(bw.length, pbw.length)} vs previous` : "in this period" }}</div></div>
       </div>
-      <div class="card" :class="{ spt: bw.length }"><div class="lbl hgap"><span class="grow">Body weight ({{ fmt.wu }})</span><span v-if="bw.length > 1" class="tiny bmlegend bp-key"><span><i class="bp-ln" />Trend</span><span><i class="bp-dot" />Weigh-ins</span></span></div>
+      <div class="card" :class="{ spt: bw.length }"><div class="lbl hgap">Body weight ({{ fmt.wu }})</div>
         <div v-if="!bw.length" class="empty sm"><b>No body weight in this period</b>Pick a longer period.</div>
-        <LineChart v-else :points="bwChart" line="Trend" :height="220" :fmt="(v) => fmt.num(v, 1)" /></div>
+        <template v-else><LineChart :points="bwChart" line="Trend" :height="220" :fmt="(v) => fmt.num(v, 1)" />
+          <div v-if="bw.length > 1" class="bmlegend bp-leg"><span><i class="bp-tr" />Trend</span><span><i class="bp-wi" />Weigh-ins</span></div></template></div>
     </template>
     <!-- nothing logged yet: one empty card, as on Measurements, not an Entries heading over an empty box -->
     <div v-else-if="cur === 'weight'" class="card empty"><Icon name="scale" :size="34" /><b>No body weight yet</b>Log it now and then, ideally at the same time of day, and its trend shows here.<br /><button class="btn tonal" @click="bodySheet = true">Log body weight</button></div>
@@ -156,10 +157,9 @@ await loaded(body);
 /* the label side gives way first, so a row is never wider than its card */
 .bp-l { min-width: 0; }
 .bp-l .s { overflow: hidden; }
-/* the weight chart's key, the figure's legend (.bmlegend) kept on one line at the header's right: the trend's line in the
-   line's colour, a weigh-in's dot as LineChart draws it (.chart .rpt); shown from two weigh-ins, when there is a line */
-.bp-key { flex-wrap: nowrap; justify-content: flex-end; white-space: nowrap; }
-.bp-key i { flex: none; }
-.bp-key .bp-ln { width: 12px; height: 2.2px; border-radius: 2px; background: var(--acc); }
-.bp-key .bp-dot { width: 6px; height: 6px; background: var(--tx2); opacity: .6; }
+/* the weight chart's legend under it, as every chart's: the trend in the line's colour, a weigh-in as LineChart draws its
+   dot (.chart .rpt); shown from two weigh-ins, when there is a line */
+.bp-leg { margin-top: var(--hg); }
+.bp-leg .bp-tr { background: var(--acc); }
+.bp-leg .bp-wi { background: var(--tx2); opacity: .6; }
 </style>
