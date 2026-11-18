@@ -539,6 +539,9 @@ export function workoutRoutes(r: Router) {
     if ("notes" in b) put("notes", str(b.notes, 10000));
     if ("rating" in b) put("rating", intOrNull(b.rating, 1, 5));
     if ("bodyweightKg" in b) put("bodyweight_kg", numOrNull(b.bodyweightKg, 0, 700));
+    // its times changed by the person: the end stays after the start (an end of null is a workout still going)
+    const st = "startedAt" in b ? isoTime(b.startedAt) : w.started_at, en = "endedAt" in b ? b.endedAt : w.ended_at;
+    if (("startedAt" in b || "endedAt" in b) && en && Date.parse(isoTime(en)) <= Date.parse(isoTime(st))) throw bad("The end has to be after the start");
     if ("startedAt" in b) put("started_at", isoTime(b.startedAt));
     if ("endedAt" in b) put("ended_at", b.endedAt ? isoTime(b.endedAt) : null);
     if ("settings" in b) put("settings", JSON.stringify(b.settings ?? {}));

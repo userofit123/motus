@@ -286,6 +286,47 @@ describe("activities", () => {
     expect(a.elevationM).toBeNull();
     expect(a.route.every((p: any[]) => p.length === 3)).toBe(true);
   });
+  it("changes an activity's times: a recording left running ends when it really did", async () => {
+    // a walk recorded 07:00-09:00 with 10 minutes paused, a point every minute moving north; really over at 07:40
+    const t0 = Date.parse("2026-10-29T07:00:00Z") / 1000;
+    const route = Array.from({ length: 121 }, (_, i) => [52 + i * 0.0006, 13, t0 + i * 60]);
+    const { id } = await call("POST", "/activities", { type: "walk", startedAt: "2026-10-29T07:00:00Z", endedAt: "2026-10-29T09:00:00Z", durationS: 110 * 60, route, source: "gps" });
+    const before = await call("GET", `/activities/${id}`);
+    await call("PUT", `/activities/${id}/times`, { startedAt: "2026-10-29T07:00:00Z", endedAt: "2026-10-29T07:40:00Z" });
+    const a = await call("GET", `/activities/${id}`);
+    expect(new Date(a.endedAt).toISOString()).toBe("2026-10-29T07:40:00.000Z");
+    // the 10 minutes paused stay paused
+    expect(a.durationS).toBe(30 * 60);
+    // the points after 07:40 are gone, and so is their distance
+    expect(a.route).toHaveLength(41);
+    expect(Number(a.distanceM)).toBeLessThan(Number(before.distanceM) / 2);
+    expect(a.movingS).toBeLessThanOrEqual(a.durationS);
+    expect(a.editedAt).toBeTruthy();
+    // a typed one (no route) only moves: its whole time is its duration
+    const typed = (await call("POST", "/activities", { type: "yoga", startedAt: "2026-10-29T18:00:00Z", durationS: 1800, distanceM: 0 })).id;
+    await call("PUT", `/activities/${typed}/times`, { startedAt: "2026-10-29T17:30:00Z", endedAt: "2026-10-29T18:30:00Z" });
+    const y = await call("GET", `/activities/${typed}`);
+    expect(y.durationS).toBe(3600);
+    expect(new Date(y.startedAt).toISOString()).toBe("2026-10-29T17:30:00.000Z");
+    // an end before the start is refused
+    const r = await eng.handle({ method: "PUT", path: `/activities/${typed}/times`, body: { startedAt: "2026-10-29T18:00:00Z", endedAt: "2026-10-29T17:00:00Z" }, userId: U });
+    expect(r.status).toBe(400);
+    // someone else's activity can't be changed
+    const other = uuidv7();
+    await eng.db.admin.query("INSERT INTO users (id, username) VALUES ($1, 'times-other')", [other]);
+    const o = await eng.handle({ method: "PUT", path: `/activities/${typed}/times`, body: { startedAt: "2026-10-29T10:00:00Z", endedAt: "2026-10-29T11:00:00Z" }, userId: other });
+    expect(o.status).toBe(404);
+    expect(new Date((await call("GET", `/activities/${typed}`)).startedAt).toISOString()).toBe("2026-10-29T17:30:00.000Z");
+  });
+  it("changes a workout's times, never to an end before its start", async () => {
+    const { id } = await call("POST", "/workouts/log", { name: "Late", startedAt: "2026-10-28T18:00:00Z", durationS: 3600, exercises: [] });
+    await call("PUT", `/workouts/${id}`, { startedAt: "2026-10-28T18:00:00Z", endedAt: "2026-10-28T18:45:00Z" });
+    expect((await call("GET", `/workouts/${id}`)).report.totals.durationS).toBe(45 * 60);
+    const r = await eng.handle({ method: "PUT", path: `/workouts/${id}`, body: { startedAt: "2026-10-28T19:00:00Z", endedAt: "2026-10-28T18:45:00Z" }, userId: U });
+    expect(r.status).toBe(400);
+    // a rename leaves the times alone and needs no check
+    await call("PUT", `/workouts/${id}`, { name: "Late session" });
+  });
   it("exports workouts as CSV", async () => {
     const csv = await call("GET", "/export/csv", undefined, { what: "workouts" });
     expect(csv.text.split("\n")[0]).toContain("Exercise Name");

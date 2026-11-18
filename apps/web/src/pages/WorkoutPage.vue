@@ -29,6 +29,7 @@ import { useSessionSamples } from "../core/heart";
 import { WORKOUT_COLOR } from "../components/stats/daySessions";
 import ExercisePicker from "../components/ExercisePicker.vue";
 import Sheet from "../components/Sheet.vue";
+import TimesSheet from "../components/TimesSheet.vue";
 import RoutineChanges from "../workout/RoutineChanges.vue";
 
 const route = useRoute(), router = useRouter();
@@ -87,15 +88,9 @@ async function save(path: string, body: unknown, method: "put" | "del" | "post" 
   try { await (api as any)[method](path, body); invalidate(["workouts", "stats", "home", "goals", "calendar", "exercises"]); return true; } catch (e) { toastError(e); return false; }
 }
 const num = (v: string) => (v.trim() === "" ? null : Number(v.replace(",", ".")));
-// shown and read as local time (the stored time is UTC)
-const localStamp = (iso: string) => { const d = new Date(iso); return `${localYmd(d)} ${d.toTimeString().slice(0, 5)}`; };
-async function editTimes() {
-  const st = await prompt("Started at", { value: localStamp(w.value.startedAt), text: "Date and time, e.g. 2026-11-01 18:30" });
-  if (!st) return;
-  const en = await prompt("Ended at", { value: localStamp(w.value.endedAt ?? w.value.startedAt) });
-  if (!en) return;
-  if (await save(`/workouts/${id.value}`, { startedAt: new Date(st.replace(" ", "T")).toISOString(), endedAt: new Date(en.replace(" ", "T")).toISOString() })) toast("Times saved");
-}
+// its start and end, with the app's own pickers; the pauses stay as long as they were
+const timing = ref(false);
+async function saveTimes(startedAt: string, endedAt: string) { if (await save(`/workouts/${id.value}`, { startedAt, endedAt })) { toast("Times saved"); timing.value = false; } }
 async function rename() { const n = await prompt("Workout name", { value: w.value.name }); if (n && (await save(`/workouts/${id.value}`, { name: n }))) toast("Workout renamed"); }
 async function del() {
   if (!(await confirm("Delete this workout?", { text: "Its sets leave your history, records and stats.", ok: "Delete", danger: true }))) return;
@@ -154,7 +149,7 @@ const menu = computed(() => [
   { label: "Duplicate to another day", icon: "copy", run: duplicate },
   { label: editing.value ? "Done editing" : "Edit", sep: true, icon: "edit", run: () => (editing.value = !editing.value) },
   { label: "Rename", icon: "edit", run: rename },
-  { label: "Change times", icon: "clock", run: editTimes },
+  { label: "Change times", icon: "clock", run: () => (timing.value = true) },
   { label: "Add a note", icon: "note", run: () => (noteSheet.value = { targets: [{ type: "workout", id: id.value, label: "This workout" }], workoutId: id.value }) },
   { label: "Open the routine", sep: true, icon: "right", run: () => router.push(`/routines/${w.value.routineId}`), hidden: !w.value?.routineId },
   { label: "Save as a routine", icon: "routines", run: saveAsRoutine },
@@ -246,6 +241,7 @@ await loaded(q);
         <div v-if="rep.totals.avgRestS" class="card tight"><div class="lbl">Average rest</div><div style="font-weight:600;font-size:18px">{{ fmt.clock(rep.totals.avgRestS) }}</div></div>
       </div>
     </div>
+    <TimesSheet v-if="timing && rep" title="Change times" :start="w.startedAt" :end="w.endedAt ?? w.startedAt" :paused="w.pausedS ?? 0" :duration="rep.totals.durationS" was="Was" ok="Save" :save="saveTimes" @close="timing = false" />
     <ExercisePicker v-if="adding" multi @close="adding = false" @pick="addExercises" />
     <Sheet v-if="routineSheet" title="Update the routine" @close="routineSheet = null">
       <RoutineChanges v-model="routineSheet.picked" :changes="routineSheet.changes" />

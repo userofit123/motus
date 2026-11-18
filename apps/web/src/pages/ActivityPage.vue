@@ -21,8 +21,9 @@ import SessionHeart from "../components/SessionHeart.vue";
 import { useSessionSamples } from "../core/heart";
 import Sheet from "../components/Sheet.vue";
 import StepSourceRows from "../components/StepSourceRows.vue";
+import TimesSheet from "../components/TimesSheet.vue";
 import { routeSplits, M_PER_MI, fromM, activityDistance, activityClimb, appSteps, stepsTyped, bandStepsVerdict, type ActivityType } from "@motus/shared";
-import { fromWhere, useDevice, adviceWord, canActivitySources, activitySources, inRangesWindow, type ActivitySources } from "../native/health";
+import { fromWhere, useDevice, adviceWord, canActivitySources, activitySources, inRangesWindow, syncAfterSession, type ActivitySources } from "../native/health";
 
 const route = useRoute(), router = useRouter();
 const id = computed(() => String(route.params.id));
@@ -86,6 +87,14 @@ const tiles = computed<Tile[]>(() => {
 });
 async function del() { if (await confirm("Delete this activity?", { ok: "Delete", danger: true })) { await api.del(`/activities/${id.value}`); invalidate(["*"]); toast("Activity deleted"); router.replace("/history"); } }
 async function edit(field: "name" | "notes") { const v = await prompt(field === "name" ? "Name" : "Notes", { value: a.value[field] }); if (v != null) { await api.put(`/activities/${id.value}`, { ...a.value, [field]: v, route: null }); invalidate(["activities"]); toast(field === "name" ? "Activity renamed" : "Notes saved"); } }
+// its start and end (a recording left running past the real end, or a time typed wrong): the engine keeps the pauses as
+// they were and leaves out the route outside the new times
+const timing = ref(false);
+const pausedS = computed(() => (a.value?.endedAt ? Math.max(0, Math.round((Date.parse(a.value.endedAt) - Date.parse(a.value.startedAt)) / 1000) - a.value.durationS) : 0));
+async function saveTimes(startedAt: string, endedAt: string) {
+  try { await api.put(`/activities/${id.value}/times`, { startedAt, endedAt }); invalidate(["*"]); toast("Times saved"); timing.value = false; syncAfterSession(); }
+  catch (e) { toastError(e); }
+}
 function gpx() {
   const pts = (a.value.route ?? []).map((p: number[]) => `<trkpt lat="${p[0]}" lon="${p[1]}">${p[3] != null ? `<ele>${p[3]}</ele>` : ""}${p[2] ? `<time>${new Date(p[2] * 1000).toISOString()}</time>` : ""}</trkpt>`).join("");
   const x = `<?xml version="1.0" encoding="UTF-8"?><gpx version="1.1" creator="Motus" xmlns="http://www.topografix.com/GPX/1/1"><trk><name>${a.value.name || a.value.type}</name><type>${a.value.type}</type><trkseg>${pts}</trkseg></trk></gpx>`;
@@ -146,7 +155,7 @@ await loaded(q, types);
   <div v-if="a" class="page">
     <button class="back" @click="goBack(router, '/history')"><Icon name="left" :size="16" /><span>Back</span></button>
     <div class="ph"><div><h1>{{ a.name || typeName(a.type) }}</h1><DotLine class="sub" :parts="[fmt.dateLong(a.startedAt), `${fmt.time(a.startedAt)}-${fmt.time(a.endedAt)}`, source].filter(Boolean)" /></div>
-      <div class="acts"><Menu :items="[{ label: 'Rename', icon: 'edit', run: () => edit('name') }, { label: 'Notes', icon: 'note', run: () => edit('notes') }, { label: 'Step sources', icon: 'info', hidden: !canSources, run: showSources }, { label: 'Export GPX', icon: 'download', sep: true, run: gpx, hidden: !a.route?.length }, { label: 'Delete', icon: 'trash', danger: true, sep: true, run: del }]" /></div></div>
+      <div class="acts"><Menu :items="[{ label: 'Rename', icon: 'edit', run: () => edit('name') }, { label: 'Notes', icon: 'note', run: () => edit('notes') }, { label: 'Change times', icon: 'clock', run: () => (timing = true) }, { label: 'Step sources', icon: 'info', hidden: !canSources, run: showSources }, { label: 'Export GPX', icon: 'download', sep: true, run: gpx, hidden: !a.route?.length }, { label: 'Delete', icon: 'trash', danger: true, sep: true, run: del }]" /></div></div>
     <RouteMap v-if="a.route?.length" :route="a.route" />
     <div class="grid g4 spt" :class="`n${tiles.length}`">
       <div v-for="t in tiles" :key="t.key" class="card stat" :class="{ hero: t.hero }"><div class="lbl"><span class="bi"><Icon :name="t.icon" :size="15" /></span>{{ t.label }}</div><div class="val">{{ t.value }}<small v-if="t.unit">{{ t.unit }}</small></div><DotLine v-if="t.sub?.length" class="sub" :parts="t.sub" /></div>
@@ -157,6 +166,8 @@ await loaded(q, types);
     </div>
     <SessionHeart v-if="fromMs != null && toMs != null" class="spt" :from="fromMs" :to="toMs" :samples="samples" :avg="a.avgHr" :max="a.maxHr" :motion="ownDist || pace ? 'pace' : 'speed'" :own-pace="!!pace" />
     <div v-if="a.notes" class="banner note spt"><Icon name="note" :size="18" class="note-ic" />{{ a.notes }}</div>
+    <TimesSheet v-if="timing" title="Change times" :start="a.startedAt" :end="a.endedAt ?? a.startedAt" :paused="pausedS" :duration="a.durationS" was="Was" ok="Save" :save="saveTimes"
+      :note="a.route?.length ? 'Any part of the route outside these times is removed, with its distance.' : undefined" @close="timing = false" />
     <Sheet v-if="srcs" title="Where these steps came from" @close="srcs = null">
       <p class="muted hgap">Steps each app saved to Health Connect from {{ fmt.time(a.startedAt) }} to {{ fmt.time(a.endedAt) }}. When your {{ srcWord }} has data for the whole {{ (a.name || typeName(a.type)).toLowerCase() }}, Motus uses its count.</p>
       <div v-if="srcs.error" class="empty sm"><b>Couldn't read Health Connect</b>{{ srcs.error }}<br /><button class="btn tonal" @click="showSources">Try again</button></div>

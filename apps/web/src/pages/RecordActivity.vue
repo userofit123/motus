@@ -18,6 +18,10 @@ import RouteMap from "../components/RouteMap.vue";
 import ChoiceTiles from "../components/ChoiceTiles.vue";
 import { newActivityType } from "../core/activityTypes";
 import HeartRate from "../components/HeartRate.vue";
+import Menu from "../components/Menu.vue";
+import TimesSheet from "../components/TimesSheet.vue";
+import { api } from "../api/client";
+import { invalidate } from "../api/live";
 import { useSettings } from "../api/queries";
 import { useLiveHr, useDevice, deviceWord } from "../native/health";
 
@@ -64,6 +68,16 @@ async function finish() {
   try { const name = t.value?.name ?? "Activity"; const id = await finishRecording(); toast(`${name} saved`); router.replace(`/activities/${id}`); }
   catch (e) { toastError(e); } finally { busy.value = false; }
 }
+// left running past the real end (forgot to finish): saved, then cut to the times given, as Change times does on the
+// activity's page. Saved even if the cut fails, so nothing recorded is lost; the times can be changed there again
+const ending = ref(false);
+async function finishAt(startedAt: string, endedAt: string) {
+  const name = t.value?.name ?? "Activity";
+  let id: string;
+  try { id = await finishRecording(); } catch (e) { toastError(e); return; }
+  try { await api.put(`/activities/${id}/times`, { startedAt, endedAt }); invalidate(["*"]); } catch (e) { toastError(e); }
+  ending.value = false; toast(`${name} saved`); router.replace(`/activities/${id}`);
+}
 async function discard() { if (await confirm("Discard this recording?", { ok: "Discard", danger: true, noHistory: true })) { discardRecording(); router.back(); } }
 // show the page once its data is in, all at once
 await loaded(types, active);
@@ -72,7 +86,8 @@ await loaded(types, active);
 <template>
   <div class="page">
     <button class="back" @click="goBack(router, '/')"><Icon name="left" :size="16" /><span>Back</span></button>
-    <div class="ph"><div><h1>{{ t?.name ?? "Activity" }}</h1><div class="sub">{{ rec ? (rec.pauseAt ? "Paused" : "Recording") : "Ready" }}{{ gps && gpsError ? " · " + gpsError : "" }}</div></div></div>
+    <div class="ph"><div><h1>{{ t?.name ?? "Activity" }}</h1><div class="sub">{{ rec ? (rec.pauseAt ? "Paused" : "Recording") : "Ready" }}{{ gps && gpsError ? " · " + gpsError : "" }}</div></div>
+      <div v-if="rec" class="acts"><Menu :items="[{ label: 'Finish at an earlier time', icon: 'clock', run: () => (ending = true) }]" /></div></div>
     <ChoiceTiles v-if="!rec" v-model="pick" class="hgap" :options="tiles" compact min="110px" label="Activity" />
     <p v-if="!rec && active.data.value" class="tiny hgap">Your workout keeps going while you record. Each has its own bar at the bottom of the screen.</p>
     <RouteMap v-if="gps" :route="rec?.route ?? noRoute" :here="here" follow />
@@ -92,6 +107,8 @@ await loaded(types, active);
         <button class="qb danger" @click="discard">Discard</button>
       </template>
     </div>
+    <TimesSheet v-if="ending && rec" title="Finish at an earlier time" :start="new Date(rec.startedAt).toISOString()" :end="new Date(rec.pauseAt ?? Date.now()).toISOString()" :paused="Math.round(rec.pausedMs / 1000)"
+      :duration="Math.round(recElapsedS)" was="Recorded" ok="Finish" :save="finishAt" :note="rec.route.length ? 'Any part of the route outside these times is removed, with its distance.' : undefined" @close="ending = false" />
   </div>
 </template>
 

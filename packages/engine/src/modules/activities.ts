@@ -2,7 +2,7 @@
 import { routeStats, daySteps, type ActivityType } from "@motus/shared";
 import type { Router, Ctx } from "../router";
 import type { Sql } from "../db";
-import { camel, id, str, intOrNull, numOrNull, bool, isoTime, dateStr, startOfDay, tzOf } from "../util";
+import { camel, id, str, intOrNull, numOrNull, bool, isoTime, dateStr, startOfDay, tzOf, secondsBetween } from "../util";
 import { uuidv7 } from "../ids";
 import { notFound, bad } from "../errors";
 import { lockRecords } from "./healthDerive";
@@ -202,6 +202,41 @@ export function activityRoutes(r: Router) {
     // brought in as its own activity
     await releaseOutside(ctx, "activity", id(p.id));
     await linkFor(ctx, "activity", id(p.id));
+    ctx.changed("activity");
+    return { ok: true };
+  });
+  // Its start and end changed by the person: a recording left running past the real end (forgot to finish), or a typed
+  // time that was wrong. The pauses stay as long as they were, so the duration follows the new span; route points
+  // recorded outside the new times are dropped and the distance, moving time and climb worked out again from the rest
+  r.put("/activities/:id/times", async (ctx, p, b) => {
+    const aid = id(p.id);
+    const a = (await ctx.q.query("SELECT started_at, ended_at, duration_s, moving_s, route FROM activities WHERE id = $1", [aid])).rows[0];
+    if (!a) throw notFound("Activity not found");
+    const startedAt = isoTime(b.startedAt), endedAt = isoTime(b.endedAt);
+    const span = Math.round((Date.parse(endedAt) - Date.parse(startedAt)) / 1000);
+    if (span <= 0) throw bad("The end has to be after the start");
+    if (span > 864000) throw bad("An activity can't be longer than 10 days");
+    const oldSpan = a.ended_at ? secondsBetween(a.started_at, a.ended_at) : a.duration_s;
+    const paused = Math.max(0, oldSpan - a.duration_s);
+    const durationS = span > paused ? span - paused : span;
+    const vals: unknown[] = [aid], sets = ["edited_at = now()"];
+    const put = (col: string, v: unknown) => { vals.push(v); sets.push(`${col} = $${vals.length}`); };
+    put("started_at", startedAt); put("ended_at", endedAt); put("duration_s", durationS);
+    let movingS: number | null = a.moving_s == null ? null : Math.min(a.moving_s, durationS);
+    const route: number[][] | null = Array.isArray(a.route) ? a.route : null;
+    const from = Date.parse(startedAt) / 1000, to = Date.parse(endedAt) / 1000;
+    // only a route whose points all have their time can be cut to the new times
+    const kept = route?.every((pt) => pt[2]) ? route.filter((pt) => pt[2]! >= from && pt[2]! <= to) : null;
+    if (route && kept && kept.length < route.length) {
+      const rs = kept.length > 1 ? routeStats(kept) : null;
+      movingS = rs ? Math.min(rs.movingS, durationS) : null;
+      put("route", kept.length > 1 ? JSON.stringify(kept) : null); put("distance_m", rs?.distanceM ?? null); put("elevation_m", rs?.elevationM ?? null);
+    }
+    put("moving_s", movingS);
+    await ctx.q.query(`UPDATE activities SET ${sets.join(", ")} WHERE id = $1`, vals);
+    // its new time may no longer hold a band session linked to it, or may now hold one (as a full save does)
+    await releaseOutside(ctx, "activity", aid);
+    await linkFor(ctx, "activity", aid);
     ctx.changed("activity");
     return { ok: true };
   });
