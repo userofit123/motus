@@ -76,11 +76,13 @@ export const LESSONS = {
         { icon: "note", t: "World Health Organization, 2020", s: `Adults should get at least ${WEEKLY_ACTIVE_MIN} minutes of moderate activity a week, or 75 minutes of vigorous activity, or a mix of both. Any activity is better than none`, ref: WHO },
         { icon: "note", t: "American College of Sports Medicine, 2011", s: `Effort counts as moderate at ${Math.round(MODERATE_FROM * 100)}-76% of your max heart rate and vigorous at ${Math.round(VIGOROUS_FROM * 100)}-95%`,
           ref: "Garber CE, et al. Quantity and quality of exercise for developing and maintaining cardiorespiratory, musculoskeletal, and neuromotor fitness in apparently healthy adults. Medicine & Science in Sports & Exercise, 2011; 43(7): 1334-1359" },
+        { icon: "note", t: "Compendium of Physical Activities, 2024", s: "Weight training and walking use about 3.5-6 times the energy of sitting still, which makes them moderate activity",
+          ref: "Herrmann SD, et al. 2024 Adult Compendium of Physical Activities: a third update of the energy costs of human activities. Journal of Sport and Health Science, 2024; 13(1): 6-12" },
         { icon: "note", t: "Paluch et al., 2022", s: "15 studies of about 47,000 adults: the more steps a day, the lower the risk of dying early, until about 8,000-10,000 steps under 60 and 6,000-8,000 from 60, where the benefit levels off",
           ref: "Paluch AE, et al. Daily steps and all-cause mortality: a meta-analysis of 15 international cohorts. The Lancet Public Health, 2022; 7(3): e219-e228" },
       ] },
       { heading: "How Motus counts", rows: [
-        { icon: "bolt", t: "Active minutes", s: `Minutes at ${pct(MODERATE_FROM)} or more of your max heart rate, against ${WEEKLY_ACTIVE_MIN} a week. Vigorous minutes count double`, r: points(ACTIVITY_WEIGHTS.minutes) },
+        { icon: "bolt", t: "Active minutes", s: `Your workouts, walks and other activities that cover distance, plus other minutes your watch or band recorded at ${pct(MODERATE_FROM)} or more of your max heart rate, against ${WEEKLY_ACTIVE_MIN} a week. A walk recorded during a workout counts its time once. Minutes at ${pct(VIGOROUS_FROM)} or more count double`, r: points(ACTIVITY_WEIGHTS.minutes) },
         { icon: "steps", t: "Daily steps", s: "Your average a day, against 8,000 (6,000 from 60): where the benefit starts to level off", r: points(ACTIVITY_WEIGHTS.steps) },
         { icon: "heart", t: "Max heart rate", s: "The one you set in Body, or 220 minus your age" },
       ] },
@@ -133,7 +135,7 @@ export const LESSONS = {
   // training load has no research source of its own to cite here: the lesson says what a point is and how it is compared
   trainingLoad: {
     title: "Training load",
-    intro: "How much training your body took in, as load points. One load point is one minute at a very light heart rate; harder minutes count more, so a hard session adds many more load points than an easy one. Motus compares your last 7 days with your usual week.",
+    intro: "How much training your body took in, counted in load points of training effort. One load point is one minute at a very light heart rate; harder minutes count more, so a hard session adds many more load points than an easy one. Motus compares your last 7 days with your usual week.",
     sections: [
       { heading: "How Motus counts", rows: [
         ...HR_ZONES.map((z, i) => ({ icon: "heart", t: `${z.name} heart rate`, s: "Each minute", r: i === 0 ? "1 load point" : `${ZONE_WEIGHTS[i]} load points` })),

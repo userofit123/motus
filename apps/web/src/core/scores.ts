@@ -48,12 +48,13 @@ export function scoreRow(p: ScorePart, num: Num): ScoreRow {
     case "efficiency": {
       if (p.weight === 0) return { key: p.key, icon: "bed", t: "Stayed asleep", s: p.value ? `Time awake recorded on ${p.value} of ${p.target} nights · needs ${MIN_NIGHTS} nights to count` : `No time awake recorded in the last ${SCORE_DAYS} nights · nothing to count`, r: "Left out", tone: "muted" };
       const out = x(p, "nights") - p.target;
-      return { key: p.key, icon: "bed", t: "Stayed asleep", s: `Nights asleep for 85% or more of the time tracked · average ${pctDown(x(p, "avg"))}%${out > 0 ? ` · time awake missing on ${nightsN(out)}` : ""}`, r: of(p), tone }; }
+      return { key: p.key, icon: "bed", t: "Stayed asleep", s: `Nights asleep 85% of the time or more · average ${pctDown(x(p, "avg"))}%${out > 0 ? ` · ${nightsN(out)} not counted` : ""}`, r: of(p), tone }; }
     case "regularity": return { key: p.key, icon: "clock", t: "Regular times", s: "Nights within an hour of your usual bed and wake times", r: of(p), tone };
-    // the split by effort (WHO's moderate and vigorous intensity) under the title, never a "Moderate" title, which is
-    // Heart's 70 % zone; the icon is zone minutes' bolt, since these are minutes at a heart rate effort (heartPulse is
-    // the resting heart rate)
-    case "minutes": return { key: p.key, icon: "bolt", t: "Active minutes", s: `${minutesSplit(p, num)} · aim for ${num(p.target)} minutes or more`, r: `${num(p.value)} min`, tone };
+    // what counts under the title (workouts, walks and the band's brisk minutes, M-268), never a "Moderate" title, which
+    // is Heart's 70 % zone; vigorous minutes said only when there are some, since they make the result more than the
+    // minutes; the icon is zone minutes' bolt (heartPulse is the resting heart rate)
+    case "minutes": { const vig = x(p, "vigorous");
+      return { key: p.key, icon: "bolt", t: "Active minutes", s: `Workouts, walks and other brisk activity${vig ? ` · ${num(vig)} vigorous minutes count double` : ""} · aim for ${num(p.target)} or more`, r: `${num(p.value)} min`, tone }; }
     case "steps": return { key: p.key, icon: "steps", t: "Daily steps", s: `Average steps a day · aim for ${num(p.target)} or more`, r: num(p.value), tone };
     case "days": return { key: p.key, icon: "calendar", t: "Strength days", s: `Days with hard sets · aim for ${days(p.target)} or more`, r: days(p.value), tone };
     case "groups": { const low = short(p);

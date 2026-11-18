@@ -778,6 +778,38 @@ describe("readiness", () => {
     expect(r.activity).toMatchObject({ score: 80, label: "Good", weakest: "steps" });
   });
 
+  it("counts workouts and walks as active minutes on days with heart rate, their overlap once (M-268)", async () => {
+    const S = uuidv7();
+    await eng.db.admin.query("INSERT INTO users (id, username) VALUES ($1, 'm268')", [S]);
+    const as = async (method: string, path: string, body?: unknown, query?: Record<string, string>) => (await eng.handle({ method, path, body, query, userId: S })).body as any;
+    const day = (n: number) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
+    const at = (n: number, hm: string) => `${day(n)}T${hm}:00Z`;
+    await as("PUT", "/settings", { features: { scores: true }, profile: { maxHr: 200 } });
+    // a band reading every 5 minutes, 08:00-20:00, at 90 bpm (under the moderate line, 128 of 200), as lifting and
+    // walking mostly are; two vigorous readings in the workout and two moderate ones outside any session
+    const hrDay = async (n: number, odd: Record<string, number> = {}) => {
+      const hr: [number, number][] = [];
+      for (let t = Date.parse(at(n, "08:00")); t <= Date.parse(at(n, "20:00")); t += 300000)
+        hr.push([t / 1000, odd[new Date(t).toISOString().slice(11, 16)] ?? 90]);
+      await eng.db.admin.query("INSERT INTO hr_days (user_id, date, hr) VALUES ($1, $2, $3)", [S, day(n), JSON.stringify(hr)]);
+    };
+    await hrDay(1, { "10:10": 160, "10:15": 160 });
+    await hrDay(2, { "15:00": 130, "15:05": 130 });
+    await hrDay(3);
+    // a 60-minute workout (65 with a 5-minute pause), a walk recorded during it, and a 15-minute walk that evening
+    await eng.db.admin.query("INSERT INTO workouts (id, user_id, name, status, started_at, ended_at, paused_s) VALUES ($1, $2, 'Legs', 'completed', $3, $4, 300)",
+      [uuidv7(), S, at(1, "10:00"), at(1, "11:05")]);
+    const walk = (start: string, s: number) => eng.db.admin.query("INSERT INTO activities (id, user_id, type, started_at, duration_s) VALUES ($1, $2, 'walk', $3, $4)", [uuidv7(), S, start, s]);
+    await walk(at(1, "10:30"), 1800);
+    await walk(at(1, "18:00"), 900);
+    // a 20-minute walk on a day without heart rate
+    await walk(at(5, "12:00"), 1200);
+    const r = (await as("GET", "/health/scores", undefined, { tz: "0" })).scores;
+    // moderate: 65 of the sessions' 75 minutes on heart rate days (10 were vigorous), 10 band minutes, 20 off heart rate
+    // days = 95; vigorous 10, counted double: 115
+    expect(r.activity.parts[0]).toMatchObject({ key: "minutes", value: 115, target: 150, extra: { moderate: 95, vigorous: 10 } });
+  });
+
   it("does not list a part with a full history but a zero usual as building", () => {
     const r = readiness([P("sleep", 8, 7), P("hrv", 60, 50), P("restingHr", 55, 0, 28)]);
     expect(r.building).toEqual([]);

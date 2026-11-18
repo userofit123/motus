@@ -30,7 +30,7 @@ import { isSum, DERIVED_DAYS, shift, lockRecords, loadReads, loadBlocks, appKind
   type DerivedType, type SpanBand, type SumType } from "./healthDerive";
 import { isNight, cleanWornDevice, plausibleSteps, stepsTyped, appSteps, bandStepsVerdict, daySteps, type WornDevice } from "@motus/shared";
 import { maxHeartRate, sessionLoad, loadTrend, CHRONIC_DAYS, exercisePeaks, type LoadTrend, type HrTick } from "@motus/shared";
-import { SCORE_DAYS, ageOf, scoresFor, effortMinutes, sleepScore, activityScore, strengthScore, muscleSets } from "@motus/shared";
+import { SCORE_DAYS, ageOf, scoresFor, MODERATE_FROM, VIGOROUS_FROM, eachSample, sleepScore, nightScore, activityScore, strengthScore, muscleSets, type ScoreNight } from "@motus/shared";
 import { getSettings } from "./settings";
 import { motusRecordFor, copyFigures, linkBandSessions, linkHistory, release, releaseDangling, type Copied } from "./bandMatch";
 import { SET_COUNT_SQL, VOLUME_SQL } from "./workouts";
@@ -915,14 +915,43 @@ export function healthRoutes(r: Router) {
       ...(withHr ? { hr: (x.hr ?? null) as [number, number][] | null } : {}),
     };
   });
+  type Night = Awaited<ReturnType<typeof nights>>[number];
+  // a night as the sleep score reads it: time asleep is the person's own when they changed it, as the night's page shows
+  // it; bed and wake times as the app's minutes from noon (tz: the device's offset), so a night's times don't wrap at
+  // midnight. The share asleep compares the band's own minutes with the band's record; a night it didn't split into
+  // asleep and awake has none (it would read 100%)
+  const scoreNightOf = (n: Night, tz: number): ScoreNight => {
+    const asleep = n.edited && n.sleepH ? Math.round(n.sleepH * 60) : n.asleepMin;
+    const d = new Date(Date.parse(n.startAt) - tz * 60000), bedAt = (d.getUTCHours() * 60 + d.getUTCMinutes() + 720) % 1440;
+    const inBedMin = Math.max(0, Math.round((Date.parse(n.endAt) - Date.parse(n.startAt)) / 60000));
+    const split = n.lightMin != null || n.deepMin != null || n.remMin != null || n.awakeMin > 0;
+    return { asleepMin: asleep, inBedMin, bedAt, wakeAt: bedAt + inBedMin, bandAsleepMin: split ? n.asleepMin : null };
+  };
+  // each full night's own sleep score (nightScore), asked for with ?scores=1 by Stats → Sleep while the Health scores
+  // feature is on; none under 18 (the adult guidelines), and none for a nap or part of a night. Each night's usual times
+  // come from the full nights of the SCORE_DAYS days ending with it, so the nights just before the list are read too
+  const withScores = async <T extends Night>(ctx: Ctx, list: T[], qs: Record<string, string>): Promise<(T & { score?: ReturnType<typeof nightScore> })[]> => {
+    if (!qs.scores || !list.length) return list;
+    const st = await getSettings(ctx.q, ctx.userId), age = ageOf(st.profile?.birthYear, ctx.now());
+    if (!st.features.scores || !scoresFor(age)) return list;
+    const tz = tzOf(qs), dates = list.map((n) => n.date).sort();
+    const around = await nights(ctx, "n.date >= $1::date AND n.date <= $2::date", [shift(dates[0]!, -(SCORE_DAYS - 1)), dates.at(-1)!], false);
+    const full = around.map((n) => ({ date: n.date, sn: scoreNightOf(n, tz) })).filter((x) => isNight(x.sn.asleepMin / 60));
+    return list.map((n) => {
+      const me = full.find((x) => x.date === n.date);
+      if (!me) return n;
+      const lo = shift(n.date, -(SCORE_DAYS - 1));
+      return { ...n, score: nightScore(me.sn, full.filter((x) => x.date >= lo && x.date <= n.date).map((x) => x.sn), age) };
+    });
+  };
   r.get("/health/sleep", async (ctx, _p, _b, qs) => {
     const from = dateStr(qs.from) ?? "1970-01-01", to = dateStr(qs.to);
-    return { nights: await nights(ctx, to ? "n.date >= $1::date AND n.date < $2::date" : "n.date >= $1::date", to ? [from, to] : [from], false) };
+    return { nights: await withScores(ctx, await nights(ctx, to ? "n.date >= $1::date AND n.date < $2::date" : "n.date >= $1::date", to ? [from, to] : [from], false), qs) };
   });
-  r.get("/health/sleep/:date", async (ctx, p) => {
+  r.get("/health/sleep/:date", async (ctx, p, _b, qs) => {
     const night = (await nights(ctx, "n.date = $1::date", [dateStr(p.date)], true))[0];
     if (!night) throw notFound("No night for this day");
-    return night;
+    return (await withScores(ctx, [night], qs))[0]!;
   });
 
   // Which kinds of band data this person has at all, so screens only offer what there is to show
@@ -1028,46 +1057,59 @@ export function healthRoutes(r: Router) {
     // the guidelines scored are the adult ones: under 18 no scores, and Stats → Scores says why (minor)
     if (!scoresFor(age)) return { scores: { from, to: today, age, minor: true, sleep: null, activity: null, strength: null } };
     const inWeek = (at: string | Date) => { const d = dayIn(at, tz); return d >= from && d <= today; };
-    // the app's minute of the day of an instant, counted from noon so a night's times don't wrap at midnight
-    const fromNoon = (iso: string) => { const d = new Date(Date.parse(iso) - tz * 60000); return (d.getUTCHours() * 60 + d.getUTCMinutes() + 720) % 1440; };
+    // sleep: the week's full nights (a nap or part of a night is no night, as everywhere), as the score reads them
+    const ns = (await nights(ctx, "n.date >= $1::date AND n.date <= $2::date", [from, today], false)).map((n) => scoreNightOf(n, tz)).filter((n) => isNight(n.asleepMin / 60));
 
-    // sleep: the week's full nights (a nap or part of a night is no night, as everywhere); time asleep is the person's own
-    // when they changed it, as the night's page shows it
-    const ns = (await nights(ctx, "n.date >= $1::date AND n.date <= $2::date", [from, today], false)).map((n) => {
-      const asleep = n.edited && n.sleepH ? Math.round(n.sleepH * 60) : n.asleepMin;
-      const bedAt = fromNoon(n.startAt), inBedMin = Math.max(0, Math.round((Date.parse(n.endAt) - Date.parse(n.startAt)) / 60000));
-      // the share asleep compares the band's own minutes with the band's record; a night it didn't split into asleep and
-      // awake has none (it would read 100%)
-      const split = n.lightMin != null || n.deepMin != null || n.remMin != null || n.awakeMin > 0;
-      return { asleepMin: asleep, inBedMin, bedAt, wakeAt: bedAt + inBedMin, bandAsleepMin: split ? n.asleepMin : null };
-    }).filter((n) => isNight(n.asleepMin / 60));
-
-    // activity: minutes of effort from each day's heart rate (with a max heart rate to place it); recorded activities of a
-    // moving type (one that covers distance: walk, run, hike, cycle, swim, row...; not yoga, stretching or other) count
-    // as moderate, as WHO's examples are, on days without heart rate, or for the whole week when heart rate covers too
-    // few days (activityScore picks)
+    // activity (M-268): the week's sessions, finished workouts and recorded activities of a moving type (one that covers
+    // distance: walk, run, hike, cycle, swim, row...; not yoga, stretching or other), count as moderate minutes. WHO's
+    // examples of moderate activity are brisk walking and the like, and the Compendium of Physical Activities puts
+    // resistance training at 3.5-6 METs, moderate. They count whether or not heart rate was recorded: a band reads
+    // every few minutes and lifting or walking keeps the heart under the moderate line (64% of max) most of the time, so
+    // heart rate alone gave a week of 7 workouts and 10 walks 20 minutes. On top, the band's own minutes at moderate or
+    // vigorous effort outside the sessions (a cycle to work nobody recorded); a vigorous reading inside a session makes
+    // that time vigorous. Overlapping sessions (a walk recorded during a workout) count their time once.
+    const lo = shift(from, -1), hi = shift(today, 2);
+    await ensureTypes(ctx);
+    const spans = [
+      ...(await ctx.q.query<{ started_at: string; dur: number | string | null }>(
+        `SELECT a.started_at, a.duration_s AS dur FROM activities a JOIN activity_types t ON t.user_id = a.user_id AND t.slug = a.type
+         WHERE t.has_distance AND a.started_at >= $1::date AND a.started_at < $2::date`, [lo, hi])).rows,
+      ...(await ctx.q.query<{ started_at: string; dur: number | string | null }>(
+        `SELECT started_at, extract(epoch FROM ended_at - started_at) - paused_s AS dur FROM workouts
+         WHERE status = 'completed' AND ended_at IS NOT NULL AND started_at >= $1::date AND started_at < $2::date`, [lo, hi])).rows,
+    ].filter((x) => inWeek(x.started_at) && Number(x.dur) > 0)
+      .map((x) => { const a = new Date(x.started_at).getTime(); return [a, a + Number(x.dur) * 1000] as [number, number]; });
+    const sessions: [number, number][] = [];
+    for (const iv of spans.sort((x, y) => x[0] - y[0])) {
+      const last = sessions.at(-1);
+      if (last && iv[0] <= last[1]) last[1] = Math.max(last[1], iv[1]); else sessions.push(iv);
+    }
+    const inSession = (ms: number) => sessions.some(([a, b]) => ms >= a && ms < b);
     const hrDays = max ? (await ctx.q.query<{ date: string; hr: unknown }>(
       "SELECT to_char(date, 'YYYY-MM-DD') AS date, hr FROM hr_days WHERE date >= $1::date AND date <= $2::date", [from, today])).rows : [];
-    let moderate = 0, vigorous = 0;
+    let moderate = 0, vigorous = 0, vigorousIn = 0;
     const hrDates = new Set<string>();
     for (const d of hrDays) {
       const hr = (typeof d.hr === "string" ? JSON.parse(d.hr) : d.hr) as [number, number][] | null;
       if (!hr || hr.length < 2) continue;
-      const m = effortMinutes(hr, max!);
-      moderate += m.moderate; vigorous += m.vigorous; hrDates.add(d.date);
+      hrDates.add(d.date);
+      eachSample(hr, (t, bpm, secs) => {
+        const share = bpm / max!, m = secs / 60;
+        if (inSession(t * 1000)) { if (share >= VIGOROUS_FROM) vigorousIn += m; }
+        else if (share >= VIGOROUS_FROM) vigorous += m;
+        else if (share >= MODERATE_FROM) moderate += m;
+      });
     }
-    const lo = shift(from, -1), hi = shift(today, 2);
-    await ensureTypes(ctx);
-    const acts = (await ctx.q.query<{ started_at: string; duration_s: number | string | null }>(
-      `SELECT a.started_at, a.duration_s FROM activities a JOIN activity_types t ON t.user_id = a.user_id AND t.slug = a.type
-       WHERE t.has_distance AND a.started_at >= $1::date AND a.started_at < $2::date`, [lo, hi])).rows;
     let activityMin = 0, activityMinOffHr = 0;
-    for (const a of acts) {
-      if (!inWeek(a.started_at)) continue;
-      const m = (Number(a.duration_s) || 0) / 60;
+    for (const [a, b] of sessions) {
+      const m = (b - a) / 60000;
       activityMin += m;
-      if (!hrDates.has(dayIn(a.started_at, tz))) activityMinOffHr += m;
+      if (!hrDates.has(dayIn(new Date(a), tz))) activityMinOffHr += m;
     }
+    // sessions on heart rate days: their time is moderate but for its vigorous readings (never more than the sessions)
+    vigorousIn = Math.min(vigorousIn, activityMin - activityMinOffHr);
+    moderate += activityMin - activityMinOffHr - vigorousIn;
+    vigorous += vigorousIn;
     const steps = (await stepsByDay(ctx.q, from, shift(today, 1), tz)).map((x) => Number(x.value) || 0);
 
     // strength: only for someone who trains (a finished workout in the last 4 weeks); the week's days with a finished hard
@@ -1087,7 +1129,7 @@ export function healthRoutes(r: Router) {
     return { scores: {
       from, to: today, age,
       sleep: sleepScore(ns, age),
-      activity: activityScore({ moderate, vigorous, minutesDays: hrDates.size, activityMin, activityMinOffHr, stepDays: steps }, age),
+      activity: activityScore({ moderate: Math.round(moderate), vigorous: Math.round(vigorous), minutesDays: hrDates.size, activityMin, activityMinOffHr, stepDays: steps }, age),
       strength,
     } };
   });
