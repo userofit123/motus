@@ -2,7 +2,7 @@
 // each check saying what it found and what to change. Pure, so the rules are tested once and the pages only show them.
 // Sets are counted as Stats → Muscles and the Strength score count them (muscleSets: a working set 1 for each main muscle,
 // 0.5 for each helper; warm-ups left out), so the three never disagree. Every rule sits next to the research it comes
-// from; the lesson behind "Where the numbers come from" gives the full references. Left out on purpose:
+// from; the lesson behind "Where the aims come from" gives the full references. Left out on purpose:
 // - total sets or minutes per session: no clear limit fits everyone;
 // - a goal (strength or size): Motus doesn't ask for one, so reps are only checked against the range that does both.
 import { muscleSets } from "./muscles";
@@ -28,8 +28,9 @@ export const CHECK_MUSCLES: { id: string; name: string; muscles: string[]; examp
 
 /** Schoenfeld, Ogborn & Krieger 2017 (and Baz-Valle et al. 2022): 10-20 hard sets a week per muscle build the most */
 export const CHECK_SETS: [number, number] = [10, 20];
-/** Schoenfeld, Ogborn & Krieger 2016: training a muscle on 2 or more days a week built more than once. A day counts for
- *  a muscle from this many of its sets on it, so a helper's odd half set doesn't. */
+/** Schoenfeld, Ogborn & Krieger 2016: training a muscle on 2 or more days a week built more than once. A muscle is
+ *  checked from DAY_SETS sets a week. A day counts for it when it is the main muscle of a lift that day, or gets at
+ *  least 1 set as a helper (2 helper sets), so a bench press trains the triceps but a helper's odd half set doesn't. */
 export const TWICE = 2, DAY_SETS = 2;
 /** ACSM 2009: balance opposing muscles. Pulling sets at 0.75-1.5 times the pushing ones, hamstrings at 0.5-2 times quads */
 export const PULL_PUSH: [number, number] = [0.75, 1.5];
@@ -77,7 +78,8 @@ const statusOf = (s: number): Check["status"] => (s >= 1 ? "good" : s >= 0.5 ? "
 const r1 = (x: number) => Math.round(x * 2) / 2;
 const n = (x: number) => String(r1(x));
 const plural = (x: number, one: string, many = `${one}s`) => `${n(x)} ${r1(x) === 1 ? one : many}`;
-const list = (a: string[]) => (a.length <= 1 ? a.join("") : `${a.slice(0, -1).join(", ")} and ${a[a.length - 1]}`);
+/** " and 2 more muscles" after the first one named, so a row's detail stays one short sentence */
+const more = (k: number, what = "muscle") => (k > 0 ? ` and ${k} more ${k === 1 ? what : `${what}s`}` : "");
 /** a muscle's name inside a sentence */
 const low1 = (m: { name: string }) => m.name.toLowerCase();
 const lifting = (s: CheckSession) => s.filter((e) => !NOT_LIFTING.has(e.category));
@@ -87,9 +89,15 @@ const working = (e: CheckExercise) => e.sets.filter((s) => s.kind !== "warmup");
 export const weekMuscleSets = (days: CheckSession[]) =>
   muscleSets(days.flatMap(lifting).map((e) => ({ primary: e.primary, secondary: e.secondary, sets: working(e).length })));
 
-function regionSets(s: CheckSession): Record<string, number> {
+/** One workout's sets per checked muscle, and the checked muscles that are a lift's main muscle in it */
+interface Day { sets: Record<string, number>; main: Set<string> }
+function dayOf(s: CheckSession): Day {
   const per = weekMuscleSets([s]);
-  return Object.fromEntries(CHECK_MUSCLES.map((m) => [m.id, Math.max(0, ...m.muscles.map((x) => per[x] ?? 0))]));
+  const mains = new Set(lifting(s).filter((e) => working(e).length).flatMap((e) => e.primary));
+  return {
+    sets: Object.fromEntries(CHECK_MUSCLES.map((m) => [m.id, Math.max(0, ...m.muscles.map((x) => per[x] ?? 0))])),
+    main: new Set(CHECK_MUSCLES.filter((m) => m.muscles.some((x) => mains.has(x))).map((m) => m.id)),
+  };
 }
 
 /** Sets a week per muscle: under 10 counts its share of 10, 10-20 in full, over 20 a little less (harder to recover
@@ -104,27 +112,25 @@ function volume(week: Record<string, number>, all: boolean, span: string): Check
   const met = ms.filter((m) => week[m.id]! >= lo && week[m.id]! <= hi).length;
   const low = ms.filter((m) => week[m.id]! < lo).sort((a, b) => week[a.id]! - week[b.id]!);
   const high = ms.filter((m) => week[m.id]! > hi);
-  const tips: string[] = [];
-  for (const m of low.slice(0, 2)) {
-    const s = week[m.id]!;
-    tips.push(s ? `${plural(s, "set")} ${span} for ${low1(m)}: add ${Math.ceil(lo - s)}, e.g. ${m.example}.` : `No sets for ${low1(m)}: add ${lo} ${span}, e.g. ${m.example}.`);
-  }
-  if (low.length > 2) tips.push(`Under ${lo} ${span} too: ${list(low.slice(2).map(low1))}.`);
-  if (!tips.length && high.length) tips.push(`Over ${hi} sets ${span} for ${list(high.map(low1))}, which adds little and is harder to recover from: drop a few.`);
-  const detail = tips.length ? tips.join(" ") : `Every muscle ${all ? "" : "it trains "}gets ${lo}-${hi} sets ${span}.`;
+  // the biggest gap only, then how many more, so the row stays one short sentence
+  const first = low[0];
+  const detail = first ? `Add ${Math.ceil(lo - week[first.id]!)} sets ${span} for ${low1(first)}, e.g. ${first.example}${low.length > 1 ? `, and more for ${low.length - 1} other ${low.length === 2 ? "muscle" : "muscles"}` : ""}.`
+    : high.length ? `Over ${hi} sets ${span} for ${low1(high[0]!)}${more(high.length - 1)}: drop a few, as they add little.`
+    : `Every muscle ${all ? "" : "it trains "}gets ${lo}-${hi} sets ${span}.`;
   return { key: "volume", title: "Sets per muscle", weight: CHECK_WEIGHTS.volume, share, status: statusOf(share), value: `${met} of ${ms.length}`, detail };
 }
 
 /** The share of trained muscles on 2 or more days a week */
-function frequency(days: Record<string, number>[], week: Record<string, number>): Check | null {
+function frequency(days: Day[], week: Record<string, number>): Check | null {
   const ms = CHECK_MUSCLES.filter((m) => week[m.id]! >= DAY_SETS);
   if (!ms.length) return null;
-  const on = (m: string) => days.filter((d) => d[m]! >= DAY_SETS).length;
+  const on = (m: string) => days.filter((d) => d.main.has(m) || d.sets[m]! >= 1).length;
   const once = ms.filter((m) => on(m.id) < TWICE);
   const share = (ms.length - once.length) / ms.length;
   const detail = !once.length ? `Each muscle is trained on ${TWICE} or more days a week.`
-    : days.length === 1 ? `Done once a week, each muscle is trained on 1 day. Twice a week builds more: do it twice, or spread its sets over 2 days.`
-    : `Trained on 1 day a week: ${list(once.slice(0, 3).map(low1))}${once.length > 3 ? ` and ${once.length - 3} more` : ""}. Twice builds more: spread the sets over 2 days.`;
+    : days.length === 1 ? "Done once a week: do it twice, or spread its sets over 2 days."
+    : once.length === 1 ? `${once[0]!.name} is trained on 1 day a week: spread its sets over 2 days.`
+    : `${once[0]!.name}${more(once.length - 1)} are trained on 1 day a week: spread their sets over 2 days.`;
   return { key: "frequency", title: "Muscles trained twice a week", weight: CHECK_WEIGHTS.frequency, share, status: statusOf(share), value: `${ms.length - once.length} of ${ms.length}`, detail };
 }
 
@@ -141,9 +147,9 @@ function pushPull(sessions: CheckSession[], both: boolean, span: string): Check 
   if (both ? !push || !pull : !push && !pull) return null;
   const ratio = push ? pull / push : Infinity;
   const share = ratioShare(ratio, PULL_PUSH);
-  const detail = share >= 1 ? "Pulling sets about match pushing sets, which keeps the shoulders balanced."
-    : ratio < PULL_PUSH[0] ? `${plural(push, "pushing set")} to ${pull ? plural(pull, "pulling set") : "no pulling sets"} ${span}: add ${Math.ceil(push * PULL_PUSH[0] - pull)} pulling sets, e.g. Barbell row, to keep the shoulders balanced.`
-    : `${plural(pull, "pulling set")} to ${push ? plural(push, "pushing set") : "no pushing sets"} ${span}: add ${Math.ceil(pull / PULL_PUSH[1] - push)} pushing sets, e.g. Bench press.`;
+  const detail = share >= 1 ? "Pulling sets about match pushing sets."
+    : ratio < PULL_PUSH[0] ? `Too little pulling: add ${Math.ceil(push * PULL_PUSH[0] - pull)} pulling sets ${span}, e.g. Barbell row.`
+    : `Too little pushing: add ${Math.ceil(pull / PULL_PUSH[1] - push)} pushing sets ${span}, e.g. Bench press.`;
   return { key: "pushPull", title: "Pushing and pulling", weight: CHECK_WEIGHTS.pushPull, share, status: statusOf(share), value: `${n(push)} / ${n(pull)}`, detail };
 }
 
@@ -153,8 +159,8 @@ function legs(week: Record<string, number>, both: boolean, span: string): Check 
   const ratio = q ? h / q : Infinity;
   const share = ratioShare(ratio, HAMS_QUADS);
   const detail = share >= 1 ? "Hamstrings get at least half the sets quads get."
-    : ratio < HAMS_QUADS[0] ? `Quads get ${plural(q, "set")} and hamstrings ${n(h)} ${span}: add ${Math.ceil(q * HAMS_QUADS[0] - h)} for hamstrings, e.g. Romanian deadlift.`
-    : `Hamstrings get ${plural(h, "set")} and quads ${n(q)} ${span}: add ${Math.ceil(h / HAMS_QUADS[1] - q)} for quads, e.g. Squat.`;
+    : ratio < HAMS_QUADS[0] ? `Too little for hamstrings: add ${Math.ceil(q * HAMS_QUADS[0] - h)} sets ${span}, e.g. Romanian deadlift.`
+    : `Too little for quads: add ${Math.ceil(h / HAMS_QUADS[1] - q)} sets ${span}, e.g. Squat.`;
   return { key: "legs", title: "Quads and hamstrings", weight: CHECK_WEIGHTS.legs, share, status: statusOf(share), value: `${n(q)} / ${n(h)}`, detail };
 }
 
@@ -177,27 +183,28 @@ function order(sessions: CheckSession[]): Check | null {
   const share = 1 - late.length / compounds;
   const first = late[0];
   const detail = !first ? "Lifts that work several muscles come before single-muscle ones."
-    : `${first.lift} comes after ${first.after}, which tires the same muscles: do ${first.lift} first.${late.length > 1 ? ` ${late.length - 1} more ${late.length > 2 ? "lifts come" : "lift comes"} late too.` : ""}`;
+    : late.length === 1 ? `Do ${first.lift} before ${first.after}, which tires the same muscles.`
+    : `Do ${first.lift} before ${first.after}, and ${late.length - 1} more ${late.length === 2 ? "lift" : "lifts"} earlier.`;
   return { key: "order", title: "Big lifts first", weight: CHECK_WEIGHTS.order, share, status: statusOf(share), value: `${compounds - late.length} of ${compounds}`, detail };
 }
 
 function reps(sessions: CheckSession[]): Check | null {
   const [lo, hi] = CHECK_REPS;
   let total = 0, inRange = 0;
-  let few: string | null = null, many: string | null = null;
+  let few: string | null = null, many: string | null = null, fewN = 0, manyN = 0;
   for (const e of [...new Set(sessions)].flatMap(lifting)) for (const s of working(e)) {
     if (s.reps == null) continue;
     total++;
-    if (s.reps < lo) few ??= `${e.name} aims for ${plural(s.reps, "rep")}`;
-    else if (s.reps > hi) many ??= `${e.name} aims for ${s.reps} reps`;
+    if (s.reps < lo) { fewN++; few ??= `${e.name} aims for ${plural(s.reps, "rep")}`; }
+    else if (s.reps > hi) { manyN++; many ??= `${e.name} aims for ${s.reps} reps`; }
     else inRange++;
   }
   if (!total) return null;
   const share = inRange / total;
-  const tips: string[] = [];
-  if (many) tips.push(`${many}: add weight so ${hi} or fewer take you near failure.`);
-  if (few) tips.push(`${few}: good for strength, but ${lo}-${hi} reps build more muscle.`);
-  const detail = tips.length ? tips.join(" ") : `Every working set aims for ${lo}-${hi} reps.`;
+  // the side with more sets outside the range, so the row gives one tip
+  const detail = many && manyN >= fewN ? `${many}: add weight so ${hi} or fewer are hard.`
+    : few ? `${few}: good for strength, but ${lo}-${hi} build more muscle.`
+    : `Every working set aims for ${lo}-${hi} reps.`;
   return { key: "reps", title: "Reps per set", weight: CHECK_WEIGHTS.reps, share, status: statusOf(share), value: `${inRange} of ${total}`, detail };
 }
 
@@ -211,8 +218,8 @@ function total(checks: (Check | null)[], sets: Record<string, number>): RoutineC
 
 /** A week of workouts, each a session in order */
 function weekOf(days: CheckSession[], whole: boolean): RoutineCheck | null {
-  const per = days.map(regionSets);
-  const sets = Object.fromEntries(CHECK_MUSCLES.map((m) => [m.id, per.reduce((t, d) => t + d[m.id]!, 0)]));
+  const per = days.map(dayOf);
+  const sets = Object.fromEntries(CHECK_MUSCLES.map((m) => [m.id, per.reduce((t, d) => t + d.sets[m.id]!, 0)]));
   const span = "a week";
   return total([volume(sets, whole, span), frequency(per, sets), pushPull(days, !whole, span), legs(sets, !whole, span), order(days), reps(days)], sets);
 }

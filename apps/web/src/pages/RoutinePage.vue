@@ -4,7 +4,7 @@ import { goBack } from "../core/leave";
 import { computed, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useQuery } from "@tanstack/vue-query";
-import { restDefaultsOf, progressionOf, progressionDefaultsOf, oneSideOf, progresses, usesWeight, usesReps, routineTime, muscleName, muscleSets, musclesWorked, scheduleSummary, sideRounds } from "@motus/shared";
+import { restDefaultsOf, progressionOf, progressionDefaultsOf, oneSideOf, progresses, usesWeight, usesReps, routineTime, muscleName, musclesWorked, weekMuscleSets, scheduleSummary, sideRounds } from "@motus/shared";
 import { useRoutine, useRoutines, useNotes, useReminders, useSchedules, useSettings, loaded } from "../api/queries";
 import { api, mediaUrl } from "../api/client";
 import { progParts as progPartsOf } from "../core/progression";
@@ -22,7 +22,6 @@ import LineChart from "../components/LineChart.vue";
 import PlanSets from "../components/PlanSets.vue";
 import BodyMap from "../components/BodyMap.vue";
 import HeartRate from "../components/HeartRate.vue";
-import NumStep from "../components/NumStep.vue";
 import RoutineCheckCard from "../components/RoutineCheckCard.vue";
 import { sessionOf, timesAWeek } from "../core/routineCheck";
 import { routineCheck } from "@motus/shared";
@@ -46,7 +45,8 @@ const routine = computed<any>(() => r.data.value);
 const myRems = computed(() => (rems.data.value ?? []).filter((m: any) => (m.targetType === "routine" && m.targetId === id.value) || (m.targetType === "exercise" && routine.value?.exercises.some((e: any) => e.exerciseId === m.targetId) && (!m.scopeRoutineId || m.scopeRoutineId === id.value))));
 // only what is still planned: a one-off day that has passed (or a plan that ended) is just the last time it was done
 const mySchedules = computed(() => { const today = localYmd(new Date()); return (schedules.data.value ?? []).filter((s: any) => s.routineId === id.value && (s.rule === "once" ? s.startDate.slice(0, 10) >= today : !s.endDate || s.endDate.slice(0, 10) >= today)); });
-const muscles = computed(() => muscleSets((routine.value?.exercises ?? []).map((e: any) => ({ primary: e.exercise?.primaryMuscles ?? [], secondary: e.exercise?.secondaryMuscles ?? [], sets: e.sets.length }))));
+// the figure's sets (its tips) counted as the Routine check counts them: warm-ups and cardio left out, so the two agree
+const muscles = computed(() => weekMuscleSets([sessionOf(routine.value)]));
 const worked = computed(() => musclesWorked((routine.value?.exercises ?? []).map((e: any) => ({ primary: e.exercise?.primaryMuscles ?? [], secondary: e.exercise?.secondaryMuscles ?? [] }))));
 // under each exercise's name: the editor's header line (superset, then setSummary: "3 sets of 8 · 60 kg"), its parts as
 // separate items so the row's gap spaces the dots
@@ -85,14 +85,13 @@ const schedRemove = (s: any) => removeItem({ scheduleId: s.id, name: routine.val
 // time (a point's tip gives it and opens that workout), and each session row's average
 const hrSessions = computed(() => (routine.value?.hr?.sessions ?? []).filter((x: any) => x.avgHr).map((x: any) => ({ x: new Date(x.date).getTime(), y: Math.round(x.avgHr), id: x.workoutId })));
 const hrOf = computed(() => new Map<string, number>((routine.value?.hr?.sessions ?? []).filter((x: any) => x.avgHr).map((x: any) => [x.workoutId, Math.round(x.avgHr)])));
-// the Routine check (feature): the routine as a week of it, done as often as its plan or the last 4 weeks say until the
-// row's stepper changes it (for this look only, nothing is saved)
+// the Routine check (feature): the routine as a week of it, done as often as its plans or the last 4 weeks say
 const checkOn = computed(() => !!st.value.features.routineCheck);
 const usual = computed(() => timesAWeek(id.value, schedules.data.value ?? [], history.data.value ?? []));
-const perWeekSet = ref<number | null>(null);
-const perWeek = computed(() => perWeekSet.value ?? usual.value.n);
-const check = computed(() => (checkOn.value && routine.value ? routineCheck(sessionOf(routine.value), perWeek.value) : null));
-const perWeekFrom = computed(() => (perWeekSet.value != null ? "For this check only" : { plan: "From your planned days", done: "From your last 4 weeks", none: "Not planned or done yet" }[usual.value.from]));
+const check = computed(() => (checkOn.value && routine.value ? routineCheck(sessionOf(routine.value), usual.value.n) : null));
+// where the times a week come from, under the score
+const timesWord = (n: number) => (n === 1 ? "once" : n === 2 ? "twice" : `${n} times`);
+const checkSource = computed(() => ({ plan: `Planned ${timesWord(usual.value.n)} a week`, done: `Done ${timesWord(usual.value.n)} a week in the last 4 weeks`, none: "Checked as once a week: not planned or done yet" }[usual.value.from]));
 const noteMenu = useNoteMenu();
 // a note on one of the routine's exercises says which; notes on the routine itself need no label
 const noteWhere = (n: any) => (n.targetType === "routine_exercise" ? routine.value?.exercises.find((e: any) => e.id === n.targetId)?.exercise?.name ?? null : null);
@@ -159,7 +158,7 @@ await loaded(r, summaries, notes, rems, schedules, history);
       <div class="stack">
         <div class="card"><BodyMap :values="muscles" :highlight="worked.primary" :secondary="worked.secondary" :height="190" legend /><div class="chips" style="margin-top:8px;justify-content:center"><span v-for="m in [...worked.primary, ...worked.secondary]" :key="m" class="mchip">{{ muscleName(m) }}</span></div></div>
         <div class="card">
-          <div class="row hgap"><b class="grow">Planned</b><button class="qb acc" style="padding:4px 6px" @click="scheduleSheet = { routineId: id }"><Icon name="plus" :size="16" /></button></div>
+          <div class="ch"><span class="t grow">Planned</span><button class="qb acc" style="padding:4px 6px" @click="scheduleSheet = { routineId: id }"><Icon name="plus" :size="16" /></button></div>
           <div v-if="!mySchedules.length" class="tiny">Nothing planned. Add days to see it in Up next and the calendar, with a reminder.</div>
           <div v-for="s in mySchedules" :key="s.id" class="li" style="min-height:0;padding:calc(var(--lpy) - 2px) 0"><Icon name="calendar" :size="16" class="muted" /><span class="grow">{{ schedLine(s) }}</span>
             <Menu :items="[{ label: 'Edit', icon: 'edit', run: () => (scheduleSheet = s) }, schedRemove(s)]" /></div>
@@ -167,10 +166,7 @@ await loaded(r, summaries, notes, rems, schedules, history);
       </div>
     </div>
     <!-- below both columns: its rows say what to change in full, which the side column is too narrow for -->
-    <RoutineCheckCard v-if="check" class="spt" :check="check" title="Routine check" span="Per week">
-      <div class="li"><Icon name="dumbbell" :size="18" class="muted" /><div class="grow"><div class="t">Times a week</div><div class="s">{{ perWeekFrom }}</div></div>
-        <NumStep :value="perWeek" :min="1" :max="7" label="Times a week" @set="(v) => (perWeekSet = v)" /></div>
-    </RoutineCheckCard>
+    <RoutineCheckCard v-if="check" class="spt" :check="check" title="Routine check" span="Per week" :source="checkSource" />
     </div>
 
     <div v-else-if="tab === 'history'">

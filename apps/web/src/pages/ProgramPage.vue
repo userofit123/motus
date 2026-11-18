@@ -5,7 +5,7 @@ import { goBack } from "../core/leave";
 import { computed, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useQueries, useQuery } from "@tanstack/vue-query";
-import { programCheck, weekMuscleSets, type ProgramDetail } from "@motus/shared";
+import { programCheck, weekMuscleSets, musclesWorked, type ProgramDetail, type Routine } from "@motus/shared";
 import { api } from "../api/client";
 import { invalidate } from "../api/live";
 import { useFmt, unitOf } from "../core/format";
@@ -60,14 +60,15 @@ const st = useSettings();
 const checkOn = computed(() => !!st.value.features.routineCheck);
 const checkWeek = computed(() => (checkOn.value ? p.value?.plan.find((w) => !w.deload && w.days.length) ?? null : null));
 const weekIds = computed(() => [...new Set((checkWeek.value?.days ?? []).map((d) => d.routineId))]);
-const weekRoutines = useQueries({ queries: computed(() => weekIds.value.map((rid) => ({ queryKey: ["routines", rid], queryFn: () => api.get(`/routines/${rid}`) }))) });
+const weekRoutines = useQueries({ queries: computed(() => weekIds.value.map((rid) => ({ queryKey: ["routines", rid], queryFn: () => api.get<Routine>(`/routines/${rid}`) }))) });
 const check = computed(() => {
   if (!checkWeek.value || weekRoutines.value.some((x) => !x.data)) return null;
   // one session per routine, so a routine done twice in the week is the same workout twice
   const byId = new Map(weekIds.value.map((rid, i) => [rid, sessionOf(weekRoutines.value[i]!.data)]));
   const days = checkWeek.value.days.map((d) => byId.get(d.routineId)!);
   const c = programCheck(days);
-  return c ? { c, muscles: weekMuscleSets(days) } : null;
+  const worked = musclesWorked(days.flat().filter((e) => e.category !== "cardio" && e.category !== "stretching"));
+  return c ? { c, muscles: { sets: weekMuscleSets(days), primary: worked.primary, secondary: worked.secondary } } : null;
 });
 // show the page once its data is in, all at once
 await loaded(q);
@@ -107,7 +108,7 @@ await loaded(q);
         <div v-if="!p.state.total" class="card empty"><b>No routines yet</b><button class="btn tonal" @click="editing = true">Add routines</button></div>
         <div v-else class="grid gauto">
           <div v-for="w in p.plan" :key="w.week" class="card wk" :class="{ cur: next && w.week === next.week && p.status !== 'finished' }">
-            <div class="ch"><span class="t grow">Week {{ w.week }}</span><span v-if="w.deload" class="mchip">Deload −{{ p.deloadPct }}%</span><Icon v-if="w.days.length && w.days.every((d) => d.status === 'done')" name="check" :size="16" class="pos" /></div>
+            <div class="ch"><span class="t grow">Week {{ w.week }}</span><span v-if="w.deload" class="mchip">Deload -{{ p.deloadPct }}%</span><Icon v-if="w.days.length && w.days.every((d) => d.status === 'done')" name="check" :size="16" class="pos" /></div>
             <div v-if="!w.days.length" class="tiny">Rest week</div>
             <div class="list">
               <div v-for="d in w.days" :key="d.day" class="li" :class="[d.status, { click: !!d.workout }]" @click="d.workout && router.push(`/workouts/${d.workout.id}`)">
@@ -118,8 +119,7 @@ await loaded(q);
             </div>
           </div>
         </div>
-        <p v-if="hasDeload" class="tiny spt">Deload weeks are lighter weeks to recover: working weights are {{ p.deloadPct }}% lower.</p>
-        <RoutineCheckCard v-if="check" class="spt" :check="check.c" title="Program check" :span="`Week ${checkWeek!.week}`" :muscles="check.muscles" />
+        <p v-if="hasDeload" class="tiny dnote">Deload weeks are lighter weeks to recover: working weights are {{ p.deloadPct }}% lower.</p>
       </section>
       <!-- its own heading so both columns start level, and so it keeps the section gap when the columns stack on a phone -->
       <section>
@@ -138,6 +138,8 @@ await loaded(q);
         </div>
       </section>
     </div>
+    <!-- below both columns, as on a routine's page: its rows say what to change in full, which the side column is too narrow for -->
+    <RoutineCheckCard v-if="check" class="spt" :check="check.c" title="Routine check" :span="`Week ${checkWeek!.week}`" :muscles="check.muscles" />
 
     <ProgramEditor v-if="editing" :program="p" @close="editing = false" />
   </div>
@@ -155,6 +157,8 @@ await loaded(q);
 .st .stat .sub { margin-top: auto; padding-top: 2px; }
 .st .val.na { color: var(--tx2); }
 .lay { grid-template-columns: minmax(0, 1fr) 300px; align-items: start; }
+/* the deload note sits close under the weeks it explains, apart from the blocks below */
+.dnote { margin: var(--hg) 0 0; }
 .wk.cur { box-shadow: inset 0 0 0 2px var(--acc); }
 /* a planned day may have no second line, so rows aren't held to the tap height; padding stays the list's own */
 .wk .li { min-height: 0; }
