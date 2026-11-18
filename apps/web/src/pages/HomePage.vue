@@ -4,7 +4,7 @@
 // (no reminder waiting, no goal due soon, no program running) stays away until it has; feature blocks need their feature.
 import { computed, ref } from "vue";
 import { useRouter } from "vue-router";
-import { num, fromM, percentChange, orderGoals, dismissalPatch, HOME_BLOCKS, GLANCE_RINGS, ageOf, stepsTarget, sleepRange, type Goal, type HomeData, type HomeSuggestion, type HomePlan, type HomeRecord, type HomeGroup, type HomeWeek, type ScoreKey, type GlanceRing } from "@motus/shared";
+import { num, fromM, percentChange, weekStartDate, orderGoals, dismissalPatch, HOME_BLOCKS, GLANCE_RINGS, ageOf, stepsTarget, sleepRange, type Goal, type HomeData, type HomeSuggestion, type HomePlan, type HomeRecord, type HomeGroup, type HomeWeek, type ScoreKey, type GlanceRing } from "@motus/shared";
 import { useCalendar, useHome, useSettings, saveSettings, useAchievements, useGoals, useHealthAvailable, useHealthDay, useReadiness, useHealthScores, useSleep, useDaily, useTypeName, loaded, type HealthAvailable, type ReadinessPart, type ReadinessBuilding } from "../api/queries";
 import { api } from "../api/client";
 import { invalidate, queryClient } from "../api/live";
@@ -28,6 +28,7 @@ import Ring from "../components/Ring.vue";
 import BodyMap from "../components/BodyMap.vue";
 import DailyLog from "../components/DailyLog.vue";
 import Sheet from "../components/Sheet.vue";
+import ReorderSheet from "../components/ReorderSheet.vue";
 import ScheduleEditor from "../components/ScheduleEditor.vue";
 import GoalSheet from "../components/GoalSheet.vue";
 import SessionStats from "../components/SessionStats.vue";
@@ -53,7 +54,7 @@ const fresh = computed(() => !!h.value && !h.value.routineCount && !h.value.tota
 type Size = "m" | "l";
 const META: Record<string, { name: string; desc: string; icon: string; size: Size }> = {
   today: { name: "Today", desc: "What to do today and this week's training days", icon: "play", size: "l" },
-  week: { name: "This week", desc: "Workouts, time and volume against last week", icon: "stats", size: "m" },
+  week: { name: "This week", desc: "Workouts, time and volume against the same days last week", icon: "stats", size: "m" },
   pinned: { name: "Pinned goals", desc: "The goals you made and pinned, each as its own block", icon: "pin", size: "m" },
   dueSoon: { name: "Goals due soon", desc: "Shows when a goal ends within two weeks", icon: "target", size: "m" },
   program: { name: "Your program", desc: "Shows while you follow a program", icon: "routines", size: "m" },
@@ -118,6 +119,13 @@ const weekStats = computed<WStat[]>(() => {
 });
 // no stat has a change (first week): the header note and the change column are left out
 const anyDelta = computed(() => weekStats.value.some((x) => x.delta));
+// the days the change covers, named in the header ("Vs Mon-Thu last week"): a bare "Vs last week" read as the whole of
+// last week, so 1 workout against 2 by Thursday looked like a fall from last week's 6 (M-263)
+const weekSpan = computed(() => {
+  const now = new Date(), day = (d: Date) => fmt.value.date(d, { weekday: "short" });
+  const a = day(weekStartDate(now, s.value.firstDay)), b = day(now);
+  return a === b ? a : `${a}-${b}`;
+});
 const lastStats = computed<WStat[]>(() => {
   const l = h.value?.last;
   if (!l) return [];
@@ -412,15 +420,20 @@ const goalOpen = ref<string | null>(null);
 async function goalStatus(g: Goal, status: string) { await api.put(`/goals/${g.id}`, { status }); invalidate(["goals", "home"]); goalOpen.value = null; toast(status === "archived" ? "Goal archived" : "Goal made active"); }
 async function goalDelete(g: Goal) { if (await confirm(`Delete "${g.title}"?`, { ok: "Delete", danger: true })) { await api.del(`/goals/${g.id}`); invalidate(["goals", "home"]); goalOpen.value = null; toast("Goal deleted"); } }
 
-// ---- Edit home: the same board, each block as a tile with its arrows and its switch
+// ---- Edit home: the same board, each block as a tile with its switch; the order is set in one list (Reorder blocks)
 const editing = ref(false);
 const setOn = (id: string, on: boolean) => saveSettings({ home: { blocks: s.value.home.blocks.map((x) => (x.id === id ? { ...x, on } : x)) } }, { quiet: true });
-// past the neighbour you can see (blocks of a switched-off feature keep their place)
-function move(id: string, dir: -1 | 1) {
-  const l = listed.value, other = l[l.findIndex((x) => x.id === id) + dir];
-  if (!other) return;
-  const all = [...s.value.home.blocks], a = all.findIndex((x) => x.id === id), b = all.findIndex((x) => x.id === other.id);
-  [all[a], all[b]] = [all[b]!, all[a]!];
+// Reorder blocks (M-270): every block in one short list, dragged by its handle (or moved with the arrows), as Goals and
+// Routines are reordered; nudging tile by tile with arrows took a tap per place. The tile it was opened from is marked.
+// Only the blocks listed move: those of a switched-off feature keep their slots in the saved order
+const reorderOpen = ref<string | null>(null);
+function moveBlock(from: number, to: number) {
+  const ids = listed.value.map((x) => x.id);
+  if (to < 0 || to >= ids.length || from === to) return;
+  ids.splice(to, 0, ids.splice(from, 1)[0]!);
+  let k = 0;
+  const byId = new Map(s.value.home.blocks.map((x) => [x.id, x]));
+  const all = s.value.home.blocks.map((x) => (available(x.id) ? byId.get(ids[k++]!)! : x));
   saveSettings({ home: { blocks: all } }, { quiet: true });
 }
 // a half-size tile that would be alone in its row (the last of an odd run before a wide tile or the end) takes the whole row.
@@ -478,21 +491,21 @@ await loaded(home, ach, avail, hDay, ready, nightsQ, dailyQ, todayCal);
 <template>
   <div class="page">
     <div class="ph">
-      <div v-if="editing"><h1>Edit home</h1><div class="sub">Move blocks and choose which show. Changes save as you go.</div></div>
+      <div v-if="editing"><h1>Edit home</h1><div class="sub">Switch blocks on or off, and tap a block's handle to change the order. Changes save as you go.</div></div>
       <div v-else><h1>{{ isPhone ? greeting : "Home" }}</h1><div class="sub">{{ fmt.dateLong(new Date().toISOString()) }}</div></div>
       <div class="acts">
         <template v-if="editing">
           <Menu :items="[{ label: 'Reset to default', icon: 'refresh', run: reset }]" />
           <button class="btn keep" @click="editing = false"><Icon name="check" :size="18" />Done</button>
         </template>
-        <Menu v-else :items="[{ label: 'Edit home', icon: 'edit', run: () => (editing = true) }, { label: 'Pinned goals', icon: 'pin', run: () => (pinOpen = true) }]" />
+        <Menu v-else :items="[{ label: 'Edit home', icon: 'edit', run: () => (editing = true) }, { label: 'Reorder blocks', icon: 'drag', run: () => (reorderOpen = '') }, { label: 'Pinned goals', icon: 'pin', run: () => (pinOpen = true) }]" />
       </div>
     </div>
 
     <!-- Edit home: every block there is, in order, at its own size so the layout reads as it will -->
     <TransitionGroup v-if="editing" name="mv" tag="div" class="hgrid">
-      <div v-for="(x, i) in listed" :key="x.id" class="card etile" :class="[META[x.id]!.size === 'l' ? 'sz-l' : 'sz-m', { off: !x.on }]" :data-solo="solo.has(x.id) || undefined">
-        <!-- the name and its switch on one row (label left, control right); the arrows have their own row at the foot, so a
+      <div v-for="x in listed" :key="x.id" class="card etile" :class="[META[x.id]!.size === 'l' ? 'sz-l' : 'sz-m', { off: !x.on }]" :data-solo="solo.has(x.id) || undefined">
+        <!-- the name and its switch on one row (label left, control right); the reorder handle has its own row at the foot, so a
              half-width tile has room for the switch in a narrow window -->
         <div class="ch">
           <span class="bi"><Icon :name="META[x.id]!.icon" :size="15" /></span>
@@ -504,8 +517,7 @@ await loaded(home, ach, avail, hDay, ready, nightsQ, dailyQ, todayCal);
           <button v-if="x.id === 'pinned'" class="lnk inl" @click="pinOpen = true">{{ picked.length ? `${picked.length} pinned, change` : "Pin goals" }}</button>
           <button v-else-if="x.id === 'quickStats'" class="lnk inl" @click="glanceOpen = true">{{ s.home.glance.length ? (s.home.glance.length === GLANCE_RINGS.length ? `All ${GLANCE_RINGS.length} rings, change` : `${s.home.glance.length} of ${GLANCE_RINGS.length} rings, change`) : "Choose rings" }}</button>
           <span class="grow" />
-          <button class="ib sm plain" :class="{ end: i === 0 }" :aria-disabled="i === 0" :aria-label="`Move ${META[x.id]!.name} earlier`" :title="`Move ${META[x.id]!.name} earlier`" @click="move(x.id, -1)"><Icon name="up" :size="18" /></button>
-          <button class="ib sm plain" :class="{ end: i === listed.length - 1 }" :aria-disabled="i === listed.length - 1" :aria-label="`Move ${META[x.id]!.name} later`" :title="`Move ${META[x.id]!.name} later`" @click="move(x.id, 1)"><Icon name="down" :size="18" /></button>
+          <button class="ib sm plain emh" aria-label="Reorder blocks" title="Reorder blocks" @click="reorderOpen = x.id"><Icon name="drag" :size="18" /></button>
         </div>
       </div>
     </TransitionGroup>
@@ -516,7 +528,7 @@ await loaded(home, ach, avail, hDay, ready, nightsQ, dailyQ, todayCal);
 
         <!-- this week against last week, and workouts per week over eight weeks -->
         <div v-else-if="id === 'week'" class="card hb wkc sz-m click" :data-solo="solo.has(id) || undefined" v-bind="link('/stats')">
-          <div class="ch"><span class="bi"><Icon name="stats" :size="15" /></span><span class="t grow">This week</span><span v-if="anyDelta" class="tiny">Vs last week</span></div>
+          <div class="ch"><span class="bi"><Icon name="stats" :size="15" /></span><span class="t grow">This week</span><span v-if="anyDelta" class="tiny">Vs {{ weekSpan }} last week</span></div>
           <div class="wstats" :class="{ n4: weekStats.length === 4, plain: !anyDelta }">
             <div v-for="x in weekStats" :key="x.key" class="ws" role="group" :aria-label="`${[x.label, x.value, x.unit, x.delta].filter(Boolean).join(' ')}, by this time last week: ${x.last}`" :title="`${x.note ? x.note + ' · ' : ''}By this time last week: ${x.last}`">
               <div class="wlb"><Icon :name="x.icon" :size="14" />{{ x.label }}</div>
@@ -685,7 +697,7 @@ await loaded(home, ach, avail, hDay, ready, nightsQ, dailyQ, todayCal);
         <!-- readiness: the score as a pinned goal's value and ring, what it means, then what made it as a report's highlights;
              while the usual is being learnt, the days the score waits for in their place, and each part's days so far -->
         <div v-else-if="id === 'readiness' && rd" class="card hb sz-m click" :data-solo="solo.has(id) || undefined" v-bind="link(readyTo)">
-          <div class="ch"><span class="bi"><Icon name="gauge" :size="15" /></span><span class="t grow">Readiness</span><span v-if="hasReadyParts && !readyWait" class="tiny">Vs your usual</span></div>
+          <div class="ch"><span class="bi"><Icon name="gauge" :size="15" /></span><span class="t grow">Readiness</span><span v-if="hasReadyParts && !readyWait" class="tiny">Vs your 28-day usual</span></div>
           <div v-if="readyWait" class="row"><div class="big grow">{{ readyWait.left }}<small>{{ readyWait.left === 1 ? "day" : "days" }} until your score</small></div><Ring :pct="readyWait.days / readyWait.need" :size="40" /></div>
           <div v-else class="row"><div class="big grow">{{ rd.score }}<small v-if="rd.label">{{ rd.label }}</small></div><Ring :pct="rd.score! / 100" :size="40" :color="rd.label === 'Take it easy' ? 'var(--warn)' : undefined" /></div>
           <div v-if="readyWait" class="tiny">{{ readyWait.text }}</div>
@@ -715,10 +727,11 @@ await loaded(home, ach, avail, hDay, ready, nightsQ, dailyQ, todayCal);
           </div>
         </div>
 
-        <!-- the newest night: time asleep with the share of the time in bed as its ring (as Stats → Sleep's night), then its stages; it opens that night there -->
+        <!-- the newest night: time asleep with the share of the time in bed as its ring (as Stats → Sleep's night), then its stages; it opens that night there.
+             The ring carries its percent, the same one as the line under it, so it reads as "asleep for 87% of the time in bed", not as a score (M-264) -->
         <div v-else-if="id === 'sleep' && night" class="card hb sz-m click" :data-solo="solo.has(id) || undefined" v-bind="link(`/stats?tab=sleep&day=${night.date}`)">
           <div class="ch"><span class="bi"><Icon name="moon" :size="15" /></span><span class="t grow">{{ nightName }}</span><span class="tiny">{{ fmt.time(night.startAt) }}-{{ fmt.time(night.endAt) }}</span></div>
-          <div class="row"><div class="big grow">{{ mins(asleepMin(night)) }}<small>{{ nightShort ? "short record" : "asleep" }}</small></div><Ring :pct="efficiency(night)" :size="40" /></div>
+          <div class="row"><div class="big grow">{{ mins(asleepMin(night)) }}<small>{{ nightShort ? "short record" : "asleep" }}</small></div><span class="pring" role="img" :aria-label="`Asleep for ${Math.round(efficiency(night) * 100)}% of the time in bed`"><Ring aria-hidden="true" :pct="efficiency(night)" :size="40" /><b aria-hidden="true"><span>{{ Math.round(efficiency(night) * 100) }}<small>%</small></span></b></span></div>
           <div v-if="nightShort" class="tiny">{{ SHORT_WHY }}</div>
           <div v-else class="tiny">{{ mins(inBedMin(night)) }} in bed · {{ Math.round(efficiency(night) * 100) }}% of it asleep</div>
           <div v-if="hasStages(night) || night.awakeMin" class="hstages"><StageBar :night="night" /></div>
@@ -727,7 +740,7 @@ await loaded(home, ach, avail, hDay, ready, nightsQ, dailyQ, todayCal);
         <!-- heart: resting heart rate and HRV against your usual, blood oxygen and today's range with its average as This
              week's tiles, each only when there, then today's line filling the rest of the block -->
         <div v-else-if="id === 'heart'" class="card hb wkc sz-m click" :data-solo="solo.has(id) || undefined" v-bind="link(`/stats?tab=heart&day=${today}`)">
-          <div class="ch"><span class="bi"><Icon name="heart" :size="15" /></span><span class="t grow">Heart</span><span v-if="heartDelta" class="tiny">Vs your usual</span></div>
+          <div class="ch"><span class="bi"><Icon name="heart" :size="15" /></span><span class="t grow">Heart</span><span v-if="heartDelta" class="tiny">Vs your 28-day usual</span></div>
           <div class="wstats hrows" :class="{ n4: heartStats.length === 4 }">
             <div v-for="x in heartStats" :key="x.key" class="ws" role="group" :aria-label="[x.label, x.value, x.unit, x.delta].filter(Boolean).join(' ')">
               <div class="wlb"><Icon :name="x.icon" :size="14" />{{ x.label }}</div>
@@ -798,6 +811,8 @@ await loaded(home, ach, avail, hDay, ready, nightsQ, dailyQ, todayCal);
     </Sheet>
     <ScheduleEditor v-if="planOpen" :schedule="planOpen" @close="planOpen = null" />
     <GoalSheet v-if="goalOpen" :id="goalOpen" @close="goalOpen = null" @edit="(g) => router.push(`/goals?edit=${g.id}`)" @status="goalStatus" @delete="goalDelete" />
+    <ReorderSheet v-if="reorderOpen != null" title="Reorder blocks" hint="Drag to reorder the blocks on Home. Blocks that are off are in the list too, so they come back where you put them."
+      :items="listed.map((x) => ({ id: x.id, title: META[x.id]!.name, sub: x.on ? undefined : 'Off', cur: x.id === reorderOpen }))" @move="moveBlock" @close="reorderOpen = null" />
     <Sheet v-if="glanceOpen" title="Today at a glance" @close="glanceOpen = false">
       <p class="tiny hgap">Choose the rings this block shows. Each one appears once its reading is in.</p>
       <label v-for="k in GLANCE_RINGS" :key="k" class="tgl">
@@ -871,6 +886,10 @@ html.phone .gtile { grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); }
 /* the icon in the ring turns the accent once its number is reached (the ring's own check would sit on it) */
 .gli { position: absolute; color: var(--tx2); }
 .gli.done { color: var(--acc); }
+/* Last night's ring with its percent in the hole, as the workout's ring holds its own; set at the smallest text size with a smaller % so "100%" clears a 40px ring */
+.pring { position: relative; flex: none; display: grid; }
+.pring b { position: absolute; inset: 0; display: grid; place-items: center; font-size: var(--fs-xs); font-weight: 700; font-variant-numeric: tabular-nums; }
+.pring small { font-size: .8em; }
 .glv { max-width: 100%; overflow: hidden; text-overflow: ellipsis; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; line-height: 1.2; }
 .glv small { font-size: var(--fs-sm); font-weight: 500; color: var(--tx2); }
 .gll { min-height: 2.4em; font-size: var(--fs-sm); color: var(--tx2); line-height: 1.2; }
@@ -978,7 +997,9 @@ html.phone .gtile { grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); }
 /* a long name wraps rather than pushing the switch out of a narrow tile */
 .etile .t { cursor: pointer; min-width: 0; overflow-wrap: anywhere; line-height: 1.25; }
 .etile.off { opacity: .55; }
-/* the foot: the pinned goals' link on the left, the arrows on the right with their icons lined up under the switch's edge */
+/* the foot: the pinned goals' or rings' link on the left, the handle on the right with its icon lined up under the switch's
+   edge, muted like the handles in Reorder blocks, which it opens */
+.emh { color: var(--tx2); }
 .emv { display: flex; align-items: center; gap: 4px; margin-top: auto; margin-inline-end: calc((18px - 36px) / 2); }
 .tgl.sub-t { padding-inline-start: calc(var(--cpx) + var(--hg)); }
 /* a ring's icon in its row of the Today at a glance sheet, as the Routine changes rows' icons (RoutineChanges .rc-i):
