@@ -97,7 +97,7 @@ const openGo = () => { const n = hover.value != null ? rows.value[hover.value] :
 </script>
 
 <template>
-  <div ref="box" style="position:relative" :class="{ cht: rows.length }" :style="{ '--tipup': TIP_ROOM - MARGIN_T + 'px' }">
+  <div ref="box" style="position:relative" :class="{ cht: rows.length }" :style="{ '--tipup': TIP_ROOM + 'px' }">
     <div v-if="rows.length" class="zrow">
       <!-- the hours, still while the nights scroll -->
       <svg class="chart zfix" :viewBox="`0 0 ${P.l} ${H}`" :style="{ width: P.l + 'px', height: H + 'px' }" aria-hidden="true">

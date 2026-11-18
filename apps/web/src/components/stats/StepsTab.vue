@@ -19,7 +19,7 @@ import { useSettings, useHealthScores } from "../../api/queries";
 import { useFmt, unitOf } from "../../core/format";
 import { useStepGoal } from "../../core/goals";
 import { mins } from "../../core/sleep";
-import { minutesSplit, scoreRow } from "../../core/scores";
+import { scoreRow } from "../../core/scores";
 import { fromWhere, useDevice } from "../../native/health";
 import Icon from "../Icon.vue";
 import Ring from "../Ring.vue";
@@ -208,8 +208,9 @@ type Insight = { key: string; icon: string; t: string; s: string; rv: string; to
 const insights = computed(() => {
   const out: Insight[] = [];
   const m = minutesPart.value;
-  // the tone and the split are the score row's own, and the aim is in the line as there ("90 min", not "180 of 150" once past it)
-  if (m) out.push({ key: "min", icon: "bolt", t: "Active minutes", s: `last 7 days · ${minutesSplit(m, n0)} · aim for ${m.target} minutes or more`, rv: `${n0(m.value)} min`, tone: scoreRow(m, n0).tone });
+  // the line and the tone are the score row's own (what counts, then the aim: "90 min", not "180 of 150" once past it),
+  // after the period as this screen's other lines start
+  if (m) { const row = scoreRow(m, n0); out.push({ key: "min", icon: "bolt", t: "Active minutes", s: `last 7 days · ${row.s.charAt(0).toLowerCase()}${row.s.slice(1)}`, rv: row.r, tone: row.tone }); }
   const k = nowStreak.value;
   if (k) out.push({ key: "streak", icon: "link", t: "Current streak", s: `goal reached every day since ${k.more ? "at least " : ""}${day(k.since!)}${k.todayDone ? "" : " · today still to go"}`,
     rv: `${k.days}${k.more ? "+" : ""} ${k.days === 1 ? "day" : "days"}`, tone: "pos" });

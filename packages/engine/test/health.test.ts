@@ -810,6 +810,51 @@ describe("readiness", () => {
     expect(r.activity.parts[0]).toMatchObject({ key: "minutes", value: 115, target: 150, extra: { moderate: 95, vigorous: 10 } });
   });
 
+  it("scores each full night on its own when asked, with its usual times from the week ending with it (M-271)", async () => {
+    const S = uuidv7();
+    await eng.db.admin.query("INSERT INTO users (id, username) VALUES ($1, 'nightscores')", [S]);
+    const as = async (method: string, path: string, body?: unknown, query?: Record<string, string>) => (await eng.handle({ method, path, body, query, userId: S })).body as any;
+    const night = (date: string, prev: string, asleepMin = 450) => ({ date, start: `${prev}T23:00:00Z`, end: `${date}T07:00:00Z`, asleepMin, awakeMin: 30 });
+    // seven full nights at the same times, 7.5 hours asleep of the 8 tracked, then a 90-minute nap
+    await as("POST", "/health/import", { sleepNights: [
+      night("2026-03-01", "2026-02-28"), night("2026-03-02", "2026-03-01"), night("2026-03-03", "2026-03-02"), night("2026-03-04", "2026-03-03"),
+      night("2026-03-05", "2026-03-04"), night("2026-03-06", "2026-03-05"), night("2026-03-07", "2026-03-06"),
+      { date: "2026-03-08", start: "2026-03-08T13:00:00Z", end: "2026-03-08T14:30:00Z", asleepMin: 90, awakeMin: 0 },
+    ] });
+    const list = async (q: Record<string, string>) => (await as("GET", "/health/sleep", undefined, { tz: "0", ...q })).nights as any[];
+    const byDate = (xs: any[]) => Object.fromEntries(xs.map((x) => [x.date, x]));
+    // the feature off: no scores, even when asked for
+    expect((await list({ from: "2026-03-01", scores: "1" })).some((x) => x.score)).toBe(false);
+    await as("PUT", "/settings", { features: { scores: true } });
+    // "0" is off, as nothing is
+    expect((await list({ from: "2026-03-01", scores: "0" })).some((x) => x.score)).toBe(false);
+    expect((await list({ from: "2026-03-01" })).some((x) => x.score)).toBe(false);
+
+    // the list starts on the 5th: its usual times still come from the nights before it (1st-4th), so regularity counts
+    const from5 = byDate(await list({ from: "2026-03-05", scores: "1" }));
+    expect(from5["2026-03-05"].score).toMatchObject({ score: 100, label: expect.any(String) });
+    expect(from5["2026-03-05"].score.parts.find((p: any) => p.key === "regularity")).toMatchObject({ weight: 25, value: 1, extra: { bed: 660, wake: 1140 } });
+    // a nap or part of a night has no score
+    expect(from5["2026-03-08"].score).toBeUndefined();
+    // the 2nd has only the 1st before it: two nights make no usual, so regularity is left out and says how many there were
+    const from2 = byDate(await list({ from: "2026-03-02", to: "2026-03-03", scores: "1" }));
+    expect(from2["2026-03-02"].score.parts.find((p: any) => p.key === "regularity")).toMatchObject({ weight: 0, value: 2, target: 3 });
+
+    // time asleep changed by hand: the score reads the person's hours, as the night's page shows them
+    await as("PUT", "/daily", { date: "2026-03-06", kind: "sleep_h", value: 5 });
+    const one = await as("GET", "/health/sleep/2026-03-06", undefined, { scores: "1", tz: "0" });
+    expect(one).toMatchObject({ edited: true, sleepH: 5 });
+    expect(one.score.parts.find((p: any) => p.key === "duration")).toMatchObject({ value: 0, extra: { asleepMin: 300 } });
+    expect(one.score.parts.find((p: any) => p.key === "regularity")).toMatchObject({ weight: 25, value: 1 });
+    expect(one.score.weakest).toBe("duration");
+    expect((await as("GET", "/health/sleep/2026-03-06", undefined, { tz: "0" })).score).toBeUndefined();
+
+    // under 18 the adult guidelines don't apply: no scores
+    await as("PUT", "/settings", { profile: { birthYear: new Date().getFullYear() - 15 } });
+    expect((await list({ from: "2026-03-01", scores: "1" })).some((x) => x.score)).toBe(false);
+    expect((await as("GET", "/health/sleep/2026-03-06", undefined, { scores: "1", tz: "0" })).score).toBeUndefined();
+  });
+
   it("does not list a part with a full history but a zero usual as building", () => {
     const r = readiness([P("sleep", 8, 7), P("hrv", 60, 50), P("restingHr", 55, 0, 28)]);
     expect(r.building).toEqual([]);

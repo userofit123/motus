@@ -124,7 +124,7 @@ const xtAnchor = (at: number) => (at <= 0 ? "start" : at >= props.bars.length ? 
       <span class="num tiny" style="width:42px;text-align:end;color:var(--tx)">{{ f(b.value) }}</span>
     </div>
   </div>
-  <div v-else ref="box" class="cht" style="position:relative" :style="{ '--tipup': top - marginT + 'px' }">
+  <div v-else ref="box" class="cht" style="position:relative" :style="{ '--tipup': TIP_ROOM + 'px' }">
     <div ref="sc" class="zsc" :class="cls">
     <svg class="chart" :viewBox="`0 0 ${CW} ${H}`" :style="{ height: H + 'px', ...(on ? { width: CW + 'px' } : {}) }">
       <rect v-if="band" x="0" :width="CW" :y="y(band[1])" :height="y(band[0]) - y(band[1])" fill="var(--pos)" opacity=".08" />

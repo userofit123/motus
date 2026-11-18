@@ -61,7 +61,7 @@ const click = (i: number) => { pick(i); hover.value = i; };
 </script>
 
 <template>
-  <div ref="box" class="cht" style="position:relative" :style="{ '--tipup': TIP_ROOM - MARGIN_T + 'px' }">
+  <div ref="box" class="cht" style="position:relative" :style="{ '--tipup': TIP_ROOM + 'px' }">
     <div class="zrow">
       <!-- the lane names, still while the night scrolls -->
       <svg class="chart zfix" :viewBox="`0 0 ${P.l} ${H}`" :style="{ width: P.l + 'px', height: H + 'px' }" aria-hidden="true">

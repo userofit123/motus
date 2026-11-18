@@ -175,7 +175,8 @@ const loadRow = computed(() => {
   // the status as What stands out's rows show it: an icon for which way it went, in the same tone as the result
   const icon = pct == null ? "clock" : t.state === "lighter" ? "arrowDown" : t.state === "steady" ? "check" : "arrowUp";
   return { icon, t: t.state ? LOAD_STATE[t.state] : "Learning your usual",
-    s: t.ratio == null ? `${fmt.value.num(t.week, 0)} load points in the last 7 days${t.left && hasToday.value ? ` · your usual in ${t.left} ${t.left === 1 ? "day" : "days"}` : ""}` : `${fmt.value.num(t.week, 0)} load points in the last 7 days · usual ${fmt.value.num(t.usual, 0)} points a week`,
+    // "load points of training effort" as Readiness's load row says it, and its usual the same way ("usual 900 a week")
+    s: t.ratio == null ? `${fmt.value.num(t.week, 0)} load points of training effort in the last 7 days${t.left && hasToday.value ? ` · your usual in ${t.left} ${t.left === 1 ? "day" : "days"}` : ""}` : `${fmt.value.num(t.week, 0)} load points of training effort in the last 7 days · usual ${fmt.value.num(t.usual, 0)} a week`,
     rv: pct == null ? "Learning" : t.state === "steady" ? "As usual" : `${pct < 0 ? "-" : "+"}${Math.abs(pct)}%`,
     tone: pct == null ? "muted" : t.state === "lighter" ? "pos" : t.state === "steady" ? undefined : "neg" };
 });

@@ -1,7 +1,7 @@
 // Every screen's data, filed under a topic (the first part of the key) so live updates know what to reload.
 import { computed, type Ref, unref, watch, type MaybeRef } from "vue";
 import { useQuery, useMutation, useInfiniteQuery, keepPreviousData, type QueryClient } from "@tanstack/vue-query";
-import { withDefaults, type Settings, type Exercise, type RoutineSummary, type Goal, type Me, type Program, type GoalMetric, type Score, type HomeData, type ActivityType, type ActivityFigures, activityDistance, activityClimb } from "@motus/shared";
+import { withDefaults, type Settings, type Exercise, type RoutineSummary, type Goal, type Me, type Program, type GoalMetric, type Score, type HomeData, type ActivityType, type ActivityFigures, activityDistance, activityClimb, TOPICS } from "@motus/shared";
 import { api, httpTransport } from "./client";
 import { sync } from "./replica";
 import { endedHere } from "./outbox";
@@ -87,9 +87,12 @@ export interface SleepNight {
    *  none for a nap or part of a night, nor under 18 */
   score?: Score;
 }
-export const useSleep = (range: MaybeRef<{ from?: string; to?: string; scores?: 1; tz?: number }>, enabled: MaybeRef<boolean> = true, opts?: QueryOpts) => useQuery({ queryKey: computed(() => ["health", "sleep", unref(range)]), queryFn: () => api.get<{ nights: SleepNight[] }>("/health/sleep", unref(range)), enabled, ...keepOpt(opts) });
+// nights asked for with their scores are filed under "nightscores", which a settings change (birth year, the feature)
+// reloads as well as a health change, so the rest of the health screens don't reload with every setting
+const sleepTopic = (scores: unknown) => (scores ? "nightscores" : "health");
+export const useSleep = (range: MaybeRef<{ from?: string; to?: string; scores?: 1; tz?: number }>, enabled: MaybeRef<boolean> = true, opts?: QueryOpts) => useQuery({ queryKey: computed(() => [sleepTopic(unref(range).scores), "sleep", unref(range)]), queryFn: () => api.get<{ nights: SleepNight[] }>("/health/sleep", unref(range)), enabled, ...keepOpt(opts) });
 // scores: with each night's own sleep score (the Health scores feature; in the key, so switching it on fetches them)
-export const useSleepNight = (date: MaybeRef<string>, opts?: QueryOpts & { scores?: MaybeRef<boolean> }) => useQuery({ queryKey: computed(() => ["health", "sleep", "night", unref(date), !!unref(opts?.scores)]),
+export const useSleepNight = (date: MaybeRef<string>, opts?: QueryOpts & { scores?: MaybeRef<boolean> }) => useQuery({ queryKey: computed(() => [sleepTopic(unref(opts?.scores)), "sleep", "night", unref(date)]),
   queryFn: () => api.get<SleepNight & { hr: [number, number][] | null }>(`/health/sleep/${unref(date)}`, unref(opts?.scores) ? { scores: 1, tz: new Date().getTimezoneOffset() } : undefined), enabled: computed(() => !!unref(date)), ...keepOpt(opts) });
 /** One day from a band: its night (the one that ended that morning), the heart rate through the day (series: [unix
  *  seconds, bpm]), the day's vitals and totals; each null when the band handed nothing over for it */
@@ -177,7 +180,7 @@ export function saveSettings(patch: Partial<Settings> | Record<string, unknown>,
   pending++;
   saving = saving.then(async () => {
     try { await api.put("/settings", patch); if (!o.quiet) savedToast(); } catch (e) { savedError(e); }
-    if (--pending === 0) invalidate(["settings", "home", "stats", "goals"]);
+    if (--pending === 0) invalidate([...TOPICS.settings]);
   });
   return saving;
 }

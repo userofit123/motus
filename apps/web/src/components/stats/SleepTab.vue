@@ -15,6 +15,7 @@ import { useSettings, useWorkouts, useSleep, useHealthDay, type SleepNight } fro
 import { useFmt, localYmd } from "../../core/format";
 import { STAGES, NO_STAGES_COLOR, NO_STAGES_SWATCH, SHORT_COLOR, hasStages, isFull, asleepMin, inBedMin, efficiency, awakeKnown, nightMin, nightIso, mins, typical, pctDown } from "../../core/sleep";
 import Icon from "../Icon.vue";
+import Ring from "../Ring.vue";
 import { adviceWord, deviceWord, useDevice } from "../../native/health";
 import BarChart from "../BarChart.vue";
 import LineChart from "../LineChart.vue";
@@ -286,6 +287,8 @@ const afterTraining = computed(() => {
 // the nights in the stretch, newest first: a week of them, then all on request
 const showAll = ref(false);
 const list = computed(() => showAll.value ? nights.value : nights.value.slice(0, 7));
+// a night with its own sleep score: then every row keeps a slot for one, so the times asleep line up
+const anyScore = computed(() => list.value.some((n) => !!n.score));
 </script>
 
 <template>
@@ -377,8 +380,11 @@ const list = computed(() => showAll.value ? nights.value : nights.value.slice(0,
         <div class="card"><div class="list">
           <div v-for="n in list" :key="n.date" class="li click" role="button" tabindex="0" @click="openNight(n.date)" @keydown.enter="openNight(n.date)">
             <span class="bi sg"><Icon name="moon" :size="16" /></span>
-            <div class="grow"><div class="t">{{ day(n.date) }}</div><div class="s">{{ fmt.time(n.startAt) }}-{{ fmt.time(n.endAt) }} · {{ isFull(n) ? `${mins(inBedMin(n))} tracked` : "short record" }}<template v-if="n.score"> · score {{ n.score.score }}</template></div></div>
+            <div class="grow sl-nt"><div class="t">{{ day(n.date) }}</div><div class="s">{{ isFull(n) ? "" : "short record · " }}{{ fmt.time(n.startAt) }}-{{ fmt.time(n.endAt) }}</div></div>
             <b class="num" :class="{ muted: !isFull(n) }">{{ mins(asleepMin(n)) }}</b>
+            <!-- the night's own sleep score as a small ring with its number, after the time asleep it mostly comes from -->
+            <span v-if="n.score" class="sl-sc" role="img" :aria-label="`Sleep score ${n.score.score}, ${n.score.label}`"><Ring :pct="n.score.score / 100" :size="34" :stroke="4" :color="n.score.label === 'Low' ? 'var(--warn)' : undefined" /><span>{{ n.score.score }}</span></span>
+            <span v-else-if="anyScore" class="sl-sc0" aria-hidden="true" />
           </div>
         </div></div>
         <div v-if="nights.length > 7 && !showAll" class="center spt"><button class="qb" @click="showAll = true">Show all {{ nights.length }} nights</button></div>
@@ -396,4 +402,13 @@ const list = computed(() => showAll.value ? nights.value : nights.value.slice(0,
 .sl-line { margin-top: var(--tdy); }
 .nw { white-space: nowrap; }
 .sl-leg { margin-top: var(--hg); }
+/* a night's line stays one line at 360px beside the score's ring: its times alone (the time tracked is their span, and
+   in full on the night's page), a short record's reason first so a cut never loses it */
+.sl-nt { min-width: 0; }
+.sl-nt .s { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* the score's number inside its ring, as Workout so far's ring holds its percent */
+.sl-sc { position: relative; display: inline-grid; place-items: center; flex: none; }
+/* a nap or part of a night has no score: its slot kept empty, so every row's time asleep lines up */
+.sl-sc0 { width: 34px; flex: none; }
+.sl-sc > span { position: absolute; font-size: var(--fs-sm); font-weight: 650; font-variant-numeric: tabular-nums; }
 </style>

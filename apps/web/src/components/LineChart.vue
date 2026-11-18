@@ -142,7 +142,7 @@ const xf = (t: number) => (props.xfmt ? props.xfmt(t) : df.value.date(t));
 </script>
 
 <template>
-  <div ref="box" style="position:relative" :class="{ cht: points.length }" :style="{ '--tipup': TIP_ROOM - MARGIN_T + 'px' }">
+  <div ref="box" style="position:relative" :class="{ cht: points.length }" :style="{ '--tipup': TIP_ROOM + 'px' }">
     <div v-if="!points.length" class="empty" style="padding:calc(var(--cpy) * 2) 0">No data yet</div>
     <div v-else class="zrow">
     <!-- the value labels, still while the plot scrolls -->

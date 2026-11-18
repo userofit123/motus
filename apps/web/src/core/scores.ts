@@ -25,11 +25,10 @@ const nights = (p: ScorePart) => (p.target === SCORE_DAYS ? `${p.target} nights`
 const days = (n: number) => `${n} ${n === 1 ? "day" : "days"}`;
 const nightsN = (n: number) => `${n} ${n === 1 ? "night" : "nights"}`;
 
-/** Active minutes split by effort, so the result ("120 min") adds up without maths: "60 moderate · 30 vigorous,
- *  counted double" (an older server sends no moderate count: what the result leaves after the vigorous ones) */
-export function minutesSplit(p: ScorePart, num: Num): string {
-  const vig = x(p, "vigorous"), mod = p.extra?.moderate ?? Math.max(0, p.value - 2 * vig);
-  return vig ? `${num(mod)} moderate · ${num(vig)} vigorous, counted double` : `${num(mod)} moderate`;
+/** The parts a score left out (weight 0) by their rows' titles: "Stayed asleep was left out."; none: "" */
+export function leftOutLine(parts: readonly ScorePart[], num: Num): string {
+  const out = parts.filter((p) => p.weight === 0).map((p) => scoreRow(p, num).t);
+  return out.length ? `${out.join(" and ")} ${out.length === 1 ? "was" : "were"} left out.` : "";
 }
 
 /** A part as a row: met in full reads positive, under half negative, as Readiness's rows take the tone of their effect.
@@ -68,7 +67,12 @@ export function scoreRow(p: ScorePart, num: Num): ScoreRow {
  *  Names (of muscle groups) stay in the rows below. */
 export function scoreWhy(s: Score, num: Num): string {
   const p = s.parts.find((y) => y.key === s.weakest);
-  if (!p) return s.key === "sleep" ? `You met every guideline on all ${nights(s.parts[0]!)}.` : "You met every guideline.";
+  // every part counted was met: "every guideline" then says "counted" and names the parts left out, so it never covers one
+  if (!p) {
+    const left = leftOutLine(s.parts, num);
+    const met = `every guideline${left ? " counted" : ""}`;
+    return `${s.key === "sleep" ? `On all ${nights(s.parts[0]!)} you met ${met}` : `You met ${met}`}.${left ? ` ${left}` : ""}`;
+  }
   const off = p.target - p.value;
   switch (p.key) {
     case "duration": {

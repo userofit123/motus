@@ -21,7 +21,7 @@ export const SCORE_DAYS = 7;
 // says what each found and gives the full reference
 export const SCORE_SOURCES = {
   sleep: "National Sleep Foundation 2015, 2017 and 2023",
-  activity: "WHO 2020, ACSM 2011 and Paluch et al. 2022",
+  activity: "WHO 2020, ACSM 2011, Compendium 2024 and Paluch et al. 2022",
   strength: "WHO 2020 and Schoenfeld et al. 2017",
 } as const;
 /** Readiness has no published source: it compares you with yourself */
@@ -183,9 +183,9 @@ export function effortMinutes(samples: readonly (readonly [number, number])[], m
 /**
  * Activity over the week:
  *   minutes 60: moderate minutes plus twice the vigorous ones against WHO's 150 a week; more than 150 counts as met.
- *   With heart rate on at least MIN_DAYS days: its minutes plus the moving activities on days without it
- *   (activityMinOffHr); on fewer days the heart rate would undercount the week, so only the week's moving activities
- *   count (activityMin, as moderate); without either the part is left out;
+ *   With heart rate on at least MIN_DAYS days: its minutes plus the finished workouts and moving activities on days
+ *   without it (activityMinOffHr); on fewer days the heart rate would undercount the week, so only the week's finished
+ *   workouts and moving activities count (activityMin, as moderate); without either the part is left out;
  *   steps 40: the average daily steps (over at least MIN_DAYS days with steps) against the level where the benefit levels
  *   off for your age.
  * A part without its data is left out and the other takes all the weight.

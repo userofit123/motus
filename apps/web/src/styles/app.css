@@ -211,9 +211,10 @@ hr.sep { border: 0; border-top: 1px solid var(--ol); margin: 14px 0; }
 .gtile .row { align-self: stretch; }
 .grun { padding-inline-start: var(--cpx); border-inline-start: 1px solid var(--ol); }
 .hero .grun { border-color: color-mix(in srgb, var(--onc) 18%, transparent); }
-/* both halves' values in one type: the number big, its unit small (as Home's other values) */
-.gtile .big { font-size: var(--fs-val); font-weight: 650; letter-spacing: -.8px; line-height: 1.1; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.gtile .big small { font-size: var(--fs); font-weight: 500; margin-inline-start: 5px; color: var(--tx2); letter-spacing: 0; }
+/* both halves' values in one type: the number big, its unit small (as Home's other values); a score's number
+   (ScoreHead) in the same type wherever it shows */
+.gtile .big, .row > .big { font-size: var(--fs-val); font-weight: 650; letter-spacing: -.8px; line-height: 1.1; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gtile .big small, .row > .big small { font-size: var(--fs); font-weight: 500; margin-inline-start: 5px; color: var(--tx2); letter-spacing: 0; }
 /* a goal's value carries its unit beside the ring ("12,500 steps"), so at 360px the goal half is a little wider and both
    halves' values a step smaller, the same in both halves so they still line up */
 html.phone .gtile .big { font-size: clamp(20px, 6vw, var(--fs-val)); }

@@ -13,6 +13,7 @@ import { toast } from "../core/toast";
 import { onHome, streakOnHome, toggleHomeGoal, setHomeStreak, periodWord, goalSub, periodDots, recurring, goalValue, goalUnit, goalTarget, goalIcon, goalSide, goalTrend, hasTrend } from "../core/goals";
 import { asleepMin, hasStages, isFull, mins, nightRingLine, SHORT_WHY } from "../core/sleep";
 import NightRing from "../components/stats/NightRing.vue";
+import ScoreHead from "../components/stats/ScoreHead.vue";
 import { SCORE_META, scoreRow, scoreWhy } from "../core/scores";
 import SourceRow from "../components/learn/SourceRow.vue";
 import { READY_PART, readinessRows, nightWhen } from "../core/readiness";
@@ -659,7 +660,7 @@ await loaded(home, ach, avail, hDay, ready, nightsQ, dailyQ, todayCal);
         <div v-else-if="id === 'readiness' && rd" class="card hb sz-m click" :data-solo="solo.has(id) || undefined" v-bind="link(readyTo)">
           <div class="ch"><span class="bi"><Icon name="gauge" :size="15" /></span><span class="t grow">Readiness</span><span v-if="hasReadyParts && !readyWait" class="tiny">Vs your 28-day usual</span></div>
           <div v-if="readyWait" class="row"><div class="big grow">{{ readyWait.left }}<small>{{ readyWait.left === 1 ? "day" : "days" }} until your score</small></div><Ring :pct="readyWait.days / readyWait.need" :size="40" /></div>
-          <div v-else class="row"><div class="big grow">{{ rd.score }}<small v-if="rd.label">{{ rd.label }}</small></div><Ring :pct="rd.score! / 100" :size="40" :color="rd.label === 'Take it easy' ? 'var(--warn)' : undefined" /></div>
+          <ScoreHead v-else :score="rd.score!" :label="rd.label" :warn="rd.label === 'Take it easy'" />
           <div v-if="readyWait" class="tiny">{{ readyWait.text }}</div>
           <div v-else-if="rd.label" class="tiny">{{ rd.why ?? READY_TEXT[rd.label] }}</div>
           <div v-if="allParts.length" class="list hhl">
@@ -675,7 +676,7 @@ await loaded(home, ach, avail, hDay, ready, nightsQ, dailyQ, todayCal);
              report's highlights, and what it is based on; it opens Stats → Scores -->
         <div v-else-if="SCORE_ID[id] && scoreOf(id)" class="card hb sz-m click" :data-solo="solo.has(id) || undefined" v-bind="link('/stats?tab=scores')">
           <div class="ch"><span class="bi"><Icon :name="SCORE_META[SCORE_ID[id]!].icon" :size="15" /></span><span class="t grow">{{ SCORE_META[SCORE_ID[id]!].name }}</span><span class="tiny">{{ SCORE_META[SCORE_ID[id]!].span }}</span></div>
-          <div class="row"><div class="big grow">{{ scoreOf(id)!.score }}<small>{{ scoreOf(id)!.label }}</small></div><Ring :pct="scoreOf(id)!.score / 100" :size="40" :color="scoreOf(id)!.label === 'Low' ? 'var(--warn)' : undefined" /></div>
+          <ScoreHead :score="scoreOf(id)!.score" :label="scoreOf(id)!.label" :warn="scoreOf(id)!.label === 'Low'" />
           <div class="tiny">{{ scoreWhy(scoreOf(id)!, numOf) }}</div>
           <div class="list hhl">
             <div v-for="x in scoreOf(id)!.parts.map((p) => scoreRow(p, numOf))" :key="x.key" class="li">
@@ -827,7 +828,7 @@ html.phone .hgrid .sz-m { grid-column: 1 / -1; }
 .ch .lnk + .lnk { margin-inline-start: var(--hg); }
 .big { font-size: var(--fs-val); font-weight: 650; letter-spacing: -.8px; line-height: 1.1; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .big small { font-size: var(--fs); font-weight: 500; margin-inline-start: 5px; color: var(--tx2); letter-spacing: 0; }
-.hero .big small, .hero .tiny { color: color-mix(in srgb, var(--onc) 75%, transparent); }
+.hero :deep(.big small), .hero .tiny { color: color-mix(in srgb, var(--onc) 75%, transparent); }
 
 /* the stat tiles of this week and the last workout are the shared .wkc/.wstats ones (app.css) */
 /* today at a glance: equal columns of a ring with its icon inside, the value under it and its name under that. Three to a
@@ -923,7 +924,7 @@ html.phone .hgrid .sz-m { grid-column: 1 / -1; }
   .hrows.n4 .wv { font-size: clamp(var(--fs-lg), calc((100cqi - 2 * var(--hg)) / 11.2), calc(var(--fs-lg) * 1.25)); }
 }
 /* as rows (phone), Heart's and Steps today's notes take the same column width, so the two blocks' numbers line up */
-@container (max-width: 330px) { .hrows:not(.plain) { grid-template-columns: minmax(0, 1fr) auto 5em; } .hrows .wd { white-space: normal; } }
+@container (max-width: 330px) { .hrows:not(.plain) { grid-template-columns: minmax(0, 1fr) auto 5em; } }
 .hfoot .spark { position: static; display: block; width: 100%; flex: 1 1 0; height: auto; min-height: 28px; max-height: 96px; }
 
 /* Edit home: each tile names its block and says what it shows; switched-off ones fade back */

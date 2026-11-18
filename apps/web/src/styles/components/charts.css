@@ -364,9 +364,10 @@ html.he .spark {
   left: 0; /* fixed side */
 }
 
-/* A chart right under its header (.lbl.hgap): the room a chart keeps at its top for a pinned tip (TIP_ROOM, useTip)
-   slides up behind the header, so the header sits --hg above the plot, as close as it is to the line above it, instead
-   of a tip's height further down. A pinned tip may then lie over the header while it is pinned; the header stays above
-   the chart's empty top, so its learn button can still be clicked. --tipup: the room the chart added, set by each chart */
-.lbl.hgap:has(+ .cht) { position: relative; z-index: 1; }
-.lbl.hgap + .cht { margin-top: calc(-1 * var(--tipup, 0px)); }
+/* A chart right under its header (.lbl.hgap, or a small chart's .tiny.hgap caption): the whole room a chart keeps at its
+   top for a pinned tip (TIP_ROOM, useTip) slides up behind the header, so the header sits --hg above the plot, as close
+   to its chart as headers are everywhere, and closer to it than to the block above (--cpy) at every density. A pinned
+   tip may then lie over the header while it is pinned; the header stays above the chart's empty top, so its learn
+   button can still be clicked. --tipup: the room the chart added, set by each chart */
+.lbl.hgap:has(+ .cht), .tiny.hgap:has(+ .cht) { position: relative; z-index: 1; }
+.lbl.hgap + .cht, .tiny.hgap + .cht { margin-top: calc(-1 * var(--tipup, 0px)); }

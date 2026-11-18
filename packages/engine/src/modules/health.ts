@@ -928,15 +928,18 @@ export function healthRoutes(r: Router) {
     return { asleepMin: asleep, inBedMin, bedAt, wakeAt: bedAt + inBedMin, bandAsleepMin: split ? n.asleepMin : null };
   };
   // each full night's own sleep score (nightScore), asked for with ?scores=1 by Stats → Sleep while the Health scores
-  // feature is on; none under 18 (the adult guidelines), and none for a nap or part of a night. Each night's usual times
-  // come from the full nights of the SCORE_DAYS days ending with it, so the nights just before the list are read too
+  // feature is on ("1" or "true"; "0" or nothing is off); none under 18 (the adult guidelines), and none for a nap or part
+  // of a night. Each night's usual times come from the full nights of the SCORE_DAYS days ending with it, so the
+  // SCORE_DAYS - 1 days before the list's oldest night are read too: on their own, since the list itself may be cut at
+  // nights()'s limit and a read of the whole span would be cut the same way, leaving the oldest nights without their week
   const withScores = async <T extends Night>(ctx: Ctx, list: T[], qs: Record<string, string>): Promise<(T & { score?: ReturnType<typeof nightScore> })[]> => {
-    if (!qs.scores || !list.length) return list;
+    if (!(qs.scores === "1" || qs.scores === "true") || !list.length) return list;
     const st = await getSettings(ctx.q, ctx.userId), age = ageOf(st.profile?.birthYear, ctx.now());
     if (!st.features.scores || !scoresFor(age)) return list;
-    const tz = tzOf(qs), dates = list.map((n) => n.date).sort();
-    const around = await nights(ctx, "n.date >= $1::date AND n.date <= $2::date", [shift(dates[0]!, -(SCORE_DAYS - 1)), dates.at(-1)!], false);
-    const full = around.map((n) => ({ date: n.date, sn: scoreNightOf(n, tz) })).filter((x) => isNight(x.sn.asleepMin / 60));
+    const tz = tzOf(qs), first = list.reduce((m, n) => (n.date < m ? n.date : m), list[0]!.date);
+    const before = await nights(ctx, "n.date >= $1::date AND n.date < $2::date", [shift(first, -(SCORE_DAYS - 1)), first], false);
+    // a single night asked for (its page) has only itself in the list: the days before it come from the read above
+    const full = [...list, ...before].map((n) => ({ date: n.date, sn: scoreNightOf(n, tz) })).filter((x) => isNight(x.sn.asleepMin / 60));
     return list.map((n) => {
       const me = full.find((x) => x.date === n.date);
       if (!me) return n;

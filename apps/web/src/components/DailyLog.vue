@@ -10,7 +10,7 @@ import { localYmd, useFmt } from "../core/format";
 import { mins } from "../core/sleep";
 import { savedToast, savedError, toast } from "../core/toast";
 import { healthSupported, syncHealth, fromWhere, useDevice } from "../native/health";
-import { DAILY_KINDS, daySteps } from "@motus/shared";
+import { DAILY_KINDS, daySteps, TOPICS } from "@motus/shared";
 import Icon from "./Icon.vue";
 import { useStepGoal } from "../core/goals";
 
@@ -67,7 +67,7 @@ const sleepM = computed(() => { const v = entered("sleep_h"); return v == null ?
 async function put(k: string, value: number | null) {
   try {
     await api.put("/daily", { date: day.value, kind: k, value });
-    invalidate(["activities", "stats", "goals", "home", "health"]);
+    invalidate([...TOPICS.activity]);
     savedToast("Saved");
   } catch (e) { savedError(e); }
 }
@@ -110,7 +110,7 @@ async function choose(k: string, o: Opt) {
   if (o.use === "synced") return useBand(k);
   try {
     await api.put("/daily", { date: day.value, kind: k, use: "typed" });
-    invalidate(["activities", "stats", "goals", "home", "health"]);
+    invalidate([...TOPICS.activity]);
     toast("Using your typed value");
   } catch (e) { savedError(e); }
 }
@@ -119,7 +119,7 @@ async function choose(k: string, o: Opt) {
 async function useBand(k: string) {
   try {
     const r = await api.put<{ restored?: boolean }>("/daily", { date: day.value, kind: k, use: "synced" });
-    invalidate(["activities", "stats", "goals", "home", "health"]);
+    invalidate([...TOPICS.activity]);
     if (r.restored) return toast(`Using ${where(k)}'s value`);
     // the phone reads the band's day now; only say it is back when the read actually brought it
     if (healthSupported() && s.value.features.healthConnect) {
