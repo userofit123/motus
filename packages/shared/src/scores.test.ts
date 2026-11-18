@@ -37,10 +37,13 @@ describe("health scores", () => {
     const typed = { ...night(8, 9), bandAsleepMin: 7 * 60 };
     const s = sleepScore([typed, typed, typed, { ...night(8, 8), bandAsleepMin: null }], 30)!;
     expect(s.parts.find((p) => p.key === "efficiency")).toMatchObject({ value: 0, target: 3 });
-    // fewer than three such nights: no efficiency part, the score from the other two
+    expect(s.parts.find((p) => p.key === "efficiency")!.extra).toMatchObject({ nights: 4 });
+    // fewer than three such nights: efficiency is left out (weight 0, never the weakest), the score from the other two
     const t = sleepScore([typed, ...Array.from({ length: 3 }, () => ({ ...night(8, 8.5), bandAsleepMin: null }))], 30)!;
-    expect(t.parts.map((p) => p.key)).toEqual(["duration", "regularity"]);
+    expect(t.parts.map((p) => [p.key, p.weight])).toEqual([["duration", 50], ["efficiency", 0], ["regularity", 25]]);
+    expect(t.parts.find((p) => p.key === "efficiency")).toMatchObject({ value: 1, target: 4, extra: { left: 1 } });
     expect(t.score).toBe(100);
+    expect(t.weakest).toBeNull();
   });
 
   it("counts the nights under and over the hours, so the line can say which", () => {

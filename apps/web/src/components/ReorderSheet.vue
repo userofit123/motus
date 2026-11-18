@@ -5,8 +5,9 @@ import Icon from "./Icon.vue";
 import Sheet from "./Sheet.vue";
 import { startDrag } from "../core/drag";
 
-// cur: the row being looked at (accent fill); active: the one being done (green dot); muted: skipped (struck through)
-export interface ReorderItem { id: string; title: string; sub?: string; color?: string | null; cur?: boolean; active?: boolean; muted?: boolean }
+// cur: the row being looked at (accent fill); active: the one being done (green dot); muted: skipped (struck through);
+// off: switched off, faded as its tile is where it is switched (Home's blocks in Edit home)
+export interface ReorderItem { id: string; title: string; sub?: string; color?: string | null; cur?: boolean; active?: boolean; muted?: boolean; off?: boolean }
 // onSelect is declared so we can tell whether the page listens: rows are only tappable then (Routines and Goals do not)
 const props = defineProps<{ title: string; hint: string; items: ReorderItem[]; showColor?: boolean; onSelect?: (index: number) => void }>();
 const emit = defineEmits<{ close: []; move: [from: number, to: number] }>();
@@ -19,7 +20,7 @@ const drag = (ev: PointerEvent, i: number) =>
   <Sheet :title="title" @close="emit('close')">
     <p class="tiny hgap">{{ hint }}</p>
     <TransitionGroup name="mv" tag="div" class="rlist">
-      <div v-for="(it, i) in items" :key="it.id" class="tgl" :class="{ fixed: !tappable(), cur: it.cur, act: it.active, muted: it.muted }" data-drag>
+      <div v-for="(it, i) in items" :key="it.id" class="tgl" :class="{ fixed: !tappable(), cur: it.cur, act: it.active, muted: it.muted, off: it.off }" data-drag>
         <button class="ib sm plain dragh" :aria-label="`Drag ${it.title} to reorder`" :title="`Drag ${it.title} to reorder`" @pointerdown="drag($event, i)"><Icon name="drag" :size="18" /></button>
         <span v-if="showColor" class="dot" :style="{ background: it.color ?? undefined }" />
         <div v-if="tappable()" class="grow" role="button" tabindex="0" @click="onSelect?.(i)" @keydown.enter="onSelect?.(i)"><div class="t">{{ it.title }}</div><div v-if="it.sub" class="s">{{ it.sub }}</div></div>
@@ -42,4 +43,6 @@ const drag = (ev: PointerEvent, i: number) =>
 /* the exercise being done: the same dot as the workout's tabs and side list */
 .act .t::after { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--pos); display: inline-block; margin-inline-start: 6px; vertical-align: middle; }
 .muted .t { text-decoration: line-through; opacity: .6; }
+/* a switched-off row fades back as its tile does in Edit home (.etile.off), controls and all */
+.off { opacity: .55; }
 </style>

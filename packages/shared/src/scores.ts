@@ -97,7 +97,8 @@ function total(key: ScoreKey, parts: ScorePart[]): Score | null {
   if (!parts.length) return null;
   const w = parts.reduce((t, p) => t + p.weight, 0);
   const score = Math.round((parts.reduce((t, p) => t + p.share * p.weight, 0) / w) * 100);
-  const low = [...parts].filter((p) => p.share < 1).sort((a, b) => a.share - b.share || b.weight - a.weight)[0];
+  // a part left out (weight 0, see sleepScore's efficiency) is shown but never what the score says first
+  const low = [...parts].filter((p) => p.share < 1 && p.weight > 0).sort((a, b) => a.share - b.share || b.weight - a.weight)[0];
   return { key, score, label: score >= 80 ? "Good" : score >= 50 ? "Fair" : "Low", parts, weakest: low?.key ?? null };
 }
 
@@ -113,7 +114,7 @@ const median = (a: number[]) => { const s = [...a].sort((x, y) => x - y), m = Ma
  * Sleep over the week's full nights (at least MIN_NIGHTS):
  *   duration 50: the share of nights within the recommended hours for your age (extra: how many were under, over);
  *   efficiency 25: the share of nights asleep for 85 % or more of the band's record (only nights it told asleep from
- *   awake, and left out with fewer than MIN_NIGHTS of them);
+ *   awake, and left out with fewer than MIN_NIGHTS of them: weight 0, so shown but not counted);
  *   regularity 25: the share of nights whose bed and wake times were both within an hour of the week's usual (median).
  */
 export function sleepScore(nights: readonly ScoreNight[], age: number | null): Score | null {
@@ -128,9 +129,13 @@ export function sleepScore(nights: readonly ScoreNight[], age: number | null): S
   const avg = Math.round(nights.reduce((t, x) => t + x.asleepMin, 0) / n);
   return total("sleep", [
     { key: "duration", weight: SLEEP_WEIGHTS.duration, share: inRange / n, value: inRange, target: n, extra: { avgMin: avg, lo, hi, short, long } },
-    // only over the nights the band told asleep from awake, and only with enough of them to say something
-    ...(effs.length >= MIN_NIGHTS ? [{ key: "efficiency" as const, weight: SLEEP_WEIGHTS.efficiency, share: good / effs.length, value: good, target: effs.length,
-      extra: { avg: Math.round((effs.reduce((t, e) => t + e, 0) / effs.length) * 100) / 100 } }] : []),
+    // only over the nights the band told asleep from awake (extra.nights: the week's, so the row can say why it counts
+    // fewer), and only with enough of them to say something; with fewer it stays as a part of weight 0 (out of the score),
+    // so the score's card can say it was left out and why (value: the nights it had, target: the week's)
+    effs.length >= MIN_NIGHTS
+      ? { key: "efficiency" as const, weight: SLEEP_WEIGHTS.efficiency, share: good / effs.length, value: good, target: effs.length,
+        extra: { avg: Math.round((effs.reduce((t, e) => t + e, 0) / effs.length) * 100) / 100, nights: n } }
+      : { key: "efficiency" as const, weight: 0, share: 1, value: effs.length, target: n, extra: { left: 1 } },
     { key: "regularity", weight: SLEEP_WEIGHTS.regularity, share: regular / n, value: regular, target: n },
   ]);
 }

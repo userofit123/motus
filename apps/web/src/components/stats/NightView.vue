@@ -15,11 +15,11 @@ import { ymd } from "@motus/shared";
 import { api } from "../../api/client";
 import { useSleep, useSleepNight } from "../../api/queries";
 import { useFmt } from "../../core/format";
-import { asleepMin, inBedMin, efficiency, awakeKnown, hasStages, isFull, mins, nightSegments, SEG_NAME, segColor, SHORT_WHY, type Seg, type SleepRecord } from "../../core/sleep";
+import { asleepMin, hasStages, nightRingLine, isFull, mins, nightSegments, SEG_NAME, segColor, SHORT_WHY, type Seg, type SleepRecord } from "../../core/sleep";
 import { hrSamples } from "../../core/heart";
 import { deviceWord, useDevice } from "../../native/health";
 import Icon from "../Icon.vue";
-import Ring from "../Ring.vue";
+import NightRing from "./NightRing.vue";
 import LineChart from "../LineChart.vue";
 import StageBar from "./StageBar.vue";
 import Hypnogram from "./Hypnogram.vue";
@@ -145,10 +145,10 @@ const beforeBed = (x: DaySession) => mins(Math.max(0, t0.value - x.b) / 60000);
   </div>
   <template v-else>
     <div class="gs-top">
-      <Ring :pct="efficiency(n)" :size="64" :stroke="7" :done="efficiency(n) >= 0.85" />
+      <NightRing :night="n" :size="64" :stroke="7" />
       <div class="grow">
         <div class="gs-val">{{ mins(asleepMin(n)) }}<small>asleep</small></div>
-        <div class="tiny"><template v-if="!noTimes">{{ fmt.time(n.startAt) }}-{{ fmt.time(n.endAt) }} · </template>{{ mins(inBedMin(n)) }} tracked · {{ awakeKnown(n) ? `${Math.round(efficiency(n) * 100)}% of it asleep` : "time awake not recorded" }}</div>
+        <div class="tiny"><template v-if="!noTimes">{{ fmt.time(n.startAt) }}-{{ fmt.time(n.endAt) }} · </template>{{ nightRingLine(n) }}</div>
         <div v-if="vsUsual" class="tiny"><span :class="vsUsual.tone">{{ vsUsual.text }}</span> vs usual {{ vsUsual.usual }}</div>
       </div>
     </div>

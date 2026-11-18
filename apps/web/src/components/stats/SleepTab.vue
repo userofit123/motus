@@ -319,7 +319,7 @@ const list = computed(() => showAll.value ? nights.value : nights.value.slice(0,
         <div v-if="bed" class="card stat"><div class="lbl"><span class="bi"><Icon name="clock" :size="15" /></span>Bedtime</div><div class="val">{{ clock(bed.at) }}</div><div class="sub">{{ spread(bed)[0] }} <span class="nw">{{ spread(bed)[1] }}</span></div></div>
         <div v-if="wake" class="card stat"><div class="lbl"><span class="bi"><Icon name="bell" :size="15" /></span>Wake time</div><div class="val">{{ clock(wake.at) }}</div><div class="sub">{{ spread(wake)[0] }} <span class="nw">{{ spread(wake)[1] }}</span></div></div>
         <div v-if="deepPct != null" class="card stat"><div class="lbl"><span class="bi"><Icon name="layers" :size="15" /></span>Deep sleep</div><div class="val">{{ deepPct }}<small>%</small></div><div class="sub">of time asleep</div></div>
-        <div v-else-if="avgBed != null" class="card stat"><div class="lbl"><span class="bi"><Icon name="bed" :size="15" /></span>Time tracked</div><div class="val">{{ mins(avgBed) }}</div><div class="sub">{{ avgEff != null ? `${Math.round(avgEff * 100)}% of it asleep` : "time awake not recorded" }}</div></div>
+        <div v-else-if="avgBed != null" class="card stat"><div class="lbl"><span class="bi"><Icon name="device" :size="15" /></span>Time tracked</div><div class="val">{{ mins(avgBed) }}</div><div class="sub"><template v-if="avgEff != null">{{ Math.floor(avgEff * 100) }}% of it asleep</template><template v-else>time awake <span class="nw">not recorded</span></template></div></div>
       </div>
       <!-- the best and worst night and the sleep debt, once there are nights to compare -->
       <div v-if="nightDays.length > 1" class="card wkc spt">

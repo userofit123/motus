@@ -204,7 +204,7 @@ const usualHour = computed(() => {
   return typicalHour((spanQ.data.value?.hours ?? []).map((h) => { const d = new Date(h.at); return { day: ymd(d), hour: d.getHours(), value: h.sum ?? 0 }; }), today.value);
 });
 const hourSpan = (h: number) => { const a = new Date(2000, 0, 1, h); return `${fmt.value.time(a.toISOString())}-${fmt.value.time(new Date(a.getTime() + 3600_000).toISOString())}`; };
-type Insight = { key: string; icon: string; t: string; s: string; rv: string; tone?: "pos" | "neg" };
+type Insight = { key: string; icon: string; t: string; s: string; rv: string; tone?: "pos" | "neg" | "muted" };
 const insights = computed(() => {
   const out: Insight[] = [];
   const m = minutesPart.value;

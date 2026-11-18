@@ -60,7 +60,7 @@ const minor = computed(() => on.value && !!sq.data.value?.minor);
 
     <!-- Readiness compares you with yourself, so it has no sources to open: its basis stays a plain line -->
     <div v-if="ready" class="card wkc spt">
-      <div class="ch"><span class="bi"><Icon name="gauge" :size="15" /></span><span class="t grow">Readiness</span><span class="tiny">Vs your usual</span></div>
+      <div class="ch"><span class="bi"><Icon name="gauge" :size="15" /></span><span class="t grow">Readiness</span><span class="tiny">Vs your 28-day usual</span></div>
       <div v-if="ready.why" class="tiny sc-why">{{ ready.why }}</div>
       <div v-if="readyRows.length" class="list crows">
         <div v-for="x in readyRows" :key="x.key" class="li">

@@ -1,8 +1,8 @@
 // Lessons behind the learn button (graduation cap) in a block's header: what a number means and the research
 // behind its aims. Research-based explanations live here, never as text under a chart, so the blocks show only the data.
 // A new lesson is one more entry; the sheet lays every lesson out the same way.
-import { WEEKLY_SET_RANGE, SLEEP_WEIGHTS, ACTIVITY_WEIGHTS, STRENGTH_WEIGHTS, WEEKLY_ACTIVE_MIN, STRENGTH_DAYS, GOOD_EFFICIENCY, MODERATE_FROM, VIGOROUS_FROM, SET_LOAD, MINUTE_LOAD, MIN_LOAD_DAYS, HR_ZONES, ZONE_WEIGHTS } from "@motus/shared";
-import { CHECK_SETS, CHECK_REPS, CHECK_WEIGHTS, PULL_PUSH, HAMS_QUADS, TWICE, DAY_SETS } from "@motus/shared";
+import { WEEKLY_SET_RANGE, MIN_NIGHTS, SLEEP_WEIGHTS, ACTIVITY_WEIGHTS, STRENGTH_WEIGHTS, WEEKLY_ACTIVE_MIN, STRENGTH_DAYS, GOOD_EFFICIENCY, MODERATE_FROM, VIGOROUS_FROM, SET_LOAD, MINUTE_LOAD, MIN_LOAD_DAYS, HR_ZONES, ZONE_WEIGHTS } from "@motus/shared";
+import { CHECK_SETS, CHECK_REPS, CHECK_WEIGHTS, PULL_PUSH, HAMS_QUADS, TWICE } from "@motus/shared";
 
 /** `ref`: a source's full reference, under what it found */
 export type LessonRow = { icon: string; t: string; s?: string; r?: string; ok?: boolean; ref?: string };
@@ -55,7 +55,7 @@ export const LESSONS = {
       { heading: "Where the aims come from", rows: [
         { icon: "note", t: "National Sleep Foundation, 2015", s: "An expert panel reviewed the research on sleep and health: adults should sleep 7-9 hours a night, and 7-8 hours from 65",
           ref: "Hirshkowitz M, et al. National Sleep Foundation's sleep time duration recommendations: methodology and results summary. Sleep Health, 2015; 1(1): 40-43" },
-        { icon: "note", t: "National Sleep Foundation, 2017", s: `An expert panel on sleep quality: being asleep for ${pct(GOOD_EFFICIENCY)} or more of your time in bed is a sign of good sleep at every adult age`,
+        { icon: "note", t: "National Sleep Foundation, 2017", s: `An expert panel on sleep quality: being asleep for ${pct(GOOD_EFFICIENCY)} or more of your time in bed is a sign of good sleep at every adult age (Motus uses the time your watch or band tracked)`,
           ref: "Ohayon M, et al. National Sleep Foundation's sleep quality recommendations: first report. Sleep Health, 2017; 3(1): 6-19" },
         { icon: "note", t: "National Sleep Foundation, 2023", s: "An expert consensus: going to bed and waking up at regular times matters for health, not only how long you sleep. It sets no exact window, so Motus uses an hour",
           ref: "Sletten TL, et al. The importance of sleep regularity: a consensus statement of the National Sleep Foundation sleep timing and variability panel. Sleep Health, 2023; 9(6): 801-820" },
@@ -63,7 +63,7 @@ export const LESSONS = {
       { heading: "How Motus counts", rows: [
         { icon: "device", t: "Time tracked", s: "From when your watch or band saw you fall asleep (or lie awake just before) to when you woke up. It can't tell when you got into bed, so lying awake before it starts tracking isn't counted" },
         { icon: "moon", t: "Hours asleep", s: "Nights with 7-9 hours asleep (7-8 from 65)", r: points(SLEEP_WEIGHTS.duration) },
-        { icon: "bed", t: "Stayed asleep", s: `Nights asleep for ${pct(GOOD_EFFICIENCY)} or more of the time tracked. Only nights your watch or band split into asleep and awake count`, r: points(SLEEP_WEIGHTS.efficiency) },
+        { icon: "bed", t: "Stayed asleep", s: `Nights asleep for ${pct(GOOD_EFFICIENCY)} or more of the time tracked. Only nights your watch or band split into asleep and awake count; with fewer than ${MIN_NIGHTS} of them, it is left out of the score`, r: points(SLEEP_WEIGHTS.efficiency) },
         { icon: "clock", t: "Regular times", s: "Nights within an hour of your usual bed and wake times", r: points(SLEEP_WEIGHTS.regularity) },
       ] },
     ],
@@ -105,7 +105,7 @@ export const LESSONS = {
     title: "Routine check",
     intro: "How a routine, or a week of a program, compares with what training research found works best. Each check gives its points for how much of its aim is met, so 100 means every check is met. A routine may be one day of a split, so it is checked only for the muscles it trains; a program's week is checked for all of them.",
     sections: [
-      { heading: "Where the numbers come from", rows: [
+      { heading: "Where the aims come from", rows: [
         SCHOENFELD,
         { icon: "note", t: "Schoenfeld, Ogborn & Krieger, 2016", s: "Review of 10 studies: training a muscle on 2 days a week built more muscle than on 1",
           ref: "Schoenfeld BJ, Ogborn D, Krieger JW. Effects of resistance training frequency on measures of muscle hypertrophy: a systematic review and meta-analysis. Sports Medicine, 2016; 46(11): 1689-1697" },
@@ -118,7 +118,7 @@ export const LESSONS = {
       ] },
       { heading: "How Motus counts", rows: [
         { icon: "activity", t: "Sets per muscle", s: `${CHECK_SETS[0]}-${CHECK_SETS[1]} working sets a week for each muscle`, r: points(CHECK_WEIGHTS.volume) },
-        { icon: "calendar", t: "Muscles trained twice a week", s: `${DAY_SETS} or more sets on ${TWICE} or more days a week`, r: points(CHECK_WEIGHTS.frequency) },
+        { icon: "calendar", t: "Muscles trained twice a week", s: `On ${TWICE} or more days a week. A day counts when the muscle is a lift's main one that day, or gets 2 or more helper sets`, r: points(CHECK_WEIGHTS.frequency) },
         { icon: "swap", t: "Pushing and pulling", s: `Upper-body pulling sets ${PULL_PUSH[0]}-${PULL_PUSH[1]} times the pushing sets`, r: points(CHECK_WEIGHTS.pushPull) },
         { icon: "split", t: "Quads and hamstrings", s: `Hamstring sets ${HAMS_QUADS[0]}-${HAMS_QUADS[1]} times the quad sets`, r: points(CHECK_WEIGHTS.legs) },
         { icon: "arrowUp", t: "Big lifts first", s: "No lift for several muscles after a single-muscle one that tires the same muscles", r: points(CHECK_WEIGHTS.order) },
@@ -126,7 +126,7 @@ export const LESSONS = {
         { icon: "target", t: "Main muscle", s: "The muscle the exercise is for", r: "1 set" },
         { icon: "layers", t: "Helper", s: "A muscle that also works in it", r: "0.5 set" },
         { icon: "flame", t: "Warm-up sets", r: "Not counted" },
-        { icon: "dumbbell", t: "A routine's week", s: "Its sets times how often you do it in a week" },
+        { icon: "dumbbell", t: "A routine's week", s: "Its sets times how often it is planned a week, else how often you did it in the last 4 weeks" },
       ] },
     ],
   },

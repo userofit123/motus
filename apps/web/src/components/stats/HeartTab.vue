@@ -165,7 +165,7 @@ const loadBars = computed(() => {
 });
 const loadHas = computed(() => loadBars.value.some((b) => b.value > 0) || (lq.data.value?.trend.week ?? 0) > 0);
 // the same ranges as Readiness's load part: steady reads "As usual" there, lighter raises the score, higher lowers it
-// Readiness says the same week shorter, under its "Vs your usual" ("you trained more in the last 7 days")
+// Readiness says the same week shorter, under its "Vs your 28-day usual" ("you trained more in the last 7 days")
 const LOAD_STATE = { lighter: "Less than usual", steady: "About your usual", higher: "More than usual", "much higher": "Much more than usual" } as const;
 // the countdown to the usual is counted to the stretch's last day, so it is said only when that is today
 const loadRow = computed(() => {

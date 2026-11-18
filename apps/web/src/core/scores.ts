@@ -12,7 +12,7 @@ export const SCORE_META: Record<ScoreKey, { name: string; icon: string; span: st
 };
 export const SCORE_KEYS: ScoreKey[] = ["sleep", "activity", "strength"];
 
-export interface ScoreRow { key: string; icon: string; t: string; s: string; r: string; tone?: "pos" | "neg" }
+export interface ScoreRow { key: string; icon: string; t: string; s: string; r: string; tone?: "pos" | "neg" | "muted" }
 type Num = (v: number) => string;
 const of = (p: ScorePart) => `${p.value} of ${p.target}`;
 const x = (p: ScorePart, k: string) => p.extra?.[k] ?? 0;
@@ -41,8 +41,13 @@ export function scoreRow(p: ScorePart, num: Num): ScoreRow {
   switch (p.key) {
     // each row's result counts nights, so its line says which nights it counts, then the average
     case "duration": return { key: p.key, icon: "moon", t: "Hours asleep", s: `Nights with ${x(p, "lo")}-${x(p, "hi")} hours · average ${mins(x(p, "avgMin"))}`, r: of(p), tone };
-    // the share of the time the band tracked spent asleep: it can't know when you got into bed, so never "in bed"
-    case "efficiency": return { key: p.key, icon: "bed", t: "Stayed asleep", s: `Nights asleep for 85% or more of the time tracked · average ${Math.round(x(p, "avg") * 100)}%`, r: of(p), tone };
+    // the share of the time the band tracked spent asleep: it can't know when you got into bed, so never "in bed". Only
+    // nights the band split into asleep and awake count, so when that is fewer than the week's the line says why its
+    // "of" is smaller than the other rows'; with too few the part is left out of the score (weight 0) and says so
+    case "efficiency": {
+      if (p.weight === 0) return { key: p.key, icon: "bed", t: "Stayed asleep", s: p.value ? `Time awake recorded on only ${p.value} of ${p.target} nights` : "Time awake not recorded", r: "Left out", tone: "muted" };
+      const out = x(p, "nights") - p.target;
+      return { key: p.key, icon: "bed", t: "Stayed asleep", s: `Nights asleep for 85% or more of the time tracked · average ${Math.round(x(p, "avg") * 100)}%${out > 0 ? ` · time awake not recorded on ${nightsN(out)}` : ""}`, r: of(p), tone }; }
     case "regularity": return { key: p.key, icon: "clock", t: "Regular times", s: "Nights within an hour of your usual bed and wake times", r: of(p), tone };
     // the split by effort (WHO's moderate and vigorous intensity) under the title, never a "Moderate" title, which is
     // Heart's 70 % zone; the icon is zone minutes' bolt, since these are minutes at a heart rate effort (heartPulse is

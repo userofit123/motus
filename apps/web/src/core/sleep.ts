@@ -36,6 +36,9 @@ export const awakeKnown = (n: SleepNight) => hasStages(n) || (n.awakeMin ?? 0) >
 /** The share of the tracked time spent asleep, 0-1: the band's own minutes asleep (not hours typed in, which were never
  *  measured against its record), as the sleep score counts it */
 export const efficiency = (n: SleepNight) => { const b = inBedMin(n); return b ? Math.min(1, n.asleepMin / b) : 0; };
+/** The line under a night's ring (NightRing), on Home and Stats → Sleep alike: what the ring shows, without repeating the
+ *  percent in it, or why it is empty */
+export const nightRingLine = (n: SleepNight) => `${mins(inBedMin(n))} tracked · ${awakeKnown(n) ? "ring shows how much of it you slept" : "time awake not recorded"}`;
 
 /** A time of night as minutes after the noon before, so 23:30 and 00:30 sit an hour apart rather than a day */
 export const nightMin = (iso: string) => { const d = new Date(iso); return (d.getHours() * 60 + d.getMinutes() + 720) % 1440; };

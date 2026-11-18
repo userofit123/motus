@@ -11,7 +11,8 @@ import { invalidate, queryClient } from "../api/live";
 import { confirm } from "../core/ask";
 import { toast } from "../core/toast";
 import { onHome, streakOnHome, toggleHomeGoal, setHomeStreak, periodWord, goalSub } from "../core/goals";
-import { asleepMin, inBedMin, efficiency, hasStages, isFull, mins, SHORT_WHY } from "../core/sleep";
+import { asleepMin, hasStages, isFull, mins, nightRingLine, SHORT_WHY } from "../core/sleep";
+import NightRing from "../components/stats/NightRing.vue";
 import { SCORE_META, scoreRow, scoreWhy } from "../core/scores";
 import SourceRow from "../components/learn/SourceRow.vue";
 import { READY_PART, readinessRows, nightWhen } from "../core/readiness";
@@ -423,10 +424,10 @@ async function goalDelete(g: Goal) { if (await confirm(`Delete "${g.title}"?`, {
 // ---- Edit home: the same board, each block as a tile with its switch; the order is set in one list (Reorder blocks)
 const editing = ref(false);
 const setOn = (id: string, on: boolean) => saveSettings({ home: { blocks: s.value.home.blocks.map((x) => (x.id === id ? { ...x, on } : x)) } }, { quiet: true });
-// Reorder blocks (M-270): every block in one short list, dragged by its handle (or moved with the arrows), as Goals and
-// Routines are reordered; nudging tile by tile with arrows took a tap per place. The tile it was opened from is marked.
+// Reorder blocks (M-270): every block in one short list, dragged by its handle (or moved with the arrows), opened from
+// the ⋮ menu as Goals and Routines are reordered; nudging tile by tile with arrows took a tap per place.
 // Only the blocks listed move: those of a switched-off feature keep their slots in the saved order
-const reorderOpen = ref<string | null>(null);
+const reorderOpen = ref(false);
 function moveBlock(from: number, to: number) {
   const ids = listed.value.map((x) => x.id);
   if (to < 0 || to >= ids.length || from === to) return;
@@ -491,33 +492,30 @@ await loaded(home, ach, avail, hDay, ready, nightsQ, dailyQ, todayCal);
 <template>
   <div class="page">
     <div class="ph">
-      <div v-if="editing"><h1>Edit home</h1><div class="sub">Switch blocks on or off, and tap a block's handle to change the order. Changes save as you go.</div></div>
+      <div v-if="editing"><h1>Edit home</h1><div class="sub">Choose which blocks show. Changes save as you go.</div></div>
       <div v-else><h1>{{ isPhone ? greeting : "Home" }}</h1><div class="sub">{{ fmt.dateLong(new Date().toISOString()) }}</div></div>
       <div class="acts">
         <template v-if="editing">
-          <Menu :items="[{ label: 'Reset to default', icon: 'refresh', run: reset }]" />
+          <Menu :items="[{ label: 'Reorder blocks', icon: 'drag', run: () => (reorderOpen = true) }, { label: 'Reset to default', icon: 'refresh', run: reset }]" />
           <button class="btn keep" @click="editing = false"><Icon name="check" :size="18" />Done</button>
         </template>
-        <Menu v-else :items="[{ label: 'Edit home', icon: 'edit', run: () => (editing = true) }, { label: 'Reorder blocks', icon: 'drag', run: () => (reorderOpen = '') }, { label: 'Pinned goals', icon: 'pin', run: () => (pinOpen = true) }]" />
+        <Menu v-else :items="[{ label: 'Edit home', icon: 'edit', run: () => (editing = true) }, { label: 'Reorder blocks', icon: 'drag', run: () => (reorderOpen = true) }, { label: 'Pinned goals', icon: 'pin', run: () => (pinOpen = true) }]" />
       </div>
     </div>
 
     <!-- Edit home: every block there is, in order, at its own size so the layout reads as it will -->
     <TransitionGroup v-if="editing" name="mv" tag="div" class="hgrid">
       <div v-for="x in listed" :key="x.id" class="card etile" :class="[META[x.id]!.size === 'l' ? 'sz-l' : 'sz-m', { off: !x.on }]" :data-solo="solo.has(x.id) || undefined">
-        <!-- the name and its switch on one row (label left, control right); the reorder handle has its own row at the foot, so a
-             half-width tile has room for the switch in a narrow window -->
+        <!-- the name and its switch on one row (label left, control right); the order is set in Reorder blocks (⋮ menu) -->
         <div class="ch">
           <span class="bi"><Icon :name="META[x.id]!.icon" :size="15" /></span>
           <label class="t grow" :for="`hb-${x.id}`">{{ META[x.id]!.name }}</label>
           <span class="tg"><input :id="`hb-${x.id}`" type="checkbox" :checked="x.on" @change="setOn(x.id, ($event.target as HTMLInputElement).checked)" /></span>
         </div>
         <div class="tiny">{{ META[x.id]!.desc }}</div>
-        <div class="emv">
+        <div v-if="x.id === 'pinned' || x.id === 'quickStats'" class="emv">
           <button v-if="x.id === 'pinned'" class="lnk inl" @click="pinOpen = true">{{ picked.length ? `${picked.length} pinned, change` : "Pin goals" }}</button>
           <button v-else-if="x.id === 'quickStats'" class="lnk inl" @click="glanceOpen = true">{{ s.home.glance.length ? (s.home.glance.length === GLANCE_RINGS.length ? `All ${GLANCE_RINGS.length} rings, change` : `${s.home.glance.length} of ${GLANCE_RINGS.length} rings, change`) : "Choose rings" }}</button>
-          <span class="grow" />
-          <button class="ib sm plain emh" aria-label="Reorder blocks" title="Reorder blocks" @click="reorderOpen = x.id"><Icon name="drag" :size="18" /></button>
         </div>
       </div>
     </TransitionGroup>
@@ -727,13 +725,13 @@ await loaded(home, ach, avail, hDay, ready, nightsQ, dailyQ, todayCal);
           </div>
         </div>
 
-        <!-- the newest night: time asleep with the share of the time in bed as its ring (as Stats → Sleep's night), then its stages; it opens that night there.
-             The ring carries its percent, the same one as the line under it, so it reads as "asleep for 87% of the time in bed", not as a score (M-264) -->
+        <!-- the newest night: time asleep with the share of the time tracked asleep as its ring (NightRing, as Stats → Sleep's night), then its stages; it
+             opens that night there. The percent is in the ring only; the line under it says what the ring is, so it doesn't read as a score (M-264) -->
         <div v-else-if="id === 'sleep' && night" class="card hb sz-m click" :data-solo="solo.has(id) || undefined" v-bind="link(`/stats?tab=sleep&day=${night.date}`)">
           <div class="ch"><span class="bi"><Icon name="moon" :size="15" /></span><span class="t grow">{{ nightName }}</span><span class="tiny">{{ fmt.time(night.startAt) }}-{{ fmt.time(night.endAt) }}</span></div>
-          <div class="row"><div class="big grow">{{ mins(asleepMin(night)) }}<small>{{ nightShort ? "short record" : "asleep" }}</small></div><span class="pring" role="img" :aria-label="`Asleep for ${Math.round(efficiency(night) * 100)}% of the time in bed`"><Ring aria-hidden="true" :pct="efficiency(night)" :size="40" /><b aria-hidden="true"><span>{{ Math.round(efficiency(night) * 100) }}<small>%</small></span></b></span></div>
+          <div class="row"><div class="big grow">{{ mins(asleepMin(night)) }}<small>{{ nightShort ? "short record" : "asleep" }}</small></div><NightRing :night="night" :size="40" /></div>
           <div v-if="nightShort" class="tiny">{{ SHORT_WHY }}</div>
-          <div v-else class="tiny">{{ mins(inBedMin(night)) }} in bed · {{ Math.round(efficiency(night) * 100) }}% of it asleep</div>
+          <div v-else class="tiny">{{ nightRingLine(night) }}</div>
           <div v-if="hasStages(night) || night.awakeMin" class="hstages"><StageBar :night="night" /></div>
         </div>
 
@@ -811,8 +809,8 @@ await loaded(home, ach, avail, hDay, ready, nightsQ, dailyQ, todayCal);
     </Sheet>
     <ScheduleEditor v-if="planOpen" :schedule="planOpen" @close="planOpen = null" />
     <GoalSheet v-if="goalOpen" :id="goalOpen" @close="goalOpen = null" @edit="(g) => router.push(`/goals?edit=${g.id}`)" @status="goalStatus" @delete="goalDelete" />
-    <ReorderSheet v-if="reorderOpen != null" title="Reorder blocks" hint="Drag to reorder the blocks on Home. Blocks that are off are in the list too, so they come back where you put them."
-      :items="listed.map((x) => ({ id: x.id, title: META[x.id]!.name, sub: x.on ? undefined : 'Off', cur: x.id === reorderOpen }))" @move="moveBlock" @close="reorderOpen = null" />
+    <ReorderSheet v-if="reorderOpen" title="Reorder blocks" hint="Drag to reorder the blocks on Home."
+      :items="listed.map((x) => ({ id: x.id, title: META[x.id]!.name, sub: x.on ? undefined : 'Off', off: !x.on }))" @move="moveBlock" @close="reorderOpen = false" />
     <Sheet v-if="glanceOpen" title="Today at a glance" @close="glanceOpen = false">
       <p class="tiny hgap">Choose the rings this block shows. Each one appears once its reading is in.</p>
       <label v-for="k in GLANCE_RINGS" :key="k" class="tgl">
@@ -886,10 +884,6 @@ html.phone .gtile { grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); }
 /* the icon in the ring turns the accent once its number is reached (the ring's own check would sit on it) */
 .gli { position: absolute; color: var(--tx2); }
 .gli.done { color: var(--acc); }
-/* Last night's ring with its percent in the hole, as the workout's ring holds its own; set at the smallest text size with a smaller % so "100%" clears a 40px ring */
-.pring { position: relative; flex: none; display: grid; }
-.pring b { position: absolute; inset: 0; display: grid; place-items: center; font-size: var(--fs-xs); font-weight: 700; font-variant-numeric: tabular-nums; }
-.pring small { font-size: .8em; }
 .glv { max-width: 100%; overflow: hidden; text-overflow: ellipsis; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; line-height: 1.2; }
 .glv small { font-size: var(--fs-sm); font-weight: 500; color: var(--tx2); }
 .gll { min-height: 2.4em; font-size: var(--fs-sm); color: var(--tx2); line-height: 1.2; }
@@ -908,7 +902,7 @@ html.phone .gtile { grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); }
 .wdays { display: flex; gap: 6px; margin-top: 4px; }
 .wdays span { flex: 1; text-align: center; font-size: var(--fs-xs); line-height: 1; color: var(--tx2); }
 .wdays .cur { color: var(--tx); font-weight: 600; }
-/* the last workout's name and day at the right of its header, at the size of the other headers' notes ("Vs last week"):
+/* the last workout's name and day at the right of its header, at the size of the other headers' notes ("Vs your 28-day usual"):
    the name as strong as Achievements' "Next" name and cut first, so the title and the day always show at 360px */
 .lname { flex: 1; min-width: 0; display: flex; align-items: baseline; justify-content: flex-end; gap: 6px; font-size: var(--fs-xs); }
 .lnm { min-width: 0; color: var(--tx); font-weight: 600; }
@@ -997,10 +991,8 @@ html.phone .gtile { grid-template-columns: minmax(0, 1.45fr) minmax(0, 1fr); }
 /* a long name wraps rather than pushing the switch out of a narrow tile */
 .etile .t { cursor: pointer; min-width: 0; overflow-wrap: anywhere; line-height: 1.25; }
 .etile.off { opacity: .55; }
-/* the foot: the pinned goals' or rings' link on the left, the handle on the right with its icon lined up under the switch's
-   edge, muted like the handles in Reorder blocks, which it opens */
-.emh { color: var(--tx2); }
-.emv { display: flex; align-items: center; gap: 4px; margin-top: auto; margin-inline-end: calc((18px - 36px) / 2); }
+/* the foot of Pinned goals' and Today at a glance's tiles: the link that picks their goals or rings */
+.emv { display: flex; align-items: center; gap: 4px; margin-top: auto; }
 .tgl.sub-t { padding-inline-start: calc(var(--cpx) + var(--hg)); }
 /* a ring's icon in its row of the Today at a glance sheet, as the Routine changes rows' icons (RoutineChanges .rc-i):
    its size kept beside a long name, in the quiet text colour */
