@@ -2,6 +2,16 @@
 
 The top entry's version is the one the release workflow publishes. Add a new `## [x.y.z]` section to release.
 
+## [0.1.39] - 2026-11-19
+
+- Routine check is titled for the routine or program you're looking at, and every value says what it counts, e.g. "15 push" over "4 pull" or "1 of 3 muscles". Its rows use the same colours as Stats → Scores, and the line under the score says when checks earn part of their points.
+- The body weight chart's line goes through your weigh-ins. The smoothed trend appears as a second line once there are 7 weigh-ins over 2 weeks, and the Change tile works for short periods and names its period.
+- Home's Last night ring is the same size as the other Home rings, with the percent in the line under it, and Edit home's up and down arrows are back next to the Reorder blocks list.
+- Stats and the Calendar day use one spacing system: a header sits close to its own chart, and sections inside a card are clearly further apart.
+- A night's sleep score looks like the weekly one, says "This night", and explains why it can differ from the 7-night score.
+- Scores say "target" instead of "aim", e.g. "Where the targets come from" and "target 7-9 hours".
+- Settings → Weights calls the - and + amount "Weight step", and the amount added when progressing is now "Increase by", in Settings and the routine editor.
+
 ## [0.1.38] - 2026-11-19
 
 - Home says what each comparison covers: This week reads "Vs Mon-Thu last week" (this week so far against the same days last week), and Readiness and Heart read "Vs your 28-day usual".
