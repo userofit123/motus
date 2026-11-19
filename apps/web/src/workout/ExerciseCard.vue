@@ -197,7 +197,7 @@ const nowId = computed(() => (W.state.active === props.index ? nextSet(visibleSe
     <table class="sets" :class="{ v3: three }">
       <thead><tr><th>Set</th><th v-if="prefs.showPrevious" class="prevh">Last time</th><th v-if="showW">{{ fmt.wu }}<span v-if="perSide" class="thside"> / side</span></th><th v-if="showW && showR" class="sx" /><th v-if="showR">Reps</th><th v-if="showD">Time</th><th v-if="showDist">{{ fmt.du }}</th><th v-if="feat.rpe">RPE</th><th style="width:44px" /></tr></thead>
       <tbody>
-        <tr v-for="s in visibleSets" :key="s.id" :class="{ done: s.done, drop: s.kind === 'drop', now: s.id === nowId && e.status !== 'skipped' }" :aria-current="s.id === nowId ? 'step' : undefined">
+        <tr v-for="s in visibleSets" :key="s.id" :class="{ done: s.done, drop: s.kind === 'drop', now: s.id === nowId && e.status !== 'skipped' }" :aria-current="s.id === nowId && e.status !== 'skipped' ? 'step' : undefined">
           <td :class="joinCls(s)"><button class="sk" :class="{ w: s.kind === 'warmup', d: s.kind === 'drop', f: s.kind === 'failure' }" @click.stop>{{ kindShort(s) }}</button></td>
           <td v-if="prefs.showPrevious" class="prev" @click="copyPrev(s)">{{ prevText(s) }}<span v-if="s.pr?.length" class="pr pvx">PR</span><span v-else-if="beat(s)" class="pos tiny pvx">{{ beat(s) }}</span></td>
           <td v-if="showW"><input class="vin" :class="{ pre: s.prefilled && !s.done }" inputmode="decimal" :value="wIn(s.weightKg)" placeholder="-" @change="W.editSet(s, { weightKg: num(($event.target as HTMLInputElement).value) == null ? null : fmt.toKg(num(($event.target as HTMLInputElement).value)!) })" @focus="($event.target as HTMLInputElement).select()" /></td>
