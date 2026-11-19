@@ -2,6 +2,13 @@
 
 The top entry's version is the one the release workflow publishes. Add a new `## [x.y.z]` section to release.
 
+## [0.1.40] - 2026-11-19
+
+- Minimising a workout takes you back to the page you were on, e.g. Stats → Sleep, instead of Home.
+- Finishing a workout always ends on its "Well done" page. Before, it sometimes jumped to Home.
+- A left or right set marked "No rest" never starts a rest. "Longer rest after a missed set" now only lengthens a rest that's already planned, and empty reps don't count as a miss.
+- The set you're on in a workout has an accent ring around it, so it stands out.
+
 ## [0.1.39] - 2026-11-19
 
 - Routine check is titled for the routine or program you're looking at, and every value says what it counts, e.g. "15 push" over "4 pull" or "1 of 3 muscles". Its rows use the same colours as Stats → Scores, and the line under the score says when checks earn part of their points.
