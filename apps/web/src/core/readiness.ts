@@ -15,7 +15,7 @@ export const READY_PART: Record<ReadyKey, { icon: string; t: string }> = {
 /** What a load point is, said in place after the week's load points wherever they are shown (Readiness's row, Stats →
  *  Heart's Training load), since a bare "load points" means nothing (M-265). "Very light" is Heart's zone name; the
  *  Training load lesson has every zone's points */
-export const LOAD_POINT = "1 per very light minute, more when harder";
+export const LOAD_POINT = "1 for each minute at a very light heart rate, more when harder";
 /** A part's value as its row writes it: sleep in hours (as the day's log keeps it) as time asleep; Training load (a
  *  feature) in load points, which the row follows with what a point is (LOAD_POINT) */
 export function readyValue(k: ReadyKey, v: number, num: Num): string {
