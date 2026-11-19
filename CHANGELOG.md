@@ -2,6 +2,25 @@
 
 The top entry's version is the one the release workflow publishes. Add a new `## [x.y.z]` section to release.
 
+## [0.1.38] - 2026-11-19
+
+- Home says what each comparison covers: This week reads "Vs Mon-Thu last week" (this week so far against the same days last week), and Readiness and Heart read "Vs your 28-day usual".
+- Home's Last night ring shows the share of the night you were asleep, with the percent inside and "Asleep for 88% of the 7h 30m tracked" under it. Stats → Sleep's night page uses the same ring.
+- Home's blocks reorder by dragging: ⋮ → Reorder blocks, on Home or in Edit home.
+- Sleep says "tracked" instead of "in bed", because the band can't tell when you got into bed. Nights where the band didn't record any time awake no longer show 100% asleep and are left out of the score's "Stayed asleep" part (the old "Asleep in bed"), which now says what it counts.
+- Score sources are called "Where the aims come from": your numbers come from your watch or band, and the studies set the aims.
+- Each night in Stats → Sleep has its own sleep score, as a ring in the Nights list and with its parts on the night's page, and each block on Stats → Scores shows its own score.
+- The Activity score counts your workouts and recorded activities (all but stretching and yoga) as active minutes, not only minutes at a brisk heart rate. A workout over 4 hours doesn't count, since it was most likely left running.
+- Load points say what they are: 1 for each minute at a very light heart rate, more when harder.
+- New optional Routine check (Settings → Features → Insights): a score out of 100 for each routine and program, with one tip per check for sets per muscle, how often each muscle is trained, push and pull balance, quads and hamstrings, exercise order and reps.
+- Change an activity's start and end times afterwards (⋮ → Change times), and finish a forgotten recording at the time it really ended (⋮ → Finish at an earlier time). The route and heart rate outside the new times are cut. Workouts' Change times uses the same date and time pickers.
+- A note added from an exercise's own page during a workout shows under that exercise, with the same choices as its Note button.
+- The Goals page shows each goal like Home's pinned goal: progress beside its streak.
+- The body weight chart shows each weigh-in as a dot beside the smoothed trend, so today's weigh-in is on the chart.
+- Heart rate zones show where each zone starts (e.g. "Moderate 130+") and how long you were in any zone, and short spikes show as under a minute instead of vanishing.
+- Rows of three tiles no longer cut off their labels or values, and chart headers sit right above their charts.
+- Settings → Weights calls the stepper setting "Weight buttons change by", and Stats → Achievements no longer shows a period choice that changed nothing.
+
 ## [0.1.37] - 2026-11-16
 
 - 
