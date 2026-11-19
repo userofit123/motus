@@ -384,12 +384,12 @@ const goalOpen = ref<string | null>(null);
 async function goalStatus(g: Goal, status: string) { await api.put(`/goals/${g.id}`, { status }); invalidate(["goals", "home"]); goalOpen.value = null; toast(status === "archived" ? "Goal archived" : "Goal made active"); }
 async function goalDelete(g: Goal) { if (await confirm(`Delete "${g.title}"?`, { ok: "Delete", danger: true })) { await api.del(`/goals/${g.id}`); invalidate(["goals", "home"]); goalOpen.value = null; toast("Goal deleted"); } }
 
-// ---- Edit home: the same board, each block as a tile with its switch; the order is set in one list (Reorder blocks)
+// ---- Edit home: the same board, each block as a tile with its switch and its arrows; Reorder blocks lists them all to drag
 const editing = ref(false);
 const setOn = (id: string, on: boolean) => saveSettings({ home: { blocks: s.value.home.blocks.map((x) => (x.id === id ? { ...x, on } : x)) } }, { quiet: true });
-// Reorder blocks (M-270): every block in one short list, dragged by its handle (or moved with the arrows), opened from
-// the ⋮ menu as Goals and Routines are reordered; nudging tile by tile with arrows took a tap per place.
-// Only the blocks listed move: those of a switched-off feature keep their slots in the saved order
+// Both ways of reordering go through here (M-270): a tile's arrows in Edit home move it one place; Reorder blocks (⋮ menu)
+// drags it any distance, as Goals and Routines are reordered. Only the blocks listed move: those of a switched-off feature keep
+// their slots in the saved order
 const reorderOpen = ref(false);
 function moveBlock(from: number, to: number) {
   const ids = listed.value.map((x) => x.id);
@@ -455,7 +455,7 @@ await loaded(home, ach, avail, hDay, ready, nightsQ, dailyQ, todayCal);
 <template>
   <div class="page">
     <div class="ph">
-      <div v-if="editing"><h1>Edit home</h1><div class="sub">Choose which blocks show. Changes save as you go.</div></div>
+      <div v-if="editing"><h1>Edit home</h1><div class="sub">Move blocks and choose which show. Changes save as you go.</div></div>
       <div v-else><h1>{{ isPhone ? greeting : "Home" }}</h1><div class="sub">{{ fmt.dateLong(new Date().toISOString()) }}</div></div>
       <div class="acts">
         <template v-if="editing">
@@ -468,17 +468,21 @@ await loaded(home, ach, avail, hDay, ready, nightsQ, dailyQ, todayCal);
 
     <!-- Edit home: every block there is, in order, at its own size so the layout reads as it will -->
     <TransitionGroup v-if="editing" name="mv" tag="div" class="hgrid">
-      <div v-for="x in listed" :key="x.id" class="card etile" :class="[META[x.id]!.size === 'l' ? 'sz-l' : 'sz-m', { off: !x.on }]" :data-solo="solo.has(x.id) || undefined">
-        <!-- the name and its switch on one row (label left, control right); the order is set in Reorder blocks (⋮ menu) -->
+      <div v-for="(x, i) in listed" :key="x.id" class="card etile" :class="[META[x.id]!.size === 'l' ? 'sz-l' : 'sz-m', { off: !x.on }]" :data-solo="solo.has(x.id) || undefined">
+        <!-- the name and its switch on one row (label left, control right); the arrows have their own row at the foot, so a
+             half-width tile has room for the switch in a narrow window -->
         <div class="ch">
           <span class="bi"><Icon :name="META[x.id]!.icon" :size="15" /></span>
           <label class="t grow" :for="`hb-${x.id}`">{{ META[x.id]!.name }}</label>
           <span class="tg"><input :id="`hb-${x.id}`" type="checkbox" :checked="x.on" @change="setOn(x.id, ($event.target as HTMLInputElement).checked)" /></span>
         </div>
         <div class="tiny">{{ META[x.id]!.desc }}</div>
-        <div v-if="x.id === 'pinned' || x.id === 'quickStats'" class="emv">
+        <div class="emv">
           <button v-if="x.id === 'pinned'" class="lnk inl" @click="pinOpen = true">{{ picked.length ? `${picked.length} pinned, change` : "Pin goals" }}</button>
           <button v-else-if="x.id === 'quickStats'" class="lnk inl" @click="glanceOpen = true">{{ s.home.glance.length ? (s.home.glance.length === GLANCE_RINGS.length ? `All ${GLANCE_RINGS.length} rings, change` : `${s.home.glance.length} of ${GLANCE_RINGS.length} rings, change`) : "Choose rings" }}</button>
+          <span class="grow" />
+          <button class="ib sm plain" :class="{ end: i === 0 }" :aria-disabled="i === 0" :aria-label="`Move ${META[x.id]!.name} earlier`" :title="`Move ${META[x.id]!.name} earlier`" @click="moveBlock(i, i - 1)"><Icon name="up" :size="18" /></button>
+          <button class="ib sm plain" :class="{ end: i === listed.length - 1 }" :aria-disabled="i === listed.length - 1" :aria-label="`Move ${META[x.id]!.name} later`" :title="`Move ${META[x.id]!.name} later`" @click="moveBlock(i, i + 1)"><Icon name="down" :size="18" /></button>
         </div>
       </div>
     </TransitionGroup>
@@ -689,7 +693,8 @@ await loaded(home, ach, avail, hDay, ready, nightsQ, dailyQ, todayCal);
         </div>
 
         <!-- the newest night: time asleep with the share of the time tracked asleep as its ring (NightRing, as Stats → Sleep's night), then its stages; it
-             opens that night there. The line under the ring says what its percent is, so it doesn't read as a score (M-264), even for a nap, whose
+             opens that night there. The ring is the size of the score blocks' and, like theirs, holds no number; the line under it
+             gives its percent, so it doesn't read as a score (M-264), even for a nap, whose
              reason for being left out follows as on Stats → Sleep's night -->
         <div v-else-if="id === 'sleep' && night" class="card hb sz-m click" :data-solo="solo.has(id) || undefined" v-bind="link(`/stats?tab=sleep&day=${night.date}`)">
           <div class="ch"><span class="bi"><Icon name="moon" :size="15" /></span><span class="t grow">{{ nightName }}</span><span class="tiny">{{ fmt.time(night.startAt) }}-{{ fmt.time(night.endAt) }}</span></div>
@@ -933,8 +938,8 @@ html.phone .hgrid .sz-m { grid-column: 1 / -1; }
 /* a long name wraps rather than pushing the switch out of a narrow tile */
 .etile .t { cursor: pointer; min-width: 0; overflow-wrap: anywhere; line-height: 1.25; }
 .etile.off { opacity: .55; }
-/* the foot of Pinned goals' and Today at a glance's tiles: the link that picks their goals or rings */
-.emv { display: flex; align-items: center; gap: 4px; margin-top: auto; }
+/* the foot: Pinned goals' or Today at a glance's link on the left, the arrows on the right with their icons lined up under the switch's edge */
+.emv { display: flex; align-items: center; gap: 4px; margin-top: auto; margin-inline-end: calc((18px - 36px) / 2); }
 .tgl.sub-t { padding-inline-start: calc(var(--cpx) + var(--hg)); }
 /* a ring's icon in its row of the Today at a glance sheet, as the Routine changes rows' icons (RoutineChanges .rc-i):
    its size kept beside a long name, in the quiet text colour */
