@@ -1,8 +1,8 @@
 <script setup lang="ts">
 // Body: the one home for everything about your body: the numbers, how they changed and every entry. Tabs (shown only
 // when there is more than one):
-//  · Weight: the smoothed trend, its change over the chosen period against the period before, the weigh-ins, the trend
-//    chart and the weight entries.
+//  · Weight: the latest weigh-in (or the smoothed trend, once there are enough weigh-ins for one), its change over the
+//    chosen period, the weigh-ins, their chart (with the trend under them) and the weight entries.
 //  · Measurements (Body measurements feature): the latest of each tape measure and body fat with the change since the one
 //    before and a sparkline of its recent entries; tap one for its chart over the period and its entries.
 //  · Photos (Progress photos feature).
@@ -23,7 +23,7 @@ import { confirm } from "../core/ask";
 import { invalidate } from "../api/live";
 import { useFmt, ago } from "../core/format";
 import { bodySheet } from "../core/ui";
-import { weightTrend, changeOver, signed } from "../core/body";
+import { weightTrend, hasTrend, changeOver, signed, TREND_MIN_ENTRIES, TREND_MIN_DAYS } from "../core/body";
 import AppSelect from "../components/AppSelect.vue";
 import LineChart from "../components/LineChart.vue";
 import { toast } from "../core/toast";
@@ -68,13 +68,19 @@ const allW = computed(() => weights.value.slice().reverse().map((b) => ({ x: new
 const trend = computed(() => weightTrend(allW.value));
 const bw = computed(() => allW.value.filter((q) => within(q.x, per.value.from, per.value.to)));
 const bwTrend = computed(() => trend.value.filter((q) => within(q.x, per.value.from, per.value.to)));
-// the chart draws the trend as its line and every weigh-in as a dot of its own, so the number logged today shows as
-// typed even while the trend, which follows it only part of the way, sits lower or higher
-const bwChart = computed(() => trend.value.map((t, i) => ({ ...t, raw: allW.value[i]!.y })).filter((q) => within(q.x, per.value.from, per.value.to)));
+// the trend is shown (tile, chart, change) only once there are enough weigh-ins for it to mean something (core/body.ts);
+// before that the page shows the weigh-ins as typed
+const trended = computed(() => hasTrend(allW.value));
+// the chart's line goes through the weigh-ins as typed, as every other body chart's; the trend is a quieter second line
+const bwChart = computed(() => allW.value.map((w, i) => ({ ...w, ...(trended.value ? { trend: trend.value[i]!.y } : {}) })).filter((q) => within(q.x, per.value.from, per.value.to)));
 const pbw = computed(() => (per.value.prevFrom ? allW.value.filter((q) => within(q.x, per.value.prevFrom, per.value.prevTo)) : []));
-// one rule for every change (core/body.ts): last value before the period → last value in it
-const bwMoved = computed(() => changeOver(trend.value, per.value.from, per.value.to));
-const pMoved = computed(() => (per.value.prevFrom ? changeOver(trend.value, per.value.prevFrom, per.value.prevTo) : null));
+// one rule for every change (core/body.ts): last value before the period → last value in it; of the trend when the hero
+// shows the trend, else of the weigh-ins, so the change always matches the number above it. No "vs previous" line under
+// it: a change set against the period before's change ("-0.3 kg vs previous") read as a weight, so the line names the
+// period instead
+const bwMoved = computed(() => changeOver(trended.value ? trend.value : allW.value, per.value.from, per.value.to));
+// the period in words, for the tiles' lines: "in the last 3 months", "this week", "since your first weigh-in"
+const perWords = computed(() => { const l = PERIODS.find((p) => p.value === rk.value)?.label ?? ""; return rk.value === "all" ? "since your first weigh-in" : /^Last \d/.test(l) ? `in the ${l.toLowerCase()}` : l.toLowerCase(); });
 const more = ref(false);
 
 // measurements: newest first per kind, in the shared list's order
@@ -109,14 +115,15 @@ await loaded(body);
     <template v-if="cur === 'weight' && weights.length">
       <!-- how it changed over the period: the trend and its change are only claimed from enough weigh-ins (core/body.ts) -->
       <div v-if="bw.length" class="grid g4 n3">
-        <div class="card hero stat"><div class="lbl"><span class="bi"><Icon name="stats" :size="15" /></span>Trend</div><div class="val">{{ fmt.num(bwTrend.at(-1)!.y, 1) }}<small>{{ fmt.wu }}</small></div><DotLine class="sub" :parts="[`Latest ${fmt.num(bw.at(-1)!.y, 1)} ${fmt.wu}`, ago(new Date(bw.at(-1)!.x).toISOString())]" /><Sparkline :values="bwTrend.map((t) => t.y)" color="var(--onc)" /></div>
-        <div class="card stat"><div class="lbl"><span class="bi"><Icon :name="bwMoved == null || bwMoved === 0 ? 'swap' : bwMoved > 0 ? 'arrowUp' : 'arrowDown'" :size="15" /></span>Change</div><div class="val">{{ bwMoved != null ? signed(bwMoved) : "-" }}<small>{{ bwMoved != null ? fmt.wu : "" }}</small></div><div class="sub">{{ pMoved != null ? `${signed(pMoved, fmt.wu)} vs previous` : "Nothing to compare with" }}</div></div>
-        <div class="card stat"><div class="lbl"><span class="bi"><Icon name="calendar" :size="15" /></span>Weigh-ins</div><div class="val">{{ bw.length }}</div><div class="sub">{{ percentChange(bw.length, pbw.length) ? `${percentChange(bw.length, pbw.length)} vs previous` : "in this period" }}</div></div>
+        <div v-if="trended" class="card hero stat"><div class="lbl"><span class="bi"><Icon name="scale" :size="15" /></span>Weight trend</div><div class="val">{{ fmt.num(bwTrend.at(-1)!.y, 1) }}<small>{{ fmt.wu }}</small></div><DotLine class="sub" :parts="[`Latest ${fmt.num(bw.at(-1)!.y, 1)} ${fmt.wu}`, ago(new Date(bw.at(-1)!.x).toISOString())]" /><Sparkline :values="bwTrend.map((t) => t.y)" color="var(--onc)" /></div>
+        <div v-else class="card hero stat"><div class="lbl"><span class="bi"><Icon name="scale" :size="15" /></span>Latest weigh-in</div><div class="val">{{ fmt.num(bw.at(-1)!.y, 1) }}<small>{{ fmt.wu }}</small></div><div class="sub">{{ ago(new Date(bw.at(-1)!.x).toISOString()) }}</div><Sparkline :values="bw.map((t) => t.y)" color="var(--onc)" /></div>
+        <div class="card stat"><div class="lbl"><span class="bi"><Icon :name="bwMoved == null || bwMoved === 0 ? 'swap' : bwMoved > 0 ? 'arrowUp' : 'arrowDown'" :size="15" /></span>Change</div><div class="val">{{ bwMoved != null ? signed(bwMoved) : "-" }}<small>{{ bwMoved != null ? fmt.wu : "" }}</small></div><div class="sub">{{ bwMoved != null ? perWords : `Needs ${TREND_MIN_ENTRIES} weigh-ins over ${TREND_MIN_DAYS} days` }}</div></div>
+        <div class="card stat"><div class="lbl"><span class="bi"><Icon name="calendar" :size="15" /></span>Weigh-ins</div><div class="val">{{ bw.length }}</div><div class="sub">{{ percentChange(bw.length, pbw.length) ? `${percentChange(bw.length, pbw.length)} vs previous` : perWords }}</div></div>
       </div>
       <div class="card" :class="{ spt: bw.length }"><div class="lbl hgap">Body weight ({{ fmt.wu }})</div>
         <div v-if="!bw.length" class="empty sm"><b>No body weight in this period</b>Pick a longer period.</div>
-        <template v-else><LineChart :points="bwChart" line="Trend" :height="220" :fmt="(v) => fmt.num(v, 1)" />
-          <div v-if="bw.length > 1" class="bmlegend bp-leg"><span><i class="bp-tr" />Trend</span><span><i class="bp-wi" />Weigh-ins</span></div></template></div>
+        <template v-else><LineChart :points="bwChart" :height="220" :fmt="(v) => fmt.num(v, 1)" />
+          <div v-if="trended && bw.length > 1" class="bmlegend bp-leg"><span><i class="bp-wi" />Weigh-ins</span><span><i class="bp-tr" />Trend</span></div></template></div>
     </template>
     <!-- nothing logged yet: one empty card, as on Measurements, not an Entries heading over an empty box -->
     <div v-else-if="cur === 'weight'" class="card empty"><Icon name="scale" :size="34" /><b>No body weight yet</b>Log it now and then, ideally at the same time of day, and its trend shows here.<br /><button class="btn tonal" @click="bodySheet = true">Log body weight</button></div>
@@ -157,9 +164,9 @@ await loaded(body);
 /* the label side gives way first, so a row is never wider than its card */
 .bp-l { min-width: 0; }
 .bp-l .s { overflow: hidden; }
-/* the weight chart's legend under it, as every chart's: the trend in the line's colour, a weigh-in as LineChart draws its
-   dot (.chart .rpt); shown from two weigh-ins, when there is a line */
+/* the weight chart's legend under it, as every chart's: the weigh-ins in the main line's colour, the trend as LineChart
+   draws its quieter line (.lc-tr), a short stroke rather than a dot since it has none; shown only with the trend */
 .bp-leg { margin-top: var(--hg); }
-.bp-leg .bp-tr { background: var(--acc); }
-.bp-leg .bp-wi { background: var(--tx2); opacity: .6; }
+.bp-leg .bp-wi { background: var(--acc); }
+.bp-leg .bp-tr { background: var(--tx2); opacity: .85; width: 14px; height: 2px; border-radius: 1px; }
 </style>

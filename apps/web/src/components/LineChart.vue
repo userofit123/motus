@@ -10,9 +10,9 @@
 // coming closer as it spreads out; the value labels sit in their own strip on the left, which stays put while the
 // plot scrolls. Charts sharing a zoom (a night's) zoom by their hours alone, so they stay lined up. Hovering, clicking or
 // tapping shows the nearest point's tip; only a clicked or tapped tip opens (useChartZoom.ts).
-// A point with a `raw` value (body weight's weigh-in under its smoothed trend) also draws that value as its own dot, off
-// the line, so what was logged always shows; its tip leads with the raw value and names the line's value with `line`,
-// unless the two read the same (a single weigh-in).
+// Points with a `trend` value (body weight's smoothed trend under its weigh-ins) also draw a second, quieter line through
+// those values, without dots or area, so the line and its fill stay on what was logged; a point's tip names its trend
+// value after `trendName`, unless the two read the same.
 import { computed, ref } from "vue";
 import Icon from "./Icon.vue";
 import { useWidth } from "./useWidth";
@@ -22,7 +22,7 @@ import { useFmt } from "../core/format";
 import ChartShade from "./ChartShade.vue";
 import { shadeSpan } from "./chartShade";
 
-const props = defineProps<{ points: { x: number; y: number; raw?: number; label?: string; id?: string }[]; line?: string; height?: number; fmt?: (v: number) => string; xfmt?: (t: number) => string; color?: string; zero?: boolean; domain?: [number, number]; xt?: number[]; gap?: number; shade?: { a: number; b: number; color?: string; soft?: boolean; name?: string; id?: string }[] }>();
+const props = defineProps<{ points: { x: number; y: number; trend?: number; label?: string; id?: string }[]; trendName?: string; height?: number; fmt?: (v: number) => string; xfmt?: (t: number) => string; color?: string; zero?: boolean; domain?: [number, number]; xt?: number[]; gap?: number; shade?: { a: number; b: number; color?: string; soft?: boolean; name?: string; id?: string }[] }>();
 const emit = defineEmits<{ pick: [id: string] }>();
 const box = ref<HTMLElement | null>(null);
 // every chart with tips keeps TIP_ROOM at its top for a pinned tip (P.t, useTip), so the tip stays inside the chart, over
@@ -37,7 +37,7 @@ const base = computed(() => Math.max(1, W.value - P.l - P.r));
 const uid = Math.random().toString(36).slice(2);
 const sorted = computed(() => [...props.points].sort((a, b) => a.x - b.x));
 const dom = computed(() => {
-  const ys = sorted.value.flatMap((p) => (p.raw == null ? [p.y] : [p.y, p.raw])), xs = sorted.value.map((p) => p.x);
+  const ys = sorted.value.flatMap((p) => (p.trend == null ? [p.y] : [p.y, p.trend])), xs = sorted.value.map((p) => p.x);
   const min = Math.min(...ys);
   let lo = props.zero ? 0 : min, hi = Math.max(...ys);
   const flat = lo === hi;
@@ -61,6 +61,8 @@ const sy = (y: number) => { const d = dom.value; return P.t + (1 - (y - d.y0) / 
 const runs = computed(() => { const out: (typeof sorted.value)[] = []; sorted.value.forEach((p, i) => { if (!i || (props.gap && p.x - sorted.value[i - 1]!.x > props.gap)) out.push([]); out.at(-1)!.push(p); }); return out; });
 const line = (r: typeof sorted.value) => r.map((p, i) => `${i ? "L" : "M"}${sx(p.x)},${sy(p.y)}`).join("");
 const path = computed(() => runs.value.map(line).join(""));
+// the second line through the points that have a trend, broken where the main line is
+const trendPath = computed(() => runs.value.map((r) => r.filter((p) => p.trend != null).map((p, i) => `${i ? "L" : "M"}${sx(p.x)},${sy(p.trend!)}`).join("")).join(""));
 const area = computed(() => runs.value.map((r) => `${line(r)}L${sx(r.at(-1)!.x)},${H.value - P.b}L${sx(r[0]!.x)},${H.value - P.b}Z`).join(""));
 // three gridlines, unless the labels would repeat (flat or tiny ranges), then one per distinct label
 const ticks = computed(() => { const d = dom.value; if (d.flat) return [sorted.value[0]!.y]; const t = [0, 0.5, 1].map((k) => d.y0 + (d.y1 - d.y0) * k); return t.filter((v, i) => t.findIndex((u) => f(u) === f(v)) === i); });
@@ -99,8 +101,8 @@ const { el: tipEl, style: tipStyle, span: tipSpan } = useTip(W);
 // kept at the chart's top
 const tipTop = (i: number) => {
   const at = (p: { x: number }) => P.l + sx(p.x) - left.value, s = sorted.value;
-  // the higher of a point's two dots (line and raw), so the tip covers neither
-  const top = (p: { y: number; raw?: number }) => sy(p.raw == null ? p.y : Math.max(p.y, p.raw));
+  // the higher of a point's two lines (its value and its trend), so the tip covers neither
+  const top = (p: { y: number; trend?: number }) => sy(p.trend == null ? p.y : Math.max(p.y, p.trend));
   let t = top(s[i]!);
   if (!pinned.value) return t;
   const { lo, hi } = tipSpan(at(s[i]!), !!go.value);
@@ -156,14 +158,19 @@ const xf = (t: number) => (props.xfmt ? props.xfmt(t) : df.value.date(t));
       <line v-for="t in ticks" :key="t" class="gl" :x1="0" :x2="CW - P.r" :y1="sy(t)" :y2="sy(t)" />
       <text v-for="t in xticks" :key="'x' + t.x" class="ax" :x="sx(t.x)" :y="H - 4" :text-anchor="t.anchor">{{ t.text }}</text>
       <path :d="area" :fill="`url(#cg${uid})`" />
+      <path v-if="trendPath" class="lc-tr" :d="trendPath" />
       <path class="ln" :d="path" :style="color ? { stroke: color } : undefined" />
-      <template v-for="(p, i) in sorted" :key="'r' + i"><circle v-if="p.raw != null" class="rpt" :cx="sx(p.x)" :cy="sy(p.raw)" :r="hover === i ? 4.5 : sorted.length > 40 ? 2 : 3" /></template>
-      <circle v-for="(p, i) in sorted" :key="i" class="pt" :cx="sx(p.x)" :cy="sy(p.y)" :r="hover === i ? 5 : sorted.length > 40 || p.raw != null ? 0 : 3" :style="color ? { stroke: color } : undefined" />
+      <circle v-for="(p, i) in sorted" :key="i" class="pt" :cx="sx(p.x)" :cy="sy(p.y)" :r="hover === i ? 5 : sorted.length > 40 ? 0 : 3" :style="color ? { stroke: color } : undefined" />
     </svg>
     </div>
     </div>
     <div v-if="hover != null && sorted[hover]" class="ctip" :class="{ go: pinned && go }" ref="tipEl" :role="pinned && go ? 'button' : undefined" :tabindex="pinned && go ? 0 : undefined" :style="tipStyle(P.l + sx(sorted[hover]!.x) - left, tipTop(hover), !!(pinned && go), pinned)" @pointerdown="pinned && go ? $event.preventDefault() : undefined" @click.stop.prevent="openGo" @keydown.enter.prevent="openGo" @keydown.space.prevent="openGo">
-      <b>{{ f(sorted[hover]!.raw ?? sorted[hover]!.y) }}</b><span class="sep">·</span><span class="ctip-r"><template v-if="sorted[hover]!.raw != null && f(sorted[hover]!.raw!) !== f(sorted[hover]!.y)">{{ line }} {{ f(sorted[hover]!.y) }} · </template>{{ sorted[hover]!.label ?? xf(sorted[hover]!.x) }}<template v-if="shadeName(sorted[hover]!.x)"> · {{ shadeName(sorted[hover]!.x) }}</template></span><Icon v-if="pinned && go" name="right" :size="13" class="ctip-go" />
+      <b>{{ f(sorted[hover]!.y) }}</b><span class="sep">·</span><span class="ctip-r"><template v-if="sorted[hover]!.trend != null && f(sorted[hover]!.trend!) !== f(sorted[hover]!.y)">{{ trendName ?? "Trend" }} {{ f(sorted[hover]!.trend!) }} · </template>{{ sorted[hover]!.label ?? xf(sorted[hover]!.x) }}<template v-if="shadeName(sorted[hover]!.x)"> · {{ shadeName(sorted[hover]!.x) }}</template></span><Icon v-if="pinned && go" name="right" :size="13" class="ctip-go" />
     </div>
   </div>
 </template>
+
+<style scoped>
+/* the trend under the main line: thinner and in the quiet text colour, so it reads as a guide, not as the data */
+.lc-tr { fill: none; stroke: var(--tx2); stroke-width: 1.5; opacity: .85; vector-effect: non-scaling-stroke; stroke-linejoin: round; stroke-linecap: round; }
+</style>
