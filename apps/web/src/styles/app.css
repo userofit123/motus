@@ -702,7 +702,6 @@ html.phone .cal .dots i.plan { background: none; border: 1px solid var(--ec, var
 .chart .ar { fill: url(#cg-acc); opacity: .5; }
 .chart .pt { fill: var(--bg); stroke: var(--acc); stroke-width: 2; }
 /* a logged value under a smoothed line (a weigh-in under the weight trend): solid and quieter than the line's own dots */
-.chart .rpt { fill: var(--tx2); opacity: .6; }
 .chart .cbar { fill: var(--acc); }
 .chart .cbar[data-dim] { fill: color-mix(in srgb, var(--acc) 75%, transparent); }
 .chart .goal { stroke: var(--tx2); stroke-width: 1; stroke-dasharray: 4 4; opacity: .7; }

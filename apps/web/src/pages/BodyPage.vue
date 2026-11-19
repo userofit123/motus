@@ -23,7 +23,7 @@ import { confirm } from "../core/ask";
 import { invalidate } from "../api/live";
 import { useFmt, ago } from "../core/format";
 import { bodySheet } from "../core/ui";
-import { weightTrend, hasTrend, changeOver, signed, TREND_MIN_ENTRIES, TREND_MIN_DAYS } from "../core/body";
+import { weightTrend, hasTrend, changeOver, changeDetail, signed } from "../core/body";
 import AppSelect from "../components/AppSelect.vue";
 import LineChart from "../components/LineChart.vue";
 import { toast } from "../core/toast";
@@ -78,9 +78,19 @@ const pbw = computed(() => (per.value.prevFrom ? allW.value.filter((q) => within
 // shows the trend, else of the weigh-ins, so the change always matches the number above it. No "vs previous" line under
 // it: a change set against the period before's change ("-0.3 kg vs previous") read as a weight, so the line names the
 // period instead
-const bwMoved = computed(() => changeOver(trended.value ? trend.value : allW.value, per.value.from, per.value.to));
+const bwChange = computed(() => changeDetail(trended.value ? trend.value : allW.value, per.value.from, per.value.to));
+const bwMoved = computed(() => bwChange.value.value);
 // the period in words, for the tiles' lines: "in the last 3 months", "this week", "since your first weigh-in"
 const perWords = computed(() => { const l = PERIODS.find((p) => p.value === rk.value)?.label ?? ""; return rk.value === "all" ? "since your first weigh-in" : /^Last \d/.test(l) ? `in the ${l.toLowerCase()}` : l.toLowerCase(); });
+// the Change tile's line: always true for the picked period. A change from a weigh-in before the period names that
+// weigh-in's day; with nothing to compare, it says what is missing
+const dayOf = (t: number) => new Date(t).toLocaleDateString(undefined, { day: "numeric", month: "short" });
+const changeSub = computed(() => {
+  const c = bwChange.value;
+  if (c.value != null) return c.since != null ? `${perWords.value} · since ${dayOf(c.since)}` : perWords.value;
+  const when = rk.value === "all" ? "so far" : perWords.value;
+  return c.why === "one" ? `Only 1 weigh-in ${when}` : `Too few weigh-ins ${when} for a change`;
+});
 const more = ref(false);
 
 // measurements: newest first per kind, in the shared list's order
@@ -117,7 +127,7 @@ await loaded(body);
       <div v-if="bw.length" class="grid g4 n3">
         <div v-if="trended" class="card hero stat"><div class="lbl"><span class="bi"><Icon name="scale" :size="15" /></span>Weight trend</div><div class="val">{{ fmt.num(bwTrend.at(-1)!.y, 1) }}<small>{{ fmt.wu }}</small></div><DotLine class="sub" :parts="[`Latest ${fmt.num(bw.at(-1)!.y, 1)} ${fmt.wu}`, ago(new Date(bw.at(-1)!.x).toISOString())]" /><Sparkline :values="bwTrend.map((t) => t.y)" color="var(--onc)" /></div>
         <div v-else class="card hero stat"><div class="lbl"><span class="bi"><Icon name="scale" :size="15" /></span>Latest weigh-in</div><div class="val">{{ fmt.num(bw.at(-1)!.y, 1) }}<small>{{ fmt.wu }}</small></div><div class="sub">{{ ago(new Date(bw.at(-1)!.x).toISOString()) }}</div><Sparkline :values="bw.map((t) => t.y)" color="var(--onc)" /></div>
-        <div class="card stat"><div class="lbl"><span class="bi"><Icon :name="bwMoved == null || bwMoved === 0 ? 'swap' : bwMoved > 0 ? 'arrowUp' : 'arrowDown'" :size="15" /></span>Change</div><div class="val">{{ bwMoved != null ? signed(bwMoved) : "-" }}<small>{{ bwMoved != null ? fmt.wu : "" }}</small></div><div class="sub">{{ bwMoved != null ? perWords : `Needs ${TREND_MIN_ENTRIES} weigh-ins over ${TREND_MIN_DAYS} days` }}</div></div>
+        <div class="card stat"><div class="lbl"><span class="bi"><Icon :name="bwMoved == null || bwMoved === 0 ? 'swap' : bwMoved > 0 ? 'arrowUp' : 'arrowDown'" :size="15" /></span>Change</div><div class="val">{{ bwMoved != null ? signed(bwMoved) : "-" }}<small>{{ bwMoved != null ? fmt.wu : "" }}</small></div><div class="sub">{{ changeSub }}</div></div>
         <div class="card stat"><div class="lbl"><span class="bi"><Icon name="calendar" :size="15" /></span>Weigh-ins</div><div class="val">{{ bw.length }}</div><div class="sub">{{ percentChange(bw.length, pbw.length) ? `${percentChange(bw.length, pbw.length)} vs previous` : perWords }}</div></div>
       </div>
       <div class="card" :class="{ spt: bw.length }"><div class="lbl hgap">Body weight ({{ fmt.wu }})</div>

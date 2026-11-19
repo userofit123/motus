@@ -46,16 +46,24 @@ export const TREND_MIN_DAYS = 7;
  *  data to call it a trend (TREND_MIN_ENTRIES entries over TREND_MIN_DAYS calendar days, not 24-hour spans: 3 weigh-ins
  *  from 11 Nov evening to 18 Nov morning do count, M-278). */
 export function changeOver(pts: Pt[], from?: Date | number | null, to?: Date | number | null): number | null {
+  return changeDetail(pts, from, to).value;
+}
+
+/** changeOver with the reason when there is no change to show, so a screen can say exactly what is missing (M-278).
+ *  A weigh-in before the period is a real starting point however short the period is ("today" compares with the last
+ *  weigh-in before today, and says which: `since`); only a start taken from inside the period needs the trend minimum.
+ *  why: "one" = nothing to compare (a single value), "few" = too few entries or days to call it a change. */
+export function changeDetail(pts: Pt[], from?: Date | number | null, to?: Date | number | null): { value: number | null; since: number | null; why: "one" | "few" | null; n: number } {
   let before: Pt | undefined, first: Pt | undefined, last: Pt | undefined;
   for (const p of pts) {
     if (inside(p.x, from, to)) { first ??= p; last = p; }
     else if (from != null && p.x < +from) before = p;
   }
   const start = before ?? first;
-  if (!last || start === last) return null;
+  if (!last || start === last) return { value: null, since: null, why: "one", n: last ? 1 : 0 };
   const n = pts.filter((p) => p.x >= start!.x && p.x <= last!.x).length;
-  if (n < TREND_MIN_ENTRIES || days(start!.x, last.x) < TREND_MIN_DAYS) return null;
-  return Math.round((last.y - start!.y) * 10) / 10;
+  if (!before && (n < TREND_MIN_ENTRIES || days(start!.x, last.x) < TREND_MIN_DAYS)) return { value: null, since: null, why: "few", n };
+  return { value: Math.round((last.y - start!.y) * 10) / 10, since: before ? before.x : null, why: null, n };
 }
 
 /** A change with its sign, plain dashes only (no true minus in the UI): "+1.2 kg", "-0.4 cm", "±0 %". Rounded before the
