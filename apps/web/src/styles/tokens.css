@@ -107,6 +107,10 @@ html {
   --lpy: 10px;
   --lmh: 48px;
   --tdy: 6px;
+  /* between the sections of one card (a night's score, stages and curves; a day's tiles, chart and list), on each side
+     of the faint line that parts them: about half again a block's padding (whole pixels, so the line stays sharp),
+     so at every density a section's header sits clearly further from the section above than from its own content (--hg) */
+  --csg: 24px;
 }
 
 :root {

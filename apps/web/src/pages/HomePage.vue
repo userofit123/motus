@@ -854,7 +854,7 @@ html.phone .hgrid .sz-m { grid-column: 1 / -1; }
 .gll { min-height: 2.4em; font-size: var(--fs-sm); color: var(--tx2); line-height: 1.2; }
 /* Your day: a block's children are 4px apart (.hb's gap) on top of their own margins, so each section takes those
    4px back and sits --cpy below the one before, as on the Calendar page; the header does the same (.hb > .ch) */
-.hb > :deep(.csec) { margin-top: calc(var(--cpy) - 4px); }
+.hb > :deep(.csec) { margin-top: calc(var(--csg) - 4px); }
 .wbars { display: flex; align-items: flex-end; gap: 6px; height: 34px; margin-top: auto; padding-top: var(--hg); box-sizing: content-box; }
 .wbars i { flex: 1; border-radius: 4px 4px 2px 2px; background: color-mix(in srgb, var(--acc) 28%, transparent); }
 .wbars i.cur { background: var(--acc); }

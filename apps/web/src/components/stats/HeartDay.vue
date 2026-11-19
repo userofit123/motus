@@ -121,10 +121,11 @@ watch(() => !recs.isLoading.value && !day.isLoading.value && !calQ.isLoading.val
       </div>
     </div>
 
-    <div class="csec"><div class="lbl hgap">Heart rate by hour</div>
-      <template v-if="charted"><HeartRate inline chart :hr="samples" :height="170" :day="{ from: from.getTime(), to: to.getTime(), spans, ticks, color: DAY_DATA_COLOR }" @pick="(id) => router.push(id)" />
+    <!-- the chart's own header names the section, so it sits right over the chart (one header, as Steps' day) -->
+    <div class="csec">
+      <template v-if="charted"><HeartRate inline chart title="Heart rate by hour" :hr="samples" :height="170" :day="{ from: from.getTime(), to: to.getTime(), spans, ticks, color: DAY_DATA_COLOR }" @pick="(id) => router.push(id)" />
         <div v-if="legend.length" class="bmlegend hd-leg"><span><i :style="{ background: DAY_DATA_COLOR }" />Heart rate</span><span v-for="k in legend" :key="k.color"><i :style="{ background: k.color }" />{{ k.name }}</span></div></template>
-      <div v-else class="tiny">{{ noRecords("day") }}</div></div>
+      <template v-else><div class="lbl hgap">Heart rate by hour</div><div class="tiny">{{ noRecords("day") }}</div></template></div>
 
     <div v-if="zoned" class="csec"><div class="lbl hgap">Time in heart rate zones · max {{ maxHr!.bpm }} bpm{{ maxHr!.own ? "" : " from your age" }}</div><StageBar :parts="zones" /><div class="tiny zn-line">{{ zNote }}</div></div>
     <div v-else-if="!maxHr && charted" class="tiny csec"><button class="lnk inl" @click="router.push('/body?tab=details')">Set your year of birth or max heart rate</button> to see the time in heart rate zones.</div>
@@ -137,5 +138,5 @@ watch(() => !recs.isLoading.value && !day.isLoading.value && !calQ.isLoading.val
 <style scoped>
 .hd-leg { margin-top: var(--hg); }
 /* apart from the zones' legend as the legend is from its bar */
-.zn-line { margin-top: var(--hg); }
+.zn-line { margin-top: var(--tdy); } /* a note under its bar, as every chart's note line */
 </style>

@@ -175,7 +175,7 @@ const zNote = computed(() => { const total = zones.value.reduce((t, z) => t + Ma
 
 <style scoped>
 .sh-leg { margin-top: var(--hg); }
-.zn-line { margin-top: var(--hg); }
+.zn-line { margin-top: var(--tdy); } /* a note under its bar, as every chart's note line */
 .sh-leg .sh-hr { background: var(--acc); }
 /* a rest is a quiet grey span behind the line (the chart draws it at 16%; a touch stronger here so the dot shows) */
 .sh-leg .sh-rest { background: color-mix(in srgb, var(--tx2) 35%, transparent); }

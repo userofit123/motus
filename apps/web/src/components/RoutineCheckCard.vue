@@ -35,7 +35,7 @@ const met = computed(() => props.check.checks.filter((c) => c.status === "good")
           <div class="tiny">{{ met }} of {{ check.checks.length }} checks met</div></div>
       </div>
     </div>
-    <div class="list crows csec">
+    <div class="list crows" style="margin-top: var(--cpy)">
       <div v-for="c in check.checks" :key="c.key" class="li">
         <Icon :name="ICON[c.key]" :size="18" class="muted" />
         <div class="grow"><div class="t">{{ c.title }}</div><div class="s">{{ c.detail }}</div></div>

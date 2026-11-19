@@ -99,6 +99,7 @@ html[data-den="compact"] {
   --lpy: 7px;
   --lmh: 42px;
   --tdy: 4px;
+  --csg: 16px;
 }
 
 html[data-den="roomy"] {
@@ -107,6 +108,7 @@ html[data-den="roomy"] {
   --lpy: 14px;
   --lmh: 56px;
   --tdy: 9px;
+  --csg: 34px;
 }
 
 html[data-den="compact"] .val {

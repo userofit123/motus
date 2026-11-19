@@ -1041,9 +1041,10 @@ html.phone #pop .aph::before { content: ""; position: absolute; left: 50%; top: 
    ring's size, so the number sits where it does beside a ring */
 .gs-ico { width: 64px; height: 64px; flex: none; border-radius: 50%; display: grid; place-items: center; color: var(--acc); background: color-mix(in srgb, var(--acc) 12%, transparent); }
 
-/* a part of a day or night card (Stats → Steps' and Heart's day, Sleep's night): a block-padding below the one before,
-   under a faint line; right under the card's header it needs no line */
-.csec { margin-top: var(--cpy); padding-top: var(--cpy); border-top: 1px solid var(--ol); }
+/* a part of a day or night card (Stats → Steps' and Heart's day, Sleep's night, a routine's card): the section gap
+   (--csg) on each side of a faint line, so sections stand clearly apart while each header sits --hg above its own
+   content; right under the card's header it needs no line */
+.csec { margin-top: var(--csg); padding-top: var(--csg); border-top: 1px solid var(--ol); }
 /* rows of a score's parts (Stats → Scores, Routine check), as Stats → Heart's highlights: the first without space above,
    the last without its line, the value on the right in tabular figures on one line */
 .crows .li:first-child { padding-top: 0; }

@@ -197,7 +197,9 @@ const beforeBed = (x: DaySession) => mins(Math.max(0, t0.value - x.b) / 60000);
     </div>
 
     <div v-if="score" class="csec">
-      <div class="lbl hgap">Sleep score for this night</div>
+      <!-- named and dated as the week's Sleep score block is (name left, period right), so the two read as one score
+           over two periods -->
+      <div class="lbl hgap"><span class="grow">Sleep score</span><span class="tiny">This night</span></div>
       <ScoreHead :score="score.score" :label="score.label" :warn="score.label === 'Low'" />
       <div class="tiny nv-why">{{ scoreLine }}</div>
       <div class="list crows">
@@ -208,6 +210,7 @@ const beforeBed = (x: DaySession) => mins(Math.max(0, t0.value - x.b) / 60000);
         </div>
         <SourceRow :topic="SCORE_META.sleep.lesson" :sources="SCORE_META.sleep.sources" />
       </div>
+      <div class="tiny nv-line">The Sleep score on Home and in the Scores tab covers your last 7 nights, so it can differ from this night's.</div>
     </div>
 
     <div v-if="drawn || hasStages(n) || n.awakeMin" class="csec">
@@ -234,6 +237,8 @@ const beforeBed = (x: DaySession) => mins(Math.max(0, t0.value - x.b) / 60000);
 <style scoped>
 .nv-note { margin-top: var(--hg); }
 .nv-line { margin-top: var(--tdy); }
+/* a curve with too few readings for a chart: its line right under the header, --hg as a chart would be */
+.hgap + .nv-line { margin-top: 0; }
 /* why under the score and above its rows, as on Stats → Scores */
 .nv-why { margin-top: var(--tdy); margin-bottom: var(--cpy); }
 </style>

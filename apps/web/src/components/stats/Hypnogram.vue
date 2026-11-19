@@ -61,7 +61,9 @@ const click = (i: number) => { pick(i); hover.value = i; };
 </script>
 
 <template>
-  <div ref="box" class="cht" style="position:relative" :style="{ '--tipup': TIP_ROOM + 'px' }">
+  <!-- under its header the tip room slides up behind it (charts.css .cht) and so does the top lane's empty strip above
+       its blocks, so the header sits --hg above the first lane's blocks, as it sits --hg above every other chart's plot -->
+  <div ref="box" class="cht" style="position:relative" :style="{ '--tipup': TIP_ROOM + (lh - bh) / 2 + 'px' }">
     <div class="zrow">
       <!-- the lane names, still while the night scrolls -->
       <svg class="chart zfix" :viewBox="`0 0 ${P.l} ${H}`" :style="{ width: P.l + 'px', height: H + 'px' }" aria-hidden="true">

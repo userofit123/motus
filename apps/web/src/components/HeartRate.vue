@@ -7,14 +7,15 @@
 // day: a whole day's readings (Stats → Heart), drawn midnight to midnight with the hours under it, left open where the
 // band read nothing, the day's workouts and activities shaded behind it in their colours (spans) and the hours given in
 // ticks; a reading in one names it in its tip (LineChart), which opens the session (pick). color: the line's own colour.
-// inline: inside a card of its own (no card around it).
+// inline: inside a card of its own (no card around it). title: the header in place of "Heart rate", for a section that
+// names what the chart covers (a day card's "Heart rate by hour"), so the section has one header, right over its chart.
 import { computed } from "vue";
 import { useFmt } from "../core/format";
 import LineChart from "./LineChart.vue";
 import { hrPoints } from "../native/health";
 
 const props = defineProps<{ avg?: number | null; max?: number | null; hr?: [number, number][] | null; chart?: boolean; height?: number; sessions?: { x: number; y: number; id: string }[];
-  day?: { from: number; to: number; spans: { a: number; b: number; id: string; name: string; color: string }[]; ticks: number[]; color: string }; inline?: boolean }>();
+  day?: { from: number; to: number; spans: { a: number; b: number; id: string; name: string; color: string }[]; ticks: number[]; color: string }; inline?: boolean; title?: string }>();
 const emit = defineEmits<{ pick: [id: string] }>();
 const fmt = useFmt();
 const t = (x: number) => fmt.value.time(new Date(x).toISOString());
@@ -34,7 +35,7 @@ const maxV = computed(() => props.max ?? (ys.value.length ? ys.value.reduce((m, 
 
 <template>
   <div v-if="chart ? points.length > 1 : avgV != null || points.length" :class="{ card: !inline }">
-    <div class="lbl hgap">Heart rate{{ chart ? " (bpm)" : "" }}</div>
+    <div class="lbl hgap">{{ title ?? "Heart rate" }}{{ chart ? " (bpm)" : "" }}</div>
     <div v-if="!chart" class="grid g2 keep hr-tiles" :class="{ hgap: points.length > 1 }">
       <div v-if="avgV != null"><div class="lbl">Average (bpm)</div><div class="hr-v">{{ Math.round(avgV) }}</div></div>
       <div v-if="maxV != null"><div class="lbl">Highest (bpm)</div><div class="hr-v">{{ Math.round(maxV) }}</div></div>

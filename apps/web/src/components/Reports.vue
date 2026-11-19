@@ -204,8 +204,9 @@ html.phone .sub.ghost { display: none; }
 
 /* the highlights under the tiles, as list rows: what on the left, its number on the right; a record in the
    accent colour, the way records are marked elsewhere */
-/* a report is dense (four tiles, then rows), so the highlights sit a block-padding gap below the tiles */
-.hl { margin-top: var(--cpy); border-top: 1px solid var(--ol); }
+/* the highlights are the report's second section: the section gap (--csg) on each side of the line under the tiles, as
+   every card's sections (.csec); the first row's own top padding counts toward the gap below the line */
+.hl { margin-top: var(--csg); padding-top: calc(var(--csg) - var(--lpy)); border-top: 1px solid var(--ol); }
 .hl .li:last-child { border-bottom: 0; padding-bottom: 0; }
 .hl .s { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hl .grow { min-width: 0; }
