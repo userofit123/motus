@@ -105,7 +105,7 @@ export const LESSONS = {
   // the Routine check (M-273): what each source found, then each check and its points
   routineCheck: {
     title: "Routine check",
-    intro: "How a routine, or a week of a program, compares with what training research found works best. Each check gives its points for how much of its aim is met, so 100 means every check is met. A routine may be one day of a split, so it is checked only for the muscles it trains; a program's week is checked for all of them.",
+    intro: "How one routine, or one week of a program, compares with what training research found works best. Each routine is checked on its own, as a week of only that routine; a program's week checks its workouts together. A check is met when its target is met in full; one that is not met still earns part of its points, so 100 means every check is met. A routine may be one day of a split, so it is checked only for the muscles it trains; a program's week is checked for all of them.",
     sections: [
       { heading: "Where the aims come from", rows: [
         SCHOENFELD,
@@ -119,16 +119,17 @@ export const LESSONS = {
           ref: "Simão R, de Salles BF, Figueiredo T, Dias I, Willardson JM. Exercise order in resistance training. Sports Medicine, 2012; 42(3): 251-265" },
       ] },
       { heading: "How Motus counts", rows: [
-        { icon: "activity", t: "Sets per muscle", s: `${CHECK_SETS[0]}-${CHECK_SETS[1]} working sets a week for each muscle`, r: points(CHECK_WEIGHTS.volume) },
+        { icon: "activity", t: `${CHECK_SETS[0]}-${CHECK_SETS[1]} sets a week per muscle`, s: "Working sets a week for each muscle", r: points(CHECK_WEIGHTS.volume) },
         { icon: "calendar", t: "Muscles trained twice a week", s: `On ${TWICE} or more days a week. A day counts when the muscle is a lift's main one that day, or gets 2 or more helper sets`, r: points(CHECK_WEIGHTS.frequency) },
-        { icon: "swap", t: "Pushing and pulling", s: `Upper-body pulling sets ${PULL_PUSH[0]}-${PULL_PUSH[1]} times the pushing sets`, r: points(CHECK_WEIGHTS.pushPull) },
-        { icon: "split", t: "Quads and hamstrings", s: `Hamstring sets ${HAMS_QUADS[0]}-${HAMS_QUADS[1]} times the quad sets`, r: points(CHECK_WEIGHTS.legs) },
-        { icon: "arrowUp", t: "Big lifts first", s: "No lift for several muscles after a single-muscle one that tires the same muscles", r: points(CHECK_WEIGHTS.order) },
-        { icon: "refresh", t: "Reps per set", s: `Working sets that aim for ${CHECK_REPS[0]}-${CHECK_REPS[1]} reps`, r: points(CHECK_WEIGHTS.reps) },
+        { icon: "swap", t: "Pushing and pulling sets", s: `Upper-body pulling sets ${PULL_PUSH[0]}-${PULL_PUSH[1]} times the pushing sets`, r: points(CHECK_WEIGHTS.pushPull) },
+        { icon: "split", t: "Quad and hamstring sets", s: `Hamstring sets ${HAMS_QUADS[0]}-${HAMS_QUADS[1]} times the quad sets`, r: points(CHECK_WEIGHTS.legs) },
+        { icon: "arrowUp", t: "Big lifts first", s: "Big lifts, the ones that work several muscles, come before single-muscle lifts that tire the same muscles", r: points(CHECK_WEIGHTS.order) },
+        { icon: "refresh", t: `${CHECK_REPS[0]}-${CHECK_REPS[1]} reps per set`, s: "Working sets with a target of that many reps", r: points(CHECK_WEIGHTS.reps) },
         { icon: "target", t: "Main muscle", s: "The muscle the exercise is for", r: "1 set" },
         { icon: "layers", t: "Helper", s: "A muscle that also works in it", r: "0.5 set" },
         { icon: "flame", t: "Warm-up sets", r: "Not counted" },
-        { icon: "dumbbell", t: "A routine's week", s: "Its sets times how often it is planned a week, else how often you did it in the last 4 weeks" },
+        { icon: "dumbbell", t: "A routine's week", s: "Only this routine's sets, times how often it is planned a week, else how often you did it in the last 4 weeks, else once" },
+        { icon: "calendar", t: "A program's week", s: "Its first full week, not a deload one, with all its workouts" },
       ] },
     ],
   },

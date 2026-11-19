@@ -139,7 +139,7 @@ await loaded(q);
       </section>
     </div>
     <!-- below both columns, as on a routine's page: its rows say what to change in full, which the side column is too narrow for -->
-    <RoutineCheckCard v-if="check" class="spt" :check="check.c" title="Routine check" :span="`Week ${checkWeek!.week}`" :muscles="check.muscles" />
+    <RoutineCheckCard v-if="check" class="spt" :check="check.c" title="Check of this program" :source="`Scored on week ${checkWeek!.week}, with ${checkWeek!.days.length === 1 ? 'its 1 workout' : `all ${checkWeek!.days.length} of its workouts`}`" :muscles="check.muscles" />
 
     <ProgramEditor v-if="editing" :program="p" @close="editing = false" />
   </div>

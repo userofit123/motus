@@ -89,9 +89,9 @@ const hrOf = computed(() => new Map<string, number>((routine.value?.hr?.sessions
 const checkOn = computed(() => !!st.value.features.routineCheck);
 const usual = computed(() => timesAWeek(id.value, schedules.data.value ?? [], history.data.value ?? []));
 const check = computed(() => (checkOn.value && routine.value ? routineCheck(sessionOf(routine.value), usual.value.n) : null));
-// where the times a week come from, under the score
+// how often the score counts it done, and where that comes from, under the score
 const timesWord = (n: number) => (n === 1 ? "once" : n === 2 ? "twice" : `${n} times`);
-const checkSource = computed(() => ({ plan: `Planned ${timesWord(usual.value.n)} a week`, done: `Done ${timesWord(usual.value.n)} a week in the last 4 weeks`, none: "Checked as once a week: not planned or done yet" }[usual.value.from]));
+const checkSource = computed(() => `Scored as done ${timesWord(usual.value.n)} a week (${{ plan: "as planned", done: "how often you did it in the last 4 weeks", none: "not planned or done yet" }[usual.value.from]})`);
 const noteMenu = useNoteMenu();
 // a note on one of the routine's exercises says which; notes on the routine itself need no label
 const noteWhere = (n: any) => (n.targetType === "routine_exercise" ? routine.value?.exercises.find((e: any) => e.id === n.targetId)?.exercise?.name ?? null : null);
@@ -166,7 +166,7 @@ await loaded(r, summaries, notes, rems, schedules, history);
       </div>
     </div>
     <!-- below both columns: its rows say what to change in full, which the side column is too narrow for -->
-    <RoutineCheckCard v-if="check" class="spt" :check="check" title="Routine check" span="Per week" :source="checkSource" />
+    <RoutineCheckCard v-if="check" class="spt" :check="check" title="Check of this routine" :source="checkSource" />
     </div>
 
     <div v-else-if="tab === 'history'">

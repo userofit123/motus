@@ -34,9 +34,9 @@ describe("routine check", () => {
     // quads 10 a week; hamstrings 4 + 5 as the squat's helper; glutes 7 as a helper of both
     const c = routineCheck([squat(5), rdl(2)], 2)!;
     const v = key(c, "volume")!;
-    expect(v.value).toBe("1 of 3");
-    // the biggest gap only, then how many more, in one short sentence
-    expect(v.detail).toBe("Add 3 sets a week for glutes, e.g. Hip thrust, and more for 1 other muscle.");
+    expect(v.value).toBe("1 of 3 muscles");
+    // the biggest gap with its cause and what to add, then the other short muscles by name
+    expect(v.detail).toBe("Only 7 sets a week for glutes: add 3, e.g. Hip thrust. Hamstrings need more too.");
     // chest isn't trained here (a leg day), so it isn't missed
     expect(v.detail).not.toContain("chest");
   });
@@ -65,17 +65,18 @@ describe("routine check", () => {
     // no lift for several muscles, so the order isn't checked
     expect(key(twice, "order")).toBeUndefined();
     expect(key(twice, "pushPull")!.share).toBe(1);
-    expect(key(twice, "volume")!.value).toBe("0 of 2");
-    expect(key(twice, "volume")!.detail).toBe("Add 2 sets a week for biceps, e.g. Dumbbell curl, and more for 1 other muscle.");
+    expect(key(twice, "volume")!.value).toBe("0 of 2 muscles");
+    expect(key(twice, "volume")!.detail).toBe("Only 8 sets a week for biceps: add 2, e.g. Dumbbell curl. Triceps need more too.");
     const once = routineCheck(iso, 1)!;
-    expect(key(once, "frequency")!.detail).toBe("Done once a week: do it twice, or spread its sets over 2 days.");
+    expect(key(once, "frequency")!.detail).toBe("Done once a week, so each muscle is trained on 1 day: do it twice a week.");
   });
 
   it("balances pushing and pulling, quads and hamstrings", () => {
     const c = routineCheck([bench(6), row(2), ex("Leg press", ["quadriceps"], { force: "push" }, 6), rdl(1)], 2)!;
     expect(key(c, "pushPull")!.status).toBe("low");
-    expect(key(c, "pushPull")!.detail).toBe("Too little pulling: add 5 pulling sets a week, e.g. Barbell row.");
-    expect(key(c, "legs")!.detail).toBe("Too little for hamstrings: add 4 sets a week, e.g. Romanian deadlift.");
+    expect(key(c, "pushPull")!.detail).toBe("Pulling has too few sets next to pushing: add 5 pulling sets a week, e.g. Barbell row.");
+    expect(key(c, "pushPull")!.value).toBe("12 push · 4 pull");
+    expect(key(c, "legs")!.detail).toBe("Hamstrings have too few sets next to quads: add 4 hamstring sets a week, e.g. Romanian deadlift.");
     const ok = routineCheck([bench(4), row(4), squat(4), rdl(3)], 2)!;
     expect(key(ok, "pushPull")!.share).toBe(1);
     expect(key(ok, "legs")!.share).toBe(1);
@@ -86,7 +87,7 @@ describe("routine check", () => {
   it("wants big lifts before single-muscle ones that tire the same muscles", () => {
     const c = routineCheck([curl(), row()], 2)!;
     expect(key(c, "order")!.share).toBe(0);
-    expect(key(c, "order")!.detail).toBe("Do Barbell row before Dumbbell curl, which tires the same muscles.");
+    expect(key(c, "order")!.detail).toBe("Barbell row works several muscles, but Dumbbell curl tires them first: do Barbell row first.");
     expect(key(routineCheck([row(), curl()], 2), "order")!.share).toBe(1);
     // in one superset they alternate, so the order doesn't count
     expect(key(routineCheck([{ ...curl(), superset: "A" }, { ...row(), superset: "A" }], 2), "order")!.share).toBe(1);
@@ -95,10 +96,10 @@ describe("routine check", () => {
   it("checks reps against 5-30", () => {
     const c = routineCheck([ex("Deadlift", ["lower back"], {}, 3, 3), ex("Leg press", ["quadriceps"], {}, 3, 40), bench()], 2)!;
     const r = key(c, "reps")!;
-    expect(r.value).toBe("3 of 9");
+    expect(r.value).toBe("3 of 9 sets");
     // one tip, for the side with more sets outside the range (a tie goes to too many reps)
-    expect(r.detail).toBe("Leg press aims for 40 reps: add weight so 30 or fewer are hard.");
-    expect(key(routineCheck([ex("Deadlift", ["lower back"], {}, 3, 3), bench()], 2), "reps")!.detail).toBe("Deadlift aims for 3 reps: good for strength, but 5-30 build more muscle.");
+    expect(r.detail).toBe("Leg press targets 40 reps, more than builds muscle: add weight so 30 or fewer are hard.");
+    expect(key(routineCheck([ex("Deadlift", ["lower back"], {}, 3, 3), bench()], 2), "reps")!.detail).toBe("Deadlift targets 3 reps, good for strength: use 5-30 reps to build more muscle.");
   });
 
   it("scores a sound program week high and a lopsided one low", () => {
