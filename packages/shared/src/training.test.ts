@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { estimate, routineTime, setSeconds, usualDuration, CHANGEOVER_S, liftedKg, trackingFrom, trackingParts, trackingLabel, weightKindsFor, refitSet, newSetFor, progresses, TRACKINGS, COUNTED_BY, usesWeight, usesReps, usesDuration, usesDistance, restAfterSet, planSetRest, isStretch, weekStartOf, weekdayOrder, statsPeriod, sameSpanBefore } from "./training";
+import { estimate, routineTime, setSeconds, usualDuration, CHANGEOVER_S, liftedKg, trackingFrom, trackingParts, trackingLabel, weightKindsFor, refitSet, newSetFor, progresses, TRACKINGS, COUNTED_BY, usesWeight, usesReps, usesDuration, usesDistance, restAfterSet, planSetRest, withMissedSetRest, isStretch, weekStartOf, weekdayOrder, statsPeriod, sameSpanBefore } from "./training";
 import { restDefaultsOf, withDefaults } from "./settings";
 import { TEMPLATES } from "./templates";
 
@@ -196,5 +196,25 @@ describe("weeks and Stats periods", () => {
     // the 31st compared with a 30-day month stops at that month's end
     expect(ymdOf(statsPeriod("month", new Date(2026, 9, 31, 12), 0).prevTo)).toBe("2026-10-01");
     expect(statsPeriod("all", wed, 0).from).toBeNull();
+  });
+});
+
+describe("missed set rest", () => {
+  const d = restDefaultsOf(withDefaults({}).workout);
+  const lr = [{ kind: "normal", side: "L" }, { kind: "normal", side: "R" }];
+  it("adds 30 s to a rest after a set short of its target", () => {
+    expect(withMissedSetRest(90, { reps: 6, targetReps: 8 })).toBe(120);
+    expect(withMissedSetRest(90, { reps: 8, targetReps: 8 })).toBe(90);
+  });
+  it("keeps no rest as no rest, so a left set short of its target goes straight to the right side", () => {
+    // M-284: the bottom bar said "No rest" on the left side, then ticking it with fewer reps started a 30 s rest
+    const first = planSetRest(lr, 0, {}, d);
+    expect(first).toBe(0);
+    expect(withMissedSetRest(first, { reps: 6, targetReps: 8 })).toBe(0);
+    expect(withMissedSetRest(planSetRest(lr, 1, {}, d), { reps: 6, targetReps: 8 })).toBe(d.afterExerciseS + 30);
+  });
+  it("doesn't count reps not filled in yet as a miss: Done takes the target", () => {
+    expect(withMissedSetRest(90, { reps: null, targetReps: 8 })).toBe(90);
+    expect(withMissedSetRest(90, { reps: 6, targetReps: null })).toBe(90);
   });
 });

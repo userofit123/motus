@@ -1,7 +1,7 @@
 // The running workout, as one shared object: a local copy that every change updates at once (so typing and ticking never
 // wait for the network), with each change sent to the server (or kept for later when offline).
 import { computed, effectScope, nextTick, reactive, ref, watch } from "vue";
-import { planSetRest, restDefaultsOf, exerciseComplete, nextSet, dropWeightKg, toKg, type Workout, type WorkoutExercise, type WorkoutSet, type WorkoutPrefs } from "@motus/shared";
+import { planSetRest, withMissedSetRest, restDefaultsOf, exerciseComplete, nextSet, dropWeightKg, toKg, type Workout, type WorkoutExercise, type WorkoutSet, type WorkoutPrefs } from "@motus/shared";
 import { useActive, useSettings } from "../api/queries";
 import { send, endedHere, markEnded, waiting } from "../api/outbox";
 import { api } from "../api/client";
@@ -158,7 +158,9 @@ export function useWorkout() {
     // superset: no rest until the round is complete
     const nx = state.w!.exercises[state.w!.exercises.indexOf(e) + 1];
     if (e.superset && nx?.superset === e.superset) secs = 0;
-    if (settings.value.features.adaptiveRest && s.targetReps && (s.reps ?? 0) < s.targetReps) secs += 30;
+    // a set short of its target rests longer, but only a rest there is: inside a left and right round, before a drop
+    // set or in a superset the 0 stays, as the bottom bar says (withMissedSetRest)
+    if (settings.value.features.adaptiveRest) secs = withMissedSetRest(secs, s);
     // no rest before a drop set comes from the server's plan (restPlannedS), which it plans again when a set becomes or
     // stops being a drop set or a drop set is added, so a rest of the set's own or the routine set's own rest stays
     return { secs, last };

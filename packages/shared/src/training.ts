@@ -187,6 +187,15 @@ export function planSetRest(sets: SidedSet[], i: number, x: SetRestInputs, d: Re
     sideRound: opensSideRound(sets, i), stretch: isStretch(x.exercise), byKindS: x.restByKind, exRestS: x.restS, prefRestS: x.prefRestS, isLastSet, exRestAfterS: x.restAfterS, prefRestAfterS: x.prefRestAfterS }, d);
 }
 
+/** The extra rest after a set that fell short of its target reps (the "Longer rest after a missed set" feature). Only
+ * lengthens a rest there is: no rest stays no rest, so the first side of a left and right round, a set before a drop set
+ * or a superset's turn never starts a 30s rest the bottom bar didn't show. Reps not filled in yet aren't a miss: Done
+ * takes the target for them. */
+export const MISSED_SET_EXTRA_S = 30;
+export function withMissedSetRest(secs: number, s: { reps?: number | null; targetReps?: number | null }): number {
+  return secs > 0 && s.reps != null && s.targetReps != null && s.reps < s.targetReps ? secs + MISSED_SET_EXTRA_S : secs;
+}
+
 /** A drop set's starting weight: about 20% lighter than the set before it, on a weight a gym has (2.5 kg or 5 lb steps). */
 export function dropWeightKg(kg: number | null | undefined, unit: "kg" | "lb"): number | null {
   if (!kg) return kg ?? null;
