@@ -4,6 +4,7 @@
 // and the action bar (rest included) in the middle, what comes next and the totals on the right.
 import { computed, nextTick, onMounted, onBeforeUnmount, ref, watch } from "vue";
 import { useRouter } from "vue-router";
+import { goBack } from "../core/leave";
 import { clock, nextSet, muscleName, workoutSoFar, restAfterSet, restDefaultsOf, isStretch, type Reminder } from "@motus/shared";
 import { useWorkout, endWorkout } from "./useWorkout";
 import { elapsed, finishRest } from "./runtime";
@@ -39,7 +40,8 @@ const exDir = ref("nx");
 watch(() => W.state.cur, (n, o) => { exDir.value = n >= o ? "nx" : "pv"; });
 const w = computed(() => W.state.w);
 const fmt = W.fmt;
-const finishing = ref(false), adding = ref(false), settingsOpen = ref(false), listOpen = ref(false);
+// leaving: Finish or Cancel is moving on to the next page
+const finishing = ref(false), leaving = ref(false), adding = ref(false), settingsOpen = ref(false), listOpen = ref(false);
 const overrides = computed({ get: () => (w.value?.settings ?? {}) as Record<string, unknown>, set: (v) => W.patchWorkout({ settings: v }) });
 // keys on a computer: Space ticks the next set, arrows move between exercises
 function key(ev: KeyboardEvent) {
@@ -58,8 +60,10 @@ watch(() => W.prefs.value.keepAwake, awake);
 onMounted(() => { mounted = true; awake(); addEventListener("keydown", key); document.addEventListener("visibilitychange", onVisible); });
 onBeforeUnmount(() => { mounted = false; keepAwake(false); removeEventListener("keydown", key); document.removeEventListener("visibilitychange", onVisible); });
 // no workout any more (finished or discarded elsewhere): go home. Not while fetching: right after Start, the cached
-// answer is still "none" until the new workout arrives
-watch(() => W.active.isFetched.value && !W.active.isFetching.value && !reloadQueued.value && !W.active.data.value && !W.state.pending, (gone) => { if (gone) router.replace("/"); });
+// answer is still "none" until the new workout arrives. Not when finished or cancelled here either: that move is
+// already on its way, and going Home on top of it would cancel it (finishing then sometimes ended on Home)
+const gone = computed(() => !leaving.value && W.active.isFetched.value && !W.active.isFetching.value && !reloadQueued.value && !W.active.data.value && !W.state.pending);
+watch(gone, (g) => { if (g) router.replace("/"); });
 
 // the exercise being done's rests as "Up next" says them: the rule the workout rests by (restAfterSet), so a stretch says its own
 const upRest = computed(() => {
@@ -131,9 +135,10 @@ const go = (i: number) => { if (w.value && i >= 0 && i <= w.value.exercises.leng
 async function discard() {
   if (!(await confirm("Cancel this workout?", { text: "It ends now and nothing from it is saved: no sets, no history.", ok: "Cancel workout", danger: true }))) return;
   const id = w.value!.id;
+  leaving.value = true;
   // through the outbox, behind any set changes still waiting there, so none of them arrives after the cancel
   try { await send("post", `/workouts/${id}/discard`); }
-  catch (e) { toastError(e); invalidate(["workouts"]); return; }
+  catch (e) { leaving.value = false; toastError(e); invalidate(["workouts"]); return; }
   finishRest(false);
   // leave first, then drop it everywhere: dropping it while this screen is still up would flash "No workout in progress"
   await router.replace("/");
@@ -163,7 +168,7 @@ const menu = computed(() => [
 <template>
   <div v-if="w" class="page wide aw" :class="{ phone: isPhone }" @touchstart.passive="isPhone && ts($event)" @touchend.passive="isPhone && te($event)">
     <div class="aw-top">
-      <button class="ib sm plain" aria-label="Minimise" @click="router.push('/')"><Icon name="down" /></button>
+      <button class="ib sm plain" aria-label="Minimise" @click="goBack(router, '/')"><Icon name="down" /></button>
       <div class="grow" style="min-width:0;cursor:pointer" role="button" tabindex="0" @click="go(w.exercises.length)" @keydown.enter="go(w.exercises.length)">
         <div class="aw-name"><span class="aw-sets">{{ done }} of {{ total }} sets</span><span class="sep">·</span><span class="ellipsis">{{ w.name }}</span></div>
         <div class="aw-clock"><b :class="{ paused }">{{ clock(elapsed(w)) }}</b><span v-if="paused" class="aw-paused">Paused</span><span v-if="hrLatest">{{ hrLatest.bpm }} bpm</span><span v-if="waiting.length">{{ waiting.length }} waiting to sync</span></div>
@@ -247,13 +252,13 @@ const menu = computed(() => [
       </div>
     </div>
 
-    <FinishSheet v-if="finishing" @close="finishing = false" @cancel="finishing = false; discard()" @open="(i) => { finishing = false; go(i); }" />
+    <FinishSheet v-if="finishing" @leaving="leaving = $event" @close="finishing = false" @cancel="finishing = false; discard()" @open="(i) => { finishing = false; go(i); }" />
     <ExercisePicker v-if="adding" multi :exclude="w.exercises.map((e) => e.exerciseId)" @close="adding = false" @pick="(ids) => { adding = false; W.addExercises(ids); }" />
     <Sheet v-if="settingsOpen" title="Workout settings" @close="settingsOpen = false"><WorkoutSettings v-model="overrides" /></Sheet>
     <ReorderSheet v-if="listOpen" title="Reorder exercises" hint="Drag to reorder, or use the arrows. Tap an exercise to open it." :items="w.exercises.map((e, i) => ({ id: e.id, title: e.exercise.name, sub: `${per[i]?.setsDone ?? 0} of ${per[i]?.setsPlanned ?? 0} sets`, cur: i === W.state.cur, active: i === W.state.active, muted: e.status === 'skipped' }))" @move="moveTo" @select="(i) => { go(i); listOpen = false; }" @close="listOpen = false" />
   </div>
   <!-- only once we know: while the app opens, or a reload is queued, the workout may still be on its way -->
-  <div v-else-if="W.active.isFetched.value && !W.active.isFetching.value && !reloadQueued" class="page"><div class="empty"><b>No workout in progress</b><button class="btn" @click="router.push('/')">Home</button></div></div>
+  <div v-else-if="!leaving && W.active.isFetched.value && !W.active.isFetching.value && !reloadQueued" class="page"><div class="empty"><b>No workout in progress</b><button class="btn" @click="router.push('/')">Home</button></div></div>
 </template>
 
 <style scoped>

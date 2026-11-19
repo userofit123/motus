@@ -24,7 +24,7 @@ import WorkoutSoFar from "./WorkoutSoFar.vue";
 import RoutineChanges from "./RoutineChanges.vue";
 import NextTimeSheet, { type NextGroup, type NextSet } from "./NextTimeSheet.vue";
 
-const emit = defineEmits<{ close: []; cancel: []; open: [index: number] }>();
+const emit = defineEmits<{ close: []; cancel: []; open: [index: number]; leaving: [on: boolean] }>();
 const router = useRouter();
 const W = useWorkout();
 const w = computed(() => W.state.w!);
@@ -212,6 +212,9 @@ async function finish() {
     finishRest(true);
     // sets ticked while offline must reach the server first, or finishing would remove them as unticked
     if (!(await settle())) { toast("Can't reach the server yet: your sets are kept here. Finish again when you're back online.", { kind: "err" }); return; }
+    // from here the workout screen must not send you Home when the workout disappears: the server's "workout gone"
+    // can arrive before the move to the finished workout is done (its page still loading), and would cancel it
+    emit("leaving", true);
     await api.post(`/workouts/${id}/finish`, {
       rating: d.rating, notes: d.notes, bodyweightKg: d.bw ? fmt.value.toKg(d.bw) : null,
       routineChanges: d.routineChanges.filter((k) => changes.value.some((c) => c.key === k)),
@@ -224,7 +227,7 @@ async function finish() {
     endWorkout(id);
     syncAfterSession(); // its heart rate from the band
     maybeAutoBackup(W.settings.value.backup, true, (run) => toast("Back up now?", { action: { label: "Download", run }, ms: 10000 }));
-  } catch (e) { toastError(e); invalidate(["workouts"]); } finally { busy.value = false; }
+  } catch (e) { emit("leaving", false); toastError(e); invalidate(["workouts"]); } finally { busy.value = false; }
 }
 </script>
 
