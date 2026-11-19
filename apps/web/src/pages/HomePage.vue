@@ -425,9 +425,9 @@ async function reset() {
 const glanceOpen = ref(false);
 // each line names the number its ring fills toward, the same one the ring uses
 const GLANCE_ROWS = computed<Record<GlanceRing, { icon: string; t: string; s: string }>>(() => ({
-  steps: { icon: "steps", t: "Steps", s: stepGoal.value?.target ? `Today, against your goal of ${fmt.value.num(stepGoal.value.target, 0)} steps` : `Today, against ${fmt.value.num(stepsTarget(age.value), 0)} steps, the aim for your age` },
+  steps: { icon: "steps", t: "Steps", s: stepGoal.value?.target ? `Today, against your goal of ${fmt.value.num(stepGoal.value.target, 0)} steps` : `Today, against ${fmt.value.num(stepsTarget(age.value), 0)} steps, the target for your age` },
   restingHr: { icon: "heartPulse", t: "Resting heart rate", s: "Your latest reading, in bpm" },
-  sleep: { icon: "moon", t: "Last night", s: `Time asleep, against at least ${sleepRange(age.value)[0]} hours, the aim for your age` },
+  sleep: { icon: "moon", t: "Last night", s: `Time asleep, against at least ${sleepRange(age.value)[0]} hours, the target for your age` },
   readiness: { icon: "gauge", t: "Readiness", s: "Today's score out of 100" },
   activeKcal: { icon: "flame", t: "Active calories", s: "Today, in kcal" },
 }));

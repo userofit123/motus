@@ -15,15 +15,15 @@ export const LOWER_AFTER: { value: number; label: string }[] = Array.from({ leng
 export const MISSED_HINT = "Missing the bottom of the rep range in this many workouts in a row";
 /** What Progression does, at the top of Settings' Progression and of an exercise's own */
 export const PROGRESSION_INTRO = "After each workout the routine keeps the reps you did. The reps move inside the rep range; when every set reaches its top, the weight goes up and the reps start again at its bottom";
-export const RANGE_HINT = "The reps to aim for. At the top on every set, the weight goes up";
+export const RANGE_HINT = "The target reps per set. At the top on every set, the weight goes up";
 /** Settings' two rep range rows, one end each, like the two weight step rows */
 export const RANGE_BOTTOM_HINT = "Where the reps start again after the weight goes up";
 export const RANGE_TOP_HINT = "At the top on every set, the weight goes up";
 type ProgShown = { mode: ProgressionMode; repsMin: number; repsMax: number; stepKg: number; lowerAfter: number };
 type ProgOwn = { mode?: unknown; repsMin?: unknown; stepKg?: unknown; lowerAfter?: unknown } | null | undefined;
 /** One exercise's Progression in plain words, as the routine page and the routine editor's Progression header say it:
- *  "Automatic · aims for 6-12 reps · when every set reaches 12, adds 2.5 kg and goes back to 6 reps · lowers the weight
- *  after 3 missed workouts"; one target: "aims for 8 reps · when every set reaches 8, adds 2.5 kg next time"; Suggest
+ *  "Automatic · target 6-12 reps · when every set reaches 12, adds 2.5 kg and goes back to 6 reps · lowers the weight
+ *  after 3 missed workouts"; one target: "target 8 reps · when every set reaches 8, adds 2.5 kg next time"; Suggest
  *  "suggests adding ..."; assisted exercises move the help the other way (nextTime: up = less help, down = more help).
  *  Each part is faded (`dim`) while it follows your default; Off is only "Off". */
 export function progParts(p: ProgShown, own: ProgOwn, weight: (kg: number) => string, opts: { assisted?: boolean } = {}) {
@@ -37,7 +37,7 @@ export function progParts(p: ProgShown, own: ProgOwn, weight: (kg: number) => st
   const n = p.lowerAfter, missed = n === 1 ? "1 missed workout" : `${n} missed workouts in a row`;
   const down = opts.assisted ? (ask ? "suggests more help" : "adds more help") : (ask ? "suggests lowering the weight" : "lowers the weight");
   return [mode,
-    { text: `aims for ${rangeText(p.repsMin, p.repsMax)}`, dim: o.repsMin == null },
+    { text: `target ${rangeText(p.repsMin, p.repsMax)}`, dim: o.repsMin == null },
     { text: `when every set reaches ${p.repsMax}, ${up}${back}`, dim: o.repsMin == null && o.stepKg == null },
     { text: n === 0 ? (opts.assisted ? "never adds help" : "never lowers the weight") : `${down} after ${missed}`, dim: o.lowerAfter == null }];
 }

@@ -8,7 +8,7 @@
 // night's own heart rate series), never empty charts.
 // With the Health scores feature on, the night's own sleep score (shared nightScore) comes after its tiles: the number
 // with its word and ring as Stats → Scores' blocks show theirs, the line that says why, its three parts as their rows,
-// each met or missed for this night, and the row that opens what the aims are based on.
+// each met or missed for this night, and the row that opens what the targets are based on.
 // Each part after the first a block-padding below the one before, under a faint line, as Stats → Heart's day.
 // The stages and the curves under them cover the same hours at the same width, so they share one zoom and scroll
 // (shareChartZoom): zoomed into 3 am on one, every one shows 3 am, lined up as a video editor's tracks.
@@ -145,9 +145,9 @@ const scoreRows = computed(() => (score.value?.parts ?? []).map((p) => {
   const met = p.share >= 1, left = p.weight === 0, ex = p.extra ?? {}, lo = ex.lo ?? 7, hi = ex.hi ?? 9;
   const r = left ? "Left out" : met ? "Met" : "Missed", tone = left ? "muted" : met ? "pos" : "neg";
   const t = p.key === "duration" ? "Hours asleep" : p.key === "efficiency" ? "Stayed asleep" : "Regular times";
-  if (p.key === "duration") return { key: p.key, icon: "moon", t, s: `${mins(ex.asleepMin ?? 0)} · aim for ${lo}-${hi} hours`, r, tone };
-  if (p.key === "efficiency") return { key: p.key, icon: "bed", t, s: left ? "No time awake recorded this night · nothing to count" : `Asleep for ${asleepPct(n.value!)}% of the time tracked · aim for 85% or more`, r, tone };
-  // the night's own times against the usual ones (the median of the week's full nights), as the rows above say value · aim
+  if (p.key === "duration") return { key: p.key, icon: "moon", t, s: `${mins(ex.asleepMin ?? 0)} · target ${lo}-${hi} hours`, r, tone };
+  if (p.key === "efficiency") return { key: p.key, icon: "bed", t, s: left ? "No time awake recorded this night · nothing to count" : `Asleep for ${asleepPct(n.value!)}% of the time tracked · target 85% or more`, r, tone };
+  // the night's own times against the usual ones (the median of the week's full nights), as the rows above say value · target
   return { key: p.key, icon: "clock", t, s: left ? `${p.value === 1 ? "Only this night" : `Only ${p.value} nights`} recorded in the last 7 days · needs ${p.target} nights to count`
     : ex.bed != null && ex.wake != null ? `${fmt.value.time(n.value!.startAt)}-${fmt.value.time(n.value!.endAt)} · usual ${fromNoon(ex.bed)}-${fromNoon(ex.wake)}` : "Bed and wake times within an hour of your usual", r, tone };
 }));
@@ -157,8 +157,8 @@ const scoreLine = computed(() => {
   const x = score.value, p = x?.parts.find((y) => y.key === x.weakest), ex = p?.extra ?? {}, lo = ex.lo ?? 7, hi = ex.hi ?? 9;
   if (!x) return "";
   if (!p) { const left = leftOutLine(x.parts, (v) => fmt.value.num(v, 0), true); return left ? `This night met every guideline that counted. ${left}` : "This night met every guideline."; }
-  if (p.key === "duration") return `You slept ${(ex.asleepMin ?? 0) < lo * 60 ? `less than ${lo}` : `more than ${hi}`} hours: aim for ${lo}-${hi} hours.`;
-  if (p.key === "efficiency") return "You were awake for over 15% of the time tracked: aim to be asleep for 85% or more of it.";
+  if (p.key === "duration") return `You slept ${(ex.asleepMin ?? 0) < lo * 60 ? `less than ${lo}` : `more than ${hi}`} hours: the target is ${lo}-${hi} hours.`;
+  if (p.key === "efficiency") return "You were awake for over 15% of the time tracked: the target is to be asleep for 85% or more of it.";
   return "Your bed or wake time was over an hour off your usual: keep to the same times.";
 });
 

@@ -17,7 +17,7 @@ export const scoresFor = (age: number | null) => age == null || age >= SCORE_MIN
 /** How many days a score covers: the last 7 (today in them), as the guidelines count per week */
 export const SCORE_DAYS = 7;
 
-// ---- sources: each score's "Where the aims come from" row names them in a few words and opens its lesson, which
+// ---- sources: each score's "Where the targets come from" row names them in a few words and opens its lesson, which
 // says what each found and gives the full reference
 export const SCORE_SOURCES = {
   sleep: "National Sleep Foundation 2015, 2017 and 2023",
@@ -134,7 +134,7 @@ export function sleepScore(nights: readonly ScoreNight[], age: number | null): S
     // so the score's card can say it was left out and why (value: the nights it had, target: the week's)
     effs.length >= MIN_NIGHTS
       ? { key: "efficiency" as const, weight: SLEEP_WEIGHTS.efficiency, share: good / effs.length, value: good, target: effs.length,
-        // rounded down as every sleep percent is (core/sleep pctDown), so 84.6% never reads as the 85% aim
+        // rounded down as every sleep percent is (core/sleep pctDown), so 84.6% never reads as the 85% target
         extra: { avg: Math.floor((effs.reduce((t, e) => t + e, 0) / effs.length) * 100 + 1e-6) / 100, nights: n } }
       : { key: "efficiency" as const, weight: 0, share: 1, value: effs.length, target: n, extra: { left: 1 } },
     { key: "regularity", weight: SLEEP_WEIGHTS.regularity, share: regular / n, value: regular, target: n },

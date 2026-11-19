@@ -1,6 +1,6 @@
 // Achievements (optional feature): milestones worked out from what you logged each time they're asked for, never
 // stored, so editing or deleting a workout moves them too. Each is a ladder of steps in the units you use: 100 km and
-// 100 mi are both round numbers to aim for, 160.9 km is not.
+// 100 mi are both round numbers to aim at, 160.9 km is not.
 import type { WeightUnit, DistanceUnit } from "./units";
 import { toKg, toM, num } from "./units";
 

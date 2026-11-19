@@ -4,7 +4,7 @@
 import { GROUPS, WEEKLY_SET_RANGE, SCORE_DAYS, MIN_NIGHTS, SCORE_SOURCES, type Score, type ScoreKey, type ScorePart } from "@motus/shared";
 import { mins, pctDown } from "./sleep";
 
-// `lesson`: the lesson its "Where the aims come from" row opens (components/learn/lessons.ts)
+// `lesson`: the lesson its "Where the targets come from" row opens (components/learn/lessons.ts)
 export const SCORE_META: Record<ScoreKey, { name: string; icon: string; span: string; sources: string; lesson: "sleepScore" | "activityScore" | "strengthScore" }> = {
   sleep: { name: "Sleep score", icon: "moon", span: "Last 7 nights", sources: SCORE_SOURCES.sleep, lesson: "sleepScore" },
   activity: { name: "Activity score", icon: "moveRing", span: "Last 7 days", sources: SCORE_SOURCES.activity, lesson: "activityScore" },
@@ -39,7 +39,7 @@ export function leftOutLine(parts: readonly ScorePart[], num: Num, night = false
 /** A part as a row: met in full reads positive, under half negative, as Readiness's rows take the tone of their effect.
  *  A part counted out of a fixed whole (nights of the week, muscle groups) reads "4 of 7", its line saying what it counts,
  *  then " · " and its average when there is one. A part with a least amount to reach (active minutes, steps, strength
- *  days) shows its own number alone and its line names the aim, since it can go past it: "5 of 2" days read as a muddle */
+ *  days) shows its own number alone and its line names the target, since it can go past it: "5 of 2" days read as a muddle */
 export function scoreRow(p: ScorePart, num: Num): ScoreRow {
   const tone = p.share >= 1 ? "pos" : p.share < 0.5 ? "neg" : undefined;
   switch (p.key) {
@@ -60,9 +60,9 @@ export function scoreRow(p: ScorePart, num: Num): ScoreRow {
     // is Heart's 70 % zone; vigorous minutes said only when there are some, since they make the result more than the
     // minutes; the icon is zone minutes' bolt (heartPulse is the resting heart rate)
     case "minutes": { const vig = x(p, "vigorous");
-      return { key: p.key, icon: "bolt", t: "Active minutes", s: `Workouts, walks and other brisk activity${vig ? ` · ${num(vig)} vigorous minutes count double` : ""} · aim for ${num(p.target)} or more`, r: `${num(p.value)} min`, tone }; }
-    case "steps": return { key: p.key, icon: "steps", t: "Daily steps", s: `Average steps a day · aim for ${num(p.target)} or more`, r: num(p.value), tone };
-    case "days": return { key: p.key, icon: "calendar", t: "Strength days", s: `Days with hard sets · aim for ${days(p.target)} or more`, r: days(p.value), tone };
+      return { key: p.key, icon: "bolt", t: "Active minutes", s: `Workouts, walks and other brisk activity${vig ? ` · ${num(vig)} vigorous minutes count double` : ""} · target ${num(p.target)} or more`, r: `${num(p.value)} min`, tone }; }
+    case "steps": return { key: p.key, icon: "steps", t: "Daily steps", s: `Average steps a day · target ${num(p.target)} or more`, r: num(p.value), tone };
+    case "days": return { key: p.key, icon: "calendar", t: "Strength days", s: `Days with hard sets · target ${days(p.target)} or more`, r: days(p.value), tone };
     case "groups": { const low = short(p);
       return { key: p.key, icon: "activity", t: `Muscle groups with ${SETS}+ hard sets`, s: low.length ? `Under ${SETS}: ${low.join(", ")}` : `All ${p.target} at ${SETS} or more`, r: of(p), tone }; }
   }
@@ -70,7 +70,7 @@ export function scoreRow(p: ScorePart, num: Num): ScoreRow {
 
 /** The line under the score: the part furthest from its guideline, cause then advice, short enough for two lines on a
  *  phone (three when every part counted was met and some didn't count, each with why). The header names the 7 nights or days ("Last 7 nights", "Last 7 days"), so no line repeats it ("You slept less
- *  than 7 hours on 3 of 7 nights: aim for 7-9 hours.", "You averaged 6,000 steps a day: aim for 8,000 or more.").
+ *  than 7 hours on 3 of 7 nights: the target is 7-9 hours.", "You averaged 6,000 steps a day: the target is 8,000 or more.").
  *  Names (of muscle groups) stay in the rows below. */
 export function scoreWhy(s: Score, num: Num): string {
   const p = s.parts.find((y) => y.key === s.weakest);
@@ -84,22 +84,22 @@ export function scoreWhy(s: Score, num: Num): string {
   const off = p.target - p.value;
   switch (p.key) {
     case "duration": {
-      const lo = x(p, "lo"), hi = x(p, "hi"), under = x(p, "short"), over = x(p, "long"), aim = `aim for ${lo}-${hi} hours`;
+      const lo = x(p, "lo"), hi = x(p, "hi"), under = x(p, "short"), over = x(p, "long"), aim = `the target is ${lo}-${hi} hours`;
       // an older server sends no counts under and over: the nights in the hours, as the row counts them
-      if (!over && !under) return `You slept ${lo}-${hi} hours on ${p.value ? `only ${p.value} of` : "none of the"} ${nights(p)}: aim for that every night.`;
+      if (!over && !under) return `You slept ${lo}-${hi} hours on ${p.value ? `only ${p.value} of` : "none of the"} ${nights(p)}: the target is ${lo}-${hi} hours every night.`;
       if (over && under) return `You slept less than ${lo} hours on ${nightsN(under)} and more than ${hi} hours on ${over}: ${aim}.`;
       return `You slept ${over ? `more than ${hi}` : `less than ${lo}`} hours on ${over || under} of ${nights(p)}: ${aim}.`;
     }
-    case "efficiency": return `You were awake for over 15% of the time tracked on ${off} of ${nights(p)}: aim to be asleep for 85% or more of it.`;
+    case "efficiency": return `You were awake for over 15% of the time tracked on ${off} of ${nights(p)}: the target is to be asleep for 85% or more of it.`;
     case "regularity": return `Your bed or wake time was over an hour off your usual on ${off} of ${nights(p)}: keep to the same times.`;
     case "minutes": return `You had ${num(p.value)} active minutes: ${num(off)} more would reach the ${p.target} a week.`;
-    case "steps": return `You averaged ${num(p.value)} steps a day: aim for ${num(p.target)} or more.`;
+    case "steps": return `You averaged ${num(p.value)} steps a day: the target is ${num(p.target)} or more.`;
     case "days": return p.value
-      ? `You did strength training on ${days(p.value)}: aim for ${days(p.target)} or more.`
-      : `You did no strength training: aim for ${days(p.target)} or more.`;
+      ? `You did strength training on ${days(p.value)}: the target is ${days(p.target)} or more.`
+      : `You did no strength training: the target is ${days(p.target)} or more.`;
     // the count only: the row below names the groups
     case "groups": { const n = short(p).length;
-      return n === 1 ? `1 muscle group got fewer than ${SETS} hard sets: aim for ${SETS} or more.`
-        : `${n} muscle groups got fewer than ${SETS} hard sets: aim for ${SETS} or more each.`; }
+      return n === 1 ? `1 muscle group got fewer than ${SETS} hard sets: the target is ${SETS} or more.`
+        : `${n} muscle groups got fewer than ${SETS} hard sets: the target is ${SETS} or more each.`; }
   }
 }

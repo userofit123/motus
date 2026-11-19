@@ -1,5 +1,5 @@
 // Lessons behind the learn button (graduation cap) in a block's header: what a number means and the research
-// behind its aims. Research-based explanations live here, never as text under a chart, so the blocks show only the data.
+// behind its targets. Research-based explanations live here, never as text under a chart, so the blocks show only the data.
 // A new lesson is one more entry; the sheet lays every lesson out the same way.
 import { WEEKLY_SET_RANGE, MIN_NIGHTS, SLEEP_WEIGHTS, ACTIVITY_WEIGHTS, STRENGTH_WEIGHTS, WEEKLY_ACTIVE_MIN, STRENGTH_DAYS, GOOD_EFFICIENCY, MODERATE_FROM, VIGOROUS_FROM, SET_LOAD, MINUTE_LOAD, MIN_LOAD_DAYS, HR_ZONES, ZONE_WEIGHTS } from "@motus/shared";
 import { CHECK_SETS, CHECK_REPS, CHECK_WEIGHTS, PULL_PUSH, HAMS_QUADS, TWICE } from "@motus/shared";
@@ -33,7 +33,7 @@ export const LESSONS = {
         { icon: "check", t: `${lo}-${hi} sets`, s: "Where most people build the most muscle", ok: true },
         { icon: "moon", t: `Over ${hi} sets`, s: "Little extra growth for most people, and harder to recover from" },
       ] },
-      { heading: "Where the aims come from", rows: [
+      { heading: "Where the targets come from", rows: [
         SCHOENFELD,
         { icon: "note", t: "Baz-Valle et al., 2022", s: `Review of studies on trained lifters: 12-${hi} sets a week worked best for most muscles, more than ${hi} rarely added much`,
           ref: "Baz-Valle E, Balsalobre-Fernández C, Alix-Fagoaga C, Schoenfeld BJ. A systematic review of the effects of different resistance training volumes on muscle hypertrophy. Journal of Human Kinetics, 2022; 81: 199-210" },
@@ -50,9 +50,9 @@ export const LESSONS = {
   // the health scores: what each guideline found, then how Motus turns it into points
   sleepScore: {
     title: "Sleep score",
-    intro: "How your last 7 nights, as your watch or band tracked them, compare with the National Sleep Foundation's advice for adults: enough hours, little time awake and steady times. Your nights come from your watch or band; the studies below set the aims. Each part gives its points for the share of nights that met it, so 100 means every night met all three.",
+    intro: "How your last 7 nights, as your watch or band tracked them, compare with the National Sleep Foundation's advice for adults: enough hours, little time awake and steady times. Your nights come from your watch or band; the studies below set the targets. Each part gives its points for the share of nights that met it, so 100 means every night met all three.",
     sections: [
-      { heading: "Where the aims come from", rows: [
+      { heading: "Where the targets come from", rows: [
         { icon: "note", t: "National Sleep Foundation, 2015", s: "An expert panel reviewed the research on sleep and health: adults should sleep 7-9 hours a night, and 7-8 hours from 65",
           ref: "Hirshkowitz M, et al. National Sleep Foundation's sleep time duration recommendations: methodology and results summary. Sleep Health, 2015; 1(1): 40-43" },
         { icon: "note", t: "National Sleep Foundation, 2017", s: `An expert panel on sleep quality: being asleep for ${pct(GOOD_EFFICIENCY)} or more of your time in bed is a sign of good sleep at every adult age (Motus uses the time your watch or band tracked)`,
@@ -70,9 +70,9 @@ export const LESSONS = {
   },
   activityScore: {
     title: "Activity score",
-    intro: `How active your last 7 days were, against the World Health Organization's ${WEEKLY_ACTIVE_MIN} minutes a week and the steps a day linked with a longer life. Each part gives its points for how much of its aim you reached, so 100 means you reached both.`,
+    intro: `How active your last 7 days were, against the World Health Organization's ${WEEKLY_ACTIVE_MIN} minutes a week and the steps a day linked with a longer life. Each part gives its points for how much of its target you reached, so 100 means you reached both.`,
     sections: [
-      { heading: "Where the aims come from", rows: [
+      { heading: "Where the targets come from", rows: [
         { icon: "note", t: "World Health Organization, 2020", s: `Adults should get at least ${WEEKLY_ACTIVE_MIN} minutes of moderate activity a week, or 75 minutes of vigorous activity, or a mix of both. Any activity is better than none`, ref: WHO },
         { icon: "note", t: "American College of Sports Medicine, 2011", s: `Effort counts as moderate at ${Math.round(MODERATE_FROM * 100)}-76% of your max heart rate and vigorous at ${Math.round(VIGOROUS_FROM * 100)}-95%`,
           ref: "Garber CE, et al. Quantity and quality of exercise for developing and maintaining cardiorespiratory, musculoskeletal, and neuromotor fitness in apparently healthy adults. Medicine & Science in Sports & Exercise, 2011; 43(7): 1334-1359" },
@@ -90,9 +90,9 @@ export const LESSONS = {
   },
   strengthScore: {
     title: "Strength score",
-    intro: "How your strength training over the last 7 days compares with the World Health Organization's advice and the weekly sets that build muscle. Each part gives its points for how much of its aim you reached, so 100 means you reached both.",
+    intro: "How your strength training over the last 7 days compares with the World Health Organization's advice and the weekly sets that build muscle. Each part gives its points for how much of its target you reached, so 100 means you reached both.",
     sections: [
-      { heading: "Where the aims come from", rows: [
+      { heading: "Where the targets come from", rows: [
         { icon: "note", t: "World Health Organization, 2020", s: `Adults should do muscle-strengthening activities that work all major muscle groups on ${STRENGTH_DAYS} or more days a week`, ref: WHO },
         SCHOENFELD,
       ] },
@@ -107,7 +107,7 @@ export const LESSONS = {
     title: "Routine check",
     intro: "How one routine, or one week of a program, compares with what training research found works best. Each routine is checked on its own, as a week of only that routine; a program's week checks its workouts together. A check is met when its target is met in full; one that is not met still earns part of its points, so 100 means every check is met. A routine may be one day of a split, so it is checked only for the muscles it trains; a program's week is checked for all of them.",
     sections: [
-      { heading: "Where the aims come from", rows: [
+      { heading: "Where the targets come from", rows: [
         SCHOENFELD,
         { icon: "note", t: "Schoenfeld, Ogborn & Krieger, 2016", s: "Review of 10 studies: training a muscle on 2 days a week built more muscle than on 1",
           ref: "Schoenfeld BJ, Ogborn D, Krieger JW. Effects of resistance training frequency on measures of muscle hypertrophy: a systematic review and meta-analysis. Sports Medicine, 2016; 46(11): 1689-1697" },

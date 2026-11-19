@@ -2,7 +2,7 @@
 // each check saying what it found and what to change. Pure, so the rules are tested once and the pages only show them.
 // Sets are counted as Stats → Muscles and the Strength score count them (muscleSets: a working set 1 for each main muscle,
 // 0.5 for each helper; warm-ups left out), so the three never disagree. Every rule sits next to the research it comes
-// from; the lesson behind "Where the aims come from" gives the full references. Each routine is checked on its own (a week
+// from; the lesson behind "Where the targets come from" gives the full references. Each routine is checked on its own (a week
 // of that routine alone); a program's week checks its workouts together. Left out on purpose:
 // - total sets or minutes per session: no clear limit fits everyone;
 // - a goal (strength or size): Motus doesn't ask for one, so reps are only checked against the range that does both.

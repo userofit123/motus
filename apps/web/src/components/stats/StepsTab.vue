@@ -208,7 +208,7 @@ type Insight = { key: string; icon: string; t: string; s: string; rv: string; to
 const insights = computed(() => {
   const out: Insight[] = [];
   const m = minutesPart.value;
-  // the line and the tone are the score row's own (what counts, then the aim: "90 min", not "180 of 150" once past it),
+  // the line and the tone are the score row's own (what counts, then the target: "90 min", not "180 of 150" once past it),
   // after the period as this screen's other lines start
   if (m) { const row = scoreRow(m, n0); out.push({ key: "min", icon: "bolt", t: "Active minutes", s: `last 7 days · ${row.s.charAt(0).toLowerCase()}${row.s.slice(1)}`, rv: row.r, tone: row.tone }); }
   const k = nowStreak.value;
