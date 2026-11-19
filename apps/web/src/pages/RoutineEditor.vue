@@ -593,19 +593,19 @@ await loaded(src, all, folders, routines, templates);
         <div class="li"><div class="grow"><div class="t">Rep range</div><div class="s">{{ RANGE_HINT }}</div></div>
           <AppSelect :model-value="progFor.progression?.repsMin != null" :options="[{ value: false, label: `Default (${rangeText(s.progression.repsMin, s.progression.repsMax)})` }, { value: true, label: 'Its own' }]" title="Rep range" style="width:auto"
             @update:model-value="(v) => (v ? setRange(progFor, s.progression.repsMin, s.progression.repsMax) : setProg(progFor, { repsMin: null, repsMax: null }))" /></div>
-        <!-- its own range: one row per end with one stepper, like "Its own weight step" and Settings' two rows -->
+        <!-- its own range: one row per end with one stepper, like "Its own increase" and Settings' two rows -->
         <template v-if="progFor.progression?.repsMin != null && progFor.progression?.repsMax != null">
           <div class="li"><div class="grow"><div class="t">Its own rep range, bottom</div></div>
             <NumStep :value="progFor.progression.repsMin" :min="1" :max="100" unit="reps" label="bottom of the rep range" @set="(v) => setRange(progFor, v, Math.max(v, progFor!.progression!.repsMax!))" /></div>
           <div class="li"><div class="grow"><div class="t">Its own rep range, top</div></div>
             <NumStep :value="progFor.progression.repsMax" :min="1" :max="100" unit="reps" label="top of the rep range" @set="(v) => setRange(progFor, Math.min(v, progFor!.progression!.repsMin!), v)" /></div>
         </template>
-        <div class="li"><div class="grow"><div class="t">Weight step</div><div class="s">The smallest change when the weight goes up or down</div></div>
+        <div class="li"><div class="grow"><div class="t">Increase by</div><div class="s">How much the weight goes up when you progress</div></div>
           <!-- a picker like "Lower the weight after": the default's label is too long for a two-part toggle on a phone -->
-          <AppSelect :model-value="progFor.progression?.stepKg != null" :options="[{ value: false, label: `Default (${fmt.wu_(defaultsOf(progFor).stepKg)})` }, { value: true, label: 'Its own' }]" title="Weight step" style="width:auto"
+          <AppSelect :model-value="progFor.progression?.stepKg != null" :options="[{ value: false, label: `Default (${fmt.wu_(defaultsOf(progFor).stepKg)})` }, { value: true, label: 'Its own' }]" title="Increase by" style="width:auto"
             @update:model-value="(v) => setProg(progFor, { stepKg: v ? defaultsOf(progFor).stepKg : null })" /></div>
-        <div v-if="progFor.progression?.stepKg != null" class="li"><div class="grow"><div class="t">Its own weight step</div></div>
-          <NumStep :value="wNum(progFor.progression.stepKg)" :step="fmt.wu === 'lb' ? 1 : 0.5" :min="fmt.wu === 'lb' ? 0.5 : 0.25" :max="100" :unit="fmt.wu" label="weight step" @set="(v) => setProg(progFor, { stepKg: fmt.toKg(v) })" /></div>
+        <div v-if="progFor.progression?.stepKg != null" class="li"><div class="grow"><div class="t">Its own increase</div></div>
+          <NumStep :value="wNum(progFor.progression.stepKg)" :step="fmt.wu === 'lb' ? 1 : 0.5" :min="fmt.wu === 'lb' ? 0.5 : 0.25" :max="100" :unit="fmt.wu" label="its own increase" @set="(v) => setProg(progFor, { stepKg: fmt.toKg(v) })" /></div>
         <div class="li"><div class="grow"><div class="t">Lower the weight after</div><div class="s">{{ MISSED_HINT }}</div></div>
           <AppSelect :model-value="progFor.progression?.lowerAfter ?? null" :options="[{ value: null, label: `Default (${lowerAfterLabel(s.progression.lowerAfter)})` }, ...LOWER_AFTER]" title="Lower the weight after" style="width:auto"
             @update:model-value="(v) => setProg(progFor, { lowerAfter: v })" /></div>
