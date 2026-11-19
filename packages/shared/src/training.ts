@@ -219,13 +219,16 @@ export function estimate(exercises: { sets: EstimateSet[]; medianSetS?: number |
   const changeS = exercises.filter((e) => e.sets.length).length * CHANGEOVER_S;
   return { totalS: workS + restS + changeS, workS, restS, changeS };
 }
+/** A workout longer than this (pauses taken out) was left running, not trained: it says nothing of how long you train
+ *  (usualDuration) or how active you were (the Activity score) */
+export const LEFT_RUNNING_S = 4 * 3600;
 /** How long a routine really takes you: the average of its recent workouts (newest first, in seconds, pauses already
  *  taken out). Looks only at the last 3 usable ones (5 min - 4 h; shorter was given up, longer left running) so it
  *  follows a routine that has changed, and leaves out any of those under half or over twice their median. The newest
  *  usable one is always kept: if it differs a lot, the routine probably changed and that is the news.
  *  `of` is how many went into the average; `newest` is whether the newest workout is one of them. */
 export function usualDuration(recentS: number[]): { s: number; of: number; newest: boolean } | null {
-  const ok = recentS.map((s, i) => ({ s, i })).filter((x) => x.s >= 300 && x.s <= 4 * 3600).slice(0, 3);
+  const ok = recentS.map((s, i) => ({ s, i })).filter((x) => x.s >= 300 && x.s <= LEFT_RUNNING_S).slice(0, 3);
   if (!ok.length) return null;
   const sorted = ok.map((x) => x.s).sort((a, b) => a - b), mid = Math.floor(sorted.length / 2);
   const med = sorted.length % 2 ? sorted[mid]! : (sorted[mid - 1]! + sorted[mid]!) / 2;

@@ -30,7 +30,7 @@ import { isSum, DERIVED_DAYS, shift, lockRecords, loadReads, loadBlocks, appKind
   type DerivedType, type SpanBand, type SumType } from "./healthDerive";
 import { isNight, cleanWornDevice, plausibleSteps, stepsTyped, appSteps, bandStepsVerdict, daySteps, type WornDevice } from "@motus/shared";
 import { maxHeartRate, sessionLoad, loadTrend, CHRONIC_DAYS, exercisePeaks, type LoadTrend, type HrTick } from "@motus/shared";
-import { SCORE_DAYS, ageOf, scoresFor, MODERATE_FROM, VIGOROUS_FROM, eachSample, sleepScore, nightScore, activityScore, strengthScore, muscleSets, type ScoreNight } from "@motus/shared";
+import { SCORE_DAYS, ageOf, scoresFor, MODERATE_FROM, VIGOROUS_FROM, LEFT_RUNNING_S, eachSample, sleepScore, nightScore, activityScore, strengthScore, muscleSets, type ScoreNight } from "@motus/shared";
 import { getSettings } from "./settings";
 import { motusRecordFor, copyFigures, linkBandSessions, linkHistory, release, releaseDangling, type Copied } from "./bandMatch";
 import { SET_COUNT_SQL, VOLUME_SQL } from "./workouts";
@@ -41,6 +41,9 @@ export const HEALTH_SOURCE = "health_connect";
 const bandNum = (v: unknown, max: number) => (typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= max ? v : null);
 // an activity's band data has settled: it has synced by then, or never will (the app uses the same 3 days)
 const SETTLED_MS = 3 * 86400000;
+/** The built-in activity types of light effort (2024 Compendium: stretching and hatha yoga under 3 METs), which the
+ *  Activity score doesn't count as active minutes; every other recorded activity is moderate */
+const LIGHT_TYPES = ["stretching", "yoga"];
 
 // The average to keep when new band readings come in: one typed in stays; the band's own (the one its earlier readings
 // gave, within rounding of the thinned series) follows as more of them arrive
@@ -1063,23 +1066,27 @@ export function healthRoutes(r: Router) {
     // sleep: the week's full nights (a nap or part of a night is no night, as everywhere), as the score reads them
     const ns = (await nights(ctx, "n.date >= $1::date AND n.date <= $2::date", [from, today], false)).map((n) => scoreNightOf(n, tz)).filter((n) => isNight(n.asleepMin / 60));
 
-    // activity (M-268): the week's sessions, finished workouts and recorded activities of a moving type (one that covers
-    // distance: walk, run, hike, cycle, swim, row...; not yoga, stretching or other), count as moderate minutes. WHO's
-    // examples of moderate activity are brisk walking and the like, and the Compendium of Physical Activities puts
-    // resistance training at 3.5-6 METs, moderate. They count whether or not heart rate was recorded: a band reads
-    // every few minutes and lifting or walking keeps the heart under the moderate line (64% of max) most of the time, so
-    // heart rate alone gave a week of 7 workouts and 10 walks 20 minutes. On top, the band's own minutes at moderate or
-    // vigorous effort outside the sessions (a cycle to work nobody recorded); a vigorous reading inside a session makes
-    // that time vigorous. Overlapping sessions (a walk recorded during a workout) count their time once.
+    // activity (M-268): the week's sessions, finished workouts and every recorded activity (built-in or one you added:
+    // climbing, padel...) but stretching and yoga, count as moderate minutes. WHO's examples of moderate activity are
+    // brisk walking and the like, and the 2024 Compendium of Physical Activities puts resistance training at 3.5-6 METs,
+    // moderate (3-6), and stretching and hatha yoga under 3, light. They count whether or not heart rate was recorded: a
+    // band reads every few minutes and lifting or walking keeps the heart under the moderate line (64% of max) most of the
+    // time, so heart rate alone gave a week of 7 workouts and 10 walks 20 minutes. On top, the band's own minutes at
+    // moderate or vigorous effort outside the sessions (a cycle to work nobody recorded); a vigorous reading inside a
+    // session makes that time vigorous. Overlapping sessions (a walk recorded during a workout) count their time once.
+    // A workout over LEFT_RUNNING_S was left running and counts nothing, as for a routine's usual time; an activity has
+    // no such limit (a long hike or ride is real, and its times can be changed when it was left running).
     const lo = shift(from, -1), hi = shift(today, 2);
-    await ensureTypes(ctx);
     const spans = [
       ...(await ctx.q.query<{ started_at: string; dur: number | string | null }>(
-        `SELECT a.started_at, a.duration_s AS dur FROM activities a JOIN activity_types t ON t.user_id = a.user_id AND t.slug = a.type
-         WHERE t.has_distance AND a.started_at >= $1::date AND a.started_at < $2::date`, [lo, hi])).rows,
+        `SELECT started_at, duration_s AS dur FROM activities
+         WHERE type <> ALL($3::text[]) AND started_at >= $1::date AND started_at < $2::date`, [lo, hi, LIGHT_TYPES])).rows,
+      // a workout's pauses are kept as one total, not when they were, so they come off the end of its time: the minutes
+      // stay right, their place in the day is approximate (it matters only for which band readings fall inside it)
       ...(await ctx.q.query<{ started_at: string; dur: number | string | null }>(
         `SELECT started_at, extract(epoch FROM ended_at - started_at) - paused_s AS dur FROM workouts
-         WHERE status = 'completed' AND ended_at IS NOT NULL AND started_at >= $1::date AND started_at < $2::date`, [lo, hi])).rows,
+         WHERE status = 'completed' AND ended_at IS NOT NULL AND started_at >= $1::date AND started_at < $2::date`, [lo, hi])).rows
+        .filter((x) => Number(x.dur) <= LEFT_RUNNING_S),
     ].filter((x) => inWeek(x.started_at) && Number(x.dur) > 0)
       .map((x) => { const a = new Date(x.started_at).getTime(); return [a, a + Number(x.dur) * 1000] as [number, number]; });
     const sessions: [number, number][] = [];
@@ -1087,7 +1094,9 @@ export function healthRoutes(r: Router) {
       const last = sessions.at(-1);
       if (last && iv[0] <= last[1]) last[1] = Math.max(last[1], iv[1]); else sessions.push(iv);
     }
-    const inSession = (ms: number) => sessions.some(([a, b]) => ms >= a && ms < b);
+    // the minutes of [a, b) (ms) inside a session: a band reading stands for up to 5 minutes, which can run past a
+    // session's start or end, so it counts inside for its part that is and outside for the rest
+    const inSession = (a: number, b: number) => sessions.reduce((t, [x, y]) => t + Math.max(0, Math.min(b, y) - Math.max(a, x)), 0) / 60000;
     const hrDays = max ? (await ctx.q.query<{ date: string; hr: unknown }>(
       "SELECT to_char(date, 'YYYY-MM-DD') AS date, hr FROM hr_days WHERE date >= $1::date AND date <= $2::date", [from, today])).rows : [];
     let moderate = 0, vigorous = 0, vigorousIn = 0;
@@ -1097,10 +1106,9 @@ export function healthRoutes(r: Router) {
       if (!hr || hr.length < 2) continue;
       hrDates.add(d.date);
       eachSample(hr, (t, bpm, secs) => {
-        const share = bpm / max!, m = secs / 60;
-        if (inSession(t * 1000)) { if (share >= VIGOROUS_FROM) vigorousIn += m; }
-        else if (share >= VIGOROUS_FROM) vigorous += m;
-        else if (share >= MODERATE_FROM) moderate += m;
+        const share = bpm / max!, inside = inSession(t * 1000, (t + secs) * 1000), out = secs / 60 - inside;
+        if (share >= VIGOROUS_FROM) { vigorousIn += inside; vigorous += out; }
+        else if (share >= MODERATE_FROM) moderate += out;
       });
     }
     let activityMin = 0, activityMinOffHr = 0;

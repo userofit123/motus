@@ -25,10 +25,15 @@ const nights = (p: ScorePart) => (p.target === SCORE_DAYS ? `${p.target} nights`
 const days = (n: number) => `${n} ${n === 1 ? "day" : "days"}`;
 const nightsN = (n: number) => `${n} ${n === 1 ? "night" : "nights"}`;
 
-/** The parts a score left out (weight 0) by their rows' titles: "Stayed asleep was left out."; none: "" */
-export function leftOutLine(parts: readonly ScorePart[], num: Num): string {
-  const out = parts.filter((p) => p.weight === 0).map((p) => scoreRow(p, num).t);
-  return out.length ? `${out.join(" and ")} ${out.length === 1 ? "was" : "were"} left out.` : "";
+/** The parts a score left out (weight 0), each by its row's title with why: "Stayed asleep didn't count: time awake
+ *  wasn't recorded on enough nights."; none: "". "didn't count" agrees with any title, one or many ("Regular times");
+ *  `night`: a single night's score (Stats → Sleep's night), whose own night had no time awake */
+export function leftOutLine(parts: readonly ScorePart[], num: Num, night = false): string {
+  const why: Partial<Record<ScorePart["key"], string>> = {
+    efficiency: night ? "time awake wasn't recorded this night" : "time awake wasn't recorded on enough nights",
+    regularity: "too few nights recorded",
+  };
+  return parts.filter((p) => p.weight === 0).map((p) => `${scoreRow(p, num).t} didn't count${why[p.key] ? `: ${why[p.key]}` : ""}.`).join(" ");
 }
 
 /** A part as a row: met in full reads positive, under half negative, as Readiness's rows take the tone of their effect.
@@ -41,15 +46,17 @@ export function scoreRow(p: ScorePart, num: Num): ScoreRow {
     // each row's result counts nights, so its line says which nights it counts, then the average
     case "duration": return { key: p.key, icon: "moon", t: "Hours asleep", s: `Nights with ${x(p, "lo")}-${x(p, "hi")} hours · average ${mins(x(p, "avgMin"))}`, r: of(p), tone };
     // the share of the time the band tracked spent asleep: it can't know when you got into bed, so never "in bed". Only
-    // nights the band split into asleep and awake count, so when that is fewer than the week's the line says so (its "of"
-    // is smaller than the other rows'); with too few the part is left out of the score (weight 0) and says so as
+    // nights the band split into asleep and awake count, so when that is fewer than the week's the line says how many it
+    // left out and why, as missing data, never "without time awake", which reads as never waking (its "of" is smaller
+    // than the other rows'); with too few the part is left out of the score (weight 0) and says so as
     // Readiness's left-out rows do, the fact then the reason
     case "efficiency": {
       if (p.weight === 0) return { key: p.key, icon: "bed", t: "Stayed asleep", s: p.value ? `Time awake recorded on ${p.value} of ${p.target} nights · needs ${MIN_NIGHTS} nights to count` : `No time awake recorded in the last ${SCORE_DAYS} nights · nothing to count`, r: "Left out", tone: "muted" };
       const out = x(p, "nights") - p.target;
-      return { key: p.key, icon: "bed", t: "Stayed asleep", s: `Nights asleep 85% of the time or more · average ${pctDown(x(p, "avg"))}%${out > 0 ? ` · ${nightsN(out)} not counted` : ""}`, r: of(p), tone }; }
+      return { key: p.key, icon: "bed", t: "Stayed asleep", s: `Nights asleep 85% of the time or more · average ${pctDown(x(p, "avg"))}%${out > 0 ? ` · time awake not recorded on ${nightsN(out)}` : ""}`, r: of(p), tone }; }
     case "regularity": return { key: p.key, icon: "clock", t: "Regular times", s: "Nights within an hour of your usual bed and wake times", r: of(p), tone };
-    // what counts under the title (workouts, walks and the band's brisk minutes, M-268), never a "Moderate" title, which
+    // what counts under the title (workouts, every recorded activity but stretching and yoga, and the band's brisk
+    // minutes, M-268), never a "Moderate" title, which
     // is Heart's 70 % zone; vigorous minutes said only when there are some, since they make the result more than the
     // minutes; the icon is zone minutes' bolt (heartPulse is the resting heart rate)
     case "minutes": { const vig = x(p, "vigorous");
@@ -62,15 +69,16 @@ export function scoreRow(p: ScorePart, num: Num): ScoreRow {
 }
 
 /** The line under the score: the part furthest from its guideline, cause then advice, short enough for two lines on a
- *  phone. The header names the 7 nights or days ("Last 7 nights", "Last 7 days"), so no line repeats it ("You slept less
+ *  phone (three when every part counted was met and some didn't count, each with why). The header names the 7 nights or days ("Last 7 nights", "Last 7 days"), so no line repeats it ("You slept less
  *  than 7 hours on 3 of 7 nights: aim for 7-9 hours.", "You averaged 6,000 steps a day: aim for 8,000 or more.").
  *  Names (of muscle groups) stay in the rows below. */
 export function scoreWhy(s: Score, num: Num): string {
   const p = s.parts.find((y) => y.key === s.weakest);
-  // every part counted was met: "every guideline" then says "counted" and names the parts left out, so it never covers one
+  // every part counted was met: "every guideline" then says "that counted" and names the parts left out with why, so it
+  // never covers one
   if (!p) {
     const left = leftOutLine(s.parts, num);
-    const met = `every guideline${left ? " counted" : ""}`;
+    const met = `every guideline${left ? " that counted" : ""}`;
     return `${s.key === "sleep" ? `On all ${nights(s.parts[0]!)} you met ${met}` : `You met ${met}`}.${left ? ` ${left}` : ""}`;
   }
   const off = p.target - p.value;

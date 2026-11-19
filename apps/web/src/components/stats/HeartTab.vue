@@ -12,6 +12,7 @@ import { ymd, weekStartOf, zoneMinutes, highRestingDays } from "@motus/shared";
 import { api } from "../../api/client";
 import { useWorkouts, useActivities, useTypeName, useSettings, useTrainingLoad } from "../../api/queries";
 import { mins } from "../../core/sleep";
+import { LOAD_POINT } from "../../core/readiness";
 import { ZONES, zoneParts, useMaxHr, hrSamples } from "../../core/heart";
 import HeartDay from "./HeartDay.vue";
 import DayNav from "./DayNav.vue";
@@ -175,8 +176,8 @@ const loadRow = computed(() => {
   // the status as What stands out's rows show it: an icon for which way it went, in the same tone as the result
   const icon = pct == null ? "clock" : t.state === "lighter" ? "arrowDown" : t.state === "steady" ? "check" : "arrowUp";
   return { icon, t: t.state ? LOAD_STATE[t.state] : "Learning your usual",
-    // "load points of training effort" as Readiness's load row says it, and its usual the same way ("usual 900 a week")
-    s: t.ratio == null ? `${fmt.value.num(t.week, 0)} load points of training effort in the last 7 days${t.left && hasToday.value ? ` · your usual in ${t.left} ${t.left === 1 ? "day" : "days"}` : ""}` : `${fmt.value.num(t.week, 0)} load points of training effort in the last 7 days · usual ${fmt.value.num(t.usual, 0)} a week`,
+    // the week's load points and what a point is, as Readiness's load row says them, and its usual the same way ("usual 900": the line already says the 7 days)
+    s: `${fmt.value.num(t.week, 0)} load points in the last 7 days (${LOAD_POINT})${t.ratio == null ? (t.left && hasToday.value ? ` · your usual in ${t.left} ${t.left === 1 ? "day" : "days"}` : "") : ` · usual ${fmt.value.num(t.usual, 0)}`}`,
     rv: pct == null ? "Learning" : t.state === "steady" ? "As usual" : `${pct < 0 ? "-" : "+"}${Math.abs(pct)}%`,
     tone: pct == null ? "muted" : t.state === "lighter" ? "pos" : t.state === "steady" ? undefined : "neg" };
 });

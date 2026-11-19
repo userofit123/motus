@@ -152,11 +152,11 @@ const scoreRows = computed(() => (score.value?.parts ?? []).map((p) => {
     : ex.bed != null && ex.wake != null ? `${fmt.value.time(n.value!.startAt)}-${fmt.value.time(n.value!.endAt)} · usual ${fromNoon(ex.bed)}-${fromNoon(ex.wake)}` : "Bed and wake times within an hour of your usual", r, tone };
 }));
 // cause then advice for the part it missed most, as Stats → Scores' line under a score; with every counted part met it
-// says "counted" and names the parts left out, as the week's line does, so "every guideline" never covers one that wasn't
+// says "that counted" and names the parts left out with why, as the week's line does, so "every guideline" never covers one that didn't
 const scoreLine = computed(() => {
   const x = score.value, p = x?.parts.find((y) => y.key === x.weakest), ex = p?.extra ?? {}, lo = ex.lo ?? 7, hi = ex.hi ?? 9;
   if (!x) return "";
-  if (!p) { const left = leftOutLine(x.parts, (v) => fmt.value.num(v, 0)); return left ? `This night met every guideline counted. ${left}` : "This night met every guideline."; }
+  if (!p) { const left = leftOutLine(x.parts, (v) => fmt.value.num(v, 0), true); return left ? `This night met every guideline that counted. ${left}` : "This night met every guideline."; }
   if (p.key === "duration") return `You slept ${(ex.asleepMin ?? 0) < lo * 60 ? `less than ${lo}` : `more than ${hi}`} hours: aim for ${lo}-${hi} hours.`;
   if (p.key === "efficiency") return "You were awake for over 15% of the time tracked: aim to be asleep for 85% or more of it.";
   return "Your bed or wake time was over an hour off your usual: keep to the same times.";

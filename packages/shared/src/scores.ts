@@ -183,9 +183,10 @@ export function effortMinutes(samples: readonly (readonly [number, number])[], m
 /**
  * Activity over the week:
  *   minutes 60: moderate minutes plus twice the vigorous ones against WHO's 150 a week; more than 150 counts as met.
- *   With heart rate on at least MIN_DAYS days: its minutes plus the finished workouts and moving activities on days
- *   without it (activityMinOffHr); on fewer days the heart rate would undercount the week, so only the week's finished
- *   workouts and moving activities count (activityMin, as moderate); without either the part is left out;
+ *   With heart rate on at least MIN_DAYS days: its minutes plus the finished workouts and recorded activities (all but
+ *   stretching and yoga) on days without it (activityMinOffHr); on fewer days the heart rate would undercount the week,
+ *   so only the week's finished workouts and recorded activities count (activityMin, as moderate); without either the
+ *   part is left out;
  *   steps 40: the average daily steps (over at least MIN_DAYS days with steps) against the level where the benefit levels
  *   off for your age.
  * A part without its data is left out and the other takes all the weight.

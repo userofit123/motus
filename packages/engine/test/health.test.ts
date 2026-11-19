@@ -768,7 +768,7 @@ describe("readiness", () => {
     // a 30-minute walk a day without heart rate (moderate: 210 of 150) and 4,000 steps a day (half of 8,000)
     for (let i = 0; i < 7; i++)
       await eng.db.admin.query("INSERT INTO activities (id, user_id, type, started_at, duration_s) VALUES ($1, $2, 'walk', $3, 1800)", [uuidv7(), S, day(i) + "T10:00:00Z"]);
-    // an hour of yoga isn't a moving type: it adds no minutes
+    // an hour of yoga is light effort: it adds no minutes
     await eng.db.admin.query("INSERT INTO activities (id, user_id, type, started_at, duration_s) VALUES ($1, $2, 'yoga', $3, 3600)", [uuidv7(), S, day(1) + "T18:00:00Z"]);
     await as("PUT", "/daily", { entries: Array.from({ length: 7 }, (_, i) => ({ date: day(i), kind: "steps", value: 4000 })) });
     const r = (await as("GET", "/health/scores", undefined, { tz: "0" })).scores;
@@ -808,6 +808,60 @@ describe("readiness", () => {
     // moderate: 65 of the sessions' 75 minutes on heart rate days (10 were vigorous), 10 band minutes, 20 off heart rate
     // days = 95; vigorous 10, counted double: 115
     expect(r.activity.parts[0]).toMatchObject({ key: "minutes", value: 115, target: 150, extra: { moderate: 95, vigorous: 10 } });
+  });
+
+  it("counts every recorded activity but stretching and yoga, and no workout left running or without an end (M-268)", async () => {
+    const S = uuidv7();
+    await eng.db.admin.query("INSERT INTO users (id, username) VALUES ($1, 'm268b')", [S]);
+    const as = async (method: string, path: string, body?: unknown, query?: Record<string, string>) => (await eng.handle({ method, path, body, query, userId: S })).body as any;
+    const day = (n: number) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
+    const at = (n: number, hm: string) => `${day(n)}T${hm}:00Z`;
+    await as("PUT", "/settings", { features: { scores: true }, profile: { maxHr: 200 } });
+    // heart rate on only 2 days, an hour at a moderate 140 each: too few days, so the band's minutes don't count
+    for (const n of [1, 2]) {
+      const hr: [number, number][] = [];
+      for (let t = Date.parse(at(n, "07:00")); t <= Date.parse(at(n, "08:00")); t += 300000) hr.push([t / 1000, 140]);
+      await eng.db.admin.query("INSERT INTO hr_days (user_id, date, hr) VALUES ($1, $2, $3)", [S, day(n), JSON.stringify(hr)]);
+    }
+    const act = (type: string, start: string, s: number) => eng.db.admin.query("INSERT INTO activities (id, user_id, type, started_at, duration_s) VALUES ($1, $2, $3, $4, $5)", [uuidv7(), S, type, start, s]);
+    // time-only types count (an hour of sport, half an hour of a type the person added); stretching and yoga don't
+    await act("sport", at(1, "12:00"), 3600);
+    await act("padel", at(2, "12:00"), 1800);
+    await act("stretching", at(3, "12:00"), 1200);
+    await act("yoga", at(3, "18:00"), 1800);
+    const workout = (start: string, end: string | null) => eng.db.admin.query("INSERT INTO workouts (id, user_id, name, status, started_at, ended_at, paused_s) VALUES ($1, $2, 'W', 'completed', $3, $4, 0)", [uuidv7(), S, start, end]);
+    // a 5-hour workout was left running, one without an end has no time: neither counts; a 60-minute one does
+    await workout(at(4, "10:00"), at(4, "15:00"));
+    await workout(at(4, "17:00"), null);
+    await workout(at(5, "10:00"), at(5, "11:00"));
+    const r = (await as("GET", "/health/scores", undefined, { tz: "0" })).scores;
+    expect(r.activity.parts[0]).toMatchObject({ key: "minutes", value: 150, extra: { moderate: 150, vigorous: 0 } });
+  });
+
+  it("splits a band reading at a session's edge and counts a walk past a paused workout's time once (M-268)", async () => {
+    const S = uuidv7();
+    await eng.db.admin.query("INSERT INTO users (id, username) VALUES ($1, 'm268c')", [S]);
+    const as = async (method: string, path: string, body?: unknown, query?: Record<string, string>) => (await eng.handle({ method, path, body, query, userId: S })).body as any;
+    const day = (n: number) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
+    const at = (n: number, hm: string) => `${day(n)}T${hm}:00Z`;
+    await as("PUT", "/settings", { features: { scores: true }, profile: { maxHr: 200 } });
+    const hrDay = async (n: number, odd: Record<string, number> = {}) => {
+      const hr: [number, number][] = [];
+      for (let t = Date.parse(at(n, "08:00")); t <= Date.parse(at(n, "20:00")); t += 300000)
+        hr.push([t / 1000, odd[new Date(t).toISOString().slice(11, 16)] ?? 90]);
+      await eng.db.admin.query("INSERT INTO hr_days (user_id, date, hr) VALUES ($1, $2, $3)", [S, day(n), JSON.stringify(hr)]);
+    };
+    // a moderate reading at 09:55 stands for 09:55-10:00, 2 minutes of it inside the workout; a vigorous one inside
+    await hrDay(1, { "09:55": 130, "10:30": 160 });
+    await hrDay(2);
+    await hrDay(3);
+    // a workout 09:58-11:03 with a 5-minute pause counts as 09:58-10:58; a walk 10:50-11:20 runs past it: 82 minutes
+    await eng.db.admin.query("INSERT INTO workouts (id, user_id, name, status, started_at, ended_at, paused_s) VALUES ($1, $2, 'Legs', 'completed', $3, $4, 300)",
+      [uuidv7(), S, at(1, "09:58"), at(1, "11:03")]);
+    await eng.db.admin.query("INSERT INTO activities (id, user_id, type, started_at, duration_s) VALUES ($1, $2, 'walk', $3, 1800)", [uuidv7(), S, at(1, "10:50")]);
+    const r = (await as("GET", "/health/scores", undefined, { tz: "0" })).scores;
+    // moderate: 3 band minutes outside + 77 of the sessions' 82 (5 vigorous) = 80; vigorous 5, counted double: 90
+    expect(r.activity.parts[0]).toMatchObject({ key: "minutes", value: 90, extra: { moderate: 80, vigorous: 5 } });
   });
 
   it("scores each full night on its own when asked, with its usual times from the week ending with it (M-271)", async () => {
