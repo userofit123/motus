@@ -36,12 +36,16 @@ export function leftOutLine(parts: readonly ScorePart[], num: Num, night = false
   return parts.filter((p) => p.weight === 0).map((p) => `${scoreRow(p, num).t} didn't count${why[p.key] ? `: ${why[p.key]}` : ""}.`).join(" ");
 }
 
+/** A row's tone from the share of its target met (0-1): in full positive, under half negative, between them plain.
+ *  The Routine check's rows take the same, so a value reads the same on both cards. */
+export const toneOf = (share: number): "pos" | "neg" | undefined => (share >= 1 ? "pos" : share < 0.5 ? "neg" : undefined);
+
 /** A part as a row: met in full reads positive, under half negative, as Readiness's rows take the tone of their effect.
  *  A part counted out of a fixed whole (nights of the week, muscle groups) reads "4 of 7", its line saying what it counts,
  *  then " · " and its average when there is one. A part with a least amount to reach (active minutes, steps, strength
  *  days) shows its own number alone and its line names the target, since it can go past it: "5 of 2" days read as a muddle */
 export function scoreRow(p: ScorePart, num: Num): ScoreRow {
-  const tone = p.share >= 1 ? "pos" : p.share < 0.5 ? "neg" : undefined;
+  const tone = toneOf(p.share);
   switch (p.key) {
     // each row's result counts nights, so its line says which nights it counts, then the average
     case "duration": return { key: p.key, icon: "moon", t: "Hours asleep", s: `Nights with ${x(p, "lo")}-${x(p, "hi")} hours · average ${mins(x(p, "avgMin"))}`, r: of(p), tone };

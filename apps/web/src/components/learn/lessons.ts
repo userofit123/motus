@@ -105,7 +105,7 @@ export const LESSONS = {
   // the Routine check (M-273): what each source found, then each check and its points
   routineCheck: {
     title: "Routine check",
-    intro: "How one routine, or one week of a program, compares with what training research found works best. Each routine is checked on its own, as a week of only that routine; a program's week checks its workouts together. A check is met when its target is met in full; one that is not met still earns part of its points, so 100 means every check is met. A routine may be one day of a split, so it is checked only for the muscles it trains; a program's week is checked for all of them.",
+    intro: "How one routine, or one week of a program, compares with what training research found works best. Each routine is checked on its own, as a week of only that routine; a program's week checks its workouts together. A check is met when its target is met in full; one that is not met can still earn part of its points, so 100 means every check is met. A routine may be one day of a split, so it is checked only for the muscles it trains; a program's week is checked for all of them.",
     sections: [
       { heading: "Where the targets come from", rows: [
         SCHOENFELD,

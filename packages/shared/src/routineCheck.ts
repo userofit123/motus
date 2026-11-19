@@ -88,6 +88,10 @@ const names = (xs: string[]) => (xs.length < 2 ? xs.join("") : `${xs.slice(0, -1
 const cap = (x: string) => x.charAt(0).toUpperCase() + x.slice(1);
 /** a muscle's name inside a sentence */
 const low1 = (m: { name: string }) => m.name.toLowerCase();
+/** Chest and back are one muscle each in a sentence, the others many ("Triceps are", "Chest is") */
+const ONE = new Set(["chest", "back"]);
+/** the verb or word that agrees with the muscles it follows: one singular muscle takes `one`, anything else `many` */
+const agree = (ms: { id: string }[], one: string, many: string) => (ms.length === 1 && ONE.has(ms[0]!.id) ? one : many);
 const lifting = (s: CheckSession) => s.filter((e) => !NOT_LIFTING.has(e.category));
 const working = (e: CheckExercise) => e.sets.filter((s) => s.kind !== "warmup");
 
@@ -118,9 +122,9 @@ function volume(week: Record<string, number>, all: boolean, span: string): Check
   const met = ms.filter((m) => week[m.id]! >= lo && week[m.id]! <= hi).length;
   const low = ms.filter((m) => week[m.id]! < lo).sort((a, b) => week[a.id]! - week[b.id]!);
   const high = ms.filter((m) => week[m.id]! > hi);
-  // cause then advice for the biggest gap, then the other short muscles by name, so the row says which they are
+  // cause then advice for the biggest gap, then the other short muscle by name (or how many, to keep it short), so the row says which they are
   const first = low[0];
-  const detail = first ? `${week[first.id]! ? `Only ${plural(week[first.id]!, "set")}` : "No sets"} ${span} for ${low1(first)}: add ${Math.ceil(lo - week[first.id]!)}, e.g. ${first.example}.${low.length > 1 ? ` ${cap(names(low.slice(1).map(low1)))} need more too.` : ""}`
+  const detail = first ? `${week[first.id]! ? `Only ${plural(week[first.id]!, "set")}` : "No sets"} ${span} for ${low1(first)}: add ${Math.ceil(lo - week[first.id]!)}, e.g. ${first.example}.${low.length > 2 ? ` ${low.length - 1} more muscles need more too.` : low[1] ? ` ${cap(low1(low[1]))} ${agree(low.slice(1), "needs", "need")} more too.` : ""}`
     : high.length ? `Over ${hi} sets ${span} for ${names(high.map(low1))}: drop a few, as they add little.`
     : `Every muscle ${all ? "" : "it trains "}gets ${lo}-${hi} sets ${span}.`;
   return { key: "volume", title: `${lo}-${hi} sets ${span} per muscle`, weight: CHECK_WEIGHTS.volume, share, status: statusOf(share), value: `${met} of ${plural(ms.length, "muscle")}`, detail };
@@ -135,7 +139,7 @@ function frequency(days: Day[], week: Record<string, number>): Check | null {
   const share = (ms.length - once.length) / ms.length;
   const detail = !once.length ? `Each muscle is trained on ${TWICE} or more days a week.`
     : days.length === 1 ? "Done once a week, so each muscle is trained on 1 day: do it twice a week."
-    : once.length === 1 ? `${once[0]!.name} is trained on 1 day a week: spread its sets over 2 days.`
+    : once.length === 1 ? `${once[0]!.name} ${agree(once, "is", "are")} trained on 1 day a week: spread ${agree(once, "its", "their")} sets over 2 days.`
     : `${once[0]!.name}${more(once.length - 1)} are trained on 1 day a week: spread their sets over 2 days.`;
   return { key: "frequency", title: "Muscles trained twice a week", weight: CHECK_WEIGHTS.frequency, share, status: statusOf(share), value: `${ms.length - once.length} of ${plural(ms.length, "muscle")}`, detail };
 }
@@ -154,8 +158,8 @@ function pushPull(sessions: CheckSession[], both: boolean, span: string): Check 
   const ratio = push ? pull / push : Infinity;
   const share = ratioShare(ratio, PULL_PUSH);
   const detail = share >= 1 ? "Pulling sets about match pushing sets."
-    : ratio < PULL_PUSH[0] ? `Pulling has too few sets next to pushing: add ${Math.ceil(push * PULL_PUSH[0] - pull)} pulling sets ${span}, e.g. Barbell row.`
-    : `Pushing has too few sets next to pulling: add ${Math.ceil(pull / PULL_PUSH[1] - push)} pushing sets ${span}, e.g. Bench press.`;
+    : ratio < PULL_PUSH[0] ? `Too few pulling sets next to pushing: add ${Math.ceil(push * PULL_PUSH[0] - pull)} ${span}, e.g. Barbell row.`
+    : `Too few pushing sets next to pulling: add ${Math.ceil(pull / PULL_PUSH[1] - push)} ${span}, e.g. Bench press.`;
   return { key: "pushPull", title: "Pushing and pulling sets", weight: CHECK_WEIGHTS.pushPull, share, status: statusOf(share), value: `${n(push)} push · ${n(pull)} pull`, detail };
 }
 
@@ -165,8 +169,8 @@ function legs(week: Record<string, number>, both: boolean, span: string): Check 
   const ratio = q ? h / q : Infinity;
   const share = ratioShare(ratio, HAMS_QUADS);
   const detail = share >= 1 ? "Hamstrings get at least half the sets quads get."
-    : ratio < HAMS_QUADS[0] ? `Hamstrings have too few sets next to quads: add ${Math.ceil(q * HAMS_QUADS[0] - h)} hamstring sets ${span}, e.g. Romanian deadlift.`
-    : `Quads have too few sets next to hamstrings: add ${Math.ceil(h / HAMS_QUADS[1] - q)} quad sets ${span}, e.g. Squat.`;
+    : ratio < HAMS_QUADS[0] ? `Too few hamstring sets next to quads: add ${Math.ceil(q * HAMS_QUADS[0] - h)} ${span}, e.g. Romanian deadlift.`
+    : `Too few quad sets next to hamstrings: add ${Math.ceil(h / HAMS_QUADS[1] - q)} ${span}, e.g. Squat.`;
   return { key: "legs", title: "Quad and hamstring sets", weight: CHECK_WEIGHTS.legs, share, status: statusOf(share), value: `${n(q)} quad · ${n(h)} hamstring`, detail };
 }
 
@@ -189,7 +193,7 @@ function order(sessions: CheckSession[]): Check | null {
   const share = 1 - late.length / compounds;
   const first = late[0];
   const detail = !first ? "Big lifts, the ones that work several muscles, come before single-muscle lifts."
-    : `${first.lift} works several muscles, but ${first.after} tires them first: do ${first.lift} first.${late.length > 1 ? ` ${late.length - 1} more big ${late.length === 2 ? "lift comes" : "lifts come"} late too.` : ""}`;
+    : `Do ${first.lift} before ${first.after}, which tires the same muscles.`;
   return { key: "order", title: "Big lifts first", weight: CHECK_WEIGHTS.order, share, status: statusOf(share), value: `${compounds - late.length} of ${compounds} big ${compounds === 1 ? "lift" : "lifts"}`, detail };
 }
 
@@ -207,8 +211,8 @@ function reps(sessions: CheckSession[]): Check | null {
   if (!total) return null;
   const share = inRange / total;
   // the side with more sets outside the range, so the row gives one tip
-  const detail = many && manyN >= fewN ? `${many}, more than builds muscle: add weight so ${hi} or fewer are hard.`
-    : few ? `${few}, good for strength: use ${lo}-${hi} reps to build more muscle.`
+  const detail = many && manyN >= fewN ? `${many}: add weight so ${hi} or fewer are hard.`
+    : few ? `${few}, good for strength: ${lo}-${hi} reps build more muscle.`
     : `Every working set targets ${lo}-${hi} reps.`;
   return { key: "reps", title: `${lo}-${hi} reps per set`, weight: CHECK_WEIGHTS.reps, share, status: statusOf(share), value: `${inRange} of ${plural(total, "set")}`, detail };
 }
