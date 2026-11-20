@@ -32,6 +32,11 @@ async function world() {
   const goalHere = async () => (await e.db.admin.query("SELECT goal FROM programs WHERE id = $1", [pid])).rows[0].goal;
   /** the copy as an app from before 053 left it: the column's default, and a schema without it */
   async function beforeGoal() {
+    // the old app had already pulled everything the server has, so the normal pull brings nothing back
+    const m0 = await replica.replicaMeta(e.db);
+    let cursor = 0;
+    for (let more = true; more;) { const p = await S("GET", "/sync/pull", undefined, { since: String(cursor), device: m0.device }); cursor = p.cursor; more = p.more; }
+    await e.db.admin.query("UPDATE app_meta SET value = jsonb_set(value::jsonb, '{cursor}', $1::jsonb) WHERE key = 'replica'", [String(cursor)]);
     await e.db.tx(async (q) => {
       await q.query("SELECT set_config('motus.sync_apply', '1', true)");
       await q.query("UPDATE programs SET goal = 'size' WHERE id = $1", [pid]);
@@ -55,7 +60,7 @@ describe("columns an app update adds", () => {
     const w = await world();
     await w.S("PUT", `/programs/${w.pid}`, { goal: "strength" });
     await w.beforeGoal();
-    // the change itself was already fetched (dropped by the old app): only the fill brings it
+    // the change was already fetched (and dropped by the old app), so a normal pull brings nothing: only the fill does
     expect(await w.goalHere()).toBe("size");
     await w.sync();
     expect(await w.goalHere()).toBe("strength");
@@ -82,5 +87,22 @@ describe("columns an app update adds", () => {
     await w.sync();
     expect(await w.goalHere()).toBe("fatLoss");
     expect((await w.S("GET", `/programs/${w.pid}`)).goal).toBe("fatLoss");
+  });
+
+  it("a goal changed here and waiting to be sent is not overwritten by the server's", async () => {
+    const w = await world();
+    await w.S("PUT", `/programs/${w.pid}`, { goal: "strength" });
+    await w.beforeGoal();
+    await w.local("PUT", `/programs/${w.pid}`, { goal: "fatLoss" });
+    // the server fails this time, so the row is held to be sent later
+    const U = (await w.S("GET", "/sync/snapshot")).user.id as string;
+    await replica.syncRound(w.e.db, U, {
+      push: async (body: any) => ({ failed: body.changes.map((c: any) => ({ tbl: c.tbl, pk: c.pk, retry: true })) }),
+      pull: (m) => w.S("GET", "/sync/pull", undefined, { since: String(m.cursor), device: m.device }),
+      catalog: () => w.S("GET", "/sync/catalog"),
+      snapshot: () => w.S("GET", "/sync/snapshot"),
+    });
+    expect(await w.goalHere()).toBe("fatLoss");
+    expect((await w.S("GET", `/programs/${w.pid}`)).goal).toBe("strength");
   });
 });
