@@ -2,6 +2,13 @@
 
 The top entry's version is the one the release workflow publishes. Add a new `## [x.y.z]` section to release.
 
+## [0.1.42] - 2026-11-20
+
+- A routine shows only checks about its own workout: big lifts first, and reps per set, whether or not it is in a program. A program's checks (sets per muscle, each muscle twice a week, balance) show only on the program, over one week.
+- A routine in a program lists it on its page under "Part of a program" (or "Part of 2 programs"), with how far along each program is. Tap one to open it.
+- The planner only offers today or later, so a workout can no longer be planned for a day that has passed. To link a past workout to a program day, use "Choose the workout" in that day's ⋮ menu.
+- Undo after removing a missed plan in the Calendar works again.
+
 ## [0.1.41] - 2026-11-20
 
 - A program's start can be "No date": it then starts with its first workout. Removing a date or choosing "Start again from week 1" never counts workouts done before.
