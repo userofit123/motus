@@ -42,19 +42,34 @@ const dow = (d: string) => new Date(d + "T12:00:00").getDay();
 // "Every day" is stored as every 1 day, so the engine and its calendar need no rule of their own; a plan that already
 // falls on every day (every 1 day, or all seven weekdays) opens with "Every day" chosen.
 const daily = (s.rule === "interval" && s.intervalDays === 1) || (s.rule === "weekly" && s.days?.length === 7);
-const startDate: string = s.startDate ?? localYmd(new Date());
+// a plan is for today or later: Home, the program days and the calendar's planned days all look ahead from today, so a
+// day already gone would be saved and shown nowhere (M-290; the server refuses it too). A repeating plan that began
+// earlier keeps its own start (kept); a one-off whose day has gone opens on today.
+const today = localYmd(new Date());
+const kept: string | null = s.id && s.rule !== "once" ? s.startDate ?? null : null;
+const startDate: string = !s.startDate || (s.startDate < today && s.startDate !== kept) ? today : s.startDate;
+const past = (d: string, rule: string) => d < today && !(rule !== "once" && d === kept);
 // a new plan starts as a one-off on its day (today unless the calendar gave one); an existing one opens as it is
 const f = ref({ rule: daily ? "daily" : (s.rule ?? "once") as string, days: [...(s.days?.length ? s.days : [dow(startDate)])] as number[], intervalDays: s.intervalDays > 1 ? s.intervalDays : 2,
   startDate, endDate: s.endDate ?? "", timeOfDay: s.timeOfDay ?? "", remind: s.remindMin != null, remindMin: s.remindMin ?? 30 });
 // "Every week" follows the chosen day: moving the start from a Monday to a Thursday moves a Monday-only plan with it
 // an end that the new start has passed is dropped rather than left before the start
+// (not when the start only moved because the rule changed, below: the plan's weekdays stay as they were)
+let auto = false, moved = false;
 watch(() => f.value.startDate, (d, old) => {
-  const x = f.value.days; if (x.length === 1 && x[0] === dow(old)) f.value.days = [dow(d)];
+  if (auto) auto = false;
+  else { moved = false; const x = f.value.days; if (x.length === 1 && x[0] === dow(old)) f.value.days = [dow(d)]; }
   if (f.value.endDate && f.value.endDate < d) f.value.endDate = "";
 });
-watch(() => f.value.rule, (r) => { if (r === "weekly" && !f.value.days.length) f.value.days = [dow(f.value.startDate)]; });
+watch(() => f.value.rule, (r) => {
+  if (r === "weekly" && !f.value.days.length) f.value.days = [dow(f.value.startDate)];
+  // a repeating plan begun last month made a one-off would be for a day already gone: it moves to today, and back to
+  // its own start if it is made repeating again
+  if (past(f.value.startDate, r)) { auto = moved = true; f.value.startDate = today; }
+  else if (r !== "once" && moved && kept) { auto = true; moved = false; f.value.startDate = kept; }
+});
 const repeats = computed(() => f.value.rule !== "once");
-const ready = computed(() => !!what.value && (f.value.rule !== "weekly" || f.value.days.length > 0) && (f.value.rule !== "interval" || f.value.intervalDays >= 1) && (!f.value.endDate || f.value.endDate >= f.value.startDate));
+const ready = computed(() => !!what.value && !past(f.value.startDate, f.value.rule) && (f.value.rule !== "weekly" || f.value.days.length > 0) && (f.value.rule !== "interval" || f.value.intervalDays >= 1) && (!f.value.endDate || f.value.endDate >= f.value.startDate));
 const body = computed(() => {
   const d = f.value.rule === "daily";
   return { rule: (d ? "interval" : f.value.rule) as Schedule["rule"], days: f.value.days, intervalDays: d ? 1 : f.value.intervalDays, startDate: f.value.startDate, endDate: repeats.value ? f.value.endDate || null : null, timeOfDay: f.value.timeOfDay || null };
@@ -71,7 +86,9 @@ async function save() {
     const [k, v] = [what.value.slice(0, 1), what.value.slice(2)];
     const remind = f.value.remind && !!f.value.timeOfDay;
     const b = { ...body.value, routineId: k === "r" ? v : null, activityType: k === "a" ? v : null, remindMin: remind ? f.value.remindMin : null };
-    if (s.id) await api.put(`/schedules/${s.id}`, b); else await api.post("/schedules", b);
+    // the app's time zone, so the server's "today" is this screen's
+    const tz = `?tz=${new Date().getTimezoneOffset()}`;
+    if (s.id) await api.put(`/schedules/${s.id}${tz}`, b); else await api.post(`/schedules${tz}`, b);
     if (remind) askNotificationPermission();
     invalidate(["schedules", "calendar", "home", "routines"]);
     toast("Schedule saved");
@@ -96,7 +113,7 @@ async function save() {
     </template>
     <div class="sh"><h2>When</h2></div>
     <div class="card">
-      <div class="fld"><label>{{ repeats ? "Starting" : "Day" }}</label><WhenPicker v-model="f.startDate" :title="repeats ? 'Starting' : 'Day'" /></div>
+      <div class="fld"><label>{{ repeats ? "Starting" : "Day" }}</label><WhenPicker v-model="f.startDate" :min="today" :title="repeats ? 'Starting' : 'Day'" /></div>
       <div class="fld"><label>Repeats</label><ChoiceTiles v-model="f.rule" :options="REPEATS" compact label="Repeats" /></div>
       <div v-if="f.rule === 'weekly'" class="fld"><label>On</label><ChoiceTiles v-model="f.days" :options="DAYS" multiple compact :cols="7" label="On" /></div>
       <div v-if="f.rule === 'interval'" class="fld"><label>Every</label><div class="row"><input v-model.number="f.intervalDays" type="number" min="1" max="60" style="width:90px" /><span>days</span></div></div>

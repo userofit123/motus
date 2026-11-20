@@ -115,11 +115,12 @@ describe("achievements", () => {
 
 describe("home on the app's calendar", () => {
   it("knows today and yesterday from the app's time zone, whatever the process's is", async () => {
+    const r = (await call("POST", "/routines", { name: "Today's", exercises: [{ exerciseId: bench, sets: [{ reps: 5 }] }] })).id;
+    // both planned on the 7th (a plan is for today or later), then the clock moves on
+    await call("POST", "/schedules", { routineId: r, rule: "once", startDate: "2026-10-08" }, { tz: TZ });
+    await call("POST", "/schedules", { routineId: r, rule: "once", startDate: "2026-10-07" }, { tz: TZ });
     // 23:30 UTC on 7 Oct is 01:30 on 8 Oct for the app
     NOW = new Date("2026-10-07T23:30:00Z");
-    const r = (await call("POST", "/routines", { name: "Today's", exercises: [{ exerciseId: bench, sets: [{ reps: 5 }] }] })).id;
-    await call("POST", "/schedules", { routineId: r, rule: "once", startDate: "2026-10-08" });
-    await call("POST", "/schedules", { routineId: r, rule: "once", startDate: "2026-10-07" });
     const home = await call("GET", "/home", undefined, { tz: TZ });
     expect(home.upNext.map((p: any) => p.date)).toEqual(["2026-10-08"]);
     NOW = new Date("2026-10-07T10:00:00Z");
@@ -131,8 +132,8 @@ describe("home on the app's calendar", () => {
     const b = (await call("POST", "/routines", { name: "Many B", exercises: [{ exerciseId: bench, sets: [{ reps: 5 }] }] })).id;
     const ids = [
       (await call("POST", "/schedules", { routineId: a, rule: "once", startDate: "2026-10-20", timeOfDay: "07:00" })).id,
-      (await call("POST", "/schedules", { routineId: b, rule: "weekly", days: [2], startDate: "2026-10-01" })).id,
-      (await call("POST", "/schedules", { activityType: "walk", rule: "interval", intervalDays: 1, startDate: "2026-10-19" })).id,
+      (await call("POST", "/schedules", { routineId: b, rule: "weekly", days: [2], startDate: "2026-10-20" })).id,
+      (await call("POST", "/schedules", { activityType: "walk", rule: "interval", intervalDays: 1, startDate: "2026-10-20" })).id,
     ];
     for (let i = 0; i < 3; i++) ids.push((await call("POST", "/schedules", { activityType: "run", rule: "once", startDate: "2026-10-20" })).id);
     const todays = async () => (await call("GET", "/home", undefined, { tz: TZ })).upNext.filter((p: any) => p.date === "2026-10-20").map((p: any) => p.name);

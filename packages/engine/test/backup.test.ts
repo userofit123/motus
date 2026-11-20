@@ -57,7 +57,7 @@ beforeAll(async () => {
     { exerciseId: mine, sets: [{ reps: 10 }] }] })).id;
   await c("PUT", `/routines/${routine}`, { name: "Day A+", folderId: folder, exercises: (await c("GET", `/routines/${routine}`)).exercises }); // a version in History
   const program = (await c("POST", "/programs", { name: "Plan", weeks: [{ days: [routine] }], startDate: "2026-10-01" })).id;
-  const schedule = (await c("POST", "/schedules", { routineId: routine, rule: "weekly", days: [1, 4], startDate: "2026-10-01" })).id;
+  const schedule = (await c("POST", "/schedules", { routineId: routine, rule: "weekly", days: [1, 4] })).id;
   await c("POST", `/schedules/${schedule}/exception`, { date: "2026-10-05" });
   const workout = (await c("POST", "/workouts/log", { startedAt: "2026-10-02T08:00:00Z", routineId: routine, exercises: [
     { exerciseId: squat, sets: [{ reps: 5, weightKg: 82.5 }] }, { exerciseId: mine, sets: [{ reps: 10 }] }] })).id;

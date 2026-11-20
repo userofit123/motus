@@ -1,12 +1,13 @@
 <script setup lang="ts">
 // Which day something is planned for: Today and Tomorrow in one tap, any other day from the calendar. Only picks the day;
 // the form it sits in saves. Used by every form that plans a day (a schedule, a program's start). none: the label of a
-// fourth choice for no day at all (the value is then ""), for a day that may be left open.
+// fourth choice for no day at all (the value is then ""), for a day that may be left open. min: the first day the
+// calendar offers (a schedule passes today: a plan is never for a day already gone).
 import { computed, nextTick, ref } from "vue";
 import { localYmd } from "../core/format";
 import DatePicker from "./DatePicker.vue";
 
-const props = defineProps<{ modelValue: string; title?: string; none?: string }>();
+const props = defineProps<{ modelValue: string; title?: string; none?: string; min?: string }>();
 const emit = defineEmits<{ "update:modelValue": [v: string] }>();
 const plus = (n: number) => { const d = new Date(); d.setDate(d.getDate() + n); return localYmd(d); };
 const today = plus(0), tomorrow = plus(1);
@@ -27,5 +28,5 @@ async function pickOther() { other.value = true; if (!props.modelValue) emit("up
     <button type="button" role="radio" :aria-checked="which === 'other'" :class="{ on: which === 'other' }" @click="pickOther">Pick a date</button>
     <button v-if="none" type="button" role="radio" :aria-checked="which === 'none'" :class="{ on: which === 'none' }" @click="set('')">{{ none }}</button>
   </div>
-  <DatePicker v-if="which === 'other'" ref="dp" :model-value="modelValue" :title="title ?? 'Choose a day'" @update:model-value="(v: string) => v && emit('update:modelValue', v)" />
+  <DatePicker v-if="which === 'other'" ref="dp" :model-value="modelValue" :min="min" :title="title ?? 'Choose a day'" @update:model-value="(v: string) => v && emit('update:modelValue', v)" />
 </template>

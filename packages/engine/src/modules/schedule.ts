@@ -86,11 +86,20 @@ export async function plannedMarked(q: Sql, from: string, to: string, tzMin: num
 
 const RULES = ["once", "weekly", "interval", "monthly"];
 
+/** A plan is for today or later (today in the app's time zone): Home, the program days and the calendar's planned days
+ * all look ahead from today, so a plan for a day already gone would be saved and then shown nowhere (M-290). A repeating
+ * plan that began earlier keeps its own start when it is edited; a past day logs a workout instead. */
+function notPast(start: string | null, today: string, rule: string, kept: string | null = null) {
+  if (start && start < today && !(rule !== "once" && start === kept)) throw bad("That day has passed. Pick today or a later day.");
+}
+
 export function scheduleRoutes(r: Router) {
   r.get("/schedules", async ({ q }) => scheduleList(q));
-  r.post("/schedules", async (ctx, _p, b) => {
+  r.post("/schedules", async (ctx, _p, b, qs) => {
     const sid = uuidv7();
     const rule = oneOf(b.rule, RULES, "weekly");
+    const today = dayIn(ctx.now(), tzOf(qs)), start = dateStr(b.startDate) ?? today;
+    notPast(start, today, rule);
     const days = Array.isArray(b.days) ? b.days.map(Number).filter((d: number) => d >= 0 && d <= 6) : [];
     if (rule === "weekly" && !days.length) throw bad("Pick at least one day");
     if (!b.routineId && !b.activityType) throw bad("Pick a routine or an activity");
@@ -98,12 +107,14 @@ export function scheduleRoutes(r: Router) {
     await ctx.q.query(
       `INSERT INTO schedules (id, user_id, routine_id, activity_type, rule, days, interval_days, start_date, end_date, time_of_day, remind_min, active)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,true)`,
-      [sid, ctx.userId, optId(b.routineId), b.activityType ? str(b.activityType, 40) : null, rule, days, intOrNull(b.intervalDays, 1, 365), dateStr(b.startDate) ?? new Date().toISOString().slice(0, 10),
+      [sid, ctx.userId, optId(b.routineId), b.activityType ? str(b.activityType, 40) : null, rule, days, intOrNull(b.intervalDays, 1, 365), start,
         dateStr(b.endDate), b.timeOfDay ? str(b.timeOfDay, 5) : null, intOrNull(b.remindMin, 0, 1440)]);
     ctx.changed("schedule");
     return { id: sid };
   });
-  r.put("/schedules/:id", async (ctx, p, b) => {
+  r.put("/schedules/:id", async (ctx, p, b, qs) => {
+    const old = (await ctx.q.query("SELECT rule, start_date FROM schedules WHERE id = $1", [id(p.id)])).rows[0] as { rule: string; start_date: string } | undefined;
+    if (old) notPast(dateStr(b.startDate), dayIn(ctx.now(), tzOf(qs)), b.rule ? oneOf(b.rule, RULES, "weekly") : old.rule, old.start_date);
     await ctx.q.query(
       `UPDATE schedules SET rule = coalesce($2, rule), days = coalesce($3, days), interval_days = $4, start_date = coalesce($5, start_date), end_date = $6,
          time_of_day = $7, remind_min = $8, active = coalesce($9, active) WHERE id = $1`,

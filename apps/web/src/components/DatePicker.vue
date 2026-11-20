@@ -111,6 +111,8 @@ function key(e: KeyboardEvent) {
 .d.today { border-color: var(--acc); color: var(--acc); }
 .d.sel { background: var(--acc); color: var(--on); }
 .d:disabled { opacity: .25; cursor: not-allowed; background: none; }
+/* the chosen day stays marked even where it can't be picked again (a repeating plan's start that has passed) */
+.d.sel:disabled { background: var(--acc); color: var(--on); }
 .dpf { display: flex; justify-content: space-between; margin-top: 6px; min-height: 8px; }
 @media (prefers-reduced-motion: reduce) { .d { transition: none; } }
 </style>

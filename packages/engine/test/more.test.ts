@@ -518,9 +518,11 @@ describe("body and daily log", () => {
 describe("calendar: done plans", () => {
   it("leaves out a planned day once it's done, by routine, activity type or the plan itself, on the app's day", async () => {
     const r = (await call("POST", "/routines", { name: "Legs" })).id;
-    const walk = (await call("POST", "/schedules", { activityType: "walk", rule: "interval", intervalDays: 1, startDate: "2026-11-01", endDate: "2026-11-06" })).id;
-    await call("POST", "/schedules", { routineId: r, rule: "once", startDate: "2026-11-04", timeOfDay: "18:00" });
-    const late = (await call("POST", "/schedules", { routineId: r, rule: "once", startDate: "2026-11-05" })).id;
+    // days already gone can't be planned any more, so these plans are made for today and moved back in the database
+    const before = async (b: any) => { const sid = (await call("POST", "/schedules", { ...b, startDate: undefined })).id; await eng.db.admin.query("UPDATE schedules SET start_date = $2 WHERE id = $1", [sid, b.startDate]); return sid; };
+    const walk = await before({ activityType: "walk", rule: "interval", intervalDays: 1, startDate: "2026-11-01", endDate: "2026-11-06" });
+    await before({ routineId: r, rule: "once", startDate: "2026-11-04", timeOfDay: "18:00" });
+    const late = await before({ routineId: r, rule: "once", startDate: "2026-11-05" });
     const tz = { tz: "-120" }; // UTC+2
     // 23:30 UTC on the 1st is the 2nd in the app's day
     await call("POST", "/activities", { type: "walk", startedAt: "2026-11-01T23:30:00Z", durationS: 1800 });
@@ -542,6 +544,22 @@ describe("calendar: done plans", () => {
     // in UTC the walk falls on the 1st instead
     const utc = await call("GET", "/calendar", undefined, { from: "2026-11-01", to: "2026-11-02", tz: "0" });
     expect(utc.planned.filter((p: any) => p.scheduleId === walk).map((p: any) => p.date)).toEqual(["2026-11-02"]);
+    for (const s of await call("GET", "/schedules")) await call("DELETE", `/schedules/${s.id}`);
+  });
+
+  it("plans only today or later, on the app's day, and keeps a repeating plan's own earlier start when it is edited (M-290)", async () => {
+    const r = (await call("POST", "/routines", { name: "Not back in time" })).id;
+    const day = (n: number) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
+    await expect(call("POST", "/schedules", { routineId: r, rule: "once", startDate: day(-1) }, { tz: "0" })).rejects.toThrow(/day has passed/);
+    await expect(call("POST", "/schedules", { routineId: r, rule: "weekly", days: [1], startDate: day(-1) }, { tz: "0" })).rejects.toThrow(/day has passed/);
+    const once = (await call("POST", "/schedules", { routineId: r, rule: "once", startDate: day(0) }, { tz: "0" })).id;
+    await expect(call("PUT", `/schedules/${once}`, { rule: "once", startDate: day(-3) }, { tz: "0" })).rejects.toThrow(/day has passed/);
+    // a weekly plan that began last week: saving it with its own start is fine, moving it further back or making it a one-off on that day is not
+    const weekly = (await call("POST", "/schedules", { routineId: r, rule: "weekly", days: [1] }, { tz: "0" })).id;
+    await eng.db.admin.query("UPDATE schedules SET start_date = $2 WHERE id = $1", [weekly, day(-7)]);
+    await call("PUT", `/schedules/${weekly}`, { rule: "weekly", days: [1, 3], startDate: day(-7), timeOfDay: "18:00" }, { tz: "0" });
+    await expect(call("PUT", `/schedules/${weekly}`, { rule: "weekly", days: [1], startDate: day(-8) }, { tz: "0" })).rejects.toThrow(/day has passed/);
+    await expect(call("PUT", `/schedules/${weekly}`, { rule: "once", startDate: day(-7) }, { tz: "0" })).rejects.toThrow(/day has passed/);
     for (const s of await call("GET", "/schedules")) await call("DELETE", `/schedules/${s.id}`);
   });
 });
