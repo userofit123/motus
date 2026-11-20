@@ -148,13 +148,22 @@ async function rename() { const n = await prompt("Workout name", { value: w.valu
 const moveTo = (from: number, to: number) => { const ids = w.value!.exercises.map((e) => e.id); if (to < 0 || to >= ids.length || from === to) return; ids.splice(to, 0, ids.splice(from, 1)[0]!); W.reorder(ids); };
 const move = (i: number, d: number) => { const ids = w.value!.exercises.map((e) => e.id); const j = i + d; if (j < 0 || j >= ids.length) return; [ids[i], ids[j]] = [ids[j]!, ids[i]!]; W.reorder(ids); };
 const togglePause = () => W.togglePause();
-// the band's heart rate so far (Android app, Health Connect on): the newest reading in the header from the first one on,
-// muted once over 10 minutes old (the band app syncs only now and then, and hiding it left nothing to see: M-291; tapping
-// the header opens the Summary, which says how old it is), and on a computer a card in the side column with the line so
-// far (not beside the Summary, which shows it)
+// the band's heart rate so far (Android app, Health Connect on): the newest reading in the header from the first one on
+// (the band app syncs only now and then, and hiding an old one left nothing to see: M-291), and on a computer a card in
+// the side column with the line so far (not beside the Summary, which shows it). Over 10 minutes old it is greyed and
+// says how old, as on every screen that shows it (.hr-old in app.css)
 const settings = useSettings();
 const hr = useLiveHr(() => w.value?.startedAt, () => !!w.value && !!settings.value.features.healthConnect);
 const hrNewest = hr.newest;
+const hrOld = computed(() => !!hrNewest.value && !hrNewest.value.fresh);
+// the header is one button that opens the Summary: a screen reader hears what it shows, not just the name
+const topLabel = computed(() => {
+  const x = w.value; if (!x) return "";
+  const h = hrNewest.value;
+  return `${x.name}: ${done.value} of ${total.value} sets, ${clock(elapsed(x))} so far` + (paused.value ? ", paused" : "")
+    + (h ? `, heart rate ${h.bpm} bpm` + (h.fresh ? "" : `, measured ${h.ago}`) : "")
+    + (waiting.value.length ? `, ${waiting.value.length} waiting to sync` : "") + ". Open the summary";
+});
 // in groups: its exercises, notes and reminders, its settings, then Cancel on its own
 const menu = computed(() => [
   { label: "Add exercise", icon: "plus", run: () => (adding.value = true) },
@@ -171,9 +180,9 @@ const menu = computed(() => [
   <div v-if="w" class="page wide aw" :class="{ phone: isPhone }" @touchstart.passive="isPhone && ts($event)" @touchend.passive="isPhone && te($event)">
     <div class="aw-top">
       <button class="ib sm plain" aria-label="Minimise" @click="goBack(router, '/')"><Icon name="down" /></button>
-      <div class="grow" style="min-width:0;cursor:pointer" role="button" tabindex="0" @click="go(w.exercises.length)" @keydown.enter="go(w.exercises.length)">
+      <div class="grow" style="min-width:0;cursor:pointer" role="button" tabindex="0" :aria-label="topLabel" @click="go(w.exercises.length)" @keydown.enter="go(w.exercises.length)">
         <div class="aw-name"><span class="aw-sets">{{ done }} of {{ total }} sets</span><span class="sep">·</span><span class="ellipsis">{{ w.name }}</span></div>
-        <div class="aw-clock"><b :class="{ paused }">{{ clock(elapsed(w)) }}</b><span v-if="paused" class="aw-paused">Paused</span><span v-if="hrNewest" :class="{ 'aw-old': !hrNewest.fresh }" :title="`Heart rate ${hrNewest.bpm} bpm, ${hrNewest.ago}`">{{ hrNewest.bpm }} bpm</span><span v-if="waiting.length">{{ waiting.length }} waiting to sync</span></div>
+        <div class="aw-clock"><b :class="{ paused }">{{ clock(elapsed(w)) }}</b><span v-if="paused" class="aw-paused">Paused</span><span v-if="hrNewest" class="aw-hr" :class="{ old: hrOld }"><span :class="{ 'hr-old': hrOld }">{{ hrNewest?.bpm }} bpm</span><small v-if="hrOld">{{ hrNewest?.ago }}</small></span><span v-if="waiting.length">{{ waiting.length }} waiting to sync</span></div>
       </div>
       <Menu :items="menu" align="start" />
       <button class="btn" :class="{ o: done === 0 }" @click="finishing = true">Finish</button>
@@ -239,8 +248,8 @@ const menu = computed(() => [
         </div>
         <div v-if="hr.samples.value.length && !onSummary" class="card aw-hr">
           <div class="lbl">Heart rate</div>
-          <div class="aw-hrv">{{ hrNewest!.bpm }} bpm</div>
-          <div class="tiny aw-hrs">{{ `${hrNewest!.ago} · average ${hr.avg.value} · up to ${hr.max.value}` }}</div>
+          <div class="aw-hrv" :class="{ 'hr-old': hrOld }">{{ hrNewest?.bpm }} bpm</div>
+          <div class="tiny aw-hrs">{{ `${hrNewest?.ago} · average ${hr.avg.value} · up to ${hr.max.value}` }}</div>
           <Sparkline v-if="hr.samples.value.length > 1" :values="hr.samples.value.map((p) => p[1])" />
         </div>
         <div class="card">
@@ -283,8 +292,11 @@ const menu = computed(() => [
 .aw-clock b { font-size: 26px; font-weight: 600; letter-spacing: -.8px; color: var(--tx); font-variant-numeric: tabular-nums; line-height: 1.1; }
 .aw-paused, .aw-clock b.paused { color: var(--acc); }
 .aw-paused { font-weight: 600; }
-/* a heart rate over 10 minutes old: still there, but quieter than the clock row's live values */
-.aw-clock .aw-old { opacity: .55; }
+/* a heart rate over 10 minutes old: greyed (.hr-old) with its age under it, small, as the bar at the bottom puts
+   "Elapsed" under its clock. "78 bpm · 25 min ago" on one line leaves no room for it beside the clock on a phone, and
+   this row hides what doesn't fit; stacked it is no wider than "25 min ago" and fits the clock's height */
+.aw-clock .aw-hr.old { display: flex; flex-direction: column; align-self: center; line-height: 1.15; }
+.aw-hr small { font-size: 11px; }
 /* -4px pulls the bar up under the header's --hg gap (optical); the gap below is a block gap */
 .aw-prog { display: flex; gap: 3px; margin: -4px 0 var(--spg); }
 .aw-prog span { flex-basis: 0; height: 5px; border-radius: 5px; background: var(--s2); overflow: hidden; }

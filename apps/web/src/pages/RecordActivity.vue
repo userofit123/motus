@@ -23,7 +23,7 @@ import TimesSheet from "../components/TimesSheet.vue";
 import { api } from "../api/client";
 import { invalidate } from "../api/live";
 import { useSettings } from "../api/queries";
-import { useLiveHr, useDevice, deviceWord, syncAfterSession } from "../native/health";
+import { useLiveHr, syncAfterSession } from "../native/health";
 
 const route = useRoute(), router = useRouter();
 const types = useActivityTypes();
@@ -56,12 +56,13 @@ const pace = computed(() => {
   if (recDistM.value < 20 || !s) return null;
   return ride.value ? fmt.value.num(d / (s / 3600), 1) : clock(s / d);
 });
-// the band's heart rate while recording (Android app, Health Connect on): a tile from the first reading on (so the tiles
-// don't move when one goes stale), and the line so far under them
+// the band's heart rate while recording (Android app, Health Connect on): a tile from the first reading on, and the line
+// so far under them
 const settings = useSettings();
-const dev = useDevice();
 const hr = useLiveHr(() => (rec.value ? new Date(rec.value.startedAt).toISOString() : null), () => !!rec.value && !!settings.value.features.healthConnect);
-const hrLatest = hr.latest, hrSamples = hr.samples;
+// the newest reading however old, greyed with its age once over 10 minutes old, as on every screen that shows it (M-291)
+const hrNewest = hr.newest, hrSamples = hr.samples;
+const hrOld = computed(() => !!hrNewest.value && !hrNewest.value.fresh);
 const busy = ref(false);
 async function finish() {
   busy.value = true;
@@ -98,7 +99,7 @@ await loaded(types, active);
       <div v-if="gps" class="card stat"><div class="lbl">Distance</div><div class="val">{{ fmt.num(fmt.distNum(recDistM), 2) }}<small>{{ fmt.du }}</small></div></div>
       <div v-if="gps" class="card stat"><div class="lbl">{{ ride ? "Speed" : "Pace" }}</div><div class="val">{{ pace ?? "-" }}<small v-if="pace">{{ ride ? `${fmt.du}/h` : `/${fmt.du}` }}</small></div></div>
       <div v-if="onFoot" class="card stat"><div class="lbl">Steps</div><div class="val">{{ stepsCounting ? fmt.num(rec!.steps, 0) : "-" }}</div><div v-if="stepsNote" class="sub">{{ stepsNote }}</div></div>
-      <div v-if="hrSamples.length" class="card stat"><div class="lbl">Heart rate</div><div class="val">{{ hrLatest ? hrLatest.bpm : "-" }}<small v-if="hrLatest">bpm</small></div><div class="sub">{{ hrLatest ? hrLatest.ago : `Waiting for your ${deviceWord(dev)}` }}</div></div>
+      <div v-if="hrSamples.length" class="card stat"><div class="lbl">Heart rate</div><div class="val" :class="{ 'hr-old': hrOld }">{{ hrNewest?.bpm }}<small>bpm</small></div><div class="sub">{{ hrNewest?.ago }}</div></div>
     </div>
     <HeartRate v-if="hrSamples.length > 1" chart class="spt" :hr="hrSamples" />
     <div class="row spt" style="justify-content:center">

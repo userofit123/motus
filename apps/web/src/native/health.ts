@@ -481,8 +481,9 @@ export function syncAfterSession() {
 // Health Connect every minute while the app is on screen (and at once when it comes back, and again half a minute later).
 // Readings reach Health Connect only when the band app syncs with the band: Gadgetbridge writes right after each sync,
 // and syncs on its own schedule (minutes to hours apart; its "fetch on unlock" never fires
-// while a workout keeps the screen on). So the newest is often minutes old: `latest` is it while at most 10 minutes old
-// (the bar at the bottom, where a number reads as "now"), `newest` always (the workout screen, muted and with its age).
+// while a workout keeps the screen on). So the newest is often minutes old. One rule on every screen that shows it (the
+// workout's header, Summary and side card, the recording screen, the bar at the bottom): the newest reading once there is
+// one; over 10 minutes old, its number greyed (`.hr-old`) and its age in words beside it (M-291).
 // One reader per session, shared by every screen that shows it (the page and the bar at the bottom).
 export type HrSample = [number, number]; // [unix seconds, bpm]
 const LIVE_EVERY_MS = 60_000, LIVE_AFTER_SHOWN_MS = 30_000, LIVE_FRESH_S = 10 * 60, LIVE_OVERLAP_S = 10 * 60;
@@ -541,7 +542,7 @@ function detach(r: LiveReader) {
 
 /** The band's heart rate since `start` (ISO) while `on` is true (the session runs, the Health Connect feature is on).
  *  samples: every reading so far; newest: the newest reading however old, with how old it is ("2 min ago", "1 h ago")
- *  and whether it is fresh (at most 10 minutes old); latest: newest while fresh, else null.
+ *  and whether it is fresh (at most 10 minutes old).
  *  Empty and null outside the Android app, without permission, or before the first reading arrives. */
 export function useLiveHr(start: () => string | null | undefined, on: () => boolean) {
   const empty = ref<HrSample[]>([]);
@@ -556,12 +557,11 @@ export function useLiveHr(start: () => string | null | undefined, on: () => bool
   const newest = computed(() => {
     const p = samples.value.at(-1); if (!p) return null;
     const ageS = Math.max(0, liveNow.value / 1000 - p[0]), m = Math.floor(ageS / 60);
-    return { bpm: p[1], at: p[0], fresh: ageS <= LIVE_FRESH_S, ago: m < 1 ? "just now" : m < 60 ? `${m} min ago` : `${Math.round(m / 60)} h ago` };
+    return { bpm: p[1], at: p[0], fresh: ageS <= LIVE_FRESH_S, ago: m < 1 ? "Just now" : m < 60 ? `${m} min ago` : `${Math.round(m / 60)} h ago` };
   });
-  const latest = computed(() => (newest.value?.fresh ? newest.value : null));
   const avg = computed(() => (samples.value.length ? Math.round(samples.value.reduce((t, p) => t + p[1], 0) / samples.value.length) : null));
   const max = computed(() => (samples.value.length ? samples.value.reduce((m, p) => Math.max(m, p[1]), 0) : null));
-  return { samples, newest, latest, avg, max };
+  return { samples, newest, avg, max };
 }
 
 /** Heart-rate readings as chart points: a band reads every few seconds, so an hour is over a thousand points; they're
