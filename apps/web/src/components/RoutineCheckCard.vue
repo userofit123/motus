@@ -3,15 +3,14 @@
 // day blocks show a goal, then each check as a row with what it found and what to change (as Stats → Scores' rows),
 // then the row that opens the research behind it. The header has no icon, as its sibling cards on the Routine and
 // Program pages. `muscles`: sets a week per muscle, for the figure where the page has none of its own (a program): on
-// the left of the score, as the Routines list's routine cards (CLAUDE.md figure rule). `source`: what the week is
-// built from, under the score (a routine's times a week, a program's week). Each value takes Stats → Scores' tone
+// the left of the score, as the Routines list's routine cards (CLAUDE.md figure rule). `source`: what the score is
+// scored on, under the score (a routine's one workout, a program's week). Each value takes Stats → Scores' tone
 // (toneOf): green when met in full, plain when half or more, red under half; the line under the score (full width, as Scores'
 // why line) counts the ones met in full and says the others earn part of their points, which is why 0 met can still score 53. The value stacks
 // so the tips keep their width at phone width: "1 of 3" over "big lifts", or two counts one over the other, each
-// with its small noun ("15 push" over "4 pull"). `weekIn`: a routine in a program, whose week (sets per muscle, twice a week, balance)
-// is checked on the program's card instead (M-287), so its card says where, as a row that opens the program.
+// with its small noun ("15 push" over "4 pull"). A routine's card scores only that routine's own workout and a program's
+// only its week (M-287), so neither points to the other.
 import { computed } from "vue";
-import { useRouter } from "vue-router";
 import { CHECK_SOURCES, type CheckKey, type RoutineCheck } from "@motus/shared";
 import Icon from "./Icon.vue";
 import Ring from "./Ring.vue";
@@ -20,13 +19,8 @@ import SourceRow from "./learn/SourceRow.vue";
 import { toneOf } from "../core/scores";
 
 // muscles: the figure's main and helper muscles (the routine card's look) and each one's sets a week for its tips
-// check: null only for a routine in a program with lifting but nothing to check in one workout (no target reps), so the card keeps its row to the week
-const props = defineProps<{ check: RoutineCheck | null; title: string; muscles?: { sets: Record<string, number>; primary: string[]; secondary: string[] }; source?: string;
-  weekIn?: { id: string; name: string; more: number } }>();
-const router = useRouter();
-const openWeek = () => router.push(`/programs/${props.weekIn!.id}`);
-const weekLine = computed(() => { const w = props.weekIn; if (!w) return "";
-  return w.more ? `Checked on ${w.name} and ${w.more} more ${w.more === 1 ? "program" : "programs"}, each over its week` : `Checked on the program ${w.name}, all its workouts together`; });
+// check: null only for a routine with lifting but nothing to check in one workout (no target reps), so the card says why
+const props = defineProps<{ check: RoutineCheck | null; title: string; muscles?: { sets: Record<string, number>; primary: string[]; secondary: string[] }; source?: string }>();
 const ICON: Record<CheckKey, string> = { volume: "activity", frequency: "calendar", pushPull: "swap", legs: "split", order: "arrowUp", reps: "refresh" };
 // "1 of 3 big lifts" → "1 of 3" over "big lifts"; "15 push · 4 pull" → "15 push" over "4 pull", each count beside its noun
 const valueOf = (v: string) => { const m = /^(\S+ of \S+) (.+)$/.exec(v); return m ? { of: m[1]!, noun: m[2]!, pairs: [] } : { of: "", noun: "", pairs: v.split(" · ").map((x) => { const [n, ...w] = x.split(" "); return { n: n!, w: w.join(" ") }; }) }; };
@@ -64,12 +58,6 @@ const metLine = computed(() => {
         <div class="r" :class="toneOf(c.share)" role="group" :aria-label="`${c.value}, ${STATE[toneOf(c.share) ?? 'none']}`">
           <template v-if="valueOf(c.value).of"><b class="rv">{{ valueOf(c.value).of }}</b><div class="s cst">{{ valueOf(c.value).noun }}</div></template>
           <div v-for="v in valueOf(c.value).pairs" v-else :key="v.w" class="rv"><b>{{ v.n }}</b> <span class="cst">{{ v.w }}</span></div></div>
-      </div>
-      <div v-if="weekIn" class="li click" role="link" tabindex="0" :aria-label="`Sets per muscle, twice a week and balance: ${weekLine}`" @click="openWeek"
-           @keydown.enter.prevent="openWeek" @keydown.space.prevent="openWeek">
-        <Icon name="layers" :size="18" class="muted" />
-        <div class="grow"><div class="t">Sets per muscle, twice a week and balance</div><div class="s">{{ weekLine }}</div></div>
-        <Icon name="right" :size="16" class="muted" />
       </div>
       <SourceRow topic="routineCheck" :sources="CHECK_SOURCES" />
     </div>

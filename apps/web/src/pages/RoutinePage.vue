@@ -23,8 +23,8 @@ import PlanSets from "../components/PlanSets.vue";
 import BodyMap from "../components/BodyMap.vue";
 import HeartRate from "../components/HeartRate.vue";
 import RoutineCheckCard from "../components/RoutineCheckCard.vue";
-import { sessionOf, timesAWeek } from "../core/routineCheck";
-import { routineCheck, workoutCheck, hasLifting } from "@motus/shared";
+import { sessionOf } from "../core/routineCheck";
+import { routineCheck, hasLifting } from "@motus/shared";
 import { useRoutineMenu } from "../core/routineMenu";
 import { removeItem } from "../components/home/planActions";
 import { useNoteMenu } from "../core/noteMenu";
@@ -85,24 +85,20 @@ const schedRemove = (s: any) => removeItem({ scheduleId: s.id, name: routine.val
 // time (a point's tip gives it and opens that workout), and each session row's average
 const hrSessions = computed(() => (routine.value?.hr?.sessions ?? []).filter((x: any) => x.avgHr).map((x: any) => ({ x: new Date(x.date).getTime(), y: Math.round(x.avgHr), id: x.workoutId })));
 const hrOf = computed(() => new Map<string, number>((routine.value?.hr?.sessions ?? []).filter((x: any) => x.avgHr).map((x: any) => [x.workoutId, Math.round(x.avgHr)])));
-// the Routine check (feature). In a program that isn't finished, only one workout of it (order, reps): its week is the
-// program's, checked on the program's card, so the card points there (M-287). In no program, it is the only week Motus
-// knows of, so it is also checked as a week of it, done as often as its plans or the last 4 weeks say.
-const checkOn = computed(() => !!st.value.features.routineCheck);
-// asked for only while both features are on; the pointer names only programs whose checked week (the first full, not
-// deload, one, as the program's card scores it) has this routine, so what it says is true
-const programs = usePrograms(computed(() => checkOn.value && !!st.value.features.programs));
-const inPrograms = computed(() => (checkOn.value && st.value.features.programs ? (programs.data.value ?? []) : [])
-  .filter((x) => !x.state.finished && x.weeks.find((w) => !w.deload && w.days.length)?.days.includes(id.value)).sort((a, b) => Number(b.active) - Number(a.active)));
-const weekIn = computed(() => (inPrograms.value.length ? { id: inPrograms.value[0]!.id, name: inPrograms.value[0]!.name, more: inPrograms.value.length - 1 } : undefined));
-// a routine with no lifting has nothing to check, so its card stays hidden, in a program or not
-const lifts = computed(() => !!routine.value && hasLifting(sessionOf(routine.value)));
-const usual = computed(() => timesAWeek(id.value, schedules.data.value ?? [], history.data.value ?? []));
-const check = computed(() => (!checkOn.value || !routine.value ? null : weekIn.value ? workoutCheck(sessionOf(routine.value)) : routineCheck(sessionOf(routine.value), usual.value.n)));
-// what the score covers and, for a week, how often it counts it done and where that comes from, under the score
-const timesWord = (n: number) => (n === 1 ? "once" : n === 2 ? "twice" : `${n} times`);
-const checkSource = computed(() => (weekIn.value ? "Scored on one workout"
-  : `Scored on a week of it, done ${timesWord(usual.value.n)} a week (${{ plan: "as planned", done: "how often you did it in the last 4 weeks", none: "not planned or done yet" }[usual.value.from]})`));
+// the Routine check (feature): only this routine's own workout (big lifts first, reps), in a program or not; a week's
+// checks are a program's, on its own page (M-287)
+const check = computed(() => (st.value.features.routineCheck && routine.value ? routineCheck(sessionOf(routine.value)) : null));
+// a routine with no lifting has nothing to check, so its card stays hidden; one with lifting but nothing to score says why
+const lifts = computed(() => !!st.value.features.routineCheck && !!routine.value && hasLifting(sessionOf(routine.value)));
+// the programs it is in (Programs feature), any week of them, each opening its page: running ones first, finished last
+const programsOn = computed(() => !!st.value.features.programs);
+const programs = usePrograms(programsOn);
+const rank = (x: { active: boolean; state: { finished?: boolean } }) => (x.state.finished ? 2 : x.active ? 0 : 1);
+const partOf = computed(() => (programsOn.value ? (programs.data.value ?? []) : [])
+  .filter((x) => x.weeks.some((w) => w.days.includes(id.value))).sort((a, b) => rank(a) - rank(b)));
+// its line as the Programs tab's cards say it: how far along and paused when it is, or all its weeks done
+const partLine = (x: (typeof partOf.value)[number]) => (x.state.finished ? `All ${x.weeks.length} weeks done`
+  : `${x.state.done} of ${x.state.total} workouts done${x.active ? "" : " · paused"}`);
 const noteMenu = useNoteMenu();
 // a note on one of the routine's exercises says which; notes on the routine itself need no label
 const noteWhere = (n: any) => (n.targetType === "routine_exercise" ? routine.value?.exercises.find((e: any) => e.id === n.targetId)?.exercise?.name ?? null : null);
@@ -174,10 +170,16 @@ await loaded(r, summaries, notes, rems, schedules, history, programs);
           <div v-for="s in mySchedules" :key="s.id" class="li" style="min-height:0;padding:calc(var(--lpy) - 2px) 0"><Icon name="calendar" :size="16" class="muted" /><span class="grow">{{ schedLine(s) }}</span>
             <Menu :items="[{ label: 'Edit', icon: 'edit', run: () => (scheduleSheet = s) }, schedRemove(s)]" /></div>
         </div>
+        <!-- the programs it is in, as the Program page lists its recent workouts; nothing when it is in none -->
+        <div v-if="partOf.length" class="card">
+          <div class="ch"><span class="t">In programs</span></div>
+          <div class="list"><div v-for="x in partOf" :key="x.id" class="li click" @click="router.push(`/programs/${x.id}`)">
+            <div class="grow"><div class="t">{{ x.name }}</div><div class="s">{{ partLine(x) }}</div></div><Icon name="right" class="muted" /></div></div>
+        </div>
       </div>
     </div>
     <!-- below both columns: its rows say what to change in full, which the side column is too narrow for -->
-    <RoutineCheckCard v-if="check || (weekIn && lifts)" class="spt" :check="check" title="Check of this routine" :source="checkSource" :week-in="weekIn" />
+    <RoutineCheckCard v-if="check || lifts" class="spt" :check="check" title="Check of this routine" source="Scored on one workout of this routine" />
     </div>
 
     <div v-else-if="tab === 'history'">

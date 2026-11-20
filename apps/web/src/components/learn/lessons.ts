@@ -105,7 +105,7 @@ export const LESSONS = {
   // the Routine check (M-273): what each source found, then each check and its points
   routineCheck: {
     title: "Routine check",
-    intro: "How your programs and routines compare with what training research found works best. A program is checked over one week, all its workouts together, for sets per muscle, training each muscle twice a week and balance; a week is checked for every muscle. A routine is checked on one workout, for big lifts first and reps. A routine in no program is also checked as a week of only that routine, as Motus doesn't know the rest of your week; it may be one day of a split, so it is checked only for the muscles it trains. A check is met when its target is met in full; one that is not met can still earn part of its points, so 100 means every check is met.",
+    intro: "How your programs and routines compare with what training research found works best. A program is checked on its program page over one week, all that week's workouts together, for sets per muscle, training each muscle twice a week and balance; the week is checked for every muscle, as research gives its targets per week. A routine is checked only on one workout of it, for big lifts first and reps, whether or not it is in a program. A check is met when its target is met in full; one that is not met can still earn part of its points, so 100 means every check is met.",
     sections: [
       { heading: "Where the targets come from", rows: [
         SCHOENFELD,
@@ -130,7 +130,6 @@ export const LESSONS = {
         { icon: "flame", t: "Warm-up sets", r: "Not counted" },
         { icon: "calendar", t: "A program's week", s: "Its first full week, not a deload one, with all its workouts: sets per muscle, muscles trained twice a week and balance" },
         { icon: "dumbbell", t: "A routine's workout", s: "One workout of it: big lifts first and reps per set" },
-        { icon: "routines", t: "A routine in no program", s: "Also checked as a week: its sets times how often it is planned a week, else how often you did it in the last 4 weeks, else once" },
       ] },
     ],
   },
