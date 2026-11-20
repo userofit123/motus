@@ -4,6 +4,7 @@ import { ref } from "vue";
 import { useRouter } from "vue-router";
 import { usePrograms } from "../api/queries";
 import type { Program } from "@motus/shared";
+import { useFmt } from "../core/format";
 import { useProgramMenu } from "../core/programMenu";
 import Icon from "./Icon.vue";
 import MuscleFig from "./MuscleFig.vue";
@@ -15,9 +16,11 @@ const programs = usePrograms();
 const edit = ref<Program | null | undefined>(undefined); // undefined: closed; null: a new one
 const pm = useProgramMenu();
 const start = (p: Program) => router.push(`/routines/${p.state.next!.routineId}/start?program=${p.id}${p.state.next!.deload ? `&deload=${p.deloadPct}` : ""}`);
-/** "Week 2 of 6 · Next: Push A" */
+const fmt = useFmt();
+/** "Week 2 of 6 · Next: Push A"; before a start date still to come "Starts Mon 23 Nov · Next: Push A", as Home says it
+ *  (the program's page adds its length and end) */
 const where = (p: Program) => !p.state.total ? "No routines yet" : p.state.finished ? `All ${p.weeks.length} weeks done`
-  : `Week ${p.state.next!.week} of ${p.weeks.length} · Next: ${p.state.next!.name}${p.state.next!.deload ? " (deload)" : ""}`;
+  : `${p.calendarWeek === 0 && p.startsOn ? `Starts ${fmt.value.day(p.startsOn)}` : `Week ${p.state.next!.week} of ${p.weeks.length}`} · Next: ${p.state.next!.name}${p.state.next!.deload ? " (deload)" : ""}`;
 // the Routines page's Programs tab puts "New program" in its header, so it opens the editor from there
 defineExpose({ create: () => (edit.value = null) });
 </script>
@@ -36,7 +39,7 @@ defineExpose({ create: () => (edit.value = null) });
         <div class="row"><b class="grow">{{ p.name }}</b><span @click.stop><Menu :items="pm.items(p, { edit: () => (edit = p) })" /></span></div>
         <div class="tiny">{{ p.state.done }} of {{ p.state.total }} workouts done{{ p.active || p.state.finished ? "" : " · paused" }}</div>
         <div class="pbar" style="margin:10px 0"><i :style="{ width: (p.state.total ? p.state.done / p.state.total : 0) * 100 + '%' }" /></div>
-        <div class="row"><div class="grow" :class="{ pos: p.state.finished, muted: !p.active && !p.state.finished }" style="font-weight:600">{{ where(p) }}</div>
+        <div class="row"><div class="grow ellipsis" :class="{ pos: p.state.finished, muted: !p.active && !p.state.finished }" style="font-weight:600">{{ where(p) }}</div>
           <button v-if="p.active && p.state.next" class="btn o s" @click.stop="start(p)"><Icon name="play" :size="14" />Start</button></div>
         </div>
       </div>

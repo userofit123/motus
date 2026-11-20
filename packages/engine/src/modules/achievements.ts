@@ -79,14 +79,14 @@ async function streakSeries(q: Sql, s: Settings, tzMin: number): Promise<Series>
 }
 
 /** Programs followed to the end: each program's routines done in its order since it started (as programState counts). */
-async function programSeries(q: Sql): Promise<Series> {
+async function programSeries(q: Sql, tzMin: number): Promise<Series> {
   const ev: { at: string; v: number }[] = [];
-  for (const p of (await q.query("SELECT id, weeks, start_date, created_at FROM programs")).rows) {
+  for (const p of (await q.query("SELECT id, weeks, start_date, counts_from, created_at FROM programs")).rows) {
     const seq: string[] = (p.weeks ?? []).flatMap((w: any) => w.days ?? []);
     if (!seq.length) continue;
     const done = (await q.query(
       "SELECT routine_id, started_at FROM workouts WHERE status = 'completed' AND started_at >= $1::timestamptz AND (program_id = $2 OR routine_id = ANY($3::uuid[])) ORDER BY started_at",
-      [countsFrom(p), p.id, [...new Set(seq)]])).rows;
+      [countsFrom(p, tzMin), p.id, [...new Set(seq)]])).rows;
     let i = 0;
     for (const w of done) if (i < seq.length && w.routine_id === seq[i] && ++i === seq.length) ev.push({ at: w.started_at, v: 1 });
   }
@@ -114,7 +114,7 @@ export async function achievements(q: Sql, s: Settings, tzMin: number) {
     streak: await streakSeries(q, s, tzMin),
     records: await recordSeries(q),
     walk: distance("walk", "hike"), run: distance("run"), cycle: distance("cycle"),
-    programs: await programSeries(q),
+    programs: await programSeries(q, tzMin),
     weighins,
   };
   const u = s.units;

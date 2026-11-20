@@ -29,6 +29,12 @@
   min-height: 34px;
 }
 
+/* a full-width row (.seg.block) shares its width equally (flex-basis 0), so the side padding only sets how narrow a label
+   may get: kept small so four choices ("Today", "Tomorrow", "Pick a date", "No date") stay on one row in a phone sheet */
+.seg.block button {
+  padding-inline: 8px;
+}
+
 .seg button.on {
   background: var(--acc);
   color: var(--on);

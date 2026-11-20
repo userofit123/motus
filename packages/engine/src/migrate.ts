@@ -51,6 +51,7 @@ import m048 from "./migrations/048_band_link_pass";
 import m049 from "./migrations/049_sync_resets";
 import m050 from "./migrations/050_foreign_ids";
 import m051 from "./migrations/051_program_no_start";
+import m052 from "./migrations/052_program_counts_from";
 
 const MIGRATIONS: [string, string][] = [
   ["001_init", m001],
@@ -104,6 +105,7 @@ const MIGRATIONS: [string, string][] = [
   ["049_sync_resets", m049],
   ["050_foreign_ids", m050],
   ["051_program_no_start", m051],
+  ["052_program_counts_from", m052],
 ];
 
 /**

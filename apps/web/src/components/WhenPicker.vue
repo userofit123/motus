@@ -15,11 +15,13 @@ const other = ref(!!props.modelValue && props.modelValue !== today && props.mode
 const which = computed(() => (other.value ? "other" : props.none && !props.modelValue ? "none" : props.modelValue === today ? "today" : props.modelValue === tomorrow ? "tomorrow" : "other"));
 const dp = ref<InstanceType<typeof DatePicker> | null>(null);
 function set(d: string) { other.value = false; emit("update:modelValue", d); }
-async function pickOther() { other.value = true; await nextTick(); dp.value?.show(); }
+// from no date, the calendar opens on today and today is the value, so closing it without a pick never leaves
+// "Pick a date" chosen with no day to save
+async function pickOther() { other.value = true; if (!props.modelValue) emit("update:modelValue", today); await nextTick(); dp.value?.show(); }
 </script>
 
 <template>
-  <div class="seg block" :class="{ four: none }" role="radiogroup" :aria-label="title ?? 'When'">
+  <div class="seg block" role="radiogroup" :aria-label="title ?? 'When'">
     <button type="button" role="radio" :aria-checked="which === 'today'" :class="{ on: which === 'today' }" @click="set(today)">Today</button>
     <button type="button" role="radio" :aria-checked="which === 'tomorrow'" :class="{ on: which === 'tomorrow' }" @click="set(tomorrow)">Tomorrow</button>
     <button type="button" role="radio" :aria-checked="which === 'other'" :class="{ on: which === 'other' }" @click="pickOther">Pick a date</button>
@@ -27,8 +29,3 @@ async function pickOther() { other.value = true; await nextTick(); dp.value?.sho
   </div>
   <DatePicker v-if="which === 'other'" ref="dp" :model-value="modelValue" :title="title ?? 'Choose a day'" @update:model-value="(v: string) => v && emit('update:modelValue', v)" />
 </template>
-
-<style scoped>
-/* four choices still fit one row on a phone (360px): the same pills, a little less room around each label */
-.seg.four button { padding-inline: 6px; }
-</style>

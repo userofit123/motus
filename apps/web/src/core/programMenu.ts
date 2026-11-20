@@ -12,9 +12,11 @@ import type { MenuItem } from "../components/Menu.vue";
 export function useProgramMenu() {
   const router = useRouter();
   const put = async (p: Program, body: Record<string, unknown>, msg: string) => { try { await api.put(`/programs/${p.id}`, body); invalidate(["routines", "home"]); toast(msg); } catch (e) { toastError(e); } };
+  // a program with a date starts again today; one with no date stays without one and waits for its next first workout
   async function restart(p: Program) {
-    if (await confirm("Start again from week 1?", { text: "From today. Workouts done before stay in your history but no longer count towards this program.", ok: "Start again" }))
-      await put(p, { startDate: localYmd(new Date()), active: true }, "Program starts again from week 1");
+    const when = p.startDate ? "From today." : "From the next time you do its first workout.";
+    if (await confirm("Start again from week 1?", { text: `${when} Workouts done before stay in your history but no longer count towards this program.`, ok: "Start again" }))
+      await put(p, p.startDate ? { startDate: localYmd(new Date()), active: true } : { restart: true, active: true }, "Program starts again from week 1");
   }
   async function del(p: Program, page: boolean) {
     if (!(await confirm(`Delete ${p.name}?`, { text: "Its routines and workouts stay.", ok: "Delete", danger: true }))) return;

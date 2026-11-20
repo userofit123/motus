@@ -132,14 +132,45 @@ describe("programs", () => {
     p = (await call("GET", "/programs", undefined, { tz: "0" })).find((x: any) => x.id === pid);
     const end = new Date(Date.parse(day(0)) + 13 * 86400000).toISOString().slice(0, 10);
     expect(p).toMatchObject({ startDate: null, startsOn: day(0), endsOn: end, calendarWeek: 1, state: { done: 1 } });
-    // a date set later is kept, and taking it away again works
+    // a date set later is kept; saving other changes keeps it
     await call("PUT", `/programs/${pid}`, { startDate: day(7) });
     p = await call("GET", `/programs/${pid}`, undefined, { tz: "0" });
-    expect(p).toMatchObject({ startDate: day(7), startsOn: day(7), calendarWeek: 2 });
+    expect(p).toMatchObject({ startDate: day(7), startsOn: day(7), calendarWeek: 2, state: { done: 1 } });
     await call("PUT", `/programs/${pid}`, { name: "Open" });
     expect((await call("GET", `/programs/${pid}`, undefined, { tz: "0" })).startDate).toBe(day(7));
-    await call("PUT", `/programs/${pid}`, { startDate: null });
-    expect((await call("GET", `/programs/${pid}`, undefined, { tz: "0" })).startsOn).toBe(day(0));
+    const get = async () => call("GET", `/programs/${pid}`, undefined, { tz: "0" });
+    const removeDate = async () => { await new Promise((r) => setTimeout(r, 5)); await call("PUT", `/programs/${pid}`, { startDate: null }); };
+    // taking the date away waits for the next workout: today's, done before that, no longer counts
+    await removeDate();
+    expect(await get()).toMatchObject({ startDate: null, startsOn: null, endsOn: null, calendarWeek: 1, state: { done: 0 } });
+    // saving it again with no date (the form sends every field) keeps waiting, it does not start over
+    await call("PUT", `/programs/${pid}`, { name: "Open", startDate: null });
+    expect(await get()).toMatchObject({ startsOn: null, state: { done: 0 } });
+    // Start again from week 1 (today), then no date: the workouts since it was made stay out
+    await call("PUT", `/programs/${pid}`, { startDate: day(0) });
+    expect(await get()).toMatchObject({ startsOn: day(0), state: { done: 1 } });
+    await removeDate();
+    expect(await get()).toMatchObject({ startsOn: null, state: { done: 0 } });
+    // a date planned ahead, then no date: today's workout from before stays out
+    await call("PUT", `/programs/${pid}`, { startDate: day(-3) });
+    expect(await get()).toMatchObject({ startsOn: day(-3), calendarWeek: 0, state: { done: 0 } });
+    await removeDate();
+    expect(await get()).toMatchObject({ startsOn: null, calendarWeek: 1, state: { done: 0 } });
+    // the next workout starts it; Start again from week 1 keeps it without a date and waits for the next one
+    await call("POST", "/workouts/log", { routineId: a, startedAt: new Date().toISOString(), exercises: [] });
+    expect(await get()).toMatchObject({ startsOn: day(0), state: { done: 1 } });
+    await new Promise((r) => setTimeout(r, 5));
+    await call("PUT", `/programs/${pid}`, { restart: true, active: true });
+    expect(await get()).toMatchObject({ startDate: null, startsOn: null, state: { done: 0 } });
+  });
+  it("starts a dated program at the app's midnight, not UTC's", async () => {
+    const a = (await call("POST", "/routines", { template: "push" })).id;
+    const today = new Date().toISOString().slice(0, 10);
+    const { id: pid } = await call("POST", "/programs", { name: "Zoned", weeks: [{ days: [a] }], startDate: today });
+    // 23:30 the day before in UTC is already the start day 2 hours east of UTC (tz -120)
+    await call("POST", "/workouts/log", { routineId: a, startedAt: new Date(Date.parse(today + "T00:00:00Z") - 30 * 60000).toISOString(), exercises: [] });
+    expect((await call("GET", `/programs/${pid}`, undefined, { tz: "-120" })).state.done).toBe(1);
+    expect((await call("GET", `/programs/${pid}`, undefined, { tz: "0" })).state.done).toBe(0);
   });
 });
 

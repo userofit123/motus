@@ -1,42 +1,50 @@
 // Programs (optional feature): weeks of routines followed in order. Where you are is worked out from the workouts you
 // finished since the program started, so skipping the app for a week or logging out of order never breaks it.
-// A program with no start date starts with the first of its workouts done after it was made (M-288). Its end is not set:
+// A program with no start date starts with the first of its workouts done after it was made, its date was taken away or
+// it started again (counts_from, M-288). Its end is not set:
 // it follows from its weeks, the last day of its last week counted from the start (M-289), as its weeks already run on.
 import type { Router } from "../router";
 import type { Sql } from "../db";
 import { camel, id, str, intOrNull, bool, dateStr, visible } from "../util";
 import { uuidv7 } from "../ids";
 import { notFound, bad } from "../errors";
-import { LIFTED_SQL } from "@motus/shared";
+import { LIFTED_SQL, programEnd } from "@motus/shared";
 import { dayIn } from "./achievements";
 
 interface Week { days: string[]; deload?: boolean }
 const DAY = 86400000;
 
-/** From when workouts count: the start date, or with none the moment the program was made (so past workouts never count). */
-export const countsFrom = (p: any): string => (p.start_date ? String(p.start_date).slice(0, 10) : new Date(p.created_at ?? Date.now()).toISOString());
+/** A program's row as stored, with what the walk through its workouts reads. */
+export interface ProgramRow { id: string; weeks: Week[] | null; start_date: string | null; counts_from: string | Date | null; created_at: string | Date; active?: boolean; deload_pct?: number }
+
+/**
+ * From when workouts count: the start date from the app's midnight (tzMin: minutes behind UTC, as dayIn), or with no date
+ * the moment it was last set to count afresh (made, date taken away, started again: counts_from), else when it was made.
+ */
+export const countsFrom = (p: Pick<ProgramRow, "start_date" | "counts_from" | "created_at">, tzMin: number): string =>
+  p.start_date ? new Date(Date.parse(String(p.start_date).slice(0, 10) + "T00:00:00Z") + tzMin * 60000).toISOString()
+    : new Date(p.counts_from ?? p.created_at ?? Date.now()).toISOString();
 
 /**
  * The program's days: startsOn its start date, or with none the day of its first workout (null until then); endsOn the last
- * day of its last week from there; calendarWeek the week the calendar is in (0 before a set start; a program waiting for its
- * first workout is in week 1, since it starts whenever you do).
+ * day of its last week from there (programEnd); calendarWeek the week the calendar is in (0 before a set start; a program
+ * waiting for its first workout is in week 1, since it starts whenever you do).
  */
-export function programDays(p: any, firstAt: string | null, today: string, tzMin: number) {
+export function programDays(p: Pick<ProgramRow, "start_date" | "weeks">, firstAt: string | null, today: string, tzMin: number) {
   const startsOn = p.start_date ? String(p.start_date).slice(0, 10) : firstAt ? dayIn(firstAt, tzMin) : null;
-  const weeks = (p.weeks ?? []).length;
-  const endsOn = startsOn && weeks ? new Date(Date.parse(startsOn) + (weeks * 7 - 1) * DAY).toISOString().slice(0, 10) : null;
+  const endsOn = programEnd(startsOn, (p.weeks ?? []).length);
   const from = startsOn ?? today;
   const calendarWeek = today < from ? 0 : Math.floor((Date.parse(today) - Date.parse(from)) / (7 * DAY)) + 1;
   return { startsOn, endsOn, calendarWeek };
 }
 
 /** The planned workouts in order, and which finished workout counted for each (walked in time order since the start). */
-async function walk(q: Sql, p: any) {
+async function walk(q: Sql, p: ProgramRow, tzMin: number) {
   const weeks: Week[] = p.weeks ?? [];
   const seq = weeks.flatMap((w, wi) => w.days.map((r, di) => ({ routineId: r, week: wi + 1, day: di + 1, deload: !!w.deload })));
   const rows = seq.length ? (await q.query(
     "SELECT id, routine_id, program_id, started_at FROM workouts WHERE status = 'completed' AND started_at >= $1::timestamptz AND (program_id = $2 OR routine_id = ANY($3::uuid[])) ORDER BY started_at",
-    [countsFrom(p), p.id, [...new Set(seq.map((s) => s.routineId))]])).rows : [];
+    [countsFrom(p, tzMin), p.id, [...new Set(seq.map((s) => s.routineId))]])).rows : [];
   const hit: (string | null)[] = seq.map(() => null);
   const extra: string[] = []; // started from this program but out of order: still the program's, just not a step forward
   let i = 0, firstAt: string | null = null;
@@ -49,20 +57,20 @@ async function walk(q: Sql, p: any) {
   return { slots, hit, extra, i, firstAt };
 }
 
-export async function programState(q: Sql, p: any) {
-  return (await programInfo(q, p, dayIn(new Date(), 0), 0)).state;
+export async function programState(q: Sql, p: ProgramRow, tzMin = 0) {
+  return (await programInfo(q, p, dayIn(new Date(), tzMin), tzMin)).state;
 }
 
 /** Where you are in the program and its days, from one walk through its workouts. */
-export async function programInfo(q: Sql, p: any, today: string, tzMin: number) {
-  const { slots, i, firstAt } = await walk(q, p);
+export async function programInfo(q: Sql, p: ProgramRow, today: string, tzMin: number) {
+  const { slots, i, firstAt } = await walk(q, p, tzMin);
   const state = slots.length ? { next: slots[i] ?? null, done: i, total: slots.length, finished: i >= slots.length } : { next: null, done: 0, total: 0 };
   return { state, ...programDays(p, firstAt, today, tzMin) };
 }
 
 /** One program in full: the plan week by week with what was done, where you are against the calendar, and totals. */
-async function programDetail(q: Sql, p: any, today: string, tzMin: number) {
-  const { slots, hit, extra, i, firstAt } = await walk(q, p);
+async function programDetail(q: Sql, p: ProgramRow, today: string, tzMin: number) {
+  const { slots, hit, extra, i, firstAt } = await walk(q, p, tzMin);
   const { startsOn, endsOn, calendarWeek } = programDays(p, firstAt, today, tzMin);
   const ids = [...hit.filter((x): x is string => !!x), ...extra];
   const ws = new Map((ids.length ? (await q.query(
@@ -71,7 +79,7 @@ async function programDetail(q: Sql, p: any, today: string, tzMin: number) {
                  WHERE we.workout_id = w.id AND s.done AND s.kind <> 'warmup'), 0) AS volume_kg
      FROM workouts w WHERE w.id = ANY($1::uuid[])`, [ids])).rows : []).map((r: any) => [r.id, { ...camel<any>(r), week: null, day: null }]));
   slots.forEach((s, k) => { const w = hit[k] && ws.get(hit[k]!); if (w) Object.assign(w, { week: s.week, day: s.day }); });
-  const plan = (p.weeks as Week[]).map((w, wi) => ({ week: wi + 1, deload: !!w.deload, days: [] as any[] }));
+  const plan = (p.weeks ?? []).map((w, wi) => ({ week: wi + 1, deload: !!w.deload, days: [] as any[] }));
   slots.forEach((s, k) => plan[s.week - 1]!.days.push({ ...s, workout: hit[k] ? ws.get(hit[k]!) ?? null : null,
     status: hit[k] ? "done" : k === i ? "next" : s.week < calendarWeek ? "late" : "todo" }));
   // how many should be done by now: every week the calendar has fully passed
@@ -110,21 +118,27 @@ export function programRoutes(r: Router) {
     const weeks = sanitize(b.weeks);
     for (const w of weeks) for (const rid of w.days) await visible(ctx.q, "routines", rid, "routine");
     const pid = uuidv7();
-    await ctx.q.query("INSERT INTO programs (id, user_id, name, description, weeks, deload_pct, start_date, active) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)",
+    const start = b.startDate === null ? null : dateStr(b.startDate) ?? new Date().toISOString().slice(0, 10);
+    await ctx.q.query("INSERT INTO programs (id, user_id, name, description, weeks, deload_pct, start_date, active, counts_from) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)",
       [pid, ctx.userId, str(b.name, 120).trim() || "Program", str(b.description, 2000), JSON.stringify(weeks), intOrNull(b.deloadPct, 0, 90) ?? 40,
-        b.startDate === null ? null : dateStr(b.startDate) ?? new Date().toISOString().slice(0, 10), bool(b.active, true)]);
+        start, bool(b.active, true), start ? null : ctx.now().toISOString()]);
     ctx.changed("routine");
     return { id: pid };
   });
   r.put("/programs/:id", async (ctx, p, b) => {
     const weeks = b.weeks ? sanitize(b.weeks) : null;
     if (weeks) for (const w of weeks) for (const rid of w.days) await visible(ctx.q, "routines", rid, "routine");
+    // startDate null takes the date away and left out keeps it. With no date the program starts with the first workout
+    // done from then on (counts_from = now), so workouts from before a date was set never count again; restart (Start
+    // again from week 1 on a program with no date) does the same and keeps it without one.
+    const setDate = b.startDate === null || dateStr(b.startDate) != null;
     const { rows } = await ctx.q.query(
       `UPDATE programs SET name = coalesce($2, name), description = coalesce($3, description), weeks = coalesce($4, weeks), deload_pct = coalesce($5, deload_pct),
-         start_date = CASE WHEN $8 THEN $6::date ELSE start_date END, active = coalesce($7, active) WHERE id = $1 RETURNING id`,
-      // startDate null takes the date away (the program then starts with its first workout); left out, the date stays
+         start_date = CASE WHEN $8 THEN $6::date ELSE start_date END, active = coalesce($7, active),
+         counts_from = CASE WHEN $9 OR ($8 AND $6::date IS NULL AND start_date IS NOT NULL) THEN $10::timestamptz ELSE counts_from END
+       WHERE id = $1 RETURNING id`,
       [id(p.id), b.name ? str(b.name, 120) : null, b.description != null ? str(b.description, 2000) : null, weeks ? JSON.stringify(weeks) : null, intOrNull(b.deloadPct, 0, 90),
-        dateStr(b.startDate), typeof b.active === "boolean" ? b.active : null, b.startDate === null || dateStr(b.startDate) != null]);
+        dateStr(b.startDate), typeof b.active === "boolean" ? b.active : null, setDate, b.restart === true, ctx.now().toISOString()]);
     if (!rows.length) throw notFound("Program not found");
     ctx.changed("routine");
     return { ok: true };
