@@ -22,6 +22,8 @@ Read it aloud as if telling a friend. If you would not say it, rewrite it.
   or "You slept less than 7 hours on 3 of the last 7 nights".
 - No double negatives, no "outside/within range" maths for the reader to do.
 - Name the thing the user knows (a muscle, a set, last night), not the internal concept (load, delta, window).
+- A target, rule or tip is a full sentence the person can act on, with a verb: "Train each muscle on at least 2
+  different days of the week", never a label-like fragment ("Each trained muscle on 2 or more days a week").
 
 ## 3. Cause, then advice
 A verdict says why and what to do, in that order, in one short sentence:

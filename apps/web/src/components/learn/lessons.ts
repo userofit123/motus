@@ -115,9 +115,9 @@ export const LESSONS = {
       { heading: "Where the targets come from", rows: Object.values(CHECK_RESEARCH).map((x) => ({ icon: "note", ...x })) },
       { heading: "How Motus counts", rows: [
         { icon: "activity", t: "Sets a week per muscle", s: "A program's week: working sets for each major muscle, against the goal's target", r: goalPoints("volume") },
-        { icon: "calendar", t: "Muscles trained twice a week", s: `A program's week: each muscle on ${TWICE} or more days. A day counts when an exercise that day is mainly for the muscle, or the muscle helps in 2 or more sets of other exercises`, r: goalPoints("frequency") },
-        { icon: "swap", t: "Pushing and pulling sets", s: `A program's week: upper-body pulling sets ${PULL_PUSH[0]}-${PULL_PUSH[1]} times the pushing sets`, r: goalPoints("pushPull") },
-        { icon: "split", t: "Quad and hamstring sets", s: `A program's week: hamstring sets ${HAMS_QUADS[0]}-${HAMS_QUADS[1]} times the quad sets`, r: goalPoints("legs") },
+        { icon: "calendar", t: "Muscles trained twice a week", s: `A program's week: is each muscle trained on at least ${TWICE} different days? A day counts when an exercise that day is mainly for the muscle, or the muscle helps in 2 or more sets of other exercises`, r: goalPoints("frequency") },
+        { icon: "swap", t: "Pushing and pulling sets", s: `A program's week: for every upper-body pushing set, ${PULL_PUSH[0]}-${PULL_PUSH[1]} pulling sets`, r: goalPoints("pushPull") },
+        { icon: "split", t: "Quad and hamstring sets", s: `A program's week: for every quad set, ${HAMS_QUADS[0]}-${HAMS_QUADS[1]} hamstring sets`, r: goalPoints("legs") },
         { icon: "refresh", t: "Reps per set", s: "A routine's workout: working sets with target reps in the goal's range", r: goalPoints("reps") },
         { icon: "layers", t: `Up to ${SESSION_SETS} sets per muscle`, s: "A routine's workout: working sets for each muscle in that one workout", r: goalPoints("session") },
         { icon: "arrowUp", t: "Big lifts first", s: "A routine's workout: big lifts, the ones that work several muscles (a press, a row, a squat), before single-muscle lifts that tire the same muscles. Counts most for strength", r: goalPoints("order") },

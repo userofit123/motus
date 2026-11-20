@@ -263,7 +263,7 @@ function volume(g: GoalTargets, days: CheckSession[], week: Record<string, numbe
     what: `Working sets (the sets after warm-ups) for each major muscle ${wk}, all its workouts together. A set counts 1 for the muscle the exercise is mainly for and 0.5 for each muscle that helps (a set of bench press: chest 1, triceps 0.5); warm-up sets don't count.`,
     itemsLabel: `Sets per muscle ${wk} · target ${lo}+`, bars: true, band: [lo, Math.max(lo, 20)],
     items: ms.map((m) => ({ label: m.name, value: r1(week[m.id]!), text: plural(week[m.id]!, "set"), ok: week[m.id]! >= lo })),
-    target: `${lo} or more working sets a week for every major muscle.`,
+    target: `Do ${lo} or more working sets a week for each major muscle.`,
     reason: g.id === "size" ? "More sets a week build more muscle, and 10 or more build clearly more than fewer than 5."
       : g.id === "strength" ? "Strength needs fewer sets than muscle size: a few heavy sets a week give most of the gain."
       : g.id === "fatLoss" ? "While you eat less, regular heavy sets tell your body to keep its muscle, and keeping it takes fewer sets than building it. 6 a week is a careful minimum."
@@ -295,7 +295,7 @@ function frequency(g: GoalTargets, days: Day[], week: Record<string, number>, wk
     what: `On how many days ${wk} each muscle is trained. A day counts when an exercise that day is mainly for the muscle, or the muscle helps in 2 or more sets of other exercises (a bench press is mainly for the chest, and the triceps help).`,
     itemsLabel: `Days per muscle ${wk} · target ${TWICE}+`, bars: false,
     items: ms.map((m) => { const d = onDays(m.id); return { label: m.name, value: d.length, text: plural(d.length, "day"), ok: d.length >= TWICE, note: wkt(d) }; }),
-    target: `Each trained muscle on ${TWICE} or more days a week.`,
+    target: `Train each muscle on at least ${TWICE} different days of the week.`,
     reason: g.id === "health" ? `Health guidelines ask adults to train every major muscle on ${TWICE} or more days a week, for the extra health benefits strength training brings.`
       : g.id === "strength" ? `Training a muscle on ${TWICE} days lets you fit in more sets a week without piling them into one workout. More sets, not more days, is what builds strength.`
       : `Past about ${SESSION_SETS} sets for one muscle in one workout, extra sets add little, so ${TWICE} days let more of your sets count. The days themselves matter little: with the same sets a week, 1 or 2 days work about the same.`,
@@ -337,7 +337,7 @@ function pushPull(g: GoalTargets, sessions: CheckSession[], wk: string): Check |
     what: `Working sets of upper-body exercises that push (presses, dips, raises) and pull (rows, pulldowns, curls) ${wk}.`,
     itemsLabel: `Upper-body sets ${wk}`, bars: false,
     items: [{ label: "Pushing", value: push, text: plural(push, "set"), ok: share >= 1, note: names([...pushers]) }, { label: "Pulling", value: pull, text: plural(pull, "set"), ok: share >= 1, note: names([...pullers]) }],
-    target: `Pulling sets ${PULL_PUSH[0]}-${PULL_PUSH[1]} times the pushing sets.`, reason: balanceReason("muscles that push (such as the chest) and muscles that pull (such as the back)"), research: BALANCE_RESEARCH,
+    target: `For every pushing set, do ${PULL_PUSH[0]}-${PULL_PUSH[1]} pulling sets.`, reason: balanceReason("muscles that push (such as the chest) and muscles that pull (such as the back)"), research: BALANCE_RESEARCH,
     tips: share >= 1 ? ["Nothing to change: keep it as it is."] : ratio < PULL_PUSH[0] ? [`Add about ${addPull} pulling sets a week, e.g. Barbell row or Pull-up${pullers.size ? `, or more sets of ${names([...pullers].slice(0, 2))}` : ""}.`]
       : [`Add about ${addPush} pushing sets a week, e.g. Bench press or Overhead press${pushers.size ? `, or more sets of ${names([...pushers].slice(0, 2))}` : ""}.`],
     sources: [SRC.acsm],
@@ -360,7 +360,7 @@ function legs(g: GoalTargets, days: CheckSession[], week: Record<string, number>
     itemsLabel: `Thigh sets ${wk}`, bars: false,
     items: [{ label: "Quads", value: r1(q), text: plural(q, "set"), ok: share >= 1, note: names(liftsFor(days, quad)) || undefined },
       { label: "Hamstrings", value: r1(h), text: plural(h, "set"), ok: share >= 1, note: names(liftsFor(days, ham)) || undefined }],
-    target: `Hamstring sets ${HAMS_QUADS[0]}-${HAMS_QUADS[1]} times the quad sets.`, reason: balanceReason("the front and the back of the thigh"), research: BALANCE_RESEARCH,
+    target: `For every quad set, do ${HAMS_QUADS[0]}-${HAMS_QUADS[1]} hamstring sets.`, reason: balanceReason("the front and the back of the thigh"), research: BALANCE_RESEARCH,
     tips: share >= 1 ? ["Nothing to change: keep it as it is."] : ratio < HAMS_QUADS[0] ? [`Add about ${addH} hamstring sets a week, e.g. Romanian deadlift or Lying leg curl.`]
       : [`Add about ${addQ} quad sets a week, e.g. Squat or Leg press.`],
     sources: [SRC.acsm],
@@ -396,7 +396,7 @@ function order(g: GoalTargets, session: CheckSession): Check | null {
     itemsLabel: `Exercises ${W}, in order`, bars: false,
     items: s.map((e, i) => ({ label: `${i + 1}. ${e.name}`, value: i + 1, text: isBig(e) ? "Big lift" : e.mechanic === "isolation" ? "Single-muscle" : "Other lift", ok: isBig(e) ? !after.has(e) : null,
       note: after.has(e) ? `After ${after.get(e)!.name}, which tires the same muscles` : undefined })),
-    target: "Big lifts before single-muscle lifts that work the same muscles.",
+    target: "Do big lifts before single-muscle lifts that work the same muscles.",
     reason: g.id === "strength" ? "A lift done first gets your freshest muscles, so you lift more weight for more reps, and over weeks it gains the most strength."
       : `A lift done first gets your freshest muscles, so you lift more weight for more reps. For ${g.lower} the order matters less than for strength.`,
     research: g.id === "strength" ? "In a 2012 review of studies (Simão and others), an exercise done early in a workout got more reps and heavier weights than the same exercise done late, when the muscles were tired. In a 2021 review of 11 studies (Nunes and others), people who did an exercise first for weeks gained more strength in it than people who did it last."
@@ -447,7 +447,7 @@ function reps(g: GoalTargets, session: CheckSession): Check | null {
     key: "reps", title: split ? `${range(split)} reps on big lifts` : `${range(g.reps)} reps a set`, share, value: `${inRange} of ${plural(total, "set")}`, detail,
     what: `The target reps of each working set (each set after the warm-ups) ${W}, by exercise.${split ? " A big lift works several muscles at once (a press, a row, a squat); a single-muscle lift works one (a curl, a raise, a fly)." : ""} Pick a weight that makes the last few reps a struggle: the reviews below count sets that end close to failure, the point where you can't do another rep.`,
     itemsLabel: `Target reps ${W}`, bars: false, items,
-    target: `${cap(tgt)}.`, targets: split ? 2 : 1,
+    target: `Aim for ${tgt}.`, targets: split ? 2 : 1,
     reason: g.id === "strength" ? (split ? `Heavy sets of few reps build the most strength, so big lifts aim for ${range(split)} reps. Single-muscle lifts are there to build muscle, which grows about the same from ${g.reps[0]} to ${g.reps[1]} reps a set.`
         : `This workout has no big lift with target reps. Single-muscle lifts are there to build muscle, which grows about the same from ${g.reps[0]} to ${g.reps[1]} reps a set.`)
       : g.id === "endurance" ? `Light weights for ${g.reps[0]} or more reps a set train the muscle to keep working for longer.`
@@ -485,7 +485,7 @@ function session(g: GoalTargets, s: CheckSession): Check | null {
     what: `Working sets (the sets after warm-ups) for each muscle ${W}. A set counts 1 for the muscle the exercise is mainly for and 0.5 for each muscle that helps (a set of bench press: chest 1, triceps 0.5); warm-up sets don't count.`,
     itemsLabel: `Sets per muscle ${W} · up to ${SESSION_SETS}`, bars: true, band: [0, SESSION_SETS],
     items: ms.map((m) => ({ label: m.name, value: r1(day.sets[m.id]!), text: plural(day.sets[m.id]!, "set"), ok: day.sets[m.id]! <= SESSION_SETS })),
-    target: `Up to ${SESSION_SETS} working sets for one muscle in one workout.`,
+    target: `Do up to ${SESSION_SETS} working sets for one muscle in one workout.`,
     reason: `Past about ${SESSION_SETS} sets for one muscle in one workout, extra sets add little muscle. The same sets on another day of the week still count.`,
     research: `In a 2024 analysis of 67 studies (Pelland and others), sets for one muscle in one workout stopped adding much muscle after about ${SESSION_SETS}, likely because the later sets are done tired. The same sets split over two workouts in the week still added muscle.`,
     tips: tips.length ? tips : ["Nothing to change: keep it as it is."],
@@ -518,7 +518,7 @@ function rest(g: GoalTargets, s: CheckSession): Check | null {
     key: "rest", title: "Rest on big lifts", share, value: `${items.length - bad.length} of ${items.length} big ${items.length === 1 ? "lift" : "lifts"}`, detail,
     what: `The rest between working sets (the sets after warm-ups) of each big lift ${W}, as the routine plans it (its own rests, else your defaults in Settings). A big lift works several muscles at once (a press, a row, a squat). Where a lift's rests differ, the shortest counts.`,
     itemsLabel: `Rest between sets ${W}`, bars: false, items,
-    target: `${cap(tgt)} between sets of a big lift.`,
+    target: `Rest ${tgt} between sets of a big lift.`,
     reason: g.id === "strength" ? "A heavy set needs a long rest: after 3 minutes or more the muscle has mostly recovered, so the next set can be just as heavy."
       : g.id === "endurance" ? "Short rests make the muscle keep working while it is still tired, which is what builds endurance."
       : g.id === "health" ? "A minute is enough to catch your breath and do the next set with good form."
