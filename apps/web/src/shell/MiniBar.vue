@@ -14,7 +14,6 @@ import { clock } from "@motus/shared";
 import Icon from "../components/Icon.vue";
 import { useSettings } from "../api/queries";
 import { useLiveHr } from "../native/health";
-import DotLine from "../components/DotLine.vue";
 
 const props = defineProps<{ strip?: boolean }>();
 const active = useActive();
@@ -32,16 +31,20 @@ const recIcon = computed(() => recType.value?.icon ?? "walk");
 const ivPhase = computed(() => ivPhases.value[ivNow.value.index]);
 const ivWhat = computed(() => (ivPhase.value ? `${PHASE_NAME[ivPhase.value.kind]} · Round ${ivPhase.value.round} of ${iv.cfg.rounds}` : ""));
 const ivLeft = computed(() => clock(Math.ceil(ivNow.value.leftMs / 1000)));
-// the band's newest heart rate (Android app, Health Connect on) after "Workout in progress" or "Recording", by the rule
-// every screen follows: over 10 minutes old, greyed and with its age (M-291). The line wraps between whole parts rather
-// than cutting them (the name below is cut short when long; this line isn't). The same readers as the pages, so no
+// the band's newest heart rate (Android app, Health Connect on) in place of "Workout" or "Recording", by the rule every
+// screen follows: over 10 minutes old, muted and with its age (M-291). It takes the label line's place, with a heart before it
+// as on the other heart rate lines: at 360px the line has 154-177px beside the clock (98-154 with the clock at its widest),
+// and the old "Workout in progress · 78 bpm · 25 min ago" needed about 234, so beside the label it wrapped and made this bar taller
+// than the others; on its own "♥ 178 bpm · 25 min ago" needs about 131. Paused shows under the clock on every bar (as the
+// workout's header shows it beside its clock), so the line never has to hold both and never says it twice. The same readers as the pages, so no
 // extra reads.
 const settings = useSettings();
 const hcOn = () => !!settings.value.features.healthConnect;
 const wHr = useLiveHr(() => active.data.value?.startedAt, () => hcOn() && showW.value).newest;
 const rHr = useLiveHr(() => (recording.value ? new Date(recording.value.startedAt).toISOString() : null), () => hcOn() && showR.value && !props.strip).newest;
 type Newest = typeof wHr.value;
-const hrParts = (lead: string, h: Newest) => (h ? [lead, { text: `${h.bpm} bpm`, tcls: h.fresh ? undefined : "hr-old" }, ...(h.fresh ? [] : [h.ago])] : [lead]);
+// a screen reader hears the reading too, as the workout's header says it
+const hrSay = (h: Newest) => (h ? `, heart rate ${h.bpm} bpm` + (h.fresh ? "" : `, measured ${h.ago}`) : "");
 const recWhat = computed(() => (recType.value?.name ?? recTypeName()) + (recDistM.value >= 10 ? ` · ${fmt.value.num(fmt.value.distNum(recDistM.value), 2)} ${fmt.value.du}` : ""));
 </script>
 
@@ -64,35 +67,35 @@ const recWhat = computed(() => (recType.value?.name ?? recTypeName()) + (recDist
   </div>
   <div v-else class="minibars" :class="{ two }">
     <Transition name="mb">
-      <div v-if="showW" class="minibar" role="button" :aria-label="`Workout in progress: ${active.data.value.name}. Open it`" @click="router.push('/workout')">
+      <div v-if="showW" class="minibar" role="button" :aria-label="`Workout: ${active.data.value.name}${active.data.value.pauseStartedAt ? ', paused' : ''}${hrSay(wHr)}. Open it`" @click="router.push('/workout')">
         <span class="mb-live" :class="{ paused: !!active.data.value.pauseStartedAt }"><Icon name="dumbbell" :size="18" /></span>
         <div class="grow" style="min-width:0">
-          <div class="k"><template v-if="active.data.value.pauseStartedAt">Workout paused</template><DotLine v-else :parts="hrParts('Workout in progress', wHr)" /></div>
+          <div class="k ellipsis"><span v-if="wHr" class="mb-hr"><span class="dotl-ic"><Icon name="heart" :size="12" /><span :class="{ 'hr-old': !wHr.fresh }">{{ wHr.bpm }} bpm</span></span><template v-if="!wHr.fresh"> · {{ wHr.ago }}</template></span><template v-else>Workout</template></div>
           <div class="t ellipsis">{{ active.data.value.name }}</div>
         </div>
-        <div class="mb-clock"><b>{{ restActive() ? clock(restLeft()) : clock(elapsed(active.data.value)) }}</b><span>{{ restActive() ? (rest.label === "Next exercise" ? "Before the next exercise" : "Resting") : "Elapsed" }}</span></div>
+        <div class="mb-clock"><b>{{ restActive() ? clock(restLeft()) : clock(elapsed(active.data.value)) }}</b><span>{{ active.data.value.pauseStartedAt ? "Paused" : restActive() ? (rest.label === "Next exercise" ? "Next exercise" : "Resting") : "Elapsed" }}</span></div>
         <Icon name="right" />
       </div>
     </Transition>
     <Transition name="mb">
-      <div v-if="showR" class="minibar" role="button" :aria-label="`Recording ${recWhat}. Open it`" @click="router.push('/activities/record')">
+      <div v-if="showR" class="minibar" role="button" :aria-label="`Recording ${recWhat}${recording!.pauseAt ? ', paused' : ''}${hrSay(rHr)}. Open it`" @click="router.push('/activities/record')">
         <span class="mb-live" :class="{ paused: !!recording!.pauseAt }"><Icon :name="recIcon" :size="18" /></span>
         <div class="grow" style="min-width:0">
-          <div class="k"><template v-if="recording!.pauseAt">Recording paused</template><DotLine v-else :parts="hrParts('Recording', rHr)" /></div>
+          <div class="k ellipsis"><span v-if="rHr" class="mb-hr"><span class="dotl-ic"><Icon name="heart" :size="12" /><span :class="{ 'hr-old': !rHr.fresh }">{{ rHr.bpm }} bpm</span></span><template v-if="!rHr.fresh"> · {{ rHr.ago }}</template></span><template v-else>Recording</template></div>
           <div class="t ellipsis">{{ recWhat }}</div>
         </div>
-        <div class="mb-clock"><b>{{ clock(recElapsedS) }}</b><span>Elapsed</span></div>
+        <div class="mb-clock"><b>{{ clock(recElapsedS) }}</b><span>{{ recording!.pauseAt ? "Paused" : "Elapsed" }}</span></div>
         <Icon name="right" />
       </div>
     </Transition>
     <Transition name="mb">
-      <div v-if="showI" class="minibar" role="button" :aria-label="`Interval timer: ${ivWhat}. Open it`" @click="router.push('/timer')">
+      <div v-if="showI" class="minibar" role="button" :aria-label="`Interval timer: ${ivWhat}${iv.pausedAt != null ? ', paused' : ''}. Open it`" @click="router.push('/timer')">
         <span class="mb-live" :class="{ paused: iv.pausedAt != null }"><Icon name="timer" :size="18" /></span>
         <div class="grow" style="min-width:0">
-          <div class="k">{{ iv.pausedAt != null ? "Interval timer paused" : iv.name || "Interval timer" }}</div>
+          <div class="k">{{ iv.name || "Interval timer" }}</div>
           <div class="t ellipsis">{{ ivWhat }}</div>
         </div>
-        <div class="mb-clock"><b>{{ ivLeft }}</b><span>Left</span></div>
+        <div class="mb-clock"><b>{{ ivLeft }}</b><span>{{ iv.pausedAt != null ? "Paused" : "Left" }}</span></div>
         <Icon name="right" />
       </div>
     </Transition>

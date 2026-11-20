@@ -182,7 +182,7 @@ const menu = computed(() => [
       <button class="ib sm plain" aria-label="Minimise" @click="goBack(router, '/')"><Icon name="down" /></button>
       <div class="grow" style="min-width:0;cursor:pointer" role="button" tabindex="0" :aria-label="topLabel" @click="go(w.exercises.length)" @keydown.enter="go(w.exercises.length)">
         <div class="aw-name"><span class="aw-sets">{{ done }} of {{ total }} sets</span><span class="sep">·</span><span class="ellipsis">{{ w.name }}</span></div>
-        <div class="aw-clock"><b :class="{ paused }">{{ clock(elapsed(w)) }}</b><span v-if="paused" class="aw-paused">Paused</span><span v-if="hrNewest" class="aw-hr" :class="{ old: hrOld }"><span :class="{ 'hr-old': hrOld }">{{ hrNewest?.bpm }} bpm</span><small v-if="hrOld">{{ hrNewest?.ago }}</small></span><span v-if="waiting.length">{{ waiting.length }} waiting to sync</span></div>
+        <div class="aw-clock"><b :class="{ paused }">{{ clock(elapsed(w)) }}</b><span v-if="paused" class="aw-paused">Paused</span><span v-if="hrNewest" class="aw-hrnow" :class="{ old: hrOld }"><span :class="{ 'hr-old': hrOld }">{{ hrNewest?.bpm }} bpm</span><small v-if="hrOld">{{ hrNewest?.ago }}</small></span><span v-if="waiting.length">{{ waiting.length }} waiting to sync</span></div>
       </div>
       <Menu :items="menu" align="start" />
       <button class="btn" :class="{ o: done === 0 }" @click="finishing = true">Finish</button>
@@ -292,11 +292,13 @@ const menu = computed(() => [
 .aw-clock b { font-size: 26px; font-weight: 600; letter-spacing: -.8px; color: var(--tx); font-variant-numeric: tabular-nums; line-height: 1.1; }
 .aw-paused, .aw-clock b.paused { color: var(--acc); }
 .aw-paused { font-weight: 600; }
-/* a heart rate over 10 minutes old: greyed (.hr-old) with its age under it, small, as the bar at the bottom puts
+/* a heart rate over 10 minutes old: muted (.hr-old) with its age under it, small, as the bar at the bottom puts
    "Elapsed" under its clock. "78 bpm · 25 min ago" on one line leaves no room for it beside the clock on a phone, and
    this row hides what doesn't fit; stacked it is no wider than "25 min ago" and fits the clock's height */
-.aw-clock .aw-hr.old { display: flex; flex-direction: column; align-self: center; line-height: 1.15; }
-.aw-hr small { font-size: 11px; }
+.aw-hrnow.old { display: flex; flex-direction: column; align-self: center; line-height: 1.15; }
+.aw-hrnow small { font-size: 11px; }
+/* fresh, the number in the main text colour, one step above the row's grey; old, it steps down to the row's grey (.hr-old) */
+.aw-hrnow > span:not(.hr-old) { color: var(--tx); }
 /* -4px pulls the bar up under the header's --hg gap (optical); the gap below is a block gap */
 .aw-prog { display: flex; gap: 3px; margin: -4px 0 var(--spg); }
 .aw-prog span { flex-basis: 0; height: 5px; border-radius: 5px; background: var(--s2); overflow: hidden; }

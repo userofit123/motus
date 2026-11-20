@@ -425,7 +425,12 @@ main { position: relative; }
 .minibars { display: flex; flex-direction: column; gap: 8px; pointer-events: none; }
 .minibars > * { pointer-events: auto; }
 .minibar { display: flex; align-items: center; gap: 12px; padding: 10px 14px 10px 10px; border-radius: 18px; background: var(--accc); color: var(--onc); box-shadow: var(--shadow-pop); cursor: pointer; }
-.minibar .k { font-size: 11.5px; font-weight: 600; opacity: .75; }
+.minibar .k { font-size: 11.5px; font-weight: 600; color: color-mix(in srgb, var(--onc) 75%, transparent); }
+/* the band's heart rate in place of the label: the number in the bar's full colour and its heart, as the "112 bpm" lines
+   elsewhere; an old one steps down to the label's own 75% (--hr-old, see .hr-old) */
+.minibar { --hr-old: color-mix(in srgb, var(--onc) 75%, transparent); }
+/* top-aligned: an inline-flex box takes its baseline from the icon, which would lift the text and grow the line */
+.mb-hr .dotl-ic { color: var(--onc); vertical-align: top; }
 .minibar .t { font-weight: 600; font-size: 14.5px; }
 /* the dots in the label line take its colour, as the rest of the line on the accent */
 .minibar .k .sep { color: inherit; }
@@ -437,7 +442,7 @@ main { position: relative; }
 @keyframes mbpulse { 50% { opacity: .35; } }
 .mb-clock { display: flex; flex-direction: column; align-items: flex-end; flex: none; }
 .mb-clock b { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -.3px; line-height: 1.1; }
-.mb-clock span { font-size: 11px; opacity: .75; }
+.mb-clock span { font-size: 11px; color: color-mix(in srgb, var(--onc) 75%, transparent); }
 html:not(.phone) .minibars:not(.strip-host) { position: fixed; z-index: 45; left: calc(88px + 50%); transform: translateX(-50%); bottom: calc(22px + var(--sb)); min-width: 360px; }
 html:not(.phone)[data-nav="mini"] .minibars { left: calc(68px + 50%); }
 html.phone .minibar { margin: 8px 10px 0; box-shadow: none; }
@@ -1043,7 +1048,10 @@ html.phone .scr.leaving .sht { animation: up .22s ease-in reverse forwards; }
 
 /* a live heart rate reading over 10 minutes old (the band app syncs only now and then): the number greyed the same way
    on every screen that shows it, always with its age in words beside or under it (M-291) */
-.hr-old { opacity: .55; }
+/* one step down on every surface: the number in the surface's main colour when fresh, its secondary colour when old
+   (--tx2 on the page, the label's 75% on a minimised bar), never an opacity on top of an already muted line, so it stays
+   readable (4.7:1 or more) */
+.hr-old, .stat .val.hr-old small { color: var(--hr-old, var(--tx2)); }
 
 /* the Appearance sheet's grab handle, as on the other sheets */
 html.phone #pop .aph { position: relative; padding-top: 22px; }
