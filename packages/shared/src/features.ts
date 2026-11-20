@@ -37,7 +37,7 @@ export const FEATURES: FeatureDef[] = [
   { id: "reports", group: "Insights", name: "Monthly report and year in review", desc: "A summary page for each month and year.", on: true },
   { id: "trainingLoad", group: "Insights", name: "Training load", desc: "How hard your workouts were, from heart rate zones and sets, the last 7 days against your usual. Counts toward Readiness.", on: false },
   { id: "scores", group: "Insights", name: "Health scores", desc: "Your last 7 days of sleep, activity and strength training scored against published health guidelines, each saying which.", on: false },
-  { id: "routineCheck", group: "Insights", name: "Routine check", desc: "Scores programs and routines against training research and says what to change: a program's week for sets per muscle and balance, a routine's own workout for exercise order and reps.", on: false },
+  { id: "routineCheck", group: "Insights", name: "Routine check", desc: "Scores programs and routines against training research for the program's goal and says what to change: a program's week for sets per muscle, training each muscle twice and balance; a routine's own workout for reps, sets per muscle, exercise order and rest. Tap a check for its numbers and sources.", on: false },
   { id: "standards", group: "Insights", name: "Strength standards", desc: "How your lifts compare, relative to body weight.", on: true },
   { id: "shareImage", group: "Insights", name: "Share image", desc: "Make an image of a finished workout.", on: false },
   // Integrations

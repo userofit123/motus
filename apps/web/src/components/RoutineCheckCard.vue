@@ -9,9 +9,11 @@
 // why line) counts the ones met in full and says the others earn part of their points, which is why 0 met can still score 53. The value stacks
 // so the tips keep their width at phone width: "1 of 3" over "big lifts", or two counts one over the other, each
 // with its small noun ("15 push" over "4 pull"). A routine's card scores only that routine's own workout and a program's
-// only its week (M-287), so neither points to the other.
-import { computed } from "vue";
-import { CHECK_SOURCES, type CheckKey, type RoutineCheck } from "@motus/shared";
+// only its week (M-287), so neither points to the other. Each row opens its popup (RoutineCheckSheet, M-291): its numbers,
+// target, what to change and research; `goalNote` says there which goal the targets are for and why that one.
+import { computed, ref } from "vue";
+import { CHECK_SOURCES, goalOf, type Check, type CheckKey, type RoutineCheck } from "@motus/shared";
+import RoutineCheckSheet from "./RoutineCheckSheet.vue";
 import Icon from "./Icon.vue";
 import Ring from "./Ring.vue";
 import BodyMap from "./BodyMap.vue";
@@ -19,9 +21,10 @@ import SourceRow from "./learn/SourceRow.vue";
 import { toneOf } from "../core/scores";
 
 // muscles: the figure's main and helper muscles (the routine card's look) and each one's sets a week for its tips
-// check: null only for a routine with lifting but nothing to check in one workout (no target reps), so the card says why
-const props = defineProps<{ check: RoutineCheck | null; title: string; muscles?: { sets: Record<string, number>; primary: string[]; secondary: string[] }; source?: string }>();
-const ICON: Record<CheckKey, string> = { volume: "activity", frequency: "calendar", pushPull: "swap", legs: "split", order: "arrowUp", reps: "refresh" };
+// check: null only for a routine with lifting but nothing to check in one workout (no target reps, no checked muscle), so the card says why
+const props = defineProps<{ check: RoutineCheck | null; title: string; muscles?: { sets: Record<string, number>; primary: string[]; secondary: string[] }; source?: string; goalNote?: string }>();
+const ICON: Record<CheckKey, string> = { volume: "activity", frequency: "calendar", pushPull: "swap", legs: "split", order: "arrowUp", reps: "refresh", session: "layers", rest: "timer" };
+const open = ref<Check | null>(null);
 // "1 of 3 big lifts" → "1 of 3" over "big lifts"; "15 push · 4 pull" → "15 push" over "4 pull", each count beside its noun
 const valueOf = (v: string) => { const m = /^(\S+ of \S+) (.+)$/.exec(v); return m ? { of: m[1]!, noun: m[2]!, pairs: [] } : { of: "", noun: "", pairs: v.split(" · ").map((x) => { const [n, ...w] = x.split(" "); return { n: n!, w: w.join(" ") }; }) }; };
 const STATE = { pos: "met in full", neg: "less than half met", none: "partly met" } as const;
@@ -50,17 +53,20 @@ const metLine = computed(() => {
     </div>
     <div v-if="check" class="tiny rc-why">{{ metLine }}</div>
     <!-- no score: say why in the count line's place, so the card isn't only its source row -->
-    <div v-else class="tiny rc-why">Nothing to score in this workout yet: no set has target reps, and it doesn't mix big and single-muscle lifts. Add target reps to score it.</div>
+    <div v-else class="tiny rc-why">Nothing to score in this workout yet: its sets have no target reps and work none of the muscles the check counts. Add target reps to score it.</div>
     <div class="list crows">
-      <div v-for="c in check?.checks ?? []" :key="c.key" class="li">
+      <div v-for="c in check?.checks ?? []" :key="c.key" class="li click" role="button" tabindex="0" :aria-label="`${c.title}, ${c.value}, ${STATE[toneOf(c.share) ?? 'none']}: ${c.detail} Opens details`"
+           @click="open = c" @keydown.enter.prevent="open = c" @keydown.space.prevent="open = c">
         <Icon :name="ICON[c.key]" :size="18" class="muted" />
         <div class="grow"><div class="t">{{ c.title }}</div><div class="s">{{ c.detail }}</div></div>
         <div class="r" :class="toneOf(c.share)" role="group" :aria-label="`${c.value}, ${STATE[toneOf(c.share) ?? 'none']}`">
           <template v-if="valueOf(c.value).of"><b class="rv">{{ valueOf(c.value).of }}</b><div class="s cst">{{ valueOf(c.value).noun }}</div></template>
           <div v-for="v in valueOf(c.value).pairs" v-else :key="v.w" class="rv"><b>{{ v.n }}</b> <span class="cst">{{ v.w }}</span></div></div>
+        <Icon name="right" :size="16" class="muted" />
       </div>
       <SourceRow topic="routineCheck" :sources="CHECK_SOURCES" />
     </div>
+    <RoutineCheckSheet v-if="open && check" :check="open" :goal="goalOf(check.goal).name" :goal-note="goalNote" @close="open = null" />
   </div>
 </template>
 

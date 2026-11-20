@@ -1,3 +1,4 @@
+import type { ProgramGoal } from "./routineCheck";
 // The shapes the API sends and receives. Weights are always kg and distances metres; the apps convert for display.
 
 export type SetKind = "warmup" | "normal" | "drop" | "failure";
@@ -150,6 +151,8 @@ export interface Program {
   /** marks: days set by hand, by day number (1 = the week's first workout): the workout that counts for it, or null when skipped */
   weeks: { days: string[]; deload?: boolean; marks?: Record<string, { routineId: string; workoutId: string | null }> }[];
   deloadPct: number;
+  /** what it trains for (routineCheck.ts GOALS): the Routine check's targets follow it */
+  goal: ProgramGoal;
   /** null: no set date, so the program starts with its first workout */
   startDate: string | null;
   /** workouts done from this moment count (when it was made without a date, its date taken away or it started again); with a date, the later of this and the date's midnight; null on older programs, which count from createdAt (or their date) */

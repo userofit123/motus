@@ -5,7 +5,7 @@ import { goBack } from "../core/leave";
 import { computed, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useQueries, useQuery } from "@tanstack/vue-query";
-import { programCheck, weekMuscleSets, musclesWorked, weeksText, type ProgramDetail, type Routine } from "@motus/shared";
+import { programCheck, weekMuscleSets, musclesWorked, weeksText, goalOf, type ProgramDetail, type Routine } from "@motus/shared";
 import { api } from "../api/client";
 import { invalidate } from "../api/live";
 import { useFmt, unitOf } from "../core/format";
@@ -39,7 +39,9 @@ const day = (d: string) => fmt.value.day(d);
 const waiting = computed(() => !p.value?.startsOn || p.value.calendarWeek === 0);
 // the end follows from the weeks (the last day of the last week), so it shows once the start is known. Before the
 // start both shapes give the same facts in the same order: its length, when it starts, when it ends (once known).
-const sub = computed(() => {
+// the goal (what the program trains for, which the Routine check's targets follow) ends the line, after its timing
+const sub = computed(() => `${subTime.value} · For ${goalOf(p.value!.goal).lower}`);
+const subTime = computed(() => {
   const x = p.value!;
   if (!x.state.total) return "No routines yet";
   if (x.status === "finished") return `All ${x.weeks.length} weeks done`;
@@ -93,9 +95,9 @@ const weekRoutines = useQueries({ queries: computed(() => weekIds.value.map((rid
 const check = computed(() => {
   if (!checkWeek.value || weekRoutines.value.some((x) => !x.data)) return null;
   // one session per routine, so a routine done twice in the week is the same workout twice
-  const byId = new Map(weekIds.value.map((rid, i) => [rid, sessionOf(weekRoutines.value[i]!.data)]));
+  const byId = new Map(weekIds.value.map((rid, i) => [rid, sessionOf(weekRoutines.value[i]!.data, st.value.workout)]));
   const days = checkWeek.value.days.map((d) => byId.get(d.routineId)!);
-  const c = programCheck(days);
+  const c = programCheck(days, p.value!.goal, checkWeek.value.week);
   const worked = musclesWorked(days.flat().filter((e) => e.category !== "cardio" && e.category !== "stretching"));
   return c ? { c, muscles: { sets: weekMuscleSets(days), primary: worked.primary, secondary: worked.secondary } } : null;
 });
@@ -172,7 +174,7 @@ await loaded(q);
       </section>
     </div>
     <!-- below both columns, as on a routine's page: its rows say what to change in full, which the side column is too narrow for -->
-    <RoutineCheckCard v-if="check" class="spt" :check="check.c" title="Check of this program" :source="`Scored on week ${checkWeek!.week} as a whole, with ${checkWeek!.days.length === 1 ? 'its 1 workout' : `all ${checkWeek!.days.length} of its workouts`}`" :muscles="check.muscles" />
+    <RoutineCheckCard v-if="check" class="spt" :check="check.c" title="Check of this program" :source="`Scored on week ${checkWeek!.week} as a whole, with ${checkWeek!.days.length === 1 ? 'its 1 workout' : `all ${checkWeek!.days.length} of its workouts`}, for ${goalOf(p.goal).lower}`"  goal-note="This program's goal. Change it with Edit in ⋮." :muscles="check.muscles" />
 
     <ProgramEditor v-if="editing" :program="p" @close="editing = false" />
     <ProgramDaySheet v-if="dayOpen" :program-id="p.id" :day="dayOpen" :used="used" @close="dayOpen = null" />

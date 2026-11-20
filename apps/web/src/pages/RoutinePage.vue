@@ -24,7 +24,7 @@ import BodyMap from "../components/BodyMap.vue";
 import HeartRate from "../components/HeartRate.vue";
 import RoutineCheckCard from "../components/RoutineCheckCard.vue";
 import { sessionOf } from "../core/routineCheck";
-import { routineCheck, hasLifting } from "@motus/shared";
+import { routineCheck, hasLifting, goalOf, DEFAULT_GOAL } from "@motus/shared";
 import { useRoutineMenu } from "../core/routineMenu";
 import { removeItem } from "../components/home/planActions";
 import { useNoteMenu } from "../core/noteMenu";
@@ -85,9 +85,20 @@ const schedRemove = (s: any) => removeItem({ scheduleId: s.id, name: routine.val
 // time (a point's tip gives it and opens that workout), and each session row's average
 const hrSessions = computed(() => (routine.value?.hr?.sessions ?? []).filter((x: any) => x.avgHr).map((x: any) => ({ x: new Date(x.date).getTime(), y: Math.round(x.avgHr), id: x.workoutId })));
 const hrOf = computed(() => new Map<string, number>((routine.value?.hr?.sessions ?? []).filter((x: any) => x.avgHr).map((x: any) => [x.workoutId, Math.round(x.avgHr)])));
-// the Routine check (feature): only this routine's own workout (big lifts first, reps), in a program or not; a week's
+// the Routine check (feature): only this routine's own workout (reps, sets per muscle, order, rest), in a program or not; a week's
 // checks are a program's, on its own page (M-287)
-const check = computed(() => (st.value.features.routineCheck && routine.value ? routineCheck(sessionOf(routine.value)) : null));
+// its targets follow the goal of the program it is in: the running one first, else the most recent (partOf's order);
+// in none, muscle size (DEFAULT_GOAL), and the popup says which
+const goalFrom = computed(() => partOf.value[0] ?? null);
+const goalNote = computed(() => {
+  const x = goalFrom.value;
+  // with Programs off the page can't see which programs it is in, so it says why it uses muscle size
+  if (!programsOn.value) return `Programs are off in Settings → Features, so this routine is checked for ${goalOf(DEFAULT_GOAL).lower}.`;
+  if (!x) return `This routine is in no program, so it is checked for ${goalOf(DEFAULT_GOAL).lower}.`;
+  if (partOf.value.length === 1) return `The goal of ${x.name}, the program this routine is in.`;
+  return `The goal of ${x.name}, ${x.active && !x.state.finished ? "the running program" : "the newest program"} of the ${partOf.value.length} this routine is in.`;
+});
+const check = computed(() => (st.value.features.routineCheck && routine.value ? routineCheck(sessionOf(routine.value, st.value.workout), goalFrom.value?.goal ?? DEFAULT_GOAL) : null));
 // a routine with no lifting has nothing to check, so its card stays hidden; one with lifting but nothing to score says why
 const lifts = computed(() => !!st.value.features.routineCheck && !!routine.value && hasLifting(sessionOf(routine.value)));
 // the programs it is in (Programs feature), any week of them, each opening its page: running ones first, finished last
@@ -179,7 +190,7 @@ await loaded(r, summaries, notes, rems, schedules, history, programs);
       </div>
     </div>
     <!-- below both columns: its rows say what to change in full, which the side column is too narrow for -->
-    <RoutineCheckCard v-if="check || lifts" class="spt" :check="check" title="Check of this routine" source="Scored on one workout of this routine" />
+    <RoutineCheckCard v-if="check || lifts" class="spt" :check="check" title="Check of this routine" :source="`Scored on one workout of this routine, for ${goalOf(goalFrom?.goal ?? DEFAULT_GOAL).lower}`" :goal-note="goalNote" />
     </div>
 
     <div v-else-if="tab === 'history'">

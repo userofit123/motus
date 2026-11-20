@@ -9,7 +9,7 @@ import type { Sql } from "../db";
 import { camel, id, str, intOrNull, bool, dateStr, visible } from "../util";
 import { uuidv7, isUuid } from "../ids";
 import { notFound, bad } from "../errors";
-import { LIFTED_SQL, programEnd } from "@motus/shared";
+import { LIFTED_SQL, programEnd, GOALS, DEFAULT_GOAL } from "@motus/shared";
 import { dayIn } from "./achievements";
 import { plannedOpen, addDays } from "./schedule";
 
@@ -153,6 +153,9 @@ async function programDetail(q: Sql, p: ProgramRow, today: string, tzMin: number
   };
 }
 
+/** A goal the app knows (left out or unknown: null, so an update keeps the program's own) */
+const goalOrNull = (g: unknown) => (typeof g === "string" && Object.hasOwn(GOALS, g) ? g : null);
+
 export function programRoutes(r: Router) {
   r.get("/programs", async ({ q }, _p, _b, qs) => {
     const rows = (await q.query("SELECT * FROM programs ORDER BY active DESC, created_at DESC")).rows;
@@ -174,9 +177,9 @@ export function programRoutes(r: Router) {
     for (const w of weeks) for (const rid of w.days) await visible(ctx.q, "routines", rid, "routine");
     const pid = uuidv7();
     const start = b.startDate === null ? null : dateStr(b.startDate) ?? new Date().toISOString().slice(0, 10);
-    await ctx.q.query("INSERT INTO programs (id, user_id, name, description, weeks, deload_pct, start_date, active, counts_from) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)",
+    await ctx.q.query("INSERT INTO programs (id, user_id, name, description, weeks, deload_pct, start_date, active, counts_from, goal) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)",
       [pid, ctx.userId, str(b.name, 120).trim() || "Program", str(b.description, 2000), JSON.stringify(weeks), intOrNull(b.deloadPct, 0, 90) ?? 40,
-        start, bool(b.active, true), start ? null : ctx.now().toISOString()]);
+        start, bool(b.active, true), start ? null : ctx.now().toISOString(), goalOrNull(b.goal) ?? DEFAULT_GOAL]);
     ctx.changed("routine");
     return { id: pid };
   });
@@ -192,12 +195,12 @@ export function programRoutes(r: Router) {
     const setDate = b.startDate === null || dateStr(b.startDate) != null;
     const { rows } = await ctx.q.query(
       `UPDATE programs SET name = coalesce($2, name), description = coalesce($3, description), weeks = coalesce($4, weeks), deload_pct = coalesce($5, deload_pct),
-         start_date = CASE WHEN $8 THEN $6::date ELSE start_date END, active = coalesce($7, active),
+         start_date = CASE WHEN $8 THEN $6::date ELSE start_date END, active = coalesce($7, active), goal = coalesce($11, goal),
          counts_from = CASE WHEN $9 OR ($8 AND $6::date IS NULL AND start_date IS NOT NULL) THEN $10::timestamptz
            WHEN $8 AND $6::date IS NOT NULL AND start_date IS DISTINCT FROM $6::date THEN NULL ELSE counts_from END
        WHERE id = $1 RETURNING id`,
       [id(p.id), b.name ? str(b.name, 120) : null, b.description != null ? str(b.description, 2000) : null, weeks ? JSON.stringify(weeks) : null, intOrNull(b.deloadPct, 0, 90),
-        dateStr(b.startDate), typeof b.active === "boolean" ? b.active : null, setDate, b.restart === true, ctx.now().toISOString()]);
+        dateStr(b.startDate), typeof b.active === "boolean" ? b.active : null, setDate, b.restart === true, ctx.now().toISOString(), goalOrNull(b.goal)]);
     if (!rows.length) throw notFound("Program not found");
     ctx.changed("routine");
     return { ok: true };

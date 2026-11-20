@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // The program form (new or edit), shared by the Programs section and a program's page.
 import { computed, ref } from "vue";
-import { programEnd, weeksText, type Program } from "@motus/shared";
+import { programEnd, weeksText, GOALS, DEFAULT_GOAL, goalOf, type Program } from "@motus/shared";
 import { useRoutines } from "../api/queries";
 import { api } from "../api/client";
 import { invalidate } from "../api/live";
@@ -19,8 +19,10 @@ const routines = useRoutines();
 const fmt = useFmt();
 const nameOf = (id: string) => routines.data.value?.find((r) => r.id === id)?.name ?? "?";
 const e = ref<any>(props.program
-  ? JSON.parse(JSON.stringify({ id: props.program.id, name: props.program.name, description: props.program.description, startDate: props.program.startDate ?? "", deloadPct: props.program.deloadPct, weeks: props.program.weeks }))
-  : { name: "", description: "", startDate: localYmd(new Date()), deloadPct: 40, weeks: [{ days: [], deload: false }] });
+  ? JSON.parse(JSON.stringify({ id: props.program.id, name: props.program.name, description: props.program.description, startDate: props.program.startDate ?? "", deloadPct: props.program.deloadPct, goal: props.program.goal ?? DEFAULT_GOAL, weeks: props.program.weeks }))
+  : { name: "", description: "", startDate: localYmd(new Date()), deloadPct: 40, goal: DEFAULT_GOAL, weeks: [{ days: [], deload: false }] });
+// what the program trains for, one choice as the other single choices in forms (a dropdown); the Routine check follows it
+const GOAL_OPTIONS = Object.values(GOALS).map((g) => ({ value: g.id, label: g.name }));
 // when it ends, as the program's page shows it (the last day of the last week); none while it has no weeks. Taking away
 // a date it had makes it wait for its next first workout (the server's counts_from), so the hint says "the next time" then;
 // one with no date that has started (startsOn: the day of its first workout) says when, as its page does.
@@ -48,6 +50,8 @@ async function save() {
   <Sheet :title="e.id ? 'Edit program' : 'New program'" size="wide" @close="emit('close')">
     <div class="fld"><label>Name</label><input v-model="e.name" placeholder="e.g. 8-week push/pull/legs" /></div>
     <div class="fld"><label>Description</label><input v-model="e.description" placeholder="Optional" /></div>
+    <div class="fld"><label>Goal</label><AppSelect v-model="e.goal" :options="GOAL_OPTIONS" title="Goal" /></div>
+    <p class="tiny hint">{{ goalOf(e.goal).hint }}</p>
     <div class="fld"><label>Starts</label><WhenPicker v-model="e.startDate" title="Starts" none="No date" /></div>
     <p v-if="hint" class="tiny hint">{{ hint }}</p>
     <div class="fld"><label>Deload weeks lighter by (%)</label><input v-model.number="e.deloadPct" type="number" min="0" max="90" /></div>
