@@ -2,6 +2,11 @@
 
 The top entry's version is the one the release workflow publishes. Add a new `## [x.y.z]` section to release.
 
+## [0.1.44] - 2026-11-20
+
+- In a routine check's popup, The target gives the target and a short reason in plain words, e.g. "At least 1:30 between sets of a big lift. A longer rest lets you do more reps in the next set, which builds a little more muscle." The study detail moved to the section below it, which reads "Where the targets come from" when a check has two targets.
+- A few research summaries were corrected to say only what the studies found, e.g. the 2016 rest study found more muscle in the thighs only.
+
 ## [0.1.43] - 2026-11-20
 
 - Programs have a goal: Muscle size, Strength, Fat loss, Muscular endurance or General fitness (Edit in ⋮). Routine check's targets follow it, e.g. for strength 1-6 reps and at least 3 minutes' rest on big lifts, for muscle size 5-30 reps and 10 or more sets a week per muscle. A routine uses the goal of the program it is in, and muscle size when it is in none.
