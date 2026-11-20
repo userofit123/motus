@@ -21,7 +21,7 @@ export const useExerciseHistory = (id: MaybeRef<string>) => useQuery({ queryKey:
 export const useRoutines = (archived = false) => useQuery({ queryKey: ["routines", "list", archived], queryFn: () => api.get<RoutineSummary[]>("/routines", { archived: archived ? 1 : undefined }) });
 export const useRoutine = (id: MaybeRef<string>) => useQuery({ queryKey: computed(() => ["routines", unref(id)]), queryFn: () => api.get(`/routines/${unref(id)}`), enabled: computed(() => !!unref(id) && unref(id) !== "new") });
 export const useFolders = () => useQuery({ queryKey: ["routines", "folders"], queryFn: () => api.get("/folders") });
-export const usePrograms = () => useQuery({ queryKey: ["routines", "programs"], queryFn: () => api.get<Program[]>("/programs") });
+export const usePrograms = () => useQuery({ queryKey: ["routines", "programs"], queryFn: () => api.get<Program[]>("/programs", { tz: new Date().getTimezoneOffset() }) });
 // settings: the start screen's Workout settings for this workout only, so the numbers shown are the ones the start
 // fills in; the last answer stays on screen while a changed one loads
 export const usePreview = (id: MaybeRef<string>, settings?: MaybeRef<Record<string, unknown>>) => {

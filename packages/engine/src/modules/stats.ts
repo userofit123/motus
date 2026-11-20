@@ -11,7 +11,7 @@ import { plannedMarked } from "./schedule";
 import { workoutSummaries, recentRecords, findRecords, countRecords, oldestOf } from "./workouts";
 import { routineSummaries } from "./routines";
 import { suggestions } from "./suggest";
-import { programState } from "./programs";
+import { programInfo } from "./programs";
 
 /** Every completed workout in a range, with its totals and sets per muscle. */
 async function workoutRows(q: Sql, from: string, to: string) {
@@ -193,11 +193,9 @@ export function statsRoutes(r: Router) {
     const programsOn = !!s.features.programs;
     const programs = [];
     for (const p of programsOn ? (await ctx.q.query("SELECT * FROM programs WHERE active ORDER BY created_at DESC")).rows : []) {
-      const st = await programState(ctx.q, p);
+      const { state: st, startsOn, endsOn, calendarWeek } = await programInfo(ctx.q, p, today, tzMin);
       if (!st.total || st.finished) continue;
-      const start = String(p.start_date).slice(0, 10);
-      const calendarWeek = today < start ? 0 : Math.floor((Date.parse(today) - Date.parse(start)) / (7 * 86400000)) + 1;
-      programs.push({ id: p.id, name: p.name, weeks: (p.weeks ?? []).length, deloadPct: p.deload_pct, startDate: start, calendarWeek, ...st });
+      programs.push({ id: p.id, name: p.name, weeks: (p.weeks ?? []).length, deloadPct: p.deload_pct, startsOn, endsOn, calendarWeek, ...st });
     }
     const routines = await routineSummaries(ctx.q, ctx.userId);
     // the programs' next workouts are suggestions only with Programs on and no program card to show them

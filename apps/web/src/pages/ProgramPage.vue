@@ -30,12 +30,16 @@ const next = computed(() => p.value?.state.next ?? null);
 const editing = ref(false);
 /** weeks behind the calendar (only while following it) */
 const behind = computed(() => (p.value?.status === "active" && next.value ? Math.max(0, p.value.calendarWeek - next.value.week) : 0));
+/** a day as the plan's day lines show it: "Mon 23 Nov" */
+const day = (d: string) => fmt.value.date(d, { weekday: "short", day: "numeric", month: "short" });
+// the end follows from the weeks (the last day of the last week), so it shows once the start is known
 const sub = computed(() => {
   const x = p.value!;
   if (!x.state.total) return "No routines yet";
   if (x.status === "finished") return `All ${x.weeks.length} weeks done`;
-  if (x.calendarWeek === 0) return `Starts ${fmt.value.date(x.startDate, { weekday: "long", day: "numeric", month: "short" })} · ${x.weeks.length} weeks`;
-  return `Week ${next.value!.week} of ${x.weeks.length}${x.status === "paused" ? " · paused" : ""}`;
+  if (!x.startsOn) return `${x.weeks.length} week${x.weeks.length > 1 ? "s" : ""} · starts on the day you do its first workout`;
+  if (x.calendarWeek === 0) return `Starts ${day(x.startsOn)} · ends ${day(x.endsOn!)}`;
+  return `Week ${next.value!.week} of ${x.weeks.length} · ${x.status === "paused" ? "paused" : `ends ${day(x.endsOn!)}`}`;
 });
 
 const put = async (body: Record<string, unknown>, msg: string) => { try { await api.put(`/programs/${id.value}`, body); invalidate(["routines", "home"]); toast(msg); } catch (e) { toastError(e); } };
@@ -99,7 +103,7 @@ await loaded(q);
           <div class="sub">{{ Math.min(p.stats.done, p.stats.expected) }} of {{ p.stats.expected }} planned up to last week</div></template>
         <template v-else><div class="val na">Not yet</div><div class="sub">Starts counting after week 1</div></template></div>
       <div class="card stat"><div class="lbl">Volume</div><div class="val">{{ volParts.value }}<small>{{ volParts.unit }}</small></div><div class="sub">Weight × reps, all workouts</div></div>
-      <div class="card stat"><div class="lbl">Training time</div><div class="val">{{ fmt.dur(p.stats.durationS, true) }}</div><div class="sub">Since {{ fmt.date(p.startDate, { day: "numeric", month: "short", year: "numeric" }) }}</div></div>
+      <div class="card stat"><div class="lbl">Training time</div><div class="val">{{ fmt.dur(p.stats.durationS, true) }}</div><div class="sub">{{ p.startsOn && p.calendarWeek ? `Since ${fmt.date(p.startsOn, { day: "numeric", month: "short", year: "numeric" })}` : "Not started yet" }}</div></div>
     </div>
 
     <div class="grid lay">
@@ -131,7 +135,7 @@ await loaded(q);
           </div>
           <div class="card">
             <div class="ch"><span class="t">Recent workouts</span></div>
-            <div v-if="!p.recent.length" class="tiny">None yet. Workouts count from {{ fmt.date(p.startDate, { day: "numeric", month: "short" }) }}, in the program's order.</div>
+            <div v-if="!p.recent.length" class="tiny">{{ p.startsOn ? `None yet. Workouts count from ${day(p.startsOn)}, in the program's order.` : "None yet. The program starts on the day you do its first workout." }}</div>
             <div class="list"><div v-for="w in p.recent" :key="w.id" class="li click" @click="router.push(`/workouts/${w.id}`)">
               <div class="grow"><div class="t">{{ w.name }}</div><div class="s">{{ fmt.date(w.startedAt, { weekday: "short", day: "numeric", month: "short" }) }} · {{ w.week ? `week ${w.week}, workout ${w.day}` : "extra, out of order" }}</div></div><Icon name="right" class="muted" /></div></div>
           </div>

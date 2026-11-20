@@ -1,12 +1,12 @@
 <script setup lang="ts">
 // The program form (new or edit), shared by the Programs section and a program's page.
-import { ref } from "vue";
+import { computed, ref } from "vue";
 import type { Program } from "@motus/shared";
 import { useRoutines } from "../api/queries";
 import { api } from "../api/client";
 import { invalidate } from "../api/live";
 import { toast, toastError } from "../core/toast";
-import { localYmd } from "../core/format";
+import { localYmd, useFmt } from "../core/format";
 import Icon from "./Icon.vue";
 import Sheet from "./Sheet.vue";
 import WhenPicker from "./WhenPicker.vue";
@@ -16,15 +16,20 @@ import Menu from "./Menu.vue";
 const props = defineProps<{ program?: Program | null }>();
 const emit = defineEmits<{ close: []; saved: [id: string] }>();
 const routines = useRoutines();
+const fmt = useFmt();
+/** the last day of the last week from a start day, as the program's page shows it */
+const weeksText = computed(() => `${e.value.weeks.length} week${e.value.weeks.length > 1 ? "s" : ""}`);
+const endOf = (start: string, weeks: number) => { const d = new Date(start + "T12:00:00"); d.setDate(d.getDate() + weeks * 7 - 1); return localYmd(d); };
 const nameOf = (id: string) => routines.data.value?.find((r) => r.id === id)?.name ?? "?";
 const e = ref<any>(props.program
-  ? JSON.parse(JSON.stringify({ id: props.program.id, name: props.program.name, description: props.program.description, startDate: props.program.startDate, deloadPct: props.program.deloadPct, weeks: props.program.weeks }))
+  ? JSON.parse(JSON.stringify({ id: props.program.id, name: props.program.name, description: props.program.description, startDate: props.program.startDate ?? "", deloadPct: props.program.deloadPct, weeks: props.program.weeks }))
   : { name: "", description: "", startDate: localYmd(new Date()), deloadPct: 40, weeks: [{ days: [], deload: false }] });
 // Adds a copy of the week right after it, in this same program (not a new program).
 const duplicateWeek = (i: number) => { const w = e.value.weeks[i]; e.value.weeks.splice(i + 1, 0, { days: [...w.days], deload: false }); };
 async function save() {
   try {
-    const x = e.value;
+    // no date chosen ("") is saved as none: the program then starts on the day of its first workout
+    const x = { ...e.value, startDate: e.value.startDate || null };
     const id = x.id ? (await api.put(`/programs/${x.id}`, x), x.id) : (await api.post("/programs", x)).id;
     invalidate(["routines", "home"]); toast("Program saved"); emit("saved", id); emit("close");
   } catch (err) { toastError(err); }
@@ -35,7 +40,8 @@ async function save() {
   <Sheet :title="e.id ? 'Edit program' : 'New program'" size="wide" @close="emit('close')">
     <div class="fld"><label>Name</label><input v-model="e.name" placeholder="e.g. 8-week push/pull/legs" /></div>
     <div class="fld"><label>Description</label><input v-model="e.description" placeholder="Optional" /></div>
-    <div class="fld"><label>Starts</label><WhenPicker v-model="e.startDate" title="Starts" /></div>
+    <div class="fld"><label>Starts</label><WhenPicker v-model="e.startDate" title="Starts" none="No date" /></div>
+    <p class="tiny hint">{{ e.startDate ? `Ends ${fmt.date(endOf(e.startDate, e.weeks.length), { weekday: "short", day: "numeric", month: "short" })}, after ${weeksText}.` : `Starts on the day you do its first workout and ends ${weeksText} later.` }}</p>
     <div class="fld"><label>Deload weeks lighter by (%)</label><input v-model.number="e.deloadPct" type="number" min="0" max="90" /></div>
     <p class="tiny hint">A deload week is a lighter week to let your body recover. In the weeks you mark as deload, working weights start {{ e.deloadPct || 0 }}% lower; warm-ups and reps stay the same.</p>
     <div class="flbl">Weeks</div>

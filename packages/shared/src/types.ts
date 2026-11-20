@@ -149,7 +149,14 @@ export interface Program {
   description: string;
   weeks: { days: string[]; deload?: boolean }[];
   deloadPct: number;
-  startDate: string;
+  /** null: no set date, so the program starts with its first workout */
+  startDate: string | null;
+  /** the day it started or starts: the start date, or the day of its first workout (null while waiting for it) */
+  startsOn: string | null;
+  /** the last day of its last week, counted from startsOn (null without it) */
+  endsOn: string | null;
+  /** The week the calendar is in since the start (0 = not started yet); compared with state.next.week to see if you're behind. */
+  calendarWeek: number;
   active: boolean;
   createdAt: string;
   state: ProgramState;
@@ -161,8 +168,6 @@ export interface ProgramWorkout { id: string; name: string; startedAt: string; d
 /** One program in full, for its page. */
 export interface ProgramDetail extends Program {
   status: "active" | "paused" | "finished";
-  /** The week the calendar is in since the start (0 = not started yet); compared with state.next.week to see if you're behind. */
-  calendarWeek: number;
   /** done: finished (with its workout); next: the one to do now; late: from a week the calendar has passed; todo: still to come */
   plan: { week: number; deload: boolean; days: (ProgramSlot & { status: "done" | "next" | "late" | "todo"; workout: ProgramWorkout | null })[] }[];
   stats: { done: number; total: number; weeksDone: number; expected: number; adherencePct: number | null; volumeKg: number; durationS: number;
@@ -461,7 +466,7 @@ export type GoalDays = null | "workdays" | number[];
 /** Home (/home): what's planned for a day in the coming week. */
 export interface HomePlan { scheduleId: string; date: string; routineId: string | null; activityType: string | null; name: string; color: string | null; timeOfDay: string | null; repeats: boolean }
 /** Home: a program you follow, where you are in it (absent while Programs is switched off). */
-export interface HomeProgram extends Omit<ProgramState, "next"> { next: ProgramSlot; id: string; name: string; weeks: number; deloadPct: number; startDate: string; calendarWeek: number }
+export interface HomeProgram extends Omit<ProgramState, "next"> { next: ProgramSlot; id: string; name: string; weeks: number; deloadPct: number; startsOn: string | null; endsOn: string | null; calendarWeek: number }
 /** A Home suggestion (rules in suggest.ts). muscle: what an exercises link filters on (a muscle, or a group's id for "gap");
  *  muscles: what the figure lights. hide: what dismissing it keeps away for a week ("r:<routine id>", "m:<group id>"). */
 export interface HomeSuggestion { key: string; kind: "program" | "order" | "missed" | "gap" | "target" | "low" | "oldest"; title: string; reason: string; routineId: string | null; color: string | null; muscle?: string; muscles?: string[]; hide: string[] }

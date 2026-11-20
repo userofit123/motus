@@ -24,6 +24,6 @@ export const scheduleSheet = ref<null | { id?: string; routineId?: string | null
 /** A routine's History (its id) */
 export const historySheet = ref<string | null>(null);
 /** Changing a program's start date, from its ⋮ menu on the Programs list or its own page */
-export const programStartSheet = ref<null | { id: string; startDate: string }>(null);
+export const programStartSheet = ref<null | { id: string; startDate: string | null }>(null);
 /** "Track by" for one exercise, from its ⋮ menu (core/track.ts); `then` shows the change on the screen that opened it */
 export const trackSheet = ref<null | { exerciseId: string; tracking: Tracking; then?: (before: Tracking, after: Tracking) => void }>(null);

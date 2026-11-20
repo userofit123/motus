@@ -118,6 +118,29 @@ describe("programs", () => {
     expect(p).toMatchObject({ status: "paused", calendarWeek: 1, state: { done: 0 } });
     expect((await eng.handle({ method: "GET", path: `/programs/${uuidv7()}`, userId: U })).status).toBe(404);
   });
+  it("starts a program with no start date on the day of its first workout, and ends after its weeks", async () => {
+    const day = (n: number) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
+    const a = (await call("POST", "/routines", { template: "push" })).id, b = (await call("POST", "/routines", { template: "pull" })).id;
+    // done before the program was made: it never counts
+    await call("POST", "/workouts/log", { routineId: a, startedAt: `${day(1)}T10:00:00Z`, exercises: [] });
+    const { id: pid } = await call("POST", "/programs", { name: "Open", weeks: [{ days: [a, b] }, { days: [a, b] }], startDate: null });
+    let p = await call("GET", `/programs/${pid}`, undefined, { tz: "0" });
+    expect(p).toMatchObject({ startDate: null, startsOn: null, endsOn: null, calendarWeek: 1, state: { done: 0 } });
+    expect(p.plan[0].days.map((d: any) => d.status)).toEqual(["next", "todo"]);
+    expect((await call("GET", "/home", undefined, { tz: "0" })).programs.find((x: any) => x.id === pid)).toMatchObject({ startsOn: null, calendarWeek: 1 });
+    await call("POST", "/workouts/log", { routineId: a, startedAt: new Date().toISOString(), exercises: [] });
+    p = (await call("GET", "/programs", undefined, { tz: "0" })).find((x: any) => x.id === pid);
+    const end = new Date(Date.parse(day(0)) + 13 * 86400000).toISOString().slice(0, 10);
+    expect(p).toMatchObject({ startDate: null, startsOn: day(0), endsOn: end, calendarWeek: 1, state: { done: 1 } });
+    // a date set later is kept, and taking it away again works
+    await call("PUT", `/programs/${pid}`, { startDate: day(7) });
+    p = await call("GET", `/programs/${pid}`, undefined, { tz: "0" });
+    expect(p).toMatchObject({ startDate: day(7), startsOn: day(7), calendarWeek: 2 });
+    await call("PUT", `/programs/${pid}`, { name: "Open" });
+    expect((await call("GET", `/programs/${pid}`, undefined, { tz: "0" })).startDate).toBe(day(7));
+    await call("PUT", `/programs/${pid}`, { startDate: null });
+    expect((await call("GET", `/programs/${pid}`, undefined, { tz: "0" })).startsOn).toBe(day(0));
+  });
 });
 
 describe("activities", () => {

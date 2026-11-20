@@ -23,15 +23,13 @@ export function useProgramMenu() {
   }
   /** edit: opens the program editor, which each screen keeps for itself; page: the program's own page, which it leaves when the program goes. */
   const items = (p: Program, o: { edit: () => void; page?: boolean }): MenuItem[] => {
-    const finished = !!p.state.total && !!p.state.finished, today = localYmd(new Date()), start = p.startDate.slice(0, 10);
-    // the same week count the server uses: 0 before the start date, 1 in the first week
-    const week = today < start ? 0 : Math.floor((Date.parse(today) - Date.parse(start)) / (7 * 86400000)) + 1;
+    const finished = !!p.state.total && !!p.state.finished;
     return [
       { label: "Pause", icon: "pause", hidden: finished || !p.active, run: () => put(p, { active: false }, "Program paused") },
       { label: "Resume", icon: "play", hidden: finished || p.active || !p.state.total, run: () => put(p, { active: true }, "Program resumed") },
-      { label: "Start again from week 1", icon: "refresh", hidden: !p.state.done && week === 1, run: () => restart(p) },
+      { label: "Start again from week 1", icon: "refresh", hidden: !p.state.done && p.calendarWeek === 1, run: () => restart(p) },
       { label: "Edit", icon: "edit", sep: true, run: o.edit },
-      { label: "Change start date", icon: "calendar", run: () => (programStartSheet.value = { id: p.id, startDate: start }) },
+      { label: "Change start date", icon: "calendar", run: () => (programStartSheet.value = { id: p.id, startDate: p.startDate }) },
       { label: "Delete", icon: "trash", danger: true, sep: true, run: () => del(p, !!o.page) },
     ];
   };
