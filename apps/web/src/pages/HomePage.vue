@@ -555,7 +555,7 @@ await loaded(home, ach, avail, hDay, ready, nightsQ, dailyQ, todayCal);
             <div class="ch"><span class="bi"><Icon name="routines" :size="15" /></span><span class="t grow ellipsis">{{ p.name }}</span><span class="tiny">{{ p.done }} of {{ p.total }}</span></div>
             <div class="pbar"><i :style="{ width: (p.done / p.total) * 100 + '%' }" /></div>
             <div class="row"><MuscleFig sm :routine="p.next.routineId" />
-              <div class="grow" style="min-width:0"><div class="tiny ellipsis">{{ p.calendarWeek === 0 && p.startsOn ? `Starts ${fmt.day(p.startsOn)}` : `Next, week ${p.next.week} of ${p.weeks}` }}</div>
+              <div class="grow" style="min-width:0"><div class="tiny ellipsis">{{ !p.startsOn ? "Starts with this workout" : p.calendarWeek === 0 ? `Starts ${fmt.day(p.startsOn)}` : `Next, week ${p.next.week} of ${p.weeks}` }}</div>
                 <div class="ellipsis"><b>{{ p.next.name }}</b><span v-if="p.next.deload" class="mchip">Deload -{{ p.deloadPct }}%</span></div></div>
               <button class="btn s o keep over" @click="router.push(`/routines/${p.next.routineId}/start?program=${p.id}${p.next.deload ? `&deload=${p.deloadPct}` : ''}`)">Start</button></div>
             <div v-if="p.calendarWeek > p.next.week" class="tiny wn">{{ p.calendarWeek - p.next.week }} week{{ p.calendarWeek - p.next.week > 1 ? "s" : "" }} behind the calendar. Carry on from here; nothing is skipped.</div>

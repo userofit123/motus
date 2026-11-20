@@ -183,6 +183,9 @@ describe("pickSuggestions", () => {
     expect(s[0]).toMatchObject({ kind: "program", reason: "Next in 5x5: week 2, workout 3" });
     const d = pickSuggestions(input({ programs: [{ program: "5x5", routineId: "legs", name: "Legs", color: null, week: 4, day: 1, deload: true }] }));
     expect(d[0]).toMatchObject({ kind: "program", reason: "Next in 5x5: week 4, workout 1 (deload)" });
+    // a program with no date waiting for its first workout: this one starts it
+    const f = pickSuggestions(input({ programs: [{ program: "5x5", routineId: "legs", name: "Legs", color: null, week: 1, day: 1, deload: false, starts: true }] }));
+    expect(f[0]).toMatchObject({ kind: "program", reason: "5x5 starts with this workout" });
   });
 });
 

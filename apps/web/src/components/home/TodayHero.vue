@@ -64,7 +64,8 @@ const hero = computed<Hero | null>(() => {
   // this device's can differ, so with none found it says "Trained today". "Nothing planned" never shows beside a workout you did
   if (trainedToday.value) return { label: dayDone.value ? `${n(dayDone.value, "session")} today` : todayWait.value ? "\u00a0" : "Trained today", title: "Done for today",
     sub: [(h.plannedToday ?? 0) ? "Nothing else planned for today" : "", next ? `Next: ${next.name}` : ""].filter(Boolean).join(" · "), routine: null, done: true, act: another };
-  if (prog && next) return { label: `${prog.name}, week ${next.week} of ${prog.weeks}`, title: next.name, sub: "", routine: next.routineId,
+  // with no date and no workout yet, this one starts it (as Home's program card says "Starts with this workout")
+  if (prog && next) return { label: prog.startsOn ? `${prog.name}, week ${next.week} of ${prog.weeks}` : `${prog.name} starts with this workout`, title: next.name, sub: "", routine: next.routineId,
     act: { label: "Start", icon: "play", run: () => router.push(`/routines/${next.routineId}/start?program=${prog.id}${next.deload ? `&deload=${prog.deloadPct}` : ""}`) } };
   const sug = (h.suggest ?? []).find((x) => x.routineId);
   if (sug) return { label: "Suggested for today", title: sug.title, sub: sug.reason, routine: sug.routineId,

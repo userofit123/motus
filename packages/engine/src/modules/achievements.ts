@@ -78,7 +78,7 @@ async function streakSeries(q: Sql, s: Settings, tzMin: number): Promise<Series>
   return out;
 }
 
-/** Programs followed to the end: each program's routines done in its order since it started (as programState counts). */
+/** Programs followed to the end: each program's routines done in its order since it started (as programInfo counts). */
 async function programSeries(q: Sql, tzMin: number): Promise<Series> {
   const ev: { at: string; v: number }[] = [];
   for (const p of (await q.query("SELECT id, weeks, start_date, counts_from, created_at FROM programs")).rows) {

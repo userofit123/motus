@@ -17,10 +17,16 @@ const edit = ref<Program | null | undefined>(undefined); // undefined: closed; n
 const pm = useProgramMenu();
 const start = (p: Program) => router.push(`/routines/${p.state.next!.routineId}/start?program=${p.id}${p.state.next!.deload ? `&deload=${p.deloadPct}` : ""}`);
 const fmt = useFmt();
-/** "Week 2 of 6 · Next: Push A"; before a start date still to come "Starts Mon 23 Nov · Next: Push A", as Home says it
+/** "Week 2 of 6 · Next: Push A"; before a start date still to come "Starts Mon 23 Nov · Next: Push A", and with no date
+ *  before its first workout "Starts with Push A" (short, so the workout's name fits at phone width), as Home says it
  *  (the program's page adds its length and end) */
-const where = (p: Program) => !p.state.total ? "No routines yet" : p.state.finished ? `All ${p.weeks.length} weeks done`
-  : `${p.calendarWeek === 0 && p.startsOn ? `Starts ${fmt.value.day(p.startsOn)}` : `Week ${p.state.next!.week} of ${p.weeks.length}`} · Next: ${p.state.next!.name}${p.state.next!.deload ? " (deload)" : ""}`;
+const where = (p: Program) => {
+  if (!p.state.total) return "No routines yet";
+  if (p.state.finished) return `All ${p.weeks.length} weeks done`;
+  const n = p.state.next!, name = `${n.name}${n.deload ? " (deload)" : ""}`;
+  if (!p.startsOn) return `Starts with ${name}`;
+  return `${p.calendarWeek === 0 ? `Starts ${fmt.value.day(p.startsOn)}` : `Week ${n.week} of ${p.weeks.length}`} · Next: ${name}`;
+};
 // the Routines page's Programs tab puts "New program" in its header, so it opens the editor from there
 defineExpose({ create: () => (edit.value = null) });
 </script>

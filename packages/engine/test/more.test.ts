@@ -146,9 +146,20 @@ describe("programs", () => {
     // saving it again with no date (the form sends every field) keeps waiting, it does not start over
     await call("PUT", `/programs/${pid}`, { name: "Open", startDate: null });
     expect(await get()).toMatchObject({ startsOn: null, state: { done: 0 } });
-    // Start again from week 1 (today), then no date: the workouts since it was made stay out
+    // a date of today counts today's workout from before it was set
     await call("PUT", `/programs/${pid}`, { startDate: day(0) });
     expect(await get()).toMatchObject({ startsOn: day(0), state: { done: 1 } });
+    // Start again from week 1 on a dated program (today): today's workout, done before, no longer counts, as the confirm
+    // says; saving the form (same date) keeps it out; a workout after the restart counts
+    await new Promise((r) => setTimeout(r, 5));
+    await call("PUT", `/programs/${pid}`, { startDate: day(0), restart: true, active: true });
+    expect(await get()).toMatchObject({ startDate: day(0), startsOn: day(0), calendarWeek: 1, state: { done: 0 } });
+    await call("PUT", `/programs/${pid}`, { name: "Open", startDate: day(0) });
+    expect(await get()).toMatchObject({ state: { done: 0 } });
+    await new Promise((r) => setTimeout(r, 5));
+    await call("POST", "/workouts/log", { routineId: a, startedAt: new Date().toISOString(), exercises: [] });
+    expect(await get()).toMatchObject({ state: { done: 1 } });
+    // then no date: the workouts since it was made stay out
     await removeDate();
     expect(await get()).toMatchObject({ startsOn: null, state: { done: 0 } });
     // a date planned ahead, then no date: today's workout from before stays out

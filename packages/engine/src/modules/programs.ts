@@ -20,10 +20,14 @@ export interface ProgramRow { id: string; weeks: Week[] | null; start_date: stri
 /**
  * From when workouts count: the start date from the app's midnight (tzMin: minutes behind UTC, as dayIn), or with no date
  * the moment it was last set to count afresh (made, date taken away, started again: counts_from), else when it was made.
+ * A dated program started again today counts from that moment (counts_from, the later of the two), so workouts done
+ * earlier today no longer count, as the confirm says; setting another date clears it.
  */
-export const countsFrom = (p: Pick<ProgramRow, "start_date" | "counts_from" | "created_at">, tzMin: number): string =>
-  p.start_date ? new Date(Date.parse(String(p.start_date).slice(0, 10) + "T00:00:00Z") + tzMin * 60000).toISOString()
-    : new Date(p.counts_from ?? p.created_at ?? Date.now()).toISOString();
+export function countsFrom(p: Pick<ProgramRow, "start_date" | "counts_from" | "created_at">, tzMin: number): string {
+  if (!p.start_date) return new Date(p.counts_from ?? p.created_at ?? Date.now()).toISOString();
+  const midnight = Date.parse(String(p.start_date).slice(0, 10) + "T00:00:00Z") + tzMin * 60000;
+  return new Date(Math.max(midnight, p.counts_from ? new Date(p.counts_from).getTime() : midnight)).toISOString();
+}
 
 /**
  * The program's days: startsOn its start date, or with none the day of its first workout (null until then); endsOn the last
@@ -55,10 +59,6 @@ async function walk(q: Sql, p: ProgramRow, tzMin: number) {
   const names = new Map((await q.query("SELECT id, name, color FROM routines WHERE id = ANY($1::uuid[])", [[...new Set(seq.map((s) => s.routineId))]])).rows.map((r: any) => [r.id, r]));
   const slots = seq.map((s) => ({ ...s, name: names.get(s.routineId)?.name ?? "Deleted routine", color: names.get(s.routineId)?.color ?? null }));
   return { slots, hit, extra, i, firstAt };
-}
-
-export async function programState(q: Sql, p: ProgramRow, tzMin = 0) {
-  return (await programInfo(q, p, dayIn(new Date(), tzMin), tzMin)).state;
 }
 
 /** Where you are in the program and its days, from one walk through its workouts. */
@@ -129,13 +129,15 @@ export function programRoutes(r: Router) {
     const weeks = b.weeks ? sanitize(b.weeks) : null;
     if (weeks) for (const w of weeks) for (const rid of w.days) await visible(ctx.q, "routines", rid, "routine");
     // startDate null takes the date away and left out keeps it. With no date the program starts with the first workout
-    // done from then on (counts_from = now), so workouts from before a date was set never count again; restart (Start
-    // again from week 1 on a program with no date) does the same and keeps it without one.
+    // done from then on (counts_from = now), so workouts from before a date was set never count again. restart (Start
+    // again from week 1) does the same: with no date it stays without one; with a date (today) workouts done earlier today
+    // stay out too. A different date counts from its midnight again (counts_from cleared); saving the same date keeps it.
     const setDate = b.startDate === null || dateStr(b.startDate) != null;
     const { rows } = await ctx.q.query(
       `UPDATE programs SET name = coalesce($2, name), description = coalesce($3, description), weeks = coalesce($4, weeks), deload_pct = coalesce($5, deload_pct),
          start_date = CASE WHEN $8 THEN $6::date ELSE start_date END, active = coalesce($7, active),
-         counts_from = CASE WHEN $9 OR ($8 AND $6::date IS NULL AND start_date IS NOT NULL) THEN $10::timestamptz ELSE counts_from END
+         counts_from = CASE WHEN $9 OR ($8 AND $6::date IS NULL AND start_date IS NOT NULL) THEN $10::timestamptz
+           WHEN $8 AND $6::date IS NOT NULL AND start_date IS DISTINCT FROM $6::date THEN NULL ELSE counts_from END
        WHERE id = $1 RETURNING id`,
       [id(p.id), b.name ? str(b.name, 120) : null, b.description != null ? str(b.description, 2000) : null, weeks ? JSON.stringify(weeks) : null, intOrNull(b.deloadPct, 0, 90),
         dateStr(b.startDate), typeof b.active === "boolean" ? b.active : null, setDate, b.restart === true, ctx.now().toISOString()]);

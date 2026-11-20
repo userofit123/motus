@@ -40,6 +40,8 @@ const sub = computed(() => {
   const x = p.value!;
   if (!x.state.total) return "No routines yet";
   if (x.status === "finished") return `All ${x.weeks.length} weeks done`;
+  // paused before it starts: the main button says Resume, so the line says paused too
+  if (x.status === "paused" && (!x.startsOn || x.calendarWeek === 0)) return `${weeksText(x.weeks.length)} · paused`;
   if (!x.startsOn) return `${weeksText(x.weeks.length)} · starts with its first workout`;
   if (x.calendarWeek === 0) return `${weeksText(x.weeks.length)} · starts ${day(x.startsOn)} · ends ${day(x.endsOn!)}`;
   return `Week ${next.value!.week} of ${x.weeks.length} · ${x.status === "paused" ? "paused" : `ends ${day(x.endsOn!)}`}`;

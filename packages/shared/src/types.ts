@@ -151,7 +151,7 @@ export interface Program {
   deloadPct: number;
   /** null: no set date, so the program starts with its first workout */
   startDate: string | null;
-  /** with no start date: workouts done from this moment count (when it was made, its date taken away or it started again); null on older programs, which count from createdAt */
+  /** workouts done from this moment count (when it was made without a date, its date taken away or it started again); with a date, the later of this and the date's midnight; null on older programs, which count from createdAt (or their date) */
   countsFrom: string | null;
   /** the day it started or starts: the start date, or the day of its first workout (null while waiting for it) */
   startsOn: string | null;

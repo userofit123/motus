@@ -2,7 +2,7 @@
 import { pickSuggestions } from "@motus/shared";
 import type { Sql } from "../db";
 import type { RoutineSummary, HomeSuggestion } from "@motus/shared";
-import { programState } from "./programs";
+import { programInfo } from "./programs";
 import { dayIn } from "./achievements";
 
 const DAY = 86400000;
@@ -20,8 +20,10 @@ export async function suggestions(q: Sql, routines: RoutineSummary[], now: Date,
 
   const programs = [];
   for (const p of withPrograms ? (await q.query("SELECT * FROM programs WHERE active ORDER BY created_at DESC")).rows : []) {
-    const next = (await programState(q, p)).next;
-    if (next) programs.push({ program: String(p.name), routineId: next.routineId, name: next.name, color: next.color ?? null, week: next.week, day: next.day, deload: !!next.deload });
+    // as Today's hero: a date still to come is not suggested yet; one with no date waiting for its first workout says this one starts it
+    const { state, startsOn, calendarWeek } = await programInfo(q, p, dayIn(now, tzMin), tzMin);
+    const next = state.next;
+    if (next && calendarWeek > 0) programs.push({ program: String(p.name), routineId: next.routineId, name: next.name, color: next.color ?? null, week: next.week, day: next.day, deload: !!next.deload, starts: !startsOn });
   }
   const recent = (await q.query<{ routine_id: string | null }>(
     "SELECT routine_id FROM workouts WHERE status = 'completed' ORDER BY started_at DESC LIMIT 80")).rows.map((x) => x.routine_id).reverse();

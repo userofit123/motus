@@ -23,7 +23,8 @@ export interface SuggestInput {
   routines: { id: string; name: string; color: string | null; daysAgo: number | null }[];
   /** the next workout of each program you follow; only the ones Home shows as suggestions (none while the programs
    *  have their own card), so a hidden one doesn't keep its routine or muscles from another suggestion */
-  programs: { program: string; routineId: string; name: string; color: string | null; week: number; day: number; deload: boolean }[];
+  /** starts: a program with no date that this workout starts (none done yet) */
+  programs: { program: string; routineId: string; name: string; color: string | null; week: number; day: number; deload: boolean; starts?: boolean }[];
   /** the routines of your last finished workouts, oldest first (null: a free workout) */
   recent: (string | null)[];
   /** whole calendar days since each muscle was last trained as a main muscle */
@@ -103,7 +104,7 @@ export function pickSuggestions(d: SuggestInput): HomeSuggestion[] {
 
   // a program you follow says what's next
   for (const p of d.programs) if (byId.has(p.routineId))
-    add({ kind: "program", title: p.name, reason: `Next in ${p.program}: week ${p.week}, workout ${p.day}${p.deload ? " (deload)" : ""}`, routineId: p.routineId, color: p.color });
+    add({ kind: "program", title: p.name, reason: p.starts ? `${p.program} starts with this workout` : `Next in ${p.program}: week ${p.week}, workout ${p.day}${p.deload ? " (deload)" : ""}`, routineId: p.routineId, color: p.color });
 
   // your usual order: the routine that most often came right after the one you did last
   const last = d.recent.at(-1), lastR = last ? byId.get(last) : undefined;
