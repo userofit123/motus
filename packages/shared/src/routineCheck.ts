@@ -320,7 +320,7 @@ function frequency(g: GoalTargets, days: Day[], week: Record<string, number>, wk
     : days.length === 1 ? `${cap(wk)} has only 1 workout, so no muscle is trained on more than 1 day. Add a second workout to the week and split each muscle's sets between the two.`
     : `In ${wk}, ${parts.map((p, i) => (i ? cap(p) : p)).join(" ")}`;
   const wkt = (m: { id: string }, d: number[]) => (d.length ? `${d.length === 1 ? "Workout" : "Workouts"} ${names(d.map((x) => (dayNames[x - 1] ? `${x} (${dayNames[x - 1]})` : String(x))))}`
-    : week[m.id]! > 0 ? "Only helps in other exercises, never 2 sets on one day" : "No sets in the week");
+    : week[m.id]! > 0 ? "Only works as a helper in other exercises, and never for 2 sets in one workout, so no day counts" : "No sets in the week");
   const named = (d: number) => (dayNames[d - 1] ? `workout ${d} (${dayNames[d - 1]})` : `workout ${d}`);
   return make(g, {
     key: "frequency", title: `Muscles trained on ${TWICE} or more days`, share, value: `${ms.length - once.length} of ${plural(ms.length, "muscle")}`, detail,
