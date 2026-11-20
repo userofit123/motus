@@ -235,7 +235,8 @@ function weekOf(days: CheckSession[], whole: boolean) {
   const span = "a week";
   return { sets, checks: [volume(sets, whole, span), frequency(per, sets), pushPull(days, !whole, span), legs(sets, !whole, span)] };
 }
-const hasLifting = (s: CheckSession) => lifting(s).some((e) => working(e).length);
+/** Whether a workout has any lifting with working sets (what a check can score at all) */
+export const hasLifting = (s: CheckSession) => lifting(s).some((e) => working(e).length);
 
 /** A routine in no program, done `perWeek` times a week: the week of it and each workout. It may be one day of a split,
  *  so only the muscles it trains are checked, and balance only where it has both sides. null when it has no lifting with sets. */

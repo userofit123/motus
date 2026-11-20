@@ -24,7 +24,7 @@ import BodyMap from "../components/BodyMap.vue";
 import HeartRate from "../components/HeartRate.vue";
 import RoutineCheckCard from "../components/RoutineCheckCard.vue";
 import { sessionOf, timesAWeek } from "../core/routineCheck";
-import { routineCheck, workoutCheck } from "@motus/shared";
+import { routineCheck, workoutCheck, hasLifting } from "@motus/shared";
 import { useRoutineMenu } from "../core/routineMenu";
 import { removeItem } from "../components/home/planActions";
 import { useNoteMenu } from "../core/noteMenu";
@@ -89,10 +89,14 @@ const hrOf = computed(() => new Map<string, number>((routine.value?.hr?.sessions
 // program's, checked on the program's card, so the card points there (M-287). In no program, it is the only week Motus
 // knows of, so it is also checked as a week of it, done as often as its plans or the last 4 weeks say.
 const checkOn = computed(() => !!st.value.features.routineCheck);
-const programs = usePrograms();
+// asked for only while both features are on; the pointer names only programs whose checked week (the first full, not
+// deload, one, as the program's card scores it) has this routine, so what it says is true
+const programs = usePrograms(computed(() => checkOn.value && !!st.value.features.programs));
 const inPrograms = computed(() => (checkOn.value && st.value.features.programs ? (programs.data.value ?? []) : [])
-  .filter((x) => !x.state.finished && x.weeks.some((w) => w.days.includes(id.value))).sort((a, b) => Number(b.active) - Number(a.active)));
+  .filter((x) => !x.state.finished && x.weeks.find((w) => !w.deload && w.days.length)?.days.includes(id.value)).sort((a, b) => Number(b.active) - Number(a.active)));
 const weekIn = computed(() => (inPrograms.value.length ? { id: inPrograms.value[0]!.id, name: inPrograms.value[0]!.name, more: inPrograms.value.length - 1 } : undefined));
+// a routine with no lifting has nothing to check, so its card stays hidden, in a program or not
+const lifts = computed(() => !!routine.value && hasLifting(sessionOf(routine.value)));
 const usual = computed(() => timesAWeek(id.value, schedules.data.value ?? [], history.data.value ?? []));
 const check = computed(() => (!checkOn.value || !routine.value ? null : weekIn.value ? workoutCheck(sessionOf(routine.value)) : routineCheck(sessionOf(routine.value), usual.value.n)));
 // what the score covers and, for a week, how often it counts it done and where that comes from, under the score
@@ -105,7 +109,7 @@ const noteWhere = (n: any) => (n.targetType === "routine_exercise" ? routine.val
 const menuFor = useRoutineMenu();
 const menu = computed(() => menuFor({ id: id.value, name: routine.value.name, pinned: !!routine.value.pinned, archived: !!routine.value.archived }, true));
 // show the page once its data is in, all at once
-await loaded(r, summaries, notes, rems, schedules, history);
+await loaded(r, summaries, notes, rems, schedules, history, programs);
 </script>
 
 <template>
@@ -173,7 +177,7 @@ await loaded(r, summaries, notes, rems, schedules, history);
       </div>
     </div>
     <!-- below both columns: its rows say what to change in full, which the side column is too narrow for -->
-    <RoutineCheckCard v-if="check || weekIn" class="spt" :check="check" title="Check of this routine" :source="checkSource" :week-in="weekIn" />
+    <RoutineCheckCard v-if="check || (weekIn && lifts)" class="spt" :check="check" title="Check of this routine" :source="checkSource" :week-in="weekIn" />
     </div>
 
     <div v-else-if="tab === 'history'">

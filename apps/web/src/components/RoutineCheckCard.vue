@@ -20,7 +20,7 @@ import SourceRow from "./learn/SourceRow.vue";
 import { toneOf } from "../core/scores";
 
 // muscles: the figure's main and helper muscles (the routine card's look) and each one's sets a week for its tips
-// check: null only for a routine in a program with nothing to check in one workout, so the card keeps its row to the week
+// check: null only for a routine in a program with lifting but nothing to check in one workout (no target reps), so the card keeps its row to the week
 const props = defineProps<{ check: RoutineCheck | null; title: string; muscles?: { sets: Record<string, number>; primary: string[]; secondary: string[] }; source?: string;
   weekIn?: { id: string; name: string; more: number } }>();
 const router = useRouter();
@@ -56,7 +56,7 @@ const metLine = computed(() => {
     </div>
     <div v-if="check" class="tiny rc-why">{{ metLine }}</div>
     <!-- no score: say why, in the count line's place, so the card isn't only its two rows -->
-    <div v-else class="tiny rc-why">Nothing to score in one workout: its sets have no target reps. Add them to check its reps.</div>
+    <div v-else class="tiny rc-why">Nothing to score in one workout: its sets have no target reps, and it has no mix of big and single-muscle lifts to order. Add target reps to check its reps.</div>
     <div class="list crows">
       <div v-for="c in check?.checks ?? []" :key="c.key" class="li">
         <Icon :name="ICON[c.key]" :size="18" class="muted" />
