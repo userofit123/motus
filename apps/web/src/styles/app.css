@@ -432,8 +432,6 @@ main { position: relative; }
 /* top-aligned: an inline-flex box takes its baseline from the icon, which would lift the text and grow the line */
 .mb-hr .dotl-ic { color: var(--onc); vertical-align: top; }
 .minibar .t { font-weight: 600; font-size: 14.5px; }
-/* the dots in the label line take its colour, as the rest of the line on the accent */
-.minibar .k .sep { color: inherit; }
 /* the icon tile with a live dot: this is running now */
 .mb-live { position: relative; width: 36px; height: 36px; border-radius: 11px; display: grid; place-items: center; background: color-mix(in srgb, var(--onc) 14%, transparent); flex: none; }
 .mb-live::after { content: ""; position: absolute; top: -2px; inset-inline-end: -2px; width: 10px; height: 10px; border-radius: 50%; background: var(--pos); box-shadow: 0 0 0 2px var(--accc); }

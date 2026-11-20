@@ -51,14 +51,14 @@ const recWhat = computed(() => (recType.value?.name ?? recTypeName()) + (recDist
 <template>
   <div v-if="strip" class="minibars strip-host">
     <Transition name="mb">
-      <div v-if="showR" class="minibar mb-strip" role="button" :aria-label="`Recording ${recWhat}. Open it`" @click="router.push('/activities/record')">
+      <div v-if="showR" class="minibar mb-strip" role="button" :aria-label="`Recording ${recWhat}${recording!.pauseAt ? ', paused' : ''}. Open it`" @click="router.push('/activities/record')">
         <span class="mb-live" :class="{ paused: !!recording!.pauseAt }"><Icon :name="recIcon" :size="15" /></span>
         <div class="grow ellipsis"><b>{{ recording!.pauseAt ? "Paused" : "Recording" }}</b> · {{ recWhat }}</div>
         <b class="mb-num">{{ clock(recElapsedS) }}</b><Icon name="right" :size="16" />
       </div>
     </Transition>
     <Transition name="mb">
-      <div v-if="showI" class="minibar mb-strip" role="button" :aria-label="`Interval timer: ${ivWhat}. Open it`" @click="router.push('/timer')">
+      <div v-if="showI" class="minibar mb-strip" role="button" :aria-label="`Interval timer: ${ivWhat}${iv.pausedAt != null ? ', paused' : ''}. Open it`" @click="router.push('/timer')">
         <span class="mb-live" :class="{ paused: iv.pausedAt != null }"><Icon name="timer" :size="15" /></span>
         <div class="grow ellipsis"><b>{{ iv.pausedAt != null ? "Paused" : iv.name || "Interval timer" }}</b> · {{ ivWhat }}</div>
         <b class="mb-num">{{ ivLeft }}</b><Icon name="right" :size="16" />
@@ -73,7 +73,7 @@ const recWhat = computed(() => (recType.value?.name ?? recTypeName()) + (recDist
           <div class="k ellipsis"><span v-if="wHr" class="mb-hr"><span class="dotl-ic"><Icon name="heart" :size="12" /><span :class="{ 'hr-old': !wHr.fresh }">{{ wHr.bpm }} bpm</span></span><template v-if="!wHr.fresh"> · {{ wHr.ago }}</template></span><template v-else>Workout</template></div>
           <div class="t ellipsis">{{ active.data.value.name }}</div>
         </div>
-        <div class="mb-clock"><b>{{ restActive() ? clock(restLeft()) : clock(elapsed(active.data.value)) }}</b><span>{{ active.data.value.pauseStartedAt ? "Paused" : restActive() ? (rest.label === "Next exercise" ? "Next exercise" : "Resting") : "Elapsed" }}</span></div>
+        <div class="mb-clock"><b>{{ restActive() ? clock(restLeft()) : clock(elapsed(active.data.value)) }}</b><span>{{ active.data.value.pauseStartedAt ? "Paused" : restActive() ? "Resting" : "Elapsed" }}</span></div>
         <Icon name="right" />
       </div>
     </Transition>

@@ -284,7 +284,7 @@ const menu = computed(() => [
 /* one line: the clock comes first and always shows; what follows ("Paused", heart rate, waiting to sync) shows whole or
    not at all: an item with no room wraps to a second line that the line's height hides, never a cut word. Paused
    shows on the clock itself too (its colour), so a long paused workout on a phone still says so */
-.aw-clock { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 10px; height: calc(26px * 1.1); overflow: hidden; white-space: nowrap; font-size: 12.5px; color: var(--tx2); }
+.aw-clock { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 10px; height: calc(26px * 1.1 + 8px); margin-bottom: -8px; row-gap: 10px; overflow: hidden; white-space: nowrap; font-size: 12.5px; color: var(--tx2); }
 .aw-clock > * { flex: none; }
 /* Finish is outlined until the first set and filled after: the filled one keeps the outline's 1px edge (unseen), so
    the button never changes width and the header around it stays put */
@@ -294,8 +294,10 @@ const menu = computed(() => [
 .aw-paused { font-weight: 600; }
 /* a heart rate over 10 minutes old: muted (.hr-old) with its age under it, small, as the bar at the bottom puts
    "Elapsed" under its clock. "78 bpm · 25 min ago" on one line leaves no room for it beside the clock on a phone, and
-   this row hides what doesn't fit; stacked it is no wider than "25 min ago" and fits the clock's height */
-.aw-hrnow.old { display: flex; flex-direction: column; align-self: center; line-height: 1.15; }
+   this row hides what doesn't fit; stacked it is no wider than "25 min ago". "78 bpm" sits on the clock's baseline and
+   the age hangs below it, into the row's 8px of extra height (pulled back by its negative margin, so the header keeps
+   its size); the row gap is taller than that, so a wrapped item stays hidden */
+.aw-hrnow.old { display: flex; flex-direction: column; line-height: 1; }
 .aw-hrnow small { font-size: 11px; }
 /* fresh, the number in the main text colour, one step above the row's grey; old, it steps down to the row's grey (.hr-old) */
 .aw-hrnow > span:not(.hr-old) { color: var(--tx); }
