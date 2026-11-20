@@ -2,6 +2,10 @@
 
 The top entry's version is the one the release workflow publishes. Add a new `## [x.y.z]` section to release.
 
+## [0.1.45] - 2026-11-20
+
+- Every routine check target is a full sentence you can act on, e.g. "Train each muscle on at least 2 different days of the week" instead of "Each trained muscle on 2 or more days a week", and "For every pushing set, do 0.75-1.5 pulling sets".
+
 ## [0.1.44] - 2026-11-20
 
 - In a routine check's popup, The target gives the target and a short reason in plain words, e.g. "At least 1:30 between sets of a big lift. A longer rest lets you do more reps in the next set, which builds a little more muscle." The study detail moved to the section below it, which reads "Where the targets come from" when a check has two targets.
