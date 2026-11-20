@@ -2,6 +2,16 @@
 
 The top entry's version is the one the release workflow publishes. Add a new `## [x.y.z]` section to release.
 
+## [0.1.41] - 2026-11-20
+
+- A program's start can be "No date": it then starts with its first workout. Removing a date or choosing "Start again from week 1" never counts workouts done before.
+- A program shows when it ends, worked out from its weeks, e.g. "Week 2 of 8 · ends Sun 17 Jan 2027". The year shows when it isn't this year.
+- Programs count each finished workout for the earliest week still missing its routine, so doing a week's routines in another order no longer fills the wrong weeks.
+- Each day in a program has a ⋮ menu: choose the workout that counts for it, mark it skipped, or schedule it. A planned day shows its date, e.g. "Up next · planned Tue 24 Nov".
+- Routine check scores a program over a whole week (sets per muscle, each muscle twice a week, balance), and a routine in a program on its own workout (big lifts first, reps). The routine shows a row that opens its program instead of repeating the weekly checks.
+- A running workout shows your band's heart rate from the first reading on. A reading over 10 minutes old is a shade lighter with its age, e.g. "78 bpm, 25 min ago", the same in the workout, the recording screen and the minimised bar. Motus checks Health Connect again 30 seconds after you come back to it.
+- The minimised bar shows your heart rate in place of "Workout in progress", "Paused" under its clock, and "Resting" for every rest.
+
 ## [0.1.40] - 2026-11-19
 
 - Minimising a workout takes you back to the page you were on, e.g. Stats → Sleep, instead of Home.
