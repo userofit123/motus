@@ -43,10 +43,11 @@ const tileCount = computed(() => (props.final ? 2 : 3) + (r.value.targets ? 1 : 
 
 const settings = useSettings();
 const hr = useLiveHr(() => props.w.startedAt, () => !!settings.value.features.healthConnect);
-const hrLatest = hr.latest, hrSamples = hr.samples;
+const hrNewest = hr.newest, hrSamples = hr.samples;
 const hrPts = computed(() => hrPoints(hrSamples.value, (x) => fmt.value.time(new Date(x).toISOString())));
-// fresh: the newest reading big and how old it is; past 10 minutes the average so far takes its place
-const hrSub = computed(() => hrLatest.value ? `${hrLatest.value.ago} · average ${hr.avg.value} · up to ${hr.max.value}` : `average so far · up to ${hr.max.value}`);
+// the newest reading big and how old it is, however old: the band app syncs only now and then, so it is the same
+// number the header shows (M-291)
+const hrSub = computed(() => hrNewest.value ? `${hrNewest.value.ago} · average ${hr.avg.value} · up to ${hr.max.value}` : "");
 
 const rows = computed(() => r.value.perExercise.map((p, i) => {
   const e = props.w.exercises[i]!;
@@ -95,7 +96,7 @@ const rows = computed(() => r.value.perExercise.map((p, i) => {
     <HeartRate v-if="final && hrSamples.length" :hr="hrSamples" />
     <div v-else-if="hrSamples.length" class="card stat wsf-hr">
       <div class="lbl"><span class="bi"><Icon name="heart" :size="15" /></span>Heart rate</div>
-      <div class="val">{{ hrLatest ? hrLatest.bpm : hr.avg.value }}<small>bpm</small></div><div class="sub">{{ hrSub }}</div>
+      <div class="val">{{ hrNewest?.bpm }}<small>bpm</small></div><div class="sub">{{ hrSub }}</div>
       <LineChart v-if="hrPts.length > 1" class="wsf-hrc" :points="hrPts" :height="120" :fmt="(v) => fmt.num(v, 0)" :xfmt="(t) => fmt.time(new Date(t).toISOString())" />
     </div>
 

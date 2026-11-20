@@ -148,11 +148,13 @@ async function rename() { const n = await prompt("Workout name", { value: w.valu
 const moveTo = (from: number, to: number) => { const ids = w.value!.exercises.map((e) => e.id); if (to < 0 || to >= ids.length || from === to) return; ids.splice(to, 0, ids.splice(from, 1)[0]!); W.reorder(ids); };
 const move = (i: number, d: number) => { const ids = w.value!.exercises.map((e) => e.id); const j = i + d; if (j < 0 || j >= ids.length) return; [ids[i], ids[j]] = [ids[j]!, ids[i]!]; W.reorder(ids); };
 const togglePause = () => W.togglePause();
-// the band's heart rate so far (Android app, Health Connect on): the newest reading in the header while fresh, and on a
-// computer a card in the side column with the line so far (not beside the Summary, which shows it)
+// the band's heart rate so far (Android app, Health Connect on): the newest reading in the header from the first one on,
+// muted once over 10 minutes old (the band app syncs only now and then, and hiding it left nothing to see: M-291; tapping
+// the header opens the Summary, which says how old it is), and on a computer a card in the side column with the line so
+// far (not beside the Summary, which shows it)
 const settings = useSettings();
 const hr = useLiveHr(() => w.value?.startedAt, () => !!w.value && !!settings.value.features.healthConnect);
-const hrLatest = hr.latest;
+const hrNewest = hr.newest;
 // in groups: its exercises, notes and reminders, its settings, then Cancel on its own
 const menu = computed(() => [
   { label: "Add exercise", icon: "plus", run: () => (adding.value = true) },
@@ -171,7 +173,7 @@ const menu = computed(() => [
       <button class="ib sm plain" aria-label="Minimise" @click="goBack(router, '/')"><Icon name="down" /></button>
       <div class="grow" style="min-width:0;cursor:pointer" role="button" tabindex="0" @click="go(w.exercises.length)" @keydown.enter="go(w.exercises.length)">
         <div class="aw-name"><span class="aw-sets">{{ done }} of {{ total }} sets</span><span class="sep">·</span><span class="ellipsis">{{ w.name }}</span></div>
-        <div class="aw-clock"><b :class="{ paused }">{{ clock(elapsed(w)) }}</b><span v-if="paused" class="aw-paused">Paused</span><span v-if="hrLatest">{{ hrLatest.bpm }} bpm</span><span v-if="waiting.length">{{ waiting.length }} waiting to sync</span></div>
+        <div class="aw-clock"><b :class="{ paused }">{{ clock(elapsed(w)) }}</b><span v-if="paused" class="aw-paused">Paused</span><span v-if="hrNewest" :class="{ 'aw-old': !hrNewest.fresh }" :title="`Heart rate ${hrNewest.bpm} bpm, ${hrNewest.ago}`">{{ hrNewest.bpm }} bpm</span><span v-if="waiting.length">{{ waiting.length }} waiting to sync</span></div>
       </div>
       <Menu :items="menu" align="start" />
       <button class="btn" :class="{ o: done === 0 }" @click="finishing = true">Finish</button>
@@ -237,8 +239,8 @@ const menu = computed(() => [
         </div>
         <div v-if="hr.samples.value.length && !onSummary" class="card aw-hr">
           <div class="lbl">Heart rate</div>
-          <div class="aw-hrv">{{ hrLatest ? hrLatest.bpm : hr.avg.value }} bpm</div>
-          <div class="tiny aw-hrs">{{ hrLatest ? `${hrLatest.ago} · average ${hr.avg.value} · up to ${hr.max.value}` : `average so far · up to ${hr.max.value}` }}</div>
+          <div class="aw-hrv">{{ hrNewest!.bpm }} bpm</div>
+          <div class="tiny aw-hrs">{{ `${hrNewest!.ago} · average ${hr.avg.value} · up to ${hr.max.value}` }}</div>
           <Sparkline v-if="hr.samples.value.length > 1" :values="hr.samples.value.map((p) => p[1])" />
         </div>
         <div class="card">
@@ -281,6 +283,8 @@ const menu = computed(() => [
 .aw-clock b { font-size: 26px; font-weight: 600; letter-spacing: -.8px; color: var(--tx); font-variant-numeric: tabular-nums; line-height: 1.1; }
 .aw-paused, .aw-clock b.paused { color: var(--acc); }
 .aw-paused { font-weight: 600; }
+/* a heart rate over 10 minutes old: still there, but quieter than the clock row's live values */
+.aw-clock .aw-old { opacity: .55; }
 /* -4px pulls the bar up under the header's --hg gap (optical); the gap below is a block gap */
 .aw-prog { display: flex; gap: 3px; margin: -4px 0 var(--spg); }
 .aw-prog span { flex-basis: 0; height: 5px; border-radius: 5px; background: var(--s2); overflow: hidden; }

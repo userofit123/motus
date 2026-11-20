@@ -478,11 +478,14 @@ export function syncAfterSession() {
 }
 
 // Live heart rate while a workout or a recording runs: the band's readings since the session started, read straight from
-// Health Connect every minute while the app is on screen (and at once when it comes back). The band hands them over only
-// when Gadgetbridge syncs with it, so the newest is often a few minutes old: shown with its age, and not at all past 10
-// minutes. One reader per session, shared by every screen that shows it (the page and the bar at the bottom).
+// Health Connect every minute while the app is on screen (and at once when it comes back, and again half a minute later).
+// Readings reach Health Connect only when the band app syncs with the band: Gadgetbridge writes right after each sync,
+// and syncs on its own schedule (minutes to hours apart; its "fetch on unlock" never fires
+// while a workout keeps the screen on). So the newest is often minutes old: `latest` is it while at most 10 minutes old
+// (the bar at the bottom, where a number reads as "now"), `newest` always (the workout screen, muted and with its age).
+// One reader per session, shared by every screen that shows it (the page and the bar at the bottom).
 export type HrSample = [number, number]; // [unix seconds, bpm]
-const LIVE_EVERY_MS = 60_000, LIVE_FRESH_S = 10 * 60, LIVE_OVERLAP_S = 10 * 60;
+const LIVE_EVERY_MS = 60_000, LIVE_AFTER_SHOWN_MS = 30_000, LIVE_FRESH_S = 10 * 60, LIVE_OVERLAP_S = 10 * 60;
 interface LiveReader { since: string; samples: Ref<HrSample[]>; users: number; timer: ReturnType<typeof setInterval> | null; busy: boolean; polled: number }
 const readers = new Map<string, LiveReader>();
 // what "2 min ago" says moves on its own, a little faster than the readings come in
@@ -506,7 +509,16 @@ async function pollLive(r: LiveReader, force = false) {
   } catch { /* no permission or Health Connect busy: try again next minute */ }
   finally { r.busy = false; }
 }
-const onVisible = () => { if (document.visibilityState === "visible") { liveNow.value = Date.now(); for (const r of readers.values()) if (r.users) void pollLive(r, true); } };
+// back on screen: read at once, and again half a minute later, when a sync the band app started on unlock (or by hand
+// in it, before coming back) has written its readings
+let againTimer: ReturnType<typeof setTimeout> | null = null;
+const pollShown = () => { for (const r of readers.values()) if (r.users) void pollLive(r, true); };
+const onVisible = () => {
+  if (document.visibilityState !== "visible") return;
+  liveNow.value = Date.now(); pollShown();
+  if (againTimer) clearTimeout(againTimer);
+  againTimer = setTimeout(() => { againTimer = null; pollShown(); }, LIVE_AFTER_SHOWN_MS);
+};
 
 function attach(since: string): LiveReader {
   let r = readers.get(since);
@@ -521,11 +533,15 @@ function detach(r: LiveReader) {
   // kept while nobody shows it (the page hands it to the bar and back, a workout and a recording may both run), so its
   // readings stay; only the oldest idle ones go once there are more than a few
   for (const [k, x] of readers) if (readers.size > 3 && !x.users) readers.delete(k);
-  if (![...readers.values()].some((x) => x.users) && nowTimer) { clearInterval(nowTimer); nowTimer = null; document.removeEventListener("visibilitychange", onVisible); }
+  if (![...readers.values()].some((x) => x.users) && nowTimer) {
+    clearInterval(nowTimer); nowTimer = null; document.removeEventListener("visibilitychange", onVisible);
+    if (againTimer) clearTimeout(againTimer); againTimer = null;
+  }
 }
 
 /** The band's heart rate since `start` (ISO) while `on` is true (the session runs, the Health Connect feature is on).
- *  samples: every reading so far; latest: the newest when at most 10 minutes old, with how old it is ("2 min ago").
+ *  samples: every reading so far; newest: the newest reading however old, with how old it is ("2 min ago", "1 h ago")
+ *  and whether it is fresh (at most 10 minutes old); latest: newest while fresh, else null.
  *  Empty and null outside the Android app, without permission, or before the first reading arrives. */
 export function useLiveHr(start: () => string | null | undefined, on: () => boolean) {
   const empty = ref<HrSample[]>([]);
@@ -537,14 +553,15 @@ export function useLiveHr(start: () => string | null | undefined, on: () => bool
   }, { immediate: true });
   onScopeDispose(() => { if (cur.value) detach(cur.value); cur.value = null; });
   const samples = computed(() => (cur.value ?? { samples: empty }).samples.value);
-  const latest = computed(() => {
+  const newest = computed(() => {
     const p = samples.value.at(-1); if (!p) return null;
-    const ageS = Math.max(0, liveNow.value / 1000 - p[0]);
-    return ageS > LIVE_FRESH_S ? null : { bpm: p[1], at: p[0], ago: ageS < 60 ? "just now" : `${Math.floor(ageS / 60)} min ago` };
+    const ageS = Math.max(0, liveNow.value / 1000 - p[0]), m = Math.floor(ageS / 60);
+    return { bpm: p[1], at: p[0], fresh: ageS <= LIVE_FRESH_S, ago: m < 1 ? "just now" : m < 60 ? `${m} min ago` : `${Math.round(m / 60)} h ago` };
   });
+  const latest = computed(() => (newest.value?.fresh ? newest.value : null));
   const avg = computed(() => (samples.value.length ? Math.round(samples.value.reduce((t, p) => t + p[1], 0) / samples.value.length) : null));
   const max = computed(() => (samples.value.length ? samples.value.reduce((m, p) => Math.max(m, p[1]), 0) : null));
-  return { samples, latest, avg, max };
+  return { samples, newest, latest, avg, max };
 }
 
 /** Heart-rate readings as chart points: a band reads every few seconds, so an hour is over a thousand points; they're
