@@ -73,7 +73,7 @@ async function save() {
     const b = { ...body.value, routineId: k === "r" ? v : null, activityType: k === "a" ? v : null, remindMin: remind ? f.value.remindMin : null };
     if (s.id) await api.put(`/schedules/${s.id}`, b); else await api.post("/schedules", b);
     if (remind) askNotificationPermission();
-    invalidate(["schedules", "calendar", "home"]);
+    invalidate(["schedules", "calendar", "home", "routines"]);
     toast("Schedule saved");
     emit("close");
   } catch (e) { toastError(e); }

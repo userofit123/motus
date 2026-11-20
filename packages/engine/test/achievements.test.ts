@@ -100,17 +100,16 @@ describe("achievements", () => {
     expect((await ach()).weighins.value).toBe(2);
   });
 
-  it("counts a program once its routines are done in order", async () => {
+  it("counts a program once every day of it is done, in any order within a week", async () => {
     const r1 = (await call("POST", "/routines", { name: "P1", exercises: [{ exerciseId: bench, sets: [{ reps: 5 }] }] })).id;
     const r2 = (await call("POST", "/routines", { name: "P2", exercises: [{ exerciseId: bench, sets: [{ reps: 5 }] }] })).id;
     await call("POST", "/programs", { name: "Two days", weeks: [{ days: [r1, r2] }], startDate: "2026-10-01" });
     expect((await ach()).programs).toBeUndefined();
-    await call("POST", "/workouts/log", { startedAt: "2026-10-05T08:00:00Z", routineId: r2 }); // out of order: doesn't move it on
+    await call("POST", "/workouts/log", { startedAt: "2026-10-05T08:00:00Z", routineId: r2 }); // before r1: still the week's second day
     await call("POST", "/workouts/log", { startedAt: "2026-10-06T09:00:00Z", routineId: r1 });
-    await call("POST", "/workouts/log", { startedAt: "2026-10-06T18:00:00Z", routineId: r2 });
     const a = await ach();
     expect(a.programs.value).toBe(1);
-    expect(a.programs.steps[0]).toMatchObject({ name: "First program finished", reachedAt: "2026-10-06T18:00:00.000Z" });
+    expect(a.programs.steps[0]).toMatchObject({ name: "First program finished", reachedAt: "2026-10-06T09:00:00.000Z" });
   });
 });
 

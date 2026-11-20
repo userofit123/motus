@@ -5,7 +5,7 @@
 import { ACHIEVEMENTS, achievementName, achievementTarget, daysIntoWeek, LIFTED_SQL, type Settings } from "@motus/shared";
 import type { Sql } from "../db";
 import { findRecords } from "./workouts";
-import { countsFrom } from "./programs";
+import { walk } from "./programs";
 
 const DAY = 86400000;
 /** The calendar day an instant falls on, for an app whose clock is tzMin minutes behind UTC. */
@@ -78,17 +78,12 @@ async function streakSeries(q: Sql, s: Settings, tzMin: number): Promise<Series>
   return out;
 }
 
-/** Programs followed to the end: each program's routines done in its order since it started (as programInfo counts). */
+/** Programs followed to the end: reached when the last of its days is filled (or skipped), as its page counts them (walk). */
 async function programSeries(q: Sql, tzMin: number): Promise<Series> {
   const ev: { at: string; v: number }[] = [];
   for (const p of (await q.query("SELECT id, weeks, start_date, counts_from, created_at FROM programs")).rows) {
-    const seq: string[] = (p.weeks ?? []).flatMap((w: any) => w.days ?? []);
-    if (!seq.length) continue;
-    const done = (await q.query(
-      "SELECT routine_id, started_at FROM workouts WHERE status = 'completed' AND started_at >= $1::timestamptz AND (program_id = $2 OR routine_id = ANY($3::uuid[])) ORDER BY started_at",
-      [countsFrom(p, tzMin), p.id, [...new Set(seq)]])).rows;
-    let i = 0;
-    for (const w of done) if (i < seq.length && w.routine_id === seq[i] && ++i === seq.length) ev.push({ at: w.started_at, v: 1 });
+    const { finishedAt } = await walk(q, p, tzMin);
+    if (finishedAt) ev.push({ at: finishedAt, v: 1 });
   }
   return running(ev.sort((a, b) => a.at.localeCompare(b.at)));
 }

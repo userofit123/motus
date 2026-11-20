@@ -14,6 +14,9 @@ import Icon from "../components/Icon.vue";
 import MuscleFig from "../components/MuscleFig.vue";
 import Menu from "../components/Menu.vue";
 import ProgramEditor from "../components/ProgramEditor.vue";
+import ProgramDaySheet from "../components/ProgramDaySheet.vue";
+import { scheduleSheet } from "../core/ui";
+import type { MenuItem } from "../components/Menu.vue";
 import RoutineCheckCard from "../components/RoutineCheckCard.vue";
 import { sessionOf } from "../core/routineCheck";
 import { useProgramMenu } from "../core/programMenu";
@@ -60,9 +63,25 @@ const primary = computed(() => {
 const pm = useProgramMenu();
 const menu = computed(() => pm.items(p.value!, { edit: () => (editing.value = true), page: true }));
 const hasDeload = computed(() => p.value?.plan.some((w) => w.deload));
-const dayLine = (d: ProgramDetail["plan"][number]["days"][number]) =>
-  d.status === "done" ? `${fmt.value.date(d.workout!.startedAt, { weekday: "short", day: "numeric", month: "short" })} · ${fmt.value.dur(d.workout!.durationS, true)} · ${fmt.value.vol(d.workout!.volumeKg)}`
-  : d.status === "next" ? (behind.value ? "Up next · behind the calendar" : "Up next") : d.status === "late" ? "Not done yet · its week has passed" : "";
+type Day = ProgramDetail["plan"][number]["days"][number];
+// an open day whose routine is planned says when (its routine's planned days go to its open days in order)
+const planned = (d: Day) => (d.plannedOn ? `planned ${day(d.plannedOn)}` : "");
+const dayLine = (d: Day) => {
+  if (d.status === "done") return `${fmt.value.date(d.workout!.startedAt, { weekday: "short", day: "numeric", month: "short" })} · ${fmt.value.dur(d.workout!.durationS, true)} · ${fmt.value.vol(d.workout!.volumeKg)}`;
+  if (d.status === "skipped") return "Skipped";
+  const parts = d.status === "next" ? ["Up next", planned(d) || (behind.value ? "behind the calendar" : "")] : d.status === "late" ? ["Not done yet", planned(d) || "its week has passed"] : [planned(d)];
+  const line = parts.filter(Boolean).join(" · ");
+  return line.charAt(0).toUpperCase() + line.slice(1);
+};
+// each day's ⋮: which workout counts for it (or skipped), planning its routine, and back to automatic
+const dayOpen = ref<Day | null>(null);
+const used = computed(() => new Map((p.value?.plan ?? []).flatMap((w) => w.days.flatMap((d) => (d.workout ? [[d.workout.id, w.week] as [string, number]] : [])))));
+const dayMenu = (d: Day): MenuItem[] => [
+  { label: "Choose the workout", icon: "edit", run: () => (dayOpen.value = d) },
+  { label: "Schedule", icon: "calendar", run: () => (scheduleSheet.value = { routineId: d.routineId }) },
+  { label: "Count automatically", icon: "refresh", sep: true, hidden: !d.byHand, run: async () => {
+    try { await api.put(`/programs/${id.value}/days`, { week: d.week, day: d.day, auto: true }); invalidate(["routines", "home"]); toast("Counts automatically again"); } catch (e) { toastError(e); } } },
+];
 // the Routine check (feature) of the program's first full week (not a deload one), from its routines as Routines loads
 // them (the same cache); asked for only while the feature is on
 const st = useSettings();
@@ -97,7 +116,7 @@ await loaded(q);
         <div class="grow"><div class="lbl">{{ p.status === "paused" ? "When you resume" : "Next" }} · week {{ next.week }}, workout {{ next.day }}</div><b class="nm">{{ next.name }}</b></div>
         <button class="qb acc" @click="router.push(`/routines/${next.routineId}`)">See routine</button></div>
       <div v-if="next.deload" class="tiny">Deload week: a lighter week to let your body recover. Working weights start {{ p.deloadPct }}% lower; warm-ups and reps stay the same.</div>
-      <div v-if="behind" class="tiny wn">You're {{ behind }} week{{ behind > 1 ? "s" : "" }} behind the calendar. Carry on from here (nothing is skipped), or start again from week 1 in ⋮.</div>
+      <div v-if="behind" class="tiny wn">You're {{ behind }} week{{ behind > 1 ? "s" : "" }} behind the calendar. Carry on from here, or start again from week 1 in ⋮.</div>
     </div>
 
     <div class="grid g4 spb st">
@@ -118,15 +137,16 @@ await loaded(q);
       <section>
         <div class="sh"><h2>Plan</h2></div>
         <div v-if="!p.state.total" class="card empty"><b>No routines yet</b><button class="btn tonal" @click="editing = true">Add routines</button></div>
-        <div v-else class="grid gauto">
+        <div v-else class="grid gauto wks">
           <div v-for="w in p.plan" :key="w.week" class="card wk" :class="{ cur: next && w.week === next.week && p.status !== 'finished' }">
             <div class="ch"><span class="t grow">Week {{ w.week }}</span><span v-if="w.deload" class="mchip">Deload -{{ p.deloadPct }}%</span><Icon v-if="w.days.length && w.days.every((d) => d.status === 'done')" name="check" :size="16" class="pos" /></div>
             <div v-if="!w.days.length" class="tiny">Rest week</div>
             <div class="list">
               <div v-for="d in w.days" :key="d.day" class="li" :class="[d.status, { click: !!d.workout }]" @click="d.workout && router.push(`/workouts/${d.workout.id}`)">
                 <MuscleFig sm :routine="d.routineId" />
-                <span class="mk"><Icon v-if="d.status === 'done'" name="check" :size="14" /><Icon v-else-if="d.status === 'next'" name="play" :size="12" /><template v-else>{{ d.day }}</template></span>
+                <span class="mk"><Icon v-if="d.status === 'done'" name="check" :size="14" /><Icon v-else-if="d.status === 'next'" name="play" :size="12" /><Icon v-else-if="d.status === 'skipped'" name="skip" :size="12" /><template v-else>{{ d.day }}</template></span>
                 <div class="grow"><div class="t">{{ d.name }}</div><div v-if="dayLine(d)" class="s">{{ dayLine(d) }}</div></div>
+                <Menu :items="dayMenu(d)" :label="`More for week ${w.week} · ${d.name}`" />
               </div>
             </div>
           </div>
@@ -143,9 +163,9 @@ await loaded(q);
           </div>
           <div class="card">
             <div class="ch"><span class="t">Recent workouts</span></div>
-            <div v-if="!p.recent.length" class="tiny">{{ p.startsOn ? `None yet. Workouts count from ${day(p.startsOn)}, in the program's order.` : "None yet. The program starts with its first workout." }}</div>
+            <div v-if="!p.recent.length" class="tiny">{{ p.startsOn ? `None yet. Workouts done from ${day(p.startsOn)} count.` : "None yet. The program starts with its first workout." }}</div>
             <div class="list"><div v-for="w in p.recent" :key="w.id" class="li click" @click="router.push(`/workouts/${w.id}`)">
-              <div class="grow"><div class="t">{{ w.name }}</div><div class="s">{{ fmt.date(w.startedAt, { weekday: "short", day: "numeric", month: "short" }) }} · {{ w.week ? `week ${w.week}, workout ${w.day}` : "extra, out of order" }}</div></div><Icon name="right" class="muted" /></div></div>
+              <div class="grow"><div class="t">{{ w.name }}</div><div class="s">{{ fmt.date(w.startedAt, { weekday: "short", day: "numeric", month: "short" }) }} · {{ w.week ? `week ${w.week}, workout ${w.day}` : "extra, beyond the plan" }}</div></div><Icon name="right" class="muted" /></div></div>
           </div>
         </div>
       </section>
@@ -154,6 +174,7 @@ await loaded(q);
     <RoutineCheckCard v-if="check" class="spt" :check="check.c" title="Check of this program" :source="`Scored on week ${checkWeek!.week}, with ${checkWeek!.days.length === 1 ? 'its 1 workout' : `all ${checkWeek!.days.length} of its workouts`}`" :muscles="check.muscles" />
 
     <ProgramEditor v-if="editing" :program="p" @close="editing = false" />
+    <ProgramDaySheet v-if="dayOpen" :program-id="p.id" :day="dayOpen" :used="used" @close="dayOpen = null" />
   </div>
   <div v-else-if="q.isError.value" class="page"><div class="card empty"><b>Program not found</b><button class="btn tonal" @click="router.push('/routines')">Back to routines</button></div></div>
 </template>
@@ -181,7 +202,10 @@ await loaded(q);
 .li.next .t, .li.next .s { color: var(--onc) !important; }
 .li.late .mk { background: color-mix(in srgb, var(--warn) 20%, transparent); color: var(--warn); }
 .li.late .s { color: var(--warn) !important; }
-.li.todo .t { color: var(--tx2); }
+.li.todo .t, .li.skipped .t { color: var(--tx2); }
+/* wide enough for a day's ⋮ beside its date, length and volume; the ⋮ sits in the row's end padding */
+.wks { grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); }
+.wk .li > :deep(.ib.plain) { margin-inline-end: -8px; }
 /* routine bars are spaced like list rows (two row paddings apart), and a gap leaves no extra space under the last one */
 .prs { display: flex; flex-direction: column; gap: calc(var(--lpy) * 2); }
 .prs .pbar { height: 6px; margin-top: 4px; }

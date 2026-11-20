@@ -9,7 +9,7 @@ import { uuidv7 } from "../ids";
 import { bad } from "../errors";
 import { SET_COUNT_SQL, VOLUME_SQL } from "./workouts";
 
-const addDays = (d: string, n: number) => { const x = new Date(d + "T12:00:00Z"); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
+export const addDays = (d: string, n: number) => { const x = new Date(d + "T12:00:00Z"); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
 const dow = (d: string) => new Date(d + "T12:00:00Z").getUTCDay();
 const daysBetween = (a: string, b: string) => Math.round((new Date(b + "T12:00:00Z").getTime() - new Date(a + "T12:00:00Z").getTime()) / 86400000);
 

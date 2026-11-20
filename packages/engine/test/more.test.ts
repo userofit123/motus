@@ -87,33 +87,53 @@ describe("programs", () => {
     const day = (n: number) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
     const a = (await call("POST", "/routines", { template: "push" })).id, b = (await call("POST", "/routines", { template: "pull" })).id;
     const { id: pid } = await call("POST", "/programs", { name: "PP", weeks: [{ days: [a, b] }, { days: [a, b], deload: true }, { days: [a, b] }], startDate: day(8) });
-    for (const [r, n] of [[a, 7], [a, 6], [b, 5]] as const) await call("POST", "/workouts/log", { routineId: r, startedAt: `${day(n)}T10:00:00Z`, exercises: [] });
-    // started from the program out of order: it's the program's, but not a step forward
-    const w = await call("POST", "/workouts/start", { routineId: b, programId: pid });
+    // week 1's routines in another order (B before A) both count for week 1; each next A fills the next week's A (M-290)
+    const ids: string[] = [];
+    for (const [r, n] of [[b, 7], [a, 6], [a, 5], [a, 4]] as const) ids.push((await call("POST", "/workouts/log", { routineId: r, startedAt: `${day(n)}T10:00:00Z`, exercises: [] })).id);
+    // started from the program with no A left in the plan: it's the program's, an extra
+    const w = await call("POST", "/workouts/start", { routineId: a, programId: pid });
     for (const e of w.exercises) for (const s of e.sets) await call("PUT", `/workout-sets/${s.id}`, { weightKg: 50, reps: 5, done: true });
     await call("POST", `/workouts/${w.id}/finish`, {});
+    // planning B plans it for the program: its next open day shows the date
+    await call("POST", "/schedules", { routineId: b, rule: "once", startDate: day(-2) });
     let p = await call("GET", `/programs/${pid}`, undefined, { tz: "0" });
     expect(p.status).toBe("active");
     expect(p.calendarWeek).toBe(2);
-    expect(p.state.next).toMatchObject({ routineId: a, week: 2, day: 1, deload: true });
+    expect(p.state.next).toMatchObject({ routineId: b, week: 2, day: 2, deload: true });
     expect(p.plan[0].days.map((d: any) => d.status)).toEqual(["done", "done"]);
-    expect(p.plan[0].days[0].workout.startedAt).toContain(day(7));
+    expect(p.plan[0].days.map((d: any) => d.workout.id)).toEqual([ids[1], ids[0]]);
     expect(p.plan[1]).toMatchObject({ deload: true });
-    expect(p.plan[1].days.map((d: any) => d.status)).toEqual(["next", "todo"]);
-    expect(p.stats).toMatchObject({ done: 2, total: 6, weeksDone: 1, expected: 2, adherencePct: 100 });
+    expect(p.plan[1].days.map((d: any) => d.status)).toEqual(["done", "next"]);
+    expect(p.plan[1].days[1].plannedOn).toBe(day(-2));
+    expect(p.plan[2].days.map((d: any) => [d.status, d.plannedOn])).toEqual([["done", null], ["todo", null]]);
+    expect(p.stats).toMatchObject({ done: 4, total: 6, weeksDone: 1, expected: 2, adherencePct: 100 });
     expect(p.stats.volumeKg).toBeGreaterThan(0);
-    expect(p.stats.perRoutine.find((x: any) => x.routineId === a)).toMatchObject({ done: 1, planned: 3 });
+    expect(p.stats.perRoutine.find((x: any) => x.routineId === a)).toMatchObject({ done: 3, planned: 3 });
     expect(p.recent.map((x: any) => x.id)[0]).toBe(w.id);
     expect(p.recent[0].week).toBeNull();
-    expect(p.recent).toHaveLength(3);
-    // two weeks on and nothing more done: week 2 is behind
-    await call("PUT", `/programs/${pid}`, { startDate: day(15) });
+    expect(p.recent).toHaveLength(5);
+    // set by hand: week 1's A skipped moves each A a week on; the oldest A chosen for week 2 takes that day
+    await call("PUT", `/programs/${pid}/days`, { week: 1, day: 1, workoutId: null });
     p = await call("GET", `/programs/${pid}`, undefined, { tz: "0" });
-    expect(p.calendarWeek).toBe(3);
-    expect(p.plan[1].days.map((d: any) => d.status)).toEqual(["next", "late"]);
-    expect(p.stats.adherencePct).toBe(50);
-    // starting again from today: nothing done yet
-    await call("PUT", `/programs/${pid}`, { startDate: day(0), active: false });
+    expect(p.plan[0].days.map((d: any) => [d.status, d.byHand])).toEqual([["skipped", true], ["done", false]]);
+    expect(p.plan.map((x: any) => x.days[0].workout?.id ?? null)).toEqual([null, ids[1], ids[2]]);
+    await call("PUT", `/programs/${pid}/days`, { week: 2, day: 1, workoutId: ids[3] });
+    p = await call("GET", `/programs/${pid}`, undefined, { tz: "0" });
+    expect(p.plan.map((x: any) => x.days[0].workout?.id ?? null)).toEqual([null, ids[3], ids[1]]);
+    expect(p.plan[1].days[0].byHand).toBe(true);
+    expect((await eng.handle({ method: "PUT", path: `/programs/${pid}/days`, userId: U, body: { week: 9, day: 1, workoutId: null } })).status).toBe(400);
+    for (const wk of [1, 2]) await call("PUT", `/programs/${pid}/days`, { week: wk, day: 1, auto: true });
+    p = await call("GET", `/programs/${pid}`, undefined, { tz: "0" });
+    expect(p.plan.map((x: any) => x.days[0].workout?.id ?? null)).toEqual([ids[1], ids[2], ids[3]]);
+    // three weeks on and nothing more done: week 3's B is late
+    await call("PUT", `/programs/${pid}`, { startDate: day(22) });
+    p = await call("GET", `/programs/${pid}`, undefined, { tz: "0" });
+    expect(p.calendarWeek).toBe(4);
+    expect(p.plan[2].days.map((d: any) => d.status)).toEqual(["done", "late"]);
+    expect(p.stats.adherencePct).toBe(67);
+    // starting again from today: nothing done yet, and a day set by hand no longer counts
+    await call("PUT", `/programs/${pid}/days`, { week: 1, day: 1, workoutId: ids[1] });
+    await call("PUT", `/programs/${pid}`, { startDate: day(0), restart: true, active: false });
     p = await call("GET", `/programs/${pid}`, undefined, { tz: "0" });
     expect(p).toMatchObject({ status: "paused", calendarWeek: 1, state: { done: 0 } });
     expect((await eng.handle({ method: "GET", path: `/programs/${uuidv7()}`, userId: U })).status).toBe(404);
@@ -132,10 +152,10 @@ describe("programs", () => {
     p = (await call("GET", "/programs", undefined, { tz: "0" })).find((x: any) => x.id === pid);
     const end = new Date(Date.parse(day(0)) + 13 * 86400000).toISOString().slice(0, 10);
     expect(p).toMatchObject({ startDate: null, startsOn: day(0), endsOn: end, calendarWeek: 1, state: { done: 1 } });
-    // a date set later is kept; saving other changes keeps it
+    // a date set later is kept; saving other changes keeps it. From that date both A workouts count, week 1's then week 2's
     await call("PUT", `/programs/${pid}`, { startDate: day(7) });
     p = await call("GET", `/programs/${pid}`, undefined, { tz: "0" });
-    expect(p).toMatchObject({ startDate: day(7), startsOn: day(7), calendarWeek: 2, state: { done: 1 } });
+    expect(p).toMatchObject({ startDate: day(7), startsOn: day(7), calendarWeek: 2, state: { done: 2 } });
     await call("PUT", `/programs/${pid}`, { name: "Open" });
     expect((await call("GET", `/programs/${pid}`, undefined, { tz: "0" })).startDate).toBe(day(7));
     const get = async () => call("GET", `/programs/${pid}`, undefined, { tz: "0" });

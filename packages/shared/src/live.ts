@@ -18,7 +18,8 @@ export const TOPICS = {
   health: ["health", "nightscores", "activities", "workouts", "routines", "exercises", "body", "stats", "goals", "home", "calendar", "readings"],
   // every Health Connect record as it is (M-238): only screens that read the records themselves
   readings: ["readings"],
-  schedule: ["schedules", "calendar", "home"],
+  // routines: a program's page shows the day each open routine is planned for (M-290)
+  schedule: ["schedules", "calendar", "home", "routines"],
   // nightscores: each night's own sleep score depends on the birth year (the hours for your age, none under 18) and the
   // Health scores feature, so only those nights reload, not every health screen
   settings: ["settings", "home", "stats", "goals", "nightscores"],

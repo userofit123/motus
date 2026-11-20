@@ -53,7 +53,7 @@ async function save() {
     <div class="fld"><label>Deload weeks lighter by (%)</label><input v-model.number="e.deloadPct" type="number" min="0" max="90" /></div>
     <p class="tiny hint">A deload week is a lighter week to let your body recover. In the weeks you mark as deload, working weights start {{ e.deloadPct || 0 }}% lower; warm-ups and reps stay the same.</p>
     <div class="flbl">Weeks</div>
-    <p class="tiny hint">The routines to do each week, in order. Motus counts your workouts in this order, so a missed day never throws the plan off.</p>
+    <p class="tiny hint">The routines to do each week. A finished workout counts for the earliest week still missing its routine, so doing a week's routines in another order is fine.</p>
     <div v-for="(w, i) in e.weeks" :key="i" class="card tight wk">
       <div class="row hgap"><b class="grow">Week {{ i + 1 }}</b><label class="row tiny" style="gap:6px"><span class="tg"><input v-model="w.deload" type="checkbox" /></span>Deload</label>
         <Menu :items="[{ label: 'Duplicate this week', icon: 'copy', run: () => duplicateWeek(i) }, { label: 'Remove this week', icon: 'trash', danger: true, sep: true, hidden: e.weeks.length < 2, run: () => e.weeks.splice(i, 1) }]" /></div>

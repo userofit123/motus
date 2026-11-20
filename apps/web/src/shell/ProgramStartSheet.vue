@@ -23,7 +23,7 @@ async function save() {
 <template>
   <Sheet :title="o.startDate ? 'Change start date' : 'Set start date'" @close="emit('close')">
     <!-- taking a date away makes it wait for its next first workout (the server's counts_from); with no date before, nothing changes -->
-    <p class="tiny hgap">{{ date ? "Workouts count towards the program from this date, in its order. Workouts done before stay in your history but no longer count towards this program."
+    <p class="tiny hgap">{{ date ? "Workouts done from this date count towards the program. Workouts done before stay in your history but no longer count towards this program."
       : o.startDate ? "The program starts the next time you do its first workout. Workouts done before stay in your history but no longer count towards this program."
       : o.startsOn ? `Started ${fmt.day(o.startsOn)} with its first workout.` : "The program starts with its first workout." }}</p>
     <div class="fld"><label>Starts</label><WhenPicker v-model="date" title="Starts" none="No date" /></div>

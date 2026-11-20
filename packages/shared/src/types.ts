@@ -142,12 +142,13 @@ export interface RoutineSummary {
   exerciseNames: string[];
 }
 
-/** A program: weeks of routines done in order, some weeks lighter (deload). */
+/** A program: weeks of routines, some weeks lighter (deload). Each finished workout fills the first open day of its routine, week 1 before week 2. */
 export interface Program {
   id: string;
   name: string;
   description: string;
-  weeks: { days: string[]; deload?: boolean }[];
+  /** marks: days set by hand, by day number (1 = the week's first workout): the workout that counts for it, or null when skipped */
+  weeks: { days: string[]; deload?: boolean; marks?: Record<string, { routineId: string; workoutId: string | null }> }[];
   deloadPct: number;
   /** null: no set date, so the program starts with its first workout */
   startDate: string | null;
@@ -170,8 +171,9 @@ export interface ProgramWorkout { id: string; name: string; startedAt: string; d
 /** One program in full, for its page. */
 export interface ProgramDetail extends Program {
   status: "active" | "paused" | "finished";
-  /** done: finished (with its workout); next: the one to do now; late: from a week the calendar has passed; todo: still to come */
-  plan: { week: number; deload: boolean; days: (ProgramSlot & { status: "done" | "next" | "late" | "todo"; workout: ProgramWorkout | null })[] }[];
+  /** done: finished (with its workout); skipped: marked skipped by hand; next: the first open day; late: from a week the calendar has passed; todo: still to come.
+   * byHand: its workout was chosen (or it was skipped) by hand; plannedOn: the day its routine is planned for next (open days only, in order) */
+  plan: { week: number; deload: boolean; days: (ProgramSlot & { status: "done" | "skipped" | "next" | "late" | "todo"; workout: ProgramWorkout | null; byHand: boolean; plannedOn: string | null })[] }[];
   stats: { done: number; total: number; weeksDone: number; expected: number; adherencePct: number | null; volumeKg: number; durationS: number;
     perRoutine: { routineId: string; name: string; done: number; planned: number }[] };
   /** Workouts in this program, newest first: the ones that counted, and any extra started from it */
