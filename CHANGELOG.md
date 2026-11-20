@@ -2,6 +2,15 @@
 
 The top entry's version is the one the release workflow publishes. Add a new `## [x.y.z]` section to release.
 
+## [0.1.46] - 2026-11-20
+
+- Every routine and program check line says plainly what it means, with your own numbers and exercises, e.g. "Chest gets 19 sets in this workout. After about 11 the chest is too tired for more sets to build much: move the other 8 to another day of the week."
+- Tips name your own routines and exercises, and never suggest an exercise you already do.
+- Butterfly, Cable Seated Lateral Raise and Lying One-Arm Lateral Raise count as pushing exercises, and a few exercises without a push or pull label now have one, so the push and pull balance is right.
+- Both weekly checks on a program count the same 10 muscles. A muscle with no sets shows as trained on 0 days.
+- With the strength goal, the reps check is titled "1-6 reps on big lifts, 5-30 on single-muscle lifts", so the title matches the count under it. Lifts the check can't sort say "Not checked", and the popup says why.
+- With the general fitness goal, the reps tip gives that goal's own reason.
+
 ## [0.1.45] - 2026-11-20
 
 - Every routine check target is a full sentence you can act on, e.g. "Train each muscle on at least 2 different days of the week" instead of "Each trained muscle on 2 or more days a week", and "For every pushing set, do 0.75-1.5 pulling sets".
