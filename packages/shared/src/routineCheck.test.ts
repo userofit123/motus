@@ -115,11 +115,14 @@ describe("routine check", () => {
     const s = key(routineCheck([bench(3, 10), curl()], "strength"), "reps")!;
     expect(s.detail).toBe("In this workout, Bench press (10 reps) aims for more than 6 reps. For strength, add weight so 6 or fewer reps are hard.");
     expect(s.value).toBe("3 of 6 sets");
+    // two targets (big lifts, single-muscle lifts), so the popup's headings say "targets"
+    expect(s.targets).toBe(2);
     expect(key(routineCheck([bench(3, 20)], "endurance"), "reps")!.share).toBe(1);
     // strength with no big lift in the workout reads as the plain range
     const iso = key(routineCheck([curl()], "strength"), "reps")!;
-    expect(iso.title).toBe("5-30 reps per set");
+    expect(iso.title).toBe("5-30 reps a set");
     expect(iso.detail).toBe("Every working set in this workout aims for 5-30 reps.");
+    expect(iso.targets).toBe(1);
   });
 
   it("keeps each muscle to 11 sets in one workout, saying what to move", () => {
@@ -153,8 +156,11 @@ describe("routine check", () => {
     expect(programCheck([day, day])!.checks.map((c) => c.key)).toEqual(["volume", "frequency", "pushPull"]);
     expect(routineCheck(day)!.checks.map((c) => c.key)).toEqual(["reps", "session", "order"]);
     // every check carries what its popup needs
-    for (const c of [...programCheck([day, day])!.checks, ...routineCheck(day)!.checks]) {
-      expect(c.what && c.target && c.why && c.itemsLabel).toBeTruthy();
+    for (const c of Object.keys(GOALS).flatMap((g) => [...programCheck([day, day, [squat(), rdl()]], g)!.checks, ...routineCheck([curl(), row(), bench(3, 10, 120)], g)!.checks])) {
+      expect(c.what && c.target && c.reason && c.research && c.itemsLabel).toBeTruthy();
+      // the short reason names no study: who found what is the research's
+      expect(c.reason).not.toMatch(/\b(19|20)\d\d\b|review|study|studies/);
+      expect(c.research).not.toBe(c.reason);
       expect(c.items.length && c.tips.length && c.sources.length).toBeTruthy();
     }
   });
