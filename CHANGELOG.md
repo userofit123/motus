@@ -2,6 +2,10 @@
 
 The top entry's version is the one the release workflow publishes. Add a new `## [x.y.z]` section to release.
 
+## [0.1.43] - 2026-11-20
+
+- 
+
 ## [0.1.42] - 2026-11-20
 
 - A routine shows only checks about its own workout: big lifts first, and reps per set, whether or not it is in a program. A program's checks (sets per muscle, each muscle twice a week, balance) show only on the program, over one week.
