@@ -4,7 +4,11 @@ The top entry's version is the one the release workflow publishes. Add a new `##
 
 ## [0.1.43] - 2026-11-20
 
-- 
+- Programs have a goal: Muscle size, Strength, Fat loss, Muscular endurance or General fitness (Edit in ⋮). Routine check's targets follow it, e.g. for strength 1-6 reps and at least 3 minutes' rest on big lifts, for muscle size 5-30 reps and 10 or more sets a week per muscle. A routine uses the goal of the program it is in, and muscle size when it is in none.
+- Every routine check line names its muscles and exercises in full instead of "and 2 more", and tapping it opens a popup: your numbers per muscle or exercise, the target and why, what to change, and the research behind it.
+- The explanations say which study found what, in whom, and how sure it is, e.g. "In a 2016 review of 10 studies (Schoenfeld and others), people who trained a muscle on 2 days a week gained more muscle than people who trained it on 1 day." Terms like working sets and big lifts are explained where they first appear.
+- A routine is also checked for sets per muscle in one workout (past about 11, extra sets add little) and for rest on big lifts. Single-muscle lifts like cable rotations no longer count as big lifts, and more than 20 sets a week is no longer marked down.
+- After an app update adds a new setting, such as a program's goal, each device fills it in from the server once instead of showing the default. Every device downloads its copy of your data once on its next sync.
 
 ## [0.1.42] - 2026-11-20
 
