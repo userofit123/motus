@@ -53,6 +53,7 @@ import m050 from "./migrations/050_foreign_ids";
 import m051 from "./migrations/051_program_no_start";
 import m052 from "./migrations/052_program_counts_from";
 import m053 from "./migrations/053_program_goal";
+import m054 from "./migrations/054_exercise_force_fixes";
 
 const MIGRATIONS: [string, string][] = [
   ["001_init", m001],
@@ -108,6 +109,7 @@ const MIGRATIONS: [string, string][] = [
   ["051_program_no_start", m051],
   ["052_program_counts_from", m052],
   ["053_program_goal", m053],
+  ["054_exercise_force_fixes", m054],
 ];
 
 /**

@@ -6,7 +6,7 @@
 // the left of the score, as the Routines list's routine cards (CLAUDE.md figure rule). `source`: what the score is
 // scored on, under the score (a routine's one workout, a program's week). Each value takes Stats → Scores' tone
 // (toneOf): green when met in full, plain when half or more, red under half; the line under the score (full width, as Scores'
-// why line) counts the ones met in full and says the others earn part of their points, which is why 0 met can still score 53. The value stacks
+// why line) counts the ones fully met and says the others add part of their points to the score, which is why 0 met can still score 53. The value stacks
 // so the tips keep their width at phone width: "1 of 3" over "big lifts", or two counts one over the other, each
 // with its small noun ("15 push" over "4 pull"). A routine's card scores only that routine's own workout and a program's
 // only its week (M-287), so neither points to the other. Each row opens its popup (RoutineCheckSheet, M-291): its numbers,
@@ -27,16 +27,16 @@ const ICON: Record<CheckKey, string> = { volume: "activity", frequency: "calenda
 const open = ref<Check | null>(null);
 // "1 of 3 big lifts" → "1 of 3" over "big lifts"; "15 push · 4 pull" → "15 push" over "4 pull", each count beside its noun
 const valueOf = (v: string) => { const m = /^(\S+ of \S+) (.+)$/.exec(v); return m ? { of: m[1]!, noun: m[2]!, pairs: [] } : { of: "", noun: "", pairs: v.split(" · ").map((x) => { const [n, ...w] = x.split(" "); return { n: n!, w: w.join(" ") }; }) }; };
-const STATE = { pos: "met in full", neg: "less than half met", none: "partly met" } as const;
+const STATE = { pos: "fully met", neg: "less than half met", none: "partly met" } as const;
 const met = computed(() => (props.check?.checks ?? []).filter((c) => c.share >= 1).length);
 // checks that earn some but not all of their points, so the line under the score can say why it isn't 0
 const part = computed(() => (props.check?.checks ?? []).filter((c) => c.share > 0 && c.share < 1).length);
 const metLine = computed(() => {
   const n = props.check?.checks.length ?? 0, rest = n - met.value, p = part.value;
-  // one check left partly met reads as "the other", not "the rest"
-  const tail = !p ? "" : p === rest ? (p === 1 ? ` · ${n === 1 ? "it" : "the other"} earns part of its points` : " · the rest earn part of their points")
-    : ` · ${p} more ${p === 1 ? "earns part of its" : "earn part of their"} points`;
-  return `${met.value} of ${n} ${n === 1 ? "check" : "checks"} met in full${tail}`;
+  // the partly met ones tied to the score above, so 0 fully met with a score of 53 makes sense
+  const adds = p === 1 ? "is partly met and adds part of its points to the score" : "are partly met and add part of their points to the score";
+  const tail = !p ? "" : p === rest ? ` · ${n === 1 ? "it" : p === 1 ? "the other one" : `the other ${p}`} ${adds}` : ` · ${p} of the other ${rest} ${adds}`;
+  return `${met.value} of ${n} ${n === 1 ? "check" : "checks"} fully met${tail}`;
 });
 </script>
 
@@ -53,7 +53,7 @@ const metLine = computed(() => {
     </div>
     <div v-if="check" class="tiny rc-why">{{ metLine }}</div>
     <!-- no score: say why in the count line's place, so the card isn't only its source row -->
-    <div v-else class="tiny rc-why">Nothing to score in this workout yet: its sets have no target reps and work none of the muscles the check counts. Add target reps to score it.</div>
+    <div v-else class="tiny rc-why">Nothing to score yet: no set in this workout has a target number of reps, and none of its exercises works a muscle the check counts. Add target reps to the sets to get a score.</div>
     <div class="list crows">
       <div v-for="c in check?.checks ?? []" :key="c.key" class="li click" role="button" tabindex="0" :aria-label="`${c.title}, ${c.value}, ${STATE[toneOf(c.share) ?? 'none']}: ${c.detail} Opens details`"
            @click="open = c" @keydown.enter.prevent="open = c" @keydown.space.prevent="open = c">

@@ -93,10 +93,10 @@ const goalFrom = computed(() => partOf.value[0] ?? null);
 const goalNote = computed(() => {
   const x = goalFrom.value;
   // with Programs off the page can't see which programs it is in, so it says why it uses muscle size
-  if (!programsOn.value) return `Programs are off in Settings → Features, so this routine is checked for ${goalOf(DEFAULT_GOAL).lower}.`;
-  if (!x) return `This routine is in no program, so it is checked for ${goalOf(DEFAULT_GOAL).lower}.`;
-  if (partOf.value.length === 1) return `The goal of ${x.name}, the program this routine is in.`;
-  return `The goal of ${x.name}, ${x.active && !x.state.finished ? "the running program" : "the newest program"} of the ${partOf.value.length} this routine is in.`;
+  if (!programsOn.value) return `Programs are off in Settings → Features, so this routine has no program goal and is checked against the targets for ${goalOf(DEFAULT_GOAL).lower}.`;
+  if (!x) return `This routine isn't in any program, so it has no goal of its own and is checked against the targets for ${goalOf(DEFAULT_GOAL).lower}.`;
+  if (partOf.value.length === 1) return `This routine is in the program ${x.name}, and that program's goal sets the targets.`;
+  return `This routine is in ${partOf.value.length} programs; the targets follow the goal of ${x.name}, ${x.active && !x.state.finished ? "the one running now" : "the one made most recently"}.`;
 });
 const check = computed(() => (st.value.features.routineCheck && routine.value ? routineCheck(sessionOf(routine.value, st.value.workout), goalFrom.value?.goal ?? DEFAULT_GOAL) : null));
 // a routine with no lifting has nothing to check, so its card stays hidden; one with lifting but nothing to score says why
@@ -190,7 +190,7 @@ await loaded(r, summaries, notes, rems, schedules, history, programs);
       </div>
     </div>
     <!-- below both columns: its rows say what to change in full, which the side column is too narrow for -->
-    <RoutineCheckCard v-if="check || lifts" class="spt" :check="check" title="Check of this routine" :source="`Scored on one workout of this routine, for ${goalOf(goalFrom?.goal ?? DEFAULT_GOAL).lower}`" :goal-note="goalNote" />
+    <RoutineCheckCard v-if="check || lifts" class="spt" :check="check" title="Check of this routine" :source="`Scores one workout of this routine against the targets for ${goalOf(goalFrom?.goal ?? DEFAULT_GOAL).lower}`" :goal-note="goalNote" />
     </div>
 
     <div v-else-if="tab === 'history'">

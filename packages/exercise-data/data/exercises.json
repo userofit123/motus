@@ -896,7 +896,7 @@
   },
   {
     "name": "Band Assisted Pull-Up",
-    "force": null,
+    "force": "pull",
     "level": "beginner",
     "mechanic": "compound",
     "equipment": "other",
@@ -2839,7 +2839,7 @@
   },
   {
     "name": "Butterfly",
-    "force": "pull",
+    "force": "push",
     "level": "beginner",
     "mechanic": "isolation",
     "equipment": "machine",
@@ -3366,7 +3366,7 @@
   },
   {
     "name": "Cable Seated Lateral Raise",
-    "force": "pull",
+    "force": "push",
     "level": "beginner",
     "mechanic": "isolation",
     "equipment": "cable",
@@ -8961,7 +8961,7 @@
   },
   {
     "name": "Incline Inner Biceps Curl",
-    "force": null,
+    "force": "pull",
     "level": "beginner",
     "mechanic": "isolation",
     "equipment": "dumbbell",
@@ -11696,7 +11696,7 @@
   },
   {
     "name": "Lying One-Arm Lateral Raise",
-    "force": "pull",
+    "force": "push",
     "level": "intermediate",
     "mechanic": "isolation",
     "equipment": "dumbbell",
@@ -14601,7 +14601,7 @@
   },
   {
     "name": "Push-Up Wide",
-    "force": null,
+    "force": "push",
     "level": "beginner",
     "mechanic": "compound",
     "equipment": "body only",
@@ -18215,7 +18215,7 @@
   },
   {
     "name": "Smith Machine Decline Press",
-    "force": null,
+    "force": "push",
     "level": "beginner",
     "mechanic": "compound",
     "equipment": "machine",

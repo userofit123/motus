@@ -97,7 +97,9 @@ const check = computed(() => {
   // one session per routine, so a routine done twice in the week is the same workout twice
   const byId = new Map(weekIds.value.map((rid, i) => [rid, sessionOf(weekRoutines.value[i]!.data, st.value.workout)]));
   const days = checkWeek.value.days.map((d) => byId.get(d.routineId)!);
-  const c = programCheck(days, p.value!.goal, checkWeek.value.week);
+  // each workout's routine name, so a tip can point at "workout 2 (Back)"
+  const dayNames = checkWeek.value.days.map((d) => weekRoutines.value[weekIds.value.indexOf(d.routineId)]!.data!.name);
+  const c = programCheck(days, p.value!.goal, checkWeek.value.week, dayNames);
   const worked = musclesWorked(days.flat().filter((e) => e.category !== "cardio" && e.category !== "stretching"));
   return c ? { c, muscles: { sets: weekMuscleSets(days), primary: worked.primary, secondary: worked.secondary } } : null;
 });
@@ -174,7 +176,7 @@ await loaded(q);
       </section>
     </div>
     <!-- below both columns, as on a routine's page: its rows say what to change in full, which the side column is too narrow for -->
-    <RoutineCheckCard v-if="check" class="spt" :check="check.c" title="Check of this program" :source="`Scored on week ${checkWeek!.week} as a whole, with ${checkWeek!.days.length === 1 ? 'its 1 workout' : `all ${checkWeek!.days.length} of its workouts`}, for ${goalOf(p.goal).lower}`"  goal-note="This program's goal. Change it with Edit in ⋮." :muscles="check.muscles" />
+    <RoutineCheckCard v-if="check" class="spt" :check="check.c" title="Check of this program" :source="`Scores week ${checkWeek!.week}, ${checkWeek!.days.length === 1 ? 'its 1 workout' : `all ${checkWeek!.days.length} workouts together`}, against the targets for ${goalOf(p.goal).lower}`" goal-note="This program's goal. Change it with Edit in ⋮." :muscles="check.muscles" />
 
     <ProgramEditor v-if="editing" :program="p" @close="editing = false" />
     <ProgramDaySheet v-if="dayOpen" :program-id="p.id" :day="dayOpen" :used="used" @close="dayOpen = null" />

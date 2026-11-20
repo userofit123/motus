@@ -46,45 +46,58 @@ describe("routine check", () => {
   it("names every short muscle in the week, never \"and 2 more\"", () => {
     const v = key(programCheck([[bench(5), row(5)], [bench(5), row(5), squat(5), rdl(5)]]), "volume")!;
     // chest 10 and back 10 met; shoulders, biceps, triceps and glutes 5 as helpers, quads 5, hamstrings 7.5, calves and abs 0
-    expect(v.detail).toBe("Calves, abs, shoulders, biceps, triceps, quads, glutes and hamstrings get fewer than 10 sets in week 1. Add sets for them to reach 10.");
+    expect(v.detail).toBe("In week 1, calves get 0 sets, abs 0, shoulders 5, biceps 5, triceps 5, quads 5, glutes 5 and hamstrings 7.5. Each needs at least 10 a week: add sets until it gets there.");
     expect(v.items.filter((i) => !i.ok).map((i) => i.label)).toEqual(["Shoulders", "Biceps", "Triceps", "Quads", "Hamstrings", "Glutes", "Calves", "Abs"]);
     // a short muscle the week already trains is pointed at its own lift
-    expect(v.tips.find((t) => t.startsWith("Quads"))).toBe("Quads: 5 of 10 sets. Add 5 sets a week, e.g. to Squat.");
+    expect(v.tips.find((t) => t.startsWith("Quads"))).toBe("Quads: 5 sets in week 1, 5 short of 10. Add 5 more sets to Squat.");
     const few = key(programCheck([[bench(10), row(10), squat(10), rdl(10), curl(10), ex("Pushdown", ["triceps"], { mechanic: "isolation" }, 10), ex("Press", ["shoulders"], {}, 10), ex("Calf raise", ["calves"], {}, 4)]], "size", 2), "volume")!;
-    expect(few.detail).toBe("Abs and calves get fewer than 10 sets in week 2. Add sets for them to reach 10.");
+    expect(few.detail).toBe("In week 2, abs get 0 sets and calves 4. Each needs at least 10 a week: add sets until it gets there.");
+    // a short muscle no exercise is mainly for gets a new one suggested
+    expect(few.tips[0]).toBe("Abs: 0 sets in week 2, and no exercise in the week is mainly for them. Add one, such as Cable crunch, with 10 sets over the week.");
   });
 
   it("asks fewer weekly sets to keep muscle while losing fat, and for strength", () => {
     const d = [bench(3), row(3)];
     expect(key(programCheck([d, d], "size"), "volume")!.items.find((i) => i.label === "Chest")!.ok).toBe(false);
     expect(key(programCheck([d, d], "fatLoss"), "volume")!.items.find((i) => i.label === "Chest")!.ok).toBe(true);
-    expect(key(programCheck([d, d], "strength"), "volume")!.title).toBe("5+ sets a week per muscle");
+    expect(key(programCheck([d, d], "strength"), "volume")!.title).toBe("At least 5 sets a week per muscle");
   });
 
   it("asks for each muscle twice a week, naming each muscle trained once", () => {
     const one = key(programCheck([[bench(5)]]), "frequency")!;
     expect(one.share).toBe(0);
-    expect(one.detail).toBe("Week 1 has 1 workout, so each muscle is trained on 1 day. Add a second workout.");
-    expect(key(programCheck([[bench(5)], [bench(5)]]), "frequency")!.share).toBe(1);
+    expect(one.detail).toBe("Week 1 has only 1 workout, so no muscle is trained on more than 1 day. Add a second workout to the week and split each muscle's sets between the two.");
+    // the same 10 muscles as the sets-a-week row: bench on 2 days trains 3 of them twice, the others not at all
+    const twice = key(programCheck([[bench(5)], [bench(5)]]), "frequency")!;
+    expect(twice.value).toBe("3 of 10 muscles");
+    expect(twice.items.find((i) => i.label === "Chest")!.ok).toBe(true);
+    expect(twice.items.find((i) => i.label === "Abs")!.note).toBe("No sets in the week");
     const chest = (n: number) => ex("Bench press", ["chest"], { force: "push" }, n);
-    const f = key(programCheck([[chest(3)], [curl(3)], [curl(3)]]), "frequency")!;
-    expect(f.detail).toBe("Chest is trained on only 1 day in week 1. Spread its sets over 2 days.");
-    expect(f.items.find((i) => i.label === "Chest")!.note).toBe("Workout 1");
+    const f = key(programCheck([[chest(3)], [curl(3)], [curl(3)]], "size", 1, ["Push", "Arms", "Arms"]), "frequency")!;
+    expect(f.detail).toMatch(/^In week 1, chest is trained in only one workout\. Move about half of its sets to another workout in the week\. Back, shoulders, /);
+    // the tip names the routine of that workout
+    expect(f.tips[0]).toBe("Chest: all 3 sets are in workout 1 (Push). Move about 1 of them to another workout in the week.");
+    expect(f.items.find((i) => i.label === "Chest")!.note).toBe("Workout 1 (Push)");
   });
 
   it("counts a helper's day from 1 set, so bench on 2 days trains the triceps twice", () => {
-    expect(key(programCheck([[bench(3)], [bench(3)]]), "frequency")!.share).toBe(1);
+    expect(key(programCheck([[bench(3)], [bench(3)]]), "frequency")!.items.find((i) => i.label === "Triceps")!.ok).toBe(true);
     const g = key(programCheck([[bench(1), ex("Pushdown", ["triceps"], { mechanic: "isolation" }, 1)], [bench(1)]]), "frequency")!;
-    expect(g.detail).toBe("Triceps are trained on only 1 day in week 1. Spread each one's sets over 2 days.");
+    expect(g.detail).toMatch(/^In week 1, triceps are trained in only one workout\. Move about half of their sets to another workout in the week\. /);
+    // the helper half set on day 2 doesn't count as a day, and the tip says so in its numbers
+    expect(g.tips.find((t) => t.startsWith("Triceps"))).toBe("Triceps: 1.5 of their 2 sets are in workout 1. Move about 1 of them to another workout in the week.");
   });
 
   it("balances pushing and pulling, quads and hamstrings over a program's week, naming the numbers", () => {
     const d = [bench(6), row(2), ex("Leg press", ["quadriceps"], { force: "push" }, 6), rdl(1)];
     const c = programCheck([d, d])!;
     expect(key(c, "pushPull")!.status).toBe("low");
-    expect(key(c, "pushPull")!.detail).toBe("12 pushing sets and only 4 pulling in week 1. Add about 5 pulling sets, e.g. Barbell row.");
+    expect(key(c, "pushPull")!.detail).toBe("In week 1, the upper body gets 12 pushing sets but only 4 pulling sets. Add about 5 pulling sets, such as Pull-up, to even it out.");
     expect(key(c, "pushPull")!.value).toBe("12 push · 4 pull");
-    expect(key(c, "legs")!.detail).toBe("12 quad sets and only 2 hamstring in week 1. Add about 4 hamstring sets, e.g. Romanian deadlift.");
+    expect(key(c, "legs")!.detail).toBe("In week 1, the quads get 12 sets but the hamstrings only 2. Add about 4 hamstring sets, such as Romanian deadlift, so they get at least half as many as the quads.");
+    // the person's own lifts first, and no new one they already do
+    expect(key(c, "pushPull")!.tips[0]).toBe("Add about 5 pulling sets over the week: more sets of Barbell row, or a new exercise such as Pull-up.");
+    expect(key(c, "legs")!.tips[0]).toBe("Add about 4 hamstring sets over the week: more sets of Romanian deadlift, or a new exercise such as Lying leg curl.");
     const ok = [bench(4), row(4), squat(4), rdl(3)];
     expect(key(programCheck([ok, ok]), "pushPull")!.share).toBe(1);
     expect(key(programCheck([ok, ok]), "legs")!.share).toBe(1);
@@ -94,41 +107,47 @@ describe("routine check", () => {
   it("wants big lifts before single-muscle ones that tire the same muscles, naming each", () => {
     const c = routineCheck([curl(), row()])!;
     expect(key(c, "order")!.share).toBe(0);
-    expect(key(c, "order")!.detail).toBe("In this workout, Barbell row comes after Dumbbell curl, which tires the same muscles first. Move it earlier.");
+    expect(key(c, "order")!.detail).toBe("In this workout, Barbell row comes after Dumbbell curl, so the biceps are already tired when you start it and you lift less. Move it before Dumbbell curl.");
     expect(key(routineCheck([row(), curl()]), "order")!.share).toBe(1);
     // both late lifts named, not "and 1 more"
     expect(key(routineCheck([bench(), fly(), ex("Dips", ["chest"], { secondary: ["triceps"] }), ex("Incline press", ["chest"], { secondary: ["shoulders"] })]), "order")!.detail)
-      .toBe("In this workout, Dips and Incline press come after Cable fly, which tires the same muscles first. Move them earlier.");
+      .toBe("In this workout, Dips and Incline press come after Cable fly, so the chest is already tired when you start them and you lift less. Move them before Cable fly.");
     // in one superset they alternate, so the order doesn't count
     expect(key(routineCheck([{ ...curl(), superset: "A" }, { ...row(), superset: "A" }]), "order")!.share).toBe(1);
     // a "compound" with no helper muscle (a cable rotation) is not a big lift
     expect(key(routineCheck([curl(), ex("Cable rotation", ["biceps"])]), "order")).toBeUndefined();
+    // a lift that is neither kind says it isn't checked
+    expect(key(routineCheck([row(), curl(), ex("Cable rotation", ["biceps"])]), "order")!.items[2]!.text).toBe("Not checked");
   });
 
   it("checks reps against the goal's range", () => {
     const c = routineCheck([ex("Deadlift", ["lower back"], { secondary: ["hamstrings"] }, 3, 3), ex("Leg press", ["quadriceps"], {}, 3, 40), bench()])!;
     const r = key(c, "reps")!;
     expect(r.value).toBe("3 of 9 sets");
-    expect(r.detail).toBe("In this workout, Deadlift (3 reps) and Leg press (40 reps) aim for reps outside 5-30. For muscle size, aim for 5-30 reps a set: open this check for each exercise.");
-    expect(key(routineCheck([bench(3, 3)]), "reps")!.detail).toBe("In this workout, Bench press (3 reps) aims for fewer than 5 reps. For muscle size, use a weight you can lift 5 or more times.");
+    expect(r.detail).toBe("In this workout, 3 sets of Deadlift aim for 3 reps and 3 sets of Leg press for 40. For muscle size, aim for 5-30 reps a set; tap this row to see which exercises need which change.");
+    expect(key(routineCheck([bench(3, 3)]), "reps")!.detail).toBe("In this workout, 3 sets of Bench press aim for only 3 reps. Sets under 5 reps build strength more than muscle: use a weight you can lift at least 5 times.");
     // strength: 1-6 on big lifts, 5-30 on the others
     const s = key(routineCheck([bench(3, 10), curl()], "strength"), "reps")!;
-    expect(s.detail).toBe("In this workout, Bench press (10 reps) aims for more than 6 reps. For strength, add weight so 6 or fewer reps are hard.");
+    expect(s.detail).toBe("In this workout, 3 sets of Bench press aim for 10 reps. Big lifts build the most strength at 6 reps or fewer: add weight until 6 reps are hard.");
     expect(s.value).toBe("3 of 6 sets");
     // two targets (big lifts, single-muscle lifts), so the popup's headings say "targets"
     expect(s.targets).toBe(2);
+    // the title names both targets, as its count holds the sets of both kinds of lift
+    expect(s.title).toBe("1-6 reps on big lifts, 5-30 on single-muscle lifts");
+    // general fitness gives its own reason for fewer reps, not muscle size's
+    expect(key(routineCheck([bench(3, 5)], "health"), "reps")!.tips[0]).toBe("Bench press: 3 sets aim for 5 reps. Lower the weight so you can do at least 8: lighter sets of 8-15 reps are easier on the joints and easier to do with good form.");
     expect(key(routineCheck([bench(3, 20)], "endurance"), "reps")!.share).toBe(1);
     // strength with no big lift in the workout reads as the plain range
     const iso = key(routineCheck([curl()], "strength"), "reps")!;
     expect(iso.title).toBe("5-30 reps a set");
-    expect(iso.detail).toBe("Every working set in this workout aims for 5-30 reps.");
+    expect(iso.detail).toBe("In this workout, every working set aims for 5-30 reps.");
     expect(iso.targets).toBe(1);
   });
 
   it("keeps each muscle to 11 sets in one workout, saying what to move", () => {
     const c = key(routineCheck([bench(8), fly(6)]), "session")!;
-    expect(c.detail).toBe("Chest gets 14 sets in this workout. In a 2024 analysis of 67 studies (Pelland and others), sets past about 11 for one muscle in one workout added little: move some to another day.");
-    expect(c.tips[0]).toBe("Chest: 14 sets. Move about 3 to another day, e.g. Cable fly.");
+    expect(c.detail).toBe("Chest gets 14 sets in this workout. After about 11 sets the chest is too tired for more sets to build much: move the other 3 sets to another day of the week.");
+    expect(c.tips[0]).toBe("Chest: 14 sets. Move about 3 of them to another workout, from Cable fly, the last chest exercise.");
     expect(key(routineCheck([bench(5), fly(5)]), "session")!.share).toBe(1);
   });
 
@@ -136,7 +155,7 @@ describe("routine check", () => {
     expect(key(routineCheck([bench(3, 10)]), "rest")).toBeUndefined();
     expect(key(routineCheck([bench(3, 10, 90)]), "rest")!.share).toBe(1);
     const s = key(routineCheck([bench(3, 5, 90)], "strength"), "rest")!;
-    expect(s.detail).toBe("Bench press rests 1:30 between sets in this workout. Rest at least 3:00 for strength.");
+    expect(s.detail).toBe("In this workout, you rest 1:30 between sets of Bench press. For strength, rest at least 3:00, so the muscle has recovered and the next set can be just as heavy.");
     expect(key(routineCheck([bench(3, 20, 180)], "endurance"), "rest")!.share).toBe(0);
   });
 
@@ -158,8 +177,8 @@ describe("routine check", () => {
     // every check carries what its popup needs
     for (const c of Object.keys(GOALS).flatMap((g) => [...programCheck([day, day, [squat(), rdl()]], g)!.checks, ...routineCheck([curl(), row(), bench(3, 10, 120)], g)!.checks])) {
       expect(c.what && c.target && c.reason && c.research && c.itemsLabel).toBeTruthy();
-      // the short reason names no study: who found what is the research's
-      expect(c.reason).not.toMatch(/\b(19|20)\d\d\b|review|study|studies/);
+      // the short reason names no study: who found what is the research's ("no study has tested" is not one)
+      expect(c.reason).not.toMatch(/\b(19|20)\d\d\b|review|studies/);
       expect(c.research).not.toBe(c.reason);
       expect(c.items.length && c.tips.length && c.sources.length).toBeTruthy();
     }
