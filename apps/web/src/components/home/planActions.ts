@@ -20,14 +20,16 @@ const TOPICS = [...LIVE.schedule];
 const exception = (p: Unplan, clear: boolean) => api.post(`/schedules/${p.scheduleId}/exception`, { date: p.date, clear }).then(() => invalidate(TOPICS));
 
 /** Removing a plan, the same everywhere (calendar, Home, the routine's page): a repeating one asks first, as all its days
- * go; a one-off one goes at once with Undo, which plans it again as it was (a new schedule with the same fields). */
+ * go; a one-off one goes at once with Undo, which plans it again as it was (a new schedule with the same fields; `restore`
+ * lets a missed plan back in with its past day). */
 export async function removeSchedule(p: Pick<Unplan, "scheduleId" | "name" | "repeats">) {
   if (p.repeats && !(await confirm(`Remove ${p.name} from the calendar?`, { text: "All its planned days go. Workouts you did stay in your history.", ok: "Remove", danger: true }))) return;
   // the one-off plan as it is now, to plan it again on Undo
   const was = p.repeats ? undefined : (await api.get<Schedule[]>("/schedules")).find((x) => x.id === p.scheduleId);
   await api.del(`/schedules/${p.scheduleId}`);
   invalidate(TOPICS);
-  toast("Removed from the calendar", was ? { action: { label: "Undo", run: () => api.post("/schedules", {
+  toast("Removed from the calendar", was ? { action: { label: "Undo", run: () => api.post(`/schedules?tz=${new Date().getTimezoneOffset()}`, {
+    restore: true,
     routineId: was.routineId, activityType: was.activityType, rule: was.rule, days: was.days, intervalDays: was.intervalDays,
     startDate: was.startDate, endDate: was.endDate, timeOfDay: was.timeOfDay, remindMin: was.remindMin,
   }).then(() => invalidate(TOPICS)).catch(toastError) } } : undefined);

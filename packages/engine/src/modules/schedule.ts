@@ -99,7 +99,8 @@ export function scheduleRoutes(r: Router) {
     const sid = uuidv7();
     const rule = oneOf(b.rule, RULES, "weekly");
     const today = dayIn(ctx.now(), tzOf(qs)), start = dateStr(b.startDate) ?? today;
-    notPast(start, today, rule);
+    // Undo of a removed plan puts it back as it was, even when its day has passed meanwhile (a missed one-off plan)
+    if (b.restore !== true) notPast(start, today, rule);
     const days = Array.isArray(b.days) ? b.days.map(Number).filter((d: number) => d >= 0 && d <= 6) : [];
     if (rule === "weekly" && !days.length) throw bad("Pick at least one day");
     if (!b.routineId && !b.activityType) throw bad("Pick a routine or an activity");

@@ -552,6 +552,9 @@ describe("calendar: done plans", () => {
     const day = (n: number) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
     await expect(call("POST", "/schedules", { routineId: r, rule: "once", startDate: day(-1) }, { tz: "0" })).rejects.toThrow(/day has passed/);
     await expect(call("POST", "/schedules", { routineId: r, rule: "weekly", days: [1], startDate: day(-1) }, { tz: "0" })).rejects.toThrow(/day has passed/);
+    // Undo of removing a missed one-off plan restores it with its past day
+    const back = await call("POST", "/schedules", { routineId: r, rule: "once", startDate: day(-2), restore: true }, { tz: "0" });
+    expect((await call("GET", "/schedules")).find((s: any) => s.id === back.id).startDate.slice(0, 10)).toBe(day(-2));
     const once = (await call("POST", "/schedules", { routineId: r, rule: "once", startDate: day(0) }, { tz: "0" })).id;
     await expect(call("PUT", `/schedules/${once}`, { rule: "once", startDate: day(-3) }, { tz: "0" })).rejects.toThrow(/day has passed/);
     // a weekly plan that began last week: saving it with its own start is fine, moving it further back or making it a one-off on that day is not
