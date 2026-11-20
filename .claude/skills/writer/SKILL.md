@@ -9,6 +9,18 @@ The developer reads the app as a user who has never seen the code. Text that is 
 makes them stop and ask "what does this mean?" is a bug. Run this check on every string you add or change,
 and on the strings next to it on the same screen.
 
+## 0. Write for a person reading it (ALWAYS, the developer's top writing rule, 2026-11-21)
+Write every line the way you would explain it to someone who asked "what does this mean?": say what actually
+happens, in concrete words. Not longer - just not abstract and not compressed into shorthand.
+- Test: if you would have to explain the line when asked, the explanation is the line. Write that instead.
+- No shorthand that only makes sense to someone who already knows: "still count", "add little", "in range",
+  "counts in full", "the range where they count", "spread thin".
+- Before: "Past about 11 sets for one muscle in one workout, extra sets add little muscle. The same sets on
+  another day of the week still count."
+  After: "In one workout, about the first 11 sets for a muscle do almost all the building; sets after that barely
+  help because the muscle is tired. Do those extra sets on another day and they work fully again."
+- Prefer the person's own things (their exercise, their numbers) over general wording when the screen has them.
+
 ## 1. Say what time it covers
 Every number or verdict names its period unless the block's header already says it once for everything in it.
 - "Sleep -1h" → "Last night: 1h less than usual".
