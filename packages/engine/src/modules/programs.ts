@@ -59,7 +59,14 @@ export interface DoneRow { id: string; routine_id: string | null; program_id: st
  */
 export function fillDays(seq: { routineId: string }[], marks: (Mark | null)[], rows: DoneRow[], programId: string) {
   const has = new Set(rows.map((w) => w.id));
-  const hit: (string | null)[] = seq.map((_, k) => (marks[k]?.workoutId && has.has(marks[k]!.workoutId!) ? marks[k]!.workoutId : null));
+  // a workout set by hand for several days (an old copy of the weeks) counts once, for the first of them
+  const seen = new Set<string>();
+  const hit: (string | null)[] = seq.map((_, k) => {
+    const wid = marks[k]?.workoutId;
+    if (!wid || !has.has(wid) || seen.has(wid)) return null;
+    seen.add(wid);
+    return wid;
+  });
   const skipped = seq.map((_, k) => marks[k]?.workoutId === null);
   const set = new Set(hit.filter((x): x is string => !!x));
   const extra: string[] = [];
@@ -88,7 +95,10 @@ export async function walk(q: Sql, p: ProgramRow, tzMin: number) {
   // set by hand: the chosen workout still counts, or the day was marked skipped
   const byHand = seq.map((_, k) => f.skipped[k]! || (!!marks[k]?.workoutId && f.hit[k] === marks[k]!.workoutId));
   const used = new Set([...f.hit.filter(Boolean), ...f.extra]);
-  const at = rows.filter((w) => used.has(w.id)).map((w) => new Date(w.started_at).toISOString()).sort();
+  // the start is the first workout from counts_from on: a workout from before it, set by hand, fills its day but doesn't
+  // move the start back (a program with no date would otherwise start, end and fall behind by that old workout)
+  const from = Date.parse(countsFrom(p, tzMin));
+  const at = rows.filter((w) => used.has(w.id) && new Date(w.started_at).getTime() >= from).map((w) => new Date(w.started_at).toISOString()).sort();
   const names = new Map((await q.query("SELECT id, name, color FROM routines WHERE id = ANY($1::uuid[])", [[...new Set(seq.map((s) => s.routineId))]])).rows.map((r: any) => [r.id, r]));
   const slots = seq.map((s) => ({ ...s, name: names.get(s.routineId)?.name ?? "Deleted routine", color: names.get(s.routineId)?.color ?? null }));
   // finishedAt: when the last day was filled (Achievements), once every day is done or skipped
@@ -160,7 +170,7 @@ export function programRoutes(r: Router) {
     return { ...c, ...(await programDetail(q, row, dayIn(new Date(), tzMin), tzMin)) };
   });
   r.post("/programs", async (ctx, _p, b) => {
-    const weeks = sanitize(b.weeks);
+    const weeks = await checkMarks(ctx.q, sanitize(b.weeks));
     for (const w of weeks) for (const rid of w.days) await visible(ctx.q, "routines", rid, "routine");
     const pid = uuidv7();
     const start = b.startDate === null ? null : dateStr(b.startDate) ?? new Date().toISOString().slice(0, 10);
@@ -171,7 +181,7 @@ export function programRoutes(r: Router) {
     return { id: pid };
   });
   r.put("/programs/:id", async (ctx, p, b) => {
-    let weeks = b.weeks ? sanitize(b.weeks) : null;
+    let weeks = b.weeks ? await checkMarks(ctx.q, sanitize(b.weeks)) : null;
     if (weeks) for (const w of weeks) for (const rid of w.days) await visible(ctx.q, "routines", rid, "routine");
     // starting again drops the days set by hand too, so no workout from before counts
     if (b.restart === true) weeks = (weeks ?? (await ctx.q.query("SELECT weeks FROM programs WHERE id = $1", [id(p.id)])).rows[0]?.weeks ?? []).map((w: Week) => ({ days: w.days, deload: !!w.deload }));
@@ -205,7 +215,10 @@ export function programRoutes(r: Router) {
     if (b.auto !== true && b.workoutId === null) mark = { routineId, workoutId: null };
     else if (b.auto !== true) {
       const wid = id(b.workoutId, "workout");
-      await visible(ctx.q, "workouts", wid, "workout");
+      // only a finished workout of this day's routine can count for it
+      const wk = (await ctx.q.query("SELECT routine_id, status FROM workouts WHERE id = $1", [wid])).rows[0] as { routine_id: string | null; status: string } | undefined;
+      if (!wk) throw bad("Unknown workout");
+      if (wk.status !== "completed" || wk.routine_id !== routineId) throw bad("Only a finished workout of this routine can count for this day");
       // one workout counts for one day: choosing it here takes it from a day it was set for by hand
       for (const x of weeks) for (const [k, m] of Object.entries(x.marks ?? {})) if (m.workoutId === wid) delete x.marks![k];
       mark = { routineId, workoutId: wid };
@@ -213,7 +226,7 @@ export function programRoutes(r: Router) {
     const marks = { ...(w.marks ?? {}) };
     if (mark) marks[day!] = mark; else delete marks[day!];
     weeks[week! - 1] = { ...w, marks };
-    await ctx.q.query("UPDATE programs SET weeks = $2 WHERE id = $1", [id(p.id), JSON.stringify(sanitize(weeks))]);
+    await ctx.q.query("UPDATE programs SET weeks = $2 WHERE id = $1", [id(p.id), JSON.stringify(await checkMarks(ctx.q, sanitize(weeks)))]);
     ctx.changed("routine");
     return { ok: true };
   });
@@ -229,6 +242,30 @@ function sanitize(v: unknown): Week[] {
   return v.slice(0, 52).map((w: any) => {
     const days: string[] = (Array.isArray(w?.days) ? w.days : []).slice(0, 14).map((x: unknown) => id(x, "routine"));
     return { days, deload: !!w?.deload, ...withMarks(days, w?.marks) };
+  });
+}
+
+/**
+ * Days set by hand as sent keep only workouts that can count: the person's own (row-level security, as visible()),
+ * finished, and of that day's routine; a workout sent for several days keeps the first of them. Others go back to
+ * counting automatically.
+ */
+async function checkMarks(q: Sql, weeks: Week[]): Promise<Week[]> {
+  const ids = [...new Set(weeks.flatMap((w) => Object.values(w.marks ?? {}).flatMap((m) => (m.workoutId ? [m.workoutId] : []))))];
+  if (!ids.length) return weeks;
+  const ok = new Map((await q.query("SELECT id, routine_id FROM workouts WHERE status = 'completed' AND id = ANY($1::uuid[])", [ids])).rows.map((r: any) => [r.id, r.routine_id]));
+  const seen = new Set<string>();
+  return weeks.map((w) => {
+    if (!w.marks) return w;
+    const marks: Record<string, Mark> = {};
+    for (const k of Object.keys(w.marks).sort((a, b) => Number(a) - Number(b))) {
+      const m = w.marks[k]!;
+      if (m.workoutId && (ok.get(m.workoutId) !== m.routineId || seen.has(m.workoutId))) continue;
+      if (m.workoutId) seen.add(m.workoutId);
+      marks[k] = m;
+    }
+    const { marks: _, ...rest } = w;
+    return Object.keys(marks).length ? { ...rest, marks } : rest;
   });
 }
 

@@ -80,7 +80,7 @@ const dayMenu = (d: Day): MenuItem[] => [
   { label: "Choose the workout", icon: "edit", run: () => (dayOpen.value = d) },
   { label: "Schedule", icon: "calendar", run: () => (scheduleSheet.value = { routineId: d.routineId }) },
   { label: "Count automatically", icon: "refresh", sep: true, hidden: !d.byHand, run: async () => {
-    try { await api.put(`/programs/${id.value}/days`, { week: d.week, day: d.day, auto: true }); invalidate(["routines", "home"]); toast("Counts automatically again"); } catch (e) { toastError(e); } } },
+    try { await api.put(`/programs/${id.value}/days`, { week: d.week, day: d.day, auto: true }); invalidate(["routines", "home"]); toast(`Week ${d.week} · ${d.name} counts automatically again`); } catch (e) { toastError(e); } } },
 ];
 // the Routine check (feature) of the program's first full week (not a deload one), from its routines as Routines loads
 // them (the same cache); asked for only while the feature is on
@@ -146,7 +146,7 @@ await loaded(q);
                 <MuscleFig sm :routine="d.routineId" />
                 <span class="mk"><Icon v-if="d.status === 'done'" name="check" :size="14" /><Icon v-else-if="d.status === 'next'" name="play" :size="12" /><Icon v-else-if="d.status === 'skipped'" name="skip" :size="12" /><template v-else>{{ d.day }}</template></span>
                 <div class="grow"><div class="t">{{ d.name }}</div><div v-if="dayLine(d)" class="s">{{ dayLine(d) }}</div></div>
-                <Menu :items="dayMenu(d)" :label="`More for week ${w.week} · ${d.name}`" />
+                <Menu :items="dayMenu(d)" :label="`Options for week ${w.week} · ${d.name}`" />
               </div>
             </div>
           </div>
@@ -193,7 +193,7 @@ await loaded(q);
 /* the deload note sits close under the weeks it explains, apart from the blocks below */
 .dnote { margin: var(--hg) 0 0; }
 .wk.cur { box-shadow: inset 0 0 0 2px var(--acc); }
-/* a planned day may have no second line, so rows aren't held to the tap height; padding stays the list's own */
+/* a day's row is as tall as its ⋮ (the tap target) or its two lines, not the list's tap height; padding stays the list's own */
 .wk .li { min-height: 0; }
 .mk { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; flex: none; font-size: 11.5px; background: var(--s2); color: var(--tx2); }
 .li.done .mk { background: var(--pos); color: var(--bg); }
@@ -203,9 +203,10 @@ await loaded(q);
 .li.late .mk { background: color-mix(in srgb, var(--warn) 20%, transparent); color: var(--warn); }
 .li.late .s { color: var(--warn) !important; }
 .li.todo .t, .li.skipped .t { color: var(--tx2); }
-/* wide enough for a day's ⋮ beside its date, length and volume; the ⋮ sits in the row's end padding */
+/* wide enough for a day's ⋮ beside its date, length and volume */
 .wks { grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); }
-.wk .li > :deep(.ib.plain) { margin-inline-end: -8px; }
+/* the ⋮ reaches into the row's end padding but stays inside the row, so the Up next row's background holds it */
+.wk .li > :deep(.ib.plain) { margin-inline-end: -4px; }
 /* routine bars are spaced like list rows (two row paddings apart), and a gap leaves no extra space under the last one */
 .prs { display: flex; flex-direction: column; gap: calc(var(--lpy) * 2); }
 .prs .pbar { height: 6px; margin-top: 4px; }

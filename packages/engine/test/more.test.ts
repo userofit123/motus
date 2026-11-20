@@ -138,6 +138,35 @@ describe("programs", () => {
     expect(p).toMatchObject({ status: "paused", calendarWeek: 1, state: { done: 0 } });
     expect((await eng.handle({ method: "GET", path: `/programs/${uuidv7()}`, userId: U })).status).toBe(404);
   });
+  it("counts a day set by hand only with a finished workout of its routine, once, and never moves the start (M-290)", async () => {
+    const day = (n: number) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
+    const a = (await call("POST", "/routines", { template: "push" })).id, b = (await call("POST", "/routines", { template: "pull" })).id;
+    // done before the program was made
+    const oldA = (await call("POST", "/workouts/log", { routineId: a, startedAt: `${day(10)}T10:00:00Z`, exercises: [] })).id;
+    const oldB = (await call("POST", "/workouts/log", { routineId: b, startedAt: `${day(9)}T10:00:00Z`, exercises: [] })).id;
+    const { id: pid } = await call("POST", "/programs", { name: "Hand", weeks: [{ days: [a, b] }, { days: [a, b] }], startDate: null });
+    const put = (body: object) => eng.handle({ method: "PUT", path: `/programs/${pid}/days`, userId: U, body });
+    // another routine's workout, or one still running, can't count for the day
+    expect((await put({ week: 1, day: 1, workoutId: oldB })).status).toBe(400);
+    const running = await call("POST", "/workouts/start", { routineId: a });
+    expect((await put({ week: 1, day: 1, workoutId: running.id })).status).toBe(400);
+    await call("DELETE", `/workouts/${running.id}`);
+    // an old workout chosen by hand fills its day, but the program still waits for its first workout to start
+    expect((await put({ week: 1, day: 1, workoutId: oldA })).status).toBe(200);
+    let p = await call("GET", `/programs/${pid}`, undefined, { tz: "0" });
+    expect(p.plan[0].days[0]).toMatchObject({ status: "done", byHand: true });
+    expect(p).toMatchObject({ startsOn: null, endsOn: null, calendarWeek: 1, state: { done: 1 } });
+    await call("POST", "/workouts/log", { routineId: b, startedAt: new Date().toISOString(), exercises: [] });
+    p = await call("GET", `/programs/${pid}`, undefined, { tz: "0" });
+    expect(p).toMatchObject({ startsOn: day(0), calendarWeek: 1, state: { done: 2 } });
+    // weeks saved with the same workout for two days, and one of another routine: it counts once, the other is dropped
+    const mark = (r: string, w: string) => ({ routineId: r, workoutId: w });
+    await call("PUT", `/programs/${pid}`, { weeks: [{ days: [a, b], marks: { 1: mark(a, oldA), 2: mark(b, oldA) } }, { days: [a, b], marks: { 1: mark(a, oldA) } }] });
+    const weeks = (await call("GET", `/programs/${pid}`, undefined, { tz: "0" })).weeks;
+    expect(weeks.map((w: any) => w.marks ?? null)).toEqual([{ 1: mark(a, oldA) }, null]);
+    p = await call("GET", `/programs/${pid}`, undefined, { tz: "0" });
+    expect(p.plan.flatMap((w: any) => w.days.map((d: any) => d.workout?.id ?? null)).filter((x: string | null) => x === oldA)).toHaveLength(1);
+  });
   it("starts a program with no start date on the day of its first workout, and ends after its weeks", async () => {
     const day = (n: number) => new Date(Date.now() - n * 86400000).toISOString().slice(0, 10);
     const a = (await call("POST", "/routines", { template: "push" })).id, b = (await call("POST", "/routines", { template: "pull" })).id;

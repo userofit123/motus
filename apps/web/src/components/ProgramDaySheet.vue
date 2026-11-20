@@ -28,26 +28,31 @@ const options = computed(() => [
     return { value: w.id, label: cap(fmt.value.day(localYmd(new Date(w.startedAt)))),
       hint: [fmt.value.dur(w.durationS ?? 0, true), fmt.value.vol(w.volumeKg), ...(wk && wk !== d.week ? [`counts for week ${wk} now`] : [])].join(" · ") };
   }),
-  { value: "skip", label: "Skipped", hint: `Not done. Your next ${d.name} workout counts for a later week.` },
+  { value: "skip", label: "Skipped", hint: `Not done, so your next ${d.name} workout counts for a later week` },
 ]);
+const busy = ref(false);
 async function save() {
   const was = !d.byHand ? "auto" : d.status === "skipped" ? "skip" : d.workout!.id;
   if (pick.value === was) return emit("close");
   const body = pick.value === "auto" ? { auto: true } : { workoutId: pick.value === "skip" ? null : pick.value };
+  busy.value = true;
   try {
     await api.put(`/programs/${props.programId}/days`, { week: d.week, day: d.day, ...body });
     invalidate(["routines", "home"]);
-    toast(pick.value === "auto" ? "Counts automatically again" : pick.value === "skip" ? `Week ${d.week} · ${d.name} skipped` : `Workout set for week ${d.week} · ${d.name}`);
+    toast(pick.value === "auto" ? `Week ${d.week} · ${d.name} counts automatically again` : pick.value === "skip" ? `Week ${d.week} · ${d.name} skipped` : `Workout set for week ${d.week} · ${d.name}`);
     emit("close");
-  } catch (e) { toastError(e); }
+  } catch (e) { toastError(e); } finally { busy.value = false; }
 }
 </script>
 
 <template>
   <Sheet title="Choose the workout" @close="emit('close')">
-    <p class="tiny hgap">{{ q.data.value && !q.data.value.length ? `No finished ${d.name} workouts yet, so week ${d.week}, workout ${d.day} can count automatically or be marked skipped.`
+    <!-- shown once its workouts are in, so the list doesn't grow under the hint while they load -->
+    <template v-if="q.data.value">
+    <p class="tiny hgap">{{ !q.data.value.length ? `No finished ${d.name} workouts yet, so week ${d.week}, workout ${d.day} can count automatically or be marked skipped.`
       : `Choose the ${d.name} workout that counts for week ${d.week}, workout ${d.day}, or mark it skipped.` }}</p>
     <div class="fld"><label>Workout</label><RadioList v-model="pick" :options="options" /></div>
-    <template #foot><button class="btn o" @click="emit('close')">Cancel</button><button class="btn" @click="save">Save</button></template>
+    </template>
+    <template #foot><button class="btn o" @click="emit('close')">Cancel</button><button class="btn" :disabled="busy" @click="save">Save</button></template>
   </Sheet>
 </template>

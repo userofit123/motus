@@ -71,6 +71,15 @@ describe("references in a device's changes", () => {
     expect(res.rejected[0].row.weeks).toEqual([{ days: [mine, mine], deload: false }]);
   });
 
+  it("drops a program's day set by hand to someone else's workout (M-290)", async () => {
+    const theirW = (await ok(as(B)("POST", "/workouts/log", { routineId: theirs, startedAt: at(), exercises: [] }))).id;
+    const marks = { 1: { routineId: mine, workoutId: theirW }, 2: { routineId: mine, workoutId: null } };
+    const p = { id: uuidv7(), user_id: A, name: "P3", weeks: [{ days: [mine, mine], deload: false, marks }], deload_pct: 40, start_date: at().slice(0, 10), active: false };
+    const res = await ok(as(A)("POST", "/sync/push", { device: "d1", user: A, changes: [upsert("programs", p)] }));
+    expect(res.applied).toBe(1);
+    expect(res.rejected[0].row.weeks).toEqual([{ days: [mine, mine], deload: false, marks: { 2: { routineId: mine, workoutId: null } } }]);
+  });
+
   it("takes references to the person's own rows sent later in the same push: a workout finished offline", async () => {
     // rows go table by table, so the routine's new version comes before the workout it names
     const w = { id: uuidv7(), user_id: A, name: "Push", routine_id: mine, status: "completed", started_at: at(), finished_at: at() };

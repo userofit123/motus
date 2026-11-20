@@ -115,14 +115,16 @@ export const REFS: Record<string, Ref[]> = {
 /** A row that couldn't be written, and why: code is the database's SQLSTATE (modules/sync.ts push sorts failures by it). */
 export interface Failure { change: Change; error: string; code?: string }
 
-/** A program's week as a device sends it (untrusted JSON): only its days are looked at, the rest is kept as sent. */
+/** A program's week as a device sends it (untrusted JSON): only its days and the workouts of its hand-set days (marks)
+ * are looked at, the rest is kept as sent. */
 type Week = Record<string, unknown> & { days: unknown[] };
 const isWeek = (w: unknown): w is Week => !!w && typeof w === "object" && Array.isArray((w as { days?: unknown }).days);
 
 /**
  * Makes a row from a device point only at rows its person can see (the same rule visible() applies to the app's own
  * requests): a reference that can't be cleared refuses the row; others are cleared, and a program's days leave out
- * routines that aren't the person's. Returns whether anything was cleared (the device then gets the row as written).
+ * routines that aren't the person's (its hand-set days, workouts that aren't). Returns whether anything was cleared
+ * (the device then gets the row as written).
  * Only a row that is someone else's counts against a reference (035). One that isn't here is kept: the person's own,
  * sent in the same push after the row pointing at it (rows go table by table: a routine's version names the workout
  * finished offline, a program the routine made for it) or in a later page of the push, or one already deleted (the
@@ -153,7 +155,17 @@ async function ownRefs(q: Sql, tbl: string, row: Record<string, unknown>, foreig
       if (!isWeek(w)) { weeks.push(w); continue; }
       const days: unknown[] = [];
       for (const d of w.days) if (await canSee("routines", d)) days.push(d); else cleared = true;
-      weeks.push({ ...w, days });
+      // days set by hand (M-290) name workouts: one that isn't the person's goes, so the day counts automatically again
+      let marks = w.marks;
+      if (marks && typeof marks === "object") {
+        const kept: Record<string, unknown> = {};
+        for (const [k, m] of Object.entries(marks as Record<string, unknown>)) {
+          const wid = m && typeof m === "object" ? (m as { workoutId?: unknown }).workoutId : undefined;
+          if (wid == null || (await canSee("workouts", wid))) kept[k] = m; else cleared = true;
+        }
+        marks = kept;
+      }
+      weeks.push(marks === undefined ? { ...w, days } : { ...w, days, marks });
     }
     row.weeks = weeks;
   }
