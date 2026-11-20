@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { routineCheck, programCheck, weekMuscleSets, type CheckExercise } from "./routineCheck";
+import { routineCheck, programCheck, workoutCheck, weekMuscleSets, type CheckExercise } from "./routineCheck";
 
 // an exercise with `n` working sets of `reps` (and a warm-up, which never counts)
 const ex = (name: string, primary: string[], o: Partial<CheckExercise> = {}, n = 3, reps = 10): CheckExercise => ({
@@ -121,5 +121,20 @@ describe("routine check", () => {
     expect(bad.label).toBe("Low");
     // a week checks every major muscle: no back is missed
     expect(key(bad, "volume")!.detail).toContain("for back");
+  });
+
+  it("checks a program's week for sets, frequency and balance, and each workout for order and reps", () => {
+    const day = [curl(), row(), bench()];
+    // a program's week: only the checks about the week, as each routine checks its own workout
+    expect(programCheck([day, day])!.checks.map((c) => c.key)).toEqual(["volume", "frequency", "pushPull"]);
+    // a routine in a program: only the checks about one workout
+    const w = workoutCheck(day)!;
+    expect(w.checks.map((c) => c.key)).toEqual(["order", "reps"]);
+    expect(key(w, "order")!.detail).toBe("Do Barbell row before Dumbbell curl, which tires the same muscles.");
+    // a routine in no program is the only week known, so it gets both
+    expect(routineCheck(day, 2)!.checks.map((c) => c.key)).toEqual(["volume", "frequency", "pushPull", "order", "reps"]);
+    // nothing to check in one workout: no lifting, or no reps and no mix of big and single-muscle lifts
+    expect(workoutCheck([])).toBeNull();
+    expect(workoutCheck([{ ...bench(), sets: [{ kind: "normal", reps: null }] }])).toBeNull();
   });
 });

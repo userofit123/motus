@@ -105,7 +105,7 @@ export const LESSONS = {
   // the Routine check (M-273): what each source found, then each check and its points
   routineCheck: {
     title: "Routine check",
-    intro: "How one routine, or one week of a program, compares with what training research found works best. Each routine is checked on its own, as a week of only that routine; a program's week checks its workouts together. A check is met when its target is met in full; one that is not met can still earn part of its points, so 100 means every check is met. A routine may be one day of a split, so it is checked only for the muscles it trains; a program's week is checked for all of them.",
+    intro: "How your programs and routines compare with what training research found works best. A program is checked over one week, all its workouts together, for sets per muscle, training each muscle twice a week and balance; a week is checked for every muscle. A routine is checked on one workout, for big lifts first and reps. A routine in no program is also checked as a week of only that routine, as Motus doesn't know the rest of your week; it may be one day of a split, so it is checked only for the muscles it trains. A check is met when its target is met in full; one that is not met can still earn part of its points, so 100 means every check is met.",
     sections: [
       { heading: "Where the targets come from", rows: [
         SCHOENFELD,
@@ -128,8 +128,9 @@ export const LESSONS = {
         { icon: "target", t: "Main muscle", s: "The muscle the exercise is for", r: "1 set" },
         { icon: "layers", t: "Helper", s: "A muscle that also works in it", r: "0.5 set" },
         { icon: "flame", t: "Warm-up sets", r: "Not counted" },
-        { icon: "dumbbell", t: "A routine's week", s: "Only this routine's sets, times how often it is planned a week, else how often you did it in the last 4 weeks, else once" },
-        { icon: "calendar", t: "A program's week", s: "Its first full week, not a deload one, with all its workouts" },
+        { icon: "calendar", t: "A program's week", s: "Its first full week, not a deload one, with all its workouts: sets per muscle, muscles trained twice a week and balance" },
+        { icon: "dumbbell", t: "A routine's workout", s: "One workout of it: big lifts first and reps per set" },
+        { icon: "routines", t: "A routine in no program", s: "Also checked as a week: its sets times how often it is planned a week, else how often you did it in the last 4 weeks, else once" },
       ] },
     ],
   },

@@ -5,7 +5,7 @@ import { computed, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useQuery } from "@tanstack/vue-query";
 import { restDefaultsOf, progressionOf, progressionDefaultsOf, oneSideOf, progresses, usesWeight, usesReps, routineTime, muscleName, musclesWorked, weekMuscleSets, scheduleSummary, sideRounds } from "@motus/shared";
-import { useRoutine, useRoutines, useNotes, useReminders, useSchedules, useSettings, loaded } from "../api/queries";
+import { useRoutine, useRoutines, useNotes, useReminders, useSchedules, useSettings, usePrograms, loaded } from "../api/queries";
 import { api, mediaUrl } from "../api/client";
 import { progParts as progPartsOf } from "../core/progression";
 import { restSummary } from "../core/plannedRest";
@@ -24,7 +24,7 @@ import BodyMap from "../components/BodyMap.vue";
 import HeartRate from "../components/HeartRate.vue";
 import RoutineCheckCard from "../components/RoutineCheckCard.vue";
 import { sessionOf, timesAWeek } from "../core/routineCheck";
-import { routineCheck } from "@motus/shared";
+import { routineCheck, workoutCheck } from "@motus/shared";
 import { useRoutineMenu } from "../core/routineMenu";
 import { removeItem } from "../components/home/planActions";
 import { useNoteMenu } from "../core/noteMenu";
@@ -85,13 +85,20 @@ const schedRemove = (s: any) => removeItem({ scheduleId: s.id, name: routine.val
 // time (a point's tip gives it and opens that workout), and each session row's average
 const hrSessions = computed(() => (routine.value?.hr?.sessions ?? []).filter((x: any) => x.avgHr).map((x: any) => ({ x: new Date(x.date).getTime(), y: Math.round(x.avgHr), id: x.workoutId })));
 const hrOf = computed(() => new Map<string, number>((routine.value?.hr?.sessions ?? []).filter((x: any) => x.avgHr).map((x: any) => [x.workoutId, Math.round(x.avgHr)])));
-// the Routine check (feature): the routine as a week of it, done as often as its plans or the last 4 weeks say
+// the Routine check (feature). In a program that isn't finished, only one workout of it (order, reps): its week is the
+// program's, checked on the program's card, so the card points there (M-287). In no program, it is the only week Motus
+// knows of, so it is also checked as a week of it, done as often as its plans or the last 4 weeks say.
 const checkOn = computed(() => !!st.value.features.routineCheck);
+const programs = usePrograms();
+const inPrograms = computed(() => (checkOn.value && st.value.features.programs ? (programs.data.value ?? []) : [])
+  .filter((x) => !x.state.finished && x.weeks.some((w) => w.days.includes(id.value))).sort((a, b) => Number(b.active) - Number(a.active)));
+const weekIn = computed(() => (inPrograms.value.length ? { id: inPrograms.value[0]!.id, name: inPrograms.value[0]!.name, more: inPrograms.value.length - 1 } : undefined));
 const usual = computed(() => timesAWeek(id.value, schedules.data.value ?? [], history.data.value ?? []));
-const check = computed(() => (checkOn.value && routine.value ? routineCheck(sessionOf(routine.value), usual.value.n) : null));
-// how often the score counts it done, and where that comes from, under the score
+const check = computed(() => (!checkOn.value || !routine.value ? null : weekIn.value ? workoutCheck(sessionOf(routine.value)) : routineCheck(sessionOf(routine.value), usual.value.n)));
+// what the score covers and, for a week, how often it counts it done and where that comes from, under the score
 const timesWord = (n: number) => (n === 1 ? "once" : n === 2 ? "twice" : `${n} times`);
-const checkSource = computed(() => `Scored as done ${timesWord(usual.value.n)} a week (${{ plan: "as planned", done: "how often you did it in the last 4 weeks", none: "not planned or done yet" }[usual.value.from]})`);
+const checkSource = computed(() => (weekIn.value ? "Scored on one workout"
+  : `Scored on a week of it, done ${timesWord(usual.value.n)} a week (${{ plan: "as planned", done: "how often you did it in the last 4 weeks", none: "not planned or done yet" }[usual.value.from]})`));
 const noteMenu = useNoteMenu();
 // a note on one of the routine's exercises says which; notes on the routine itself need no label
 const noteWhere = (n: any) => (n.targetType === "routine_exercise" ? routine.value?.exercises.find((e: any) => e.id === n.targetId)?.exercise?.name ?? null : null);
@@ -166,7 +173,7 @@ await loaded(r, summaries, notes, rems, schedules, history);
       </div>
     </div>
     <!-- below both columns: its rows say what to change in full, which the side column is too narrow for -->
-    <RoutineCheckCard v-if="check" class="spt" :check="check" title="Check of this routine" :source="checkSource" />
+    <RoutineCheckCard v-if="check || weekIn" class="spt" :check="check" title="Check of this routine" :source="checkSource" :week-in="weekIn" />
     </div>
 
     <div v-else-if="tab === 'history'">

@@ -2,8 +2,11 @@
 // each check saying what it found and what to change. Pure, so the rules are tested once and the pages only show them.
 // Sets are counted as Stats → Muscles and the Strength score count them (muscleSets: a working set 1 for each main muscle,
 // 0.5 for each helper; warm-ups left out), so the three never disagree. Every rule sits next to the research it comes
-// from; the lesson behind "Where the targets come from" gives the full references. Each routine is checked on its own (a week
-// of that routine alone); a program's week checks its workouts together. Left out on purpose:
+// from; the lesson behind "Where the targets come from" gives the full references. The checks split by what they are about
+// (M-287): sets per muscle, twice a week and balance are about a week of training, so a program checks them over its week
+// with every workout together; big lifts first and reps are about one workout, so they are checked on each routine. A
+// routine in a program gets only those two (its week is the program's); a routine in no program is the only week Motus
+// knows of, so it gets all six, as a week of that routine alone. Left out on purpose:
 // - total sets or minutes per session: no clear limit fits everyone;
 // - a goal (strength or size): Motus doesn't ask for one, so reps are only checked against the range that does both.
 import { muscleSets } from "./muscles";
@@ -179,7 +182,7 @@ function legs(week: Record<string, number>, both: boolean, span: string): Check 
 function order(sessions: CheckSession[]): Check | null {
   let compounds = 0;
   const late: { lift: string; after: string }[] = [];
-  // a day done twice a week is read once, so its lifts aren't counted twice
+  // a routine done twice a week is read once, so its lifts aren't counted twice
   for (const s of [...new Set(sessions)].map(lifting)) {
     s.forEach((e, i) => {
       if (e.mechanic !== "compound") return;
@@ -225,23 +228,34 @@ function total(checks: (Check | null)[], sets: Record<string, number>): RoutineC
   return { score, label: score >= 80 ? "Good" : score >= 50 ? "Fair" : "Low", checks: cs, sets };
 }
 
-/** A week of workouts, each a session in order */
-function weekOf(days: CheckSession[], whole: boolean): RoutineCheck | null {
+/** The week's checks over its workouts, each a session in order, and its sets per checked muscle */
+function weekOf(days: CheckSession[], whole: boolean) {
   const per = days.map(dayOf);
   const sets = Object.fromEntries(CHECK_MUSCLES.map((m) => [m.id, per.reduce((t, d) => t + d.sets[m.id]!, 0)]));
   const span = "a week";
-  return total([volume(sets, whole, span), frequency(per, sets), pushPull(days, !whole, span), legs(sets, !whole, span), order(days), reps(days)], sets);
+  return { sets, checks: [volume(sets, whole, span), frequency(per, sets), pushPull(days, !whole, span), legs(sets, !whole, span)] };
 }
+const hasLifting = (s: CheckSession) => lifting(s).some((e) => working(e).length);
 
-/** One routine, done `perWeek` times a week. It may be one day of a split, so only the muscles it trains are checked,
- *  and balance only where it has both sides. null when it has no lifting with sets. */
+/** A routine in no program, done `perWeek` times a week: the week of it and each workout. It may be one day of a split,
+ *  so only the muscles it trains are checked, and balance only where it has both sides. null when it has no lifting with sets. */
 export function routineCheck(session: CheckSession, perWeek: number): RoutineCheck | null {
-  if (!lifting(session).some((e) => working(e).length)) return null;
-  return weekOf(Array.from({ length: Math.max(1, Math.round(perWeek)) }, () => session), false);
+  if (!hasLifting(session)) return null;
+  const w = weekOf(Array.from({ length: Math.max(1, Math.round(perWeek)) }, () => session), false);
+  return total([...w.checks, order([session]), reps([session])], w.sets);
 }
 
-/** A program's week: its workouts in order. Every major muscle is checked, since a week should cover them all. */
+/** One workout of a routine in a program (its week is checked on the program): big lifts first and reps. null when
+ *  neither applies (no lifting with sets, no target reps, or no mix of big and single-muscle lifts). */
+export function workoutCheck(session: CheckSession): RoutineCheck | null {
+  if (!hasLifting(session)) return null;
+  return total([order([session]), reps([session])], dayOf(session).sets);
+}
+
+/** A program's week: its workouts together, for sets per muscle, twice a week and balance. Every major muscle is
+ *  checked, since a week should cover them all; order and reps are each routine's own. */
 export function programCheck(days: CheckSession[]): RoutineCheck | null {
-  if (!days.some((s) => lifting(s).some((e) => working(e).length))) return null;
-  return weekOf(days, true);
+  if (!days.some(hasLifting)) return null;
+  const w = weekOf(days, true);
+  return total(w.checks, w.sets);
 }

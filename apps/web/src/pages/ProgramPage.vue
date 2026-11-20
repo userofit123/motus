@@ -82,8 +82,9 @@ const dayMenu = (d: Day): MenuItem[] => [
   { label: "Count automatically", icon: "refresh", sep: true, hidden: !d.byHand, run: async () => {
     try { await api.put(`/programs/${id.value}/days`, { week: d.week, day: d.day, auto: true }); invalidate(["routines", "home"]); toast(`Week ${d.week} · ${d.name} counts automatically again`); } catch (e) { toastError(e); } } },
 ];
-// the Routine check (feature) of the program's first full week (not a deload one), from its routines as Routines loads
-// them (the same cache); asked for only while the feature is on
+// the Routine check (feature) of the program's first full week (not a deload one), all its workouts together: sets per
+// muscle, twice a week and balance (each routine's page checks its own order and reps, M-287). From its routines as
+// Routines loads them (the same cache); asked for only while the feature is on
 const st = useSettings();
 const checkOn = computed(() => !!st.value.features.routineCheck);
 const checkWeek = computed(() => (checkOn.value ? p.value?.plan.find((w) => !w.deload && w.days.length) ?? null : null));
@@ -171,7 +172,7 @@ await loaded(q);
       </section>
     </div>
     <!-- below both columns, as on a routine's page: its rows say what to change in full, which the side column is too narrow for -->
-    <RoutineCheckCard v-if="check" class="spt" :check="check.c" title="Check of this program" :source="`Scored on week ${checkWeek!.week}, with ${checkWeek!.days.length === 1 ? 'its 1 workout' : `all ${checkWeek!.days.length} of its workouts`}`" :muscles="check.muscles" />
+    <RoutineCheckCard v-if="check" class="spt" :check="check.c" title="Check of this program" :source="`Scored on week ${checkWeek!.week} as a whole, with ${checkWeek!.days.length === 1 ? 'its 1 workout' : `all ${checkWeek!.days.length} of its workouts`}`" :muscles="check.muscles" />
 
     <ProgramEditor v-if="editing" :program="p" @close="editing = false" />
     <ProgramDaySheet v-if="dayOpen" :program-id="p.id" :day="dayOpen" :used="used" @close="dayOpen = null" />
