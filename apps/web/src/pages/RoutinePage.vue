@@ -172,7 +172,7 @@ await loaded(r, summaries, notes, rems, schedules, history, programs);
         </div>
         <!-- the programs it is in, as the Program page lists its recent workouts; nothing when it is in none -->
         <div v-if="partOf.length" class="card">
-          <div class="ch"><span class="t">In programs</span></div>
+          <div class="ch"><span class="t">{{ partOf.length === 1 ? 'Part of a program' : 'Part of ' + partOf.length + ' programs' }}</span></div>
           <div class="list"><div v-for="x in partOf" :key="x.id" class="li click" @click="router.push(`/programs/${x.id}`)">
             <div class="grow"><div class="t">{{ x.name }}</div><div class="s">{{ partLine(x) }}</div></div><Icon name="right" class="muted" /></div></div>
         </div>

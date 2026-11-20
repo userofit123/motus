@@ -49,7 +49,7 @@ const metLine = computed(() => {
       </div>
     </div>
     <div v-if="check" class="tiny rc-why">{{ metLine }}</div>
-    <!-- no score: say why, in the count line's place, so the card isn't only its two rows -->
+    <!-- no score: say why in the count line's place, so the card isn't only its source row -->
     <div v-else class="tiny rc-why">Nothing to score in this workout yet: no set has target reps, and it doesn't mix big and single-muscle lifts. Add target reps to score it.</div>
     <div class="list crows">
       <div v-for="c in check?.checks ?? []" :key="c.key" class="li">
