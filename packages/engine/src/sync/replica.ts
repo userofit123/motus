@@ -13,7 +13,14 @@ import { uuidv7 } from "../ids";
  * before M-257 may hold rows the server refused, such as a restore done in the copy before restores went to the
  * server, which a later restore there gave new ids, so the copy showed them twice (2).
  */
-export interface ReplicaMeta { cursor: number; pushed: number; device: string; catalog: string; ready: boolean; v: number }
+export interface ReplicaMeta { cursor: number; pushed: number; device: string; catalog: string; ready: boolean; v: number; cols?: Schema }
+/**
+ * cols: the columns each synced table had when this copy last had all of the server's values. An app update can add a
+ * column (053 gave programs their goal): a copy from before took the server's rows without it, the column then
+ * started out with its default here, and the server's value never came again, as only rows that change come again
+ * (a program changed to strength still trained for muscle size on that device). fillNewColumns brings those values.
+ */
+export type Schema = Record<string, string[]>;
 export const COPY_VERSION = 2;
 
 export const replicaMeta = (db: Db) => metaOf(db.admin);
@@ -103,7 +110,53 @@ async function writeSnapshot(q: Sql, snap: Snapshot) {
 // in the same transaction as the rows: a change made here meanwhile is after `pushed` (sent later), never marked sent
 async function snapshotLoaded(q: Sql, snap: Snapshot) {
   const pushed = Number((await q.query("SELECT coalesce(max(seq), 0) AS s FROM sync_log")).rows[0].s);
-  return saveMetaIn(q, { cursor: snap.cursor, pushed, device: (await metaOf(q)).device || uuidv7(), ready: true, v: COPY_VERSION });
+  return saveMetaIn(q, { cursor: snap.cursor, pushed, device: (await metaOf(q)).device || uuidv7(), ready: true, v: COPY_VERSION, cols: await schemaIn(q) });
+}
+
+/** The columns of every synced table in this copy, as its migrations made them. */
+async function schemaIn(q: Sql): Promise<Schema> {
+  const out: Schema = {};
+  for (const r of (await q.query<{ t: string; c: string }>(
+    "SELECT table_name AS t, column_name AS c FROM information_schema.columns WHERE table_schema = 'public' AND table_name = ANY($1::text[]) ORDER BY ordinal_position",
+    [SYNCED.map((t) => t.name)])).rows) (out[r.t] ??= []).push(r.c);
+  return out;
+}
+
+/**
+ * The columns this copy has that it didn't have when it last had all of the server's values (meta.cols), with each
+ * table's key left out. A copy from before cols was kept doesn't know which are new, so every column counts as new
+ * (once: the values are the server's, as this copy has already sent what changed here).
+ */
+export function newColumns(had: Schema | undefined, now: Schema): Schema {
+  const out: Schema = {};
+  for (const t of SYNCED) {
+    const add = (now[t.name] ?? []).filter((c) => !t.pk.includes(c) && !(had?.[t.name] ?? []).includes(c));
+    if (add.length) out[t.name] = add;
+  }
+  return out;
+}
+
+/**
+ * After an app update that added columns: their values from the server's rows (a snapshot, fetched after this copy
+ * sent its changes), so the copy shows what the person set on another device instead of each new column's default.
+ * Only those columns, only rows both have, and not rows changed here and not yet taken by the server (their own
+ * values stay and are sent). Not logged, so nothing is sent back.
+ */
+async function fillNewColumns(db: Db, add: Schema, snap: Snapshot, now: Schema) {
+  await db.tx(async (q) => {
+    await q.query("SELECT set_config('motus.sync_apply', '1', true)");
+    const mine = new Set([...(await unsentIn(q)).keys(), ...Object.values(await holdsIn(q)).map((h) => keyOf(h.tbl, h.pk))]);
+    for (const t of SYNCED) {
+      const rows = (snap.tables[t.name] ?? []).filter((r) => !mine.has(keyOf(t.name, Object.fromEntries(t.pk.map((c) => [c, r[c]])))));
+      // only columns the server has too: an app newer than its server keeps its own defaults
+      const cols = (add[t.name] ?? []).filter((c) => rows.length && c in rows[0]!);
+      if (!cols.length) continue;
+      for (let i = 0; i < rows.length; i += 200)
+        await q.query(`UPDATE ${t.name} x SET ${cols.map((c) => `${c} = s.${c}`).join(", ")}
+          FROM jsonb_populate_recordset(NULL::${t.name}, $1::jsonb) s WHERE ${t.pk.map((c) => `x.${c} = s.${c}`).join(" AND ")}`, [JSON.stringify(rows.slice(i, i + 200))]);
+    }
+    await saveMetaIn(q, { cols: now });
+  });
 }
 
 /** Whether the copy has to be made again from the server (see ReplicaMeta.v). */
@@ -378,6 +431,9 @@ export async function syncRound(db: Db, userId: string, s: SyncServer, opts: { n
   const send = (body: unknown) => { wrote(); return s.push(body); };
   const answers = await pushAll(db, userId, send, opts.now);
   let changed = answers.some((a) => a.rejected?.length), remade = false;
+  // an app update added columns: their values come from the server once, before the changes (which then bring anything newer)
+  const schema = await schemaIn(db.admin), add = newColumns((await replicaMeta(db)).cols, schema);
+  if (Object.keys(add).length) { const snap = await s.snapshot(); wrote(); await fillNewColumns(db, add, snap, schema); changed = true; }
   const removed: Change[] = [];
   const retry: Change[] = [];
   for (;;) {
