@@ -55,15 +55,15 @@ export const GOALS: Record<ProgramGoal, GoalTargets> = {
   // ACSM 2009: 1-6 reps and 3-5 minutes' rest on the main lifts for strength; Schoenfeld et al. 2017: heavy loads build more
   // strength than light; Pelland et al. 2024: strength needs fewer weekly sets than size; Nunes et al. 2021: a lift gains
   // most strength when it is done early in the workout, so order counts more here
-  strength: { id: "strength", name: "Strength", lower: "strength", hint: "Lift more weight: 1-6 reps on big lifts, long rests, big lifts first.",
+  strength: { id: "strength", name: "Strength", lower: "strength", hint: "Lift more weight: 1-6 reps a set on big lifts (ones that work several muscles, such as squat or bench press), at least 3 minutes' rest between their sets, and those lifts first.",
     reps: [5, 30], bigReps: [1, 6], weekSets: 5, rest: [180, Infinity], weights: { ...PROGRAM_W, reps: 35, order: 30, rest: 20, session: 15 } },
   // Helms et al. 2015: while dieting, keep lifting heavy so the body keeps its muscle; Bickel et al. 2011: about a third of
   // the sets kept the muscle gained, so 6 sets a week is a careful floor; reps and rest as for size
-  fatLoss: { id: "fatLoss", name: "Fat loss", lower: "keeping muscle while losing fat", hint: "Keep your muscle while you lose weight: keep lifting heavy, at least 6 sets a week for each muscle.",
+  fatLoss: { id: "fatLoss", name: "Fat loss", lower: "keeping muscle while losing fat", hint: "Keep your muscle while you lose weight: keep lifting heavy, at least 6 sets a week for each muscle. The weight loss itself comes from eating less.",
     reps: [5, 30], weekSets: 6, rest: [90, Infinity], weights: { ...PROGRAM_W, reps: 35, session: 30, order: 15, rest: 20 } },
   // ACSM 2009: light loads for 15 or more reps and short rests (1-2 minutes, under 1 for moderate reps) for endurance;
   // research gives no weekly set count for it, so 6 keeps every muscle trained
-  endurance: { id: "endurance", name: "Muscular endurance", lower: "muscular endurance", hint: "Keep going for longer: 15 or more reps a set, short rests.",
+  endurance: { id: "endurance", name: "Muscular endurance", lower: "muscular endurance", hint: "Do more reps before your muscles tire: 15 or more reps a set, up to 1:30 rest between sets.",
     reps: [15, 100], weekSets: 6, rest: [0, 90], weights: { ...PROGRAM_W, reps: 40, rest: 25, session: 20, order: 15 } },
   // WHO 2020: every major muscle group on 2 or more days a week; ACSM 2009: 8-12 reps for beginners (up to 15 for older
   // adults), 1-3 sets an exercise, so about 4 sets a week per muscle over 2 days
@@ -156,36 +156,42 @@ export interface RoutineCheck {
 }
 
 // ----- the research, each finding once -----
-const SRC = {
-  volume: { t: "Schoenfeld, Ogborn & Krieger, 2017", s: "Review of 15 studies: 10 or more sets a week per muscle built clearly more muscle than fewer than 5",
+// Each finding says what kind of source it is (a review of many studies, one study, a guideline), who was studied, what
+// was compared and what was measured, so a reader new to the research knows how far to trust it (writer skill §6).
+// Exported for the lesson, which lists every one.
+export const CHECK_RESEARCH = {
+  volume: { t: "Schoenfeld, Ogborn & Krieger, 2017", s: "A review of 15 studies that compared how many sets a week people did for a muscle: people who did 10 or more sets a week gained clearly more muscle than people who did fewer than 5",
     ref: "Schoenfeld BJ, Ogborn D, Krieger JW. Dose-response relationship between weekly resistance training volume and increases in muscle mass: a systematic review and meta-analysis. Journal of Sports Sciences, 2017; 35(11): 1073-1082" },
-  pelland: { t: "Pelland et al., 2024", s: "Analysis of 67 studies: more sets a week build more muscle, but each extra set adds less; in one session, growth levels off at about 11 sets for a muscle. Strength needs fewer sets than size",
+  pelland: { t: "Pelland et al., 2024", s: "An analysis of 67 studies, shared before other scientists had reviewed it: more sets a week built more muscle and strength, but each extra set added less than the one before. Within one workout, sets for one muscle stopped adding much muscle after about 11. Strength needed fewer sets a week than muscle size",
     ref: "Pelland JC, Remmert JF, Robinson ZP, Hinson SR, Zourdos MC. The resistance training dose response: meta-regressions exploring the effects of weekly volume and frequency on muscle hypertrophy and strength gain. SportRxiv preprint, 2024" },
-  freq: { t: "Schoenfeld, Ogborn & Krieger, 2016", s: "Review of 10 studies: training a muscle on 2 days a week built more muscle than on 1",
+  freq: { t: "Schoenfeld, Ogborn & Krieger, 2016", s: "A review of 10 studies that compared training a muscle on 1 day a week with training it on 2 or more: people who trained it on 2 days gained more muscle than people who trained it on 1",
     ref: "Schoenfeld BJ, Ogborn D, Krieger JW. Effects of resistance training frequency on measures of muscle hypertrophy: a systematic review and meta-analysis. Sports Medicine, 2016; 46(11): 1689-1697" },
-  grgic: { t: "Grgic et al., 2018", s: "Training more often built more strength mostly because it added more sets; with the same sets, 1 or 3 days a week did about the same",
+  freq2019: { t: "Schoenfeld, Grgic & Krieger, 2019", s: "A larger review of 25 studies by the same team: when people did the same number of sets a week, training a muscle on 1, 2 or 3 or more days built about the same muscle. Training more often helped mainly because it let people do more sets",
+    ref: "Schoenfeld BJ, Grgic J, Krieger J. How many times per week should a muscle be trained to maximize muscle hypertrophy? A systematic review and meta-analysis of studies examining the effects of resistance training frequency. Journal of Sports Sciences, 2019; 37(11): 1286-1295" },
+  grgic: { t: "Grgic et al., 2018", s: "A review of 22 studies on strength: people who trained a muscle on more days a week gained more strength, mostly because they also did more sets. With the same sets a week, the number of days made little difference",
     ref: "Grgic J, Schoenfeld BJ, Davies TB, Lazinica B, Krieger JW, Pedisic Z. Effect of resistance training frequency on gains in muscular strength: a systematic review and meta-analysis. Sports Medicine, 2018; 48(5): 1207-1220" },
-  reps: { t: "Schoenfeld et al., 2021", s: "Muscle grows from a wide range of reps, about 5-30 a set, when sets end near failure; heavy sets of few reps build the most strength, light sets of many reps the most endurance",
+  reps: { t: "Schoenfeld et al., 2021", s: "A review of earlier studies on reps: muscle grew about the same from 5 to 30 reps a set, as long as each set ended close to failure, the point where you can't do another rep. Heavy sets of few reps built the most strength, light sets of many reps the most endurance",
     ref: "Schoenfeld BJ, Grgic J, Van Every DW, Plotkin DL. Loading recommendations for muscle strength, hypertrophy, and local endurance: a re-examination of the repetition continuum. Sports, 2021; 9(2): 32" },
-  loads: { t: "Schoenfeld et al., 2017", s: "Review of 21 studies: heavy and light loads built about the same muscle, heavy loads more strength",
+  loads: { t: "Schoenfeld et al., 2017", s: "A review of 21 studies that compared lifting heavy weights for few reps with lifting light weights for many reps: both built about the same muscle, and heavy weights built more strength",
     ref: "Schoenfeld BJ, Grgic J, Ogborn D, Krieger JW. Strength and hypertrophy adaptations between low- vs. high-load resistance training: a systematic review and meta-analysis. Journal of Strength and Conditioning Research, 2017; 31(12): 3508-3523" },
-  acsm: { t: "American College of Sports Medicine, 2009", s: "1-6 reps and 3-5 minutes' rest on the main lifts for strength; 15 or more reps and short rests for endurance; 8-12 reps for beginners; big lifts before single-muscle ones; balance opposing muscles",
+  acsm: { t: "American College of Sports Medicine, 2009", s: "Guidelines from a large association of exercise scientists, drawn from the studies up to 2009 and from coaching practice. For strength: 1-6 reps and 3-5 minutes' rest on big lifts. For endurance: 15 or more reps and short rests. For beginners: 8-12 reps and 1-3 sets of an exercise. Do big lifts before single-muscle ones, and give opposing muscles, such as chest and back, about as much work",
     ref: "American College of Sports Medicine. Progression models in resistance training for healthy adults. Medicine & Science in Sports & Exercise, 2009; 41(3): 687-708" },
-  simao: { t: "Simão et al., 2012", s: "Review: lifts done early in a workout get more reps and weight than the same lifts done late",
+  simao: { t: "Simão et al., 2012", s: "A review of studies on exercise order: an exercise done early in a workout got more reps and heavier weights than the same exercise done late, when the muscles were already tired",
     ref: "Simão R, de Salles BF, Figueiredo T, Dias I, Willardson JM. Exercise order in resistance training. Sports Medicine, 2012; 42(3): 251-265" },
-  nunes: { t: "Nunes et al., 2021", s: "Review of 11 studies: a lift gains more strength when done early in the workout; muscle size grew about the same in either order",
+  nunes: { t: "Nunes et al., 2021", s: "A review of 11 studies in which people trained for weeks with exercises in different orders: people got stronger at an exercise when they did it first than when they did it last, and muscle size grew about the same either way",
     ref: "Nunes JP, Grgic J, Cunha PM, et al. What influence does resistance exercise order have on muscular strength gains and muscle hypertrophy? A systematic review and meta-analysis. European Journal of Sport Science, 2021; 21(2): 149-157" },
-  restLong: { t: "Schoenfeld et al., 2016", s: "In trained men, 3-minute rests built more muscle and strength than 1-minute rests",
+  restLong: { t: "Schoenfeld et al., 2016", s: "One study of young men who already lifted weights, over 8 weeks: those who rested 3 minutes between sets gained more muscle and strength than those who rested 1 minute",
     ref: "Schoenfeld BJ, Pope ZK, Benik FM, et al. Longer interset rest periods enhance muscle strength and hypertrophy in resistance-trained men. Journal of Strength and Conditioning Research, 2016; 30(7): 1805-1812" },
-  singer: { t: "Singer et al., 2024", s: "Review of 19 studies: rests longer than 60 seconds built a little more muscle; past about 90 seconds no further gain was seen",
+  singer: { t: "Singer et al., 2024", s: "A review of 19 studies that compared rest times between sets: people who rested longer than 60 seconds gained slightly more muscle than people who rested less; resting longer than about 90 seconds added no further gain the studies could see",
     ref: "Singer A, Wolf M, Generoso L, et al. Give it a rest: a systematic review with Bayesian meta-analysis on the effect of inter-set rest interval duration on muscle hypertrophy. Frontiers in Sports and Active Living, 2024; 6: 1429789" },
-  helms: { t: "Helms et al., 2015", s: "While losing weight, keep lifting heavy and keep most of your sets so the body holds on to its muscle",
+  helms: { t: "Helms et al., 2015", s: "Advice for bodybuilders getting lean for a contest, drawn from the research (a review, not a new study): while eating less to lose fat, keep lifting heavy weights so the body holds on to its muscle",
     ref: "Helms ER, Fitschen PJ, Aragon AA, Cronin J, Schoenfeld BJ. Recommendations for natural bodybuilding contest preparation: resistance and cardiovascular training. Journal of Sports Medicine and Physical Fitness, 2015; 55(3): 164-178" },
-  bickel: { t: "Bickel et al., 2011", s: "After 16 weeks of training, a third of the sets on 1 day a week kept the muscle built, in younger adults",
+  bickel: { t: "Bickel et al., 2011", s: "One study of younger and older adults who first trained 3 days a week for 16 weeks: over the next 32 weeks, the younger adults kept the muscle they had built while doing only a third as many sets, all on 1 day a week. The older adults needed more sets to keep it",
     ref: "Bickel CS, Cross JM, Bamman MM. Exercise dosing to retain resistance training adaptations in young and older adults. Medicine & Science in Sports & Exercise, 2011; 43(7): 1177-1187" },
-  who: { t: "World Health Organization, 2020", s: "Adults should do muscle-strengthening activities that work all major muscle groups on 2 or more days a week",
+  who: { t: "World Health Organization, 2020", s: "Activity guidelines for adults, drawn from reviews of health research: do muscle-strengthening activities that work all major muscles on 2 or more days a week",
     ref: "Bull FC, et al. WHO 2020 guidelines on physical activity and sedentary behaviour. British Journal of Sports Medicine, 2020; 54(24): 1451-1462" },
 } satisfies Record<string, CheckSource>;
+const SRC = CHECK_RESEARCH;
 
 const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
 const statusOf = (s: number): Check["status"] => (s >= 1 ? "good" : s >= 0.5 ? "fair" : "low");
@@ -245,18 +251,18 @@ function volume(g: GoalTargets, days: CheckSession[], week: Record<string, numbe
     const own = liftsFor(days, m), add = Math.ceil(lo - week[m.id]!);
     return `${m.name}: ${n(week[m.id]!)} of ${lo} sets. Add ${plural(add, "set")} a week, ${own.length ? `e.g. to ${own.slice(0, 2).join(" or ")}` : `e.g. ${m.example}`}.`;
   });
-  if (high.length) tips.push(`${cap(names(high.map(low1)))} ${agree(high, "gets", "get")} over 20 sets. That still counts in full: research finds a little more growth from more sets, but each one adds less and takes longer to recover from.`);
+  if (high.length) tips.push(`${cap(names(high.map(low1)))} ${agree(high, "gets", "get")} over 20 sets. The check still counts this as met: in a 2024 analysis of 67 studies (Pelland and others), more sets still built a little more muscle, but each extra set added less than the one before, and more sets take longer to recover from.`);
   return make(g, {
     key: "volume", title: `${lo}+ sets a week per muscle`, share, value: `${ms.length - low.length} of ${plural(ms.length, "muscle")}`, detail,
-    what: `Working sets for each major muscle ${wk}, all its workouts together. A set counts 1 for the exercise's main muscle and 0.5 for each helper; warm-ups don't count.`,
+    what: `Working sets (the sets after warm-ups) for each major muscle ${wk}, all its workouts together. A set counts 1 for the muscle the exercise is mainly for and 0.5 for each muscle that helps (a set of bench press: chest 1, triceps 0.5); warm-up sets don't count.`,
     itemsLabel: `Sets per muscle ${wk} · target ${lo}+`, bars: true, band: [lo, Math.max(lo, 20)],
     items: ms.map((m) => ({ label: m.name, value: r1(week[m.id]!), text: plural(week[m.id]!, "set"), ok: week[m.id]! >= lo })),
     target: `${lo} or more working sets a week for every major muscle.`,
-    why: g.id === "size" ? "More weekly sets build more muscle, up to a point: 10 or more a week built clearly more than fewer than 5. Past about 20, each extra set adds less."
-      : g.id === "strength" ? "Strength needs fewer sets than size: heavy, well-rested sets matter more than many sets. About 5 a week per muscle keeps every muscle progressing."
-      : g.id === "fatLoss" ? "While you eat less, lifting tells the body to keep its muscle. About a third of the usual sets was enough to keep it, so 6 a week is a careful minimum."
-      : g.id === "endurance" ? "Research gives no weekly set count for endurance. 6 a week keeps every muscle trained; the reps and rests matter more for this goal."
-      : "Health guidelines ask for every major muscle to be trained on 2 or more days a week; 2 sets on each of those days is enough to start.",
+    why: g.id === "size" ? "In a 2017 review of 15 studies (Schoenfeld and others), people who did 10 or more sets a week for a muscle gained clearly more muscle than people who did fewer than 5. A 2024 analysis of 67 studies (Pelland and others) found that more sets kept adding muscle, but each extra set added less than the one before."
+      : g.id === "strength" ? "In a 2024 analysis of 67 studies (Pelland and others), strength rose with more sets a week but levelled off sooner than muscle size, so a few heavy sets already gave most of the gain. No study names an exact number for strength: Motus asks for 5 a week per muscle so every muscle keeps getting stronger."
+      : g.id === "fatLoss" ? "In a 2011 study (Bickel and others), younger adults who had trained for 16 weeks kept their muscle for 32 more weeks doing only a third of their sets. That study did not test people eating less, so Motus asks for at least 6 sets a week per muscle as a careful minimum. Lifting heavy is what tells the body to keep its muscle while you lose fat (a 2015 review of advice for bodybuilders, Helms and others)."
+      : g.id === "endurance" ? "No study gives a number of sets a week for muscular endurance. Motus asks for 6 a week per muscle so every muscle keeps being trained; for this goal, many reps a set and short rests matter more (American College of Sports Medicine guidelines, 2009)."
+      : "The World Health Organization's 2020 guidelines ask adults to train every major muscle on 2 or more days a week, and the American College of Sports Medicine's 2009 guidelines suggest beginners start with 1-3 sets of an exercise. So 2 sets on each of 2 days, 4 a week, is enough to start.",
     tips: tips.length ? tips : ["Nothing to change: keep it as it is."],
     sources: g.id === "size" ? [SRC.volume, SRC.pelland] : g.id === "strength" ? [SRC.pelland] : g.id === "fatLoss" ? [SRC.helms, SRC.bickel] : g.id === "health" ? [SRC.who, SRC.acsm] : [SRC.acsm],
   });
@@ -275,23 +281,25 @@ function frequency(g: GoalTargets, days: Day[], week: Record<string, number>, wk
   const wkt = (d: number[]) => (d.length ? `${d.length === 1 ? "Workout" : "Workouts"} ${names(d.map(String))}` : "As a helper only");
   return make(g, {
     key: "frequency", title: "Muscles trained twice a week", share, value: `${ms.length - once.length} of ${plural(ms.length, "muscle")}`, detail,
-    what: `On how many days ${wk} each muscle is trained. A day counts when the muscle is an exercise's main one that day, or gets 2 or more helper sets.`,
+    what: `On how many days ${wk} each muscle is trained. A day counts when an exercise that day is mainly for the muscle, or the muscle helps in 2 or more sets of other exercises (a bench press is mainly for the chest, and the triceps help).`,
     itemsLabel: `Days per muscle ${wk} · target ${TWICE}+`, bars: false,
     items: ms.map((m) => { const d = onDays(m.id); return { label: m.name, value: d.length, text: plural(d.length, "day"), ok: d.length >= TWICE, note: wkt(d) }; }),
     target: `Each trained muscle on ${TWICE} or more days a week.`,
-    why: g.id === "health" ? "Health guidelines ask for every major muscle on 2 or more days a week."
-      : "Training a muscle on 2 days built more muscle than on 1. Later studies found the days matter less when the weekly sets are the same; spreading them mostly keeps each workout's sets for a muscle in the range where they still count.",
+    why: g.id === "health" ? "The World Health Organization's 2020 guidelines ask adults to train every major muscle on 2 or more days a week."
+      : g.id === "strength" ? `In a 2018 review of 22 studies (Grgic and others), people who trained a muscle on more days a week gained more strength, but mostly because they also did more sets: with the same sets a week, the number of days made little difference. So 2 days is not a must; it mainly lets you do more sets in the week without piling them all into one workout.`
+      : `In a 2016 review of 10 studies (Schoenfeld and others), people who trained a muscle on 2 days a week gained more muscle than people who trained it on 1 day. A larger 2019 review of 25 studies by the same team found that when the sets a week were the same, 1, 2 or 3 days built about the same muscle. So with the same sets a week, 1 or 2 days both work. Training on 2 days keeps each workout under about ${SESSION_SETS} sets for the muscle; in a 2024 analysis of 67 studies (Pelland and others), sets past that in one workout added little.`,
     tips: once.length ? once.map((m) => { const d = onDays(m.id); return d.length
       ? `${m.name}: all its sets are on workout ${d[0]}. Move about half of them to another workout${days.length === 1 ? ", once the week has a second one" : ""}.`
-      : `${m.name}: only a few helper sets, spread thin. Add an exercise for it on 2 workouts, e.g. ${m.example}.`; })
+      : `${m.name}: it only helps in a few sets of other exercises, spread over the week. Add an exercise mainly for it on 2 workouts, e.g. ${m.example}.`; })
       : ["Nothing to change: keep it as it is."],
-    sources: g.id === "health" ? [SRC.who, SRC.freq] : g.id === "strength" ? [SRC.grgic, SRC.freq] : [SRC.freq, SRC.pelland],
+    sources: g.id === "health" ? [SRC.who, SRC.freq] : g.id === "strength" ? [SRC.grgic, SRC.freq2019] : [SRC.freq, SRC.freq2019, SRC.pelland],
   });
 }
 
 /** A ratio's share of its range: in it in full, outside it by how far */
 const ratioShare = (x: number, [lo, hi]: [number, number]) => (x < lo ? clamp01(x / lo) : x > hi ? clamp01(hi / x) : 1);
-const BALANCE_WHY = "Lifting guidelines ask to balance opposing muscles to keep joints healthy and posture even. No study sets an exact ratio, so Motus allows a wide range; take this as a rough guide, not a hard rule.";
+/** why the balance checks: a guideline and common practice, no study, and the text says so */
+const balanceWhy = (pair: string) => `The American College of Sports Medicine's 2009 guidelines advise giving opposing muscles (${pair}) about as much work, a common practice meant to protect the joints and keep posture upright. No study has tested an exact ratio, so Motus allows a wide range: take it as a rough guide, not a rule.`;
 
 /** Pushing and pulling sets in the week; a week with one side only scores 0, as the other side is missing */
 function pushPull(g: GoalTargets, sessions: CheckSession[], wk: string): Check | null {
@@ -314,7 +322,7 @@ function pushPull(g: GoalTargets, sessions: CheckSession[], wk: string): Check |
     what: `Working sets of upper-body exercises that push (presses, dips, raises) and pull (rows, pulldowns, curls) ${wk}.`,
     itemsLabel: `Upper-body sets ${wk}`, bars: false,
     items: [{ label: "Pushing", value: push, text: plural(push, "set"), ok: share >= 1, note: names([...pushers]) }, { label: "Pulling", value: pull, text: plural(pull, "set"), ok: share >= 1, note: names([...pullers]) }],
-    target: `Pulling sets ${PULL_PUSH[0]}-${PULL_PUSH[1]} times the pushing sets.`, why: BALANCE_WHY,
+    target: `Pulling sets ${PULL_PUSH[0]}-${PULL_PUSH[1]} times the pushing sets.`, why: balanceWhy("muscles that push, such as the chest, and muscles that pull, such as the back"),
     tips: share >= 1 ? ["Nothing to change: keep it as it is."] : ratio < PULL_PUSH[0] ? [`Add about ${addPull} pulling sets a week, e.g. Barbell row or Pull-up${pullers.size ? `, or more sets of ${names([...pullers].slice(0, 2))}` : ""}.`]
       : [`Add about ${addPush} pushing sets a week, e.g. Bench press or Overhead press${pushers.size ? `, or more sets of ${names([...pushers].slice(0, 2))}` : ""}.`],
     sources: [SRC.acsm],
@@ -333,11 +341,11 @@ function legs(g: GoalTargets, days: CheckSession[], week: Record<string, number>
     : `Only ${n(q)} quad sets and ${n(h)} hamstring ${wk}. Add about ${addQ} quad sets, e.g. Squat.`;
   return make(g, {
     key: "legs", title: "Quad and hamstring sets", share, value: `${n(q)} quad · ${n(h)} hamstring`, detail,
-    what: `Working sets for the front of the thighs (quads) and the back (hamstrings) ${wk}, helpers counting half.`,
+    what: `Working sets (the sets after warm-ups) for the front of the thighs (quads) and the back (hamstrings) ${wk}. A set counts half when the muscle only helps in it.`,
     itemsLabel: `Thigh sets ${wk}`, bars: false,
     items: [{ label: "Quads", value: r1(q), text: plural(q, "set"), ok: share >= 1, note: names(liftsFor(days, quad)) || undefined },
       { label: "Hamstrings", value: r1(h), text: plural(h, "set"), ok: share >= 1, note: names(liftsFor(days, ham)) || undefined }],
-    target: `Hamstring sets ${HAMS_QUADS[0]}-${HAMS_QUADS[1]} times the quad sets.`, why: BALANCE_WHY,
+    target: `Hamstring sets ${HAMS_QUADS[0]}-${HAMS_QUADS[1]} times the quad sets.`, why: balanceWhy("the front and the back of the thigh"),
     tips: share >= 1 ? ["Nothing to change: keep it as it is."] : ratio < HAMS_QUADS[0] ? [`Add about ${addH} hamstring sets a week, e.g. Romanian deadlift or Lying leg curl.`]
       : [`Add about ${addQ} quad sets a week, e.g. Squat or Leg press.`],
     sources: [SRC.acsm],
@@ -374,8 +382,8 @@ function order(g: GoalTargets, session: CheckSession): Check | null {
     items: s.map((e, i) => ({ label: `${i + 1}. ${e.name}`, value: i + 1, text: isBig(e) ? "Big lift" : e.mechanic === "isolation" ? "Single-muscle" : "Other lift", ok: isBig(e) ? !after.has(e) : null,
       note: after.has(e) ? `After ${after.get(e)!.name}, which tires the same muscles` : undefined })),
     target: "Big lifts before single-muscle lifts that work the same muscles.",
-    why: g.id === "strength" ? "A lift done early gets more reps and more weight, and over weeks it gains more strength than when done late. For strength this matters most."
-      : "A lift done early gets more reps and more weight. Over weeks this shows up as strength in the lifts done first; muscle size grew about the same in either order, so for this goal it matters less.",
+    why: g.id === "strength" ? "In a 2012 review of studies (Simão and others), an exercise done early in a workout got more reps and heavier weights than the same exercise done late, when the muscles were tired. In a 2021 review of 11 studies (Nunes and others), people who did an exercise first for weeks gained more strength in it than people who did it last. For strength, this matters most."
+      : `In a 2012 review of studies (Simão and others), an exercise done early in a workout got more reps and heavier weights than the same exercise done late, when the muscles were tired. In a 2021 review of 11 studies (Nunes and others), doing an exercise first for weeks built more strength in it, but muscle size grew about the same in either order, so for ${g.lower} the order matters less.`,
     tips: late.length ? late.map((e) => `Move ${e.name} before ${after.get(e)!.name}.`) : ["Nothing to change: keep it as it is."],
     sources: g.id === "strength" ? [SRC.nunes, SRC.simao, SRC.acsm] : [SRC.simao, SRC.nunes],
   });
@@ -403,7 +411,7 @@ function reps(g: GoalTargets, session: CheckSession): Check | null {
     tips.push(many >= few
       ? `${e.name}: ${plural(many, "set")} ${many === 1 ? "aims" : "aim"} for more than ${hi} reps. ${hi >= 100 ? "" : `Add weight so ${hi} or fewer are hard.`}`.trim()
       : g.id === "endurance" ? `${e.name}: ${plural(few, "set")} ${few === 1 ? "aims" : "aim"} for fewer than ${lo} reps. Lower the weight so you can do ${lo} or more.`
-      : `${e.name}: ${plural(few, "set")} ${few === 1 ? "aims" : "aim"} for fewer than ${lo} reps. ${g.bigReps ? "Single-muscle lifts are safer and work better with 5 or more." : `Fine for strength, but for ${g.lower} use a weight you can lift ${lo} or more times.`}`);
+      : `${e.name}: ${plural(few, "set")} ${few === 1 ? "aims" : "aim"} for fewer than ${lo} reps. ${g.bigReps ? `Single-muscle lifts are there to build muscle, which grows from ${lo}-${hi} reps a set: use a weight you can lift ${lo} or more times.` : `That builds strength more than size: for ${g.lower}, use a weight you can lift ${lo} or more times.`}`);
   }
   if (!total) return null;
   const share = inRange / total;
@@ -420,15 +428,15 @@ function reps(g: GoalTargets, session: CheckSession): Check | null {
   const detail = !off.length ? `Every working set ${W} aims for ${split ? tgt : `${range(g.reps)} reps`}.` : `${cap(W)}, ${who} for ${how}. ${fix}`;
   return make(g, {
     key: "reps", title: split ? `${range(split)} reps on big lifts` : `${range(g.reps)} reps per set`, share, value: `${inRange} of ${plural(total, "set")}`, detail,
-    what: `The target reps of each working set ${W}, by exercise. Sets work best when they end near failure: the last reps should be hard.`,
+    what: `The target reps of each working set (each set after the warm-ups) ${W}, by exercise.${split ? " A big lift works several muscles at once (a press, a row, a squat); a single-muscle lift works one (a curl, a raise, a fly)." : ""} Pick a weight that makes the last few reps a struggle: the reviews below count sets that end close to failure, the point where you can't do another rep.`,
     itemsLabel: `Target reps ${W}`, bars: false, items,
     target: `${cap(tgt)}.`,
-    why: g.id === "strength" ? "Heavy sets of few reps build the most strength, so big lifts should mostly be 1-6 reps. Single-muscle lifts are there for muscle, where 5-30 reps work."
-      : g.id === "endurance" ? "Light sets of 15 or more reps build the most endurance: the muscle learns to keep going."
-      : g.id === "health" ? "For general fitness, moderate weights for 8-15 reps are safe and build both strength and muscle."
-      : `Muscle grows about the same from 5 to 30 reps a set, as long as the set ends near failure. Fewer than 5 builds strength more than size; more than 30 mostly builds endurance.${g.id === "fatLoss" ? " While losing weight, keep the weights heavy so the body keeps its muscle." : ""}`,
+    why: g.id === "strength" ? "In a 2017 review of 21 studies (Schoenfeld and others), people who lifted heavy weights for few reps gained more strength than people who lifted light weights for many, and the American College of Sports Medicine's 2009 guidelines advise 1-6 reps on big lifts for strength. Single-muscle lifts are there to build muscle, which grew about the same from 5 to 30 reps a set (a 2021 review, Schoenfeld and others)."
+      : g.id === "endurance" ? "The American College of Sports Medicine's 2009 guidelines advise light weights for 15 or more reps a set for endurance, and a 2021 review (Schoenfeld and others) found light sets of many reps improved endurance the most: the muscle gets used to working for longer."
+      : g.id === "health" ? "The American College of Sports Medicine's 2009 guidelines advise beginners to use a weight they can lift 8-12 times, and older adults one they can lift 10-15 times. Motus uses 8-15 reps for this goal."
+      : `In a 2017 review of 21 studies (Schoenfeld and others), people who lifted heavy weights for few reps and people who lifted light weights for many reps gained about the same muscle, as long as their sets ended close to failure (when you can't do another rep). A 2021 review by the same team puts the range at about 5-30 reps a set: fewer than 5 builds strength more than size, more than 30 mostly builds endurance.${g.id === "fatLoss" ? " While losing fat, a 2015 review of advice for bodybuilders (Helms and others) says to keep the weights heavy so the body holds on to its muscle." : ""}`,
     tips: tips.length ? tips : ["Nothing to change: keep it as it is."],
-    sources: g.id === "fatLoss" ? [SRC.reps, SRC.helms] : g.id === "health" ? [SRC.acsm] : g.id === "strength" ? [SRC.loads, SRC.acsm] : [SRC.reps, SRC.loads],
+    sources: g.id === "fatLoss" ? [SRC.loads, SRC.reps, SRC.helms] : g.id === "health" ? [SRC.acsm] : g.id === "strength" ? [SRC.loads, SRC.acsm, SRC.reps] : g.id === "endurance" ? [SRC.acsm, SRC.reps] : [SRC.loads, SRC.reps],
   });
 }
 
@@ -441,7 +449,7 @@ function session(g: GoalTargets, s: CheckSession): Check | null {
   const over = ms.filter((m) => day.sets[m.id]! > SESSION_SETS);
   const share = ms.reduce((t, m) => t + Math.min(1, SESSION_SETS / day.sets[m.id]!), 0) / ms.length;
   const detail = !over.length ? `Every muscle gets ${SESSION_SETS} or fewer sets ${W}.`
-    : `${names(over.map((m, i) => (i ? `${low1(m)} ${n(day.sets[m.id]!)}` : `${m.name} ${agree([m], "gets", "get")} ${plural(day.sets[m.id]!, "set")}`)))} ${W}. Past about ${SESSION_SETS} sets for one muscle, extra ones add little: move some to another day.`;
+    : `${names(over.map((m, i) => (i ? `${low1(m)} ${n(day.sets[m.id]!)}` : `${m.name} ${agree([m], "gets", "get")} ${plural(day.sets[m.id]!, "set")}`)))} ${W}. In a 2024 analysis of 67 studies (Pelland and others), sets past about ${SESSION_SETS} for one muscle in one workout added little: move some to another day.`;
   const tips = over.map((m) => {
     // the last exercises for the muscle, enough of their sets to bring it back to the limit
     const own = lifting(s).filter((e) => working(e).length && e.primary.some((p) => m.muscles.includes(p))).reverse();
@@ -451,11 +459,11 @@ function session(g: GoalTargets, s: CheckSession): Check | null {
   });
   return make(g, {
     key: "session", title: `Up to ${SESSION_SETS} sets per muscle`, share, value: `${ms.length - over.length} of ${plural(ms.length, "muscle")}`, detail,
-    what: `Working sets for each muscle ${W}. A set counts 1 for the exercise's main muscle and 0.5 for each helper; warm-ups don't count.`,
+    what: `Working sets (the sets after warm-ups) for each muscle ${W}. A set counts 1 for the muscle the exercise is mainly for and 0.5 for each muscle that helps (a set of bench press: chest 1, triceps 0.5); warm-up sets don't count.`,
     itemsLabel: `Sets per muscle ${W} · up to ${SESSION_SETS}`, bars: true, band: [0, SESSION_SETS],
     items: ms.map((m) => ({ label: m.name, value: r1(day.sets[m.id]!), text: plural(day.sets[m.id]!, "set"), ok: day.sets[m.id]! <= SESSION_SETS })),
     target: `Up to ${SESSION_SETS} working sets for one muscle in one workout.`,
-    why: "In one workout, a muscle's growth levels off at about 11 sets: later sets are done tired and add little. The same sets spread over two workouts in the week count in full.",
+    why: `In a 2024 analysis of 67 studies (Pelland and others), sets for one muscle in one workout stopped adding much muscle after about ${SESSION_SETS}, likely because the later sets are done tired. The same sets split over two workouts in the week still added muscle.`,
     tips: tips.length ? tips : ["Nothing to change: keep it as it is."],
     sources: [SRC.pelland],
   });
@@ -484,13 +492,13 @@ function rest(g: GoalTargets, s: CheckSession): Check | null {
   const detail = !bad.length ? `Big lifts rest ${tgt} between sets ${W}.` : `${who} between sets ${W}. Rest ${tgt} for ${g.lower}.`;
   return make(g, {
     key: "rest", title: "Rest on big lifts", share, value: `${items.length - bad.length} of ${items.length} big ${items.length === 1 ? "lift" : "lifts"}`, detail,
-    what: `The rest between working sets of each big lift ${W}, as the routine plans it (its own rests, else your defaults in Settings). Where a lift's rests differ, the shortest counts.`,
+    what: `The rest between working sets (the sets after warm-ups) of each big lift ${W}, as the routine plans it (its own rests, else your defaults in Settings). A big lift works several muscles at once (a press, a row, a squat). Where a lift's rests differ, the shortest counts.`,
     itemsLabel: `Rest between sets ${W}`, bars: false, items,
     target: `${cap(tgt)} between sets of a big lift.`,
-    why: g.id === "strength" ? "Heavy sets need 3-5 minutes for the muscle to recover, so the next set can be as heavy."
-      : g.id === "endurance" ? "Short rests train the muscle to recover quickly and keep going, which is what endurance is."
-      : g.id === "health" ? "At least a minute lets you do the next set with good form."
-      : "Rests longer than a minute built a little more muscle than shorter ones, and 3 minutes more than 1 on big lifts. Past about 90 seconds, no further gain was seen.",
+    why: g.id === "strength" ? "The American College of Sports Medicine's 2009 guidelines advise 3-5 minutes' rest between heavy sets of big lifts, so the muscle has recovered and the next set can be as heavy. Motus asks for at least 3:00."
+      : g.id === "endurance" ? "The American College of Sports Medicine's 2009 guidelines advise short rests for endurance, about 1-2 minutes or less, so the muscle learns to keep working while it is still tired. Motus asks for up to 1:30."
+      : g.id === "health" ? "No study sets a rest time for general fitness. Motus asks for at least 1:00, common practice so you can do the next set with good form."
+      : "In a 2024 review of 19 studies (Singer and others), people who rested longer than 1 minute between sets gained slightly more muscle than people who rested less, and resting longer than about 90 seconds added nothing more the studies could see. In one 2016 study of young men who already lifted (Schoenfeld and others), 3 minutes' rest built more muscle and strength than 1 minute. So Motus asks for at least 1:30.",
     tips: bad.length ? bad.map((x) => `${x.label}: set its rest between sets to ${tgt}.`) : ["Nothing to change: keep it as it is."],
     sources: g.id === "strength" || g.id === "endurance" || g.id === "health" ? [SRC.acsm] : [SRC.singer, SRC.restLong],
   });

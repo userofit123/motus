@@ -124,7 +124,7 @@ describe("routine check", () => {
 
   it("keeps each muscle to 11 sets in one workout, saying what to move", () => {
     const c = key(routineCheck([bench(8), fly(6)]), "session")!;
-    expect(c.detail).toBe("Chest gets 14 sets in this workout. Past about 11 sets for one muscle, extra ones add little: move some to another day.");
+    expect(c.detail).toBe("Chest gets 14 sets in this workout. In a 2024 analysis of 67 studies (Pelland and others), sets past about 11 for one muscle in one workout added little: move some to another day.");
     expect(c.tips[0]).toBe("Chest: 14 sets. Move about 3 to another day, e.g. Cable fly.");
     expect(key(routineCheck([bench(5), fly(5)]), "session")!.share).toBe(1);
   });

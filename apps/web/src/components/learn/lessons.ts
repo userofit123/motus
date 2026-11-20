@@ -2,7 +2,7 @@
 // behind its targets. Research-based explanations live here, never as text under a chart, so the blocks show only the data.
 // A new lesson is one more entry; the sheet lays every lesson out the same way.
 import { WEEKLY_SET_RANGE, MIN_NIGHTS, SLEEP_WEIGHTS, ACTIVITY_WEIGHTS, STRENGTH_WEIGHTS, WEEKLY_ACTIVE_MIN, STRENGTH_DAYS, GOOD_EFFICIENCY, MODERATE_FROM, VIGOROUS_FROM, SET_LOAD, MINUTE_LOAD, MIN_LOAD_DAYS, HR_ZONES, ZONE_WEIGHTS } from "@motus/shared";
-import { GOALS, SESSION_SETS, PULL_PUSH, HAMS_QUADS, TWICE, restText } from "@motus/shared";
+import { GOALS, SESSION_SETS, PULL_PUSH, HAMS_QUADS, TWICE, restText, CHECK_RESEARCH } from "@motus/shared";
 
 /** `ref`: a source's full reference, under what it found */
 export type LessonRow = { icon: string; t: string; s?: string; r?: string; ok?: boolean; ref?: string };
@@ -21,7 +21,7 @@ const points = (n: number) => `${n} points`;
 const goalPoints = (k: keyof (typeof GOALS)["size"]["weights"]) => { const v = Object.values(GOALS).map((g) => g.weights[k]); const lo = Math.min(...v), hi = Math.max(...v); return lo === hi ? points(lo) : `${lo}-${hi} points`; };
 // the same source in two lessons reads the same in both
 const WHO = "Bull FC, et al. WHO 2020 guidelines on physical activity and sedentary behaviour. British Journal of Sports Medicine, 2020; 54(24): 1451-1462";
-const SCHOENFELD = { icon: "note", t: "Schoenfeld, Ogborn & Krieger, 2017", s: `Review of 15 studies: ${lo} or more sets a week per muscle built clearly more muscle than fewer than 5`,
+const SCHOENFELD = { icon: "note", t: "Schoenfeld, Ogborn & Krieger, 2017", s: `A review of 15 studies that compared how many sets a week people did for a muscle: people who did ${lo} or more sets a week gained clearly more muscle than people who did fewer than 5`,
   ref: "Schoenfeld BJ, Ogborn D, Krieger JW. Dose-response relationship between weekly resistance training volume and increases in muscle mass: a systematic review and meta-analysis. Journal of Sports Sciences, 2017; 35(11): 1073-1082" };
 
 export const LESSONS = {
@@ -41,8 +41,8 @@ export const LESSONS = {
           ref: "Baz-Valle E, Balsalobre-Fernández C, Alix-Fagoaga C, Schoenfeld BJ. A systematic review of the effects of different resistance training volumes on muscle hypertrophy. Journal of Human Kinetics, 2022; 81: 199-210" },
       ] },
       { heading: "How Motus counts", rows: [
-        { icon: "target", t: "Main muscle", s: "The muscle the exercise is for", r: "1 set" },
-        { icon: "layers", t: "Helper", s: "A muscle that also works in it", r: "0.5 set" },
+        { icon: "target", t: "Main muscle", s: "The muscle the exercise is mainly for (bench press: chest)", r: "1 set" },
+        { icon: "layers", t: "Helper", s: "A muscle that also works in it (bench press: triceps)", r: "0.5 set" },
         { icon: "flame", t: "Warm-up sets", r: "Not counted" },
         { icon: "calendar", t: "Last 7 days", s: "Today and the 6 days before it" },
         { icon: "stats", t: "Average per training week", s: "Weeks without a workout are left out" },
@@ -107,39 +107,23 @@ export const LESSONS = {
   // the Routine check (M-273): what each source found, then each check and its points
   routineCheck: {
     title: "Routine check",
-    intro: "How your programs and routines compare with what training research found works, for the program's goal. A program is checked on its page over one week, all that week's workouts together: sets per muscle, training each muscle twice a week and balance. A routine is checked on one workout of it: reps, sets per muscle in that workout, exercise order and rest, with the targets of the program it is in (muscle size when it is in none). Tap any check for its numbers, the target and what to change. A check is met when its target is met in full; one that is not can still earn part of its points, so 100 means every check is met.",
+    intro: "How your programs and routines compare with what training research found works. The targets follow the program's goal. A program is checked on its page over one week, all that week's workouts together: sets per muscle, training each muscle on 2 days a week, and balance between pushing and pulling and between front and back of the thigh. A routine is checked on one workout of it: reps, sets per muscle in that workout, exercise order and rest, using the goal of the program it is in. A routine that isn't in any program is checked for muscle size. Tap any check for its numbers, the target and what to change. A check is met when its target is met in full; one that is not can still earn part of its points, so 100 means every check is met.",
     sections: [
       { heading: "Targets for each goal", rows: Object.values(GOALS).map((g) => ({ icon: "goals", t: g.name,
         s: `${g.bigReps ? `${g.bigReps[0]}-${g.bigReps[1]} reps on big lifts, ${g.reps[0]}-${g.reps[1]} on others` : g.reps[1] >= 100 ? `${g.reps[0]}+ reps` : `${g.reps[0]}-${g.reps[1]} reps`} · ${g.weekSets}+ sets a week per muscle · ${g.rest[1] === Infinity ? `at least ${restText(g.rest[0])}` : `up to ${restText(g.rest[1])}`} rest on big lifts` })) },
-      { heading: "Where the targets come from", rows: [
-        SCHOENFELD,
-        { icon: "note", t: "Pelland et al., 2024", s: `Analysis of 67 studies: more weekly sets build more muscle, each extra set adding less; in one workout, growth levels off at about ${SESSION_SETS} sets for a muscle`,
-          ref: "Pelland JC, Remmert JF, Robinson ZP, Hinson SR, Zourdos MC. The resistance training dose response: meta-regressions exploring the effects of weekly volume and frequency on muscle hypertrophy and strength gain. SportRxiv preprint, 2024" },
-        { icon: "note", t: "Schoenfeld, Ogborn & Krieger, 2016", s: "Review of 10 studies: training a muscle on 2 days a week built more muscle than on 1",
-          ref: "Schoenfeld BJ, Ogborn D, Krieger JW. Effects of resistance training frequency on measures of muscle hypertrophy: a systematic review and meta-analysis. Sports Medicine, 2016; 46(11): 1689-1697" },
-        { icon: "note", t: "Schoenfeld et al., 2021", s: "Muscle grows from about 5-30 reps a set when sets end near failure; heavy sets build the most strength, light sets of many reps the most endurance",
-          ref: "Schoenfeld BJ, Grgic J, Van Every DW, Plotkin DL. Loading recommendations for muscle strength, hypertrophy, and local endurance: a re-examination of the repetition continuum. Sports, 2021; 9(2): 32" },
-        { icon: "note", t: "Singer et al., 2024", s: "Review of 19 studies: rests longer than 60 seconds built a little more muscle; past about 90 seconds no further gain was seen",
-          ref: "Singer A, Wolf M, Generoso L, et al. Give it a rest: a systematic review with Bayesian meta-analysis on the effect of inter-set rest interval duration on muscle hypertrophy. Frontiers in Sports and Active Living, 2024; 6: 1429789" },
-        { icon: "note", t: "Nunes et al., 2021", s: "A lift gains more strength when done early in the workout; muscle size grew about the same in either order",
-          ref: "Nunes JP, Grgic J, Cunha PM, et al. What influence does resistance exercise order have on muscular strength gains and muscle hypertrophy? A systematic review and meta-analysis. European Journal of Sport Science, 2021; 21(2): 149-157" },
-        { icon: "note", t: "American College of Sports Medicine, 2009", s: "Reps and rests for strength, size and endurance; big lifts before single-muscle ones; balance opposing muscles (no study sets an exact ratio)",
-          ref: "American College of Sports Medicine. Progression models in resistance training for healthy adults. Medicine & Science in Sports & Exercise, 2009; 41(3): 687-708" },
-        { icon: "note", t: "Helms et al., 2015", s: "While losing weight, keep lifting heavy so the body holds on to its muscle",
-          ref: "Helms ER, Fitschen PJ, Aragon AA, Cronin J, Schoenfeld BJ. Recommendations for natural bodybuilding contest preparation: resistance and cardiovascular training. Journal of Sports Medicine and Physical Fitness, 2015; 55(3): 164-178" },
-        { icon: "note", t: "World Health Organization, 2020", s: "Adults should train all major muscle groups on 2 or more days a week", ref: WHO },
-      ] },
+      // every finding the checks cite, worded as the checks' popups word them (shared CHECK_RESEARCH)
+      { heading: "Where the targets come from", rows: Object.values(CHECK_RESEARCH).map((x) => ({ icon: "note", ...x })) },
       { heading: "How Motus counts", rows: [
         { icon: "activity", t: "Sets a week per muscle", s: "A program's week: working sets for each major muscle, against the goal's target", r: goalPoints("volume") },
-        { icon: "calendar", t: "Muscles trained twice a week", s: `On ${TWICE} or more days a week. A day counts when the muscle is an exercise's main one that day, or gets 2 or more helper sets`, r: goalPoints("frequency") },
+        { icon: "calendar", t: "Muscles trained twice a week", s: `A program's week: each muscle on ${TWICE} or more days. A day counts when an exercise that day is mainly for the muscle, or the muscle helps in 2 or more sets of other exercises`, r: goalPoints("frequency") },
         { icon: "swap", t: "Pushing and pulling sets", s: `A program's week: upper-body pulling sets ${PULL_PUSH[0]}-${PULL_PUSH[1]} times the pushing sets`, r: goalPoints("pushPull") },
         { icon: "split", t: "Quad and hamstring sets", s: `A program's week: hamstring sets ${HAMS_QUADS[0]}-${HAMS_QUADS[1]} times the quad sets`, r: goalPoints("legs") },
         { icon: "refresh", t: "Reps per set", s: "A routine's workout: working sets with target reps in the goal's range", r: goalPoints("reps") },
         { icon: "layers", t: `Up to ${SESSION_SETS} sets per muscle`, s: "A routine's workout: working sets for each muscle in that one workout", r: goalPoints("session") },
-        { icon: "arrowUp", t: "Big lifts first", s: "A routine's workout: big lifts, the ones that work several muscles, before single-muscle lifts that tire the same muscles. Counts most for strength", r: goalPoints("order") },
+        { icon: "arrowUp", t: "Big lifts first", s: "A routine's workout: big lifts, the ones that work several muscles (a press, a row, a squat), before single-muscle lifts that tire the same muscles. Counts most for strength", r: goalPoints("order") },
         { icon: "timer", t: "Rest on big lifts", s: "A routine's workout: the planned rest between sets of each big lift, from the routine or your defaults in Settings", r: goalPoints("rest") },
-        { icon: "target", t: "Main muscle", s: "The muscle the exercise is for", r: "1 set" },
-        { icon: "layers", t: "Helper", s: "A muscle that also works in it", r: "0.5 set" },
+        { icon: "target", t: "Main muscle", s: "The muscle the exercise is mainly for (bench press: chest)", r: "1 set" },
+        { icon: "layers", t: "Helper", s: "A muscle that also works in it (bench press: triceps)", r: "0.5 set" },
         { icon: "flame", t: "Warm-up sets", r: "Not counted" },
       ] },
     ],

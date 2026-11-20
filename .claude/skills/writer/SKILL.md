@@ -38,7 +38,16 @@ Never advice alone ("take it easier") and never a cause without the effect on th
 - Numbers with units ("8 hours", "57 bpm", "80 kg"); ranges "7-9"; empty value "-".
 - Plain dashes only; dot separators " · " with single spaces (CLAUDE.md).
 
-## 6. Context check before you finish
+## 6. Research claims say who found what
+A sentence that rests on research says so in the sentence itself: who was studied, what was compared, what
+was measured, and the source, in plain words. Never a bare result like "2 days built more muscle than 1".
+- "Training a muscle on 2 days built more muscle than on 1" → "In a 2016 review of 10 studies (Schoenfeld and
+  others), people who trained a muscle on 2 days a week gained more muscle than people who trained it on 1 day."
+- Say how sure it is when it matters: "a review of studies", "one study of 34 trained men", "common practice,
+  not tested in studies".
+- Later or conflicting findings get the same treatment: who, what, and what it means for the reader.
+
+## 7. Context check before you finish
 For each string, answer from the screen alone (no code):
 1. Which period/thing does it refer to?
 2. Would a new user know what to do or think after reading it?
