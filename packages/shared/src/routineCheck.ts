@@ -103,9 +103,9 @@ export const TWICE = 2, DAY_SETS = 2;
  *  add little and are better done on another day */
 export const SESSION_SETS = 11;
 /** Rest between hard workouts for one muscle (M-298, RESEARCH.md §5.6). Many hard sets leave a muscle weaker for 24-48 hours
- *  or more (Morán-Navarro et al. 2017, Pareja-Blanco et al. 2020), and guidelines ask for 48 hours before the same muscles
- *  are trained hard again (ACSM 2011; NSCA). A few sets a day are fine (Saric et al. 2019: 6 days a week built as much as
- *  3 with the same weekly sets). No study gives a set count, so a workout is hard for a muscle from RECOVER_SETS sets,
+ *  or more (Morán-Navarro et al. 2017, Pareja-Blanco et al. 2020), and guidelines ask for a rest before the same muscles
+ *  are trained hard again (ACSM 2011: 48 hours; NSCA: at least 1 day). Fewer sets a day can work (Saric et al. 2019: 6 days a week built about as
+ *  much as 3 with the same weekly sets). No study gives a set count, so a workout is hard for a muscle from RECOVER_SETS sets,
  *  about half of the SESSION_SETS one workout can use. */
 export const RECOVER_SETS = 6, RECOVER_HOURS = 48;
 /** ACSM 2009: balance opposing muscles. No study sets a ratio, so these are wide ranges from practice: pulling sets
@@ -206,17 +206,17 @@ export const CHECK_RESEARCH = {
     ref: "Bickel CS, Cross JM, Bamman MM. Exercise dosing to retain resistance training adaptations in young and older adults. Medicine & Science in Sports & Exercise, 2011; 43(7): 1177-1187" },
   who: { t: "World Health Organization, 2020", s: "Activity guidelines for adults, drawn from reviews of health research: do muscle-strengthening activities that work all major muscles on 2 or more days a week",
     ref: "Bull FC, et al. WHO 2020 guidelines on physical activity and sedentary behaviour. British Journal of Sports Medicine, 2020; 54(24): 1451-1462" },
-  moran: { t: "Morán-Navarro et al., 2017", s: "One study of 10 men who already lifted, who did bench press and squat: 3 sets of 10 reps taken to failure, the point where you can't do another rep, left the muscles weaker for longer than the same weight lifted 5 times a set, half of what they could do. The sets short of failure had recovered much sooner, between 24 and 48 hours after",
+  moran: { t: "Morán-Navarro et al., 2017", s: "One study of 10 men who already lifted, who did bench press and squat: 3 sets of 10 reps taken to failure, the point where you can't do another rep, left the muscles weaker for longer than the same weight lifted 5 times a set, half of what they could do. After those shorter sets, strength was back between 24 and 48 hours later",
     ref: "Morán-Navarro R, Pérez CE, Mora-Rodríguez R, et al. Time course of recovery following resistance training leading or not to failure. European Journal of Applied Physiology, 2017; 117(12): 2387-2399" },
   pareja: { t: "Pareja-Blanco et al., 2020", s: "One study of 10 men who did 3 sets of bench press and squat with different numbers of reps: sets taken to failure, most of all long ones, left the muscles weaker and more damaged, and they were still weaker 48 hours later",
     ref: "Pareja-Blanco F, Rodríguez-Rosell D, Aagaard P, et al. Time course of recovery from resistance exercise with different set configurations. Journal of Strength and Conditioning Research, 2020; 34(10): 2867-2876" },
-  macdougall: { t: "MacDougall et al., 1995", s: "One study of 6 young men who did 12 hard sets for the biceps of one arm: the muscle built new protein, which is how it repairs and grows, more than twice as fast as the other arm 24 hours later, and was back to about normal by 36 hours",
+  macdougall: { t: "MacDougall et al., 1995", s: "One study of 6 young men who did 12 hard sets for the biceps of one arm: 36 hours later, that biceps built new protein, which is how a muscle repairs and grows, only about 14% faster than the other arm's, too small a difference to be sure of. By then the repair after the workout was nearly over",
     ref: "MacDougall JD, Gibala MJ, Tarnopolsky MA, et al. The time course for elevated muscle protein synthesis following heavy resistance exercise. Canadian Journal of Applied Physiology, 1995; 20(4): 480-486" },
   garber: { t: "American College of Sports Medicine, 2011", s: "Exercise guidelines for adults: train each major muscle on 2-3 days a week, with at least 48 hours between workouts for the same muscles",
     ref: "Garber CE, Blissmer B, Deschenes MR, et al. Quantity and quality of exercise for developing and maintaining cardiorespiratory, musculoskeletal, and neuromotor fitness in apparently healthy adults. Medicine & Science in Sports & Exercise, 2011; 43(7): 1334-1359" },
   nsca: { t: "National Strength and Conditioning Association", s: "Advice for personal trainers, from the association's textbook: leave at least 1 day, and no more than 3, between workouts that train the same muscles hard",
     ref: "National Strength and Conditioning Association. Determination of resistance training frequency. NSCA Kinetic Select, 2017, from Coburn JW, Malek MH (eds). NSCA's Essentials of Personal Training, 2nd ed. Human Kinetics, 2012" },
-  saric: { t: "Saric et al., 2019", s: "One study of 27 men who already lifted, over 6 weeks, who did the same sets a week on 3 or on 6 days: both groups gained about the same muscle and strength. Spread over 6 days, each workout gave a muscle half as many sets as over 3",
+  saric: { t: "Saric et al., 2019", s: "One study of 27 men who already lifted, over 6 weeks, who did the same sets a week on 3 or on 6 days a week: both groups gained about the same muscle and strength, with half as many sets in each workout on 6 days. Only on the front of the upper arm did the 3-day group's growth reach a size the researchers could be sure of",
     ref: "Saric J, Lisica D, Orlic I, et al. Resistance training frequencies of 3 and 6 times per week produce similar muscular adaptations in resistance-trained men. Journal of Strength and Conditioning Research, 2019; 33: S122-S129" },
 } satisfies Record<string, CheckSource>;
 const SRC = CHECK_RESEARCH;
@@ -440,56 +440,79 @@ function legs(g: GoalTargets, days: CheckSession[], week: Record<string, number>
   });
 }
 
+const WEEKDAY = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
 /** A muscle trained hard (RECOVER_SETS or more sets, as the main muscle of a lift) in two workouts that come one after the
- *  other in the week. The program puts its workouts in order, not on days, so Motus can't see the hours between them: it
- *  takes workouts next to each other as ones that may fall on days in a row, and says so. Only pairs inside the week are
- *  looked at, as the next week may hold other workouts. Checked over the muscles that are a lift's main muscle in 2 or
- *  more workouts; null when there are none (the twice-a-week row already says so). */
-function recovery(g: GoalTargets, days: Day[], wk: string, dayNames: string[]): Check | null {
+ *  other in the week, with no day off between them. `weekdays`: each workout's planned weekdays (0 Sunday) from its
+ *  routine's weekly plan, null without one. When both workouts of a pair have one, the real gap decides (2 or more days
+ *  apart leaves a day off, which is fine); else two workouts in a row are taken as ones that may fall on days in a row,
+ *  and the popup says so. Only pairs inside the week are looked at, as the next week may hold other workouts. Checked over
+ *  the muscles that are a lift's main muscle in 2 or more workouts; null when there are none (the twice-a-week row says so). */
+function recovery(g: GoalTargets, days: Day[], wk: string, dayNames: string[], weekdays: (number[] | null)[]): Check | null {
   const named = (d: number) => (dayNames[d - 1] ? `workout ${d} (${dayNames[d - 1]})` : `workout ${d}`);
   const onDays = (m: string) => days.flatMap((d, i) => (d.main.has(m) ? [i + 1] : []));
   const ms = CHECK_MUSCLES.filter((m) => onDays(m.id).length >= 2);
   if (!ms.length) return null;
-  const hard = (d: number, m: string) => days[d - 1]!.main.has(m) && days[d - 1]!.sets[m]! >= RECOVER_SETS;
-  // each muscle's pairs of workouts in a row that both work it hard (d: the first of the two)
-  const pairs = (m: string) => onDays(m).filter((d) => d < days.length && hard(d, m) && hard(d + 1, m));
+  const sets = (d: number, m: string) => days[d - 1]!.sets[m]!;
+  const hard = (d: number, m: string) => days[d - 1]!.main.has(m) && sets(d, m) >= RECOVER_SETS;
+  /** the planned days of workouts d and d+1 closest together (gap: days later, 0 the same day); null unless both are planned */
+  const plan = (d: number) => {
+    const A = weekdays[d - 1], B = weekdays[d];
+    if (!A?.length || !B?.length) return null;
+    let best: { a: number; b: number; gap: number } | null = null;
+    for (const a of A) for (const b of B) { const gap = (b - a + 7) % 7; if (!best || gap < best.gap) best = { a, b, gap }; }
+    return best;
+  };
+  const off = (d: number) => (plan(d)?.gap ?? 0) >= 2;
+  const when = (d: number) => { const p = plan(d)!; return p.gap ? `planned for ${WEEKDAY[p.a]} and ${WEEKDAY[p.b]}` : `both planned for ${WEEKDAY[p.a]}`; };
+  const hardBoth = (m: string) => onDays(m).filter((d) => d < days.length && hard(d, m) && hard(d + 1, m));
+  // each muscle's pairs of workouts in a row that both work it hard, without a planned day off between (d: the first)
+  const pairs = (m: string) => hardBoth(m).filter((d) => !off(d));
   const bad = ms.filter((m) => pairs(m.id).length);
   const share = (ms.length - bad.length) / ms.length;
-  /** "workouts 2 (Arms) and 3 (Pull)", as the twice-a-week check's notes name two workouts */
-  const two = (x: number, y: number) => `workouts ${[x, y].map((d) => (dayNames[d - 1] ? `${d} (${dayNames[d - 1]})` : String(d))).join(" and ")}`;
+  /** "workouts 2 (Arms) and 3 (Pull)", as the twice-a-week check's notes name workouts */
+  const list = (ds: number[]) => `workouts ${names(ds.map((d) => (dayNames[d - 1] ? `${d} (${dayNames[d - 1]})` : String(d))))}`;
+  const two = (x: number, y: number) => list([x, y]);
   const both = (d: number) => two(d, d + 1);
-  const sets = (d: number, m: string) => days[d - 1]!.sets[m]!;
-  // the detail by pair of workouts, so two muscles hard in the same two workouts read as one finding
-  const byPair = [...new Set(bad.flatMap((m) => pairs(m.id)))].sort((a, b) => a - b)
-    .map((d) => ({ d, ms: bad.filter((m) => pairs(m.id).includes(d)) }));
-  // each muscle with its own two counts: "biceps get 8 and 7.5 sets, triceps 6 and 6"
-  const found = byPair.map((p) => `${names(p.ms.map((m, i) => (i ? `${low1(m)} ${n(sets(p.d, m.id))} and ${n(sets(p.d + 1, m.id))}` : `${low1(m)} ${agree([m], "gets", "get")} ${n(sets(p.d, m.id))} and ${nSets(sets(p.d + 1, m.id))}`)))} in ${both(p.d)}, one right after the other`);
-  const detail = !bad.length ? `In ${wk}, no muscle gets ${RECOVER_SETS} or more sets in two workouts in a row.`
-    : `In ${wk}, ${found.join("; ")}. A muscle needs about ${RECOVER_HOURS} hours to recover from that many sets: leave a day off between ${byPair.length === 1 ? "the two" : "each two"} (Monday and Wednesday, not Monday and Tuesday), or put another workout between them.`;
+  // the card line by run of workouts (1-2 and 2-3 read as "workouts 1, 2 and 3"), muscles with the same run together, so
+  // two muscles in the same workouts read as one finding and the line never lists set counts
+  const runs = (m: string) => pairs(m).reduce<number[][]>((r, d) => { const last = r.at(-1); if (last && last.at(-1) === d) last.push(d + 1); else r.push([d, d + 1]); return r; }, []);
+  const groups = new Map<string, { run: number[]; ms: typeof bad }>();
+  for (const m of bad) for (const run of runs(m.id)) { const k = run.join(); if (!groups.has(k)) groups.set(k, { run, ms: [] }); groups.get(k)!.ms.push(m); }
+  const found = [...groups.values()].sort((x, y) => x.run[0]! - y.run[0]!).map(({ run, ms: gm }) =>
+    `${names(gm.map(low1))} ${agree(gm, "gets", "get")} ${RECOVER_SETS} or more sets in ${list(run)}, ${run.length === 2 && plan(run[0]!) ? when(run[0]!) : `${run.length} workouts in a row`}`);
+  const one = groups.size === 1 && [...groups.values()][0]!.run.length === 2;
+  const cleared = ms.some((m) => hardBoth(m.id).some(off));
+  const detail = !bad.length ? `In ${wk}, no muscle gets ${RECOVER_SETS} or more sets in two workouts in a row${cleared ? " without a day off between them" : ""}.`
+    : `In ${wk}, ${found.join("; ")}. Leave a day off between ${one ? "them" : "each of these workouts and the next"}.`;
   const tips = bad.map((m) => {
     const [d, ...more] = pairs(m.id), a = sets(d!, m.id), b = sets(d! + 1, m.id);
-    const move = Math.ceil(b - (RECOVER_SETS - 1));
-    const also = more.length ? ` The same goes for ${names(more.map(both))}.` : "";
-    return `${m.name}: ${nSets(a)} in ${named(d!)}, then ${n(b)} in ${named(d! + 1)}. Leave a day off between these two workouts, or move ${move} of ${its(m)} sets from ${named(d! + 1)} to another workout, so that workout gives ${it(m)} ${RECOVER_SETS - 1} or fewer.${also}`;
+    // whole sets to move so the second workout drops below RECOVER_SETS
+    const move = Math.floor(b - RECOVER_SETS) + 1;
+    const also = more.length ? ` ${m.name} also ${agree([m], "gets", "get")} ${RECOVER_SETS} or more sets in ${names(more.map((x) => `both ${both(x)}`))}.` : "";
+    return `${m.name}: ${nSets(a)} in ${named(d!)}, then ${n(b)} in ${named(d! + 1)}${plan(d!) ? `, ${when(d!)}` : ""}. Leave a day off between these two workouts, or move ${move} of ${its(m)} sets from ${named(d! + 1)} to a workout that doesn't come right before or after these two, so ${they(m)} ${agree([m], "gets", "get")} fewer than ${RECOVER_SETS} sets in ${named(d! + 1)}.${also}`;
   });
   return make(g, {
-    key: "recovery", title: `A day off after ${RECOVER_SETS} or more sets for a muscle`, share, value: `${ms.length - bad.length} of ${plural(ms.length, "muscle")}`, detail,
-    what: `Whether a muscle gets ${RECOVER_SETS} or more working sets in two workouts of ${wk} that come one after the other. A workout counts for a muscle only when it has an exercise mainly for it, as in the check "Muscles trained on ${TWICE} or more days". The program puts its workouts in order, not on days of the week, so Motus can't see how many days you leave between them: it treats two workouts in a row as ones you may do on two days in a row. If you already leave a day off between them, you meet this target.`,
-    itemsLabel: `Muscles trained in ${TWICE} or more workouts in ${wk} · target a day off after ${RECOVER_SETS} or more sets`, bars: false,
+    key: "recovery", title: `A day off after ${RECOVER_SETS} or more sets`, share, value: `${ms.length - bad.length} of ${plural(ms.length, "muscle")}`, detail,
+    what: `Whether a muscle gets ${RECOVER_SETS} or more working sets in two workouts in a row in ${wk}. A workout counts for a muscle only when it has an exercise mainly for it, as in the check "Muscles trained on ${TWICE} or more days". When the routines of both workouts are planned every week (Schedule in the workout's ⋮ menu), the check uses those days, and a day off between the two meets the target. Without those plans, it takes two workouts in a row as ones you may do on days in a row. Only workouts within ${wk} are compared, so its last workout and the first workout of the next week aren't.`,
+    itemsLabel: `Lighter of two workouts in a row, ${wk} · target fewer than ${RECOVER_SETS} sets`, bars: false,
     items: ms.map((m) => {
       const d = onDays(m.id), p = pairs(m.id)[0];
-      // the hardest pair in a row (else the first), or the workouts it is in when none are next to each other
-      const next = d.filter((x) => d.includes(x + 1)).sort((x, y) => Math.min(days[y - 1]!.sets[m.id]!, days[y]!.sets[m.id]!) - Math.min(days[x - 1]!.sets[m.id]!, days[x]!.sets[m.id]!));
-      const at = p ?? next[0];
-      // never in a row: its first two workouts and how many come between them
-      if (at == null) { const [x, y] = d as [number, number], gap = y - x - 1;
-        return { label: m.name, value: Math.min(sets(x, m.id), sets(y, m.id)), text: `${n(sets(x, m.id))} and ${plural(sets(y, m.id), "set")}`, ok: true, note: `${cap(two(x, y))}, with ${plural(gap, "workout")} between them` }; }
-      const a = sets(at, m.id), b = sets(at + 1, m.id);
-      return { label: m.name, value: Math.min(a, b), text: `${n(a)} and ${plural(b, "set")}`, ok: !p, note: `${cap(both(at))}, one right after the other` };
+      const lo = (x: number) => Math.min(sets(x, m.id), sets(x + 1, m.id));
+      // the pair that needs a day off, else the hardest pair in a row, or its first two workouts when none are in a row
+      const at = p ?? d.filter((x) => d.includes(x + 1)).sort((x, y) => lo(y) - lo(x))[0];
+      if (at == null) { const [x, y] = d as [number, number], gap = y - x - 1, v = Math.min(sets(x, m.id), sets(y, m.id));
+        return { label: m.name, value: v, text: plural(v, "set"), ok: true, note: `${cap(two(x, y))}: ${n(sets(x, m.id))} and ${plural(sets(y, m.id), "set")}, with ${plural(gap, "workout")} between them` }; }
+      const a = sets(at, m.id), b = sets(at + 1, m.id), pl = plan(at);
+      const counts = `${n(a)} and ${plural(b, "set")}`;
+      const note = p ? (pl ? `${cap(both(at))}: ${counts}, ${when(at)}` : `${cap(both(at))} in a row: ${counts}`)
+        : lo(at) < RECOVER_SETS ? `${cap(both(at))} in a row: ${counts} - fewer than ${RECOVER_SETS} in one of them`
+        : `${cap(both(at))}: ${counts}, ${when(at)}, with ${plural(pl!.gap - 1, "day")} off between them`;
+      return { label: m.name, value: lo(at), text: plural(lo(at), "set"), ok: !p, note };
     }),
-    target: `When a muscle gets ${RECOVER_SETS} or more sets in a workout, leave at least one day off (about ${RECOVER_HOURS} hours) before its next workout with ${RECOVER_SETS} or more sets.`,
-    reason: `After many hard sets a muscle stays weaker for 1-2 days while it repairs, so training it hard again the next day means lighter weights or fewer reps. A few sets on the next day are fine: doing a few sets for a muscle every day builds as much muscle as doing more sets on fewer days.`,
-    research: `In one 2017 study of 10 men who already lifted (Morán-Navarro and others), 3 sets of bench press and squat taken to failure, the point where you can't do another rep, left the muscles weaker for longer than sets stopped well short of failure, which had recovered between 24 and 48 hours after. In a 2020 study of 10 men (Pareja-Blanco and others), the muscles were still weaker 48 hours after sets taken to failure, most of all long ones. In a 1995 study of 6 young men (MacDougall and others), 12 hard sets for the biceps made the muscle build new protein, which is how it repairs and grows, twice as fast 24 hours later; by 36 hours it was back to about normal. The American College of Sports Medicine's 2011 guidelines ask for at least ${RECOVER_HOURS} hours between workouts for the same muscles, and the National Strength and Conditioning Association's 2012 textbook for personal trainers asks for at least 1 day off. Training a muscle every day can still work with few sets: in a 2019 study of 27 men who already lifted (Saric and others), 6 workouts a week built as much muscle as 3 with the same sets a week, so each workout had half as many sets. No study names the number of sets that needs a day off; Motus uses ${RECOVER_SETS}, about half of the ${SESSION_SETS} that one workout can use well.`,
+    target: `When a muscle gets ${RECOVER_SETS} or more sets in a workout, give it fewer than ${RECOVER_SETS} in the next workout, or leave at least one day off before that workout.`,
+    reason: `After many hard sets a muscle stays weaker for 1-2 days while it repairs, so training it hard again the next day means lighter weights or fewer reps. Exercise guidelines ask for about ${RECOVER_HOURS} hours between hard workouts for the same muscle. No study names how many sets make a workout hard for a muscle: ${RECOVER_SETS} is Motus's own line.`,
+    research: `In one 2017 study of 10 men who already lifted (Morán-Navarro and others), 3 sets of 10 reps of bench press and squat taken to failure, the point where you can't do another rep, left the muscles weaker for longer than the same weight lifted 5 times a set, half of what they could do; after those shorter sets, strength was back between 24 and 48 hours later. In a 2020 study of 10 men (Pareja-Blanco and others), sets of bench press and squat taken to failure, most of all long ones, left the muscles weaker and more damaged, and they were still weaker 48 hours later. In a 1995 study of 6 young men (MacDougall and others), 36 hours after 12 hard sets for the biceps of one arm, that biceps built new protein, which is how a muscle repairs and grows, only about 14% faster than the other arm's, too small a difference to be sure of: by then the repair after the workout was nearly over. The American College of Sports Medicine's 2011 guidelines ask for at least ${RECOVER_HOURS} hours between workouts for the same muscles, and the National Strength and Conditioning Association's 2012 textbook for personal trainers asks for at least 1 day, and no more than 3, between workouts that train the same muscles hard. Training a muscle on more days can still work with fewer sets each time: in a 2019 study of 27 men who already lifted (Saric and others), the same sets a week done on 6 days a week built about as much muscle and strength over 6 weeks as on 3 days, with half as many sets in each workout; only on the front of the upper arm did the 3-day group's growth reach a size the researchers could be sure of. No study names the number of sets that needs a day off; Motus uses ${RECOVER_SETS}, about half of the ${SESSION_SETS} that one workout can use well.`,
     tips: tips.length ? tips : ["Nothing to change: keep it as it is."],
     sources: [SRC.moran, SRC.pareja, SRC.macdougall, SRC.garber, SRC.nsca, SRC.saric],
   });
@@ -712,12 +735,13 @@ export function routineCheck(s: CheckSession, goal: string | null = DEFAULT_GOAL
 
 /** A program's week (`week`: its number, for the wording; `dayNames`: each workout's routine name, for the tips that
  *  point at one workout): its workouts together, for sets per muscle, twice a week, balance and a day off between hard
- *  workouts for a muscle, against the program's goal. Every major muscle is checked, since a week should cover them all. */
-export function programCheck(days: CheckSession[], goal: string | null = DEFAULT_GOAL, week = 1, dayNames: string[] = []): RoutineCheck | null {
+ *  workouts for a muscle, against the program's goal. Every major muscle is checked, since a week should cover them all.
+ *  `weekdays`: each workout's planned weekdays (0 Sunday) when its routine is planned every week, for the day-off check. */
+export function programCheck(days: CheckSession[], goal: string | null = DEFAULT_GOAL, week = 1, dayNames: string[] = [], weekdays: (number[] | null)[] = []): RoutineCheck | null {
   if (!days.some(hasLifting)) return null;
   const g = goalOf(goal), wk = `week ${week}`;
   const per = days.map(dayOf);
   const sets = Object.fromEntries(CHECK_MUSCLES.map((m) => [m.id, per.reduce((t, d) => t + d.sets[m.id]!, 0)]));
   return total(g, [volume(g, days, sets, wk), frequency(g, per, sets, wk, dayNames), pushPull(g, days, wk), legs(g, days, sets, wk),
-    recovery(g, per, wk, dayNames)], sets);
+    recovery(g, per, wk, dayNames, weekdays)], sets);
 }

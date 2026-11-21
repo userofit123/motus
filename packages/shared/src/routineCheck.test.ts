@@ -188,22 +188,52 @@ describe("routine check", () => {
     const r = key(programCheck([legs, arms, pull], "size", 1, ["Legs", "Arms", "Pull"]), "recovery")!;
     expect(r.share).toBe(0);
     expect(r.value).toBe("0 of 1 muscle");
-    expect(r.detail).toBe("In week 1, biceps get 8 and 7.5 sets in workouts 2 (Arms) and 3 (Pull), one right after the other. A muscle needs about 48 hours to recover from that many sets: leave a day off between the two (Monday and Wednesday, not Monday and Tuesday), or put another workout between them.");
-    expect(r.items[0]).toMatchObject({ label: "Biceps", text: "8 and 7.5 sets", ok: false, note: "Workouts 2 (Arms) and 3 (Pull), one right after the other" });
-    expect(r.tips[0]).toBe("Biceps: 8 sets in workout 2 (Arms), then 7.5 in workout 3 (Pull). Leave a day off between these two workouts, or move 3 of their sets from workout 3 (Pull) to another workout, so that workout gives them 5 or fewer.");
-    // three hard workouts in a row: the tip names the first two and the next pair too
-    expect(key(programCheck([arms, arms, arms], "size", 1, ["A", "B", "C"]), "recovery")!.tips[0]).toBe("Biceps: 8 sets in workout 1 (A), then 8 in workout 2 (B). Leave a day off between these two workouts, or move 3 of their sets from workout 2 (B) to another workout, so that workout gives them 5 or fewer. The same goes for workouts 2 (B) and 3 (C).");
+    expect(r.title).toBe("A day off after 6 or more sets");
+    expect(r.detail).toBe("In week 1, biceps get 6 or more sets in workouts 2 (Arms) and 3 (Pull), 2 workouts in a row. Leave a day off between them.");
+    expect(r.items[0]).toMatchObject({ label: "Biceps", value: 7.5, text: "7.5 sets", ok: false, note: "Workouts 2 (Arms) and 3 (Pull) in a row: 8 and 7.5 sets" });
+    expect(r.tips[0]).toBe("Biceps: 8 sets in workout 2 (Arms), then 7.5 in workout 3 (Pull). Leave a day off between these two workouts, or move 2 of their sets from workout 3 (Pull) to a workout that doesn't come right before or after these two, so they get fewer than 6 sets in workout 3 (Pull).");
+    // three hard workouts in a row: one run on the card, and the tip names the next pair too
+    const three = key(programCheck([arms, arms, arms], "size", 1, ["A", "B", "C"]), "recovery")!;
+    expect(three.detail).toBe("In week 1, biceps get 6 or more sets in workouts 1 (A), 2 (B) and 3 (C), 3 workouts in a row. Leave a day off between each of these workouts and the next.");
+    expect(three.tips[0]).toBe("Biceps: 8 sets in workout 1 (A), then 8 in workout 2 (B). Leave a day off between these two workouts, or move 3 of their sets from workout 2 (B) to a workout that doesn't come right before or after these two, so they get fewer than 6 sets in workout 2 (B). Biceps also get 6 or more sets in both workouts 2 (B) and 3 (C).");
+    // two muscles hard in the same two workouts: one finding naming both, no set counts on the card
+    const push = (k: number) => ex("Pushdown", ["triceps"], { mechanic: "isolation", force: "push" }, k);
+    const twoMs = key(programCheck([[curl(8), push(7)], [curl(7), push(6)]], "size", 1, ["A", "B"]), "recovery")!;
+    expect(twoMs.detail).toBe("In week 1, biceps and triceps get 6 or more sets in workouts 1 (A) and 2 (B), 2 workouts in a row. Leave a day off between them.");
+    expect(twoMs.tips).toHaveLength(2);
     // another workout between them: no longer in a row
     const apart = key(programCheck([arms, legs, pull], "size", 1, ["Arms", "Legs", "Pull"]), "recovery")!;
     expect(apart.share).toBe(1);
-    expect(apart.items[0]).toMatchObject({ text: "8 and 7.5 sets", ok: true, note: "Workouts 1 (Arms) and 3 (Pull), with 1 workout between them" });
-    // a few sets in a row are fine, as are a hard workout followed by a light one
+    expect(apart.items[0]).toMatchObject({ text: "7.5 sets", ok: true, note: "Workouts 1 (Arms) and 3 (Pull): 8 and 7.5 sets, with 1 workout between them" });
+    // a few sets in a row are fine, as are a hard workout followed by a light one, and the row says why
     expect(key(programCheck([[curl(3)], [curl(3)]]), "recovery")!.share).toBe(1);
-    expect(key(programCheck([[curl(8)], [curl(5)]]), "recovery")!.share).toBe(1);
+    const light = key(programCheck([[curl(8)], [curl(5)]]), "recovery")!;
+    expect(light.share).toBe(1);
+    expect(light.items[0]!.note).toBe("Workouts 1 and 2 in a row: 8 and 5 sets - fewer than 6 in one of them");
     // helping sets alone never make a workout hard for a muscle: bench gives the triceps 4 sets, but no day
     expect(key(programCheck([[bench(8)], [bench(8)]]), "recovery")!.items.map((i) => i.label)).toEqual(["Chest"]);
     // no muscle trained in 2 workouts: nothing to check
     expect(key(programCheck([[curl(8)], [squat(8)]]), "recovery")).toBeUndefined();
+  });
+
+  it("uses the planned weekdays when both workouts are planned every week (M-298)", () => {
+    const arms = [curl(8)], pull = [row(3), curl(6)], legs = [squat(3)], nm = ["Legs", "Arms", "Pull"];
+    const on = (wd: (number[] | null)[]) => key(programCheck([legs, arms, pull], "size", 1, nm, wd), "recovery")!;
+    // Monday and Wednesday: a day off between them, so met, and the row says why
+    const apart = on([null, [1], [3]]);
+    expect(apart.share).toBe(1);
+    expect(apart.detail).toBe("In week 1, no muscle gets 6 or more sets in two workouts in a row without a day off between them.");
+    expect(apart.items[0]).toMatchObject({ ok: true, note: "Workouts 2 (Arms) and 3 (Pull): 8 and 7.5 sets, planned for Monday and Wednesday, with 1 day off between them" });
+    // Monday and Tuesday, or both on Monday: flagged with the real days
+    const next = on([null, [1], [2]]);
+    expect(next.share).toBe(0);
+    expect(next.detail).toBe("In week 1, biceps get 6 or more sets in workouts 2 (Arms) and 3 (Pull), planned for Monday and Tuesday. Leave a day off between them.");
+    expect(next.tips[0]).toMatch(/^Biceps: 8 sets in workout 2 \(Arms\), then 7.5 in workout 3 \(Pull\), planned for Monday and Tuesday\. /);
+    expect(on([null, [1], [1]]).items[0]!.note).toBe("Workouts 2 (Arms) and 3 (Pull): 8 and 7.5 sets, both planned for Monday");
+    // Saturday then Monday wraps round the week: 1 day off between
+    expect(on([null, [6], [1]]).share).toBe(1);
+    // only one of the two planned: taken as days in a row, as without plans
+    expect(on([null, [1], null]).share).toBe(0);
   });
 
   it("scores a sound program week high and a lopsided one low", () => {

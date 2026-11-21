@@ -2,7 +2,7 @@
 // behind its targets. Research-based explanations live here, never as text under a chart, so the blocks show only the data.
 // A new lesson is one more entry; the sheet lays every lesson out the same way.
 import { WEEKLY_SET_RANGE, MIN_NIGHTS, SLEEP_WEIGHTS, ACTIVITY_WEIGHTS, STRENGTH_WEIGHTS, WEEKLY_ACTIVE_MIN, STRENGTH_DAYS, GOOD_EFFICIENCY, MODERATE_FROM, VIGOROUS_FROM, SET_LOAD, MINUTE_LOAD, MIN_LOAD_DAYS, HR_ZONES, ZONE_WEIGHTS } from "@motus/shared";
-import { GOALS, SESSION_SETS, TWICE, RECOVER_SETS, RECOVER_HOURS, restText, CHECK_RESEARCH } from "@motus/shared";
+import { GOALS, SESSION_SETS, TWICE, RECOVER_SETS, restText, CHECK_RESEARCH } from "@motus/shared";
 
 /** `ref`: a source's full reference, under what it found */
 export type LessonRow = { icon: string; t: string; s?: string; r?: string; ok?: boolean; ref?: string };
@@ -116,7 +116,7 @@ export const LESSONS = {
   // the Routine check (M-273): what each source found, then each check and its points
   routineCheck: {
     title: "Routine check",
-    intro: "How your programs and routines compare with what training research found works. The targets follow the program's goal. A program is checked on its page over one week, all that week's workouts together: sets per muscle, training each muscle on 2 days a week, balance between pushing and pulling and between front and back of the thigh, and a day off before a muscle's next hard workout. A routine is checked on one workout of it: reps, sets per muscle in that workout, exercise order and rest, using the goal of the program it is in. A routine that isn't in any program is checked for muscle size. Tap any check for its numbers, the target and what to change. A check is fully met when its whole target is met; one that is only partly met still adds part of its points to the score, so 100 means every check is fully met.",
+    intro: `How your programs and routines compare with what training research found works. The targets follow the program's goal. A program is checked on its page over one week, all that week's workouts together: sets per muscle, training each muscle on 2 days a week, balance between pushing and pulling and between front and back of the thigh, and a day off before a muscle gets ${RECOVER_SETS} or more sets again. A routine is checked on one workout of it: reps, sets per muscle in that workout, exercise order and rest, using the goal of the program it is in. A routine that isn't in any program is checked for muscle size. Tap any check for its numbers, the target and what to change. A check is fully met when its whole target is met; one that is only partly met still adds part of its points to the score, so 100 means every check is fully met.`,
     sections: [
       { heading: "Targets for each goal", rows: Object.values(GOALS).map((g) => ({ icon: "goals", t: g.name,
         s: `${g.bigReps ? `${g.bigReps[0]}-${g.bigReps[1]} reps on big lifts, ${g.reps[0]}-${g.reps[1]} on single-muscle lifts` : g.reps[1] >= 100 ? `${g.reps[0]}+ reps` : `${g.reps[0]}-${g.reps[1]} reps`} · at least ${g.weekSets} sets a week per muscle · rest ${g.rest[1] === Infinity ? `at least ${restText(g.rest[0])}` : `${restText(g.rest[1])} or less`} between sets of big lifts` })) },
@@ -127,7 +127,7 @@ export const LESSONS = {
         { icon: "calendar", t: `Muscles trained on ${TWICE} or more days`, s: `A program's week: is there an exercise mainly for each major muscle on at least ${TWICE} different days? A day where the muscle only helps, like the triceps in a bench press, doesn't count as one of those days`, r: goalPoints("frequency") },
         { icon: "swap", t: "Pushing and pulling sets", s: "A program's week: about as many upper-body pulling sets as pushing sets, 3-6 pulling sets for every 4 pushing sets", r: goalPoints("pushPull") },
         { icon: "thigh", t: "Quad and hamstring sets", s: "A program's week: the hamstrings get at least half as many sets as the quads, and at most twice as many", r: goalPoints("legs") },
-        { icon: "bed", t: `A day off after ${RECOVER_SETS} or more sets for a muscle`, s: `A program's week: a muscle that gets ${RECOVER_SETS} or more sets in a workout gets fewer than ${RECOVER_SETS} in the next one, since it needs about ${RECOVER_HOURS} hours to recover. A program has no days of the week, so two workouts next to each other count as days in a row`, r: goalPoints("recovery") },
+        { icon: "dayOff", t: `A day off after ${RECOVER_SETS} or more sets`, s: `A program's week: when a muscle gets ${RECOVER_SETS} or more sets in a workout, it gets fewer than ${RECOVER_SETS} in the next workout, or a day off comes between the two`, r: goalPoints("recovery") },
         { icon: "refresh", t: "Reps per set", s: "A routine's workout: working sets with target reps in the goal's range", r: goalPoints("reps") },
         { icon: "layers", t: `Up to ${SESSION_SETS} sets per muscle`, s: "A routine's workout: working sets for each muscle in that one workout", r: goalPoints("session") },
         { icon: "arrowUp", t: "Big lifts first", s: "A routine's workout: big lifts, the ones that work several muscles (a press, a row, a squat), before single-muscle lifts that tire the same muscles. Counts most for strength", r: goalPoints("order") },

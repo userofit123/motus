@@ -8,6 +8,8 @@ const ICONS: Record<string, string> = {
   home: "M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z",
   history: "M3 12a9 9 0 1 0 3-6.7M3 4v4h4M12 7v5l3 2",
   calendar: "M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM4 10h16M8 2v4M16 2v4",
+  // a calendar with one day crossed out: a day off between workouts (not "bed", which is sleep)
+  dayOff: "M4 6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2zM4 10h16M8 2v4M16 2v4M8 14h.01M8 17.5h.01M12 14h.01M12 17.5h.01M14.75 13.75l2.5 2.5M17.25 13.75l-2.5 2.5",
   routines: "M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01",
   dumbbell: "M6 7v10M3 9v6M18 7v10M21 9v6M6 12h12",
   goals: "M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM12 17a5 5 0 1 0 0-10 5 5 0 0 0 0 10zM12 13a1 1 0 1 0 0-2 1 1 0 0 0 0 2z",
