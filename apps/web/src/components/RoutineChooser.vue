@@ -54,7 +54,7 @@ const open = (g: { id: string | null; name: string }) => !(titled.value ? isFold
 
 <template>
   <div>
-    <div v-if="titled" class="sh fh">
+    <div v-if="titled" class="sh fh first">
       <button class="fh-b" :aria-expanded="!isFolded(head)" @click="fold(head)">
         <span class="fi"><Icon name="routines" :size="15" /></span>
         <h2>{{ head.name }}</h2><span class="sep" aria-hidden="true">·</span><span class="fn">{{ list.length }}</span>
@@ -85,7 +85,7 @@ const open = (g: { id: string | null; name: string }) => !(titled.value ? isFold
 <style scoped>
 /* the folder headers, as on the Routines page */
 .sh.fh { justify-content: flex-start; gap: 4px; }
-section:first-of-type .sh.fh, .sh.fh:first-child { margin-top: 0; }
+section:first-of-type .sh.fh { margin-top: 0; }
 .fh-b { display: inline-flex; align-items: center; gap: 6px; border: 0; background: none; color: var(--tx); cursor: pointer; padding: 4px 8px 4px 0; border-radius: var(--r-sm); min-width: 0; }
 .fh-b h2 { margin: 0; }
 .fi { width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center; background: var(--s2); color: var(--acc); flex: none; }
