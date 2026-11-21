@@ -90,10 +90,10 @@ function load(data: any, folds: "fold" | "keep" = "fold") {
 watch([src.data, isNew, planMode], () => {
   // a template or "based on this" picked elsewhere opens here as an unsaved draft, like one picked in the starter below
   const q = route.query;
-  if (isNew.value && !planMode.value && (q.template || q.from)) {
+  if (isNew.value && !planMode.value && (q.template || q.from || q.combine)) {
     const name = typeof q.name === "string" ? q.name : undefined;
     router.replace({ query: {} });
-    void startFrom(q.template ? "template" : "copy", String(q.template ?? q.from), name);
+    void startFrom(q.template ? "template" : "copy", String(q.template ?? q.from ?? q.combine), name);
     return;
   }
   const d = readJson<any>(draftKey.value, null);
@@ -369,11 +369,22 @@ useLeaveGuard(() => dirty.value, { title: planMode.value ? "Discard this workout
   onDiscard: () => { localStorage.removeItem(draftKey.value); dirty.value = false; } });
 const cancel = () => goBack(router, planMode.value ? "/" : forProgram ? `/programs/${forProgram}` : "/routines");
 // both open as an unsaved draft: nothing is created until Save, so Discard leaves no routine behind
+// a copy of several routines (v = their ids joined by commas, from Routines → Combine routines) is one new routine with
+// all their exercises in the order given; each routine's supersets keep to their own exercises, with letters of their own
 async function startFrom(kind: "template" | "copy", v: string, name?: string) {
   try {
     if (kind === "copy") {
-      const full = await api.get(`/routines/${v}`);
-      load({ ...full, id: undefined, name: name || full.name + " (copy)", basedOnId: full.id, pinned: false, exercises: full.exercises.map((e: any) => ({ ...e, id: undefined })) });
+      const fulls = await Promise.all(v.split(",").map((id) => api.get(`/routines/${id}`)));
+      const full = fulls[0], many = fulls.length > 1;
+      let next = 65;
+      const exercises = fulls.flatMap((f: any) => {
+        const tags = new Map<string, string>();
+        return f.exercises.map((e: any) => {
+          if (many && e.superset && !tags.has(e.superset)) tags.set(e.superset, String.fromCharCode(next++));
+          return { ...e, id: undefined, superset: many ? tags.get(e.superset) ?? null : e.superset };
+        });
+      });
+      load({ ...full, id: undefined, name: name || (many ? fulls.map((f: any) => f.name).join(" + ") : full.name + " (copy)"), basedOnId: many ? undefined : full.id, pinned: false, exercises });
     } else load(await api.get(`/templates/${encodeURIComponent(v)}`));
     dirty.value = true;
     starter.value = false;

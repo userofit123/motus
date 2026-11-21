@@ -18,7 +18,9 @@ import Collapse from "./Collapse.vue";
 // follow other blocks; with folders, the folder headers are the headings, so no second heading stacks on top. It sits
 // above the search, as the heading of everything below it, and folds under its own key: the same routines have no
 // header on the Routines page or the Start sheet, so a fold shared with those could hide them there for good.
-const props = withDefaults(defineProps<{ icon?: string; marked?: string[]; markLabel?: string; title?: string }>(), { icon: "play", marked: () => [], markLabel: "", title: "" });
+// picked: for choosing several in an order (Combine routines): a picked row shows its place, "#1", and a check
+const props = withDefaults(defineProps<{ icon?: string; marked?: string[]; markLabel?: string; title?: string; picked?: string[] }>(), { icon: "play", marked: () => [], markLabel: "", title: "", picked: () => [] });
+const place = (r: RoutineSummary) => props.picked.indexOf(r.id) + 1;
 const isMarked = (r: RoutineSummary) => props.marked.includes(r.id);
 const emit = defineEmits<{ pick: [r: RoutineSummary] }>();
 const routines = useRoutines();
@@ -74,8 +76,8 @@ const open = (g: { id: string | null; name: string }) => !(titled.value ? isFold
       <Collapse :open="open(g)"><div class="list">
         <div v-for="r in g.items" :key="r.id" class="li click" @click="emit('pick', r)">
           <span class="dot" :style="r.color ? { background: r.color } : undefined" />
-          <div class="grow"><div class="t">{{ r.name }}<span v-if="isMarked(r)" class="tiny acc mk">{{ markLabel }}</span></div><div class="s">{{ r.exerciseCount }} exercises · {{ routineTime(r.estimateS, r.usual) }} · {{ r.lastDoneAt ? `last done ${ago(r.lastDoneAt)}` : "not done yet" }}</div></div>
-          <Icon :name="icon" :size="16" class="go" />
+          <div class="grow"><div class="t">{{ r.name }}<span v-if="isMarked(r)" class="tiny acc mk">{{ markLabel }}</span><span v-if="place(r)" class="tiny acc mk">#{{ place(r) }}</span></div><div class="s">{{ r.exerciseCount }} exercises · {{ routineTime(r.estimateS, r.usual) }} · {{ r.lastDoneAt ? `last done ${ago(r.lastDoneAt)}` : "not done yet" }}</div></div>
+          <Icon :name="place(r) ? 'check' : icon" :size="16" class="go" />
         </div>
       </div></Collapse>
     </section>
