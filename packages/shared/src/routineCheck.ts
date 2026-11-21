@@ -12,7 +12,7 @@
 // - total minutes per session and warm-ups: no clear target fits everyone (warm-up studies disagree, Ribeiro et al. 2014);
 // - cardio for fat loss: a program holds only routines, so Motus has no cardio in it to check.
 import { muscleSets, muscleSetCount } from "./muscles";
-import type { SetKind } from "./types";
+import type { Schedule, SetKind } from "./types";
 
 /** What a program trains for. Only goals the research gives different targets for (ACSM 2009 sets apart strength,
  *  muscle size and local muscular endurance; fat loss and health have their own guidance):
@@ -442,30 +442,59 @@ function legs(g: GoalTargets, days: CheckSession[], week: Record<string, number>
 
 const WEEKDAY = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
+/** Each workout's planned weekdays (0 Sunday) for the day-off check, from the plans (Schedule) of its routine that repeat
+ *  every week and are running today: "weekly" gives its days, "every day" (an interval of 1 day) all 7. Plans switched
+ *  off, ended before today or starting after today are left out. null when the routine has none, or when it is in the
+ *  week twice, as then which of its days goes with which workout is unknown. */
+export function plannedWeekdays(routineIds: string[], schedules: Schedule[], today: string): (number[] | null)[] {
+  return routineIds.map((rid) => {
+    if (routineIds.filter((x) => x === rid).length > 1) return null;
+    const days = new Set(schedules.filter((s) => s.routineId === rid && s.active && s.startDate <= today && (!s.endDate || s.endDate >= today))
+      .flatMap((s) => (s.rule === "weekly" ? s.days : s.rule === "interval" && s.intervalDays === 1 ? [0, 1, 2, 3, 4, 5, 6] : [])));
+    return days.size ? [...days].sort((a, b) => a - b) : null;
+  });
+}
+
 /** A muscle trained hard (RECOVER_SETS or more sets, as the main muscle of a lift) in two workouts that come one after the
- *  other in the week, with no day off between them. `weekdays`: each workout's planned weekdays (0 Sunday) from its
- *  routine's weekly plan, null without one. When both workouts of a pair have one, the real gap decides (2 or more days
- *  apart leaves a day off, which is fine); else two workouts in a row are taken as ones that may fall on days in a row,
- *  and the popup says so. Only pairs inside the week are looked at, as the next week may hold other workouts. Checked over
- *  the muscles that are a lift's main muscle in 2 or more workouts; null when there are none (the twice-a-week row says so). */
+ *  other, with no day off between them. `weekdays`: each workout's planned weekdays (0 Sunday) from its routine's weekly
+ *  plan, null without one. When both workouts of a pair have one, the days decide: a weekly plan repeats, so the gap is
+ *  the shorter way round the week (Sunday and the Monday after are 1 day apart, not 6), taken over every pairing of the
+ *  two workouts' days, and the closest pairing counts; 2 or more days apart leaves a day off, which is fine. With plans on
+ *  both, the week's last workout and its first are compared too, as the plan brings them round again. Without plans, two
+ *  workouts in a row are taken as ones that may fall on days in a row, and only pairs inside the week are looked at, as the
+ *  next week may hold other workouts. Checked over the muscles that are a lift's main muscle in 2 or more workouts; null
+ *  when there are none (the twice-a-week row says so). */
 function recovery(g: GoalTargets, days: Day[], wk: string, dayNames: string[], weekdays: (number[] | null)[]): Check | null {
   const named = (d: number) => (dayNames[d - 1] ? `workout ${d} (${dayNames[d - 1]})` : `workout ${d}`);
   const onDays = (m: string) => days.flatMap((d, i) => (d.main.has(m) ? [i + 1] : []));
   const ms = CHECK_MUSCLES.filter((m) => onDays(m.id).length >= 2);
   if (!ms.length) return null;
+  const N = days.length;
   const sets = (d: number, m: string) => days[d - 1]!.sets[m]!;
   const hard = (d: number, m: string) => days[d - 1]!.main.has(m) && sets(d, m) >= RECOVER_SETS;
-  /** the planned days of workouts d and d+1 closest together (gap: days later, 0 the same day); null unless both are planned */
+  /** the workout after d: the next one, and after the last the first when both are planned (the plan repeats weekly) */
+  const nxt = (d: number) => (d === N ? 1 : d + 1);
+  const wrap = N > 2 && !!weekdays[N - 1]?.length && !!weekdays[0]?.length;
+  /** the pairs compared (d: the first of the two), in order */
+  const starts = [...Array(N - 1).keys()].map((i) => i + 1).concat(wrap ? [N] : []);
+  /** the planned days of workouts d and nxt(d) closest together the shorter way round the week (gap: days apart, 0 the same
+   *  day; back: the second's day comes before the first's); null unless both are planned */
   const plan = (d: number) => {
-    const A = weekdays[d - 1], B = weekdays[d];
+    const A = weekdays[d - 1], B = weekdays[nxt(d) - 1];
     if (!A?.length || !B?.length) return null;
-    let best: { a: number; b: number; gap: number } | null = null;
-    for (const a of A) for (const b of B) { const gap = (b - a + 7) % 7; if (!best || gap < best.gap) best = { a, b, gap }; }
+    let best: { a: number; b: number; gap: number; back: boolean } | null = null;
+    for (const a of A) for (const b of B) {
+      const fwd = (b - a + 7) % 7, gap = Math.min(fwd, 7 - fwd);
+      if (!best || gap < best.gap) best = { a, b, gap, back: fwd > 7 - fwd };
+    }
     return best;
   };
   const off = (d: number) => (plan(d)?.gap ?? 0) >= 2;
-  const when = (d: number) => { const p = plan(d)!; return p.gap ? `planned for ${WEEKDAY[p.a]} and ${WEEKDAY[p.b]}` : `both planned for ${WEEKDAY[p.a]}`; };
-  const hardBoth = (m: string) => onDays(m).filter((d) => d < days.length && hard(d, m) && hard(d + 1, m));
+  const when = (d: number) => {
+    const p = plan(d)!;
+    return !p.gap ? `both planned for ${WEEKDAY[p.a]}` : `planned for ${WEEKDAY[p.a]} and ${p.back ? `the ${WEEKDAY[p.b]} before` : WEEKDAY[p.b]}`;
+  };
+  const hardBoth = (m: string) => starts.filter((d) => hard(d, m) && hard(nxt(d), m));
   // each muscle's pairs of workouts in a row that both work it hard, without a planned day off between (d: the first)
   const pairs = (m: string) => hardBoth(m).filter((d) => !off(d));
   const bad = ms.filter((m) => pairs(m.id).length);
@@ -473,10 +502,15 @@ function recovery(g: GoalTargets, days: Day[], wk: string, dayNames: string[], w
   /** "workouts 2 (Arms) and 3 (Pull)", as the twice-a-week check's notes name workouts */
   const list = (ds: number[]) => `workouts ${names(ds.map((d) => (dayNames[d - 1] ? `${d} (${dayNames[d - 1]})` : String(d))))}`;
   const two = (x: number, y: number) => list([x, y]);
-  const both = (d: number) => two(d, d + 1);
+  const both = (d: number) => two(d, nxt(d));
   // the card line by run of workouts (1-2 and 2-3 read as "workouts 1, 2 and 3"), muscles with the same run together, so
-  // two muscles in the same workouts read as one finding and the line never lists set counts
-  const runs = (m: string) => pairs(m).reduce<number[][]>((r, d) => { const last = r.at(-1); if (last && last.at(-1) === d) last.push(d + 1); else r.push([d, d + 1]); return r; }, []);
+  // two muscles in the same workouts read as one finding and the line never lists set counts; a run that comes round to
+  // its own start stops there, so no workout is named twice
+  const runs = (m: string) => pairs(m).reduce<number[][]>((r, d) => {
+    const last = r.at(-1);
+    if (last && last.at(-1) === d) { if (!last.includes(nxt(d))) last.push(nxt(d)); } else r.push([d, nxt(d)]);
+    return r;
+  }, []);
   const groups = new Map<string, { run: number[]; ms: typeof bad }>();
   for (const m of bad) for (const run of runs(m.id)) { const k = run.join(); if (!groups.has(k)) groups.set(k, { run, ms: [] }); groups.get(k)!.ms.push(m); }
   const found = [...groups.values()].sort((x, y) => x.run[0]! - y.run[0]!).map(({ run, ms: gm }) =>
@@ -486,29 +520,31 @@ function recovery(g: GoalTargets, days: Day[], wk: string, dayNames: string[], w
   const detail = !bad.length ? `In ${wk}, no muscle gets ${RECOVER_SETS} or more sets in two workouts in a row${cleared ? " without a day off between them" : ""}.`
     : `In ${wk}, ${found.join("; ")}. Leave a day off between ${one ? "them" : "each of these workouts and the next"}.`;
   const tips = bad.map((m) => {
-    const [d, ...more] = pairs(m.id), a = sets(d!, m.id), b = sets(d! + 1, m.id);
+    const [d, ...more] = pairs(m.id), a = sets(d!, m.id), b = sets(nxt(d!), m.id);
     // whole sets to move so the second workout drops below RECOVER_SETS
     const move = Math.floor(b - RECOVER_SETS) + 1;
     const also = more.length ? ` ${m.name} also ${agree([m], "gets", "get")} ${RECOVER_SETS} or more sets in ${names(more.map((x) => `both ${both(x)}`))}.` : "";
-    return `${m.name}: ${nSets(a)} in ${named(d!)}, then ${n(b)} in ${named(d! + 1)}${plan(d!) ? `, ${when(d!)}` : ""}. Leave a day off between these two workouts, or move ${move} of ${its(m)} sets from ${named(d! + 1)} to a workout that doesn't come right before or after these two, so ${they(m)} ${agree([m], "gets", "get")} fewer than ${RECOVER_SETS} sets in ${named(d! + 1)}.${also}`;
+    return `${m.name}: ${nSets(a)} in ${named(d!)}, then ${n(b)} in ${named(nxt(d!))}${plan(d!) ? `, ${when(d!)}` : ""}. Leave a day off between these two workouts, or move ${move} of ${its(m)} sets from ${named(nxt(d!))} to a workout that doesn't come right before or after these two, so ${they(m)} ${agree([m], "gets", "get")} fewer than ${RECOVER_SETS} sets in ${named(nxt(d!))}.${also}`;
   });
   return make(g, {
     key: "recovery", title: `A day off after ${RECOVER_SETS} or more sets`, share, value: `${ms.length - bad.length} of ${plural(ms.length, "muscle")}`, detail,
-    what: `Whether a muscle gets ${RECOVER_SETS} or more working sets in two workouts in a row in ${wk}. A workout counts for a muscle only when it has an exercise mainly for it, as in the check "Muscles trained on ${TWICE} or more days". When the routines of both workouts are planned every week (Schedule in the workout's ⋮ menu), the check uses those days, and a day off between the two meets the target. Without those plans, it takes two workouts in a row as ones you may do on days in a row. Only workouts within ${wk} are compared, so its last workout and the first workout of the next week aren't.`,
-    itemsLabel: `Lighter of two workouts in a row, ${wk} · target fewer than ${RECOVER_SETS} sets`, bars: false,
+    what: `Whether a muscle has two hard workouts in a row in ${wk} with no day off between them. A workout is hard for a muscle when it gives that muscle ${RECOVER_SETS} or more working sets. A workout counts for a muscle only when it has an exercise mainly for it, as in the check "Muscles trained on ${TWICE} or more days". When the routines of both workouts are planned every week (Schedule in the workout's ⋮ menu), the check uses those days, and a day off between the two meets the target. As those plans repeat every week, a Sunday workout and the Monday one after it count as days in a row, and the last workout of ${wk} is compared with its first workout, which the plans bring round again the next week. Without those plans, the check takes two workouts in a row as ones you may do on days in a row, and doesn't compare the last workout of ${wk} with the first workout of the next week, as that week may hold other workouts.`,
+    itemsLabel: `Hard workouts in a row per muscle in ${wk} · target 0`, bars: false,
     items: ms.map((m) => {
       const d = onDays(m.id), p = pairs(m.id)[0];
-      const lo = (x: number) => Math.min(sets(x, m.id), sets(x + 1, m.id));
+      // how many of the muscle's workouts are hard ones in a row without a day off: the row's number, 0 meets the target
+      const k = new Set(pairs(m.id).flatMap((x) => [x, nxt(x)])).size;
+      const row = (note: string) => ({ label: m.name, value: k, text: plural(k, "workout"), ok: !p, note });
+      const lo = (x: number) => Math.min(sets(x, m.id), sets(nxt(x), m.id));
       // the pair that needs a day off, else the hardest pair in a row, or its first two workouts when none are in a row
-      const at = p ?? d.filter((x) => d.includes(x + 1)).sort((x, y) => lo(y) - lo(x))[0];
-      if (at == null) { const [x, y] = d as [number, number], gap = y - x - 1, v = Math.min(sets(x, m.id), sets(y, m.id));
-        return { label: m.name, value: v, text: plural(v, "set"), ok: true, note: `${cap(two(x, y))}: ${n(sets(x, m.id))} and ${plural(sets(y, m.id), "set")}, with ${plural(gap, "workout")} between them` }; }
-      const a = sets(at, m.id), b = sets(at + 1, m.id), pl = plan(at);
+      const at = p ?? starts.filter((x) => d.includes(x) && d.includes(nxt(x))).sort((x, y) => lo(y) - lo(x))[0];
+      if (at == null) { const [x, y] = d as [number, number], gap = y - x - 1;
+        return row(`${cap(two(x, y))}: ${n(sets(x, m.id))} and ${plural(sets(y, m.id), "set")}, with ${plural(gap, "workout")} between them`); }
+      const a = sets(at, m.id), b = sets(nxt(at), m.id), pl = plan(at);
       const counts = `${n(a)} and ${plural(b, "set")}`;
-      const note = p ? (pl ? `${cap(both(at))}: ${counts}, ${when(at)}` : `${cap(both(at))} in a row: ${counts}`)
+      return row(p ? (pl ? `${cap(both(at))}: ${counts}, ${when(at)}` : `${cap(both(at))} in a row: ${counts}`)
         : lo(at) < RECOVER_SETS ? `${cap(both(at))} in a row: ${counts} - fewer than ${RECOVER_SETS} in one of them`
-        : `${cap(both(at))}: ${counts}, ${when(at)}, with ${plural(pl!.gap - 1, "day")} off between them`;
-      return { label: m.name, value: lo(at), text: plural(lo(at), "set"), ok: !p, note };
+        : `${cap(both(at))}: ${counts}, ${when(at)}, with ${plural(pl!.gap - 1, "day")} off between them`);
     }),
     target: `When a muscle gets ${RECOVER_SETS} or more sets in a workout, give it fewer than ${RECOVER_SETS} in the next workout, or leave at least one day off before that workout.`,
     reason: `After many hard sets a muscle stays weaker for 1-2 days while it repairs, so training it hard again the next day means lighter weights or fewer reps. Exercise guidelines ask for about ${RECOVER_HOURS} hours between hard workouts for the same muscle. No study names how many sets make a workout hard for a muscle: ${RECOVER_SETS} is Motus's own line.`,

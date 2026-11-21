@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { routineCheck, programCheck, weekMuscleSets, GOALS, goalOf, type CheckExercise } from "./routineCheck";
+import { routineCheck, programCheck, plannedWeekdays, weekMuscleSets, GOALS, goalOf, type CheckExercise } from "./routineCheck";
 import { muscleSetCount } from "./muscles";
+import type { Schedule } from "./types";
 
 // an exercise with `n` working sets of `reps` (and a warm-up, which never counts)
 const ex = (name: string, primary: string[], o: Partial<CheckExercise> = {}, n = 3, reps = 10, restS?: number): CheckExercise => ({
@@ -190,11 +191,13 @@ describe("routine check", () => {
     expect(r.value).toBe("0 of 1 muscle");
     expect(r.title).toBe("A day off after 6 or more sets");
     expect(r.detail).toBe("In week 1, biceps get 6 or more sets in workouts 2 (Arms) and 3 (Pull), 2 workouts in a row. Leave a day off between them.");
-    expect(r.items[0]).toMatchObject({ label: "Biceps", value: 7.5, text: "7.5 sets", ok: false, note: "Workouts 2 (Arms) and 3 (Pull) in a row: 8 and 7.5 sets" });
+    expect(r.itemsLabel).toBe("Hard workouts in a row per muscle in week 1 · target 0");
+    expect(r.items[0]).toMatchObject({ label: "Biceps", value: 2, text: "2 workouts", ok: false, note: "Workouts 2 (Arms) and 3 (Pull) in a row: 8 and 7.5 sets" });
     expect(r.tips[0]).toBe("Biceps: 8 sets in workout 2 (Arms), then 7.5 in workout 3 (Pull). Leave a day off between these two workouts, or move 2 of their sets from workout 3 (Pull) to a workout that doesn't come right before or after these two, so they get fewer than 6 sets in workout 3 (Pull).");
     // three hard workouts in a row: one run on the card, and the tip names the next pair too
     const three = key(programCheck([arms, arms, arms], "size", 1, ["A", "B", "C"]), "recovery")!;
     expect(three.detail).toBe("In week 1, biceps get 6 or more sets in workouts 1 (A), 2 (B) and 3 (C), 3 workouts in a row. Leave a day off between each of these workouts and the next.");
+    expect(three.items[0]).toMatchObject({ value: 3, text: "3 workouts" });
     expect(three.tips[0]).toBe("Biceps: 8 sets in workout 1 (A), then 8 in workout 2 (B). Leave a day off between these two workouts, or move 3 of their sets from workout 2 (B) to a workout that doesn't come right before or after these two, so they get fewer than 6 sets in workout 2 (B). Biceps also get 6 or more sets in both workouts 2 (B) and 3 (C).");
     // two muscles hard in the same two workouts: one finding naming both, no set counts on the card
     const push = (k: number) => ex("Pushdown", ["triceps"], { mechanic: "isolation", force: "push" }, k);
@@ -204,7 +207,7 @@ describe("routine check", () => {
     // another workout between them: no longer in a row
     const apart = key(programCheck([arms, legs, pull], "size", 1, ["Arms", "Legs", "Pull"]), "recovery")!;
     expect(apart.share).toBe(1);
-    expect(apart.items[0]).toMatchObject({ text: "7.5 sets", ok: true, note: "Workouts 1 (Arms) and 3 (Pull): 8 and 7.5 sets, with 1 workout between them" });
+    expect(apart.items[0]).toMatchObject({ value: 0, text: "0 workouts", ok: true, note: "Workouts 1 (Arms) and 3 (Pull): 8 and 7.5 sets, with 1 workout between them" });
     // a few sets in a row are fine, as are a hard workout followed by a light one, and the row says why
     expect(key(programCheck([[curl(3)], [curl(3)]]), "recovery")!.share).toBe(1);
     const light = key(programCheck([[curl(8)], [curl(5)]]), "recovery")!;
@@ -223,7 +226,7 @@ describe("routine check", () => {
     const apart = on([null, [1], [3]]);
     expect(apart.share).toBe(1);
     expect(apart.detail).toBe("In week 1, no muscle gets 6 or more sets in two workouts in a row without a day off between them.");
-    expect(apart.items[0]).toMatchObject({ ok: true, note: "Workouts 2 (Arms) and 3 (Pull): 8 and 7.5 sets, planned for Monday and Wednesday, with 1 day off between them" });
+    expect(apart.items[0]).toMatchObject({ value: 0, text: "0 workouts", ok: true, note: "Workouts 2 (Arms) and 3 (Pull): 8 and 7.5 sets, planned for Monday and Wednesday, with 1 day off between them" });
     // Monday and Tuesday, or both on Monday: flagged with the real days
     const next = on([null, [1], [2]]);
     expect(next.share).toBe(0);
@@ -234,6 +237,49 @@ describe("routine check", () => {
     expect(on([null, [6], [1]]).share).toBe(1);
     // only one of the two planned: taken as days in a row, as without plans
     expect(on([null, [1], null]).share).toBe(0);
+    // a plan repeats weekly, so the gap is the shorter way round: Monday and the Sunday before are days in a row
+    const back = on([null, [1], [0]]);
+    expect(back.share).toBe(0);
+    expect(back.items[0]!.note).toBe("Workouts 2 (Arms) and 3 (Pull): 8 and 7.5 sets, planned for Monday and the Sunday before");
+    // several planned days each: the closest pairing counts (Wednesday with the Tuesday before, not the Saturday)
+    const many = on([null, [3], [2, 6]]);
+    expect(many.share).toBe(0);
+    expect(many.detail).toBe("In week 1, biceps get 6 or more sets in workouts 2 (Arms) and 3 (Pull), planned for Wednesday and the Tuesday before. Leave a day off between them.");
+    // Monday and Thursday plus Saturday: the closest is Monday and the Saturday before, 1 day off between, so met
+    expect(on([null, [1], [4, 6]]).items[0]!.note).toBe("Workouts 2 (Arms) and 3 (Pull): 8 and 7.5 sets, planned for Monday and the Saturday before, with 1 day off between them");
+  });
+
+  it("compares the week's last workout with its first when both are planned (M-298)", () => {
+    const arms = [curl(8)], legs = [squat(3)], nm = ["Arms", "Legs", "Pull"], pull = [row(3), curl(6)];
+    const on = (wd: (number[] | null)[]) => key(programCheck([arms, legs, pull], "size", 1, nm, wd), "recovery")!;
+    // Pull on Sunday, then Arms on Monday of the next week: days in a row, so flagged
+    const r = on([[1], [3], [0]]);
+    expect(r.share).toBe(0);
+    expect(r.detail).toBe("In week 1, biceps get 6 or more sets in workouts 3 (Pull) and 1 (Arms), planned for Sunday and Monday. Leave a day off between them.");
+    expect(r.items[0]).toMatchObject({ value: 2, ok: false, note: "Workouts 3 (Pull) and 1 (Arms): 7.5 and 8 sets, planned for Sunday and Monday" });
+    // Pull on Friday: Saturday and Sunday off before Monday, so met
+    expect(on([[1], [3], [5]]).items[0]).toMatchObject({ value: 0, ok: true, note: "Workouts 3 (Pull) and 1 (Arms): 7.5 and 8 sets, planned for Friday and Monday, with 2 days off between them" });
+    // without plans on both, the last and the first aren't compared
+    expect(on([[1], [3], null]).items[0]).toMatchObject({ ok: true, note: "Workouts 1 (Arms) and 3 (Pull): 8 and 7.5 sets, with 1 workout between them" });
+  });
+
+  it("turns the plans of a week's routines into weekdays (M-298)", () => {
+    const today = "2026-11-22";
+    const plan = (o: Partial<Schedule>): Schedule => ({ id: "s", routineId: "a", activityType: null, rule: "weekly", days: [3, 1], intervalDays: null,
+      startDate: "2026-11-01", endDate: null, timeOfDay: null, remindMin: null, active: true, ...o });
+    expect(plannedWeekdays(["a", "b"], [plan({})], today)).toEqual([[1, 3], null]);
+    // two weekly plans of one routine add up; every day gives all 7
+    expect(plannedWeekdays(["a"], [plan({}), plan({ days: [5] })], today)).toEqual([[1, 3, 5]]);
+    expect(plannedWeekdays(["a"], [plan({ rule: "interval", intervalDays: 1, days: [] })], today)).toEqual([[0, 1, 2, 3, 4, 5, 6]]);
+    // every 2 days, monthly and once have no fixed weekdays
+    expect(plannedWeekdays(["a"], [plan({ rule: "interval", intervalDays: 2, days: [] }), plan({ rule: "monthly", days: [] })], today)).toEqual([null]);
+    // switched off, ended, or starting later: left out; ending today still counts
+    expect(plannedWeekdays(["a"], [plan({ active: false })], today)).toEqual([null]);
+    expect(plannedWeekdays(["a"], [plan({ endDate: "2026-11-21" })], today)).toEqual([null]);
+    expect(plannedWeekdays(["a"], [plan({ startDate: "2026-11-23" })], today)).toEqual([null]);
+    expect(plannedWeekdays(["a"], [plan({ endDate: today, startDate: today })], today)).toEqual([[1, 3]]);
+    // a routine in the week twice: which day goes with which workout is unknown
+    expect(plannedWeekdays(["a", "b", "a"], [plan({})], today)).toEqual([null, null, null]);
   });
 
   it("scores a sound program week high and a lopsided one low", () => {

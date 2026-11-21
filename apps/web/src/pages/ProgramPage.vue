@@ -4,7 +4,7 @@ import { loaded, useSettings } from "../api/queries";
 import { computed, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useQueries, useQuery } from "@tanstack/vue-query";
-import { programCheck, weekMuscleSets, musclesWorked, weeksText, goalOf, type ProgramDetail, type Routine, type Schedule } from "@motus/shared";
+import { programCheck, plannedWeekdays, weekMuscleSets, musclesWorked, weeksText, goalOf, type ProgramDetail, type Routine, type Schedule } from "@motus/shared";
 import { api } from "../api/client";
 import { invalidate } from "../api/live";
 import { useFmt, unitOf, localYmd } from "../core/format";
@@ -110,26 +110,17 @@ const checkOn = computed(() => !!st.value.features.routineCheck);
 const checkWeek = computed(() => (checkOn.value ? p.value?.plan.find((w) => !w.deload && w.days.length) ?? null : null));
 const weekIds = computed(() => [...new Set((checkWeek.value?.days ?? []).map((d) => d.routineId))]);
 const plans = useQuery({ queryKey: ["schedules"], queryFn: () => api.get<Schedule[]>("/schedules"), enabled: checkOn });
-// each workout's weekdays when its routine is planned every week (still running), so the day-off check sees the real days;
-// null when it isn't, or when the routine is in the week twice, as then which of its days goes with which workout is unknown
-const weekdaysOf = (ids: string[]) => {
-  const today = localYmd(new Date());
-  return ids.map((rid) => {
-    if (ids.filter((x) => x === rid).length > 1) return null;
-    const days = new Set((plans.data.value ?? []).filter((s) => s.routineId === rid && s.active && (!s.endDate || s.endDate >= today))
-      .flatMap((s) => (s.rule === "weekly" ? s.days : s.rule === "interval" && s.intervalDays === 1 ? [0, 1, 2, 3, 4, 5, 6] : [])));
-    return days.size ? [...days] : null;
-  });
-};
 const weekRoutines = useQueries({ queries: computed(() => weekIds.value.map((rid) => ({ queryKey: ["routines", rid], queryFn: () => api.get<Routine>(`/routines/${rid}`) }))) });
 const check = computed(() => {
   if (!checkWeek.value || weekRoutines.value.some((x) => !x.data)) return null;
+  // wait for the plans too, so the day-off row doesn't flip once they come in; a failed or offline fetch doesn't hold it
+  if (plans.status.value === "pending" && plans.fetchStatus.value !== "idle") return null;
   // one session per routine, so a routine done twice in the week is the same workout twice
   const byId = new Map(weekIds.value.map((rid, i) => [rid, sessionOf(weekRoutines.value[i]!.data, st.value.workout)]));
   const days = checkWeek.value.days.map((d) => byId.get(d.routineId)!);
   // each workout's routine name, so a tip can point at "workout 2 (Back)"
   const dayNames = checkWeek.value.days.map((d) => weekRoutines.value[weekIds.value.indexOf(d.routineId)]!.data!.name);
-  const c = programCheck(days, p.value!.goal, checkWeek.value.week, dayNames, weekdaysOf(checkWeek.value.days.map((d) => d.routineId)));
+  const c = programCheck(days, p.value!.goal, checkWeek.value.week, dayNames, plannedWeekdays(checkWeek.value.days.map((d) => d.routineId), plans.data.value ?? [], localYmd(new Date())));
   const worked = musclesWorked(days.flat().filter((e) => e.category !== "cardio" && e.category !== "stretching"));
   return c ? { c, muscles: { sets: weekMuscleSets(days), primary: worked.primary, secondary: worked.secondary } } : null;
 });
