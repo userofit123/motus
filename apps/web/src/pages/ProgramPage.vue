@@ -1,7 +1,6 @@
 <script setup lang="ts">
 // One program: where you are and what's next (Start), the plan week by week with what was done, and whether you're on schedule.
 import { loaded, useSettings } from "../api/queries";
-import { goBack } from "../core/leave";
 import { computed, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useQueries, useQuery } from "@tanstack/vue-query";
@@ -31,6 +30,9 @@ const p = computed(() => q.data.value);
 // the volume as the value with its unit small beside it ("12.4k" kg), as the other tiles' units
 const volParts = computed(() => unitOf(fmt.value.vol(p.value?.stats.volumeKg ?? 0)));
 const next = computed(() => p.value?.state.next ?? null);
+// Back always goes to the Programs list, wherever the program was opened from (Home, a routine, the Start sheet);
+// one step back when that list is the page before, so it isn't there twice
+const toPrograms = () => (history.state?.back === "/routines?tab=programs" ? router.back() : router.push("/routines?tab=programs"));
 const editing = ref(false);
 const adding = ref(false);
 /** weeks behind the calendar (only while following it) */
@@ -78,9 +80,15 @@ const dayLine = (d: Day) => {
   return line.charAt(0).toUpperCase() + line.slice(1);
 };
 // a workout moved up or down in its week, saved straight away, as the routine editor's exercises move in their ⋮
+// (read fresh, so two quick moves both land instead of the second undoing the first)
 async function move(d: Day, by: number) {
-  const weeks = p.value!.weeks.map((w, i) => (i === d.week - 1 ? moveDay(w, d.day - 1, d.day - 1 + by) : w));
-  try { await api.put(`/programs/${id.value}`, { weeks }); invalidate(["routines", "home"]); } catch (e) { toastError(e); }
+  try {
+    const fresh = await api.get<ProgramDetail>(`/programs/${id.value}`, { tz: new Date().getTimezoneOffset() });
+    const to = d.day - 1 + by, w = fresh.weeks[d.week - 1];
+    if (!w || to < 0 || to >= w.days.length) return;
+    const weeks = fresh.weeks.map((x, i) => (i === d.week - 1 ? moveDay(x, d.day - 1, to) : x));
+    await api.put(`/programs/${id.value}`, { weeks }); invalidate(["routines", "home"]);
+  } catch (e) { toastError(e); }
 }
 // each day's ⋮: which workout counts for it (or skipped), planning its routine, its place in the week, and back to automatic
 const dayOpen = ref<Day | null>(null);
@@ -118,7 +126,7 @@ await loaded(q);
 
 <template>
   <div v-if="p" class="page">
-    <button class="back" @click="goBack(router, '/routines?tab=programs')"><Icon name="left" :size="16" /><span>Programs</span></button>
+    <button class="back" @click="toPrograms"><Icon name="left" :size="16" /><span>Programs</span></button>
     <div class="ph">
       <div><h1>{{ p.name }}</h1><div class="sub">{{ sub }}</div></div>
       <div class="acts"><button class="btn keep" @click="primary.run()"><Icon :name="primary.icon" :size="16" />{{ primary.label }}</button><Menu :items="menu" /></div>

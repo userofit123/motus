@@ -67,6 +67,9 @@ hr.sep { border: 0; border-top: 1px solid var(--ol); margin: 14px 0; }
 .back svg { display: block; flex: none; width: 20px; height: 20px; padding: 3px; box-sizing: border-box; border-radius: 50%; background: var(--s2); color: var(--tx); transition: background .2s, color .2s; }
 /* most fonts sit their letters a little above the middle of the line: bring the label down to the chevron's centre */
 .back > span { translate: 0 1px; }
+/* a long label (a program's name) stays on one line and ends in "…" instead of running past the page */
+.back { max-width: 100%; }
+.back > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .back:hover { color: var(--tx); background: var(--s2); }
 .back:hover svg { background: var(--accc); color: var(--onc); }
 .back:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }

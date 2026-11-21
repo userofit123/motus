@@ -10,8 +10,11 @@ import Icon from "./Icon.vue";
 import SearchField from "./SearchField.vue";
 import Collapse from "./Collapse.vue";
 
-// icon: what tapping a row does (play: start it, as the Start sheet; plus: add it, as a program's Add routines)
-withDefaults(defineProps<{ icon?: string }>(), { icon: "play" });
+// icon: what tapping a row does (play: start it, as the Start sheet; plus: add it, as a program's Add routines).
+// marked/markLabel: routines already in what they're picked for, said first in their line with a check in place of the
+// icon (a program's routines: picking one again still adds it, so a repeat tap shows instead of passing unseen)
+const props = withDefaults(defineProps<{ icon?: string; marked?: string[]; markLabel?: string }>(), { icon: "play", marked: () => [], markLabel: "" });
+const isMarked = (r: RoutineSummary) => props.marked.includes(r.id);
 const emit = defineEmits<{ pick: [r: RoutineSummary] }>();
 const routines = useRoutines();
 const folders = useFolders();
@@ -50,8 +53,8 @@ function fold(g: { id: string | null }) { const k = fkey(g); folded.value = isFo
       <Collapse :open="!isFolded(g) || !!q"><div class="list">
         <div v-for="r in g.items" :key="r.id" class="li click" @click="emit('pick', r)">
           <span class="dot" :style="r.color ? { background: r.color } : undefined" />
-          <div class="grow"><div class="t">{{ r.name }}</div><div class="s">{{ r.exerciseCount }} exercises · {{ routineTime(r.estimateS, r.usual) }} · {{ r.lastDoneAt ? `last done ${ago(r.lastDoneAt)}` : "not done yet" }}</div></div>
-          <Icon :name="icon" :size="16" class="go" />
+          <div class="grow"><div class="t">{{ r.name }}</div><div class="s"><span v-if="isMarked(r)" class="mk">{{ markLabel }} · </span>{{ r.exerciseCount }} exercises · {{ routineTime(r.estimateS, r.usual) }} · {{ r.lastDoneAt ? `last done ${ago(r.lastDoneAt)}` : "not done yet" }}</div></div>
+          <Icon :name="isMarked(r) ? 'check' : icon" :size="16" class="go" />
         </div>
       </div></Collapse>
     </section>
@@ -67,4 +70,5 @@ section:first-of-type .sh.fh { margin-top: 0; }
 .fi { width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center; background: var(--s2); color: var(--acc); flex: none; }
 .fn { color: var(--tx2); font-size: 13px; font-weight: 500; }
 .go { color: var(--acc); flex: none; }
+.mk { color: var(--acc); font-weight: 500; }
 </style>

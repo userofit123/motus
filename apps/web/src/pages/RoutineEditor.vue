@@ -330,8 +330,14 @@ async function save(thenStart = false) {
     invalidate(["routines", "home", "calendar"]);
     if (forProgram) {
       // the routine is saved either way; if adding it to the program fails, its own page opens as after any save
-      try { toast(await addToProgram(forProgram, rid, r.value.name.trim())); router.replace(thenStart ? `/routines/${rid}/start` : `/programs/${forProgram}`); }
-      catch (e) { toastError(e); router.replace(`/routines/${rid}`); }
+      // back to the program the way it came (no second copy of its page); Save and start starts it as part of the
+      // program, as the program's own Start does
+      try {
+        const a = await addToProgram(forProgram, rid, r.value.name.trim());
+        toast(a.text);
+        if (thenStart) router.replace(`/routines/${rid}/start?program=${forProgram}${a.deload ? `&deload=${a.deload}` : ""}`);
+        else goBack(router, `/programs/${forProgram}`);
+      } catch (e) { toastError(e); router.replace(`/routines/${rid}`); }
       return;
     }
     toast("Routine saved");
@@ -420,7 +426,7 @@ const setMenu = (e: any, j: number) => e.sets[j].kind === "drop" ? [
 ];
 const tr = (e: any) => exById.value.get(e.exerciseId)?.tracking ?? e.exercise?.tracking ?? "weight_reps";
 // show the page once its data is in, all at once
-await loaded(src, all, folders, routines, templates);
+await loaded(src, all, folders, routines, templates, programs);
 </script>
 
 <template>

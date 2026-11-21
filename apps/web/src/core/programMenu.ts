@@ -46,18 +46,40 @@ type Week = Program["weeks"][number];
 /** The weeks that get a routine added from the program's page: every week but the rest weeks (all of them while none has a routine yet). */
 export const addWeeks = (weeks: Week[]) => (weeks.some((w) => w.days.length) ? weeks.filter((w) => w.days.length) : weeks);
 
+/** The most workouts one week holds (the server keeps no more than this). */
+export const WEEK_MAX = 14;
+
 /**
- * Adds a routine to the end of every week but the rest weeks (Add routines, and a new routine made from the program's
- * page). Reads the program fresh, so routines added one after another all land; returns the confirmation to show.
+ * Adds a routine to the end of every week but the rest weeks and the full ones (Add routines, and a new routine made
+ * from the program's page). Reads the program fresh, so routines added one after another all land. Returns the
+ * confirmation to show and the deload to start it with (its program's current week's); fails, saying why, when no week
+ * can take it.
  */
-export async function addToProgram(programId: string, routineId: string, name: string): Promise<string> {
+export async function addToProgram(programId: string, routineId: string, name: string): Promise<{ text: string; deload: number | null }> {
   const p = await api.get<ProgramDetail>(`/programs/${programId}`, { tz: new Date().getTimezoneOffset() });
-  const to = addWeeks(p.weeks);
+  const n = p.weeks.length, target = addWeeks(p.weeks), to = target.filter((w) => w.days.length < WEEK_MAX);
+  if (!n) throw new Error(`${p.name} has no weeks yet, so ${name} was not added. Add a week with Edit in ⋮.`);
+  if (!to.length) throw new Error(n === 1
+    ? `${name} was not added: ${p.name} already has ${WEEK_MAX} workouts, the most a week can hold.`
+    : `${name} was not added: every week of ${p.name} already has ${WEEK_MAX} workouts, the most a week can hold.`);
   const weeks = p.weeks.map((w) => (to.includes(w) ? { ...w, days: [...w.days, routineId] } : w));
   await api.put(`/programs/${programId}`, { weeks });
   invalidate(["routines", "home"]);
-  if (to.length === p.weeks.length) return p.weeks.length === 1 ? `Added ${name} to ${p.name}` : `Added ${name} to all ${p.weeks.length} weeks of ${p.name}`;
-  return `Added ${name} to ${to.length} of ${p.weeks.length} weeks of ${p.name}, not the rest weeks`;
+  const week = p.weeks[(p.state.next?.week ?? 1) - 1];
+  const deload = week?.deload ? p.deloadPct : null;
+  if (to.length === n) return { text: n === 1 ? `Added ${name} to ${p.name}` : `Added ${name} to all ${n} weeks of ${p.name}`, deload };
+  const rest = n - target.length, full = target.length - to.length;
+  const not = [rest ? "the rest weeks" : "", full === 1 ? `1 week that already has ${WEEK_MAX} workouts, the most a week can hold` : full ? `${full} weeks that already have ${WEEK_MAX} workouts, the most a week can hold` : ""];
+  return { text: `Added ${name} to ${to.length} of ${n} weeks of ${p.name}, not ${not.filter(Boolean).join(" or ")}`, deload };
+}
+
+/**
+ * A week with one workout taken out. A day chosen by hand is kept by its place in the week, so the ones after it move
+ * up one place with their routines, and the removed one's goes with it.
+ */
+export function removeDay(w: Week, at: number): Week {
+  const marks = w.marks ? Object.fromEntries(Object.entries(w.marks).flatMap(([k, v]) => (+k === at + 1 ? [] : [[String(+k > at + 1 ? +k - 1 : +k), v]]))) : undefined;
+  return { ...w, days: w.days.filter((_, i) => i !== at), ...(marks ? { marks } : {}) };
 }
 
 /**
