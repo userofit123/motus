@@ -73,8 +73,9 @@ export async function addToProgram(programId: string, routineId: string, name: s
   const deload = (had && had.week < added ? had.deload : !!to[0]!.deload) ? p.deloadPct : null;
   if (to.length === n) return { text: n === 1 ? `Added ${name} to ${p.name}` : `Added ${name} to all ${n} weeks of ${p.name}`, deload };
   const rest = n - target.length, full = target.length - to.length;
-  const skipped = [rest ? `${rest} rest week${rest === 1 ? "" : "s"}` : "", full ? `${full} full week${full === 1 ? "" : "s"} (${WEEK_MAX} workouts)` : ""];
-  return { text: `Added ${name} to ${to.length} of ${n} weeks of ${p.name}: ${skipped.filter(Boolean).join(" and ")} skipped`, ms: 6000, deload };
+  // "skipped" is not used here: in a program it means a workout day the person skipped
+  const left = [rest ? `${rest} rest week${rest === 1 ? "" : "s"}` : "", full ? `${full} full week${full === 1 ? "" : "s"} (${WEEK_MAX} workouts)` : ""];
+  return { text: `Added ${name} to ${to.length} of ${n} weeks of ${p.name}, not to ${left.filter(Boolean).join(" or ")}`, ms: 6000, deload };
 }
 
 /**

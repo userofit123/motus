@@ -54,8 +54,10 @@ const groups = computed(() => {
 // folded folders are remembered on this device (a search shows everything)
 const folded = ref<string[]>(readJson<string[]>("motusFolded", []));
 const fkey = (g: { id: string | null }) => g.id ?? "other";
-const isFolded = (g: { id: string | null }) => folded.value.includes(fkey(g));
-function fold(g: { id: string | null }) { const k = fkey(g); folded.value = isFolded(g) ? folded.value.filter((x) => x !== k) : [...folded.value, k]; writeJson("motusFolded", folded.value); }
+// only a group with a header can be folded: a fold saved by another screen (where the group had a header) never hides
+// a headerless group here, which would have no way to unfold
+const isFolded = (g: { id: string | null; name: string }) => !!g.name && folded.value.includes(fkey(g));
+function fold(g: { id: string | null; name: string }) { const k = fkey(g); folded.value = isFolded(g) ? folded.value.filter((x) => x !== k) : [...folded.value, k]; writeJson("motusFolded", folded.value); }
 async function newFolder() {
   const name = await prompt("New folder", { placeholder: "e.g. Push / Pull / Legs" });
   if (name) { await api.post("/folders", { name }); invalidate(["routines"]); toast("Folder created"); }
