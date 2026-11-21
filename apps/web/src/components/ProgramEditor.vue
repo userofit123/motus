@@ -12,6 +12,8 @@ import Sheet from "./Sheet.vue";
 import WhenPicker from "./WhenPicker.vue";
 import AppSelect from "./AppSelect.vue";
 import Menu from "./Menu.vue";
+import { startDrag } from "../core/drag";
+import { moveDay } from "../core/programMenu";
 
 const props = defineProps<{ program?: Program | null }>();
 const emit = defineEmits<{ close: []; saved: [id: string] }>();
@@ -34,6 +36,9 @@ const hint = computed(() => {
   if (p && !p.startDate && p.startsOn) return `Started ${fmt.value.day(p.startsOn)} with its first workout. Ends ${fmt.value.day(programEnd(p.startsOn, n)!)}, after ${weeksText(n)}.`;
   return `Starts ${p?.startDate ? "the next time you do" : "with"} its first workout and ends ${weeksText(n)} later.`;
 });
+// a week's workouts put in order by their handle, as the routine editor's exercises; a day chosen by hand moves with its routine
+const dragDay = (ev: PointerEvent, i: number, j: number) =>
+  startDrag(ev, { list: (ev.currentTarget as HTMLElement).closest(".pdays") as HTMLElement, index: j, move: (a, b) => (e.value.weeks[i] = moveDay(e.value.weeks[i], a, b)) });
 // Adds a copy of the week right after it, in this same program (not a new program).
 const duplicateWeek = (i: number) => { const w = e.value.weeks[i]; e.value.weeks.splice(i + 1, 0, { days: [...w.days], deload: false }); };
 async function save() {
@@ -61,9 +66,9 @@ async function save() {
     <div v-for="(w, i) in e.weeks" :key="i" class="card tight wk">
       <div class="row hgap"><b class="grow">Week {{ i + 1 }}</b><label class="row tiny" style="gap:6px"><span class="tg"><input v-model="w.deload" type="checkbox" /></span>Deload</label>
         <Menu :items="[{ label: 'Duplicate this week', icon: 'copy', run: () => duplicateWeek(i) }, { label: 'Remove this week', icon: 'trash', danger: true, sep: true, hidden: e.weeks.length < 2, run: () => e.weeks.splice(i, 1) }]" /></div>
-      <!-- the week's workouts in order, each removable; routines are added from a dropdown under them -->
+      <!-- the week's workouts in order, each dragged by its handle to another place and removable; routines are added from a dropdown under them -->
       <div v-if="w.days.length" class="pdays">
-        <div v-for="(d, j) in w.days" :key="j" class="pday"><span class="pdn">{{ j + 1 }}</span><span class="grow ellipsis">{{ nameOf(d) }}</span><button type="button" class="ib sm plain" :aria-label="`Remove ${nameOf(d)}`" @click="w.days.splice(j, 1)"><Icon name="close" :size="14" /></button></div>
+        <div v-for="(d, j) in w.days" :key="j" class="pday" data-drag><button type="button" class="ib sm plain dragh" :aria-label="`Drag ${nameOf(d)} to reorder`" :title="`Drag ${nameOf(d)} to reorder`" @pointerdown="dragDay($event, i, j)"><Icon name="drag" :size="18" /></button><span class="pdn">{{ j + 1 }}</span><span class="grow ellipsis">{{ nameOf(d) }}</span><button type="button" class="ib sm plain" :aria-label="`Remove ${nameOf(d)}`" @click="w.days.splice(j, 1)"><Icon name="close" :size="14" /></button></div>
       </div>
       <div v-else class="tiny">No workouts: a rest week.</div>
       <AppSelect :model-value="''" :options="(routines.data.value ?? []).filter((r) => !r.archived).map((r) => ({ value: r.id, label: r.name }))" :placeholder="w.days.length ? 'Add another workout…' : 'Add a workout…'" title="Add a workout" @update:model-value="(v: string) => v && w.days.push(v)" />
@@ -80,7 +85,9 @@ async function save() {
 .wk { display: flex; flex-direction: column; gap: var(--hg); margin-bottom: var(--hg); }
 .wk .row.hgap { margin: 0; }
 .pdays { display: flex; flex-direction: column; gap: 4px; }
-.pday { display: flex; align-items: center; gap: 10px; padding: 2px 2px 2px 6px; border-radius: var(--r-sm); background: var(--s2); font-size: 13.5px; }
+.pday { display: flex; align-items: center; gap: 10px; padding: 2px; border-radius: var(--r-sm); background: var(--s2); font-size: 13.5px; }
+/* muted like the routine editor's handle; it takes the row's start padding, as the remove button takes its end */
+.pday .dragh { color: var(--tx2); margin-inline-end: -6px; }
 .pdn { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; flex: none; font-size: 11.5px; font-weight: 600; background: var(--s1); color: var(--tx2); }
 /* .tg is the settings-list switch row, which draws a line above itself; here it's a bare switch beside a label */
 .wk .tg { border: 0; padding: 0; flex: none; }

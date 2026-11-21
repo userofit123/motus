@@ -8,8 +8,8 @@
 import { computed, nextTick, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { plannedRest as plannedRestOf, restForKind, restSummary } from "../core/plannedRest";
-import { usesWeight, usesReps, usesDuration, usesDistance, musclesWorked, estimate, dropWeightKg, restDefaultsOf, progressionOf, progressionDefaultsOf, oneSideOf, duration, muscleName, sideRounds, sideJoins, toM, fromM, muscleSets, refitSet, newSetFor, progresses, type Progression, type Tracking, type RoutineExercise } from "@motus/shared";
-import { useRoutine, useRoutines, useFolders, useExercises, useSettings, useTemplates, loaded } from "../api/queries";
+import { usesWeight, usesReps, usesDuration, usesDistance, musclesWorked, estimate, dropWeightKg, restDefaultsOf, progressionOf, progressionDefaultsOf, oneSideOf, duration, muscleName, sideRounds, sideJoins, toM, fromM, muscleSets, muscleSetCount, refitSet, newSetFor, progresses, type Progression, type Tracking, type RoutineExercise } from "@motus/shared";
+import { useRoutine, useRoutines, useFolders, useExercises, useSettings, useTemplates, usePrograms, loaded } from "../api/queries";
 import { api, mediaUrl } from "../api/client";
 import { invalidate } from "../api/live";
 import { useFmt, SET_KINDS, setLabel, setSummary as setSummaryOf, sideJoinCls } from "../core/format";
@@ -22,6 +22,7 @@ import { exerciseSheet } from "../core/ui";
 import { sidesItem } from "../core/sides";
 import { trackItem } from "../core/track";
 import { startDrag } from "../core/drag";
+import { addToProgram } from "../core/programMenu";
 import Icon from "../components/Icon.vue";
 import Menu from "../components/Menu.vue";
 import Collapse from "../components/Collapse.vue";
@@ -41,6 +42,11 @@ const route = useRoute(), router = useRouter();
 const planMode = computed(() => route.name === "workout-plan");
 const id = computed(() => (planMode.value ? "new" : String(route.params.id)));
 const isNew = computed(() => id.value === "new");
+// a new routine made from a program's Add routines: saving adds it to that program and goes back to it
+const forProgram = isNew.value && !planMode.value && typeof route.query.program === "string" ? route.query.program : null;
+// its Back names the program it returns to, as other pages name the page they return to
+const programs = usePrograms(!!forProgram);
+const programName = computed(() => (forProgram ? programs.data.value?.find((x) => x.id === forProgram)?.name ?? "Back" : null));
 const src = useRoutine(id);
 const all = useExercises();
 const folders = useFolders();
@@ -207,7 +213,7 @@ const withEx = (e: any) => (e.exercise ? e : { ...e, exercise: exOf(e) });
 const plannedRest = (e: any, x: any, j: number) => plannedRestOf(withEx(e), x, j, restDefaults.value);
 const est = computed(() => r.value ? estimate(r.value.exercises.map((e: any) => ({ sets: e.sets.map((x: any, j: number) => ({ ...x, restS: plannedRest(e, x, j) })) }))) : null);
 const setCount = computed(() => (r.value?.exercises ?? []).reduce((a: number, e: any) => a + e.sets.length, 0));
-const muscles = computed(() => muscleSets((r.value?.exercises ?? []).map((e: any) => { const x = e.exercise ?? exById.value.get(e.exerciseId); return { primary: x?.primaryMuscles ?? [], secondary: x?.secondaryMuscles ?? [], sets: e.sets.length }; })));
+const muscles = computed(() => muscleSets((r.value?.exercises ?? []).map((e: any) => { const x = e.exercise ?? exById.value.get(e.exerciseId); return { primary: x?.primaryMuscles ?? [], secondary: x?.secondaryMuscles ?? [], sets: muscleSetCount(e.sets) }; })));
 const worked = computed(() => musclesWorked((r.value?.exercises ?? []).map((e: any) => { const x = e.exercise ?? exById.value.get(e.exerciseId); return { primary: x?.primaryMuscles ?? [], secondary: x?.secondaryMuscles ?? [] }; })));
 const exOf = (e: any) => exById.value.get(e.exerciseId) ?? e.exercise;
 // Left / right sides (optional feature): an exercise done one side at a time starts with left and right sets and gets a
@@ -322,6 +328,12 @@ async function save(thenStart = false) {
     localStorage.removeItem(draftKey.value);
     dirty.value = false;
     invalidate(["routines", "home", "calendar"]);
+    if (forProgram) {
+      // the routine is saved either way; if adding it to the program fails, its own page opens as after any save
+      try { toast(await addToProgram(forProgram, rid, r.value.name.trim())); router.replace(thenStart ? `/routines/${rid}/start` : `/programs/${forProgram}`); }
+      catch (e) { toastError(e); router.replace(`/routines/${rid}`); }
+      return;
+    }
     toast("Routine saved");
     router.replace(thenStart ? `/routines/${rid}/start` : `/routines/${rid}`);
   } catch (e) { toastError(e); } finally { busy.value = false; }
@@ -349,7 +361,7 @@ async function startPlanned() {
 // leaving with changes asks first, however it happens (this Back, the phone's, the browser's)
 useLeaveGuard(() => dirty.value, { title: planMode.value ? "Discard this workout plan?" : undefined,
   onDiscard: () => { localStorage.removeItem(draftKey.value); dirty.value = false; } });
-const cancel = () => goBack(router, planMode.value ? "/" : "/routines");
+const cancel = () => goBack(router, planMode.value ? "/" : forProgram ? `/programs/${forProgram}` : "/routines");
 // both open as an unsaved draft: nothing is created until Save, so Discard leaves no routine behind
 async function startFrom(kind: "template" | "copy", v: string, name?: string) {
   try {
@@ -413,7 +425,7 @@ await loaded(src, all, folders, routines, templates);
 
 <template>
   <div v-if="r" class="page">
-    <button class="back" @click="cancel"><Icon name="left" :size="16" /><span>{{ isNew && !planMode ? "Routines" : "Back" }}</span></button>
+    <button class="back" @click="cancel"><Icon name="left" :size="16" /><span>{{ programName ?? (isNew && !planMode ? "Routines" : "Back") }}</span></button>
     <div v-if="planMode" class="tiny pl-k">New workout</div>
     <div class="ph">
       <div class="grow"><input v-model="r.name" class="in" :placeholder="planMode ? 'Workout name' : 'Routine name'" style="font-size:24px;font-weight:600;padding:8px 12px;max-width:520px" @input="touch" /></div>

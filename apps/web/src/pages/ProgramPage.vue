@@ -15,11 +15,12 @@ import MuscleFig from "../components/MuscleFig.vue";
 import Menu from "../components/Menu.vue";
 import ProgramEditor from "../components/ProgramEditor.vue";
 import ProgramDaySheet from "../components/ProgramDaySheet.vue";
+import ProgramAddSheet from "../components/ProgramAddSheet.vue";
 import { scheduleSheet } from "../core/ui";
 import type { MenuItem } from "../components/Menu.vue";
 import RoutineCheckCard from "../components/RoutineCheckCard.vue";
 import { sessionOf } from "../core/routineCheck";
-import { useProgramMenu } from "../core/programMenu";
+import { useProgramMenu, moveDay } from "../core/programMenu";
 
 const route = useRoute(), router = useRouter();
 const id = computed(() => String(route.params.id));
@@ -31,6 +32,7 @@ const p = computed(() => q.data.value);
 const volParts = computed(() => unitOf(fmt.value.vol(p.value?.stats.volumeKg ?? 0)));
 const next = computed(() => p.value?.state.next ?? null);
 const editing = ref(false);
+const adding = ref(false);
 /** weeks behind the calendar (only while following it) */
 const behind = computed(() => (p.value?.status === "active" && next.value ? Math.max(0, p.value.calendarWeek - next.value.week) : 0));
 /** a start or end day: "today", "tomorrow", "Mon 23 Nov", with the year when it isn't this year ("Sun 17 Jan 2027") */
@@ -57,13 +59,13 @@ const start = () => router.push(`/routines/${next.value!.routineId}/start?progra
 // the one primary button: what makes sense now
 const primary = computed(() => {
   const x = p.value!;
-  if (!x.state.total) return { label: "Add routines", icon: "edit", run: () => (editing.value = true) };
+  if (!x.state.total) return { label: "Add routines", icon: "plus", run: () => (adding.value = true) };
   if (x.status === "finished") return { label: "Start again", icon: "refresh", run: () => pm.restart(p.value!) };
   if (x.status === "paused") return { label: "Resume", icon: "play", run: () => put({ active: true }, "Program resumed") };
   return { label: "Start", icon: "play", run: start };
 });
 const pm = useProgramMenu();
-const menu = computed(() => pm.items(p.value!, { edit: () => (editing.value = true), page: true }));
+const menu = computed(() => pm.items(p.value!, { edit: () => (editing.value = true), add: p.value!.state.total ? () => (adding.value = true) : undefined, page: true }));
 const hasDeload = computed(() => p.value?.plan.some((w) => w.deload));
 type Day = ProgramDetail["plan"][number]["days"][number];
 // an open day whose routine is planned says when (its routine's planned days go to its open days in order)
@@ -75,12 +77,19 @@ const dayLine = (d: Day) => {
   const line = parts.filter(Boolean).join(" · ");
   return line.charAt(0).toUpperCase() + line.slice(1);
 };
-// each day's ⋮: which workout counts for it (or skipped), planning its routine, and back to automatic
+// a workout moved up or down in its week, saved straight away, as the routine editor's exercises move in their ⋮
+async function move(d: Day, by: number) {
+  const weeks = p.value!.weeks.map((w, i) => (i === d.week - 1 ? moveDay(w, d.day - 1, d.day - 1 + by) : w));
+  try { await api.put(`/programs/${id.value}`, { weeks }); invalidate(["routines", "home"]); } catch (e) { toastError(e); }
+}
+// each day's ⋮: which workout counts for it (or skipped), planning its routine, its place in the week, and back to automatic
 const dayOpen = ref<Day | null>(null);
 const used = computed(() => new Map((p.value?.plan ?? []).flatMap((w) => w.days.flatMap((d) => (d.workout ? [[d.workout.id, w.week] as [string, number]] : [])))));
 const dayMenu = (d: Day): MenuItem[] => [
   { label: "Choose the workout", icon: "edit", run: () => (dayOpen.value = d) },
   { label: "Schedule", icon: "calendar", run: () => (scheduleSheet.value = { routineId: d.routineId }) },
+  { label: "Move up", icon: "up", sep: true, hidden: d.day === 1, run: () => move(d, -1) },
+  { label: "Move down", icon: "down", hidden: d.day === (p.value!.weeks[d.week - 1]?.days.length ?? 0), run: () => move(d, 1) },
   { label: "Count automatically", icon: "refresh", sep: true, hidden: !d.byHand, run: async () => {
     try { await api.put(`/programs/${id.value}/days`, { week: d.week, day: d.day, auto: true }); invalidate(["routines", "home"]); toast(`Week ${d.week} · ${d.name} counts automatically again`); } catch (e) { toastError(e); } } },
 ];
@@ -109,7 +118,7 @@ await loaded(q);
 
 <template>
   <div v-if="p" class="page">
-    <button class="back" @click="goBack(router, '/routines')"><Icon name="left" :size="16" /><span>Routines</span></button>
+    <button class="back" @click="goBack(router, '/routines?tab=programs')"><Icon name="left" :size="16" /><span>Programs</span></button>
     <div class="ph">
       <div><h1>{{ p.name }}</h1><div class="sub">{{ sub }}</div></div>
       <div class="acts"><button class="btn keep" @click="primary.run()"><Icon :name="primary.icon" :size="16" />{{ primary.label }}</button><Menu :items="menu" /></div>
@@ -141,7 +150,7 @@ await loaded(q);
     <div class="grid lay">
       <section>
         <div class="sh"><h2>Plan</h2></div>
-        <div v-if="!p.state.total" class="card empty"><b>No routines yet</b><button class="btn tonal" @click="editing = true">Add routines</button></div>
+        <div v-if="!p.state.total" class="card empty"><b>No routines yet</b><button class="btn tonal" @click="adding = true">Add routines</button></div>
         <div v-else class="grid gauto wks">
           <div v-for="w in p.plan" :key="w.week" class="card wk" :class="{ cur: next && w.week === next.week && p.status !== 'finished' }">
             <div class="ch"><span class="t grow">Week {{ w.week }}</span><span v-if="w.deload" class="mchip">Deload -{{ p.deloadPct }}%</span><Icon v-if="w.days.length && w.days.every((d) => d.status === 'done')" name="check" :size="16" class="pos" /></div>
@@ -179,9 +188,10 @@ await loaded(q);
     <RoutineCheckCard v-if="check" class="spt" :check="check.c" title="Check of this program" :source="`Scores week ${checkWeek!.week}, ${checkWeek!.days.length === 1 ? 'its 1 workout' : `all ${checkWeek!.days.length} workouts together`}, against the targets for ${goalOf(p.goal).lower}`" goal-note="This program's goal. Change it with Edit in ⋮." :muscles="check.muscles" />
 
     <ProgramEditor v-if="editing" :program="p" @close="editing = false" />
+    <ProgramAddSheet v-if="adding" :program="p" @close="adding = false" />
     <ProgramDaySheet v-if="dayOpen" :program-id="p.id" :day="dayOpen" :used="used" @close="dayOpen = null" />
   </div>
-  <div v-else-if="q.isError.value" class="page"><div class="card empty"><b>Program not found</b><button class="btn tonal" @click="router.push('/routines')">Back to routines</button></div></div>
+  <div v-else-if="q.isError.value" class="page"><div class="card empty"><b>Program not found</b><button class="btn tonal" @click="router.push('/routines?tab=programs')">Back to programs</button></div></div>
 </template>
 
 <style scoped>

@@ -10,6 +10,8 @@ import Icon from "./Icon.vue";
 import SearchField from "./SearchField.vue";
 import Collapse from "./Collapse.vue";
 
+// icon: what tapping a row does (play: start it, as the Start sheet; plus: add it, as a program's Add routines)
+withDefaults(defineProps<{ icon?: string }>(), { icon: "play" });
 const emit = defineEmits<{ pick: [r: RoutineSummary] }>();
 const routines = useRoutines();
 const folders = useFolders();
@@ -49,7 +51,7 @@ function fold(g: { id: string | null }) { const k = fkey(g); folded.value = isFo
         <div v-for="r in g.items" :key="r.id" class="li click" @click="emit('pick', r)">
           <span class="dot" :style="r.color ? { background: r.color } : undefined" />
           <div class="grow"><div class="t">{{ r.name }}</div><div class="s">{{ r.exerciseCount }} exercises · {{ routineTime(r.estimateS, r.usual) }} · {{ r.lastDoneAt ? `last done ${ago(r.lastDoneAt)}` : "not done yet" }}</div></div>
-          <Icon name="play" :size="16" class="go" />
+          <Icon :name="icon" :size="16" class="go" />
         </div>
       </div></Collapse>
     </section>
