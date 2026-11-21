@@ -115,8 +115,8 @@ const ICONS: Record<string, string> = {
   speed: "M3 8h6M2 12h9M3 16h6M14 6l6 6-6 6",
   // a metronome: cadence, steps or pedal turns a minute
   cadence: "M10 3h4l5 18H5zM7.2 14h9.6M12 14l2-7",
-  // a leg, side view: the thigh (quads in front, hamstrings behind) down to the knee and foot
-  thigh: "M8 3c-1.5 5-1 9 1 12l-.5 6H15l-.5-7c1.5-3 2-7 1.5-11M9 15h5.5",
+  // a leg, side view, hip to foot: the thigh (quads in front, hamstrings behind)
+  thigh: "M7.5 2.5h6.5l.8 8.5c.2 2.2-.6 4.4-.9 6.6l-.1 1.4 4.2 1.6c.8.3.6 1.4-.3 1.4H9.8l-.2-3.2c-.2-2.3-1.4-4.4-1.5-6.8L7.5 2.5z",
 };
 </script>
 
