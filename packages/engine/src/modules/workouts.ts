@@ -1,6 +1,6 @@
 // Workouts: starting one (from a routine or empty), logging sets, skipping, reordering and replacing exercises,
 // finishing, logging a past workout, editing and duplicating, and the full detail with records and improvements.
-import { e1rm, usesWeight, ymd, pairSets, planSetRest, restDefaultsOf, liftedKg, liftsWeight, LIFTED_SQL, TRACKING_SQL, structureChanges, pausedWithin, type Tracking, type RoutineExercise, type ExerciseStatus, type SetKind, type RestByKind, type RestDefaults, type WorkoutExercise, type HomeRecord, type Workout, type WorkoutSummary, type Routine } from "@motus/shared";
+import { e1rm, usesWeight, ymd, pairSets, planSetRest, restDefaultsOf, liftedKg, liftsWeight, muscleSetCount, LIFTED_SQL, TRACKING_SQL, structureChanges, pausedWithin, type Tracking, type RoutineExercise, type ExerciseStatus, type SetKind, type RestByKind, type RestDefaults, type WorkoutExercise, type HomeRecord, type Workout, type WorkoutSummary, type Routine } from "@motus/shared";
 import type { Router, Ctx } from "../router";
 import type { Sql } from "../db";
 import { camel, id, optId, str, strList, intOrNull, numOrNull, bool, oneOf, isoTime, secondsBetween, visible } from "../util";
@@ -305,7 +305,7 @@ async function workoutReport(q: Sql, w: any) {
   }
   const muscles: Record<string, number> = {};
   for (const e of w.exercises) {
-    const n = e.sets.filter((s: any) => s.done && s.kind !== "warmup").length;
+    const n = muscleSetCount(e.sets.filter((s: any) => s.done));
     if (!n) continue;
     for (const m of e.exercise?.primaryMuscles ?? []) muscles[m] = (muscles[m] ?? 0) + n;
     for (const m of e.exercise?.secondaryMuscles ?? []) muscles[m] = (muscles[m] ?? 0) + n * 0.5;

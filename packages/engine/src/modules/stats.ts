@@ -1,5 +1,5 @@
 // Stats and the home summary. Sessions come back with their times; the apps group them into days and weeks in their own time zone.
-import { e1rm, GROUPS, WEEKLY_SET_RANGE, liftedKg, LIFTED_SQL, TRACKING_SQL, MIN_NIGHT_H, sameSpanBefore } from "@motus/shared";
+import { e1rm, GROUPS, WEEKLY_SET_RANGE, liftedKg, LIFTED_SQL, MUSCLE_SETS_SQL, TRACKING_SQL, MIN_NIGHT_H, sameSpanBefore } from "@motus/shared";
 import type { Router, Ctx } from "../router";
 import type { Sql } from "../db";
 import { camel, startOfDay, tzOf } from "../util";
@@ -13,7 +13,8 @@ import { routineSummaries } from "./routines";
 import { suggestions } from "./suggest";
 import { programInfo } from "./programs";
 
-/** Every completed workout in a range, with its totals and sets per muscle. */
+/** Every completed workout in a range, with its totals and sets per muscle (a left and a right set 1 for the muscle,
+ *  MUSCLE_SETS_SQL; the total `sets` counts every set done). */
 async function workoutRows(q: Sql, from: string, to: string) {
   const { rows } = await q.query(
     `SELECT w.id, w.name, w.routine_id, w.started_at, w.avg_hr, w.max_hr, r.color, greatest(0, extract(epoch FROM w.ended_at - w.started_at)::int - w.paused_s) AS duration_s,
@@ -26,10 +27,10 @@ async function workoutRows(q: Sql, from: string, to: string) {
      WHERE w.status = 'completed' AND w.started_at >= $1 AND w.started_at < $2
      GROUP BY w.id, r.color ORDER BY w.started_at`, [from, to]);
   const musc = (await q.query(
-    `SELECT we.workout_id, e.primary_muscles, e.secondary_muscles, count(s.id) AS n
+    `SELECT we.workout_id, e.primary_muscles, e.secondary_muscles, ${MUSCLE_SETS_SQL} AS n
      FROM workout_exercises we JOIN workouts w ON w.id = we.workout_id JOIN exercises e ON e.id = we.exercise_id
      JOIN workout_sets s ON s.workout_exercise_id = we.id AND s.done AND s.kind <> 'warmup'
-     WHERE w.status = 'completed' AND w.started_at >= $1 AND w.started_at < $2 GROUP BY we.workout_id, e.id`, [from, to])).rows;
+     WHERE w.status = 'completed' AND w.started_at >= $1 AND w.started_at < $2 GROUP BY we.id, e.id`, [from, to])).rows;
   return rows.map((r: any) => {
     const muscles: Record<string, number> = {}, primary = new Set<string>(), secondary = new Set<string>();
     for (const m of musc.filter((x: any) => x.workout_id === r.id)) {

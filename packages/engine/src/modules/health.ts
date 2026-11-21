@@ -30,7 +30,7 @@ import { isSum, DERIVED_DAYS, shift, lockRecords, loadReads, loadBlocks, appKind
   type DerivedType, type SpanBand, type SumType } from "./healthDerive";
 import { isNight, cleanWornDevice, plausibleSteps, stepsTyped, appSteps, bandStepsVerdict, daySteps, type WornDevice } from "@motus/shared";
 import { maxHeartRate, sessionLoad, loadTrend, CHRONIC_DAYS, exercisePeaks, type LoadTrend, type HrTick } from "@motus/shared";
-import { SCORE_DAYS, ageOf, scoresFor, MODERATE_FROM, VIGOROUS_FROM, LEFT_RUNNING_S, eachSample, sleepScore, nightScore, activityScore, strengthScore, muscleSets, type ScoreNight } from "@motus/shared";
+import { SCORE_DAYS, ageOf, scoresFor, MODERATE_FROM, VIGOROUS_FROM, LEFT_RUNNING_S, eachSample, sleepScore, nightScore, activityScore, strengthScore, muscleSets, MUSCLE_SETS_SQL, type ScoreNight } from "@motus/shared";
 import { getSettings } from "./settings";
 import { motusRecordFor, copyFigures, linkBandSessions, linkHistory, release, releaseDangling, type Copied } from "./bandMatch";
 import { SET_COUNT_SQL, VOLUME_SQL } from "./workouts";
@@ -1126,10 +1126,10 @@ export function healthRoutes(r: Router) {
     // strength: only for someone who trains (a finished workout in the last 4 weeks); the week's days with a finished hard
     // set, and hard sets per muscle as Stats → Muscles counts them
     const sets = (await ctx.q.query<{ workout_id: string; started_at: string; primary_muscles: string[]; secondary_muscles: string[]; n: string | number }>(
-      `SELECT w.id AS workout_id, w.started_at, e.primary_muscles, e.secondary_muscles, count(s.id) AS n
+      `SELECT w.id AS workout_id, w.started_at, e.primary_muscles, e.secondary_muscles, ${MUSCLE_SETS_SQL} AS n
        FROM workouts w LEFT JOIN workout_exercises we ON we.workout_id = w.id LEFT JOIN exercises e ON e.id = we.exercise_id
        LEFT JOIN workout_sets s ON s.workout_exercise_id = we.id AND s.done AND s.kind <> 'warmup'
-       WHERE w.status = 'completed' AND w.started_at >= $1::date AND w.started_at < $2::date GROUP BY w.id, e.id`, [shift(today, -29), hi])).rows;
+       WHERE w.status = 'completed' AND w.started_at >= $1::date AND w.started_at < $2::date GROUP BY w.id, we.id, e.id`, [shift(today, -29), hi])).rows;
     const week = sets.filter((x) => inWeek(x.started_at));
     const trains = sets.some((x) => dayIn(x.started_at, tz) <= today);
     const strength = trains ? strengthScore({

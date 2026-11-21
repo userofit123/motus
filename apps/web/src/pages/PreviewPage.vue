@@ -5,7 +5,7 @@
 import { goBack } from "../core/leave";
 import { computed, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { duration, estimate, usesWeight, usesReps, muscleSets, musclesWorked } from "@motus/shared";
+import { duration, estimate, usesWeight, usesReps, muscleSets, muscleSetCount, musclesWorked } from "@motus/shared";
 import { usePreview, useSettings, loaded } from "../api/queries";
 import { api, ApiError, mediaUrl } from "../api/client";
 import { invalidate } from "../api/live";
@@ -47,7 +47,7 @@ const counts = computed(() => {
 // your real times say more than the plan's numbers, but only for the whole routine: skip something and it's the plan again
 const usual = computed<{ s: number; of: number; newest: boolean } | null>(() => (skip.value.length ? null : p.value?.usual ?? null));
 const est = computed(() => estimate(active.value.map((e) => ({ sets: e.sets.map((x: any) => ({ kind: x.kind, reps: x.reps, durationS: x.durationS, restS: x.restS })) }))));
-const muscles = computed(() => muscleSets(active.value.map((e) => ({ primary: e.exercise?.primaryMuscles ?? [], secondary: e.exercise?.secondaryMuscles ?? [], sets: e.sets.length }))));
+const muscles = computed(() => muscleSets(active.value.map((e) => ({ primary: e.exercise?.primaryMuscles ?? [], secondary: e.exercise?.secondaryMuscles ?? [], sets: muscleSetCount(e.sets) }))));
 // main and helped by whether any exercise has the muscle as a main one, not by amounts (a busy helper isn't a main muscle)
 const worked = computed(() => musclesWorked(active.value.map((e) => ({ primary: e.exercise?.primaryMuscles ?? [], secondary: e.exercise?.secondaryMuscles ?? [] }))));
 const toggleSkip = (rid: string) => { const i = skip.value.indexOf(rid); if (i >= 0) skip.value.splice(i, 1); else skip.value.push(rid); };

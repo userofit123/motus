@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { routineCheck, programCheck, weekMuscleSets, GOALS, goalOf, type CheckExercise } from "./routineCheck";
+import { muscleSetCount } from "./muscles";
 
 // an exercise with `n` working sets of `reps` (and a warm-up, which never counts)
 const ex = (name: string, primary: string[], o: Partial<CheckExercise> = {}, n = 3, reps = 10, restS?: number): CheckExercise => ({
@@ -67,9 +68,9 @@ describe("routine check", () => {
     const one = key(programCheck([[bench(5)]]), "frequency")!;
     expect(one.share).toBe(0);
     expect(one.detail).toBe("Week 1 has only 1 workout, so no muscle is trained on more than 1 day. Add a second workout to the week and split each muscle's sets between the two.");
-    // the same 10 muscles as the sets-a-week row: bench on 2 days trains 3 of them twice, the others not at all
+    // the same 10 muscles as the sets-a-week row: bench on 2 days trains the chest twice; its helpers get no day (M-296)
     const twice = key(programCheck([[bench(5)], [bench(5)]]), "frequency")!;
-    expect(twice.value).toBe("3 of 10 muscles");
+    expect(twice.value).toBe("1 of 10 muscles");
     expect(twice.items.find((i) => i.label === "Chest")!.ok).toBe(true);
     expect(twice.items.find((i) => i.label === "Abs")!.note).toBe("No sets in the week");
     const chest = (n: number) => ex("Bench press", ["chest"], { force: "push" }, n);
@@ -80,12 +81,34 @@ describe("routine check", () => {
     expect(f.items.find((i) => i.label === "Chest")!.note).toBe("Workout 1 (Push)");
   });
 
-  it("counts a helper's day from 1 set, so bench on 2 days trains the triceps twice", () => {
-    expect(key(programCheck([[bench(3)], [bench(3)]]), "frequency")!.items.find((i) => i.label === "Triceps")!.ok).toBe(true);
+  it("counts a day only for the muscle an exercise is mainly for, never for its helpers (M-296)", () => {
+    // two back days and two biceps days: the rows' biceps help gives the biceps no day, so they have 2 days, not 4
+    const back = [row(3), ex("Lat pulldown", ["lats"], { secondary: ["biceps"], force: "pull" }, 3)];
+    const p = key(programCheck([back, back, [curl(3)], [curl(3)]], "size", 1, ["Back #1", "Back #2", "Biceps #1", "Biceps #2"]), "frequency")!;
+    expect(p.items.find((i) => i.label === "Biceps")).toMatchObject({ value: 2, note: "Workouts 3 (Biceps #1) and 4 (Biceps #2)" });
+    // bench on 2 days: the triceps only help, so no day counts for them, and the tip asks for an exercise of their own
+    const b = key(programCheck([[bench(3)], [bench(3)]]), "frequency")!;
+    expect(b.items.find((i) => i.label === "Triceps")).toMatchObject({ ok: false, note: "Only helps in other exercises, and helping doesn't count as a day" });
+    expect(b.tips.find((t) => t.startsWith("Triceps"))).toBe("Triceps: no workout has an exercise mainly for them; they only help in other exercises, and helping doesn't count as a day. Add an exercise for them, such as Triceps pushdown, to 2 workouts of the week.");
     const g = key(programCheck([[bench(1), ex("Pushdown", ["triceps"], { mechanic: "isolation" }, 1)], [bench(1)]]), "frequency")!;
     expect(g.detail).toMatch(/^In week 1, triceps are trained in only one workout\. Move about half of their sets to another workout in the week\. /);
     // the helper half set on day 2 doesn't count as a day, and the tip says so in its numbers
     expect(g.tips.find((t) => t.startsWith("Triceps"))).toBe("Triceps: 1.5 of their 2 sets are in workout 1. Move about 1 of them to another workout in the week.");
+  });
+
+  it("counts a left and a right set as 1 set for the muscle (M-295)", () => {
+    const sided = (name: string, rounds: number): CheckExercise => ex(name, ["biceps"], { mechanic: "isolation", force: "pull",
+      sets: [{ kind: "warmup", reps: 10, side: "L" }, ...Array.from({ length: rounds }, () => [{ kind: "normal" as const, reps: 10, side: "L" }, { kind: "normal" as const, reps: 10, side: "R" }]).flat()] });
+    // each side counted on its own, the busier side counts; warm-ups never
+    const sd = (x: string) => [...x].map((c) => (c === "W" ? { kind: "warmup", side: "L" } : { kind: "normal", side: c === "B" ? null : c }));
+    expect([sd("LR"), sd("LRLR"), sd("L"), sd("LLR"), sd("WBLR"), sd("BB")].map(muscleSetCount)).toEqual([1, 2, 1, 2, 2, 2]);
+    // 1 curl done with both arms for 3 sets, 3 one-arm curls done left and right 3 times each: 21 sets logged, 12 per arm
+    const arms = [curl(3), sided("Concentration curl", 3), sided("One-arm cable curl", 3), sided("One-arm preacher curl", 3)];
+    expect(weekMuscleSets([arms]).biceps).toBe(12);
+    const s = key(routineCheck(arms), "session")!;
+    expect(s.items.find((i) => i.label === "Biceps")!.value).toBe(12);
+    // the push and pull row counts them the same way
+    expect(key(programCheck([arms, arms]), "pushPull")!.value).toBe("0 push · 24 pull");
   });
 
   it("balances pushing and pulling, quads and hamstrings over a program's week, naming the numbers", () => {

@@ -11,6 +11,6 @@ export const sessionOf = (routine: Routine | null | undefined, w?: WorkoutPrefs)
     name: e.exercise?.name ?? "", primary: e.exercise?.primaryMuscles ?? [], secondary: e.exercise?.secondaryMuscles ?? [],
     mechanic: e.exercise?.mechanic ?? null, force: e.exercise?.force ?? null, category: e.exercise?.category ?? "strength",
     superset: e.superset ?? null,
-    sets: (e.sets ?? []).map((s: RoutineSet, j: number) => ({ kind: s.kind, reps: s.reps ?? null, restS: d && !e.superset ? plannedRest(e, s, j, d) : null })),
+    sets: (e.sets ?? []).map((s: RoutineSet, j: number) => ({ kind: s.kind, reps: s.reps ?? null, side: s.side ?? null, restS: d && !e.superset ? plannedRest(e, s, j, d) : null })),
   }));
 };

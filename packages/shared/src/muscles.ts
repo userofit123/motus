@@ -27,6 +27,23 @@ export function muscleSets(rows: { primary: string[]; secondary: string[]; sets:
   return out;
 }
 
+/** One exercise's working sets for its muscles (the `sets` muscleSets takes), warm-ups left out (M-295). A left set and a
+ * right set are one set for the muscle, not two: each arm or leg did one set, and training studies count a one-arm set
+ * done on each side as one set (Schoenfeld et al. 2017, Pelland et al. 2024). Each side is counted on its own and the
+ * busier side counts, so L R L R is 2, a lone L is 1 and L L R is 2. MUSCLE_SETS_SQL is the same count in SQL. */
+export function muscleSetCount(sets: { kind?: string | null; side?: string | null }[]): number {
+  let both = 0, l = 0, r = 0;
+  for (const s of sets) {
+    if (s.kind === "warmup") continue;
+    if (s.side === "L") l++; else if (s.side === "R") r++; else both++;
+  }
+  return both + Math.max(l, r);
+}
+/** muscleSetCount over the workout_sets rows `s` of one exercise in one workout (group by its workout_exercises row);
+ *  the query leaves out warm-ups and sets not done itself */
+export const MUSCLE_SETS_SQL = `(count(s.id) FILTER (WHERE coalesce(s.side, '') NOT IN ('L', 'R'))
+  + greatest(count(s.id) FILTER (WHERE s.side = 'L'), count(s.id) FILTER (WHERE s.side = 'R')))`;
+
 /** Which muscles a plan works: main where any exercise has it as a main muscle, helped where it only ever helps.
  * For a routine or a workout this reads better than amounts, where a busy helper would show up as a main muscle. */
 export function musclesWorked(rows: { primary: string[]; secondary: string[] }[]): { primary: string[]; secondary: string[] } {

@@ -43,6 +43,7 @@ export const LESSONS = {
       { heading: "How Motus counts", rows: [
         { icon: "target", t: "Main muscle", s: "The muscle the exercise is mainly for (bench press: chest)", r: "1 set" },
         { icon: "layers", t: "Helper", s: "A muscle that also works in it (bench press: triceps)", r: "0.5 set" },
+        { icon: "dumbbell", t: "Left and right sets", s: "A left set plus a right set of a one-arm or one-leg exercise (one-arm curl: biceps)", r: "1 set" },
         { icon: "flame", t: "Warm-up sets", r: "Not counted" },
         { icon: "calendar", t: "Last 7 days", s: "Today and the 6 days before it" },
         { icon: "stats", t: "Average per training week", s: "Weeks without a workout are left out" },
@@ -115,7 +116,7 @@ export const LESSONS = {
       { heading: "Where the targets come from", rows: Object.values(CHECK_RESEARCH).map((x) => ({ icon: "note", ...x })) },
       { heading: "How Motus counts", rows: [
         { icon: "activity", t: "Sets a week per muscle", s: "A program's week: working sets for each major muscle, against the goal's target", r: goalPoints("volume") },
-        { icon: "calendar", t: `Muscles trained on ${TWICE} or more days`, s: `A program's week: is each major muscle trained on at least ${TWICE} different days? A day counts when an exercise that day is mainly for the muscle, or the muscle helps in 2 or more sets of other exercises`, r: goalPoints("frequency") },
+        { icon: "calendar", t: `Muscles trained on ${TWICE} or more days`, s: `A program's week: is each major muscle the main one in an exercise on at least ${TWICE} different days? Helping in other exercises doesn't count`, r: goalPoints("frequency") },
         { icon: "swap", t: "Pushing and pulling sets", s: "A program's week: about as many upper-body pulling sets as pushing sets, 3-6 pulling sets for every 4 pushing sets", r: goalPoints("pushPull") },
         { icon: "split", t: "Quad and hamstring sets", s: "A program's week: the hamstrings get at least half as many sets as the quads, and at most twice as many", r: goalPoints("legs") },
         { icon: "refresh", t: "Reps per set", s: "A routine's workout: working sets with target reps in the goal's range", r: goalPoints("reps") },
@@ -124,6 +125,7 @@ export const LESSONS = {
         { icon: "timer", t: "Rest between sets of big lifts", s: "A routine's workout: the planned rest between sets of each big lift, from the routine or your defaults in Settings", r: goalPoints("rest") },
         { icon: "target", t: "Main muscle", s: "The muscle the exercise is mainly for (bench press: chest)", r: "1 set" },
         { icon: "layers", t: "Helper", s: "A muscle that also works in it (bench press: triceps)", r: "0.5 set" },
+        { icon: "dumbbell", t: "Left and right sets", s: "A left set plus a right set of a one-arm or one-leg exercise (one-arm curl: biceps)", r: "1 set" },
         { icon: "flame", t: "Warm-up sets", r: "Not counted" },
       ] },
     ],
