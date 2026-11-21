@@ -374,17 +374,23 @@ const cancel = () => goBack(router, planMode.value ? "/" : forProgram ? `/progra
 async function startFrom(kind: "template" | "copy", v: string, name?: string) {
   try {
     if (kind === "copy") {
-      const fulls = await Promise.all(v.split(",").map((id) => api.get(`/routines/${id}`)));
+      const ids = v.split(",");
+      // a routine that was deleted since it was picked is skipped; one id alone keeps the plain error
+      const got = await Promise.all(ids.map((id) => (ids.length > 1 ? api.get(`/routines/${id}`).catch(() => null) : api.get(`/routines/${id}`))));
+      const fulls = got.filter((f) => f);
+      if (ids.length > 1 && fulls.length < 2) throw new Error("A routine you picked no longer exists, so there is nothing to combine.");
       const full = fulls[0], many = fulls.length > 1;
-      let next = 65;
-      const exercises = fulls.flatMap((f: any) => {
+      // letters are handed out as the editor does (first unused A-Z, then Z), across all the routines
+      const used = new Set<string>();
+      const nextTag = () => { for (let c = 65; c < 91; c++) { const t = String.fromCharCode(c); if (!used.has(t)) { used.add(t); return t; } } return "Z"; };
+      const exercises = fulls.flatMap((f) => {
         const tags = new Map<string, string>();
-        return f.exercises.map((e: any) => {
-          if (many && e.superset && !tags.has(e.superset)) tags.set(e.superset, String.fromCharCode(next++));
-          return { ...e, id: undefined, superset: many ? tags.get(e.superset) ?? null : e.superset };
+        return f.exercises.map((e: { superset?: string | null }) => {
+          if (many && e.superset && !tags.has(e.superset)) tags.set(e.superset, nextTag());
+          return { ...e, id: undefined, superset: many ? (e.superset ? tags.get(e.superset) : null) ?? null : e.superset };
         });
       });
-      load({ ...full, id: undefined, name: name || (many ? fulls.map((f: any) => f.name).join(" + ") : full.name + " (copy)"), basedOnId: many ? undefined : full.id, pinned: false, exercises });
+      load({ ...full, id: undefined, name: name || (many ? fulls.map((f) => f.name).join(" + ") : full.name + " (copy)"), ...(many ? { description: "", settings: {} } : {}), basedOnId: many ? undefined : full.id, pinned: false, exercises });
     } else load(await api.get(`/templates/${encodeURIComponent(v)}`));
     dirty.value = true;
     starter.value = false;

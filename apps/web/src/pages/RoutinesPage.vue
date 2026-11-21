@@ -124,7 +124,7 @@ await loaded(routines, folders, ...(settings.value.features.programs ? [programs
       <div class="acts">
         <template v-if="onPrograms"><button class="btn keep" @click="programsRef?.create()"><Icon name="plus" :size="18" />New program</button></template>
         <template v-else>
-          <Menu :items="[{ label: 'New folder', icon: 'folder', run: newFolder }, { label: 'From a template', icon: 'layers', run: () => (fromTemplate = true) }, { label: 'Combine routines', icon: 'copy', hint: 'Make one new routine from several', run: () => (combining = true), hidden: (routines.data.value?.filter((r) => !r.archived).length ?? 0) < 2 }, { label: showArchived ? 'Hide archived' : 'Show archived', icon: 'archive', sep: true, run: () => (showArchived = !showArchived) }]" />
+          <Menu :items="[{ label: 'New folder', icon: 'folder', run: newFolder }, { label: 'From a template', icon: 'layers', run: () => (fromTemplate = true) }, { label: 'Combine routines', icon: 'layers', hint: 'Make one new routine from several', run: () => (combining = true), hidden: (routines.data.value?.filter((r) => !r.archived).length ?? 0) < 2 }, { label: showArchived ? 'Hide archived' : 'Show archived', icon: 'archive', sep: true, run: () => (showArchived = !showArchived) }]" />
           <button class="btn keep" @click="router.push('/routines/new/edit')"><Icon name="plus" :size="18" />New routine</button>
         </template>
       </div>
@@ -179,9 +179,9 @@ await loaded(routines, folders, ...(settings.value.features.programs ? [programs
     <ReorderSheet v-if="reorderGroup" :title="`Reorder ${reorderGroup.name || 'routines'}`" hint="Drag to reorder the routines in this list." show-color
       :items="reorderGroup.items.map((r) => ({ id: r.id, title: r.name, sub: exercises(r.exerciseCount), color: r.color }))" @move="moveRoutine" @close="reorderKey = null" />
     <Sheet v-if="combining" title="Combine routines" @close="combining = false; picked = []">
-      <p class="tiny hgap">Pick two or more. Their exercises go into one new routine in the order you pick, ready to change. Your own routines and their history stay as they are.</p>
+      <p class="tiny hgap">Pick two or more. Their exercises go into one new routine, in the order you pick them, ready to change. The routines you pick and their history stay as they are.</p>
       <RoutineChooser icon="plus" :picked="picked" @pick="togglePick" />
-      <template #foot><button class="btn" :disabled="picked.length < 2" @click="combine">{{ picked.length < 2 ? "Pick two or more" : `Combine ${picked.length} routines` }}</button></template>
+      <template #foot><button class="btn" :disabled="picked.length < 2" @click="combine">{{ picked.length < 2 ? "Combine" : `Combine ${picked.length}` }}</button></template>
     </Sheet>
     <Sheet v-if="fromTemplate" title="Start from a template" size="wide" @close="fromTemplate = false">
       <p class="tiny hgap">A copy is added to your routines, ready to change.</p>
