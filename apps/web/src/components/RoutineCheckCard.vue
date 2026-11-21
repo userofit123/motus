@@ -23,7 +23,7 @@ import { toneOf } from "../core/scores";
 // muscles: the figure's main and helper muscles (the routine card's look) and each one's sets a week for its tips
 // check: null only for a routine with lifting but nothing to check in one workout (no target reps, no checked muscle), so the card says why
 const props = defineProps<{ check: RoutineCheck | null; title: string; muscles?: { sets: Record<string, number>; primary: string[]; secondary: string[] }; source?: string; goalNote?: string }>();
-const ICON: Record<CheckKey, string> = { volume: "activity", frequency: "calendar", pushPull: "swap", legs: "split", order: "arrowUp", reps: "refresh", session: "layers", rest: "timer" };
+const ICON: Record<CheckKey, string> = { volume: "activity", frequency: "calendar", pushPull: "swap", legs: "stretch", order: "arrowUp", reps: "refresh", session: "layers", rest: "timer" };
 const open = ref<Check | null>(null);
 // "1 of 3 big lifts" → "1 of 3" over "big lifts"; "15 push · 4 pull" → "15 push" over "4 pull", each count beside its noun
 const valueOf = (v: string) => { const m = /^(\S+ of \S+) (.+)$/.exec(v); return m ? { of: m[1]!, noun: m[2]!, pairs: [] } : { of: "", noun: "", pairs: v.split(" · ").map((x) => { const [n, ...w] = x.split(" "); return { n: n!, w: w.join(" ") }; }) }; };

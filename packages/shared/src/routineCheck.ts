@@ -318,12 +318,12 @@ function frequency(g: GoalTargets, days: Day[], week: Record<string, number>, wk
   const parts: string[] = [];
   // "trained in only one workout", not "all its sets": its helping sets on other days don't make them a day
   if (one.length) parts.push(`${names(one.map(low1))} ${one.length === 1 ? `${agree(one, "is", "are")} trained` : "are each trained"} in only one workout. Move about half of ${one.length === 1 ? `${its(one[0]!)} sets` : "each one's sets"} to another workout in the week.`);
-  if (none.length) parts.push(`${names(none.map(low1))} ${agree(none, "has", "have")} no exercise of ${none.length === 1 ? its(none[0]!) : "their"} own in any workout. Add one for ${none.length === 1 ? it(none[0]!) : "them"} to 2 workouts.`);
+  if (none.length) parts.push(`${names(none.map(low1))} ${agree(none, "has", "have")} no exercise mainly for ${none.length === 1 ? it(none[0]!) : "them"} in any workout. Add one for ${none.length === 1 ? it(none[0]!) : "them"} to 2 workouts.`);
   const detail = !once.length ? `In ${wk}, every muscle is trained on at least ${TWICE} different days.`
     : days.length === 1 ? `${cap(wk)} has only 1 workout, so no muscle is trained on more than 1 day. Add a second workout to the week and split each muscle's sets between the two.`
     : `In ${wk}, ${parts.map((p, i) => (i ? cap(p) : p)).join(" ")}`;
   const wkt = (m: { id: string }, d: number[]) => (d.length ? `${d.length === 1 ? "Workout" : "Workouts"} ${names(d.map((x) => (dayNames[x - 1] ? `${x} (${dayNames[x - 1]})` : String(x))))}`
-    : week[m.id]! > 0 ? `Only a helper in other exercises - no exercise mainly for ${it(m)}` : "No sets in the week");
+    : week[m.id]! > 0 ? `Only a helper in exercises for other muscles - no exercise mainly for ${it(m)}` : "No sets in the week");
   const named = (d: number) => (dayNames[d - 1] ? `workout ${d} (${dayNames[d - 1]})` : `workout ${d}`);
   return make(g, {
     key: "frequency", title: `Muscles trained on ${TWICE} or more days`, share, value: `${ms.length - once.length} of ${plural(ms.length, "muscle")}`, detail,
@@ -342,7 +342,7 @@ function frequency(g: GoalTargets, days: Day[], week: Record<string, number>, wk
     tips: once.length ? once.map((m) => {
       const d = onDays(m.id);
       if (!d.length) return week[m.id]! > 0
-        ? `${m.name}: no workout has an exercise mainly for ${it(m)}; ${they(m)} only ${agree([m], "helps", "help")} in other exercises, and helping doesn't count as a day. Add an exercise for ${it(m)}, such as ${m.example}, to 2 workouts of the week.`
+        ? `${m.name}: no workout has an exercise mainly for ${it(m)}; ${they(m)} ${agree([m], "is", "are")} only a helper in exercises for other muscles. Add an exercise for ${it(m)}, such as ${m.example}, to 2 workouts of the week.`
         : `${m.name}: no workout in the week trains ${it(m)}. Add an exercise for ${it(m)}, such as ${m.example}, to 2 workouts of the week.`;
       const on = days[d[0]! - 1]!.sets[m.id]!, all = week[m.id]!;
       const where = r1(on) === r1(all) ? `all ${nSets(all)} are in ${named(d[0]!)}` : `${n(on)} of ${its(m)} ${nSets(all)} are in ${named(d[0]!)}`;

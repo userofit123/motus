@@ -88,8 +88,8 @@ describe("routine check", () => {
     expect(p.items.find((i) => i.label === "Biceps")).toMatchObject({ value: 2, note: "Workouts 3 (Biceps #1) and 4 (Biceps #2)" });
     // bench on 2 days: the triceps only help, so no day counts for them, and the tip asks for an exercise of their own
     const b = key(programCheck([[bench(3)], [bench(3)]]), "frequency")!;
-    expect(b.items.find((i) => i.label === "Triceps")).toMatchObject({ ok: false, note: "Only a helper in other exercises - no exercise mainly for them" });
-    expect(b.tips.find((t) => t.startsWith("Triceps"))).toBe("Triceps: no workout has an exercise mainly for them; they only help in other exercises, and helping doesn't count as a day. Add an exercise for them, such as Triceps pushdown, to 2 workouts of the week.");
+    expect(b.items.find((i) => i.label === "Triceps")).toMatchObject({ ok: false, note: "Only a helper in exercises for other muscles - no exercise mainly for them" });
+    expect(b.tips.find((t) => t.startsWith("Triceps"))).toBe("Triceps: no workout has an exercise mainly for them; they are only a helper in exercises for other muscles. Add an exercise for them, such as Triceps pushdown, to 2 workouts of the week.");
     const g = key(programCheck([[bench(1), ex("Pushdown", ["triceps"], { mechanic: "isolation" }, 1)], [bench(1)]]), "frequency")!;
     expect(g.detail).toMatch(/^In week 1, triceps are trained in only one workout\. Move about half of their sets to another workout in the week\. /);
     // the helper half set on day 2 doesn't count as a day, and the tip says so in its numbers
