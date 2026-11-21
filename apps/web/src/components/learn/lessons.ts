@@ -126,7 +126,7 @@ export const LESSONS = {
         { icon: "activity", t: "Sets a week per muscle", s: "A program's week: working sets for each major muscle, against the goal's target", r: goalPoints("volume") },
         { icon: "calendar", t: `Muscles trained on ${TWICE} or more days`, s: `A program's week: is there an exercise mainly for each major muscle on at least ${TWICE} different days? A day where the muscle only helps, like the triceps in a bench press, doesn't count as one of those days`, r: goalPoints("frequency") },
         { icon: "swap", t: "Pushing and pulling sets", s: "A program's week: about as many upper-body pulling sets as pushing sets, 3-6 pulling sets for every 4 pushing sets", r: goalPoints("pushPull") },
-        { icon: "stretch", t: "Quad and hamstring sets", s: "A program's week: the hamstrings get at least half as many sets as the quads, and at most twice as many", r: goalPoints("legs") },
+        { icon: "thigh", t: "Quad and hamstring sets", s: "A program's week: the hamstrings get at least half as many sets as the quads, and at most twice as many", r: goalPoints("legs") },
         { icon: "refresh", t: "Reps per set", s: "A routine's workout: working sets with target reps in the goal's range", r: goalPoints("reps") },
         { icon: "layers", t: `Up to ${SESSION_SETS} sets per muscle`, s: "A routine's workout: working sets for each muscle in that one workout", r: goalPoints("session") },
         { icon: "arrowUp", t: "Big lifts first", s: "A routine's workout: big lifts, the ones that work several muscles (a press, a row, a squat), before single-muscle lifts that tire the same muscles. Counts most for strength", r: goalPoints("order") },
