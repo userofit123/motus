@@ -1,5 +1,5 @@
 // Home's suggestions: the numbers they're worked out from. The rules themselves are in @motus/shared (pickSuggestions).
-import { pickSuggestions } from "@motus/shared";
+import { pickSuggestions, MUSCLE_SETS_SQL } from "@motus/shared";
 import type { Sql } from "../db";
 import type { RoutineSummary, HomeSuggestion } from "@motus/shared";
 import { programInfo } from "./programs";
@@ -30,10 +30,7 @@ export async function suggestions(q: Sql, routines: RoutineSummary[], now: Date,
   const muscleDays = Object.fromEntries((await q.query<{ m: string; at: string }>(
     `SELECT unnest(e.primary_muscles) AS m, max(w.started_at) AS at FROM workout_exercises we JOIN workouts w ON w.id = we.workout_id JOIN exercises e ON e.id = we.exercise_id
      WHERE w.status = 'completed' AND we.status <> 'skipped' GROUP BY 1`)).rows.map((x) => [x.m, calDays(x.at)]));
-  const sets28 = Object.fromEntries((await q.query<{ m: string; n: string }>(
-    `SELECT unnest(e.primary_muscles) AS m, count(s.id) AS n FROM workout_exercises we JOIN workouts w ON w.id = we.workout_id JOIN exercises e ON e.id = we.exercise_id
-     JOIN workout_sets s ON s.workout_exercise_id = we.id AND s.done AND s.kind <> 'warmup'
-     WHERE w.status = 'completed' AND w.started_at >= $1 GROUP BY 1`, [new Date(now.getTime() - 28 * DAY).toISOString()])).rows.map((x) => [x.m, Number(x.n)]));
+  const sets28 = await setsByMuscle(q, new Date(now.getTime() - 28 * DAY));
   const routineMuscles = (await q.query<{ routine_id: string; m: string; n: string; main: boolean }>(
     `SELECT re.routine_id, unnest(e.primary_muscles) AS m, count(*) AS n, true AS main FROM routine_exercises re JOIN exercises e ON e.id = re.exercise_id GROUP BY 1, 2
      UNION ALL SELECT re.routine_id, unnest(e.secondary_muscles) AS m, count(*) AS n, false AS main FROM routine_exercises re JOIN exercises e ON e.id = re.exercise_id GROUP BY 1, 2`))
@@ -55,4 +52,14 @@ export async function suggestions(q: Sql, routines: RoutineSummary[], now: Date,
     planned: { routineIds: [...plannedIds], muscles: [...plannedMuscles] },
     hidden,
   });
+}
+
+/** Sets per main muscle in finished workouts since `since`: each exercise of each workout counted as Stats → Muscles
+ *  counts it (MUSCLE_SETS_SQL: warm-ups out, a left and a right set are 1), then added up per muscle */
+export async function setsByMuscle(q: Sql, since: Date): Promise<Record<string, number>> {
+  return Object.fromEntries((await q.query<{ m: string; n: string }>(
+    `SELECT unnest(x.pm) AS m, sum(x.n) AS n FROM (
+       SELECT e.primary_muscles AS pm, ${MUSCLE_SETS_SQL} AS n FROM workout_exercises we JOIN workouts w ON w.id = we.workout_id JOIN exercises e ON e.id = we.exercise_id
+       JOIN workout_sets s ON s.workout_exercise_id = we.id AND s.done AND s.kind <> 'warmup'
+       WHERE w.status = 'completed' AND w.started_at >= $1 GROUP BY we.id, e.id) x GROUP BY 1`, [since.toISOString()])).rows.map((x) => [x.m, Number(x.n)]));
 }

@@ -285,7 +285,7 @@ function volume(g: GoalTargets, days: CheckSession[], week: Record<string, numbe
   }
   return make(g, {
     key: "volume", title: `At least ${lo} sets a week per muscle`, share, value: `${ms.length - low.length} of ${plural(ms.length, "muscle")}`, detail,
-    what: `How many working sets each major muscle gets in ${wk}, adding up all the week's workouts. Warm-up sets are left out. A set counts as 1 set for the muscle the exercise is mainly for, and as half a set for each muscle that helps: one set of bench press counts 1 for the chest and 0.5 for the triceps. A left set and a right set of a one-arm or one-leg exercise count as 1 set together, since each arm or leg does one set.`,
+    what: `How many working sets each major muscle gets in ${wk}, adding up all the week's workouts. Warm-up sets are left out. A set counts as 1 set for the muscle the exercise is mainly for, and as half a set for each muscle that helps: one set of bench press counts 1 for the chest and 0.5 for the triceps. A left set and a right set of a one-arm or one-leg exercise count as 1 set together: each arm (or leg) works in only one of the two, so its muscles get 1 set.`,
     itemsLabel: `Sets per muscle in ${wk} · target ${lo} or more`, bars: true, band: [lo, Math.max(lo, 20)],
     items: ms.map((m) => ({ label: m.name, value: r1(week[m.id]!), text: plural(week[m.id]!, "set"), ok: week[m.id]! >= lo })),
     target: `Do ${lo} or more working sets a week for each major muscle.`,
@@ -323,11 +323,11 @@ function frequency(g: GoalTargets, days: Day[], week: Record<string, number>, wk
     : days.length === 1 ? `${cap(wk)} has only 1 workout, so no muscle is trained on more than 1 day. Add a second workout to the week and split each muscle's sets between the two.`
     : `In ${wk}, ${parts.map((p, i) => (i ? cap(p) : p)).join(" ")}`;
   const wkt = (m: { id: string }, d: number[]) => (d.length ? `${d.length === 1 ? "Workout" : "Workouts"} ${names(d.map((x) => (dayNames[x - 1] ? `${x} (${dayNames[x - 1]})` : String(x))))}`
-    : week[m.id]! > 0 ? "Only helps in other exercises, and helping doesn't count as a day" : "No sets in the week");
+    : week[m.id]! > 0 ? `Only a helper in other exercises - no exercise mainly for ${it(m)}` : "No sets in the week");
   const named = (d: number) => (dayNames[d - 1] ? `workout ${d} (${dayNames[d - 1]})` : `workout ${d}`);
   return make(g, {
     key: "frequency", title: `Muscles trained on ${TWICE} or more days`, share, value: `${ms.length - once.length} of ${plural(ms.length, "muscle")}`, detail,
-    what: `On how many different days in ${wk} each muscle is trained. A day counts for a muscle only when an exercise that day is mainly for it: a bench press day counts for the chest, but not for the triceps, which only help push. Those helping sets still add half a set each to the triceps' sets a week.`,
+    what: `On how many different days in ${wk} each muscle is trained. A day counts for a muscle only when an exercise that day is mainly for it: a bench press day counts for the chest, but not for the triceps, which only help push. The triceps do get half a set for each set of bench press in the check "At least ${g.weekSets} sets a week per muscle".`,
     itemsLabel: `Days each muscle is trained in ${wk} · target ${TWICE} or more`, bars: false,
     items: ms.map((m) => { const d = onDays(m.id); return { label: m.name, value: d.length, text: plural(d.length, "day"), ok: d.length >= TWICE, note: wkt(m, d) }; }),
     target: `Train each muscle on at least ${TWICE} different days of the week.`,
@@ -384,7 +384,7 @@ function pushPull(g: GoalTargets, sessions: CheckSession[], wk: string): Check |
     : `In ${wk}, the upper body gets ${nSets(pull, "pulling set")} but only ${nSets(push, "pushing set")}. Add about ${addPush} pushing ${addPush === 1 ? "set" : "sets"}, such as ${fresh([...pushers], ["Bench press", "Overhead press"])}, to even it out.`;
   return make(g, {
     key: "pushPull", title: "Pushing and pulling sets", share, value: `${n(push)} push · ${n(pull)} pull`, detail,
-    what: `Working sets in ${wk} of upper-body exercises that push the weight away from you (presses, dips, raises) and that pull it towards you (rows, pulldowns, curls). A left set and a right set of a one-arm or one-leg exercise count as 1 set together, since each arm or leg does one set.`,
+    what: `Working sets in ${wk} of upper-body exercises that push the weight away from you (presses, dips, raises) and that pull it towards you (rows, pulldowns, curls). A left set and a right set of a one-arm exercise, such as a one-arm row, count as 1 set together: each arm works in only one of the two, so its muscles get 1 set.`,
     itemsLabel: `Upper-body sets in ${wk}`, bars: false,
     items: [{ label: "Pushing", value: push, text: plural(push, "set"), ok: share >= 1, note: names([...pushers]) }, { label: "Pulling", value: pull, text: plural(pull, "set"), ok: share >= 1, note: names([...pullers]) }],
     target: "Do about as many pulling sets as pushing sets: for every 4 pushing sets, 3-6 pulling sets.",
@@ -408,7 +408,7 @@ function legs(g: GoalTargets, days: CheckSession[], week: Record<string, number>
     : `In ${wk}, the hamstrings get ${nSets(h)} but the quads only ${n(q)}. Add about ${nSets(addQ, "quad set")}, such as Squat, so they get at least half as many as the hamstrings.`;
   return make(g, {
     key: "legs", title: "Quad and hamstring sets", share, value: `${n(q)} quad · ${n(h)} hamstring`, detail,
-    what: `Working sets in ${wk} for the front of the thigh (quads) and the back of the thigh (hamstrings). Warm-ups are left out. A set counts as half a set when the muscle only helps in that exercise instead of being the one it is mainly for. A left set and a right set of a one-arm or one-leg exercise count as 1 set together, since each arm or leg does one set.`,
+    what: `Working sets in ${wk} for the front of the thigh (quads) and the back of the thigh (hamstrings). Warm-ups are left out. A set counts as half a set when the muscle only helps in that exercise instead of being the one it is mainly for. A left set and a right set of a one-leg exercise, such as a split squat, count as 1 set together: each leg works in only one of the two, so its muscles get 1 set.`,
     itemsLabel: `Thigh sets in ${wk}`, bars: false,
     items: [{ label: "Quads", value: r1(q), text: plural(q, "set"), ok: share >= 1, note: names(liftsFor(days, quad)) || undefined },
       { label: "Hamstrings", value: r1(h), text: plural(h, "set"), ok: share >= 1, note: names(liftsFor(days, ham)) || undefined }],
@@ -559,7 +559,7 @@ function session(g: GoalTargets, s: CheckSession): Check | null {
   });
   return make(g, {
     key: "session", title: `Up to ${SESSION_SETS} sets per muscle`, share, value: `${ms.length - over.length} of ${plural(ms.length, "muscle")}`, detail,
-    what: `How many working sets each muscle gets ${W} (warm-ups left out). A set counts as 1 set for the muscle the exercise is mainly for, and as half a set for each muscle that helps: one set of bench press counts 1 for the chest and 0.5 for the triceps. A left set and a right set of a one-arm or one-leg exercise count as 1 set together, since each arm or leg does one set.`,
+    what: `How many working sets each muscle gets ${W} (warm-ups left out). A set counts as 1 set for the muscle the exercise is mainly for, and as half a set for each muscle that helps: one set of bench press counts 1 for the chest and 0.5 for the triceps. A left set and a right set of a one-arm or one-leg exercise count as 1 set together: each arm (or leg) works in only one of the two, so its muscles get 1 set.`,
     itemsLabel: `Sets per muscle ${W} · up to ${SESSION_SETS}`, bars: true, band: [0, SESSION_SETS],
     items: ms.map((m) => ({ label: m.name, value: r1(day.sets[m.id]!), text: plural(day.sets[m.id]!, "set"), ok: day.sets[m.id]! <= SESSION_SETS })),
     target: `Do up to ${SESSION_SETS} working sets for one muscle in one workout.`,

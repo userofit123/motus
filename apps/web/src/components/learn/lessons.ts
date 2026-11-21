@@ -24,6 +24,15 @@ const WHO = "Bull FC, et al. WHO 2020 guidelines on physical activity and sedent
 const SCHOENFELD = { icon: "note", t: "Schoenfeld, Ogborn & Krieger, 2017", s: `A review of 15 studies that compared how many sets a week people did for a muscle: people who did ${lo} or more sets a week gained clearly more muscle than people who did fewer than 5`,
   ref: "Schoenfeld BJ, Ogborn D, Krieger JW. Dose-response relationship between weekly resistance training volume and increases in muscle mass: a systematic review and meta-analysis. Journal of Sports Sciences, 2017; 35(11): 1073-1082" };
 
+// how a set counts for a muscle (muscleSetCount and muscleSets in @motus/shared): the same rows in every lesson whose
+// numbers use that count (weekly sets, the Strength score, the Routine check)
+const MUSCLE_SET_ROWS = [
+  { icon: "target", t: "Main muscle", s: "The muscle the exercise is mainly for (bench press: chest)", r: "1 set" },
+  { icon: "layers", t: "Helper", s: "A muscle that also works in it (bench press: triceps)", r: "0.5 set" },
+  // "split" is the app's left-and-right icon (the "One side at a time" menu item)
+  { icon: "split", t: "Left and right sets", s: "A left set and a right set of a one-arm or one-leg exercise (one-arm curl, left then right: biceps)", r: "1 set" },
+];
+
 export const LESSONS = {
   weeklySets: {
     title: "Working sets per week",
@@ -41,9 +50,7 @@ export const LESSONS = {
           ref: "Baz-Valle E, Balsalobre-Fernández C, Alix-Fagoaga C, Schoenfeld BJ. A systematic review of the effects of different resistance training volumes on muscle hypertrophy. Journal of Human Kinetics, 2022; 81: 199-210" },
       ] },
       { heading: "How Motus counts", rows: [
-        { icon: "target", t: "Main muscle", s: "The muscle the exercise is mainly for (bench press: chest)", r: "1 set" },
-        { icon: "layers", t: "Helper", s: "A muscle that also works in it (bench press: triceps)", r: "0.5 set" },
-        { icon: "dumbbell", t: "Left and right sets", s: "A left set plus a right set of a one-arm or one-leg exercise (one-arm curl: biceps)", r: "1 set" },
+        ...MUSCLE_SET_ROWS,
         { icon: "flame", t: "Warm-up sets", r: "Not counted" },
         { icon: "calendar", t: "Last 7 days", s: "Today and the 6 days before it" },
         { icon: "stats", t: "Average per training week", s: "Weeks without a workout are left out" },
@@ -102,6 +109,7 @@ export const LESSONS = {
       { heading: "How Motus counts", rows: [
         { icon: "calendar", t: "Strength days", s: `Days with hard sets, against ${STRENGTH_DAYS} a week`, r: points(STRENGTH_WEIGHTS.days) },
         { icon: "activity", t: `Muscle groups with ${lo}+ hard sets`, s: "Chest, back, shoulders, arms, core and legs", r: points(STRENGTH_WEIGHTS.groups) },
+        ...MUSCLE_SET_ROWS,
       ] },
     ],
   },
@@ -116,16 +124,14 @@ export const LESSONS = {
       { heading: "Where the targets come from", rows: Object.values(CHECK_RESEARCH).map((x) => ({ icon: "note", ...x })) },
       { heading: "How Motus counts", rows: [
         { icon: "activity", t: "Sets a week per muscle", s: "A program's week: working sets for each major muscle, against the goal's target", r: goalPoints("volume") },
-        { icon: "calendar", t: `Muscles trained on ${TWICE} or more days`, s: `A program's week: is each major muscle the main one in an exercise on at least ${TWICE} different days? Helping in other exercises doesn't count`, r: goalPoints("frequency") },
+        { icon: "calendar", t: `Muscles trained on ${TWICE} or more days`, s: `A program's week: is there an exercise mainly for each major muscle on at least ${TWICE} different days? A day where the muscle only helps, like the triceps in a bench press, isn't one of them`, r: goalPoints("frequency") },
         { icon: "swap", t: "Pushing and pulling sets", s: "A program's week: about as many upper-body pulling sets as pushing sets, 3-6 pulling sets for every 4 pushing sets", r: goalPoints("pushPull") },
         { icon: "split", t: "Quad and hamstring sets", s: "A program's week: the hamstrings get at least half as many sets as the quads, and at most twice as many", r: goalPoints("legs") },
         { icon: "refresh", t: "Reps per set", s: "A routine's workout: working sets with target reps in the goal's range", r: goalPoints("reps") },
         { icon: "layers", t: `Up to ${SESSION_SETS} sets per muscle`, s: "A routine's workout: working sets for each muscle in that one workout", r: goalPoints("session") },
         { icon: "arrowUp", t: "Big lifts first", s: "A routine's workout: big lifts, the ones that work several muscles (a press, a row, a squat), before single-muscle lifts that tire the same muscles. Counts most for strength", r: goalPoints("order") },
         { icon: "timer", t: "Rest between sets of big lifts", s: "A routine's workout: the planned rest between sets of each big lift, from the routine or your defaults in Settings", r: goalPoints("rest") },
-        { icon: "target", t: "Main muscle", s: "The muscle the exercise is mainly for (bench press: chest)", r: "1 set" },
-        { icon: "layers", t: "Helper", s: "A muscle that also works in it (bench press: triceps)", r: "0.5 set" },
-        { icon: "dumbbell", t: "Left and right sets", s: "A left set plus a right set of a one-arm or one-leg exercise (one-arm curl: biceps)", r: "1 set" },
+        ...MUSCLE_SET_ROWS,
         { icon: "flame", t: "Warm-up sets", r: "Not counted" },
       ] },
     ],

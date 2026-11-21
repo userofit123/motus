@@ -2,7 +2,7 @@
 // Progress is worked out from the data each time, so editing a past workout moves the goal too.
 // Weeks, months and days follow the app's calendar (tz = its getTimezoneOffset(), as for /home and /achievements), not
 // the process's: the server runs in UTC and the copy on a device in the person's zone, and both must agree.
-import { e1rm, GROUPS, LIFTED_SQL, bodyMeasure, bodyUnit, bodyGoalDirection, goalDaysOf, orderGoals, goalAutoTitle, GOAL_METRICS, MIN_NIGHT_H, duration, type Goal, type GoalProgress, type Settings } from "@motus/shared";
+import { e1rm, GROUPS, LIFTED_SQL, MUSCLE_SETS_SQL, bodyMeasure, bodyUnit, bodyGoalDirection, goalDaysOf, orderGoals, goalAutoTitle, GOAL_METRICS, MIN_NIGHT_H, duration, type Goal, type GoalProgress, type Settings } from "@motus/shared";
 import type { Router, Ctx } from "../router";
 import type { Sql } from "../db";
 import { camel, id, str, numOrNull, oneOf, dateStr, startOfDay, tzOf, visible } from "../util";
@@ -78,9 +78,13 @@ async function valueFor(q: Sql, g: Goal, w: Window, s: Settings, now: Date, tzMi
       if (g.metric === "muscle_sessions")
         return one(`SELECT count(DISTINCT w.id) v FROM workout_exercises we JOIN workouts w ON w.id=we.workout_id JOIN exercises e ON e.id=we.exercise_id
           WHERE ${done} AND we.status<>'skipped' AND e.primary_muscles && $3::text[]`, [...P, muscles]);
-      return one(`SELECT coalesce(sum(CASE WHEN e.primary_muscles && $3::text[] THEN 1 ELSE 0.5 END),0) v FROM workout_sets s JOIN workout_exercises we ON we.id=s.workout_exercise_id
+      // each exercise of each workout counted as Stats → Muscles counts it (MUSCLE_SETS_SQL: a left and a right set are 1),
+      // then 1 per set where the muscle is a main one of the exercise and 0.5 where it only helps
+      return one(`SELECT coalesce(sum(CASE WHEN x.main THEN x.n ELSE x.n * 0.5 END),0) v FROM (
+        SELECT e.primary_muscles && $3::text[] AS main, ${MUSCLE_SETS_SQL} AS n FROM workout_sets s JOIN workout_exercises we ON we.id=s.workout_exercise_id
         JOIN workouts w ON w.id=we.workout_id JOIN exercises e ON e.id=we.exercise_id
-        WHERE ${done} AND s.done AND s.kind<>'warmup' AND (e.primary_muscles && $3::text[] OR e.secondary_muscles && $3::text[])`, [...P, muscles]);
+        WHERE ${done} AND s.done AND s.kind<>'warmup' AND (e.primary_muscles && $3::text[] OR e.secondary_muscles && $3::text[])
+        GROUP BY we.id, e.id) x`, [...P, muscles]);
     }
     // only where the type tracks distance, as the app shows it (activityDistance in @motus/shared): a time only type's
     // number left from before its type changed doesn't count
