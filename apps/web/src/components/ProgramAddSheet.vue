@@ -21,17 +21,24 @@ const hint = computed(() => {
   return `Each routine you pick or make here ${where}. To change one week only, use Edit in ⋮.`;
 });
 const inProgram = computed(() => [...new Set(props.program.weeks.flatMap((w) => w.days))]);
-const pick = async (r: RoutineSummary) => { try { toast((await addToProgram(props.program.id, r.id, r.name)).text); } catch (e) { toastError(e); } };
+const pick = async (r: RoutineSummary) => { try { const a = await addToProgram(props.program.id, r.id, r.name); toast(a.text, { ms: a.ms }); } catch (e) { toastError(e); } };
 const create = () => { emit("close"); router.push({ path: "/routines/new/edit", query: { program: props.program.id } }); };
 </script>
 
 <template>
   <Sheet title="Add routines" @close="emit('close')">
     <p class="tiny hgap">{{ hint }}</p>
-    <div class="opt-list hgap">
+    <div class="sh first"><h2>Create</h2></div>
+    <div class="opt-list">
       <button class="optb" @click="create"><span class="oi"><Icon name="plus" /></span><div class="grow"><div class="t">New routine</div><div class="s">From scratch, from a template or from another routine</div></div></button>
     </div>
-    <RoutineChooser icon="plus" :marked="inProgram" mark-label="In this program" @pick="pick" />
+    <RoutineChooser class="blk" icon="plus" title="Your routines" :marked="inProgram" mark-label="In this program" @pick="pick" />
     <template #foot><button class="btn" @click="emit('close')">Done</button></template>
   </Sheet>
 </template>
+
+<style scoped>
+/* the routines come after the Create block: the same gap as between the chooser's own folder blocks (a .sh's top
+   margin), whose first header drops its own margin */
+.blk { margin-top: calc(var(--spg) * 1.75); }
+</style>

@@ -85,7 +85,7 @@ async function save() {
 .wk { display: flex; flex-direction: column; gap: var(--hg); margin-bottom: var(--hg); }
 .wk .row.hgap { margin: 0; }
 .pdays { display: flex; flex-direction: column; gap: var(--tdy); }
-.pday { display: flex; align-items: center; gap: var(--cpy); padding: calc(var(--tdy) / 2); border-radius: var(--r-sm); background: var(--s2); font-size: 13.5px; }
+.pday { display: flex; align-items: center; gap: var(--cpx); padding: calc(var(--tdy) / 2); border-radius: var(--r-sm); background: var(--s2); font-size: 13.5px; }
 /* muted like the routine editor's handle; it takes the row's start padding, as the remove button takes its end */
 .pday .dragh { color: var(--tx2); margin-inline-end: -6px; }
 .pdn { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; flex: none; font-size: 11.5px; font-weight: 600; background: var(--s1); color: var(--tx2); }

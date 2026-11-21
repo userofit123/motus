@@ -11,9 +11,12 @@ import SearchField from "./SearchField.vue";
 import Collapse from "./Collapse.vue";
 
 // icon: what tapping a row does (play: start it, as the Start sheet; plus: add it, as a program's Add routines).
-// marked/markLabel: routines already in what they're picked for, said first in their line with a check in place of the
-// icon (a program's routines: picking one again still adds it, so a repeat tap shows instead of passing unseen)
-const props = withDefaults(defineProps<{ icon?: string; marked?: string[]; markLabel?: string }>(), { icon: "play", marked: () => [], markLabel: "" });
+// marked/markLabel: routines already in what they're picked for, said in a small label after the name (a program's
+// routines: picking one again still adds it, so the tap keeps its icon). The label sits on the name's line, which has
+// room to spare, so a marked row is no taller than the others.
+// title: the heading of the routines when they have no folder headers (no pinned, no folders), for a sheet where they
+// follow other blocks; with folders, the folder headers are the headings, so no second heading stacks on top
+const props = withDefaults(defineProps<{ icon?: string; marked?: string[]; markLabel?: string; title?: string }>(), { icon: "play", marked: () => [], markLabel: "", title: "" });
 const isMarked = (r: RoutineSummary) => props.marked.includes(r.id);
 const emit = defineEmits<{ pick: [r: RoutineSummary] }>();
 const routines = useRoutines();
@@ -29,7 +32,7 @@ const groups = computed(() => {
   // empty folders are left out: there is nothing to pick in them
   for (const f of fs) { const items = list.value.filter((r) => r.folderId === f.id && !r.pinned); if (items.length) out.push({ id: f.id, name: f.name, items }); }
   const rest = list.value.filter((r) => (!r.folderId || !fs.some((f) => f.id === r.folderId)) && !r.pinned);
-  if (rest.length) out.push({ id: null, name: out.length ? "Other" : "", items: rest });
+  if (rest.length) out.push({ id: null, name: out.length ? "Other" : props.title, items: rest });
   return out;
 });
 const folded = ref<string[]>(readJson<string[]>("motusFolded", []));
@@ -53,8 +56,8 @@ function fold(g: { id: string | null }) { const k = fkey(g); folded.value = isFo
       <Collapse :open="!isFolded(g) || !!q"><div class="list">
         <div v-for="r in g.items" :key="r.id" class="li click" @click="emit('pick', r)">
           <span class="dot" :style="r.color ? { background: r.color } : undefined" />
-          <div class="grow"><div class="t">{{ r.name }}</div><div class="s"><span v-if="isMarked(r)" class="mk">{{ markLabel }} · </span>{{ r.exerciseCount }} exercises · {{ routineTime(r.estimateS, r.usual) }} · {{ r.lastDoneAt ? `last done ${ago(r.lastDoneAt)}` : "not done yet" }}</div></div>
-          <Icon :name="isMarked(r) ? 'check' : icon" :size="16" class="go" />
+          <div class="grow"><div class="t">{{ r.name }}<span v-if="isMarked(r)" class="tiny acc mk">{{ markLabel }}</span></div><div class="s">{{ r.exerciseCount }} exercises · {{ routineTime(r.estimateS, r.usual) }} · {{ r.lastDoneAt ? `last done ${ago(r.lastDoneAt)}` : "not done yet" }}</div></div>
+          <Icon :name="icon" :size="16" class="go" />
         </div>
       </div></Collapse>
     </section>
@@ -70,5 +73,6 @@ section:first-of-type .sh.fh { margin-top: 0; }
 .fi { width: 26px; height: 26px; border-radius: 8px; display: grid; place-items: center; background: var(--s2); color: var(--acc); flex: none; }
 .fn { color: var(--tx2); font-size: 13px; font-weight: 500; }
 .go { color: var(--acc); flex: none; }
-.mk { color: var(--acc); font-weight: 500; }
+/* "In this program", after the name with a word's space; kept whole so it moves to the next line as one piece */
+.mk { margin-inline-start: .4em; font-weight: 500; white-space: nowrap; }
 </style>

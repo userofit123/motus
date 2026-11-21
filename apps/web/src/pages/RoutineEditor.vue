@@ -333,8 +333,8 @@ async function save(thenStart = false) {
       // back to the program the way it came (no second copy of its page); Save and start starts it as part of the
       // program, as the program's own Start does
       try {
-        const a = await addToProgram(forProgram, rid, r.value.name.trim());
-        toast(a.text);
+        const a = await addToProgram(forProgram, rid, r.value.name.trim(), { saved: true });
+        toast(a.text, { ms: a.ms });
         if (thenStart) router.replace(`/routines/${rid}/start?program=${forProgram}${a.deload ? `&deload=${a.deload}` : ""}`);
         else goBack(router, `/programs/${forProgram}`);
       } catch (e) { toastError(e); router.replace(`/routines/${rid}`); }

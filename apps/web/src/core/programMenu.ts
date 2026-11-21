@@ -52,25 +52,29 @@ export const WEEK_MAX = 14;
 /**
  * Adds a routine to the end of every week but the rest weeks and the full ones (Add routines, and a new routine made
  * from the program's page). Reads the program fresh, so routines added one after another all land. Returns the
- * confirmation to show and the deload to start it with (its program's current week's); fails, saying why, when no week
- * can take it.
+ * confirmation to show (ms: how long, longer when it lists weeks left out) and the deload to start it with; fails,
+ * saying why, when no week can take it. saved: called from the routine editor, where the routine is already saved, so
+ * the failure says so and leaves out advice about the program's ⋮, which is not on that screen.
  */
-export async function addToProgram(programId: string, routineId: string, name: string): Promise<{ text: string; deload: number | null }> {
+export async function addToProgram(programId: string, routineId: string, name: string, o: { saved?: boolean } = {}): Promise<{ text: string; ms?: number; deload: number | null }> {
   const p = await api.get<ProgramDetail>(`/programs/${programId}`, { tz: new Date().getTimezoneOffset() });
   const n = p.weeks.length, target = addWeeks(p.weeks), to = target.filter((w) => w.days.length < WEEK_MAX);
-  if (!n) throw new Error(`${p.name} has no weeks yet, so ${name} was not added. Add a week with Edit in ⋮.`);
-  if (!to.length) throw new Error(n === 1
-    ? `${name} was not added: ${p.name} already has ${WEEK_MAX} workouts, the most a week can hold.`
-    : `${name} was not added: every week of ${p.name} already has ${WEEK_MAX} workouts, the most a week can hold.`);
+  if (!n) throw new Error(o.saved ? `Routine saved, but not added to ${p.name}: the program has no weeks yet` : `${p.name} has no weeks yet, so ${name} was not added. Add a week with Edit in ⋮.`);
+  if (!to.length) throw new Error(o.saved
+    ? `Routine saved, but not added to ${p.name}: ${n === 1 ? "the program" : "every week"} is full (${WEEK_MAX} workouts)`
+    : `${name} not added: ${n === 1 ? p.name : `every week of ${p.name}`} is full (${WEEK_MAX} workouts)`);
   const weeks = p.weeks.map((w) => (to.includes(w) ? { ...w, days: [...w.days, routineId] } : w));
   await api.put(`/programs/${programId}`, { weeks });
   invalidate(["routines", "home"]);
-  const week = p.weeks[(p.state.next?.week ?? 1) - 1];
-  const deload = week?.deload ? p.deloadPct : null;
+  // the server counts a workout of this routine for its first open day: one it already had, or the first week it was
+  // just added to, whichever comes first; Start with that day's deload, as the program's own Start does
+  const had = p.plan.find((w) => w.days.some((d) => d.routineId === routineId && d.status !== "done" && d.status !== "skipped"));
+  const added = p.weeks.indexOf(to[0]!) + 1;
+  const deload = (had && had.week < added ? had.deload : !!to[0]!.deload) ? p.deloadPct : null;
   if (to.length === n) return { text: n === 1 ? `Added ${name} to ${p.name}` : `Added ${name} to all ${n} weeks of ${p.name}`, deload };
   const rest = n - target.length, full = target.length - to.length;
-  const not = [rest ? "the rest weeks" : "", full === 1 ? `1 week that already has ${WEEK_MAX} workouts, the most a week can hold` : full ? `${full} weeks that already have ${WEEK_MAX} workouts, the most a week can hold` : ""];
-  return { text: `Added ${name} to ${to.length} of ${n} weeks of ${p.name}, not ${not.filter(Boolean).join(" or ")}`, deload };
+  const skipped = [rest ? `${rest} rest week${rest === 1 ? "" : "s"}` : "", full ? `${full} full week${full === 1 ? "" : "s"} (${WEEK_MAX} workouts)` : ""];
+  return { text: `Added ${name} to ${to.length} of ${n} weeks of ${p.name}: ${skipped.filter(Boolean).join(" and ")} skipped`, ms: 6000, deload };
 }
 
 /**
