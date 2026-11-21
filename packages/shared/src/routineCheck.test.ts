@@ -29,7 +29,7 @@ describe("routine check", () => {
     // each scope's points add up to 100 for every goal
     for (const g of Object.values(GOALS)) {
       const w = g.weights;
-      expect(w.volume + w.frequency + w.pushPull + w.legs).toBe(100);
+      expect(w.volume + w.frequency + w.pushPull + w.legs + w.recovery).toBe(100);
       expect(w.reps + w.session + w.order + w.rest).toBe(100);
     }
   });
@@ -182,6 +182,30 @@ describe("routine check", () => {
     expect(key(routineCheck([bench(3, 20, 180)], "endurance"), "rest")!.share).toBe(0);
   });
 
+  it("asks for a day off between two hard workouts in a row for a muscle (M-298)", () => {
+    // biceps: 8 sets in Arms, then 6 in Pull right after (a row's help adds 1.5): hard in both, so flagged
+    const arms = [curl(8)], pull = [row(3), curl(6)], legs = [squat(3)];
+    const r = key(programCheck([legs, arms, pull], "size", 1, ["Legs", "Arms", "Pull"]), "recovery")!;
+    expect(r.share).toBe(0);
+    expect(r.value).toBe("0 of 1 muscle");
+    expect(r.detail).toBe("In week 1, biceps get 8 and 7.5 sets in workouts 2 (Arms) and 3 (Pull), one right after the other. A muscle needs about 48 hours to recover from that many sets: leave a day off between the two (Monday and Wednesday, not Monday and Tuesday), or put another workout between them.");
+    expect(r.items[0]).toMatchObject({ label: "Biceps", text: "8 and 7.5 sets", ok: false, note: "Workouts 2 (Arms) and 3 (Pull), one right after the other" });
+    expect(r.tips[0]).toBe("Biceps: 8 sets in workout 2 (Arms), then 7.5 in workout 3 (Pull). Leave a day off between these two workouts, or move 3 of their sets from workout 3 (Pull) to another workout, so that workout gives them 5 or fewer.");
+    // three hard workouts in a row: the tip names the first two and the next pair too
+    expect(key(programCheck([arms, arms, arms], "size", 1, ["A", "B", "C"]), "recovery")!.tips[0]).toBe("Biceps: 8 sets in workout 1 (A), then 8 in workout 2 (B). Leave a day off between these two workouts, or move 3 of their sets from workout 2 (B) to another workout, so that workout gives them 5 or fewer. The same goes for workouts 2 (B) and 3 (C).");
+    // another workout between them: no longer in a row
+    const apart = key(programCheck([arms, legs, pull], "size", 1, ["Arms", "Legs", "Pull"]), "recovery")!;
+    expect(apart.share).toBe(1);
+    expect(apart.items[0]).toMatchObject({ text: "8 and 7.5 sets", ok: true, note: "Workouts 1 (Arms) and 3 (Pull), with 1 workout between them" });
+    // a few sets in a row are fine, as are a hard workout followed by a light one
+    expect(key(programCheck([[curl(3)], [curl(3)]]), "recovery")!.share).toBe(1);
+    expect(key(programCheck([[curl(8)], [curl(5)]]), "recovery")!.share).toBe(1);
+    // helping sets alone never make a workout hard for a muscle: bench gives the triceps 4 sets, but no day
+    expect(key(programCheck([[bench(8)], [bench(8)]]), "recovery")!.items.map((i) => i.label)).toEqual(["Chest"]);
+    // no muscle trained in 2 workouts: nothing to check
+    expect(key(programCheck([[curl(8)], [squat(8)]]), "recovery")).toBeUndefined();
+  });
+
   it("scores a sound program week high and a lopsided one low", () => {
     const a = [bench(4), row(4), squat(4), rdl(3), curl(3), ex("Pushdown", ["triceps"], { mechanic: "isolation", force: "push" }), ex("Overhead press", ["shoulders"], { force: "push", secondary: ["triceps"] }, 3),
       ex("Hip thrust", ["glutes"], {}, 3), ex("Calf raise", ["calves"], { mechanic: "isolation" }, 4), ex("Cable crunch", ["abdominals"], { mechanic: "isolation" }, 4)];
@@ -195,7 +219,7 @@ describe("routine check", () => {
 
   it("checks a program's week for the week's checks, and a routine only on its own workout", () => {
     const day = [curl(), row(), bench()];
-    expect(programCheck([day, day])!.checks.map((c) => c.key)).toEqual(["volume", "frequency", "pushPull"]);
+    expect(programCheck([day, day])!.checks.map((c) => c.key)).toEqual(["volume", "frequency", "pushPull", "recovery"]);
     expect(routineCheck(day)!.checks.map((c) => c.key)).toEqual(["reps", "session", "order"]);
     // every check carries what its popup needs
     for (const c of Object.keys(GOALS).flatMap((g) => [...programCheck([day, day, [squat(), rdl()]], g)!.checks, ...routineCheck([curl(), row(), bench(3, 10, 120)], g)!.checks])) {

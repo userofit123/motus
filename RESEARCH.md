@@ -294,6 +294,34 @@ code signing to self-update. Money Manager already runs this setup.
   limited.
 - Background reads need an extra permission, so sync when the app is opened or through WorkManager.
 
+### 5.6 Recovery between workouts for the same muscle (program check, M-298)
+What the program check's "A day off between hard workouts for a muscle" rests on.
+- **Muscle building after a workout:** after 12 hard sets for the biceps, the muscle built new protein
+  about twice as fast at 24 hours and was back near normal by 36 hours (MacDougall et al. 1995, 6 young men).
+- **Strength comes back in 1-2 days, slower after failure:** sets taken to failure, the point where no
+  other rep is possible, left bench press and squat weaker for longer than the same work stopped well short
+  of it, which had recovered between 24 and 48 hours after (Morán-Navarro et al. 2017, 10 trained men).
+  Failure sets with many reps were still weaker 48 hours after (Pareja-Blanco et al. 2020, 10 men).
+- **Guidelines:** at least 48 hours between workouts for the same muscle groups (ACSM, Garber et al. 2011);
+  at least 1 day and no more than 3 between workouts that train the same muscles hard (NSCA, Essentials of
+  Personal Training). Some trainer tables give 48-72 hours, longer for heavy lifts that work several muscles.
+- **Few sets a day are fine:** with the same sets a week, 6 workouts a week built as much muscle and
+  strength as 3 (Saric et al. 2019, 27 trained men, 6 weeks); a muscle trained 5 days a week grew at least as
+  well as once a week (Zaroni et al. 2019). The frequency reviews agree: with equal weekly sets, the number of
+  days matters little (Schoenfeld, Grgic & Krieger 2019; Schoenfeld & Grgic's 2019 frequency review).
+- **Unaccustomed lowering (eccentric) work** causes the longest soreness and strength loss, days rather than
+  hours, and much less once the muscle is used to it (the repeated-bout effect; Clarkson & Hubal 2002).
+- **Rule Motus uses:** a muscle that gets 6 or more sets in a workout (as the main muscle of a lift) should not
+  get 6 or more again in the next workout of the program's week, unless a day off falls between them. No
+  study names a set count; 6 is about half of the 11 that one workout can use (Pelland et al. 2024). A program
+  lists its workouts in order without days of the week, so the check treats two workouts in a row as ones
+  that may fall on days in a row, and says so.
+- **Not built yet, worth adding later:** (1) a lighter (deload) week about every 4-8 weeks when the program has none,
+  as coaches surveyed reported doing (Bell et al. 2023; practice, not a trial); (2) at least one lift per muscle lengthened
+  under load, such as Romanian deadlift or overhead triceps extension, which grew muscle more than the
+  shortened position (Wolf et al. 2023 review; Maeo et al. 2021, 2023); (3) progression: the same weight and
+  reps every week stalls, so plan small increases (ACSM 2009, progressive overload).
+
 ---
 
 ## 6. Sources
@@ -316,4 +344,5 @@ code signing to self-update. Money Manager already runs this setup.
 - body-highlighter: https://github.com/lahaxearnaud/body-highlighter · react-body-highlighter: https://github.com/giavinh79/react-body-highlighter
 - Capacitor local notifications: https://capacitorjs.com/docs/apis/local-notifications · background-geolocation: https://github.com/capacitor-community/background-geolocation · Capgo health: https://capgo.app/docs/plugins/health/
 - electron-updater: https://www.electron.build/docs/features/auto-update · Tauri updater: https://v2.tauri.app/plugin/updater/
+- Recovery (§5.6): MacDougall 1995 https://pubmed.ncbi.nlm.nih.gov/8563679/ · Morán-Navarro 2017 https://pubmed.ncbi.nlm.nih.gov/28965198/ · Pareja-Blanco 2020 https://pubmed.ncbi.nlm.nih.gov/30036284/ · ACSM 2011 (summary) https://www.unm.edu/~lkravitz/Article%20folder/ACSMGuidelinesUNM.pdf · NSCA https://www.nsca.com/education/articles/kinetic-select/determination-of-resistance-training-frequency/ · Saric 2019 https://pubmed.ncbi.nlm.nih.gov/30363041/ · Zaroni 2019 https://pubmed.ncbi.nlm.nih.gov/31260419/ · frequency review 2019 https://pubmed.ncbi.nlm.nih.gov/30236847/
 - Money Manager (sibling project `../moneymanager`): theme engine `frontend/src/core/theme.js`, appearance panel `frontend/src/components/AppearancePanel.vue`, live updates `frontend/src/live.js`, backups `server/src/backup.js`, release pipeline `.github/workflows/release.yml`
