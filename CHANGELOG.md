@@ -2,6 +2,11 @@
 
 The top entry's version is the one the release workflow publishes. Add a new `## [x.y.z]` section to release.
 
+## [0.1.49] - 2026-11-22
+
+- On a program, tapping a day's routine opens that routine, and Back returns to the program. A done day's workout is now under "Open the workout" in that day's ⋮ menu.
+- Folders on the Routines page can be put in a different order: "Move up" and "Move down" in a folder's ⋮ menu. The order also applies wherever you pick a routine, such as the Start sheet.
+
 ## [0.1.48] - 2026-11-22
 
 - A program is checked for three more things:
