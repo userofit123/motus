@@ -30,7 +30,9 @@ describe("routine check", () => {
     // each scope's points add up to 100 for every goal
     for (const g of Object.values(GOALS)) {
       const w = g.weights;
-      expect(w.volume + w.frequency + w.pushPull + w.legs + w.recovery).toBe(100);
+      expect(w.volume + w.frequency + w.pushPull + w.legs + w.recovery + w.progression + w.stretch + w.deload).toBe(100);
+      // the stretched position is checked for muscle size only
+      expect(w.stretch).toBe(g.id === "size" ? 5 : 0);
       expect(w.reps + w.session + w.order + w.rest).toBe(100);
     }
   });
@@ -280,6 +282,65 @@ describe("routine check", () => {
     expect(plannedWeekdays(["a"], [plan({ endDate: today, startDate: today })], today)).toEqual([[1, 3]]);
     // a routine in the week twice: which day goes with which workout is unknown
     expect(plannedWeekdays(["a", "b", "a"], [plan({})], today)).toEqual([null, null, null]);
+  });
+
+  it("asks for Progression on every exercise lifted with a weight, saying where to switch it on (M-298)", () => {
+    const on = (e: CheckExercise, progress: CheckExercise["progress"]) => ({ ...e, progress });
+    const met = key(programCheck([[on(bench(), "on"), on(squat(), "on")]]), "progression")!;
+    expect(met).toMatchObject({ share: 1, status: "good", value: "2 of 2 exercises", title: "Progression on every exercise" });
+    expect(met.detail).toBe("In week 1, Progression is on for every exercise, so the weights go up as you get stronger.");
+    // off in one workout of the week counts as off; each way it is off gets its own tip
+    const off = key(programCheck([[on(bench(), "on"), on(squat(), "fixed")], [on(bench(), "off"), on(curl(), "settingsOff")]]), "progression")!;
+    expect(off.share).toBe(0);
+    expect(off.value).toBe("0 of 3 exercises");
+    expect(off.detail).toBe("In week 1, Progression is off for Bench press, Squat and Dumbbell curl, so their weight and reps stay the same every workout. Switch it on.");
+    expect(off.itemsLabel).toBe("Progression per exercise in week 1 · target on");
+    expect(off.items.map((i) => i.text)).toEqual(["Off", "Fixed", "Off"]);
+    expect(off.tips).toHaveLength(3);
+    expect(off.tips[0]).toBe("Squat: \"Keep these numbers fixed\" is on, so its numbers never change. Switch it off in the exercise's ⋮ menu in the routine editor.");
+    // not known (no Progression given, or not lifted with a weight): not shown
+    expect(key(programCheck([[bench(), squat()]]), "progression")).toBeUndefined();
+  });
+
+  it("asks for the triceps, hamstrings and calves to be worked stretched, for muscle size only (M-298)", () => {
+    const named = (name: string, m: string) => ex(name, [m], { mechanic: "isolation" });
+    const met = key(programCheck([[named("Cable Rope Overhead Triceps Extension", "triceps"), named("Seated Leg Curl", "hamstrings"), named("Standing Calf Raises", "calves")]]), "stretch")!;
+    expect(met).toMatchObject({ share: 1, value: "3 of 3 muscles", title: "Exercises with the muscle stretched" });
+    expect(met.detail).toBe("In week 1, the triceps, hamstrings and calves each get an exercise that works them while stretched.");
+    // only short ones: flagged, with the stretched position to use; an unknown exercise is left out, never against you
+    const bad = key(programCheck([[named("Triceps Pushdown", "triceps"), named("Lying Leg Curls", "hamstrings"), named("Calf machine", "calves")]]), "stretch")!;
+    expect(bad.share).toBe(0);
+    expect(bad.value).toBe("0 of 2 muscles");
+    expect(bad.detail).toBe("In week 1, the triceps and hamstrings are never worked while stretched. Give each one exercise that stretches it.");
+    expect(bad.itemsLabel).toBe("Stretched exercises in week 1 · target 1 or more");
+    expect(bad.items.find((i) => i.label === "Calves")).toMatchObject({ ok: null, text: "-" });
+    expect(bad.tips[0]).toBe("Triceps: Triceps Pushdown works them with the arms down. Swap one for an exercise done with the arms overhead, such as Overhead triceps extension, so they also work while stretched.");
+    const one = key(programCheck([[named("Triceps Pushdown", "triceps")]]), "stretch")!;
+    expect(one.detail).toBe("In week 1, the triceps are only worked with the arms down, never stretched. Add one exercise done with the arms overhead.");
+    // other goals, and only unknown exercises: not shown
+    expect(key(programCheck([[named("Triceps Pushdown", "triceps")]], "strength"), "stretch")).toBeUndefined();
+    expect(key(programCheck([[named("Calf machine", "calves")]]), "stretch")).toBeUndefined();
+  });
+
+  it("asks a program longer than 8 weeks for a deload week after at most 8 normal weeks (M-298)", () => {
+    const day = [bench(), squat()];
+    const weeks = (n: number, dl: number[] = []) => ({ deload: Array.from({ length: n }, (_, i) => dl.includes(i + 1)), deloadPct: 40 });
+    const none = key(programCheck([day], "size", 1, [], [], weeks(12)), "deload")!;
+    expect(none).toMatchObject({ value: "12 weeks in a row", title: "A deload week after at most 8 weeks", status: "fair" });
+    expect(none.share).toBeCloseTo(8 / 12);
+    expect(none.detail).toBe("This program's 12 weeks have no deload week, a lighter week to let your body recover. Mark week 7 as one.");
+    expect(none.itemsLabel).toBe("Normal weeks in a row · target 8 or fewer");
+    expect(none.tips).toEqual(["Week 7: mark it as a deload week, with Edit in ⋮ and then Deload on that week."]);
+    // a long stretch after a deload week is named; 21 weeks in a row need two, spread evenly
+    const late = key(programCheck([day], "size", 1, [], [], weeks(24, [3])), "deload")!;
+    expect(late.detail).toBe("In this program, weeks 4-24 come in a row with no deload week. Mark weeks 10 and 18 as deload weeks.");
+    const met = key(programCheck([day], "size", 1, [], [], weeks(12, [6, 12])), "deload")!;
+    expect(met.share).toBe(1);
+    expect(met.detail).toBe("In this program, weeks 6 and 12 are deload weeks, so at most 5 normal weeks come in a row.");
+    expect(met.items.map((i) => i.note)).toEqual(["Then week 6 is a deload week", "Then week 12 is a deload week"]);
+    // 8 weeks or fewer, or no weeks given: not shown
+    expect(key(programCheck([day], "size", 1, [], [], weeks(8)), "deload")).toBeUndefined();
+    expect(key(programCheck([day]), "deload")).toBeUndefined();
   });
 
   it("scores a sound program week high and a lopsided one low", () => {

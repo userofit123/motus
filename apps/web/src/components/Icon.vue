@@ -119,6 +119,11 @@ const ICONS: Record<string, string> = {
   cadence: "M10 3h4l5 18H5zM7.2 14h9.6M12 14l2-7",
   // a leg, side view, hip to foot: the thigh (quads in front, hamstrings behind)
   thigh: "M7.5 2.5h6.5l.8 8.5c.2 2.2-.6 4.4-.9 6.6l-.1 1.4 4.2 1.6c.8.3.6 1.4-.3 1.4H9.8l-.2-3.2c-.2-2.3-1.4-4.4-1.5-6.8L7.5 2.5z",
+  // Routine check rows (M-298): Progression as steps going up; a muscle stretched between two arrows; deload weeks as
+  // week bars with one lower
+  climb: "M3 20h5v-5h5v-5h5V4M15 7l3-3 3 3",
+  lengthen: "M8.5 12c0-1.7 1.6-3 3.5-3s3.5 1.3 3.5 3-1.6 3-3.5 3-3.5-1.3-3.5-3zM2 12h4M18 12h4M4.5 9.5 2 12l2.5 2.5M19.5 9.5 22 12l-2.5 2.5",
+  deload: "M5 18V7M9.67 18V7M14.33 18v-5M19 18V7M3 21h18",
 };
 </script>
 

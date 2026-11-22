@@ -102,7 +102,8 @@ const dayMenu = (d: Day): MenuItem[] => [
     try { await api.put(`/programs/${id.value}/days`, { week: d.week, day: d.day, auto: true }); invalidate(["routines", "home"]); toast(`Week ${d.week} · ${d.name} counts automatically again`); } catch (e) { toastError(e); } } },
 ];
 // the Routine check (feature) of the program's first full week (not a deload one), all its workouts together: sets per
-// muscle, twice a week, push and pull balance, quads and hamstrings, and a day off after 6 or more sets for a muscle (each
+// muscle, twice a week, push and pull balance, quads and hamstrings, a day off after 6 or more sets for a muscle,
+// Progression on each exercise, exercises with the muscle stretched, and, over all its weeks, deload weeks (M-298; each
 // routine's page checks its own order, reps, sets and rest, M-287). From its routines as Routines loads them (the same
 // cache), and the plans (Schedule) for the day-off check's weekdays; asked for only while the feature is on
 const st = useSettings();
@@ -116,11 +117,12 @@ const check = computed(() => {
   // wait for the plans too, so the day-off row doesn't flip once they come in; a failed or offline fetch doesn't hold it
   if (plans.status.value === "pending" && plans.fetchStatus.value !== "idle") return null;
   // one session per routine, so a routine done twice in the week is the same workout twice
-  const byId = new Map(weekIds.value.map((rid, i) => [rid, sessionOf(weekRoutines.value[i]!.data, st.value.workout)]));
+  const byId = new Map(weekIds.value.map((rid, i) => [rid, sessionOf(weekRoutines.value[i]!.data, st.value.workout, st.value.progression.mode)]));
   const days = checkWeek.value.days.map((d) => byId.get(d.routineId)!);
   // each workout's routine name, so a tip can point at "workout 2 (Back)"
   const dayNames = checkWeek.value.days.map((d) => weekRoutines.value[weekIds.value.indexOf(d.routineId)]!.data!.name);
-  const c = programCheck(days, p.value!.goal, checkWeek.value.week, dayNames, plannedWeekdays(checkWeek.value.days.map((d) => d.routineId), plans.data.value ?? [], localYmd(new Date())));
+  const c = programCheck(days, p.value!.goal, checkWeek.value.week, dayNames, plannedWeekdays(checkWeek.value.days.map((d) => d.routineId), plans.data.value ?? [], localYmd(new Date())),
+    { deload: p.value!.weeks.map((w) => !!w.deload), deloadPct: p.value!.deloadPct });
   const worked = musclesWorked(days.flat().filter((e) => e.category !== "cardio" && e.category !== "stretching"));
   return c ? { c, muscles: { sets: weekMuscleSets(days), primary: worked.primary, secondary: worked.secondary } } : null;
 });

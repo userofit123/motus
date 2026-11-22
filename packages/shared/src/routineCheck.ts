@@ -5,7 +5,8 @@
 // 0.5 for each helper; warm-ups left out; a left and a right set together 1, muscleSetCount), so the three never disagree.
 // The checks split by what they are about (M-287): sets per muscle in the week, twice a week, balance and a day off
 // between hard workouts for a muscle (M-298) are about a week
-// of training, so only a program checks them, over one week with every workout together; exercise order, reps, sets per
+// of training, and Progression, exercises with the muscle stretched and deload weeks (M-298) about the program as a whole,
+// so only a program checks them, over one week with every workout together; exercise order, reps, sets per
 // muscle in one session and rest are about one workout, so a routine checks only those, whether or not it is in a program.
 // The targets follow the program's goal (M-291): a routine takes the goal of the program it is in (the page picks which).
 // Left out on purpose:
@@ -26,7 +27,7 @@ import type { Schedule, SetKind } from "./types";
 export type ProgramGoal = "size" | "strength" | "fatLoss" | "endurance" | "health";
 export const DEFAULT_GOAL: ProgramGoal = "size";
 
-export type CheckKey = "volume" | "frequency" | "pushPull" | "legs" | "recovery" | "order" | "reps" | "session" | "rest";
+export type CheckKey = "volume" | "frequency" | "pushPull" | "legs" | "recovery" | "progression" | "stretch" | "deload" | "order" | "reps" | "session" | "rest";
 
 export interface GoalTargets {
   id: ProgramGoal;
@@ -43,16 +44,21 @@ export interface GoalTargets {
   /** rest between working sets of a big lift, seconds (Infinity: no upper limit) */
   rest: [number, number];
   /** each check's points; a routine's (order, reps, session, rest) and a program's (volume, frequency, pushPull, legs,
-   *  recovery) each add up to 100 */
+   *  recovery, progression, stretch, deload) each add up to 100 */
   weights: Record<CheckKey, number>;
 }
 
-const PROGRAM_W = { volume: 40, frequency: 20, pushPull: 15, legs: 15, recovery: 10 };
+// A program's points (M-298): sets a week stay the biggest share, as the volume reviews are the strongest evidence;
+// progression is the basic rule for getting stronger (ACSM 2009), so it weighs as much as the day off; the deload week rests
+// on what coaches and athletes report, not on trials, so it weighs least. The stretched position is checked for muscle
+// size only (the studies measured growth), so the other goals give it 0 and progression its 5 points.
+const PROGRAM_W = { volume: 35, frequency: 15, pushPull: 10, legs: 10, recovery: 10, progression: 15, stretch: 0, deload: 5 };
+const SIZE_W = { ...PROGRAM_W, progression: 10, stretch: 5 };
 export const GOALS: Record<ProgramGoal, GoalTargets> = {
   // Schoenfeld et al. 2017 and 2021: 5-30 reps near failure build about the same muscle; Schoenfeld, Ogborn & Krieger
   // 2017: 10+ sets a week clearly more than under 5; Singer et al. 2024: rests over 60 s a little better, no gain past 90 s
   size: { id: "size", name: "Muscle size", lower: "muscle size", hint: "Build bigger muscles: 10 or more sets a week for each muscle, 5-30 reps a set, each set close to failure.",
-    reps: [5, 30], weekSets: 10, rest: [90, Infinity], weights: { ...PROGRAM_W, reps: 35, session: 30, order: 15, rest: 20 } },
+    reps: [5, 30], weekSets: 10, rest: [90, Infinity], weights: { ...SIZE_W, reps: 35, session: 30, order: 15, rest: 20 } },
   // ACSM 2009: 1-6 reps and 3-5 minutes' rest on the main lifts for strength; Schoenfeld et al. 2017: heavy loads build more
   // strength than light; Pelland et al. 2024: strength needs fewer weekly sets than size; Nunes et al. 2021: a lift gains
   // most strength when it is done early in the workout, so order counts more here
@@ -121,6 +127,10 @@ export interface CheckExercise {
   name: string; primary: string[]; secondary: string[];
   mechanic: string | null; force: string | null; category: string;
   superset?: string | null;
+  /** whether Progression raises its reps and weight after workouts: "on"; "fixed" (Keep these numbers fixed); "off" (its
+   *  own Progression is off); "settingsOff" (it follows Settings, where Progression is off). Left out when not known or
+   *  when it isn't lifted with a weight, so the progression check doesn't count it. */
+  progress?: "on" | "fixed" | "off" | "settingsOff";
   /** restS: the rest planned after the set, seconds (left out when not known); side: "L" or "R" for one side */
   sets: { kind: SetKind; reps: number | null; restS?: number | null; side?: string | null }[];
 }
@@ -218,6 +228,28 @@ export const CHECK_RESEARCH = {
     ref: "National Strength and Conditioning Association. Determination of resistance training frequency. NSCA Kinetic Select, 2017, from Coburn JW, Malek MH (eds). NSCA's Essentials of Personal Training, 2nd ed. Human Kinetics, 2012" },
   saric: { t: "Saric et al., 2019", s: "One study of 27 men who already lifted, over 6 weeks, who did the same sets a week on 3 or on 6 days a week: both groups gained about the same muscle and strength, with half as many sets in each workout on 6 days. Only on the front of the upper arm did the 3-day group's growth reach a size the researchers could be sure of",
     ref: "Saric J, Lisica D, Orlic I, et al. Resistance training frequencies of 3 and 6 times per week produce similar muscular adaptations in resistance-trained men. Journal of Strength and Conditioning Research, 2019; 33: S122-S129" },
+  plotkin: { t: "Plotkin et al., 2022", s: "One study of 43 people who already lifted, over 8 weeks of leg training: one group added weight each week, the other added reps at the same weight. Both groups gained about the same muscle and strength",
+    ref: "Plotkin D, Coleman M, Van Every D, et al. Progressive overload without progressing load? The effects of load or repetition progression on muscular adaptations. PeerJ, 2022; 10: e14142" },
+  rogerson: { t: "Rogerson et al., 2024", s: "A survey of 246 competitive strength and physique athletes: all of them took deload weeks, lighter weeks of fewer sets and lighter weights, on average every 5-6 weeks and for about a week. It reports what athletes do, not what works best",
+    ref: "Rogerson D, Nolan D, Korakakis PA, et al. Deloading practices in strength and physique sports: a cross-sectional survey. Sports Medicine - Open, 2024; 10" },
+  bell: { t: "Bell et al., 2023", s: "Expert coaches of strength and physique athletes, asked over three rounds to agree on advice: a deload is a planned stretch of lighter training to reduce tiredness, help recovery and get ready for the training after it",
+    ref: "Bell L, Nolan D, Immonen V, et al. Integrating deloading into strength and physique sports training programmes: an international Delphi consensus approach. Sports Medicine - Open, 2023; 9: 87" },
+  coleman: { t: "Coleman et al., 2024", s: "One study of 39 people who already lifted, over 9 weeks: stopping training for one week halfway built about the same leg muscle as training straight through, and slightly less leg strength. That week was a full stop, not a lighter week",
+    ref: "Coleman M, Burke R, Augustin F, et al. Gaining more from doing less? The effects of a one-week deload period during supervised resistance training on muscular adaptations. PeerJ, 2024; 12: e16777" },
+  maeoTriceps: { t: "Maeo et al., 2023", s: "One study of 21 adults new to lifting, over 12 weeks: each trained one arm with triceps extensions overhead and the other with the arm at their side, as in a pushdown. The overhead arm's triceps grew about 1.4 times as much",
+    ref: "Maeo S, Wu Y, Huang M, et al. Triceps brachii hypertrophy is substantially greater after elbow extension training performed in the overhead versus neutral arm position. European Journal of Sport Science, 2023; 23(7): 1240-1250" },
+  maeoHams: { t: "Maeo et al., 2021", s: "One study of 20 adults new to lifting, over 12 weeks: each trained one leg with seated leg curls, where the bent hips stretch the hamstrings, and the other with lying leg curls. The seated leg's hamstrings grew 14%, the lying leg's 9%",
+    ref: "Maeo S, Huang M, Wu Y, et al. Greater hamstrings muscle hypertrophy but similar damage protection after training at long versus short muscle lengths. Medicine & Science in Sports & Exercise, 2021; 53(4): 825-837" },
+  kinoshita: { t: "Kinoshita et al., 2023", s: "One study of adults, over 12 weeks: each trained one leg with standing calf raises, knee straight, and the other with seated ones, knee bent. The standing leg's main calf muscle (the gastrocnemius) grew clearly more; the deeper soleus grew about the same in both",
+    ref: "Kinoshita M, Maeo S, Kobayashi Y, et al. Triceps surae muscle hypertrophy is greater after standing versus seated calf-raise training. Frontiers in Physiology, 2023; 14: 1272106" },
+  pedrosa: { t: "Pedrosa et al., 2022", s: "One study of leg extensions: people who did only the first half of each rep, where the quads are stretched, gained more quad muscle in some parts of the thigh than people who did only the second half",
+    ref: "Pedrosa GF, Lima FV, Schoenfeld BJ, et al. Partial range of motion training elicits favorable improvements in muscular adaptations when carried out at long muscle lengths. European Journal of Sport Science, 2022; 22(8): 1250-1260" },
+  kassiano: { t: "Kassiano et al., 2023", s: "One study of young women doing calf raises: doing only the bottom half of each rep, where the calves are stretched, grew the inner calf muscle about 15%, against about 7% for full reps and 3% for only the top half",
+    ref: "Kassiano W, et al. Greater gastrocnemius muscle hypertrophy after partial range of motion training performed at long muscle lengths. Journal of Strength and Conditioning Research, 2023; 37(9): 1746-1753" },
+  wolf: { t: "Wolf et al., 2023", s: "A review of studies that compared full reps with partial reps: full reps built a little more muscle overall, but in the few studies where the partial reps were the stretched half, those built more muscle",
+    ref: "Wolf M, Androulakis-Korakakis P, Fisher J, Schoenfeld B, Steele J. Partial vs full range of motion resistance training: a systematic review and meta-analysis. International Journal of Strength and Conditioning, 2023; 3(1)" },
+  wolf2025: { t: "Wolf et al., 2025", s: "One study of people who already lifted, over 8 weeks of upper-body training: one arm did only the stretched half of each rep, the other full reps. Both arms gained about the same, so the stretched half was not better here",
+    ref: "Wolf M, et al. Lengthened partial repetitions elicit similar muscular adaptations as full range of motion repetitions during resistance training in trained individuals. PeerJ, 2025; 13: e18904" },
 } satisfies Record<string, CheckSource>;
 const SRC = CHECK_RESEARCH;
 
@@ -554,6 +586,142 @@ function recovery(g: GoalTargets, days: Day[], wk: string, dayNames: string[], w
   });
 }
 
+// ----- a program as a whole: progression, the stretched position and deload weeks (M-298, RESEARCH.md §5.7) -----
+
+const PROGRESS_NOTE = { fixed: "Keep these numbers fixed is on", off: "Its own Progression is off", settingsOff: "Progression is off in Settings" } as const;
+
+/** ACSM 2009: progressive overload, asking a bit more of the muscles over time, is the basic rule for gaining strength
+ *  and muscle; adding weight or adding reps both work (Plotkin et al. 2022). A program has no per-week targets of its
+ *  own, so what Motus can know is whether Progression is on for each exercise lifted with a weight. Each exercise once
+ *  by name; one off anywhere in the week counts as off. null when no exercise's Progression is known. */
+function progression(g: GoalTargets, days: CheckSession[], wk: string): Check | null {
+  const seen = new Map<string, NonNullable<CheckExercise["progress"]>>();
+  for (const e of days.flatMap(lifting)) if (working(e).length && e.progress && (seen.get(e.name) ?? "on") === "on") seen.set(e.name, e.progress);
+  if (!seen.size) return null;
+  const all = [...seen], off = all.filter(([, p]) => p !== "on");
+  const share = (all.length - off.length) / all.length;
+  const by = (k: string) => off.filter(([, p]) => p === k).map(([x]) => x);
+  const fx = by("fixed"), ow = by("off"), st = by("settingsOff");
+  const tips: string[] = [];
+  if (fx.length) tips.push(`${names(fx)}: "Keep these numbers fixed" is on, so ${fx.length === 1 ? "its" : "their"} numbers never change. Switch it off in ${fx.length === 1 ? "the exercise's" : "each exercise's"} ⋮ menu in the routine editor.`);
+  if (ow.length) tips.push(`${names(ow)}: ${ow.length === 1 ? "its" : "their"} own Progression is off. Switch it on under ${ow.length === 1 ? "the exercise" : "each exercise"} in the routine editor.`);
+  if (st.length) tips.push(`${names(st)}: ${st.length === 1 ? "it follows" : "they follow"} Settings, where Progression is off. Switch it on in Settings → Workout → Progression, or for ${st.length === 1 ? "this exercise" : "each exercise"} in the routine editor.`);
+  return make(g, {
+    key: "progression", title: "Progression on every exercise", share, value: `${all.length - off.length} of ${plural(all.length, "exercise")}`,
+    detail: !off.length ? `In ${wk}, Progression is on for every exercise, so the weights go up as you get stronger.`
+      : `In ${wk}, Progression is off for ${names(off.map(([x]) => x))}, so ${off.length === 1 ? "its" : "their"} weight and reps stay the same every workout. Switch it on.`,
+    what: `Whether Progression moves each exercise's numbers up after your workouts (or offers to, on the Finish screen), for the exercises in ${wk} lifted with a weight. The reps you reach become next time's; once every working set reaches the top of the exercise's rep range, the weight goes up and the reps start again from the bottom. An exercise with "Keep these numbers fixed" on, or with Progression off, keeps the same weight and reps every workout.`,
+    itemsLabel: `Progression per exercise in ${wk} · target on`, bars: false,
+    items: all.map(([x, p]) => ({ label: x, value: p === "on" ? 1 : 0, text: p === "on" ? "On" : p === "fixed" ? "Fixed" : "Off", ok: p === "on", note: p === "on" ? undefined : PROGRESS_NOTE[p] })),
+    target: "Keep Progression on for every exercise, so the weight goes up as you get stronger.",
+    reason: "A muscle keeps growing and getting stronger only while the work asks a bit more of it than before. Once it is used to a weight, lifting that same weight for the same reps every week no longer asks for more.",
+    research: "The American College of Sports Medicine's 2009 guidelines name progressive overload, asking a bit more of the muscles over time, as the basic rule for gaining strength and muscle; adding weight, reps or sets are all ways to do it. In one 2022 study of 43 people who already lifted (Plotkin and others), adding weight each week and adding reps each week built about the same leg muscle and strength over 8 weeks. Progression in Motus does both: it keeps the reps you reach, and adds weight once you reach the top of the rep range. No study has tested Progression as Motus runs it; this check only makes sure it is on.",
+    tips: tips.length ? tips : ["Nothing to change: keep it as it is."],
+    sources: [SRC.acsm, SRC.plotkin],
+  });
+}
+
+/** Exercises that work a muscle while it is stretched (`long`) or only while it is short (`short`), by library name, for
+ *  the muscles where studies compared whole exercises done both ways: the triceps with the arms overhead or at the side
+ *  (Maeo et al. 2023), the hamstrings with the hips bent or straight (Maeo et al. 2021: seated and lying leg curls; the
+ *  Romanian and stiff-legged deadlifts and good mornings bend the hips the same way, though the study used leg curls),
+ *  the calves with the knees straight or bent (Kinoshita et al. 2023). Left out: the biceps (the results disagree) and
+ *  the quads (only studies of half reps). Kept small and to the library's own names; an exercise in neither list is
+ *  unknown and never counts against the person. `pos`: where the muscle is short, then stretched. */
+export const STRETCH: Record<string, { long: string[]; short: string[]; pos: [string, string]; example: string }> = {
+  triceps: {
+    long: ["Cable Rope Overhead Triceps Extension", "Triceps Overhead Extension with Rope", "Kettlebell Overhead Triceps Extension", "Overhead Triceps",
+      "Sled Overhead Triceps Extension", "Speed Band Overhead Triceps", "Standing Overhead Barbell Triceps Extension", "Standing Dumbbell Triceps Extension",
+      "Standing One-Arm Dumbbell Triceps Extension", "Seated Triceps Press"],
+    short: ["Triceps Pushdown", "Triceps Pushdown - Rope Attachment", "Triceps Pushdown - V-Bar Attachment", "Reverse Grip Triceps Pushdown", "Tricep Dumbbell Kickback"],
+    pos: ["with the arms down", "with the arms overhead"], example: "Overhead triceps extension",
+  },
+  hamstrings: {
+    long: ["Seated Leg Curl", "Romanian Deadlift", "Romanian Deadlift from Deficit", "Stiff-Legged Barbell Deadlift", "Stiff-Legged Dumbbell Deadlift",
+      "Smith Machine Stiff-Legged Deadlift", "Good Morning", "Wide Stance Stiff Legs"],
+    short: ["Lying Leg Curls", "Standing Leg Curl", "Ball Leg Curl"],
+    pos: ["with the hips straight", "with the hips bent forward"], example: "Seated leg curl",
+  },
+  calves: {
+    long: ["Standing Calf Raises", "Standing Barbell Calf Raise", "Standing Dumbbell Calf Raise", "Smith Machine Calf Raise", "Calf Press On The Leg Press Machine",
+      "Calf Press", "Donkey Calf Raises", "Rocking Standing Calf Raise", "Calf Raise On A Dumbbell"],
+    short: ["Seated Calf Raise", "Barbell Seated Calf Raise", "Dumbbell Seated One-Leg Calf Raise"],
+    pos: ["with the knees bent", "with the knees straight"], example: "Standing calf raise",
+  },
+};
+
+/** For muscle size only (the studies measured growth): the triceps, hamstrings and calves that are a lift's main muscle in
+ *  the week each get at least one exercise that works them stretched. A muscle counts only when Motus knows its
+ *  exercises: one stretched one meets it, only short ones miss it, anything else is left out. null when none is known. */
+function stretch(g: GoalTargets, days: CheckSession[], wk: string): Check | null {
+  if (g.id !== "size") return null;
+  const is = (xs: string[], x: string) => xs.some((y) => y.toLowerCase() === x.toLowerCase());
+  const rows = CHECK_MUSCLES.filter((m) => STRETCH[m.id]).flatMap((m) => {
+    const own = liftsFor(days, m), L = STRETCH[m.id]!;
+    if (!own.length) return [];
+    const long = own.filter((x) => is(L.long, x));
+    return [{ m, L, own, long, ok: long.length ? true : own.every((x) => is(L.short, x)) ? false : null }];
+  });
+  const known = rows.filter((r) => r.ok !== null), bad = known.filter((r) => !r.ok);
+  if (!known.length) return null;
+  const share = (known.length - bad.length) / known.length;
+  const detail = !bad.length ? `In ${wk}, the ${names(known.map((r) => low1(r.m)))} ${known.length === 1 ? "get" : "each get"} an exercise that works them while stretched.`
+    : bad.length === 1 ? `In ${wk}, the ${low1(bad[0]!.m)} are only worked ${bad[0]!.L.pos[0]}, never stretched. Add one exercise done ${bad[0]!.L.pos[1]}.`
+    : `In ${wk}, the ${names(bad.map((r) => low1(r.m)))} are never worked while stretched. Give each one exercise that stretches it.`;
+  return make(g, {
+    key: "stretch", title: "Exercises with the muscle stretched", share, value: `${known.length - bad.length} of ${plural(known.length, "muscle")}`, detail,
+    what: `Whether the triceps, hamstrings and calves each get at least one exercise in ${wk} that works them while stretched, at their longest: the triceps with the arms overhead, the hamstrings with the hips bent forward, the calves with the knees straight. Only these three are checked, as only for them have studies compared whole exercises done stretched and not. Motus knows the position of common exercises only; a muscle whose exercises it doesn't know is left out, so it never counts against you.`,
+    itemsLabel: `Stretched exercises in ${wk} · target 1 or more`, bars: false,
+    items: rows.map((r) => ({ label: r.m.name, value: r.long.length, text: r.ok === null ? "-" : plural(r.long.length, "exercise"), ok: r.ok,
+      note: r.ok ? names(r.long) : r.ok === false ? `Only ${names(r.own)}, ${r.L.pos[0]}` : `Not counted: Motus doesn't know the position of ${names(r.own)}` })),
+    target: "Give the triceps, hamstrings and calves at least one exercise each that works them while stretched.",
+    reason: "A muscle seems to grow more when it works hard while stretched: the triceps with the arms overhead, the hamstrings with the hips bent, the calves with the knees straight. This has been tested for only a few muscles, so Motus checks only these three.",
+    research: "In a 2023 study of 21 adults new to lifting (Maeo and others), each trained one arm with triceps extensions overhead and the other with the arm at the side, as in a pushdown, for 12 weeks: the overhead arm's triceps grew about 1.4 times as much. In a 2021 study of 20 adults by the same team, seated leg curls, where the bent hips stretch the hamstrings, grew them 14% against 9% for lying leg curls; Romanian deadlifts bend the hips the same way but were not in the study. In a 2023 study (Kinoshita and others), standing calf raises, knees straight, grew the main calf muscle clearly more than seated ones. Studies of half reps point the same way: doing only the stretched half of leg extensions (Pedrosa and others, 2022) or calf raises (Kassiano and others, 2023) built more muscle than the other half, and a 2023 review (Wolf and others) found the stretched half ahead of full reps in the few studies that tested it. Not every study agrees: for the biceps the results are mixed, and in a 2025 study of people who already lifted (Wolf and others) the stretched half built about the same as full reps. So Motus checks only the three muscles where whole exercises were compared, and this check is worth few points.",
+    tips: bad.length ? bad.map((r) => `${r.m.name}: ${names(r.own)} ${r.own.length === 1 ? "works" : "work"} them ${r.L.pos[0]}. Swap one for an exercise done ${r.L.pos[1]}, such as ${r.L.example}, so they also work while stretched.`)
+      : ["Nothing to change: keep it as it is."],
+    sources: [SRC.maeoTriceps, SRC.maeoHams, SRC.kinoshita, SRC.pedrosa, SRC.kassiano, SRC.wolf, SRC.wolf2025],
+  });
+}
+
+/** Deload weeks (Rogerson et al. 2024: athletes take one on average every 5-6 weeks; Bell et al. 2023: coaches' advice;
+ *  no trial of a lighter week yet, Coleman et al. 2024 tested a full week off). Practice, not trials, so the rule is
+ *  lenient: at most DELOAD_EVERY normal weeks in a row, the long end of what athletes reported. Checked only for programs
+ *  longer than that: a shorter one ends before most lifters take a deload week, and the week after it can be an easy one. */
+export const DELOAD_EVERY = 8;
+function deload(g: GoalTargets, plan: { deload: boolean[]; deloadPct: number } | undefined): Check | null {
+  const W = plan?.deload ?? [];
+  if (W.length <= DELOAD_EVERY) return null;
+  // the runs of normal weeks, by first and last week number
+  const runs: [number, number][] = [];
+  W.forEach((d, i) => { if (d) return; const r = runs.at(-1); if (r && r[1] === i) r[1] = i + 1; else runs.push([i + 1, i + 1]); });
+  if (!runs.length) return null;
+  const len = (r: [number, number]) => r[1] - r[0] + 1;
+  const longest = Math.max(...runs.map(len)), long = runs.filter((r) => len(r) > DELOAD_EVERY);
+  const share = longest <= DELOAD_EVERY ? 1 : DELOAD_EVERY / longest;
+  const dl = W.flatMap((d, i) => (d ? [i + 1] : []));
+  const wks = (r: [number, number]) => (r[0] === r[1] ? `week ${r[0]}` : `weeks ${r[0]}-${r[1]}`);
+  /** the fewest weeks of a run to make deload weeks so no stretch is longer than DELOAD_EVERY, spread evenly */
+  const split = (r: [number, number]) => { const k = Math.ceil((len(r) - DELOAD_EVERY) / (DELOAD_EVERY + 1)), step = (len(r) + 1) / (k + 1);
+    return [...Array(k).keys()].map((j) => r[0] - 1 + Math.round(step * (j + 1))); };
+  const mark = (ws: number[]) => `${ws.length === 1 ? "week" : "weeks"} ${names(ws.map(String))}`;
+  const todo = long.flatMap(split);
+  const detail = !long.length ? `In this program, ${mark(dl)} ${dl.length === 1 ? "is a deload week" : "are deload weeks"}, so at most ${plural(longest, "normal week")} ${longest === 1 ? "comes" : "come"} in a row.`
+    : !dl.length ? `This program's ${W.length} weeks have no deload week, a lighter week to let your body recover. Mark ${mark(todo)} as ${todo.length === 1 ? "one" : "deload weeks"}.`
+    : `In this program, ${names(long.map(wks))} come in a row with no deload week. Mark ${mark(todo)} as ${todo.length === 1 ? "one" : "deload weeks"}.`;
+  return make(g, {
+    key: "deload", title: `A deload week after at most ${DELOAD_EVERY} weeks`, share, value: `${plural(longest, "week")} in a row`, detail,
+    what: `How many normal weeks come in a row in this program before a deload week, a lighter week to let your body recover. In a deload week, working weights start ${plan!.deloadPct}% lower; warm-ups and reps stay the same. Only programs longer than ${DELOAD_EVERY} weeks are checked: a shorter one ends before most lifters take a deload week, and you can make the week after it an easy one.`,
+    itemsLabel: `Normal weeks in a row · target ${DELOAD_EVERY} or fewer`, bars: false,
+    items: runs.map((r) => ({ label: cap(wks(r)), value: len(r), text: plural(len(r), "week"), ok: len(r) <= DELOAD_EVERY,
+      note: r[1] < W.length ? `Then week ${r[1] + 1} is a deload week` : "The program ends after them" })),
+    target: `Mark a deload week after at most ${DELOAD_EVERY} normal weeks in a row.`,
+    reason: `Weeks of hard training build up tiredness and aches that a normal rest day doesn't clear, and lifters and coaches plan a lighter week now and then to let it pass. This is common practice that hasn't been tested in trials, so the check allows up to ${DELOAD_EVERY} normal weeks in a row and is worth few points.`,
+    research: `In a 2024 survey of 246 competitive strength and physique athletes (Rogerson and others), all of them took deload weeks, on average every 5-6 weeks and for about a week, doing fewer sets and reps with lighter weights on their usual training days. In 2023, expert coaches asked over three rounds to agree on advice (Bell and others) described a deload as planned lighter training to reduce tiredness, help recovery and get ready for the training after it. Both report what athletes and coaches do, not what works best. Only one trial has tested a break: in a 2024 study of 39 people who already lifted (Coleman and others), stopping training for one week halfway through 9 weeks built about the same leg muscle as training straight through, and slightly less leg strength. That week was a full stop, not a lighter week, so the question is still open. Motus allows up to ${DELOAD_EVERY} normal weeks in a row, the long end of what the athletes reported.`,
+    tips: todo.length ? todo.map((x) => `Week ${x}: mark it as a deload week, with Edit in ⋮ and then Deload on that week.`) : ["Nothing to change: keep it as it is."],
+    sources: [SRC.rogerson, SRC.bell, SRC.coleman],
+  });
+}
+
 // ----- one workout -----
 
 const W = "in this workout";
@@ -772,12 +940,15 @@ export function routineCheck(s: CheckSession, goal: string | null = DEFAULT_GOAL
 /** A program's week (`week`: its number, for the wording; `dayNames`: each workout's routine name, for the tips that
  *  point at one workout): its workouts together, for sets per muscle, twice a week, balance and a day off between hard
  *  workouts for a muscle, against the program's goal. Every major muscle is checked, since a week should cover them all.
- *  `weekdays`: each workout's planned weekdays (0 Sunday) when its routine is planned every week, for the day-off check. */
-export function programCheck(days: CheckSession[], goal: string | null = DEFAULT_GOAL, week = 1, dayNames: string[] = [], weekdays: (number[] | null)[] = []): RoutineCheck | null {
+ *  `weekdays`: each workout's planned weekdays (0 Sunday) when its routine is planned every week, for the day-off check.
+ *  `plan`: each of the program's weeks, whether it is a deload week, and how much lighter those are, for the deload check;
+ *  progression and the stretched position look at the week's exercises (M-298). */
+export function programCheck(days: CheckSession[], goal: string | null = DEFAULT_GOAL, week = 1, dayNames: string[] = [], weekdays: (number[] | null)[] = [],
+  plan?: { deload: boolean[]; deloadPct: number }): RoutineCheck | null {
   if (!days.some(hasLifting)) return null;
   const g = goalOf(goal), wk = `week ${week}`;
   const per = days.map(dayOf);
   const sets = Object.fromEntries(CHECK_MUSCLES.map((m) => [m.id, per.reduce((t, d) => t + d.sets[m.id]!, 0)]));
   return total(g, [volume(g, days, sets, wk), frequency(g, per, sets, wk, dayNames), pushPull(g, days, wk), legs(g, days, sets, wk),
-    recovery(g, per, wk, dayNames, weekdays)], sets);
+    recovery(g, per, wk, dayNames, weekdays), progression(g, days, wk), stretch(g, days, wk), deload(g, plan)], sets);
 }

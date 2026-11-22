@@ -321,11 +321,47 @@ What the program check's "A day off after 6 or more sets" rests on.
   routines of both workouts are planned every week (Schedule), the check uses the real weekdays: 2 or more
   days apart leaves a day off and is fine. Otherwise it treats two workouts in a row as ones that may fall on
   days in a row, and says so. The week's last workout and the next week's first are not compared.
-- **Not built yet, worth adding later:** (1) a lighter (deload) week about every 4-8 weeks when the program has none,
-  as coaches surveyed reported doing (Bell et al. 2023; practice, not a trial); (2) at least one lift per muscle lengthened
-  under load, such as Romanian deadlift or overhead triceps extension, which grew muscle more than the
-  shortened position (Wolf et al. 2023 review; Maeo et al. 2021, 2023); (3) progression: the same weight and
-  reps every week stalls, so plan small increases (ACSM 2009, progressive overload).
+- **Also built (§5.7):** Progression on every exercise, exercises with the muscle stretched, and deload weeks.
+
+### 5.7 Progression, the stretched position and deload weeks (program checks, M-298)
+What the program checks "Progression on every exercise", "Exercises with the muscle stretched" and "A deload week after
+at most 8 weeks" rest on. Sources checked 2026-11-22.
+- **Progression (firm as a principle, little on the method):** progressive overload, asking a bit more of the muscles
+  over time, is the basic rule for continued gains in strength and size (ACSM 2009 position stand; a guideline built on
+  the studies up to then and on practice). How to progress matters less: adding weight each week and adding reps at the
+  same weight built about the same leg muscle and strength (Plotkin et al. 2022, PeerJ 10:e14142; 43 trained adults,
+  8 weeks; strength slightly favoured adding weight, muscle slightly favoured adding reps, neither difference sure).
+  A program in Motus has no per-week targets; Progression (double progression, PLAN.md §8.7) moves each exercise's
+  numbers. So the check can only know whether Progression is on for each exercise lifted with a weight: off when "Keep
+  these numbers fixed" is on, when the exercise's own Progression is off, or when it follows Settings and Settings has it
+  off. It can fail, and does for those cases.
+- **Stretched position (moderate, for a few muscles):** whole exercises compared, one limb each way, in untrained adults
+  over 12 weeks: triceps extensions overhead grew the triceps about 1.4 times as much as with the arm at the side (Maeo
+  et al. 2023, Eur J Sport Sci 23(7):1240-1250; 21 adults; an earlier study, Stasinaki et al. 2018, found no
+  significant difference); seated leg curls (hips bent) grew the hamstrings 14% against 9% for lying ones (Maeo et al.
+  2021, MSSE 53(4):825-837; 20 adults); standing calf raises (knee straight) grew the gastrocnemius far more than seated
+  ones, the soleus about the same (Kinoshita et al. 2023, Front Physiol 14:1272106). Half-rep studies agree: the
+  stretched half of leg extensions (Pedrosa et al. 2022, Eur J Sport Sci 22(8):1250-1260) and calf raises (Kassiano
+  et al. 2023, JSCR 37(9):1746-1753, young women: medial gastrocnemius +15% against +7% full reps) built more than the
+  other half; a review found full reps slightly ahead overall but the stretched half ahead in the few studies that
+  tested it (Wolf et al. 2023, IJSC 3(1)). Against: biceps results are mixed, and in trained people the stretched half
+  built about the same as full reps over 8 weeks (Wolf et al. 2025, PeerJ 13:e18904); a critic notes the triceps study's
+  two cable set-ups also differed in how the load changed over the rep. **Rule Motus uses:** for muscle size only, the
+  triceps, hamstrings and calves that are a lift's main muscle in the week each need one exercise from a short list of
+  library exercises known to work them stretched (overhead triceps extensions; seated leg curl, Romanian and
+  stiff-legged deadlifts, good morning - these bend the hips like the seated curl, though the study used leg curls;
+  standing calf raises). A muscle counts as missed only when all its exercises are on a list of ones that work it short
+  (pushdowns and kickbacks; lying and standing leg curls; seated calf raises); unknown exercises leave it out. Biceps and
+  quads are not checked (mixed results; only half-rep studies). Worth 5 points.
+- **Deload weeks (weak: practice, not trials):** 246 competitive strength and physique athletes all reported taking
+  deload weeks, on average every 5.6 ± 2.3 weeks, lasting about 6 days, with fewer sets and reps and lighter weights on
+  the same training days (Rogerson et al. 2024, Sports Med Open, survey). Coaches agreed a deload is planned lighter
+  training to limit tiredness, help recovery and prepare for what follows (Bell et al. 2023, Sports Med Open 9:87,
+  Delphi of 21-34 coaches). The one trial: a full week off halfway through 9 weeks gave the same leg muscle growth and
+  slightly less leg strength than training straight through (Coleman et al. 2024, PeerJ 12:e16777; 39 trained adults).
+  **Rule Motus uses:** a program longer than 8 weeks should have no more than 8 normal weeks in a row (the long end of
+  what athletes reported); shorter programs are not checked, as they end before most lifters take one and the week after
+  can be easy. Worth 5 points; the text says it is common practice, not tested in trials.
 
 ---
 
