@@ -451,6 +451,13 @@ export function routineRoutes(r: Router) {
     ctx.changed("routine");
     return { id: fid };
   });
+  // the folders in the order given (ids of every folder), numbered 0..n-1 as the routines are
+  r.post("/folders/reorder", async (ctx, _p, b) => {
+    const ids: string[] = (Array.isArray(b.ids) ? b.ids : []).map((x: unknown) => id(x));
+    for (const [i, fid] of ids.entries()) await ctx.q.query("UPDATE folders SET position = $2 WHERE id = $1", [fid, i]);
+    ctx.changed("routine");
+    return { ok: true };
+  });
   r.put("/folders/:id", async (ctx, p, b) => {
     await ctx.q.query("UPDATE folders SET name = coalesce($2, name), position = coalesce($3, position), color = CASE WHEN $5::boolean THEN $4 ELSE color END WHERE id = $1",
       [id(p.id), b.name ? str(b.name, 80) : null, intOrNull(b.position, 0, 10000), b.color ? str(b.color, 20) : null, "color" in b]);
