@@ -341,10 +341,10 @@ describe("routine check", () => {
     // a week with no workouts ends a run like a deload week: a full week off
     const gap = key(programCheck([day], "size", 1, [], [], { ...weeks(12), empty: Array.from({ length: 12 }, (_, i) => i === 6) }), "deload")!;
     expect(gap.share).toBe(1);
-    expect(gap.detail).toBe("In this program, week 7 has no workouts, so at most 6 normal weeks come in a row.");
-    expect(gap.items.map((i) => i.note)).toEqual(["Then week 7 has no workouts", "The program ends after them"]);
+    expect(gap.detail).toBe("In this program, week 7 is a rest week, so at most 6 normal weeks come in a row.");
+    expect(gap.items.map((i) => i.note)).toEqual(["Then week 7 is a rest week", "The program ends after them"]);
     const both = key(programCheck([day], "size", 1, [], [], { ...weeks(18, [6]), empty: Array.from({ length: 18 }, (_, i) => i === 12) }), "deload")!;
-    expect(both.detail).toBe("In this program, week 6 is a deload week and week 13 has no workouts, so at most 6 normal weeks come in a row.");
+    expect(both.detail).toBe("In this program, week 6 is a deload week and week 13 is a rest week, so at most 6 normal weeks come in a row.");
     // 8 weeks or fewer, or no weeks given: not shown
     expect(key(programCheck([day], "size", 1, [], [], weeks(8)), "deload")).toBeUndefined();
     expect(key(programCheck([day]), "deload")).toBeUndefined();
