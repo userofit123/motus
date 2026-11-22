@@ -103,7 +103,7 @@ const dayMenu = (d: Day): MenuItem[] => [
 ];
 // the Routine check (feature) of the program's first full week (not a deload one), all its workouts together: sets per
 // muscle, twice a week, push and pull balance, quads and hamstrings, a day off after 6 or more sets for a muscle,
-// Progression on each exercise, exercises with the muscle stretched, and, over all its weeks, deload weeks (M-298; each
+// Progression on each exercise, muscles worked while stretched, and, over all its weeks, deload weeks (M-298; each
 // routine's page checks its own order, reps, sets and rest, M-287). From its routines as Routines loads them (the same
 // cache), and the plans (Schedule) for the day-off check's weekdays; asked for only while the feature is on
 const st = useSettings();
@@ -122,7 +122,7 @@ const check = computed(() => {
   // each workout's routine name, so a tip can point at "workout 2 (Back)"
   const dayNames = checkWeek.value.days.map((d) => weekRoutines.value[weekIds.value.indexOf(d.routineId)]!.data!.name);
   const c = programCheck(days, p.value!.goal, checkWeek.value.week, dayNames, plannedWeekdays(checkWeek.value.days.map((d) => d.routineId), plans.data.value ?? [], localYmd(new Date())),
-    { deload: p.value!.weeks.map((w) => !!w.deload), deloadPct: p.value!.deloadPct });
+    { deload: p.value!.weeks.map((w) => !!w.deload), empty: p.value!.weeks.map((w) => !w.days.length), deloadPct: p.value!.deloadPct });
   const worked = musclesWorked(days.flat().filter((e) => e.category !== "cardio" && e.category !== "stretching"));
   return c ? { c, muscles: { sets: weekMuscleSets(days), primary: worked.primary, secondary: worked.secondary } } : null;
 });
@@ -199,7 +199,7 @@ await loaded(q);
       </section>
     </div>
     <!-- below both columns, as on a routine's page: its rows say what to change in full, which the side column is too narrow for -->
-    <RoutineCheckCard v-if="check" class="spt" :check="check.c" title="Check of this program" :source="`Scores week ${checkWeek!.week}, ${checkWeek!.days.length === 1 ? 'its 1 workout' : `all ${checkWeek!.days.length} workouts together`}, against the targets for ${goalOf(p.goal).lower}`" goal-note="This program's goal. Change it with Edit in ⋮." :muscles="check.muscles" />
+    <RoutineCheckCard v-if="check" class="spt" :check="check.c" title="Check of this program" :source="`Scores week ${checkWeek!.week}, ${checkWeek!.days.length === 1 ? 'its 1 workout' : `all ${checkWeek!.days.length} workouts together`}, against the targets for ${goalOf(p.goal).lower}${check.c.checks.some((x) => x.key === 'deload') ? `, and deload weeks over all ${p.weeks.length} weeks` : ''}`" goal-note="This program's goal. Change it with Edit in ⋮." :muscles="check.muscles" />
 
     <ProgramEditor v-if="editing" :program="p" @close="editing = false" />
     <ProgramAddSheet v-if="adding" :program="p" @close="adding = false" />

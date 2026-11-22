@@ -66,7 +66,7 @@ export interface RoutineSet {
   side?: string | null;
 }
 
-/** How a routine exercise's weight moves after a workout (Settings → Workout → Progression): "suggest" asks on the
+/** How a routine exercise's weight moves after a workout (Settings → Workout defaults → Progression): "suggest" asks on the
  * Finish screen, "auto" just does it, "off" never. */
 export type ProgressionMode = "suggest" | "auto" | "off";
 /** A routine exercise's own Progression; each field null follows Settings. The rep range is what the reps move in:
