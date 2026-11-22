@@ -2,6 +2,15 @@
 
 The top entry's version is the one the release workflow publishes. Add a new `## [x.y.z]` section to release.
 
+## [0.1.47] - 2026-11-22
+
+- A left set and a right set of a one-arm or one-leg exercise count as 1 set for the muscle: each arm or leg works in only one of the two, so its muscle gets 1 set. A biceps routine with 1 two-arm exercise and 3 one-arm exercises, each done 3 times on each side, now shows 12 biceps sets instead of 21. This applies to the routine and program checks, Stats, the muscle figures, the Strength score, muscle set goals and the suggestions on Home.
+- A day counts for a muscle in "Muscles trained on 2 or more days" only when an exercise that day is mainly for it. Back days no longer count as biceps days because the biceps help in rows. Helping still gives the muscle half a set for each set in its sets a week.
+- A program has a new check, "A day off after 6 or more sets": when a muscle gets 6 or more sets in two workouts in a row, it says so and suggests a day off between them. It uses the days you planned the workouts on (Schedule in a workout's ⋮ menu); without plans, it treats two workouts next to each other as days in a row. The popup says which studies this is based on.
+- In a program, Back goes to Programs. "Add routines" opens a sheet where you pick routines to add to every week, or make a new one with "New routine" without leaving the program. Routines already in the program say "In this program".
+- The routines in a program can be put in a different order: "Move up" and "Move down" in a day's ⋮ menu, or drag them in Edit.
+- "Combine routines" in the Routines ⋮ menu makes one new routine from the exercises of two or more, in the order you tick them, e.g. "Chest #1 + Triceps #1". The routines you pick and their history stay as they are.
+
 ## [0.1.46] - 2026-11-20
 
 - Every routine and program check line says plainly what it means, with your own numbers and exercises, e.g. "Chest gets 19 sets in this workout. After about 11 the chest is too tired for more sets to build much: move the other 8 to another day of the week."
