@@ -116,12 +116,15 @@ const noteWhere = (n: any) => (n.targetType === "routine_exercise" ? routine.val
 const menuFor = useRoutineMenu();
 const menu = computed(() => menuFor({ id: id.value, name: routine.value.name, pinned: !!routine.value.pinned, archived: !!routine.value.archived }, true));
 // show the page once its data is in, all at once
+// opened from a program's page, Back names that program (as the routine editor's Back does); otherwise Routines
+const fromProgram = /^\/programs\/([^/?#]+)/.exec(String(window.history.state?.back ?? ""))?.[1];
+const backLabel = computed(() => (fromProgram ? programs.data.value?.find((x) => x.id === fromProgram)?.name : null) ?? "Routines");
 await loaded(r, summaries, notes, rems, schedules, history, programs);
 </script>
 
 <template>
   <div v-if="routine" class="page">
-    <button class="back" @click="goBack(router, '/routines')"><Icon name="left" :size="16" /><span>Routines</span></button>
+    <button class="back" @click="goBack(router, '/routines')"><Icon name="left" :size="16" /><span>{{ backLabel }}</span></button>
     <div class="ph">
       <div><h1>{{ routine.name }}</h1><DotLine class="sub" :parts="[`${routine.exercises.length} ${routine.exercises.length === 1 ? 'exercise' : 'exercises'}`, routineTime(sum?.estimateS ?? 0, sum?.usual), sum?.lastDoneAt ? `last done ${ago(sum.lastDoneAt)}` : 'not done yet']" /></div>
       <div class="acts"><Menu :items="menu" /><button class="btn keep" @click="router.push(`/routines/${id}/start`)"><Icon name="play" :size="16" />Start</button></div>

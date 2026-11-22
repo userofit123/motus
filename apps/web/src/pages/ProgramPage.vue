@@ -93,7 +93,9 @@ async function move(d: Day, by: number) {
 // each day's ⋮: which workout counts for it (or skipped), planning its routine, its place in the week, and back to automatic
 const dayOpen = ref<Day | null>(null);
 const used = computed(() => new Map((p.value?.plan ?? []).flatMap((w) => w.days.flatMap((d) => (d.workout ? [[d.workout.id, w.week] as [string, number]] : [])))));
+// the row opens the routine whatever its status; a done day's workout stays one tap away in its ⋮
 const dayMenu = (d: Day): MenuItem[] => [
+  { label: "See workout", icon: "history", hidden: !d.workout, run: () => router.push(`/workouts/${d.workout!.id}`) },
   { label: "Choose the workout", icon: "edit", run: () => (dayOpen.value = d) },
   { label: "Schedule", icon: "calendar", run: () => (scheduleSheet.value = { routineId: d.routineId }) },
   { label: "Move up", icon: "up", sep: true, hidden: d.day === 1, run: () => move(d, -1) },
@@ -170,7 +172,7 @@ await loaded(q);
             <div class="ch"><span class="t grow">Week {{ w.week }}</span><span v-if="w.deload" class="mchip">Deload -{{ p.deloadPct }}%</span><Icon v-if="w.days.length && w.days.every((d) => d.status === 'done')" name="check" :size="16" class="pos" /></div>
             <div v-if="!w.days.length" class="tiny">Rest week</div>
             <div class="list">
-              <div v-for="d in w.days" :key="d.day" class="li" :class="[d.status, { click: !!d.workout }]" @click="d.workout && router.push(`/workouts/${d.workout.id}`)">
+              <div v-for="d in w.days" :key="d.day" class="li click" :class="d.status" @click="router.push(`/routines/${d.routineId}`)">
                 <MuscleFig sm :routine="d.routineId" />
                 <span class="mk"><Icon v-if="d.status === 'done'" name="check" :size="14" /><Icon v-else-if="d.status === 'next'" name="play" :size="12" /><Icon v-else-if="d.status === 'skipped'" name="skip" :size="12" /><template v-else>{{ d.day }}</template></span>
                 <div class="grow"><div class="t">{{ d.name }}</div><div v-if="dayLine(d)" class="s">{{ dayLine(d) }}</div></div>
