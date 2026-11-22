@@ -2,6 +2,14 @@
 
 The top entry's version is the one the release workflow publishes. Add a new `## [x.y.z]` section to release.
 
+## [0.1.48] - 2026-11-22
+
+- A program is checked for three more things:
+  - Progression on every exercise where you log weight and reps. An exercise with Progression off, or with "Keep these numbers fixed" on, is named, with where to switch it on.
+  - For the muscle size goal, an exercise that works the triceps, hamstrings and calves while stretched, such as an overhead triceps extension. In a 2023 study of 14 adults new to lifting, the calf grew about 9-12% with standing calf raises against 1-2% with seated ones. Exercises Motus doesn't know never count against you.
+  - For programs longer than 8 weeks, a deload week at least every 8 weeks. It names the weeks to mark, and a rest week counts too. This is common coaching practice, not tested in trials, so it is worth only a few points.
+- Each new check has its own icon, a row in the Routine check lesson, and its research in the popup.
+
 ## [0.1.47] - 2026-11-22
 
 - A left set and a right set of a one-arm or one-leg exercise count as 1 set for the muscle: each arm or leg works in only one of the two, so its muscle gets 1 set. A biceps routine with 1 two-arm exercise and 3 one-arm exercises, each done 3 times on each side, now shows 12 biceps sets instead of 21. This applies to the routine and program checks, Stats, the muscle figures, the Strength score, muscle set goals and the suggestions on Home.
