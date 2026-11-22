@@ -159,7 +159,7 @@ await loaded(routines, folders, ...(settings.value.features.programs ? [programs
         </button>
         <Menu v-if="(g.id && g.id !== 'pinned') || (g.items.length > 1 && !showArchived && !q)" :items="[
           ...(g.items.length > 1 && !showArchived && !q ? [{ label: 'Reorder routines', icon: 'drag', run: () => (reorderKey = fkey(g)) }] : []),
-          ...(g.id && g.id !== 'pinned' ? [{ label: 'Rename', icon: 'edit', run: () => renameFolder(g as any) }, { label: 'Move up', icon: 'up', sep: true, hidden: folderIndex(g.id) === 0, run: () => moveFolder(g.id!, -1) }, { label: 'Move down', icon: 'down', hidden: folderIndex(g.id) === (folders.data.value?.length ?? 0) - 1, run: () => moveFolder(g.id!, 1) }, { label: 'Delete folder', icon: 'trash', danger: true, sep: true, run: () => delFolder(g as any) }] : [])]" /></div>
+          ...(g.id && g.id !== 'pinned' ? [{ label: 'Rename', icon: 'edit', run: () => renameFolder(g as any) }, { label: 'Move up', icon: 'up', sep: true, hidden: !!q || folderIndex(g.id) === 0, run: () => moveFolder(g.id!, -1) }, { label: 'Move down', icon: 'down', hidden: !!q || folderIndex(g.id) === (folders.data.value?.length ?? 0) - 1, run: () => moveFolder(g.id!, 1) }, { label: 'Delete folder', icon: 'trash', danger: true, sep: true, run: () => delFolder(g as any) }] : [])]" /></div>
       <Collapse :open="!isFolded(g) || !!q">
       <div v-if="!g.items.length" class="tiny hgap">Empty. Move a routine here from its ⋮ menu.</div>
       <div class="grid gauto rgrid">
