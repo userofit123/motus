@@ -95,8 +95,8 @@ const dayOpen = ref<Day | null>(null);
 const used = computed(() => new Map((p.value?.plan ?? []).flatMap((w) => w.days.flatMap((d) => (d.workout ? [[d.workout.id, w.week] as [string, number]] : [])))));
 // the row opens the routine whatever its status; a done day's workout stays one tap away in its ⋮
 const dayMenu = (d: Day): MenuItem[] => [
-  { label: "See workout", icon: "history", hidden: !d.workout, run: () => router.push(`/workouts/${d.workout!.id}`) },
-  { label: "Choose the workout", icon: "edit", run: () => (dayOpen.value = d) },
+  { label: "Open the workout", icon: "right", hidden: !d.workout, run: () => router.push(`/workouts/${d.workout!.id}`) },
+  { label: "Choose the workout", sep: !!d.workout, icon: "edit", run: () => (dayOpen.value = d) },
   { label: "Schedule", icon: "calendar", run: () => (scheduleSheet.value = { routineId: d.routineId }) },
   { label: "Move up", icon: "up", sep: true, hidden: d.day === 1, run: () => move(d, -1) },
   { label: "Move down", icon: "down", hidden: d.day === (p.value!.weeks[d.week - 1]?.days.length ?? 0), run: () => move(d, 1) },
