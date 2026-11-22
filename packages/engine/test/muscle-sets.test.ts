@@ -6,6 +6,7 @@ import { createEngine, type Engine } from "../src/index";
 import { pgliteDb } from "../src/adapters/pglite";
 import { uuidv7 } from "../src/ids";
 import { setsByMuscle } from "../src/modules/suggest";
+import { weekIn } from "../src/modules/achievements";
 
 let eng: Engine, U: string, curl = "", row = "";
 const call = async (method: string, path: string, body?: unknown, query?: Record<string, string>) => {
@@ -45,8 +46,13 @@ describe("sets per muscle", () => {
     curl = (await call("POST", "/exercises", { name: "Test one-arm curl", tracking: "weight_reps", primaryMuscles: ["biceps"] })).id;
     row = (await call("POST", "/exercises", { name: "Test row", tracking: "weight_reps", primaryMuscles: ["middle back"], secondaryMuscles: ["biceps"] })).id;
   };
-  // a couple of minutes ago, so it falls in this week and the last 7 days whenever the tests run
-  const log = (exercises: unknown[]) => call("POST", "/workouts/log", { startedAt: new Date(Date.now() - 120000).toISOString(), durationS: 60, exercises });
+  // a couple of minutes ago, but never before the start of the current week (as the week goals and scores work it out, in
+  // UTC with the default first day), so it falls in this week and the last 7 days whenever the tests run, also in the first
+  // minutes after a week begins. Never in the future.
+  const log = (exercises: unknown[]) => {
+    const now = Date.now(), weekStart = new Date(weekIn(new Date(now), 0, 0) + "T00:00:00Z").getTime();
+    return call("POST", "/workouts/log", { startedAt: new Date(Math.max(now - 120000, weekStart)).toISOString(), durationS: 60, exercises });
+  };
 
   it("counts a lone left set as 1 set", async () => {
     await fresh();
